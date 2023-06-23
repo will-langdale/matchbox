@@ -1,11 +1,5 @@
 from src.data import utils as du
 
-# import logging
-
-# from sklearn.model_selection import train_test_split
-# from dotenv import find_dotenv, load_dotenv
-# import click
-
 
 def data_hub_read(sample: int = None):
     """
@@ -177,28 +171,3 @@ def export_wins_read(sample: int = None):
     df_ew = du.query(sql=query)
 
     return df_ew
-
-
-# @click.command()
-# @click.option(
-#     "--output_name", required=True, type=str, help="Name of dataset to be saved"
-# )
-# @click.option(
-#     "--split_test_set",
-#     is_flag=True,
-#     help="Whether to create separate test set",
-# )
-# def main(output_name, split_test_set):
-#     """
-#     Entrypoint
-#     """
-#     download_data_workspace_extract(output_name, split_test_set)
-
-
-# if __name__ == "__main__":
-#     log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-#     logging.basicConfig(level=logging.INFO, format=log_fmt)
-
-#     load_dotenv(find_dotenv())
-
-#     main()

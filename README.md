@@ -1,6 +1,8 @@
-# 🔗 Company Matching
+# 🔗 Company matching
 
 A [Splink](https://moj-analytical-services.github.io/splink/) model for matching companies across DBT datasets.
+
+See [Robin Linacre's series of articles on probabilistic record linkage](https://www.robinlinacre.com/probabilistic_linkage/) for theoretical underpinning (Fellegi and Sunter, 1969).
 
 ## Coverage
 
@@ -9,15 +11,17 @@ A [Splink](https://moj-analytical-services.github.io/splink/) model for matching
 * [Export Wins](https://data.trade.gov.uk/datasets/0738396f-d1fd-46f1-a53f-5d8641d032af#export-wins-master-datasets)
 * [HMRC UK exporters](https://data.trade.gov.uk/datasets/76fb2db3-ab32-4af8-ae87-d41d36b31265#uk-exporters)
 
-## Metrics
+## Release metrics
 
-Coming soon!
+🛠 Coming soon!
 
-## Getting started
+## Usage
 
-Please init this repo with `git init` if it has just been cookie-cut. Under the hood, the cookiecutter creates conda environments to keep dependencies and environments clean and separated between projects. If you have never done it within Data Workspace, please run `conda init bash` and restart your terminal.
+🛠 Coming soon!
 
-After having initiated the git repo or after having cloned it:
+## Contributing
+
+Clone the repo, then run:
 
 ```bash
 . setup.sh
@@ -44,7 +48,8 @@ from src.locations import MODELS_HOME
 
 In order to run notebooks correctly, you need to select the right environment as kernel. If you have just run `make requirements`, please refresh your browser window / editor to give a chance to the notebook engine to pick up the new kernel option.
 
-## Managing Python dependencies
+### Managing Python dependencies
+
 Every time a Python dependency needs to be added to this project, add it to `requirements.in` (in alphabetical order), and re-run `make requirements`. This will:
 
 - Auto-generate or update the `requirements.txt` file which can then be committed
@@ -56,10 +61,12 @@ The above is achieved under the hood by the `piptools` package. The `requirement
 
 The version of Python being used and some dependencies (e.g. `setuptools` and `piptools` itself) are not managed through `requirements.in` or `requirements.txt`. They are installed through conda, and fixed using a conda lock file. Please refer to the "Project organisation" section below to learn more.
 
-## Using this repository
+### Using this repository
+
 Documentation on how to use the code in this repository (e.g. how to train a model) should be placed in the `references` folder.
 
-## Before a commit
+### Before a commit
+
 Please format and lint the code before committing. If one of the checks fail, you will not be able to commit.
 
 ```bash
@@ -74,7 +81,8 @@ make
 To appear in this list, `make` steps should have a comment above them, as in all current examples. New `make` steps can depend on each other.
 
 
-## Project Organisation
+### Project Organisation
+
 ```
 ├── Makefile                        <- Makefile with commands like `make data` or `make train`
 ├── README.md                       <- The top-level README for developers using this project.
@@ -125,7 +133,8 @@ To appear in this list, `make` steps should have a comment above them, as in all
 └── .gitlab                         <- folder containing merge template
 ```
 
-## Environment variables
+### Environment variables
+
 This repo contains a `.env.sample` file that should be renamed to `.env` and filled according to necessity. Then, the variables included can be referenced as follows:
 
 ```python

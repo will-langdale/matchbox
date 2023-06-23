@@ -1,4 +1,4 @@
-.PHONY: clean environment data install_git_hooks requirements precommit test
+.PHONY: train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -17,6 +17,13 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 # COMMANDS                                                                      #
 #################################################################################
 
+## Train model
+train:
+	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --sample 100_000 --dev
+
+## Build lookup and write to data workspace
+predict:
+	$(PYTHON_INTERPRETER) src/models/predict.py --run_id company-matching__$(NOW) --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
 
 ## Delete all compiled Python files
 clean:
@@ -37,10 +44,6 @@ else
 endif
 	@echo ">>> New conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
 
-
-## Generate extract of dataset
-data:
-	$(PYTHON_INTERPRETER) src/data/make_dataset.py --output_name extract__$(NOW)
 
 ## Install pre-commit hook
 install_git_hooks:

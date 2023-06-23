@@ -14,7 +14,7 @@ import contextlib
 import traceback
 
 DEFAULT_ARTIFACT_PATH = "model"
-DEFAULT_EXPERIMENT_NAME = "company_matching"
+DEFAULT_EXPERIMENT_NAME = "Default"
 DEFAULT_MODEL_NAME = "company_matching"
 
 
