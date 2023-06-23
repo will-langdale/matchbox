@@ -8,8 +8,6 @@ import logging
 import duckdb
 from dotenv import find_dotenv, load_dotenv
 
-from splink.duckdb.linker import DuckDBLinker
-
 LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
@@ -86,14 +84,12 @@ def main(run_id, output_schema, output_table):
     json_settings = mu.load_model_from_run(run_id)
 
     # Load data
+    logger.info("Loading data")
     datasets = CompanyMatchingDatasets()
 
     # Instantiate linker, load settings
-    linker = DuckDBLinker(
-        datasets.data,
-        settings,
-        input_table_aliases=datasets.alias,
-    )
+    logger.info("Instantiating linker and loading settings")
+    linker = datasets.linker(settings)
     linker.load_model(json_settings)
 
     # Predict/cluster/create lookup

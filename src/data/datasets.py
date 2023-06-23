@@ -1,5 +1,8 @@
 from src.data import utils as du
+from src.features.clean_complex import clean_raw_data
+
 from splink.duckdb.linker import DuckDBLinker
+import duckdb
 
 
 class CompanyMatchingDatasets:
@@ -12,29 +15,32 @@ class CompanyMatchingDatasets:
             '"dit"."export_wins__wins_dataset"': self.export_wins_read(sample),
         }
         self.datasets_and_readfuncs_clean = {}
+        self.connection = duckdb.connect()
+        # self.logger = logging.getLogger(__name__)
 
         for table in self.datasets_and_readfuncs.keys():
-            table_clean = self.clean_table_name(table)
+            table_clean = self._clean_table_name(table)
             self.datasets_and_readfuncs_clean[
                 table_clean
             ] = self.datasets_and_readfuncs[table]
+            self.connection.register(
+                f"{table_clean}", self.datasets_and_readfuncs_clean[table_clean]
+            )
 
-        self.alias = []
-        self.data = []
-
-        for table in self.datasets_and_readfuncs_clean:
-            setattr(self, table, self.datasets_and_readfuncs_clean[table])
-            self.data.append(getattr(self, table))
-            self.alias.append(f"self.{table}")
-
-    def clean_table_name(self, name):
+    def _clean_table_name(self, name):
         return name.replace('"', "").replace(".", "_")
+
+    def _generate_data_log(self, df, df_name, sample):
+        msg = f"{df_name}: {len(df)} items loaded"
+        if sample is not None:
+            msg += ". Sampling is ENABLED"
+        return msg
 
     def linker(self, settings: dict = None):
         return DuckDBLinker(
-            self.data,
-            settings,
-            input_table_aliases=self.alias,
+            list(self.datasets_and_readfuncs_clean.keys()),
+            settings_dict=settings,
+            connection=self.connection,
         )
 
     def data_hub_read(self, sample: int = None):
@@ -57,21 +63,7 @@ class CompanyMatchingDatasets:
             company_number,
             name as company_name,
             string_to_array(btrim(trading_names, '[]'), ', ') as secondary_names,
-            address_1,
-            address_2,
-            address_town,
-            address_county,
-            address_country,
-            address_postcode as postcode,
-            registered_address_1,
-            registered_address_2,
-            registered_address_town,
-            registered_address_county,
-            registered_address_country,
-            registered_address_postcode as postcode_alt,
-            uk_region,
-            sector,
-            description
+            address_postcode as postcode
         """
 
         query = f"""
@@ -83,7 +75,19 @@ class CompanyMatchingDatasets:
 
         df_dh = du.query(sql=query)
 
-        return df_dh
+        # self.logger.info(
+        #     self._generate_data_log(
+        #         df_dh,
+        #         dsname,
+        #         sample
+        #     )
+        # )
+
+        df_dh_clean = clean_raw_data(df_dh)
+
+        # self.logger.info(f"{dsname} cleaned")
+
+        return df_dh_clean
 
     def comp_house_read(self, sample: int = None):
         """
@@ -115,18 +119,7 @@ class CompanyMatchingDatasets:
                 ],
                 ''
             ) as secondary_names,
-            company_status,
-            account_category,
-            address_line_1,
-            address_line_2,
-            post_town,
-            county,
-            country,
-            postcode,
-            sic_code_1,
-            sic_code_2,
-            sic_code_3,
-            sic_code_4
+            postcode
         """
 
         query = f"""
@@ -137,7 +130,19 @@ class CompanyMatchingDatasets:
 
         df_ch = du.query(sql=query)
 
-        return df_ch
+        # self.logger.info(
+        #     self._generate_data_log(
+        #         df_ch,
+        #         dsname,
+        #         sample
+        #     )
+        # )
+
+        df_ch_clean = clean_raw_data(df_ch)
+
+        # self.logger.info(f"{dsname} cleaned")
+
+        return df_ch_clean
 
     def hmrc_exporters_read(self, sample: int = None):
         """
@@ -170,7 +175,19 @@ class CompanyMatchingDatasets:
 
         df_ex = du.query(sql=query)
 
-        return df_ex
+        # self.logger.info(
+        #     self._generate_data_log(
+        #         df_ex,
+        #         dsname,
+        #         sample
+        #     )
+        # )
+
+        df_ex_clean = clean_raw_data(df_ex)
+
+        # self.logger.info(f"{dsname} cleaned")
+
+        return df_ex_clean
 
     def export_wins_read(self, sample: int = None):
         """
@@ -203,4 +220,16 @@ class CompanyMatchingDatasets:
 
         df_ew = du.query(sql=query)
 
-        return df_ew
+        # self.logger.info(
+        #     self._generate_data_log(
+        #         df_ex,
+        #         dsname,
+        #         sample
+        #     )
+        # )
+
+        df_ew_clean = clean_raw_data(df_ew)
+
+        # self.logger.info(f"{dsname} cleaned")
+
+        return df_ew_clean

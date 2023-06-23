@@ -1,12 +1,13 @@
 from src.config import settings
 from src.models import utils as mu
 from src.data.datasets import CompanyMatchingDatasets
+from src.locations import OUTPUTS_HOME
 
 import click
 import logging
 import mlflow
-import json
 from dotenv import find_dotenv, load_dotenv
+from os import path
 
 LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
@@ -42,9 +43,11 @@ def train_model(run_name, description, sample, dev):
             raise ValueError("Cannot subsample dataset during production run")
 
     # Load data
+    logger.info("Loading data")
     datasets = CompanyMatchingDatasets(sample=sample)
 
     # Instantiate linker
+    logger.info("Instantiating linker")
     linker = datasets.linker(settings)
 
     with mu.mlflow_run(run_name=run_name, description=description, dev_mode=dev):
@@ -75,8 +78,9 @@ def train_model(run_name, description, sample, dev):
 
         logger.info("Saving model and settings")
 
-        model_json = json.dumps(linker.save_model_to_json(), indent=4)
-        mlflow.log_artifact(model_json, "linker_model_params.json")
+        json_file_path = path.join(OUTPUTS_HOME, "companies_matching_model.json")
+        linker.save_model_to_json(out_path=json_file_path)
+        mlflow.log_artifact(json_file_path, mu.DEFAULT_ARTIFACT_PATH)
 
         logger.info("Done.")
 

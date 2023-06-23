@@ -145,7 +145,7 @@ def add_postcode_area(df):
     return clean_df.df()
 
 
-def clean_numbers_and_names(df):
+def clean_raw_data(df):
     """
     Steer the cleaning of company numbers and names
     Args: the dataframe to be cleaned

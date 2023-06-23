@@ -19,11 +19,13 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 ## Train model
 train:
-	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --sample 100 --dev
+	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --sample 100000 --dev
+
 
 ## Build lookup and write to data workspace
 predict:
 	$(PYTHON_INTERPRETER) src/models/predict.py --run_id company-matching__$(NOW) --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
+
 
 ## Delete all compiled Python files
 clean:
