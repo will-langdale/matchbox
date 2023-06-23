@@ -3,10 +3,14 @@ click # To parse command-line arguments
 GitPython # To read git commit hashes
 markdown # To render methodology description
 matplotlib
-mlflow==1.30.0
+mlflow
 pandas
 psycopg2-binary # To connect to postgres SQL database
 pyarrow
 python-dotenv # To read .env file
 scikit-learn
 sqlalchemy # To connect to postgres SQL database
+splink
+duckdb
+polars
+altair

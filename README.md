@@ -1,5 +1,17 @@
-# company_matching
-A Splink model for matching companies across DBT datasets.
+# 🔗 Company Matching
+
+A [Splink](https://moj-analytical-services.github.io/splink/) model for matching companies across DBT datasets.
+
+## Coverage
+
+* [Companies House](https://data.trade.gov.uk/datasets/a777d199-53a4-4d0a-bbbb-1559a86f8c4c#companies-house-company-data)
+* [Data Hub companies](https://data.trade.gov.uk/datasets/32918f3e-a727-42e6-8359-9efc61c93aa4#data-hub-companies-master)
+* [Export Wins](https://data.trade.gov.uk/datasets/0738396f-d1fd-46f1-a53f-5d8641d032af#export-wins-master-datasets)
+* [HMRC UK exporters](https://data.trade.gov.uk/datasets/76fb2db3-ab32-4af8-ae87-d41d36b31265#uk-exporters)
+
+## Metrics
+
+Coming soon!
 
 ## Getting started
 

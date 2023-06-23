@@ -10,6 +10,12 @@
     # via -r requirements.in
 alembic==1.11.1
     # via mlflow
+altair==5.0.1
+    # via
+    #   -r requirements.in
+    #   splink
+astroid==2.15.5
+    # via pylint
 asttokens==2.2.1
     # via stack-data
 attrs==23.1.0
@@ -53,10 +59,16 @@ decorator==5.1.1
     # via ipython
 defusedxml==0.7.1
     # via nbconvert
+dill==0.3.6
+    # via pylint
 distlib==0.3.6
     # via virtualenv
 docker==6.1.3
     # via mlflow
+duckdb==0.8.1
+    # via
+    #   -r requirements.in
+    #   splink
 entrypoints==0.4
     # via mlflow
 exceptiongroup==1.1.1
@@ -104,18 +116,25 @@ ipykernel==6.23.2
     # via -r requirements-dev.in
 ipython==8.14.0
     # via ipykernel
+isort==5.12.0
+    # via pylint
 itsdangerous==2.1.2
     # via flask
 jedi==0.18.2
     # via ipython
 jinja2==3.1.2
     # via
+    #   altair
     #   flask
     #   nbconvert
+    #   splink
 joblib==1.2.0
     # via scikit-learn
 jsonschema==4.17.3
-    # via nbformat
+    # via
+    #   altair
+    #   nbformat
+    #   splink
 jupyter-client==8.2.0
     # via
     #   ipykernel
@@ -131,6 +150,8 @@ jupyterlab-pygments==0.2.2
     # via nbconvert
 kiwisolver==1.4.4
     # via matplotlib
+lazy-object-proxy==1.9.0
+    # via astroid
 mako==1.2.4
     # via alembic
 markdown==3.4.3
@@ -148,7 +169,9 @@ matplotlib-inline==0.1.6
     #   ipykernel
     #   ipython
 mccabe==0.7.0
-    # via flake8
+    # via
+    #   flake8
+    #   pylint
 mistune==3.0.1
     # via nbconvert
 mlflow==1.30.0
@@ -169,6 +192,7 @@ nodeenv==1.8.0
     # via pre-commit
 numpy==1.25.0
     # via
+    #   altair
     #   contourpy
     #   matplotlib
     #   mlflow
@@ -189,7 +213,9 @@ packaging==21.3
 pandas==1.5.3
     # via
     #   -r requirements.in
+    #   altair
     #   mlflow
+    #   splink
 pandocfilters==1.5.0
     # via nbconvert
 parso==0.8.3
@@ -198,6 +224,8 @@ pathspec==0.11.1
     # via black
 pexpect==4.8.0
     # via ipython
+phonetics==1.0.5
+    # via splink
 pickleshare==0.7.5
     # via ipython
 pillow==9.5.0
@@ -206,9 +234,12 @@ platformdirs==3.8.0
     # via
     #   black
     #   jupyter-core
+    #   pylint
     #   virtualenv
 pluggy==1.2.0
     # via pytest
+polars==0.18.3
+    # via -r requirements.in
 pre-commit==3.3.3
     # via -r requirements-dev.in
 prometheus-client==0.17.0
@@ -239,6 +270,8 @@ pygments==2.15.1
     #   nbconvert
 pyjwt==2.7.0
     # via databricks-cli
+pylint==2.17.4
+    # via -r requirements-dev.in
 pyparsing==3.1.0
     # via
     #   matplotlib
@@ -290,11 +323,15 @@ smmap==5.0.0
     # via gitdb
 soupsieve==2.4.1
     # via beautifulsoup4
+splink==3.9.2
+    # via -r requirements.in
 sqlalchemy==1.4.48
     # via
     #   -r requirements.in
     #   alembic
     #   mlflow
+sqlglot==11.4.1
+    # via splink
 sqlparse==0.4.4
     # via mlflow
 stack-data==0.6.2
@@ -308,7 +345,12 @@ tinycss2==1.2.1
 tomli==2.0.1
     # via
     #   black
+    #   pylint
     #   pytest
+tomlkit==0.11.8
+    # via pylint
+toolz==0.12.0
+    # via altair
 tornado==6.3.2
     # via
     #   ipykernel
@@ -327,8 +369,11 @@ traitlets==5.9.0
 typing-extensions==4.6.3
     # via
     #   alembic
+    #   altair
+    #   astroid
     #   black
     #   ipython
+    #   pylint
 urllib3==1.26.16
     # via
     #   databricks-cli
@@ -346,6 +391,8 @@ websocket-client==1.6.0
     # via docker
 werkzeug==2.3.6
     # via flask
+wrapt==1.15.0
+    # via astroid
 zipp==3.15.0
     # via
     #   importlib-metadata

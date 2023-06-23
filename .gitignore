@@ -84,3 +84,6 @@ target/
 
 # Mypy cache
 .mypy_cache/
+
+# Theia
+.theia
