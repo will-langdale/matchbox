@@ -1,13 +1,12 @@
-from src.config import settings, datasets_and_readfuncs
+from src.config import settings
 from src.models import utils as mu
+from src.data.datasets import CompanyMatchingDatasets
 
 import click
 import logging
 import mlflow
 import json
 from dotenv import find_dotenv, load_dotenv
-
-from splink.duckdb.linker import DuckDBLinker
 
 LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
@@ -43,23 +42,10 @@ def train_model(run_name, description, sample, dev):
             raise ValueError("Cannot subsample dataset during production run")
 
     # Load data
-    data = []
-    for dataset in datasets_and_readfuncs.keys():
-        df = datasets_and_readfuncs[dataset](sample)
-
-        msg = f"{dataset}: {len(dataset)} items loaded"
-        if sample is not None:
-            msg += ". Sampling is ENABLED"
-        logger.info(msg)
-
-        data.append(df)
+    datasets = CompanyMatchingDatasets(sample=sample)
 
     # Instantiate linker
-    linker = DuckDBLinker(
-        data,
-        settings,
-        input_table_aliases=list(datasets_and_readfuncs.keys()),
-    )
+    linker = datasets.linker(settings)
 
     with mu.mlflow_run(run_name=run_name, description=description, dev_mode=dev):
         # Estimate model parameters...

@@ -1,11 +1,5 @@
 import splink.duckdb.comparison_library as cl
 import splink.duckdb.comparison_template_library as ctl
-from src.data.make_dataset import (
-    comp_house_read,
-    export_wins_read,
-    hmrc_exporters_read,
-    data_hub_read,
-)
 
 settings = {
     "link_type": "link_and_dedupe",
@@ -122,10 +116,3 @@ stopwords = [
     "b v",
     "bv",
 ]
-
-datasets_and_readfuncs = {
-    '"companieshouse"."companies"': comp_house_read,
-    '"dit"."data_hub__companies"': data_hub_read,
-    '"hmrc"."trade__exporters"': hmrc_exporters_read,
-    '"dit"."export_wins__wins_dataset"': export_wins_read,
-}

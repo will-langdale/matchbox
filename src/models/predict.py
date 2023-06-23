@@ -1,6 +1,7 @@
-from src.config import settings, datasets_and_readfuncs
+from src.config import settings
 from src.models import utils as mu
 from src.data import utils as du
+from src.data.datasets import CompanyMatchingDatasets
 
 import click
 import logging
@@ -85,21 +86,14 @@ def main(run_id, output_schema, output_table):
     json_settings = mu.load_model_from_run(run_id)
 
     # Load data
-    logger.info("Loading data")
-    data = []
-    for dataset in datasets_and_readfuncs.keys():
-        df = datasets_and_readfuncs[dataset]()
-        logger.info(f"{dataset}: {len(dataset)} items loaded")
-        data.append(df)
+    datasets = CompanyMatchingDatasets()
 
-    # Instantiate linker and load settings
-    logger.info("Configuring linker")
+    # Instantiate linker, load settings
     linker = DuckDBLinker(
-        data,
+        datasets.data,
         settings,
-        input_table_aliases=list(datasets_and_readfuncs.keys()),
+        input_table_aliases=datasets.alias,
     )
-
     linker.load_model(json_settings)
 
     # Predict/cluster/create lookup

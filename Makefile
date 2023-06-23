@@ -19,7 +19,7 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 ## Train model
 train:
-	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --sample 100_000 --dev
+	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --sample 100 --dev
 
 ## Build lookup and write to data workspace
 predict:
