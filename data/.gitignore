@@ -1,0 +1,9 @@
+# This is a special gitignore file to ignore any data file
+# (except under data/external/), but not the data subfolders
+
+## Ignore all files in following subfolders e.g. data/raw/bigfile.csv
+raw/**
+interim/**
+processed/**
+## But keep the subfolders e.g. data/raw/
+!**/.gitkeep

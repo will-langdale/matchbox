@@ -1,0 +1,11 @@
+# This is a special gitignore file to ignore any output file but not the output subfolders
+
+## Ignore all files in this folder
+*
+## Ignore all files in subfolders e.g. outputs/figures/plot.png
+*/**
+## But keep the subfolders e.g. outputs/figures/
+!*/
+!**/.gitkeep
+## Also, keep this file
+!.gitignore
