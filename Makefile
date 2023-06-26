@@ -17,6 +17,7 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 # COMMANDS                                                                      #
 #################################################################################
 
+
 ## Removes all processed datasets
 clear:
 	rm -Rf data/processed/*
