@@ -34,7 +34,7 @@ train:
 
 ## Build lookup and write to data workspace
 predict:
-	$(PYTHON_INTERPRETER) src/models/predict.py --run_id company-matching__$(NOW) --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
+	$(PYTHON_INTERPRETER) src/models/predict.py --run --input_dir company-matching__06-26-23_11-40-51 --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
 
 
 ## Delete all compiled Python files

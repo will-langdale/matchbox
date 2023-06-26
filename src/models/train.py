@@ -92,6 +92,12 @@ def train_model(run_name: str, input_dir: str, description: str, dev: bool):
         linker.save_model_to_json(out_path=json_file_path, overwrite=True)
         mlflow.log_artifact(json_file_path, mu.DEFAULT_ARTIFACT_PATH)
 
+        # Generating ROC curve and AOC metric
+
+        # logger.info("Generating ROC curve and AOC metric")
+
+        mlflow.log_metric("datasets", len(list(data.keys())))
+
         logger.info("Done.")
 
 

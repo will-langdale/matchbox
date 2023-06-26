@@ -14,7 +14,7 @@ import contextlib
 import traceback
 
 DEFAULT_ARTIFACT_PATH = "model"
-DEFAULT_EXPERIMENT_NAME = "Default"
+DEFAULT_EXPERIMENT_NAME = "company_matching"
 DEFAULT_MODEL_NAME = "company_matching"
 
 
@@ -222,3 +222,17 @@ def render_methodology(template_path=None):
             rendered = template.render(methodology=rendered)
 
     return rendered
+
+
+def latest_successful_run_id(experiment: str = DEFAULT_EXPERIMENT_NAME):
+    """
+    Gets the last successful run in an experiment.
+    """
+    experiment_runs = mlflow.search_runs(
+        experiment_ids=mlflow.get_experiment_by_name(experiment).experiment_id
+    )
+
+    return experiment_runs[
+        (experiment_runs.end_time == max(experiment_runs.end_time))
+        & (experiment_runs.status == "FINISHED")
+    ].run_id[0]

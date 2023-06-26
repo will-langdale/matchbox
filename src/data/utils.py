@@ -243,6 +243,10 @@ def clean_table_name(name):
     return name.replace('"', "").replace(".", "_")
 
 
+def collapse_multiline_string(string: str):
+    return "".join(line.strip() for line in string.splitlines())
+
+
 def build_alias_path_dict(input_dir: str = None):
     """
     Takes a directory of processed data and returns the alias: path dict
