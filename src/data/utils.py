@@ -3,6 +3,8 @@ from src.locations import DATA_SUBDIR
 import pandas as pd
 import sqlalchemy
 from sqlalchemy.sql import text as sql_text
+import glob
+from pathlib import Path
 
 import os
 from contextlib import closing
@@ -14,7 +16,7 @@ DEFAULT_DF_FORMAT = "fea"  # can be switched to csv
 sql_engine = sqlalchemy.create_engine("postgresql://")
 
 
-def query(sql, params=None):
+def query(sql, params=None, **kwargs):
     """
     Read full results set from Data Workspace based on arbitrary query
 
@@ -28,7 +30,7 @@ def query(sql, params=None):
     """
 
     with sql_engine.connect() as connection:
-        return pd.read_sql(sql_text(sql), connection, params=params)
+        return pd.read_sql(sql_text(sql), connection, params=params, **kwargs)
 
 
 def query_iter(sql, params=None, batch_size=DEFAULT_BATCH_SIZE):
@@ -201,3 +203,58 @@ def load_df(data_subdir, ds_name, extension=DEFAULT_DF_FORMAT, **kwargs):
         return pd.read_csv(file_path, low_memory=False, **kwargs)
 
     raise ValueError("The format specified is not supported")
+
+
+def get_company_data(
+    cols: str, dataset: str, where: str = "", sample: int = None, **kwargs
+):
+    """
+    Generic function for getting company data from a variety of tables
+    Args:
+        cols [str]: A string to be concatenated into a SQL SELECT statement
+        dataset [str]: A Data Workspace dataset in "schema.table" form
+        where [str]: An optional condition for filtering the table
+        sample [int, default: None]: A size of random sample to draw
+        **kwargs: Keyword arguments passed to pandas.get_sql()
+    Returns: the requested dataset
+    """
+
+    limit = ""
+
+    if sample is not None:
+        limit = f"order by random() limit {sample}"
+
+    if where != "":
+        where = f"where {where}"
+
+    raw_query = f"""
+        select {cols}
+        from {dataset}
+        {where}
+        {limit}
+    """
+
+    df_raw = query(sql=raw_query, **kwargs)
+
+    return df_raw
+
+
+def clean_table_name(name):
+    return name.replace('"', "").replace(".", "_")
+
+
+def build_alias_path_dict(input_dir: str = None):
+    """
+    Takes a directory of processed data and returns the alias: path dict
+    Args:
+        input_dir [str]: the subdirectory of data/processed
+    Returns: A dictionary of alias: path values
+    """
+    filepaths = glob.glob(os.path.join(DATA_SUBDIR["processed"], input_dir, "*"))
+    data = {}
+
+    for df_path in filepaths:
+        alias = Path(df_path).stem
+        data[alias] = df_path
+
+    return data

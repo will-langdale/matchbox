@@ -1,13 +1,16 @@
 from src.config import settings
 from src.models import utils as mu
-from src.data.datasets import CompanyMatchingDatasets
 from src.locations import OUTPUTS_HOME
+from src.data import utils as du
 
 import click
 import logging
 import mlflow
+import duckdb
 from dotenv import find_dotenv, load_dotenv
-from os import path
+from os import path, makedirs
+
+from splink.duckdb.linker import DuckDBLinker
 
 LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
@@ -15,40 +18,43 @@ LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 @click.command()
 @click.option("--run_name", required=True, type=str, help="Namespace of the run")
 @click.option(
+    "--input_dir",
+    required=True,
+    type=str,
+    help="Directory of the cleaned parquet files",
+)
+@click.option(
     "--description",
     default=None,
     type=str,
     help="Description of the training run",
 )
 @click.option(
-    "--sample",
-    default=None,
-    show_default=True,
-    help="Sample size for data, useful for speedy testing",
-)
-@click.option(
     "--dev",
     is_flag=True,
     help="Dev runs allow to run this script with a dirty git repo",
 )
-def train_model(run_name, description, sample, dev):
+def train_model(run_name: str, input_dir: str, description: str, dev: bool):
     """
     Trains the model and stores a JSON of its settings
     """
 
     logger = logging.getLogger(__name__)
 
-    if sample is not None:
-        if not dev:
-            raise ValueError("Cannot subsample dataset during production run")
-
     # Load data
     logger.info("Loading data")
-    datasets = CompanyMatchingDatasets(sample=sample)
+
+    connection = duckdb.connect()
+    data = du.build_alias_path_dict(input_dir)
 
     # Instantiate linker
     logger.info("Instantiating linker")
-    linker = datasets.linker(settings)
+    linker = DuckDBLinker(
+        list(data.values()),
+        settings_dict=settings,
+        connection=connection,
+        input_table_aliases=list(data.keys()),
+    )
 
     with mu.mlflow_run(run_name=run_name, description=description, dev_mode=dev):
         # Estimate model parameters...
@@ -78,8 +84,12 @@ def train_model(run_name, description, sample, dev):
 
         logger.info("Saving model and settings")
 
-        json_file_path = path.join(OUTPUTS_HOME, "companies_matching_model.json")
-        linker.save_model_to_json(out_path=json_file_path)
+        outdir = path.join(OUTPUTS_HOME, input_dir)
+        if not path.exists(outdir):
+            makedirs(outdir)
+
+        json_file_path = path.join(outdir, "companies_matching_model.json")
+        linker.save_model_to_json(out_path=json_file_path, overwrite=True)
         mlflow.log_artifact(json_file_path, mu.DEFAULT_ARTIFACT_PATH)
 
         logger.info("Done.")

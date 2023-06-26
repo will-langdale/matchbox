@@ -1,4 +1,4 @@
-.PHONY: train predict clean environment install_git_hooks requirements precommit test
+.PHONY: clear data train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -17,9 +17,19 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 # COMMANDS                                                                      #
 #################################################################################
 
+## Removes all processed datasets
+clear:
+	rm -Rf data/processed/*
+
+
+## Load data to parquet
+data:
+	$(PYTHON_INTERPRETER) src/data/get_datasets.py --output_dir company-matching__$(NOW) --sample 100000
+
+
 ## Train model
 train:
-	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --sample 100000 --dev
+	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --input_dir company-matching__06-26-23_11-40-51 --dev
 
 
 ## Build lookup and write to data workspace

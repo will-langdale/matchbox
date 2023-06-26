@@ -116,3 +116,56 @@ stopwords = [
     "b v",
     "bv",
 ]
+
+datasets = {
+    '"companieshouse"."companies"': {
+        "cols": """
+            id::text as unique_id,
+            company_number,
+            company_name,
+            array_remove(
+                array[
+                    previous_name_1,
+                    previous_name_2,
+                    previous_name_3,
+                    previous_name_4,
+                    previous_name_5,
+                    previous_name_6
+                ],
+                ''
+            ) as secondary_names,
+            postcode
+        """,
+        "where": "",
+    },
+    '"dit"."data_hub__companies"': {
+        "cols": """
+            id::text as unique_id,
+            company_number,
+            name as company_name,
+            string_to_array(btrim(trading_names, '[]'), ', ') as secondary_names,
+            address_postcode as postcode
+        """,
+        "where": "archived is False",
+    },
+    '"hmrc"."trade__exporters"': {
+        "cols": """
+            id::text as unique_id,
+            null as company_number,
+            company_name,
+            null as secondary_names,
+            postcode
+        """,
+        "where": "",
+    },
+    '"dit"."export_wins__wins_dataset"': {
+        "cols": """
+            id::text as unique_id,
+            cdms_reference as company_number,
+            company_name,
+            null as secondary_names,
+            null as postcode
+        """,
+        "where": "",
+    },
+}
