@@ -66,9 +66,11 @@ def train_model(run_name: str, input_dir: str, description: str, dev: bool):
             "l.name_unusual_tokens = r.name_unusual_tokens",
             recall=0.7,
         )
+        mlflow.log_param(key="random_match_recall", value=0.7)
 
         # ...u
         linker.estimate_u_using_random_sampling(max_pairs=1e7)
+        mlflow.log_param(key="u_sampling_max_pairs", value=1e7)
 
         # ...m
         linker.estimate_m_from_label_column("comp_num_clean")
@@ -92,11 +94,22 @@ def train_model(run_name: str, input_dir: str, description: str, dev: bool):
         linker.save_model_to_json(out_path=json_file_path, overwrite=True)
         mlflow.log_artifact(json_file_path, mu.DEFAULT_ARTIFACT_PATH)
 
-        # Generating ROC curve and AOC metric
+        # Generating metrics
 
         # logger.info("Generating ROC curve and AOC metric")
 
-        mlflow.log_metric("datasets", len(list(data.keys())))
+        dataset_count = len(list(data.keys()))
+        sample_count = duckdb.sql(
+            f"""
+            select
+                count(*)
+            from
+                read_parquet({list(data.values())})
+        """
+        ).fetchall()[0][0]
+
+        mlflow.log_metric("dataset_count", dataset_count)
+        mlflow.log_metric("sample_count", sample_count)
 
         logger.info("Done.")
 
@@ -105,6 +118,7 @@ def main():
     """
     Entrypoint
     """
+
     train_model()
 
 
