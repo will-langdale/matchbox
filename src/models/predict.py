@@ -18,7 +18,9 @@ def predict_clusters(linker, threshold: float = 0.7):
     """
     Produce outputs such as predictions table,
     comparison viewer, clusters, linker settings
-    Args: linker model
+    Args:
+        linker model: A fitter linker object
+        threshold: The threshold at which to predict at
     Returns: None
     """
 
@@ -86,7 +88,7 @@ def predict_clusters(linker, threshold: float = 0.7):
     "--model_name",
     required=False,
     default=mu.DEFAULT_MODEL_NAME,
-    type=int,
+    type=str,
     help="Model to load. Required if run_id not set. Defaults to mu.DEFAULT_MODEL_NAME",
 )
 @click.option(
@@ -95,6 +97,13 @@ def predict_clusters(linker, threshold: float = 0.7):
     default=None,
     type=int,
     help="Version of model to load. Required if run_id not set",
+)
+@click.option(
+    "--threshold",
+    required=False,
+    default=0.7,
+    type=float,
+    help="Threshold the model should predict and cluster at",
 )
 @click.option(
     "--input_dir",
@@ -120,6 +129,7 @@ def main(
     model,
     model_name,
     model_version,
+    threshold,
     input_dir,
     output_schema,
     output_table,
@@ -131,7 +141,7 @@ def main(
 
     if run and model:
         raise ValueError("Can load a run or a model, not both")
-    elif not (run and model):
+    elif not (run or model):
         raise ValueError("Must load either a run or a model")
 
     if run:
@@ -175,7 +185,7 @@ def main(
 
     # Predict/cluster/create lookup
     logger.info("Building lookup")
-    lookup = predict_clusters(linker, threshold=0.7)
+    lookup = predict_clusters(linker, threshold=threshold)
 
     # Write lookup to output
     logger.info("Writing lookup")
