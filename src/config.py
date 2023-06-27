@@ -3,8 +3,8 @@ import splink.duckdb.comparison_template_library as ctl
 
 settings = {
     "link_type": "link_and_dedupe",
-    "retain_matching_columns": True,
-    "retain_intermediate_calculation_columns": True,
+    "retain_matching_columns": False,
+    "retain_intermediate_calculation_columns": False,
     "blocking_rules_to_generate_predictions": [
         """
             ((l.comp_num_clean = r.comp_num_clean))
