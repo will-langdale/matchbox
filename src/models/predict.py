@@ -14,54 +14,6 @@ import json
 LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
-def predict_clusters(linker, threshold: float = 0.7):
-    """
-    Produce outputs such as predictions table,
-    comparison viewer, clusters, linker settings
-    Args:
-        linker model: A fitter linker object
-        threshold: The threshold at which to predict at
-    Returns: None
-    """
-
-    predictions = linker.predict(threshold_match_probability=threshold)
-    clusters = linker.cluster_pairwise_predictions_at_threshold(
-        predictions,
-        threshold_match_probability=threshold,
-        pairwise_formatting=True,
-        filter_pairwise_format_for_clusters=False,
-    )
-    clusters_df = clusters.as_pandas_dataframe()  # noqa:F841
-
-    lookup = duckdb.sql(
-        """
-        select
-            source_dataset_l as source,
-            unique_id_l as source_id,
-            cluster_id_l as source_cluster,
-            source_dataset_r as target,
-            unique_id_r as target_id,
-            cluster_id_r as target_cluster,
-            match_probability
-        from
-            clusters_df
-        union
-        select
-            source_dataset_r as source,
-            unique_id_r as source_id,
-            cluster_id_r as source_cluster,
-            source_dataset_l as target,
-            unique_id_l as target_id,
-            cluster_id_l as target_cluster,
-            match_probability
-        from
-            clusters_df
-    """
-    )
-
-    return lookup.df()
-
-
 @click.command()
 @click.option(
     "--run",
@@ -185,12 +137,51 @@ def main(
 
     # Predict/cluster/create lookup
     logger.info("Building lookup")
-    lookup = predict_clusters(linker, threshold=threshold)
+
+    predictions = linker.predict(threshold_match_probability=threshold)
+
+    clusters = linker.cluster_pairwise_predictions_at_threshold(
+        predictions,
+        threshold_match_probability=threshold,
+        pairwise_formatting=True,
+        filter_pairwise_format_for_clusters=False,
+    )
+
+    lookup = linker.query_sql(
+        f"""
+        select
+            source_dataset_l as source,
+            unique_id_l as source_id,
+            cluster_id_l as source_cluster,
+            source_dataset_r as target,
+            unique_id_r as target_id,
+            cluster_id_r as target_cluster,
+            match_probability
+        from
+            { clusters.physical_name }
+        union
+        select
+            source_dataset_r as source,
+            unique_id_r as source_id,
+            cluster_id_r as source_cluster,
+            source_dataset_l as target,
+            unique_id_l as target_id,
+            cluster_id_l as target_cluster,
+            match_probability
+        from
+            { clusters.physical_name }
+        """,
+        output_type="splink_df",
+    )
 
     # Write lookup to output
     logger.info("Writing lookup")
+
     du.data_workspace_write(
-        schema=output_schema, table=output_table, df=lookup, if_exists="replace"
+        schema=output_schema,
+        table=output_table,
+        df=lookup.as_pandas_dataframe(),
+        if_exists="replace",
     )
 
     logger.info("Done")
