@@ -1,10 +1,11 @@
-from src.locations import DATA_SUBDIR
+from src.locations import DATA_SUBDIR, PROJECT_DIR
 
 import pandas as pd
 import sqlalchemy
 from sqlalchemy.sql import text as sql_text
 import glob
 from pathlib import Path
+import requests
 
 import os
 from contextlib import closing
@@ -12,6 +13,7 @@ from contextlib import closing
 DEFAULT_BATCH_SIZE = 10000
 DEFAULT_DF_FORMAT = "fea"  # can be switched to csv
 
+HTTPFS_PATH = PROJECT_DIR / "scratch" / "httpfs.duckdb_extension"
 
 sql_engine = sqlalchemy.create_engine("postgresql://")
 
@@ -262,3 +264,24 @@ def build_alias_path_dict(input_dir: str = None):
         data[alias] = df_path
 
     return data
+
+
+def get_aws_creds():
+    r = requests.get(
+        "http://169.254.170.2" + os.environ["AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"]
+    )
+
+    return r.json()
+
+
+def get_duckdb_s3_config_string():
+    aws_creds = get_aws_creds()
+
+    return f"""
+        install '{HTTPFS_PATH.resolve()}';
+        load '{HTTPFS_PATH.resolve()}';
+        set s3_region='{os.environ['S3_REGION']}';
+        set s3_access_key_id='{aws_creds['AccessKeyId']}';
+        set s3_secret_access_key='{aws_creds['SecretAccessKey']}';
+        set s3_session_token='{aws_creds['Token']}';
+    """
