@@ -1,4 +1,4 @@
-.PHONY: clear data train predict clean environment install_git_hooks requirements precommit test
+.PHONY: check clear data train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -16,6 +16,11 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
+
+
+## Shows disk usage across repo
+check:
+	du -hs ~/$(PROJECT_NAME)/.[^.]* * | sort -rh
 
 
 ## Removes all processed datasets
