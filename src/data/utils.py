@@ -176,6 +176,8 @@ def persist_df(df, data_subdir, ds_name, extension=DEFAULT_DF_FORMAT):
         df.to_feather(file_path)
     elif extension == "csv":
         df.to_csv(file_path, index=False)
+    elif extension == "parquet":
+        df.to_parquet(file_path, index=False)
     else:
         raise ValueError("The format specified is not supported")
 
@@ -203,6 +205,8 @@ def load_df(data_subdir, ds_name, extension=DEFAULT_DF_FORMAT, **kwargs):
         return pd.read_feather(file_path, **kwargs)
     if extension == "csv":
         return pd.read_csv(file_path, low_memory=False, **kwargs)
+    if extension == "parquet":
+        return pd.read_parquet(file_path, **kwargs)
 
     raise ValueError("The format specified is not supported")
 
@@ -285,3 +289,12 @@ def get_duckdb_s3_config_string():
         set s3_secret_access_key='{aws_creds['SecretAccessKey']}';
         set s3_session_token='{aws_creds['Token']}';
     """
+
+
+def generate_dummy_df():
+    """
+    Returns a 2*2 pandas dataframe.
+    """
+    return pd.DataFrame(
+        {"irrational": ["pi", "e", "phi"], "rounded": [3.14, 2.72, 1.62]}
+    )
