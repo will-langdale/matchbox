@@ -9,9 +9,6 @@ import click
 from dotenv import find_dotenv, load_dotenv
 
 
-LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-
 @click.command()
 @click.option(
     "--output_dir",
@@ -63,7 +60,7 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format=LOG_FMT)
+    logging.basicConfig(level=logging.INFO, format=du.LOG_FMT)
 
     load_dotenv(find_dotenv())
 

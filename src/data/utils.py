@@ -1,4 +1,4 @@
-from src.locations import DATA_SUBDIR, PROJECT_DIR
+from src.locations import DATA_SUBDIR, PROJECT_DIR, DATA_HOME
 
 import pandas as pd
 import sqlalchemy
@@ -6,6 +6,7 @@ from sqlalchemy.sql import text as sql_text
 import glob
 from pathlib import Path
 import requests
+import duckdb
 
 import os
 from contextlib import closing
@@ -13,7 +14,10 @@ from contextlib import closing
 DEFAULT_BATCH_SIZE = 10000
 DEFAULT_DF_FORMAT = "fea"  # can be switched to csv
 
-HTTPFS_PATH = PROJECT_DIR / "scratch" / "httpfs.duckdb_extension"
+HTTPFS_PATH = Path(PROJECT_DIR) / "scratch" / "httpfs.duckdb_extension"
+DEFAULT_DUCKDB_PATH = Path(DATA_HOME) / "company_matching.duckdb"
+
+LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 sql_engine = sqlalchemy.create_engine("postgresql://")
 
@@ -253,14 +257,16 @@ def collapse_multiline_string(string: str):
     return "".join(line.strip() for line in string.splitlines())
 
 
-def build_alias_path_dict(input_dir: str = None):
+def build_alias_path_dict(input_dir: str = None, match_pattern: str = "*"):
     """
     Takes a directory of processed data and returns the alias: path dict
     Args:
         input_dir [str]: the subdirectory of data/processed
     Returns: A dictionary of alias: path values
     """
-    filepaths = glob.glob(os.path.join(DATA_SUBDIR["processed"], input_dir, "*"))
+    filepaths = glob.glob(
+        os.path.join(DATA_SUBDIR["processed"], input_dir, match_pattern)
+    )
     data = {}
 
     for df_path in filepaths:
@@ -298,3 +304,7 @@ def generate_dummy_df():
     return pd.DataFrame(
         {"irrational": ["pi", "e", "phi"], "rounded": [3.14, 2.72, 1.62]}
     )
+
+
+def get_duckdb_connection(path=DEFAULT_DUCKDB_PATH.as_posix()):
+    return duckdb.connect(database=path, read_only=False)

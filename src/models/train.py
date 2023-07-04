@@ -12,8 +12,6 @@ from os import path, makedirs
 
 from splink.duckdb.linker import DuckDBLinker
 
-LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
 
 @click.command()
 @click.option("--run_name", required=True, type=str, help="Namespace of the run")
@@ -123,7 +121,7 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format=LOG_FMT)
+    logging.basicConfig(level=logging.INFO, format=du.LOG_FMT)
 
     load_dotenv(find_dotenv())
 
