@@ -15,20 +15,21 @@ def prepare_local_duckdb(input_dir, duckdb_dir=du.DEFAULT_DUCKDB_PATH, overwrite
         con = du.get_duckdb_connection(path=duckdb_dir.as_posix())
 
     dfs_to_load = du.build_alias_path_dict(input_dir)
+    del dfs_to_load["predictions"]
 
     # Create lookups with autoincrementing primary key
 
     con.query(
         """
         create sequence unique_id_lookup_pk start 1;
-        create sequence table_alias_lookup_pk start 1;
+        create sequence table_name_lookup_pk start 1;
         create table unique_id_lookup(
             id integer primary key default nextval('unique_id_lookup_pk'),
             unique_id varchar
         );
-        create table table_alias_lookup(
-            id integer primary key default nextval('table_alias_lookup_pk'),
-            unique_id varchar
+        create table table_name_lookup(
+            id integer primary key default nextval('table_name_lookup_pk'),
+            table_name varchar
         );
     """
     )
@@ -43,8 +44,17 @@ def prepare_local_duckdb(input_dir, duckdb_dir=du.DEFAULT_DUCKDB_PATH, overwrite
         f"""
         insert into unique_id_lookup
         by name ({sql});
-        insert into table_alias_lookup
-        values ({list(dfs_to_load.keys())});
+    """
+    )
+
+    alias_value_list = [f"('{df_name}')" for df_name in list(dfs_to_load.keys())]
+
+    sql = ", ".join(alias_value_list)
+
+    con.query(
+        f"""
+        insert into table_alias_lookup(table_name)
+        values {sql};
     """
     )
 
@@ -54,9 +64,9 @@ def prepare_local_duckdb(input_dir, duckdb_dir=du.DEFAULT_DUCKDB_PATH, overwrite
         con.query(
             f"""
             create table {df} as
-            select * from {dfs_to_load[df]} d
+            select * from '{dfs_to_load[df]}' d
                 join unique_id_lookup l on
-                    (d.unique_id = l.unique_key);
+                    (d.unique_id = l.unique_id);
             alter table {df} drop unique_id;
             alter table {df} rename column id to unique_id;
         """
@@ -68,9 +78,7 @@ def main():
     Entrypoint
     """
 
-    prepare_local_duckdb(
-        input_dir="company-matching__06-26-23_11-40-51", overwrite=True
-    )
+    prepare_local_duckdb(input_dir="company-matching__full", overwrite=True)
 
 
 if __name__ == "__main__":
