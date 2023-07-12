@@ -224,6 +224,8 @@ pathspec==0.11.1
     # via black
 pexpect==4.8.0
     # via ipython
+pgpq==0.7.3
+    # via -r requirements.in
 phonetics==1.0.5
     # via splink
 pickleshare==0.7.5
@@ -252,6 +254,10 @@ protobuf==4.23.3
     # via mlflow
 psutil==5.9.5
     # via ipykernel
+psycopg[binary]==3.1.9
+    # via -r requirements.in
+psycopg-binary==3.1.9
+    # via psycopg
 psycopg2-binary==2.9.6
     # via -r requirements.in
 ptyprocess==0.7.0
@@ -259,7 +265,9 @@ ptyprocess==0.7.0
 pure-eval==0.2.2
     # via stack-data
 pyarrow==12.0.1
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   pgpq
 pycodestyle==2.10.0
     # via flake8
 pyflakes==3.0.1
@@ -355,6 +363,8 @@ tornado==6.3.2
     # via
     #   ipykernel
     #   jupyter-client
+tqdm==4.65.0
+    # via -r requirements.in
 traitlets==5.9.0
     # via
     #   comm
@@ -373,6 +383,7 @@ typing-extensions==4.6.3
     #   astroid
     #   black
     #   ipython
+    #   psycopg
     #   pylint
 urllib3==1.26.16
     # via

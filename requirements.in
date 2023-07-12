@@ -14,3 +14,6 @@ splink
 duckdb
 polars
 altair
+tqdm
+psycopg[binary]
+pgpq
