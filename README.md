@@ -11,6 +11,67 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 * [Export Wins](https://data.trade.gov.uk/datasets/0738396f-d1fd-46f1-a53f-5d8641d032af#export-wins-master-datasets)
 * [HMRC UK exporters](https://data.trade.gov.uk/datasets/76fb2db3-ab32-4af8-ae87-d41d36b31265#uk-exporters)
 
+## Output
+
+The current output is:
+
+```mermaid
+erDiagram
+    lookup {
+        string source_id
+        string source
+        string source_cluster
+        string target_id
+        string target
+        string target_cluster
+        float match_probability
+    }
+```
+
+I think we can do better. In the below proposed output:
+
+* String storage is minimised with key relationships
+* Calculation is saved by only calculating on deduped records
+* `data_workspace_tables` represents any and all tables joined by the model
+* `unique_id_lookup` contains every key joined across all Data Workspace tables, even in things like HMRC Exporters, where we expect duplicate entries
+* `unique_id_lookup` and `unique_id_reduped` translate between the duplicated work of Data Workspace and the deduplicated world of the Splink lookup
+
+```mermaid
+erDiagram
+    lookup {
+        uuid cluster
+        int source FK
+        int source_id FK
+        int target FK
+        int target_id FK
+        float match_probability
+    }
+    table_alias_lookup {
+        int id PK
+        string table_name
+    }
+    unique_id_lookup {
+        int id PK
+        string unique_id PK_FK
+    }
+    unique_id_reduped {
+        int source FK
+        int dupe_id FK
+        int id FK
+    }
+    data_workspace_tables{
+        string id
+        ... ...
+    }
+    
+    table_alias_lookup ||--|{ lookup
+    unique_id_lookup |o--|{ lookup
+    table_alias_lookup |o--|{ unique_id_reduped
+    unique_id_reduped ||--|| unique_id_lookup
+    unique_id_reduped ||--|| unique_id_lookup
+    unique_id_lookup  ||--|{ data_workspace_tables
+```
+
 ## Release metrics
 
 🛠 Coming soon!
