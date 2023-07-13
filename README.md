@@ -52,24 +52,23 @@ erDiagram
     }
     unique_id_lookup {
         int id PK
-        string unique_id PK_FK
+        string unique_id PK, FK
     }
-    unique_id_reduped {
+    unique_id_duped {
         int source FK
         int dupe_id FK
         int id FK
     }
     data_workspace_tables{
         string id
-        ... ...
+        etc etc
     }
     
-    table_alias_lookup ||--|{ lookup
-    unique_id_lookup |o--|{ lookup
-    table_alias_lookup |o--|{ unique_id_reduped
-    unique_id_reduped ||--|| unique_id_lookup
-    unique_id_reduped ||--|| unique_id_lookup
-    unique_id_lookup  ||--|{ data_workspace_tables
+    table_alias_lookup ||--|{ lookup : lookup
+    unique_id_duped |o--|{ lookup : lookup
+    table_alias_lookup |o--|{ unique_id_duped : lookup
+    unique_id_duped ||--|| unique_id_lookup : dedupe-redupe
+    unique_id_lookup  ||--|{ data_workspace_tables : match
 ```
 
 ## Release metrics
