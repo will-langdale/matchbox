@@ -36,6 +36,11 @@ I think we can do better. In the below proposed output:
 * `unique_id_lookup` contains every key joined across all Data Workspace tables, even in things like HMRC Exporters, where we expect duplicate entries
 * `unique_id_lookup` and `unique_id_reduped` translate between the duplicated work of Data Workspace and the deduplicated world of the Splink lookup
 
+![ERD](/src/visualisation/company_matching_erg.drawio.svg)
+
+<!---
+This doesn't render, but will with a GitLab upgrade. I draw here and render here, then include the SVG: 
+
 ```mermaid
 erDiagram
     lookup {
@@ -70,6 +75,7 @@ erDiagram
     unique_id_duped ||--|| unique_id_lookup : dedupe-redupe
     unique_id_lookup  ||--|{ data_workspace_tables : match
 ```
+-->
 
 ## Release metrics
 
