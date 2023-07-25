@@ -13,6 +13,8 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 
 ## Output
 
+### v0.1
+
 The current output is:
 
 ```mermaid
@@ -28,54 +30,99 @@ erDiagram
     }
 ```
 
-I think we can do better. In the below proposed output:
+### v0.2
 
-* String storage is minimised with key relationships
-* Calculation is saved by only calculating on deduped records
-* `data_workspace_tables` represents any and all tables joined by the model
-* `unique_id_lookup` contains every key joined across all Data Workspace tables, even in things like HMRC Exporters, where we expect duplicate entries
-* `unique_id_lookup` and `unique_id_reduped` translate between the duplicated work of Data Workspace and the deduplicated world of the Splink lookup
+I think we can do better. The proposed output below is a small relational database optimised for three separate use cases: **linking**, **deduping** and **verifying**.
 
 ![ERD](/src/visualisation/company_matching_erg.drawio.svg)
 
-<!---
-This doesn't render, but will with a GitLab upgrade. I draw here and render here, then include the SVG: 
-
-```mermaid
-erDiagram
-    lookup {
-        uuid cluster
-        int source FK
-        int source_id FK
-        int target FK
-        int target_id FK
-        float match_probability
-    }
-    table_alias_lookup {
-        int id PK
-        string table_name
-    }
-    unique_id_lookup {
-        int id PK
-        string unique_id PK, FK
-    }
-    unique_id_duped {
-        int source FK
-        int dupe_id FK
-        int id FK
-    }
-    data_workspace_tables{
-        string id
-        etc etc
-    }
+* String storage is minimised with key relationships
+* We use our knowledge of how fact tables relate to form a DAG of matching, where we only match between pairs of tables with an edge
+* Calculation is saved by only matching on naïve-deduped records, which form dimension tables for each fact table of interest
+    * Naïve deduping considers a combination of fields to be "unique" without any alteration. To improve naïve deduping, we need a ⚙️process that uses the below deduping outputs
     
-    table_alias_lookup ||--|{ lookup : lookup
-    unique_id_duped |o--|{ lookup : lookup
-    table_alias_lookup |o--|{ unique_id_duped : lookup
-    unique_id_duped ||--|| unique_id_lookup : dedupe-redupe
-    unique_id_lookup  ||--|{ data_workspace_tables : match
+I got carried away with the SQL translation from `lookup` and `verify` to `clusters`. Sorry. To explain it in English:
+
+* The lookup table contains all pairwise predictions over a certaion %ge probability
+* We join in `verify` when the `verified` bool agrees over a certain %ge, and allocate a probability match of 1
+* We order these matches by %ge probability descending
+* We take the highest probability match for each distinct pair of source id and target table and add it to `clusters`
+    * This is achieved by recursing on an anti-join with `clusters` until lookup is empty
+    * If a source id and target table is in `clusters`, it can't be inserted again
+    * Recall a verified match is probability 1, always, so goes to the top
+* This isn't in the SQL, but if all matches in the cluster are verified, `verified` is set to true in `clusters`
+    
+#### Linking
+
+To **link** in production, we use something like this to return the relevant columns from the various fact tables, with lots of nulls:
+
 ```
--->
+select
+    cl.uuid,
+    f1.field_of_interest,
+    f1.field_of_interest,
+    f2.field_of_interest
+from
+    clusters cl
+-- for each fact table we want to get data from
+where
+    source in (fact_table_1, fact_table_2, ...)
+left join
+    dim_table_1 d1 on
+    cl.source_id = d1.unique_id
+left join
+    fact_table_1 f1 on
+    -- repeat for all fields except unique_id
+    d1.unique_field_* = f1.unique_field_*
+```
+
+It's up to the user and use case as what to do next.
+
+* To summarise something like HMRC exporters, add `group by cl.uuid` and use `max()` for fields you're certain have a single value (like the name in Data Hub), and `avg()`, `sum()`, `count()` or whatever to get your summary stats
+* To get unique values on a single row, add `group by cl.uuid` and use `max()` to drop all the nulls
+
+Ideally we'd fold this into a `company_join()` PostgreSQL function to hide the mess.
+
+#### Deduping
+
+To **dedupe** in production, we use something like this to show a list of pairs of potential duplicates in a single table:
+
+```
+select
+    lk.source_id,
+    lk.match_probability,
+    fl.field_of_interest,
+    fr.field_of_interest,
+from
+    lookup lk
+where
+    source = target
+    and source = 'fact_table'
+left join
+    dim_table dl on
+    lk.source_id = dl.unique_id
+left join
+    fact_table fl on
+    -- repeat for all fields except unique_id
+    dl.unique_field_* = fl.unique_field_*
+left join
+    dim_table dr on
+    lk.source_id = dr.unique_id
+left join
+    fact_table fr on
+    -- repeat for all fields except unique_id
+    dr.unique_field_* = fr.unique_field_*
+```
+
+Ideally we'd fold this into a `company_dedupe()` PostgreSQL function to hide the mess.
+
+#### Verifying
+
+To **verify** in producion, we provide a bool in the `clusters` table, and a `verify` table. These tables will enable us to iterate company matching against a "ground truth".
+
+A ⚙️process would be needed to examine matches and allow users to write true/false to the `verify` table.
+
+The `clusters` `verified` column is either all true, or all false, and is only set when all pairs agree.
 
 ## Release metrics
 
