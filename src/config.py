@@ -10,12 +10,12 @@ tables = {
         "make_dim": None,
     },
     '"hmrc"."trade__exporters"': {
-        "dim": None,
+        "dim": '"_user_eaf4fd9a"."hmrc_trade__exporters__dim"',
         "fact": '"hmrc"."trade__exporters"',
         "make_dim": None,
     },
     '"dit"."export_wins__wins_dataset"': {
-        "dim": None,
+        "dim": '"_user_eaf4fd9a"."export_wins__wins_dataset__dim"',
         "fact": '"dit"."export_wins__wins_dataset"',
         "make_dim": None,
     },

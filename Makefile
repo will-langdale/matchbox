@@ -1,4 +1,4 @@
-.PHONY: check clear data train predict clean environment install_git_hooks requirements precommit test
+.PHONY: check clear data dims train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -16,6 +16,12 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
+
+
+## Make dimension tables (currently hard-coded)
+dims:
+	python src/dim/hmrc_trade__exporters.py
+	python src/dim/dit_export_wins__wins_dataset.py
 
 
 ## Shows disk usage across repo
