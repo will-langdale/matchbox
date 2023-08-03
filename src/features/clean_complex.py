@@ -1,6 +1,5 @@
 import duckdb
 import pandas as pd
-from src.config import stopwords
 from src.features.clean_basic import (
     remove_notnumbers_leadingzeroes,
     clean_company_name,
@@ -8,8 +7,9 @@ from src.features.clean_basic import (
     array_intersect,
     list_join_to_string,
     get_postcode_area,
-    get_low_freq_char_sig,
+    # get_low_freq_char_sig,
 )
+from src.config import stopwords
 
 
 def clean_comp_numbers(df):
@@ -30,31 +30,45 @@ def clean_comp_numbers(df):
     return clean.df()
 
 
-def clean_comp_names(df):
+def clean_comp_names(
+    df, primary_col: str, secondary_col: str = None, stopwords: str = stopwords
+):
     """
     Lower case, remove punctuation & tokenise the primary company name into an array.
     Extract tokens into: 'unusual' and 'stopwords'. Dedupe. Sort alphabetically.
     Untokenise the unusual words back to a string.
-    Args: dataframe containing company_name column
-    Returns: dataframe of: company number, 'unusual' tokens', most common 3 tokens,
-             most common 4 to 6 tokens, list of previous names of company, postcode.
 
+    Args:
+        df: a dataframe
+        primary_col: a column containing the company's main name
+        secondary_col: a column containing an array of the company's
+            secondary names
+        stopwords: a list of stopwords to use for this clean
+    Returns:
+        dataframe: company number, 'unusual' tokens', most common 3 tokens,
+            most common 4 to 6 tokens, list of previous names of company, postcode.
     """
 
-    # clean and tokenise the two company name fields and put in a new dataframe
+    # TODO: Refactor the silly nested f-strings
+
+    # CLEAN and TOKENISE
+    # To a new dataframe
     sql_clean_company_name = f"""
-    SELECT
-        {clean_company_name("company_name")} AS company_name_arr,
-        {clean_company_name("secondary_names")} AS secondary_names_arr,
+    select
+        {clean_company_name(primary_col)} as company_name_arr,
+        {
+            f"{clean_company_name(secondary_col)} as secondary_names_arr, "
+            if secondary_col
+            else ""
+        }
         *
-    FROM df
+    from df
     """
     names_cleaned = duckdb.sql(sql_clean_company_name)  # noqa:F841
 
-    # Define 'stopwords' which are in the company names
+    # Define STOPWORDS
+    # And join them in
     stopword_tokens = pd.DataFrame({"token_array": [stopwords]})  # noqa:F841
-
-    # put the array of stopwords in a separate column alongside the cleaned names
     sql_companies_arr_with_top = """
     select
         *,
@@ -63,66 +77,78 @@ def clean_comp_names(df):
     """
     with_common_terms = duckdb.sql(sql_companies_arr_with_top)  # noqa:F841
 
-    # separate out the company_name into 'unusual' tokens and 'stopwords'
+    # EXTRACT the UNUSUAL and STOPWORD tokens
+    # We want the weird stuff from company names
     # TODO: leave name_unusual_tokens (and secondary...) as array & remove split() below
+    def secondary_name_unusual_tokens():
+        # DuckDB needs a refactor, sorry
+        return list_join_to_string(array_except("secondary_names_arr", "stopwords"))
+
+    def cat_names_tokens_stopwords(primary_arr, secondary_arr, stopwords):
+        # DuckDB needs a refactor, sorry
+        # return array_intersect("secondary_names_arr", "stopwords")
+        primary = rf"{array_intersect(primary_arr, stopwords)}"
+        secondary = rf"{array_intersect(primary_arr, stopwords)}"
+
+        if secondary_arr:
+            return rf"""
+                array_cat(
+                    {primary},
+                    {secondary}
+                )
+            """
+        else:
+            return rf"{primary}"
+
     sql_manipulate_arrays = f"""
     select
-        unique_id,
-        comp_num_clean,
-        {list_join_to_string(
-            array_except("company_name_arr", "stopwords")
-        )}
+        *,
+        {
+            list_join_to_string(
+                array_except("company_name_arr", "stopwords")
+            )
+        }
             as name_unusual_tokens,
-        {list_join_to_string(
-            array_except("secondary_names_arr", "stopwords")
-        )}
-            as secondary_name_unusual_tokens,
-        ARRAY_CAT(
-            {array_intersect("company_name_arr", "stopwords")},
-            {array_intersect("secondary_names_arr", "stopwords")})
-            as names_tokens_stopwords,
-        postcode,
-        null as postcode_alt
+        {
+            (
+                f"{secondary_name_unusual_tokens()} "
+                "as secondary_name_unusual_tokens"
+            )
+            if secondary_col
+            else ""
+        }
+        {
+            cat_names_tokens_stopwords(
+                "company_name_arr",
+                "secondary_names_arr",
+                stopwords
+            )
+        } as names_tokens_stopwords
     from with_common_terms
     """
     clean = duckdb.sql(sql_manipulate_arrays)
 
     clean_df = clean.df()
 
-    # finally, in Python because simpler, dedupe names_tokens_stopwords,
-    #  sort alphabetically and convert to string
+    # DEDUPE names_tokens_stopwords
     clean_df["name_unusual_tokens"] = clean_df.name_unusual_tokens.apply(
         lambda x: " ".join(sorted(set(x.split()))) if pd.notnull(x) else x
     )
-    clean_df[
-        "secondary_name_unusual_tokens"
-    ] = clean_df.secondary_name_unusual_tokens.apply(
-        lambda x: " ".join(sorted(set(x.split()))) if pd.notnull(x) else x
-    )
-    # slightly different for the stopwords because already an array so no split() needed
+    if secondary_col:
+        clean_df[
+            "secondary_name_unusual_tokens"
+        ] = clean_df.secondary_name_unusual_tokens.apply(
+            lambda x: " ".join(sorted(set(x.split()))) if pd.notnull(x) else x
+        )
+
     clean_df["names_tokens_stopwords"] = clean_df.names_tokens_stopwords.apply(
         lambda x: " ".join(set(x))
     )
 
-    # get the first 5 and last 5 chars of name_unusual_tokens, for blocking rules
+    # Get HEAD and TAIL characters
+    # For blocking rules
     clean_df["name_unusual_tokens_first5"] = clean_df.name_unusual_tokens.str[:5]
     clean_df["name_unusual_tokens_last5"] = clean_df.name_unusual_tokens.str[-5:]
-
-    # get first first and last 5 chars of the low frequency character signature
-
-    sql_freq_sig = f"""
-        select
-            *,
-            {get_low_freq_char_sig("name_unusual_tokens")} as name_sig
-        from
-            clean_df
-    """
-    clean = duckdb.sql(sql_freq_sig)
-
-    clean_df = clean.df()
-
-    clean_df["name_sig_first5"] = clean_df.name_sig.str[:5]
-    clean_df["name_sig_last5"] = clean_df.name_sig.str[-5:]
 
     return clean_df
 

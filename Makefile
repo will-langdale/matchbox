@@ -76,7 +76,7 @@ install_git_hooks:
 ## Reformat, lint, clear notebook outputs if necessary
 precommit:
 	black . --extend-exclude \.ipynb$
-	flake8 .
+	flake8 . --exclude scratch
 ifeq (yes,$(SENSITIVE_PROJECT))
 	@echo "Clearing output of all notebooks:"
 	export JUPYTER_CONFIG_DIR=${HOME}/.jupyter_conf; jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/*.ipynb

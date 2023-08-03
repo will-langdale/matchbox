@@ -36,6 +36,29 @@ pairs = {
     },
 }
 
+stopwords = [
+    "limited",
+    "uk",
+    "company",
+    "international",
+    "group",
+    "of",
+    "the",
+    "inc",
+    "and",
+    "plc",
+    "corporation",
+    "llp",
+    "pvt",
+    "gmbh",
+    "u k",
+    "pte",
+    "usa",
+    "bank",
+    "b v",
+    "bv",
+]
+
 
 # Keeping for later right now
 
@@ -135,29 +158,6 @@ pairs = {
 #         # cl.array_intersect_at_sizes("alternative_company_names", [1])
 #     ],
 # }
-
-# stopwords = [
-#     "limited",
-#     "uk",
-#     "company",
-#     "international",
-#     "group",
-#     "of",
-#     "the",
-#     "inc",
-#     "and",
-#     "plc",
-#     "corporation",
-#     "llp",
-#     "pvt",
-#     "gmbh",
-#     "u k",
-#     "pte",
-#     "usa",
-#     "bank",
-#     "b v",
-#     "bv",
-# ]
 
 # datasets = {
 #     '"companieshouse"."companies"': {
