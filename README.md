@@ -11,6 +11,13 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 * [Export Wins](https://data.trade.gov.uk/datasets/0738396f-d1fd-46f1-a53f-5d8641d032af#export-wins-master-datasets)
 * [HMRC UK exporters](https://data.trade.gov.uk/datasets/76fb2db3-ab32-4af8-ae87-d41d36b31265#uk-exporters)
 
+## Notes
+
+I needed somewhere to scribble for v2. It's here.
+
+* .env in use for setting the schema for written tables
+* How am I handling making a dim table in production?
+
 ## Output
 
 ### v0.1
