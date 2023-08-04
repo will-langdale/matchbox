@@ -17,6 +17,7 @@ I needed somewhere to scribble for v2. It's here.
 
 * .env in use for setting the schema for written tables
 * How am I handling making a dim table in production?
+* Link Robin's [settings editor](https://www.robinlinacre.com/splink3_settings_editor_temp/)
 
 ## Output
 
