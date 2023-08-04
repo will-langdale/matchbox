@@ -3,6 +3,8 @@ from src.data import utils as du
 # from src.models import utils as mu
 from src.config import tables
 
+from splink.duckdb.linker import DuckDBLinker
+
 
 class LinkDatasets(object):
     def __init__(
@@ -19,8 +21,10 @@ class LinkDatasets(object):
         self.settings = settings
         self.pipeline = pipeline
 
+        self.table_l_alias = du.clean_table_name(table_l)
         self.table_l_select = ", ".join(table_l_select)
         self.table_l_dim = tables[table_l]["dim"]
+        self.table_r_alias = du.clean_table_name(table_r)
         self.table_r_select = ", ".join(table_r_select)
         self.table_r_dim = tables[table_r]["dim"]
 
@@ -32,6 +36,8 @@ class LinkDatasets(object):
 
         self.table_l_proc = None
         self.table_r_proc = None
+
+        self.linker = None
 
     def get_data(self):
         self.table_l_raw = du.query(
@@ -62,6 +68,13 @@ class LinkDatasets(object):
             curr = step(curr)
         self.table_r_proc = curr
 
-    def call_pipeline(self):
+    def create_linker(self):
+        self.linker = DuckDBLinker(
+            input_table_or_tables=[self.table_l_proc, self.table_r_proc],
+            settings_dict=self.settings,
+            input_table_aliases=[self.table_l_alias, self.table_r_alias],
+        )
+
+    def train_linker(self):
         for step in self.pipeline:
             step()
