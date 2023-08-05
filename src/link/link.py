@@ -9,30 +9,26 @@ from splink.duckdb.linker import DuckDBLinker
 class LinkDatasets(object):
     def __init__(
         self,
-        table_l: str,
-        table_l_select: list,
-        table_l_preproc: list,
-        table_r: str,
-        table_r_select: list,
-        table_r_preproc: list,
+        table_l: dict,
+        table_r: dict,
         settings: dict,
-        pipeline: list,
+        pipeline: dict,
     ):
         self.settings = settings
         self.pipeline = pipeline
 
-        self.table_l_alias = du.clean_table_name(table_l)
-        self.table_l_select = ", ".join(table_l_select)
-        self.table_l_dim = tables[table_l]["dim"]
-        self.table_r_alias = du.clean_table_name(table_r)
-        self.table_r_select = ", ".join(table_r_select)
-        self.table_r_dim = tables[table_r]["dim"]
+        self.table_l_alias = du.clean_table_name(table_l["name"])
+        self.table_l_select = ", ".join(table_l["select"])
+        self.table_l_dim = tables[table_l["name"]]["dim"]
+        self.table_r_alias = du.clean_table_name(table_r["name"])
+        self.table_r_select = ", ".join(table_r["select"])
+        self.table_r_dim = tables[table_r["name"]]["dim"]
 
         self.table_l_raw = None
         self.table_r_raw = None
 
-        self.table_l_proc_pipe = table_l_preproc
-        self.table_r_proc_pipe = table_r_preproc
+        self.table_l_proc_pipe = table_l["preproc"]
+        self.table_r_proc_pipe = table_r["preproc"]
 
         self.table_l_proc = None
         self.table_r_proc = None
@@ -59,13 +55,13 @@ class LinkDatasets(object):
 
     def preprocess_data(self):
         curr = self.table_l_raw
-        for step in self.table_l_proc_pipe:
-            curr = step(curr)
+        for func in self.table_l_proc_pipe.keys():
+            curr = func(curr, **self.table_l_proc_pipe[func])
         self.table_l_proc = curr
 
         curr = self.table_r_raw
-        for step in self.table_r_proc_pipe:
-            curr = step(curr)
+        for func in self.table_r_proc_pipe.keys():
+            curr = func(curr, **self.table_r_proc_pipe[func])
         self.table_r_proc = curr
 
     def create_linker(self):
