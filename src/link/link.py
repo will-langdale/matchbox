@@ -76,5 +76,6 @@ class LinkDatasets(object):
         )
 
     def train_linker(self):
-        for step in self.pipeline:
-            step()
+        for k in self.pipeline.keys():
+            proc_func = getattr(self.linker, k)
+            proc_func(**self.pipeline[k])
