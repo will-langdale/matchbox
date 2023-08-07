@@ -21,12 +21,16 @@ class MakeDim(object):
             create table {self.dim_table} as (
                 select
                     uuid_generate_v4() as dim_uuid,
+                    id,
                     {self.unique_fields}
                 from (
-                    select distinct
+                    select distinct on ({self.unique_fields})
+                        id,
                         {self.unique_fields}
                     from
                         {self.fact_table}
+                    order by
+                        {self.unique_fields}
                 ) dedupe
             );
         """

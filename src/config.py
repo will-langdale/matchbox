@@ -1,23 +1,29 @@
+import os
+from dotenv import load_dotenv, find_dotenv
+
+dotenv_path = find_dotenv()
+load_dotenv(dotenv_path)
+
 tables = {
     '"companieshouse"."companies"': {
         "dim": '"companieshouse"."companies"',
         "fact": '"companieshouse"."companies"',
-        "make_dim": None,
+        "match": None,
     },
     '"dit"."data_hub__companies"': {
         "dim": '"dit"."data_hub__companies"',
         "fact": '"dit"."data_hub__companies"',
-        "make_dim": None,
+        "match": None,
     },
     '"hmrc"."trade__exporters"': {
-        "dim": '"_user_eaf4fd9a"."hmrc_trade__exporters__dim"',
+        "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
         "fact": '"hmrc"."trade__exporters"',
-        "make_dim": None,
+        "match": None,
     },
     '"dit"."export_wins__wins_dataset"': {
-        "dim": '"_user_eaf4fd9a"."export_wins__wins_dataset__dim"',
+        "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
         "fact": '"dit"."export_wins__wins_dataset"',
-        "make_dim": None,
+        "match": None,
     },
 }
 
@@ -25,14 +31,17 @@ pairs = {
     ('"companieshouse"."companies"', '"dit"."data_hub__companies"'): {
         "link": None,
         "model": None,
+        "eval": f'"{os.getenv("SCHEMA")}"."ch_x_dh__eval"',
     },
     ('"dit"."data_hub__companies"', '"dit"."export_wins__wins_dataset"'): {
         "link": None,
         "model": None,
+        "eval": f'"{os.getenv("SCHEMA")}"."dh_x_ew__eval"',
     },
     ('"companieshouse"."companies"', '"hmrc"."trade__exporters"'): {
         "link": None,
         "model": None,
+        "eval": f'"{os.getenv("SCHEMA")}"."ch_x_exp__eval"',
     },
 }
 

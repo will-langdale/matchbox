@@ -18,6 +18,16 @@ I needed somewhere to scribble for v2. It's here.
 * .env in use for setting the schema for written tables
 * How am I handling making a dim table in production?
 * Link Robin's [settings editor](https://www.robinlinacre.com/splink3_settings_editor_temp/)
+* Eval
+    * Dim table needs a sample ID from the fact
+    * Generalise the lookup tables from lead gen to make an eval table
+    * To eval:
+        * Source -> target dim ID
+        * What does company matching think?
+        * What does splink think?
+        * Total count
+        * Agree, disagree @ 1, sample 50 agrees, 50 disagrees
+        * Agree, disagree @ 3, sample 50 agrees, 50 disagrees
 
 ## Output
 
