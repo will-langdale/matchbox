@@ -16,12 +16,12 @@ tables = {
         "match": None,
     },
     '"hmrc"."trade__exporters"': {
-        "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
+        "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
         "fact": '"hmrc"."trade__exporters"',
         "match": None,
     },
     '"dit"."export_wins__wins_dataset"': {
-        "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
+        "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
         "fact": '"dit"."export_wins__wins_dataset"',
         "match": None,
     },
