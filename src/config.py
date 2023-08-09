@@ -8,22 +8,22 @@ tables = {
     '"companieshouse"."companies"': {
         "dim": '"companieshouse"."companies"',
         "fact": '"companieshouse"."companies"',
-        "match": None,
+        "match_v1": '"companieshouse"."companies__match_ids"',
     },
     '"dit"."data_hub__companies"': {
         "dim": '"dit"."data_hub__companies"',
         "fact": '"dit"."data_hub__companies"',
-        "match": None,
+        "match_v1": '"dit"."data_hub__companies__match_ids"',
     },
     '"hmrc"."trade__exporters"': {
         "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
         "fact": '"hmrc"."trade__exporters"',
-        "match": None,
+        "match_v1": '"hmrc"."trade__exporters__match_ids"',
     },
     '"dit"."export_wins__wins_dataset"': {
         "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
         "fact": '"dit"."export_wins__wins_dataset"',
-        "match": None,
+        "match_v1": '"dit"."export_wins__wins_dataset__match_ids"',
     },
 }
 

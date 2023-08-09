@@ -1,4 +1,4 @@
-.PHONY: check clear data dims train predict clean environment install_git_hooks requirements precommit test
+.PHONY: check clear data dims evals train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -22,6 +22,11 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 dims:
 	python src/dim/hmrc_trade__exporters.py
 	python src/dim/dit_export_wins__wins_dataset.py
+   
+   
+## Make evaluation tables for existing matching service
+evals:
+	python src/eval/make_eval.py
 
 
 ## Shows disk usage across repo
@@ -75,8 +80,8 @@ install_git_hooks:
 
 ## Reformat, lint, clear notebook outputs if necessary
 precommit:
-	black . --extend-exclude \.ipynb$
-	flake8 . --exclude scratch
+	black . --extend-exclude \.ipynb$ 
+	flake8 . --exclude scratch,.ipynb_checkpoints
 ifeq (yes,$(SENSITIVE_PROJECT))
 	@echo "Clearing output of all notebooks:"
 	export JUPYTER_CONFIG_DIR=${HOME}/.jupyter_conf; jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/*.ipynb

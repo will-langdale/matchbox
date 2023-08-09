@@ -1,4 +1,5 @@
 scratch/
+*/**/.ipynb_checkpoints
 
 # DuckDB
 */**/*.duckdb
