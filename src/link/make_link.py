@@ -1,7 +1,7 @@
 from src.data import utils as du
 
 # from src.models import utils as mu
-from src.config import tables
+from src.config import tables, pairs
 
 from splink.duckdb.linker import DuckDBLinker
 
@@ -16,6 +16,11 @@ class LinkDatasets(object):
     ):
         self.settings = settings
         self.pipeline = pipeline
+
+        if (table_l["name"], table_r["name"]) in pairs:
+            self.pair = pairs[(table_l["name"], table_r["name"])]
+        elif (table_r["name"], table_l["name"]) in pairs:
+            self.pair = pairs[(table_r["name"], table_l["name"])]
 
         self.table_l_alias = du.clean_table_name(table_l["name"])
         self.table_l_select = ", ".join(table_l["select"])
@@ -75,3 +80,24 @@ class LinkDatasets(object):
         for k in self.pipeline.keys():
             proc_func = getattr(self.linker, k)
             proc_func(**self.pipeline[k])
+
+    def generate_report(self, predictions) -> dict:
+        """
+        Generate a dict report that compares a prediction df
+        with the evaluation df for the pair. It contains:
+
+            - The difference in match counts
+            - The count of matches that agree
+            - The count of matches that disagree
+            - A sample of agreeing matches
+            - A sample of disagreeing matches from the eval
+            - A sample of disagreeing matches from the predictions
+
+        Parameters:
+            Predictions: A dataframe output by the linker
+
+        Returns:
+            A dict with the relevant metrics
+        """
+
+        self.pair["eval"]
