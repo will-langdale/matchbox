@@ -20,7 +20,6 @@ class MakeDim(object):
         sql = f"""
             create table {self.dim_table} as (
                 select distinct on ({self.unique_fields})
-                    uuid_generate_v4() as dim_uuid,
                     id,
                     {self.unique_fields}
                 from
