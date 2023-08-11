@@ -87,7 +87,7 @@ class LinkDatasets(object):
     def predict(self, **kwargs):
         self.predictions = self.linker.predict(**kwargs)
 
-    def generate_report(self, predictions=None) -> dict:
+    def generate_report(self, sample: int, predictions=None) -> dict:
         """
         Generate a dict report that compares a prediction df
         with the evaluation df for the pair. It contains:
@@ -100,90 +100,115 @@ class LinkDatasets(object):
             - A sample of disagreeing matches from the predictions
 
         Parameters:
+            Sample: The sample size of matches to spot check
             Predictions: A dataframe output by the linker. If none,
             will use predictions in self.prefictions
 
         Returns:
             A dict with the relevant metrics
         """
-        pass
 
+        if not predictions:
+            predictions = self.predictions
 
-#         if not predictions:
-#             predictions = self.predictions
+        predictions = (
+            predictions.as_pandas_dataframe()
+            .sort_values(by=["match_probability"], ascending=False)
+            .drop_duplicates(subset=["id_l", "id_r"], keep="first")
+            .merge(
+                self.table_l_raw.add_suffix("_l"),
+                how="left",
+                left_on=["id_l"],
+                right_on=["id_l"],
+                suffixes=("", "_remove"),
+            )
+            .merge(
+                self.table_r_raw.add_suffix("_r"),
+                how="left",
+                left_on=["id_r"],
+                right_on=["id_r"],
+                suffixes=("", "_remove"),
+            )
+            .filter(regex="^((?!remove).)*$")
+        )
 
-#         predictions = (
-#             predictions
-#             .as_pandas_dataframe()
-#             .sort_values(
-#                 by=['match_probability'],
-#                 ascending=False
-#             )
-#             .drop_duplicates(
-#                 subset=['id_l', 'id_r'],
-#                 keep='first'
-#             )
-#             .merge(
-#                 self.table_l_raw.add_suffix('_l'),
-#                 how='left',
-#                 left_on=['id_l'],
-#                 right_on=['id_l'],
-#                 suffixes=('', '_remove')
-#             )
-#             .merge(
-#                 self.table_r_raw.add_suffix('_r'),
-#                 how='left',
-#                 left_on=['id_r'],
-#                 right_on=['id_r'],
-#                 suffixes=('', '_remove')
-#             )
-#             .filter(regex='^((?!remove).)*$')
-#         )
+        existing = (
+            du.dataset(self.pair["eval"])
+            .merge(
+                self.table_l_raw.add_suffix("_l"),
+                how="left",
+                left_on=["id_l"],
+                right_on=["id_l"],
+                suffixes=("", "_remove"),
+            )
+            .merge(
+                self.table_r_raw.add_suffix("_r"),
+                how="left",
+                left_on=["id_r"],
+                right_on=["id_r"],
+                suffixes=("", "_remove"),
+            )
+            .filter(regex="^((?!remove).)*$")
+        )
 
-#         existing = (
-#             du.dataset(self.pair['eval'])
-#             .merge(
-#                 self.table_l_raw.add_suffix('_l'),
-#                 how='left',
-#                 left_on=['id_l'],
-#                 right_on=['id_l'],
-#                 suffixes=('', '_remove')
-#             )
-#             .merge(
-#                 self.table_r_raw.add_suffix('_r'),
-#                 how='left',
-#                 left_on=['id_r'],
-#                 right_on=['id_r'],
-#                 suffixes=('', '_remove')
-#             )
-#             .filter(regex='^((?!remove).)*$')
-#         )
+        agree = predictions.merge(
+            existing, how="inner", on=["id_l", "id_r"], suffixes=("_pred", "_exist")
+        ).filter(regex="id|pred|exist|match_probability|score")
 
-#         agree = (
-#             predictions
-#             .merge(
-#                 existing,
-#                 how='inner',
-#                 on=['id_l', 'id_r']
-#             )
-#         )
+        cols = agree.columns.tolist()
+        cols.insert(0, cols.pop(cols.index("score")))
+        cols.insert(0, cols.pop(cols.index("match_probability")))
+        cols.insert(0, cols.pop(cols.index("id_r")))
+        cols.insert(0, cols.pop(cols.index("id_l")))
 
-#         disagree = (
-#             predictions
-#             .merge(
-#                 existing,
-#                 how='outer',
-#                 on=['id_l', 'id_r'],
-#                 indicator=True
-#             )
-#         )
+        agree = agree.reindex(columns=cols)
 
-#         prediction_only = (
-#             disagree[(disagree._merge=='left_only')]
-#             .drop('_merge', axis=1)
-#         )
+        disagree = predictions.merge(
+            existing,
+            how="outer",
+            on=["id_l", "id_r"],
+            suffixes=("_pred", "_exist"),
+            indicator=True,
+        ).filter(regex="id|pred|exist|match_probability|score|_merge")
 
-#         existing_only = (
-#             disagree[(disagree._merge=='right_only')]
-#             .drop('_merge', axis=1)
-#         )
+        cols = disagree.columns.tolist()
+        cols.insert(0, cols.pop(cols.index("score")))
+        cols.insert(0, cols.pop(cols.index("match_probability")))
+        cols.insert(0, cols.pop(cols.index("id_r")))
+        cols.insert(0, cols.pop(cols.index("id_l")))
+
+        disagree = disagree.reindex(columns=cols)
+
+        prediction_only = (
+            disagree[(disagree._merge == "left_only")]
+            .drop("_merge", axis=1)
+            .filter(regex="^((?!_exist).)*$")
+            .filter(regex="^((?!score).)*$")
+            .sort_values(by=["match_probability"], ascending=False)
+        )
+        existing_only = (
+            disagree[(disagree._merge == "right_only")]
+            .drop("_merge", axis=1)
+            .filter(regex="^((?!_pred).)*$")
+            .filter(regex="^((?!match_probability).)*$")
+            .sort_values(by=["score"], ascending=False)
+        )
+
+        res = {
+            "eval_matches": existing.shape[0],
+            "pred_matches": predictions.shape[0],
+            "both_eval_and_pred": agree.shape[0],
+            "eval_only": existing_only.shape[0],
+            "pred_only": prediction_only.shape[0],
+            "both_eval_and_pred_sample": (
+                agree.sample(sample).to_dict(orient="records")
+            ),
+            "eval_only_sample": (
+                existing_only.sample(sample).to_dict(orient="records")
+            ),
+            "pred_only_sample": (
+                prediction_only.sample(sample).to_dict(orient="records")
+            ),
+        }
+
+        return res

@@ -52,6 +52,8 @@ erDiagram
 
 I think we can do better. The proposed output below is a small relational database optimised for three separate use cases: **linking**, **deduping** and **verifying**.
 
+[Notes on this on Confluence.](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3573448705/Company+matching%3A+operationalisation)
+
 ![ERD](/src/visualisation/company_matching_erg.drawio.svg)
 
 * String storage is minimised with key relationships
