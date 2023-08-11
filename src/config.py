@@ -51,16 +51,19 @@ pairs = {
     ('"companieshouse"."companies"', '"dit"."data_hub__companies"'): {
         "link": None,
         "model": None,
+        "experiment": "🔗ch_x_dh",
         "eval": f'"{os.getenv("SCHEMA")}"."ch_x_dh__eval"',
     },
     ('"dit"."data_hub__companies"', '"dit"."export_wins__wins_dataset"'): {
         "link": None,
         "model": None,
+        "experiment": "🔗dh_x_ew",
         "eval": f'"{os.getenv("SCHEMA")}"."dh_x_ew__eval"',
     },
     ('"companieshouse"."companies"', '"hmrc"."trade__exporters"'): {
         "link": None,
         "model": None,
+        "experiment": "🔗ch_x_exp",
         "eval": f'"{os.getenv("SCHEMA")}"."ch_x_exp__eval"',
     },
 }
