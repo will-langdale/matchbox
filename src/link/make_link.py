@@ -22,12 +22,13 @@ class LinkDatasets(object):
         elif (table_r["name"], table_l["name"]) in pairs:
             self.pair = pairs[(table_r["name"], table_l["name"])]
 
+        self.table_l = tables[table_l["name"]]
         self.table_l_alias = du.clean_table_name(table_l["name"])
         self.table_l_select = ", ".join(table_l["select"])
-        self.table_l_dim = tables[table_l["name"]]["dim"]
+
+        self.table_r = tables[table_r["name"]]
         self.table_r_alias = du.clean_table_name(table_r["name"])
         self.table_r_select = ", ".join(table_r["select"])
-        self.table_r_dim = tables[table_r["name"]]["dim"]
 
         self.table_l_raw = None
         self.table_r_raw = None
@@ -40,13 +41,15 @@ class LinkDatasets(object):
 
         self.linker = None
 
+        self.predictions = None
+
     def get_data(self):
         self.table_l_raw = du.query(
             f"""
                 select
                     {self.table_l_select}
                 from
-                    {self.table_l_dim};
+                    {self.table_l['dim']};
             """
         )
         self.table_r_raw = du.query(
@@ -54,7 +57,7 @@ class LinkDatasets(object):
                 select
                     {self.table_r_select}
                 from
-                    {self.table_r_dim};
+                    {self.table_r['dim']};
             """
         )
 
@@ -81,7 +84,10 @@ class LinkDatasets(object):
             proc_func = getattr(self.linker, k)
             proc_func(**self.pipeline[k])
 
-    def generate_report(self, predictions) -> dict:
+    def predict(self, **kwargs):
+        self.predictions = self.linker.predict(**kwargs)
+
+    def generate_report(self, predictions=None) -> dict:
         """
         Generate a dict report that compares a prediction df
         with the evaluation df for the pair. It contains:
@@ -94,10 +100,90 @@ class LinkDatasets(object):
             - A sample of disagreeing matches from the predictions
 
         Parameters:
-            Predictions: A dataframe output by the linker
+            Predictions: A dataframe output by the linker. If none,
+            will use predictions in self.prefictions
 
         Returns:
             A dict with the relevant metrics
         """
+        pass
 
-        self.pair["eval"]
+
+#         if not predictions:
+#             predictions = self.predictions
+
+#         predictions = (
+#             predictions
+#             .as_pandas_dataframe()
+#             .sort_values(
+#                 by=['match_probability'],
+#                 ascending=False
+#             )
+#             .drop_duplicates(
+#                 subset=['id_l', 'id_r'],
+#                 keep='first'
+#             )
+#             .merge(
+#                 self.table_l_raw.add_suffix('_l'),
+#                 how='left',
+#                 left_on=['id_l'],
+#                 right_on=['id_l'],
+#                 suffixes=('', '_remove')
+#             )
+#             .merge(
+#                 self.table_r_raw.add_suffix('_r'),
+#                 how='left',
+#                 left_on=['id_r'],
+#                 right_on=['id_r'],
+#                 suffixes=('', '_remove')
+#             )
+#             .filter(regex='^((?!remove).)*$')
+#         )
+
+#         existing = (
+#             du.dataset(self.pair['eval'])
+#             .merge(
+#                 self.table_l_raw.add_suffix('_l'),
+#                 how='left',
+#                 left_on=['id_l'],
+#                 right_on=['id_l'],
+#                 suffixes=('', '_remove')
+#             )
+#             .merge(
+#                 self.table_r_raw.add_suffix('_r'),
+#                 how='left',
+#                 left_on=['id_r'],
+#                 right_on=['id_r'],
+#                 suffixes=('', '_remove')
+#             )
+#             .filter(regex='^((?!remove).)*$')
+#         )
+
+#         agree = (
+#             predictions
+#             .merge(
+#                 existing,
+#                 how='inner',
+#                 on=['id_l', 'id_r']
+#             )
+#         )
+
+#         disagree = (
+#             predictions
+#             .merge(
+#                 existing,
+#                 how='outer',
+#                 on=['id_l', 'id_r'],
+#                 indicator=True
+#             )
+#         )
+
+#         prediction_only = (
+#             disagree[(disagree._merge=='left_only')]
+#             .drop('_merge', axis=1)
+#         )
+
+#         existing_only = (
+#             disagree[(disagree._merge=='right_only')]
+#             .drop('_merge', axis=1)
+#         )

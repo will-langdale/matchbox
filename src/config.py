@@ -6,23 +6,43 @@ load_dotenv(dotenv_path)
 
 tables = {
     '"companieshouse"."companies"': {
-        "dim": '"companieshouse"."companies"',
         "fact": '"companieshouse"."companies"',
+        "key_fields": [
+            "id",
+            "company_number",
+            "company_name",
+            "address_line_1",
+            "postcode",
+            "company_status",
+        ],
+        "dim": '"companieshouse"."companies"',
         "match_v1": '"companieshouse"."companies__match_ids"',
     },
     '"dit"."data_hub__companies"': {
-        "dim": '"dit"."data_hub__companies"',
         "fact": '"dit"."data_hub__companies"',
+        "key_fields": [
+            "id",
+            "name",
+            "company_number",
+            "duns_number",
+            "cdms_reference_code",
+            "address_1",
+            "address_postcode",
+            "archived",
+        ],
+        "dim": '"dit"."data_hub__companies"',
         "match_v1": '"dit"."data_hub__companies__match_ids"',
     },
     '"hmrc"."trade__exporters"': {
-        "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
         "fact": '"hmrc"."trade__exporters"',
+        "key_fields": ["company_name", "address", "postcode"],
+        "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
         "match_v1": '"hmrc"."trade__exporters__match_ids"',
     },
     '"dit"."export_wins__wins_dataset"': {
-        "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
         "fact": '"dit"."export_wins__wins_dataset"',
+        "key_fields": ["cdms_reference", "company_name"],
+        "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
         "match_v1": '"dit"."export_wins__wins_dataset__match_ids"',
     },
 }

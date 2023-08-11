@@ -18,11 +18,10 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 #################################################################################
 
 
-## Make dimension tables (currently hard-coded)
+## Make dimension tables
 dims:
-	python src/dim/hmrc_trade__exporters.py
-	python src/dim/dit_export_wins__wins_dataset.py
-   
+	python src/dim/make_dim.py
+
    
 ## Make evaluation tables for existing matching service
 evals:

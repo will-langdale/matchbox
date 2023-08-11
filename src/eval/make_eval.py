@@ -24,23 +24,23 @@ class MakeEval(object):
             create table {self.eval_table} as (
                 select distinct on (cluster)
                     cluster,
-                    l_id,
-                    r_id,
+                    id_l,
+                    id_r,
                     score
                 from (
                     select
-                        l_lkp.id as l_id,
+                        l_lkp.id as id_l,
                         case
                             when l.id is not null
                             then true
                             else false
-                        end as l_hit,
-                        r_lkp.id as r_id,
+                        end as hit_l,
+                        r_lkp.id as id_r,
                         case
                             when r.id is not null
                             then true
                             else false
-                        end as r_hit,
+                        end as hit_r,
                         l_lkp.match_id as cluster,
                         coalesce(
                             (
@@ -63,13 +63,13 @@ class MakeEval(object):
                         r.id::text = r_lkp.id::text
                 ) raw_matches
                 where
-                    l_hit = true
-                    and r_hit = true
+                    hit_l = true
+                    and hit_r = true
                 order by
                     cluster desc,
                     score desc,
-                    l_hit desc,
-                    r_hit desc
+                    hit_l desc,
+                    hit_r desc
             );
         """
 

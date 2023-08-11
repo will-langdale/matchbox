@@ -1,4 +1,6 @@
 from src.data import utils as du
+from src.config import tables
+import logging
 
 
 class MakeDim(object):
@@ -30,3 +32,29 @@ class MakeDim(object):
         """
 
         du.query_nonreturn(sql)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+    logger = logging.getLogger(__name__)
+    logger.info("Creating dim tables")
+
+    for table in tables:
+        if tables[table]["fact"] != tables[table]["dim"]:
+            dim_name = tables[table]["dim"]
+            logger.info(f"Creating {dim_name}")
+
+            dim_config = MakeDim(
+                unique_fields=tables[table]["key_fields"],
+                fact_table=tables[table]["fact"],
+                dim_table=dim_name,
+            )
+
+            dim_config.make_dim_table(overwrite=True)
+
+            logger.info(f"Written {dim_name}")
+
+    logger.info("Finished")
