@@ -290,12 +290,6 @@ class LinkDatasets(object):
             self.linker.save_model_to_json(out_path=model_file_path, overwrite=True)
             mlflow.log_artifact(model_file_path, "model")
 
-            settings_path = path.join(outdir, "settings.json")
-            settings_json = json.dumps(self.settings, indent=4, cls=ComparisonEncoder)
-            with open(settings_path, "w") as f:
-                f.write(settings_json)
-            mlflow.log_artifact(settings_path, "config")
-
             pipeline_path = path.join(outdir, "pipeline.json")
             pipeline_json = json.dumps(self.pipeline, indent=4, cls=ComparisonEncoder)
             with open(pipeline_path, "w") as f:
@@ -333,27 +327,5 @@ class LinkDatasets(object):
             mlflow.log_metric("both_eval_and_pred", report["both_eval_and_pred"])
             mlflow.log_metric("eval_only", report["eval_only"])
             mlflow.log_metric("pred_only", report["pred_only"])
-
-            both_eval_and_pred_path = path.join(
-                outdir, "both_eval_and_pred_sample.json"
-            )
-            both_eval_and_pred_json = json.dumps(
-                report["both_eval_and_pred_sample"], indent=4
-            )
-            with open(both_eval_and_pred_path, "w") as f:
-                f.write(both_eval_and_pred_json)
-            mlflow.log_artifact(both_eval_and_pred_path, "samples")
-
-            eval_only_path = path.join(outdir, "eval_only_sample.json")
-            eval_only_json = json.dumps(report["eval_only_sample"], indent=4)
-            with open(eval_only_path, "w") as f:
-                f.write(eval_only_json)
-            mlflow.log_artifact(eval_only_path, "samples")
-
-            pred_only_path = path.join(outdir, "pred_only_sample.json")
-            pred_only_json = json.dumps(report["pred_only_sample"], indent=4)
-            with open(pred_only_path, "w") as f:
-                f.write(pred_only_json)
-            mlflow.log_artifact(pred_only_path, "samples")
 
         logger.info("Done!")
