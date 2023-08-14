@@ -4,11 +4,22 @@ from src.locations import OUTPUTS_HOME
 from src.config import tables, pairs
 
 from splink.duckdb.linker import DuckDBLinker
+from splink.comparison import Comparison
 
 import mlflow
 import logging
 import json
 from os import path, makedirs
+
+
+class ComparisonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if callable(obj):
+            return obj.__name__
+        elif isinstance(obj, Comparison):
+            return obj.as_dict()
+        else:
+            return json.JSONEncoder.default(self, obj)
 
 
 class LinkDatasets(object):
@@ -22,7 +33,7 @@ class LinkDatasets(object):
         self.settings = settings
         self.pipeline = pipeline
         self.table_l_settings = table_l
-        self.rable_r_settings = table_r
+        self.table_r_settings = table_r
 
         if (table_l["name"], table_r["name"]) in pairs:
             self.pair = pairs[(table_l["name"], table_r["name"])]
@@ -71,12 +82,16 @@ class LinkDatasets(object):
     def preprocess_data(self):
         curr = self.table_l_raw
         for func in self.table_l_proc_pipe.keys():
-            curr = func(curr, **self.table_l_proc_pipe[func])
+            curr = self.table_l_proc_pipe[func]["function"](
+                curr, **self.table_l_proc_pipe[func]["arguments"]
+            )
         self.table_l_proc = curr
 
         curr = self.table_r_raw
         for func in self.table_r_proc_pipe.keys():
-            curr = func(curr, **self.table_r_proc_pipe[func])
+            curr = self.table_r_proc_pipe[func]["function"](
+                curr, **self.table_r_proc_pipe[func]["arguments"]
+            )
         self.table_r_proc = curr
 
     def create_linker(self):
@@ -276,25 +291,29 @@ class LinkDatasets(object):
             mlflow.log_artifact(model_file_path, "model")
 
             settings_path = path.join(outdir, "settings.json")
-            settings_json = json.dumps(self.settings, indent=4)
+            settings_json = json.dumps(self.settings, indent=4, cls=ComparisonEncoder)
             with open(settings_path, "w") as f:
                 f.write(settings_json)
             mlflow.log_artifact(settings_path, "config")
 
             pipeline_path = path.join(outdir, "pipeline.json")
-            pipeline_json = json.dumps(self.pipeline, indent=4)
+            pipeline_json = json.dumps(self.pipeline, indent=4, cls=ComparisonEncoder)
             with open(pipeline_path, "w") as f:
                 f.write(pipeline_json)
             mlflow.log_artifact(pipeline_path, "config")
 
             preproc_l_path = path.join(outdir, f"{self.table_l_alias}_settings.json")
-            preproc_l_json = json.dumps(self.table_l_settings, indent=4)
+            preproc_l_json = json.dumps(
+                self.table_l_settings, indent=4, cls=ComparisonEncoder
+            )
             with open(preproc_l_path, "w") as f:
                 f.write(preproc_l_json)
             mlflow.log_artifact(preproc_l_path, "config")
 
             preproc_r_path = path.join(outdir, f"{self.table_r_alias}_settings.json")
-            preproc_r_json = json.dumps(self.table_r_settings, indent=4)
+            preproc_r_json = json.dumps(
+                self.table_r_settings, indent=4, cls=ComparisonEncoder
+            )
             with open(preproc_r_path, "w") as f:
                 f.write(preproc_r_json)
             mlflow.log_artifact(preproc_r_path, "config")
