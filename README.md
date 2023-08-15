@@ -15,19 +15,11 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 
 I needed somewhere to scribble for v2. It's here.
 
-* .env in use for setting the schema for written tables
+* `.env` in use for setting the schema for written tables
+    * I've been using my personal schema -- see `.env.sample` for syntax
 * How am I handling making a dim table in production?
 * Link Robin's [settings editor](https://www.robinlinacre.com/splink3_settings_editor_temp/)
-* Eval
-    * Dim table needs a sample ID from the fact
-    * Generalise the lookup tables from lead gen to make an eval table
-    * To eval:
-        * Source -> target dim ID
-        * What does company matching think?
-        * What does splink think?
-        * Total count
-        * Agree, disagree @ 1, sample 50 agrees, 50 disagrees
-        * Agree, disagree @ 3, sample 50 agrees, 50 disagrees
+* New thoughts on eval: [Robin uses blocking rules to make a ROC curve even whern unsupervised](https://www.robinlinacre.com/comparing_splink_models_unsupervised/). I can define "true" blocking rules per pair, scale the scores from the companies matching service, plot ROC and log AUC for each, and have an evaluation metric not just for the existing service, but for any pair of pred tables in the future -- no samples needed
 
 ## Output
 
