@@ -20,12 +20,12 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 ## Make dimension tables
 dims:
-	python src/dim/make_dim.py
+	$(PYTHON_INTERPRETER) src/dim/make_dim.py
 
    
 ## Make evaluation tables for existing matching service
 evals:
-	python src/eval/make_eval.py
+	$(PYTHON_INTERPRETER) src/eval/make_eval.py
 
 
 ## Shows disk usage across repo

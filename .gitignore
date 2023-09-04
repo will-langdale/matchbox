@@ -1,8 +1,8 @@
 scratch/
-*/**/.ipynb_checkpoints
+*.ipynb_checkpoints
 
 # DuckDB
-*/**/*.duckdb
+*.duckdb
 
 # Splink
 .tmp/

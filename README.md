@@ -11,15 +11,12 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 * [Export Wins](https://data.trade.gov.uk/datasets/0738396f-d1fd-46f1-a53f-5d8641d032af#export-wins-master-datasets)
 * [HMRC UK exporters](https://data.trade.gov.uk/datasets/76fb2db3-ab32-4af8-ae87-d41d36b31265#uk-exporters)
 
-## Notes
+## Quickstart
 
-I needed somewhere to scribble for v2. It's here.
-
-* `.env` in use for setting the schema for written tables
-    * I've been using my personal schema -- see `.env.sample` for syntax
-* How am I handling making a dim table in production?
-* Link Robin's [settings editor](https://www.robinlinacre.com/splink3_settings_editor_temp/)
-* New thoughts on eval: [Robin uses blocking rules to make a ROC curve even whern unsupervised](https://www.robinlinacre.com/comparing_splink_models_unsupervised/). I can define "true" blocking rules per pair, scale the scores from the companies matching service, plot ROC and log AUC for each, and have an evaluation metric not just for the existing service, but for any pair of pred tables in the future -- no samples needed
+* Create a `.env` with your development schema to write tables into. Copy the sample with `cp .env.sample .env` then fill it in
+* Use `make dims` to create dimension tables where needed
+* Use `make evals` to create evaluation tables where needed
+* Use the command line to run individual linking scripts in `src/link/`
 
 ## Output
 
