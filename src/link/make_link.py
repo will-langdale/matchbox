@@ -39,6 +39,8 @@ class LinkDatasets(object):
             self.pair = pairs[(table_l["name"], table_r["name"])]
         elif (table_r["name"], table_l["name"]) in pairs:
             self.pair = pairs[(table_r["name"], table_l["name"])]
+        else:
+            raise ValueError("Table pair not found.")
 
         self.table_l = tables[table_l["name"]]
         self.table_l_alias = du.clean_table_name(table_l["name"])
