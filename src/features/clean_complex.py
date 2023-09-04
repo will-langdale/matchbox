@@ -27,7 +27,7 @@ def clean_comp_numbers(df):
     """
     clean = duckdb.sql(sql_clean_comp_number)
 
-    return clean.df()
+    return clean
 
 
 def clean_comp_names(
@@ -168,7 +168,7 @@ def add_postcode_area(df):
     """
     clean_df = duckdb.sql(sql_add_postcode_area)  # noqa:F841
 
-    return clean_df.df()
+    return clean_df
 
 
 def clean_raw_data(df):
