@@ -231,14 +231,18 @@ def check_table_exists(table: str) -> bool:
         bool: whether or not the table exists
     """
 
-    schema, tablename = table.replace('"', "").split(".")
+    schema_name_list = table.replace('"', "").split(".")
 
-    if tablename is None and schema is not None:
-        tablename = table
+    if len(schema_name_list) == 1:
         schema = None
+        tablename = schema_name_list[0]
         schema_clause = ""
-    else:
+    elif len(schema_name_list) == 2:
+        schema = schema_name_list[0]
+        tablename = schema_name_list[1]
         schema_clause = f"and table_schema = '{schema}'"
+    else:
+        raise ValueError(f"Could not identify schema and table in {table}.")
 
     sql = f"""
         select exists (
@@ -256,8 +260,11 @@ def check_table_exists(table: str) -> bool:
         except MultipleResultsFound:
             if "." not in table:
                 schema_error = "Could not derive schema."
+            else:
+                schema_error = ""
+
             raise ValueError(
-                f"Multiple results foound. Table name unclear. {schema_error}"
+                f"Multiple results found. Table name unclear. {schema_error}"
             )
 
         return exists
