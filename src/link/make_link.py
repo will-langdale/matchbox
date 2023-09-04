@@ -81,20 +81,52 @@ class LinkDatasets(object):
             """
         )
 
-    def preprocess_data(self):
-        curr = self.table_l_raw
-        for func in self.table_l_proc_pipe.keys():
-            curr = self.table_l_proc_pipe[func]["function"](
-                curr, **self.table_l_proc_pipe[func]["arguments"]
-            )
-        self.table_l_proc = curr
+    def _run_pipeline(self, table_in, pipeline):
+        """
+        Runs a pipeline of functions against an input table and
+        returns the result.
 
-        curr = self.table_r_raw
-        for func in self.table_r_proc_pipe.keys():
-            curr = self.table_r_proc_pipe[func]["function"](
-                curr, **self.table_r_proc_pipe[func]["arguments"]
+        Arguments:
+            table_in: The table to be processed
+            pipeline: A dict with where each key is a pipeline step,
+            and the value is another dict with keys "function" and
+            "arguments". "function"'s value is a callable function
+            that returns the input for the next step, and "arguments"
+            should contain a dictionary of method and value arguments
+            to the function.
+
+        Returns:
+            A output table with the pipeline of functions applied
+
+        Examples:
+            _run_pipeline(
+                table_in = self.table,
+                pipeline = {
+                    "add_two_columns": {
+                        "function": add_columns,
+                        "arguments": {
+                            "left_column": "q1_q2_profit",
+                            "right_column": "q3_q4_profit",
+                            "output": "year_profit"
+                        }
+                    },
+                    "delete_columns": {
+                        "function": delete_columns,
+                        "arguments": {
+                            "columns": ["q1_q2_profit", "q3_q4_profit"]
+                        }
+                    }
+                }
             )
-        self.table_r_proc = curr
+        """
+        curr = table_in
+        for func in pipeline.keys():
+            curr = pipeline[func]["function"](curr, **pipeline[func]["arguments"])
+        return curr
+
+    def preprocess_data(self):
+        self.table_l_proc = self._run_pipeline(self.table_l_raw, self.table_l_proc_pipe)
+        self.table_r_proc = self._run_pipeline(self.table_r_raw, self.table_r_proc_pipe)
 
     def create_linker(self):
         self.linker = DuckDBLinker(
@@ -104,9 +136,19 @@ class LinkDatasets(object):
         )
 
     def train_linker(self):
-        for k in self.pipeline.keys():
-            proc_func = getattr(self.linker, k)
-            proc_func(**self.pipeline[k])
+        """
+        Runs the pipeline of linker functions to train the linker object.
+
+        Similar to _run_pipeline(), expects self.pipeline to be a dict
+        of step keys with a value of a dict with "function" and "argument"
+        keys. Here, however, the value of "function" should be a string
+        corresponding to a method in the linker object. "argument"
+        remains the same: a dictionary of method and value arguments to
+        the referenced linker method.
+        """
+        for func in self.pipeline.keys():
+            proc_func = getattr(self.linker, self.pipeline[func]["function"])
+            proc_func(**self.pipeline[func]["arguments"])
 
     def predict(self, **kwargs):
         self.predictions = self.linker.predict(**kwargs)
@@ -237,7 +279,7 @@ class LinkDatasets(object):
 
         return res
 
-    def run_mlflow_experiment(self, run_name, description):
+    def run_mlflow_experiment(self, run_name, description, **kwargs):
         """
         Runs the whole pipeline:
 
@@ -248,6 +290,8 @@ class LinkDatasets(object):
         - Evaluation
 
         Logs the lot to MLflow.
+
+        Keyword arguments passed to the predict method.
         """
         logging.basicConfig(
             level=logging.INFO,
@@ -317,12 +361,13 @@ class LinkDatasets(object):
             # Outcome
 
             logger.info("Generating predictions")
-            self.predict(threshold_match_probability=0.7)
+            self.predict(**kwargs)
 
             logger.info("Creating report")
             report = self.generate_report(sample=10)
 
-            mlflow.log_param(key="threshold_match_probability", value=0.7)
+            for key, value in kwargs.items():
+                mlflow.log_param(key=key, value=value)
 
             mlflow.log_metric("eval_matches", report["eval_matches"])
             mlflow.log_metric("pred_matches", report["pred_matches"])
