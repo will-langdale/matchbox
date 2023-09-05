@@ -44,6 +44,30 @@ See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net
         * A reporting page that shows various model performance against this
         
 
+## Notes
+
+See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3589275785/Company+matching+v2.1+architecture+ideas) for the architecture we're implementing here, codename 🐙blocktopus.
+
+* `src/link/` will contain link class and individual link method classes
+* `src/pipeline/` will contain matches that link the cluster table on the left with a dim table on the right
+* Idea for process
+    * Some kind of `make setup` that sets up the system ready to link. Includes:
+        * `make star`, which writes/updates a `star` table where each row is a fact, dim and table pk
+        * `make dims`, which writes/updates the dim tables that are controlled by the framework
+    * `make links`, which uses `src/config.py` to run the whole pipeline step by step. Includes:
+        * Instantiating the initial `clusters` table
+        * Instantiate the `probabilities` table
+        * For each link in the chain
+            * Link cluster with table on right
+            * Update `probabilities` with output
+            * Update `clusters` with processed `probabilities`
+            * Log performance vs `validate`
+    * A function to turn `clusters` into a `lookup` for the end user
+    * A streamlit app to validate connections found in either `clusters` or `probabilities`
+        * A `validate` table that records user decisions
+        * A reporting page that shows various model performance against this
+        
+
 ## Output
 
 ### v0.1
