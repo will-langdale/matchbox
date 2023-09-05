@@ -225,7 +225,10 @@ def check_table_exists(table: str) -> bool:
         schema to be included, but will attempt to check without
 
     Raises:
-        ValueError: when a single answer can't be determined
+        ValueError:
+            * When a single answer can't be determined
+            * When the function can't detect either a schema.table or
+            table format in the input
 
     Returns:
         bool: whether or not the table exists

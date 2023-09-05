@@ -37,16 +37,25 @@ settings = {
 
 pipeline = {
     "estimate_probability_two_random_records_match": {
-        "deterministic_matching_rules": """
-            l.name_unusual_tokens = r.name_unusual_tokens
-        """,
-        "recall": 0.7,
+        "function": "estimate_probability_two_random_records_match",
+        "arguments": {
+            "deterministic_matching_rules": """
+                l.name_unusual_tokens = r.name_unusual_tokens
+            """,
+            "recall": 0.7,
+        },
     },
-    "estimate_u_using_random_sampling": {"max_pairs": 1e6},
+    "estimate_u_using_random_sampling": {
+        "function": "estimate_u_using_random_sampling",
+        "arguments": {"max_pairs": 1e6},
+    },
     "estimate_parameters_using_expectation_maximisation": {
-        "blocking_rule": """
-            l.name_unusual_tokens = r.name_unusual_tokens
-        """
+        "function": "estimate_parameters_using_expectation_maximisation",
+        "arguments": {
+            "blocking_rule": """
+                l.name_unusual_tokens = r.name_unusual_tokens
+            """
+        },
     },
 }
 
