@@ -1,73 +1,84 @@
 from src.data import utils as du
 from src.link import model_utils as mu
+from src.link.make_link import ClusterToData
 from src.locations import OUTPUTS_HOME
-from src.config import link_pipeline
+from src.config import tables, pairs
+
+from splink.duckdb.linker import DuckDBLinker
+from splink.comparison import Comparison
 
 import mlflow
 import logging
 import json
 from os import path, makedirs
 
-"""
-What does an abstract object need?
 
-* Get cluster data method
-    * Amalgamate data from various dim tables
-* Get dim table method
-* Predict method
+class ComparisonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if callable(obj):
+            return obj.__name__
+        elif isinstance(obj, Comparison):
+            return obj.as_dict()
+        else:
+            return json.JSONEncoder.default(self, obj)
 
-"""
 
-
-class ClusterToData(object):
+class SplinkLinker(ClusterToData):
     def __init__(
         self,
-        cluster: dict,
-        table: dict,
+        table_l: dict,
+        table_r: dict,
         settings: dict,
         pipeline: dict,
     ):
-        self.cluster_settings = cluster
-        self.table_settings = table
         self.settings = settings
         self.pipeline = pipeline
+        self.table_l_settings = table_l
+        self.table_r_settings = table_r
 
-        self.cluster = None  # TODO: Implement cluster retriever
-        self.cluster_alias = None  # TODO: Implement
-        self.cluster_select = None  # TODO: Implement
+        if (table_l["name"], table_r["name"]) in pairs:
+            self.pair = pairs[(table_l["name"], table_r["name"])]
+        elif (table_r["name"], table_l["name"]) in pairs:
+            self.pair = pairs[(table_r["name"], table_l["name"])]
+        else:
+            raise ValueError("Table pair not found.")
 
-        self.table = link_pipeline[table["name"]]
-        self.table_alias = du.clean_table_name(table["name"])
-        self.table_select = ", ".join(table["select"])
+        self.table_l = tables[table_l["name"]]
+        self.table_l_alias = du.clean_table_name(table_l["name"])
+        self.table_l_select = ", ".join(table_l["select"])
 
-        self.cluster_raw = None
-        self.table_raw = None
+        self.table_r = tables[table_r["name"]]
+        self.table_r_alias = du.clean_table_name(table_r["name"])
+        self.table_r_select = ", ".join(table_r["select"])
 
-        self.cluster_proc_pipe = None  # TODO: Implement
-        self.table_proc_pipe = table["preproc"]
+        self.table_l_raw = None
+        self.table_r_raw = None
 
-        self.cluster_proc = None
-        self.table_proc = None
+        self.table_l_proc_pipe = table_l["preproc"]
+        self.table_r_proc_pipe = table_r["preproc"]
+
+        self.table_l_proc = None
+        self.table_r_proc = None
 
         self.linker = None
 
         self.predictions = None
 
     def get_data(self):
-        # self.cluster_raw = du.query(
-        #     f"""
-        #         select
-        #             {self.cluster_select}
-        #         from
-        #             {self.cluster['dim']};
-        #     """
-        # )
-        self.table_raw = du.query(
+        self.table_l_raw = du.query(
             f"""
                 select
-                    {self.table_select}
+                    {self.table_l_select}
                 from
-                    {self.table['dim']};
+                    {self.table_l['dim']};
+            """
+        )
+        self.table_r_raw = du.query(
+            f"""
+                select
+                    {self.table_r_select}
+                from
+                    {self.table_r['dim']};
             """
         )
 
@@ -115,12 +126,33 @@ class ClusterToData(object):
         return curr
 
     def preprocess_data(self):
-        self.cluster_proc = self._run_pipeline(self.cluster_raw, self.cluster_proc_pipe)
-        self.table_proc = self._run_pipeline(self.table_raw, self.table_proc_pipe)
+        self.table_l_proc = self._run_pipeline(self.table_l_raw, self.table_l_proc_pipe)
+        self.table_r_proc = self._run_pipeline(self.table_r_raw, self.table_r_proc_pipe)
 
-    def predict(self):
-        raise NotImplementedError("method predict must be implemented")
-        # TODO: Force predict to return in the shape lookup needs
+    def create_linker(self):
+        self.linker = DuckDBLinker(
+            input_table_or_tables=[self.table_l_proc, self.table_r_proc],
+            settings_dict=self.settings,
+            input_table_aliases=[self.table_l_alias, self.table_r_alias],
+        )
+
+    def train_linker(self):
+        """
+        Runs the pipeline of linker functions to train the linker object.
+
+        Similar to _run_pipeline(), expects self.pipeline to be a dict
+        of step keys with a value of a dict with "function" and "argument"
+        keys. Here, however, the value of "function" should be a string
+        corresponding to a method in the linker object. "argument"
+        remains the same: a dictionary of method and value arguments to
+        the referenced linker method.
+        """
+        for func in self.pipeline.keys():
+            proc_func = getattr(self.linker, self.pipeline[func]["function"])
+            proc_func(**self.pipeline[func]["arguments"])
+
+    def predict(self, **kwargs):
+        self.predictions = self.linker.predict(**kwargs)
 
     def generate_report(self, sample: int, predictions=None) -> dict:
         """
@@ -151,14 +183,14 @@ class ClusterToData(object):
             .sort_values(by=["match_probability"], ascending=False)
             .drop_duplicates(subset=["id_l", "id_r"], keep="first")
             .merge(
-                self.cluster_raw.add_suffix("_l"),
+                self.table_l_raw.add_suffix("_l"),
                 how="left",
                 left_on=["id_l"],
                 right_on=["id_l"],
                 suffixes=("", "_remove"),
             )
             .merge(
-                self.table_raw.add_suffix("_r"),
+                self.table_r_raw.add_suffix("_r"),
                 how="left",
                 left_on=["id_r"],
                 right_on=["id_r"],
@@ -170,14 +202,14 @@ class ClusterToData(object):
         existing = (
             du.dataset(self.pair["eval"])
             .merge(
-                self.cluster_raw.add_suffix("_l"),
+                self.table_l_raw.add_suffix("_l"),
                 how="left",
                 left_on=["id_l"],
                 right_on=["id_l"],
                 suffixes=("", "_remove"),
             )
             .merge(
-                self.table_raw.add_suffix("_r"),
+                self.table_r_raw.add_suffix("_r"),
                 how="left",
                 left_on=["id_r"],
                 right_on=["id_r"],
@@ -288,8 +320,8 @@ class ClusterToData(object):
                 value=len(self.settings["blocking_rules_to_generate_predictions"]),
             )
             mlflow.log_param(key="comparisons", value=len(self.settings["comparisons"]))
-            mlflow.log_param(key="preprocessing_l", value=len(self.cluster_proc_pipe))
-            mlflow.log_param(key="preprocessing_r", value=len(self.table_proc_pipe))
+            mlflow.log_param(key="preprocessing_l", value=len(self.table_l_proc_pipe))
+            mlflow.log_param(key="preprocessing_r", value=len(self.table_r_proc_pipe))
 
             # Linker
 
@@ -306,29 +338,23 @@ class ClusterToData(object):
             mlflow.log_artifact(model_file_path, "model")
 
             pipeline_path = path.join(outdir, "pipeline.json")
-            # pipeline_json = json.dumps(self.pipeline, indent=4, cls=ComparisonEncoder)
-            pipeline_json = json.dumps(self.pipeline, indent=4)
-            # TODO: Fix
+            pipeline_json = json.dumps(self.pipeline, indent=4, cls=ComparisonEncoder)
             with open(pipeline_path, "w") as f:
                 f.write(pipeline_json)
             mlflow.log_artifact(pipeline_path, "config")
 
-            preproc_l_path = path.join(outdir, f"{self.cluster_alias}_settings.json")
-            # preproc_l_json = json.dumps(
-            #     self.cluster_settings, indent=4, cls=ComparisonEncoder
-            # )
-            preproc_l_json = json.dumps(self.cluster_settings, indent=4)
-            # TODO: Fix
+            preproc_l_path = path.join(outdir, f"{self.table_l_alias}_settings.json")
+            preproc_l_json = json.dumps(
+                self.table_l_settings, indent=4, cls=ComparisonEncoder
+            )
             with open(preproc_l_path, "w") as f:
                 f.write(preproc_l_json)
             mlflow.log_artifact(preproc_l_path, "config")
 
-            preproc_r_path = path.join(outdir, f"{self.table_alias}_settings.json")
-            # preproc_r_json = json.dumps(
-            #     self.table_settings, indent=4, cls=ComparisonEncoder
-            # )
-            preproc_r_json = json.dumps(self.table_settings, indent=4)
-            # TODO: Fix
+            preproc_r_path = path.join(outdir, f"{self.table_r_alias}_settings.json")
+            preproc_r_json = json.dumps(
+                self.table_r_settings, indent=4, cls=ComparisonEncoder
+            )
             with open(preproc_r_path, "w") as f:
                 f.write(preproc_r_json)
             mlflow.log_artifact(preproc_r_path, "config")
