@@ -1,4 +1,4 @@
-.PHONY: check clear data train predict clean environment install_git_hooks requirements precommit test
+.PHONY: check clear data dims evals train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -16,6 +16,16 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
+
+
+## Make dimension tables
+dims:
+	$(PYTHON_INTERPRETER) src/dim/make_dim.py
+
+   
+## Make evaluation tables for existing matching service
+evals:
+	$(PYTHON_INTERPRETER) src/eval/make_eval.py
 
 
 ## Shows disk usage across repo
@@ -69,8 +79,8 @@ install_git_hooks:
 
 ## Reformat, lint, clear notebook outputs if necessary
 precommit:
-	black . --extend-exclude \.ipynb$
-	flake8 .
+	black . --extend-exclude \.ipynb$ 
+	flake8 . --exclude scratch,.ipynb_checkpoints
 ifeq (yes,$(SENSITIVE_PROJECT))
 	@echo "Clearing output of all notebooks:"
 	export JUPYTER_CONFIG_DIR=${HOME}/.jupyter_conf; jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/*.ipynb

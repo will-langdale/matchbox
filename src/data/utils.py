@@ -3,6 +3,7 @@ from src.locations import DATA_SUBDIR, PROJECT_DIR, DATA_HOME
 import pandas as pd
 import sqlalchemy
 from sqlalchemy.sql import text as sql_text
+from sqlalchemy.exc import MultipleResultsFound
 import glob
 from pathlib import Path
 import requests
@@ -213,6 +214,63 @@ def load_df(data_subdir, ds_name, extension=DEFAULT_DF_FORMAT, **kwargs):
         return pd.read_parquet(file_path, **kwargs)
 
     raise ValueError("The format specified is not supported")
+
+
+def check_table_exists(table: str) -> bool:
+    """
+    Returns true if a table exists
+
+    Parameters:
+        table: any valid query string for Postgres. Would prefer a
+        schema to be included, but will attempt to check without
+
+    Raises:
+        ValueError:
+            * When a single answer can't be determined
+            * When the function can't detect either a schema.table or
+            table format in the input
+
+    Returns:
+        bool: whether or not the table exists
+    """
+
+    schema_name_list = table.replace('"', "").split(".")
+
+    if len(schema_name_list) == 1:
+        schema = None
+        tablename = schema_name_list[0]
+        schema_clause = ""
+    elif len(schema_name_list) == 2:
+        schema = schema_name_list[0]
+        tablename = schema_name_list[1]
+        schema_clause = f"and table_schema = '{schema}'"
+    else:
+        raise ValueError(f"Could not identify schema and table in {table}.")
+
+    sql = f"""
+        select exists (
+            select from information_schema.tables
+            where table_name = '{tablename}'
+            {schema_clause}
+        );
+    """
+
+    with sql_engine.connect() as connection:
+        res = connection.execute(sql_text(sql))
+
+        try:
+            exists = res.scalar()
+        except MultipleResultsFound:
+            if "." not in table:
+                schema_error = "Could not derive schema."
+            else:
+                schema_error = ""
+
+            raise ValueError(
+                f"Multiple results found. Table name unclear. {schema_error}"
+            )
+
+        return exists
 
 
 def get_company_data(

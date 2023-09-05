@@ -11,6 +11,13 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 * [Export Wins](https://data.trade.gov.uk/datasets/0738396f-d1fd-46f1-a53f-5d8641d032af#export-wins-master-datasets)
 * [HMRC UK exporters](https://data.trade.gov.uk/datasets/76fb2db3-ab32-4af8-ae87-d41d36b31265#uk-exporters)
 
+## Quickstart
+
+* Create a `.env` with your development schema to write tables into. Copy the sample with `cp .env.sample .env` then fill it in
+* Use `make dims` to create dimension tables where needed
+* Use `make evals` to create evaluation tables where needed
+* Use the command line to run individual linking scripts in `src/link/`
+
 ## Output
 
 ### v0.1
@@ -33,6 +40,8 @@ erDiagram
 ### v0.2
 
 I think we can do better. The proposed output below is a small relational database optimised for three separate use cases: **linking**, **deduping** and **verifying**.
+
+[Notes on this on Confluence.](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3573448705/Company+matching%3A+operationalisation)
 
 ![ERD](/src/visualisation/company_matching_erg.drawio.svg)
 
