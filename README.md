@@ -14,9 +14,35 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 ## Quickstart
 
 * Create a `.env` with your development schema to write tables into. Copy the sample with `cp .env.sample .env` then fill it in
-* Use `make dims` to create dimension tables where needed
-* Use `make evals` to create evaluation tables where needed
-* Use the command line to run individual linking scripts in `src/link/`
+    * `SCHEMA` is where any tables the service creates will be written by default
+    * `STAR_TABLE` is where fact and dimension tables will be recorded and checked
+    * `PROBABILITIES_TABLE` is where match probabilities will be recorded and checked
+    * `CLUSTERS_TABLE` is where company entities will be recorded and checked
+    * `VALIDATE_TABLE` is where user validation outputs will be recorded and checked
+
+## Notes
+
+See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3589275785/Company+matching+v2.1+architecture+ideas) for the architecture we're implementing here, codename 🐙blocktopus.
+
+* `src/link/` will contain link class and individual link method classes
+* `src/pipeline/` will contain matches that link the cluster table on the left with a dim table on the right
+* Idea for process
+    * Some kind of `make setup` that sets up the system ready to link. Includes:
+        * `make star`, which writes/updates a `star` table where each row is the name of a fact table and dimension table, plus a pk
+        * `make dims`, which writes/updates the dim tables that are controlled by the framework
+    * `make links`, which uses `src/config.py` to run the whole pipeline step by step. Includes:
+        * Instantiating the initial `clusters` table
+        * Instantiate the `probabilities` table
+        * For each link in the chain
+            * Link cluster with table on right
+            * Update `probabilities` with output
+            * Update `clusters` with processed `probabilities`
+            * Log performance vs `validate`
+    * A function to turn `clusters` into a `lookup` for the end user
+    * A streamlit app to validate connections found in either `clusters` or `probabilities`
+        * A `validate` table that records user decisions
+        * A reporting page that shows various model performance against this
+        
 
 ## Output
 
