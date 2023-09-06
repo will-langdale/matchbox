@@ -37,7 +37,13 @@ def make_star_table(
         hash_hex = sha256(
             f"{fact}{dim}".encode(encoding="UTF-8", errors="strict")
         ).hexdigest()
-        hash_int = int(hash_hex, 16) % (10**8)
+        # We need a hash that:
+        # * Is an integer
+        # * Is stable
+        # * Is unique for the amount of dims we'll ever see
+        # I therefore manipulate the hex to 0-65535 to fit in a 16-bit signed
+        # int field
+        hash_int = int(hash_hex, 16) % 65535
 
         out["uuid"].append(hash_int)
         out["fact"].append(fact)
