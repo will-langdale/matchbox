@@ -43,7 +43,7 @@ def make_star_table(
         # * Is an integer
         # * Is stable
         # * Is unique for the amount of dims we'll ever see
-        # I therefore manipulate the hex to 0-65535 to fit in a 16-bit signed
+        # I therefore manipulate the hex to 0-65535 to fit in a 16-bit unsigned
         # int field
         hash_int = int(hash_hex, 16) % 65536
 
