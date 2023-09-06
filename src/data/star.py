@@ -21,7 +21,9 @@ def make_star_table(
         overwrite: Whether to overwrite the target if it exists
 
     Raises:
-        ValueError if the table exists and overwrite is False
+        ValueError
+            * If the table exists and overwrite is False
+            * If the hash function fails to produce unique keys
     """
 
     if_exists = "replace" if overwrite else "fail"
@@ -30,7 +32,7 @@ def make_star_table(
     if du.check_table_exists(schema_and_table) and not overwrite:
         raise ValueError("Table exists. Set overwrite to True if you want to proceed.")
 
-    out = {"uuid": [], "fact": [], "dim": []}
+    out = {"id": [], "fact": [], "dim": []}
     for table in link_pipeline:
         fact = link_pipeline[table]["fact"]
         dim = link_pipeline[table]["dim"]
@@ -43,13 +45,16 @@ def make_star_table(
         # * Is unique for the amount of dims we'll ever see
         # I therefore manipulate the hex to 0-65535 to fit in a 16-bit signed
         # int field
-        hash_int = int(hash_hex, 16) % 65535
+        hash_int = int(hash_hex, 16) % 65536
 
-        out["uuid"].append(hash_int)
+        out["id"].append(hash_int)
         out["fact"].append(fact)
         out["dim"].append(dim)
 
     star = pd.DataFrame.from_dict(out)
+
+    if len(star) != len(star.id.unique()):
+        raise ValueError("Hash function has failed to produce unique keys. Change it.")
 
     du.data_workspace_write(
         df=star, schema=star_schema, table=star_table, if_exists=if_exists
