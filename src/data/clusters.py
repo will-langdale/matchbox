@@ -106,17 +106,19 @@ class Clusters(object):
 
     def get_data(self, fields: list):
         """
-        Build the cluster table at point n in the 🐙blocktopus build process.
+        Wrangle clusters and associated dimension fields into an output
+        appropriate for the linker object to join a new dimension table onto.
+
+        Returns a temporary dimension table that can use information from
+        across the matched clusters so far to be the left "cluster" side of
+        the next step n of the 🐙blocktopus architecture.
 
         Arguments:
-            cluster_table: The location of the cluster table
             fields: The data to retrieve from the cluster's dimension tables
 
         Returns:
             A dataframe with one row per company entity, and one column per
             requested field
         """
-
-        data = None
-
-        return data
+        # TODO: implement as part of Linker class update
+        pass
