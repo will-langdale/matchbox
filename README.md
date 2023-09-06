@@ -14,7 +14,7 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 ## Quickstart
 
 * Create a `.env` with your development schema to write tables into. Copy the sample with `cp .env.sample .env` then fill it in
-    * `SCHEMA` is where all proprietary tables will be written by default
+    * `SCHEMA` is where any tables the service creates will be written by default
     * `STAR_TABLE` is where fact and dimension tables will be recorded and checked
     * `PROBABILITIES_TABLE` is where match probabilities will be recorded and checked
     * `CLUSTERS_TABLE` is where company entities will be recorded and checked
@@ -28,7 +28,7 @@ See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net
 * `src/pipeline/` will contain matches that link the cluster table on the left with a dim table on the right
 * Idea for process
     * Some kind of `make setup` that sets up the system ready to link. Includes:
-        * `make star`, which writes/updates a `star` table where each row is a fact, dim and table pk
+        * `make star`, which writes/updates a `star` table where each row is the name of a fact table and dimension table, plus a pk
         * `make dims`, which writes/updates the dim tables that are controlled by the framework
     * `make links`, which uses `src/config.py` to run the whole pipeline step by step. Includes:
         * Instantiating the initial `clusters` table

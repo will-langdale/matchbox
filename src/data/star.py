@@ -20,8 +20,8 @@ def make_star_table(
         star_table: The target STAR lookup table
         overwrite: Whether to overwrite the target if it exists
 
-    Returns:
-        Nothing
+    Raises:
+        ValueError if the table exists and overwrite is False
     """
 
     if_exists = "replace" if overwrite else "fail"
@@ -45,10 +45,9 @@ def make_star_table(
 
     star = pd.DataFrame.from_dict(out)
 
-    with du.sql_engine.connect() as connection:
-        star.to_sql(
-            name=star_table, con=connection, schema=star_schema, if_exists=if_exists
-        )
+    du.data_workspace_write(
+        df=star, schema=star_schema, table=star_table, if_exists=if_exists
+    )
 
 
 if __name__ == "__main__":
