@@ -9,17 +9,18 @@ import json
 from os import path, makedirs
 
 """
-What does an abstract object need?
+What does ANY linker neeed?
 
-* Get cluster data method
-    * Amalgamate data from various dim tables
-* Get dim table method
-* Predict method
+* The left data: cluster data, pivoted wide, with fields to join
+    * Call cluster data method from Clusters
+* The right data: dim table data
+
+What does ONE linker need?
 
 """
 
 
-class ClusterToData(object):
+class Linker(object):
     def __init__(
         self,
         cluster: dict,
