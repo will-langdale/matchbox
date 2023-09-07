@@ -23,7 +23,7 @@ star:
 
 ## Make dimension tables
 dims:
-	$(PYTHON_INTERPRETER) src/data/dims.py
+	$(PYTHON_INTERPRETER) src/data/datasets.py
     
 ## Setup system ready for linking
 setup:
