@@ -18,8 +18,8 @@ class Clusters(object):
         * create(dim=None, overwrite): Drops all data and recreates the cluster
         table. If a dimension table is specified, adds each row as a new cluster
         * read(): Returns the cluster table
-        * add_clusters(lookup): Using a lookup table, adds new entries
-        to the cluster table
+        * add_clusters(probabilities): Using a probabilities table, adds new
+        entries to the cluster table
         * get_data(fields): returns the cluster table pivoted wide,
         with the requested fields attached
     """
@@ -84,19 +84,41 @@ class Clusters(object):
     def read(self):
         return du.dataset(self.schema_table)
 
+    def add_clusters(self, probabilities):
+        """
+        The core probabilities > clusters algorithm, as proposed in the
+        v0.2 output currently described in the README.
+
+        1. Order probabilities from high to low probability
+        2. Take the highest of each unique pair and add to cluster table
+        3. Remove all members of matched pairs from either side of
+        probabilities
+        4. Repeat 2-3 until lookup is empty
+
+        This algorithm should both work with one step in an additive
+        pattern, or a big group of matches made concurrently.
+
+        Instinctively, I think this should read the Postgres table but
+        perform the algorithm in memory. We'll see.
+        """
+        # TODO: implement once we've populated a probabilities table
+        pass
+
     def get_data(self, fields: list):
         """
-        Build the cluster table at point n in the 🐙blocktopus build process.
+        Wrangle clusters and associated dimension fields into an output
+        appropriate for the linker object to join a new dimension table onto.
+
+        Returns a temporary dimension table that can use information from
+        across the matched clusters so far to be the left "cluster" side of
+        the next step n of the 🐙blocktopus architecture.
 
         Arguments:
-            cluster_table: The location of the cluster table
             fields: The data to retrieve from the cluster's dimension tables
 
         Returns:
             A dataframe with one row per company entity, and one column per
             requested field
         """
-
-        data = None
-
-        return data
+        # TODO: implement as part of Linker class update
+        pass

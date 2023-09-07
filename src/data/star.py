@@ -1,5 +1,5 @@
 from src.data import utils as du
-from src.config import link_pipeline as link_pipeline_dict
+from src.config import link_pipeline
 
 import logging
 from dotenv import load_dotenv, find_dotenv
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
 
     star.create(
-        link_pipeline=link_pipeline_dict,
+        link_pipeline=link_pipeline,
         overwrite=True,
     )
 
