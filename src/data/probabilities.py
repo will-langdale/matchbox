@@ -75,6 +75,9 @@ class Probabilities(object):
                 * If probabilities doesn't contain columns cluster, table, id
                 and probability
                 * If probabilities doesn't contain values between 0 and 1
+
+        Returns:
+            The dataframe of probabilities that were added to the table.
         """
 
         in_cols = set(probabilities.columns.tolist())
@@ -103,3 +106,5 @@ class Probabilities(object):
         du.data_workspace_write(
             df=probabilities, schema=self.schema, table=self.table, if_exists="append"
         )
+
+        return probabilities

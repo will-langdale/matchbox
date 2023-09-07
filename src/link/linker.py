@@ -1,12 +1,11 @@
 from src.data import utils as du
 from src.link import model_utils as mu
-from src.locations import OUTPUTS_HOME
-from src.config import link_pipeline
 
-import mlflow
+# import mlflow
 import logging
-import json
-from os import path, makedirs
+
+# import json
+# from os import path, makedirs
 
 """
 What does ANY linker neeed?
@@ -41,56 +40,55 @@ What does ONE linker need?
 
 
 class Linker(object):
+    """
+    A class to build attributes and methods shared by all Linker subclasses.
+    Standardises:
+
+    * Retrieving the left table: cluster data
+    * Retrieving the right table: dimension data
+    * The structure of the core linking methods: prepare() and link()
+    * The output shape and location
+    * The evaluation and reporting methodology
+
+    Assumes a Linker subclass will be instantiated with:
+
+    * Dicts of settings that configure its process
+    * A single step in the link_pipeline in config.py
+
+    Parameters:
+        * dataset: An object of class Dataset
+        * probabilities: An object of class Probabilities
+        * clusters: An object of class Clusters
+        * n: The current step in the pipeline process
+
+    Methods:
+        * get_data(): retrieves the left and right tables: clusters
+        and dimensions
+        * prepare(): a method intended for linkers that need to clean data
+        and train model parameters. Can output None to be skipped
+        * link(): performs linking and returns a match table appropriate
+        for Probabilities
+        * evaluate(): runs prepare() and link() and returns a report of
+        their performance
+    """
+
     def __init__(
-        self,
-        cluster: dict,
-        table: dict,
-        settings: dict,
-        pipeline: dict,
+        self, dataset: object, probabilities: object, clusters: object, n: int
     ):
-        self.cluster_settings = cluster
-        self.table_settings = table
-        self.settings = settings
-        self.pipeline = pipeline
+        self.dataset = dataset
+        self.probabilities = probabilities
+        self.clusters = clusters
+        self.n = n
 
-        self.cluster = None  # TODO: Implement cluster retriever
-        self.cluster_alias = None  # TODO: Implement
-        self.cluster_select = None  # TODO: Implement
-
-        self.table = link_pipeline[table["name"]]
-        self.table_alias = du.clean_table_name(table["name"])
-        self.table_select = ", ".join(table["select"])
-
+        self.dim_raw = None
         self.cluster_raw = None
-        self.table_raw = None
 
-        self.cluster_proc_pipe = None  # TODO: Implement
-        self.table_proc_pipe = table["preproc"]
+        self.dim_processed = None
+        self.cluster_processed = None
 
-        self.cluster_proc = None
-        self.table_proc = None
-
-        self.linker = None
-
-        self.predictions = None
-
-    def get_data(self):
-        # self.cluster_raw = du.query(
-        #     f"""
-        #         select
-        #             {self.cluster_select}
-        #         from
-        #             {self.cluster['dim']};
-        #     """
-        # )
-        self.table_raw = du.query(
-            f"""
-                select
-                    {self.table_select}
-                from
-                    {self.table['dim']};
-            """
-        )
+    def get_data(self, dim_fields: list, fact_fields: list):
+        self.dim_raw = self.dataset.read_dim(dim_fields)
+        self.cluster_raw = self.clusters.get_data(fact_fields)
 
     def _run_pipeline(self, table_in, pipeline):
         """
@@ -135,240 +133,78 @@ class Linker(object):
             curr = pipeline[func]["function"](curr, **pipeline[func]["arguments"])
         return curr
 
-    def preprocess_data(self):
-        self.cluster_proc = self._run_pipeline(self.cluster_raw, self.cluster_proc_pipe)
-        self.table_proc = self._run_pipeline(self.table_raw, self.table_proc_pipe)
-
-    def predict(self):
-        raise NotImplementedError("method predict must be implemented")
-        # TODO: Force predict to return in the shape lookup needs
-
-    def generate_report(self, sample: int, predictions=None) -> dict:
+    def prepare(self):
         """
-        Generate a dict report that compares a prediction df
-        with the evaluation df for the pair. It contains:
+        An optional method for functions like data cleaning and linker training.
+        If you don't use it, must return False. If you do, must return True.
 
-            - The difference in match counts
-            - The count of matches that agree
-            - The count of matches that disagree
-            - A sample of agreeing matches
-            - A sample of disagreeing matches from the eval
-            - A sample of disagreeing matches from the predictions
+        Returns
+            Bool indicating whether code was run.
+        """
+        return False
 
-        Parameters:
-            Sample: The sample size of matches to spot check
-            Predictions: A dataframe output by the linker. If none,
-            will use predictions in self.prefictions
+    def link(self, log_output: bool = True):
+        """
+        Runs whatever linking logic the subclass implements. Must finish by
+        optionally calling Probabilities.add_probabilities(predictions), and then
+        returning those predictions.
+
+        Arguments:
+            * log_output: whether to log outputs to the probabilities table
+        """
+        raise NotImplementedError("method link() must be implemented")
+
+        predictions = None
+
+        if log_output:
+            self.probabilities.add_probabilities(predictions)
+
+        return predictions
+
+    def evaluate(self, log_mlflow: bool = False, log_output: bool = False) -> dict:
+        """
+        Runs the prepare() and link() functions, and records evaluations.
+
+        Arguments:
+            * log_mlflow: whether to use MLflow to log this run
+            * log_output: whether to log outputs to the probabilities table
 
         Returns:
-            A dict with the relevant metrics
-        """
-
-        if not predictions:
-            predictions = self.predictions
-
-        predictions = (
-            predictions.as_pandas_dataframe()
-            .sort_values(by=["match_probability"], ascending=False)
-            .drop_duplicates(subset=["id_l", "id_r"], keep="first")
-            .merge(
-                self.cluster_raw.add_suffix("_l"),
-                how="left",
-                left_on=["id_l"],
-                right_on=["id_l"],
-                suffixes=("", "_remove"),
-            )
-            .merge(
-                self.table_raw.add_suffix("_r"),
-                how="left",
-                left_on=["id_r"],
-                right_on=["id_r"],
-                suffixes=("", "_remove"),
-            )
-            .filter(regex="^((?!remove).)*$")
-        )
-
-        existing = (
-            du.dataset(self.pair["eval"])
-            .merge(
-                self.cluster_raw.add_suffix("_l"),
-                how="left",
-                left_on=["id_l"],
-                right_on=["id_l"],
-                suffixes=("", "_remove"),
-            )
-            .merge(
-                self.table_raw.add_suffix("_r"),
-                how="left",
-                left_on=["id_r"],
-                right_on=["id_r"],
-                suffixes=("", "_remove"),
-            )
-            .filter(regex="^((?!remove).)*$")
-        )
-
-        agree = predictions.merge(
-            existing, how="inner", on=["id_l", "id_r"], suffixes=("_pred", "_exist")
-        ).filter(regex="id|pred|exist|match_probability|score")
-
-        cols = agree.columns.tolist()
-        cols.insert(0, cols.pop(cols.index("score")))
-        cols.insert(0, cols.pop(cols.index("match_probability")))
-        cols.insert(0, cols.pop(cols.index("id_r")))
-        cols.insert(0, cols.pop(cols.index("id_l")))
-
-        agree = agree.reindex(columns=cols)
-
-        disagree = predictions.merge(
-            existing,
-            how="outer",
-            on=["id_l", "id_r"],
-            suffixes=("_pred", "_exist"),
-            indicator=True,
-        ).filter(regex="id|pred|exist|match_probability|score|_merge")
-
-        cols = disagree.columns.tolist()
-        cols.insert(0, cols.pop(cols.index("score")))
-        cols.insert(0, cols.pop(cols.index("match_probability")))
-        cols.insert(0, cols.pop(cols.index("id_r")))
-        cols.insert(0, cols.pop(cols.index("id_l")))
-
-        disagree = disagree.reindex(columns=cols)
-
-        prediction_only = (
-            disagree[(disagree._merge == "left_only")]
-            .drop("_merge", axis=1)
-            .filter(regex="^((?!_exist).)*$")
-            .filter(regex="^((?!score).)*$")
-            .sort_values(by=["match_probability"], ascending=False)
-        )
-        existing_only = (
-            disagree[(disagree._merge == "right_only")]
-            .drop("_merge", axis=1)
-            .filter(regex="^((?!_pred).)*$")
-            .filter(regex="^((?!match_probability).)*$")
-            .sort_values(by=["score"], ascending=False)
-        )
-
-        res = {
-            "eval_matches": existing.shape[0],
-            "pred_matches": predictions.shape[0],
-            "both_eval_and_pred": agree.shape[0],
-            "eval_only": existing_only.shape[0],
-            "pred_only": prediction_only.shape[0],
-            "both_eval_and_pred_sample": (
-                agree.sample(sample).to_dict(orient="records")
-            ),
-            "eval_only_sample": (
-                existing_only.sample(sample).to_dict(orient="records")
-            ),
-            "pred_only_sample": (
-                prediction_only.sample(sample).to_dict(orient="records")
-            ),
-        }
-
-        return res
-
-    def run_mlflow_experiment(self, run_name, description, **kwargs):
-        """
-        Runs the whole pipeline:
-
-        - Data acquisition
-        - Data cleaning
-        - Linker creation
-        - Linker training
-        - Evaluation
-
-        Logs the lot to MLflow.
-
-        Keyword arguments passed to the predict method.
+            A dict of analysis
         """
         logging.basicConfig(
             level=logging.INFO,
             format=du.LOG_FMT,
         )
         logger = logging.getLogger(__name__)
-        logger.info("Running pipeline as MLflow experiment")
 
-        with mu.mlflow_run(
-            run_name=run_name,
-            experiment_name=self.pair["experiment"],
-            description=description,
-            dev_mode=True,
-        ):
-            # Data processing
+        logger.info("Running pipeline")
 
-            logger.info("Acquiring raw data")
-            self.get_data()
+        if log_output:
+            logger.info("Logging outputs to the Probabilities table")
 
-            logger.info("Preprocessing data")
-            self.preprocess_data()
+        if log_mlflow:
+            logger.info("Logging as MLflow experiment")
+            with mu.mlflow_run(
+                # TODO: configure
+                # run_name=None,
+                # experiment_name=None,
+                # description=None,
+                dev_mode=True,
+            ):
+                logger.info("Running prepare() function")
+                self.prepare()
 
-            mlflow.log_param(
-                key="blocking_rules",
-                value=len(self.settings["blocking_rules_to_generate_predictions"]),
-            )
-            mlflow.log_param(key="comparisons", value=len(self.settings["comparisons"]))
-            mlflow.log_param(key="preprocessing_l", value=len(self.cluster_proc_pipe))
-            mlflow.log_param(key="preprocessing_r", value=len(self.table_proc_pipe))
+                logger.info("Running link() fnction")
+                self.link()
 
-            # Linker
+                # TODO: Artifacts and parameters
+                # for key, value in kwargs.items():
+                #     mlflow.log_param(key=key, value=value)
 
-            logger.info("Creating linker and running training pipeline")
-            self.create_linker()
-            self.train_linker()
-
-            outdir = path.join(OUTPUTS_HOME, self.pair["experiment"])
-            if not path.exists(outdir):
-                makedirs(outdir)
-
-            model_file_path = path.join(outdir, f"{self.pair['experiment']}.json")
-            self.linker.save_model_to_json(out_path=model_file_path, overwrite=True)
-            mlflow.log_artifact(model_file_path, "model")
-
-            pipeline_path = path.join(outdir, "pipeline.json")
-            # pipeline_json = json.dumps(self.pipeline, indent=4, cls=ComparisonEncoder)
-            pipeline_json = json.dumps(self.pipeline, indent=4)
-            # TODO: Fix
-            with open(pipeline_path, "w") as f:
-                f.write(pipeline_json)
-            mlflow.log_artifact(pipeline_path, "config")
-
-            preproc_l_path = path.join(outdir, f"{self.cluster_alias}_settings.json")
-            # preproc_l_json = json.dumps(
-            #     self.cluster_settings, indent=4, cls=ComparisonEncoder
-            # )
-            preproc_l_json = json.dumps(self.cluster_settings, indent=4)
-            # TODO: Fix
-            with open(preproc_l_path, "w") as f:
-                f.write(preproc_l_json)
-            mlflow.log_artifact(preproc_l_path, "config")
-
-            preproc_r_path = path.join(outdir, f"{self.table_alias}_settings.json")
-            # preproc_r_json = json.dumps(
-            #     self.table_settings, indent=4, cls=ComparisonEncoder
-            # )
-            preproc_r_json = json.dumps(self.table_settings, indent=4)
-            # TODO: Fix
-            with open(preproc_r_path, "w") as f:
-                f.write(preproc_r_json)
-            mlflow.log_artifact(preproc_r_path, "config")
-
-            # Outcome
-
-            logger.info("Generating predictions")
-            self.predict(**kwargs)
-
-            logger.info("Creating report")
-            report = self.generate_report(sample=10)
-
-            for key, value in kwargs.items():
-                mlflow.log_param(key=key, value=value)
-
-            mlflow.log_metric("eval_matches", report["eval_matches"])
-            mlflow.log_metric("pred_matches", report["pred_matches"])
-            mlflow.log_metric("both_eval_and_pred", report["both_eval_and_pred"])
-            mlflow.log_metric("eval_only", report["eval_only"])
-            mlflow.log_metric("pred_only", report["pred_only"])
+        else:
+            logger.info("Experiment not automatically logged")
+            # TODO: non ML-flow logic
+            pass
 
         logger.info("Done!")

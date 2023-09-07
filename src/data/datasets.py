@@ -102,11 +102,27 @@ class Dataset(object):
 
         du.query_nonreturn(sql)
 
-    def read_dim(self):
-        return du.dataset(self.dim_schema_table)
+    def read_dim(self, dim_fields: list = None):
+        fields = "*" if dim_fields is None else dim_fields
+        return du.query(
+            f"""
+            select
+                {fields}
+            from
+                {self.dim_schema_table};
+        """
+        )
 
-    def read_fact(self):
-        return du.dataset(self.fact_schema_table)
+    def read_fact(self, fact_fields: list = None):
+        fields = "*" if fact_fields is None else fact_fields
+        return du.query(
+            f"""
+            select
+                {fields}
+            from
+                {self.fact_schema_table};
+        """
+        )
 
 
 if __name__ == "__main__":
