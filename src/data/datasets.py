@@ -1,16 +1,20 @@
 from src.data import utils as du
-
-# from src.config import link_pipeline
+from src.data.star import Star
+from src.config import link_pipeline
 
 import logging
 from dotenv import load_dotenv, find_dotenv
 import os
 
 
-class Data(object):
+class Dataset(object):
     """
     A class to interact with fact and dimension tables in the company
     matching framework.
+
+    Parameters:
+        * star_id: the ID of the row in the STAR table
+        * star: a star object from which to populate key fields
 
     Attributes:
         * id: the key of the fact/dim row in the STAR table
@@ -22,23 +26,25 @@ class Data(object):
         * fact_schema_table: the data's dimention table full name
 
     Methods:
-        * create(dim=None, overwrite): Drops all data and recreates the
+        * create_dim(unique_fields, overwrite): Drops all data and recreates the
         dimension table using the unique fields specified
-        * read(): Returns the cluster table
-        * add_clusters(probabilities): Using a probabilities table, adds new
-        entries to the cluster table
-        * get_data(fields): returns the cluster table pivoted wide,
-        with the requested fields attached
+        * read_dim(): Returns the dimension table
+        * read_fact(): Returns the fact table
     """
 
     def __init__(self, star_id: int, star: object):
+        self.star = star
         self.id = star_id
-        self.dim_schema = None
-        self.dim_table = None
-        self.dim_schema_table = None
-        self.fact_schema = None
-        self.fact_table = None
-        self.fact_schema_table = None
+        self.dim_schema_table = star.get(star_id=self.id, response="dim")
+
+        self.dim_schema, self.dim_table = du.get_schema_table_names(
+            full_name=self.dim_schema_table, validate=True
+        )
+
+        self.fact_schema_table = star.get(star_id=self.id, response="fact")
+        self.fact_schema, self.fact_table = du.get_schema_table_names(
+            full_name=self.fact_schema_table, validate=True
+        )
 
     def create_dim(self, unique_fields: list, overwrite: bool):
         """
@@ -96,6 +102,12 @@ class Data(object):
 
         du.query_nonreturn(sql)
 
+    def read_dim(self):
+        return du.dataset(self.dim_schema_table)
+
+    def read_fact(self):
+        return du.dataset(self.fact_schema_table)
+
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -105,18 +117,23 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.info("Creating dim tables")
 
-    #     for table in link_pipeline:
-    #         if link_pipeline[table]["fact"] != link_pipeline[table]["dim"]:
-    #             dim_name = link_pipeline[table]["dim"]
-    #             logger.info(f"Creating {dim_name}")
+    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
 
-    #             dim_config = make_dim_table(
-    #                 unique_fields=link_pipeline[table]["key_fields"],
-    #                 fact_table=link_pipeline[table]["fact"],
-    #                 dim_table=dim_name,
-    #                 overwrite=True,
-    #             )
+    for table in link_pipeline:
+        if link_pipeline[table]["fact"] != link_pipeline[table]["dim"]:
+            star_id = star.get(
+                fact=link_pipeline[table]["fact"],
+                dim=link_pipeline[table]["dim"],
+                response="id",
+            )
+            data = Dataset(star_id=star_id, star=star)
 
-    #             logger.info(f"Written {dim_name}")
+            logger.info(f"Creating {data.dim_schema_table}")
+
+            data.create_dim(
+                unique_fields=link_pipeline[table]["key_fields"], overwrite=True
+            )
+
+            logger.info(f"Written {data.dim_schema_table}")
 
     logger.info("Finished")
