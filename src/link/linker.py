@@ -34,7 +34,7 @@ class Linker(object):
         * n: The current step in the pipeline process
 
     Methods:
-        * get_data(): retrieves the left and right tables: clusters
+        * get_data(dim_fields, ): retrieves the left and right tables: clusters
         and dimensions
         * prepare(): a method intended for linkers that need to clean data
         and train model parameters. Can output None to be skipped
@@ -52,19 +52,19 @@ class Linker(object):
         self.clusters = clusters
         self.n = n
 
-        self.dim_raw = None
         self.cluster_raw = None
+        self.dim_raw = None
 
-        self.dim_processed = None
         self.cluster_processed = None
+        self.dim_processed = None
 
         self.report_artefacts = {}
         self.report_parameters = {}
         self.report_metrics = {}
 
-    def get_data(self, dim_fields: list, fact_fields: list):
+    def get_data(self, cluster_fields: list, dim_fields: list):
+        self.cluster_raw = self.clusters.get_data(cluster_fields)
         self.dim_raw = self.dataset.read_dim(dim_fields)
-        self.cluster_raw = self.clusters.get_data(fact_fields)
 
     def _run_pipeline(self, table_in, pipeline):
         """
