@@ -24,24 +24,67 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 
 See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3589275785/Company+matching+v2.1+architecture+ideas) for the architecture we're implementing here, codename 🐙blocktopus.
 
-* `src/link/` will contain link class and individual link method classes
-* `src/pipeline/` will contain matches that link the cluster table on the left with a dim table on the right
-* Idea for process
-    * Some kind of `make setup` that sets up the system ready to link. Includes:
-        * `make star`, which writes/updates a `star` table where each row is the name of a fact table and dimension table, plus a pk
-        * `make dims`, which writes/updates the dim tables that are controlled by the framework
-    * `make links`, which uses `src/config.py` to run the whole pipeline step by step. Includes:
-        * Instantiating the initial `clusters` table
-        * Instantiate the `probabilities` table
-        * For each link in the chain
-            * Link cluster with table on right
-            * Update `probabilities` with output
-            * Update `clusters` with processed `probabilities`
-            * Log performance vs `validate`
-    * A function to turn `clusters` into a `lookup` for the end user
-    * A streamlit app to validate connections found in either `clusters` or `probabilities`
-        * A `validate` table that records user decisions
-        * A reporting page that shows various model performance against this
+### Structure notes
+
+* `src/data/` contains classes for read/writing from our key tables
+    * STAR (dim/fact lookup)
+    * Dataset (dim/fact combos)
+    * Probabilities (probability table)
+    * Clusters (cluster table)
+    * Validation (user validation table)
+* `src/link/` contains an abstract Linker class and individual linker method subclasses
+* `src/pipeline/` will contain matches that link the cluster table on the left with a dim table on the right, one script per link
+* `src/config.py` configures the whole thing
+* Not sure where entrypoint for a run is quite yet
+
+### Process notes and ideas
+
+* Some kind of `make setup` that sets up the system ready to link. Includes:
+    * `make star`, which writes/updates a `star` table where each row is the name of a fact table and dimension table, plus a pk
+    * `make dims`, which writes/updates the dim tables that are controlled by the framework
+* `make links`, which uses `src/config.py` to run the whole pipeline step by step. Includes:
+    * Instantiating the initial `clusters` table
+    * Instantiate the `probabilities` table
+    * For each link in the chain
+        * Link cluster with table on right
+        * Update `probabilities` with output
+        * Update `clusters` with processed `probabilities`
+        * Log performance vs `validate`
+* A function to turn `clusters` into a `lookup` for the end user
+* A streamlit app to validate connections found in either `clusters` or `probabilities`
+    * A `validate` table that records user decisions
+    * A reporting page that shows various model performance against this
+        
+### Linker notes
+
+What does ANY linker neeed?
+
+* The left data: cluster data, pivoted wide, with fields to join
+    * Call cluster data method from Clusters
+* The right data: dim table data
+    * Call dim retrieval method from Dataset
+* A prepare method. An optional bit for subclasses to fill in
+    * Should require dict parameterisation
+    * Preprocessing handled here, even if called from new methods
+    * Linker training handled here, even if called from new methods
+* A link method to output data. A bit subclasses MUST fill in
+    * Optional experiment parameter
+    * Ouput as df or direct to probabilities table?
+        * Add experiment to Probabilities table so we can compare outputs
+* An evaluate method
+    * With option to use MLFlow
+    * With option to output to Probabilities table
+    * Against a single experiment ID (MLflow or otherwise)
+        * Runs prepare
+        * Runs link
+        * Runs a standard report
+
+What does ONE linker need?
+
+* The above, but
+    * link method must contain more code
+    * prepare method might contain more code
+
 
 ## Output
 

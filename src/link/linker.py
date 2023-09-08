@@ -10,37 +10,6 @@ import io
 # import json
 # from os import path, makedirs
 
-"""
-What does ANY linker neeed?
-
-* The left data: cluster data, pivoted wide, with fields to join
-    * Call cluster data method from Clusters
-* The right data: dim table data
-    * Call dim retrieval method from Dataset
-* A prepare method. An optional bit for subclasses to fill in
-    * Should require dict parameterisation
-    * Preprocessing handled here, even if called from new methods
-    * Linker training handled here, even if called from new methods
-* A link method to output data. A bit subclasses MUST fill in
-    * Optional experiment parameter
-    * Ouput as df or direct to probabilities table?
-        * Add experiment to Probabilities table so we can compare outputs
-* An evaluate method
-    * With option to use MLFlow
-    * With option to output to Probabilities table
-    * Against a single experiment ID (MLflow or otherwise)
-        * Runs prepare
-        * Runs link
-        * Runs a standard report
-
-What does ONE linker need?
-
-* The above, but
-    * link method must contain more code
-    * prepare method might contain more code
-
-"""
-
 
 class Linker(object):
     """
