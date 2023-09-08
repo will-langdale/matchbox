@@ -1,8 +1,11 @@
 from src.data import utils as du
 from src.link import model_utils as mu
 
-# import mlflow
+import mlflow
 import logging
+
+# from pathlib import Path
+import io
 
 # import json
 # from os import path, makedirs
@@ -86,6 +89,10 @@ class Linker(object):
         self.dim_processed = None
         self.cluster_processed = None
 
+        self.report_artefacts = {}
+        self.report_parameters = {}
+        self.report_metrics = {}
+
     def get_data(self, dim_fields: list, fact_fields: list):
         self.dim_raw = self.dataset.read_dim(dim_fields)
         self.cluster_raw = self.clusters.get_data(fact_fields)
@@ -138,6 +145,15 @@ class Linker(object):
         An optional method for functions like data cleaning and linker training.
         If you don't use it, must return False. If you do, must return True.
 
+        During a run, use the _add_log_item(item_type='artefact') method to record
+        items you want evaluate() to save. Examples are plots, datasets or JSON
+        objects.
+
+        During a run, use the _add_log_item(item_type='parameter') method to record
+        method parameters you want evaluate() to save. Examples are the
+        Jaro-Winkler fuzzy matching value above which you consider something a
+        match.
+
         Returns
             Bool indicating whether code was run.
         """
@@ -148,6 +164,15 @@ class Linker(object):
         Runs whatever linking logic the subclass implements. Must finish by
         optionally calling Probabilities.add_probabilities(predictions), and then
         returning those predictions.
+
+        During a run, use the _add_log_item(item_type='artefact') method to record
+        items you want evaluate() to save. Examples are plots, datasets or JSON
+        objects.
+
+        During a run, use the _add_log_item(item_type='parameter') method to record
+        method parameters you want evaluate() to save. Examples are the
+        Jaro-Winkler fuzzy matching value above which you consider something a
+        match.
 
         Arguments:
             * log_output: whether to log outputs to the probabilities table
@@ -161,11 +186,81 @@ class Linker(object):
 
         return predictions
 
-    def evaluate(self, log_mlflow: bool = False, log_output: bool = False) -> dict:
+    def _add_log_item(
+        self,
+        name: str,
+        item: object,
+        item_type: str,
+        path: str = None,
+    ):
+        """
+        Adds an item to either the artefact, metric or parameter dictionary,
+        ready to be recorded as part of a report in evaluate(). When using
+        MLflow, this is attached to the run in the specified directory.
+
+        Subclasses should not use item_type='metric', as all matching methods
+        should be comparable.
+
+        Arguments:
+            name: the unique name the artifact will be keyed to
+            path: [Optional] if saving an artefact, the relative path you want it
+            saved in, including the name and file extension you want to use
+            item: the object you want to save. Requires:
+                * object, if item_type is 'artefact'
+                * string, if item_type is 'parameter'
+                * numeric, if item_type is 'metric'
+            item_type: the type of item you're saving. One of 'artefact',
+            'parameter' or 'metric'
+
+        Raises:
+            ValueError:
+                * if one of 'artefact', 'parameter' or 'metric' not passed to
+                item_type
+                * if path not set when item_type is 'artefact'
+            TypeError: if an unacceptable datatype is passed for the item_type
+        """
+        # TODO: prevent key duplication in same run, allow between runs
+
+        if item_type not in ["artefact", "parameter", "metric"]:
+            raise ValueError(
+                """
+                item_type must be one of 'artefact', 'parameter' or 'metric'
+            """
+            )
+
+        if item_type == "artefact":
+            if path is None:
+                raise ValueError(
+                    """
+                    If item_type is 'artefact', must specify path
+                """
+                )
+            self.report_artefacts[name] = {"path": path, "artefact": item}
+        elif item_type == "parameter":
+            if not isinstance(item, str):
+                raise TypeError("Parameters must be logged as strings")
+            self.report_parameters[name] = {"name": name, "value": item}
+        elif item_type == "metric":
+            if not isinstance(item, int):
+                raise TypeError("Metrics must be logged as strings")
+            self.report_metrics[name] = {"name": name, "value": item}
+
+    def evaluate(
+        self,
+        link_experiment: str,
+        evaluation_name: str,
+        evaluation_description: str,
+        log_mlflow: bool = False,
+        log_output: bool = False,
+    ) -> dict:
         """
         Runs the prepare() and link() functions, and records evaluations.
 
         Arguments:
+            * link_experiment: the experiment for the link, defined in config
+            * evaluation_name: the name of this specific evaluation run
+            * evaluation_description: a description of this specific
+            evaluation run
             * log_mlflow: whether to use MLflow to log this run
             * log_output: whether to log outputs to the probabilities table
 
@@ -186,10 +281,9 @@ class Linker(object):
         if log_mlflow:
             logger.info("Logging as MLflow experiment")
             with mu.mlflow_run(
-                # TODO: configure
-                # run_name=None,
-                # experiment_name=None,
-                # description=None,
+                experiment_name=link_experiment,
+                run_name=evaluation_name,
+                description=evaluation_description,
                 dev_mode=True,
             ):
                 logger.info("Running prepare() function")
@@ -198,13 +292,37 @@ class Linker(object):
                 logger.info("Running link() fnction")
                 self.link()
 
-                # TODO: Artifacts and parameters
-                # for key, value in kwargs.items():
-                #     mlflow.log_param(key=key, value=value)
+                # TODO: Evaluation method based on validation table
+                # Table not yet implemented
+
+                for artefact in self.report_parameters.keys():
+                    path = self.report_parameters[artefact]["path"]
+                    artefact = self.report_parameters[artefact]["artefact"]
+
+                    with io.BytesIO(artefact) as f:
+                        mlflow.log_artifact(local_dir=f.name, artifact_path=path)
+
+                for param in self.report_parameters.keys():
+                    mlflow.log_param(
+                        key=self.report_parameters[param]["name"],
+                        value=self.report_parameters[param]["value"],
+                    )
+
+                for metric in self.report_metrics.keys():
+                    mlflow.log_metric(
+                        key=self.report_parameters[metric]["name"],
+                        value=self.report_parameters[metric]["value"],
+                    )
+
+                # TODO: Make dict of outputs to return
 
         else:
             logger.info("Experiment not automatically logged")
-            # TODO: non ML-flow logic
+            # TODO: non ML-flow logic, potentially with dir to save to
+            # Use shutil to save objects to the path specifid
+            # https://docs.python.org/3/library/shutil.html
             pass
 
         logger.info("Done!")
+
+        return None
