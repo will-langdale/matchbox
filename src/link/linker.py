@@ -145,6 +145,9 @@ class Linker(object):
         An optional method for functions like data cleaning and linker training.
         If you don't use it, must return False. If you do, must return True.
 
+        All preprocessing should write the finalised data to self.dim_processed
+        and self.cluster_processed.
+
         During a run, use the _add_log_item(item_type='artefact') method to record
         items you want evaluate() to save. Examples are plots, datasets or JSON
         objects.
@@ -154,9 +157,16 @@ class Linker(object):
         Jaro-Winkler fuzzy matching value above which you consider something a
         match.
 
+        _run_pipeline() is provided as a method to run pipelines of data cleaning
+        using DuckDB and the functions in src/features.
+
         Returns
             Bool indicating whether code was run.
         """
+
+        self.dim_processed = self.dim_raw
+        self.cluster_processed = self.cluster_raw
+
         return False
 
     def link(self, log_output: bool = True):
@@ -164,6 +174,9 @@ class Linker(object):
         Runs whatever linking logic the subclass implements. Must finish by
         optionally calling Probabilities.add_probabilities(predictions), and then
         returning those predictions.
+
+        Link jobs should take self.dim_processed and self.cluster_processed as
+        their input.
 
         During a run, use the _add_log_item(item_type='artefact') method to record
         items you want evaluate() to save. Examples are plots, datasets or JSON
