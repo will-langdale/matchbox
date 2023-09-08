@@ -100,11 +100,17 @@ class Clusters(object):
 
         Instinctively, I think this should read the Postgres table but
         perform the algorithm in memory. We'll see.
+
+        Arguments:
+            dataset: an instantiated dataset object corresponding to the
+            dimension side of the linker job that produced probabilities
         """
         # TODO: implement once we've populated a probabilities table
+        # DO NOT FORGET: use probabilities.source to get the dim and add
+        # a new cluster for any rows that WEREN'T matched
         pass
 
-    def get_data(self, fields: list):
+    def get_data(self, select: dict, dim_only: bool = True, n: int = None):
         """
         Wrangle clusters and associated dimension fields into an output
         appropriate for the linker object to join a new dimension table onto.
@@ -114,11 +120,53 @@ class Clusters(object):
         the next step n of the 🐙blocktopus architecture.
 
         Arguments:
-            fields: The data to retrieve from the cluster's dimension tables
+            select: a dict where the key is a Postgres-quoted fact table, with
+            values a list of fields you want from that fact table. We use fact
+            table as all of these are on Data Workspace, and this will hopefully
+            make a really interpretable dict to pass
+            dim_only: force function to only return data from dimension tables.
+            Used to build the left side of a join, where retrieving from the
+            fact table would create duplication
+            n: (optional) the step at which to retrive values
+
+        Raises:
+            KeyError:
+                * If a requested field isn't in the dimension table and
+                dim_only is True
+                * If a requested field isn't in the fact or dimension table
 
         Returns:
             A dataframe with one row per company entity, and one column per
             requested field
         """
         # TODO: implement as part of Linker class update
+        # build left join clauses
+        # for table, fields in select.items()
+        # get id from STAR and create dataset object
+        # if dim_only is true
+        # check everything in fields is in the dim
+        # else
+        # check everything in fields is in the dim or fact
+        # use dataset obj to add to left join clause
+        # left_clause = """
+        #     left join companieshouse.companies t1 on
+        #         cl.id = t1.id
+        #         and cl.source = 1970
+        # """
+        # retrieve data from clusters, joining on
+        # sql = """
+        #     select
+        #         cl.cluster,
+        #         t1.company_name as companieshouse_companies_company_name,
+        #         t1.company_number as companieshouse_companies_company_number
+        #     from
+        #         "_user_eaf4fd9a"."cm_clusters" cl
+        #     left join
+        #         companieshouse.companies t1 on
+        #             cl.id = t1.id
+        #             and cl.source = 1970
+        #     where
+        #         cl.n < 2
+        #     limit 50;
+        # """
         pass

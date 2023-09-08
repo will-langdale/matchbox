@@ -102,8 +102,8 @@ class Dataset(object):
 
         du.query_nonreturn(sql)
 
-    def read_dim(self, dim_fields: list = None):
-        fields = "*" if dim_fields is None else dim_fields
+    def read_dim(self, dim_select: list = None):
+        fields = "*" if dim_select is None else dim_select
         return du.query(
             f"""
             select
@@ -113,8 +113,8 @@ class Dataset(object):
         """
         )
 
-    def read_fact(self, fact_fields: list = None):
-        fields = "*" if fact_fields is None else fact_fields
+    def read_fact(self, dim_select: list = None):
+        fields = "*" if dim_select is None else dim_select
         return du.query(
             f"""
             select

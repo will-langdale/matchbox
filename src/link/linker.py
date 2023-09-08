@@ -62,9 +62,9 @@ class Linker(object):
         self.report_parameters = {}
         self.report_metrics = {}
 
-    def get_data(self, cluster_fields: list, dim_fields: list):
-        self.cluster_raw = self.clusters.get_data(cluster_fields)
-        self.dim_raw = self.dataset.read_dim(dim_fields)
+    def get_data(self, cluster_select: dict, dim_select: list):
+        self.cluster_raw = self.clusters.get_data(cluster_select)
+        self.dim_raw = self.dataset.read_dim(dim_select)
 
     def _run_pipeline(self, table_in, pipeline):
         """

@@ -9,9 +9,9 @@ class Probabilities(object):
     retrieval of data in various shapes.
 
     Attributes:
-        * schema: the cluster table's schema name
-        * table: the cluster table's table name
-        * schema_table: the cluster table's full name
+        * schema: the probabilities table's schema name
+        * table: the probabilities table's table name
+        * schema_table: the probabilities table's full name
         * star: an object of class Star that wraps the star table
 
     Methods:

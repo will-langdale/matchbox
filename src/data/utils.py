@@ -307,6 +307,26 @@ def check_table_exists(table: str) -> bool:
         return exists
 
 
+def get_table_columns(table: str) -> list:
+    """
+    Returns a list containing the names of the table's columns.
+
+    Parameters:
+        table: any valid query string for Postgres. Would prefer a
+        schema to be included, but will attempt to check without
+
+    Returns:
+        list of column names
+    """
+
+    if check_table_exists(table):
+        sql = f"select * from {table} limit 0"
+        with sql_engine.connect() as connection:
+            res = connection.execute(sql_text(sql))
+
+        return res._metadata.keys
+
+
 def get_company_data(
     cols: str, dataset: str, where: str = "", sample: int = None, **kwargs
 ):

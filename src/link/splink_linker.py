@@ -4,6 +4,7 @@ from splink.duckdb.linker import DuckDBLinker
 from splink.comparison import Comparison
 
 import json
+import io
 
 
 class ComparisonEncoder(json.JSONEncoder):
@@ -85,6 +86,16 @@ class SplinkLinker(Linker):
             item=train_pipeline_json.encode(),
             item_type="artefact",
             path="config/train_pipeline.json",
+        )
+
+        model_json = io.BytesIO()
+        self.linker.save_model_to_json(out_path=model_json.name, overwrite=True)
+
+        super()._add_log_item(
+            name="model",
+            item=model_json.encode(),
+            item_type="artefact",
+            path="model/model.json",
         )
 
     def prepare(
