@@ -1,4 +1,4 @@
-from src.link.make_link import Linker
+from src.link.linker import Linker
 
 from splink.duckdb.linker import DuckDBLinker
 from splink.comparison import Comparison

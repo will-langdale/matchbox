@@ -149,6 +149,10 @@ class Clusters(object):
 
         select_items = []
         join_clauses = ""
+        if n is not None:
+            n_clause = f"where cl.n < {n}"
+        else:
+            n_clause = ""
 
         for i, (table, fields) in enumerate(select.items()):
             data = Dataset(
@@ -202,13 +206,12 @@ class Clusters(object):
             from
                 {self.schema_table} cl
             {join_clauses}
-            where
-                cl.n <= {n};
+            {n_clause};
         """
 
         result = du.query(sql)
 
-        if len(result) == 0:
+        if len(result.index) == 0:
             raise ValueError("Nothing returned. Something went wrong")
 
         return result
