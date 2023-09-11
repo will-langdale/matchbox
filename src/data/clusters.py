@@ -1,5 +1,10 @@
 from src.data import utils as du
+from src.data.datasets import Dataset
 import uuid
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("clusters")
 
 
 class Clusters(object):
@@ -135,38 +140,75 @@ class Clusters(object):
                 dim_only is True
                 * If a requested field isn't in the fact or dimension table
 
+            ValueError: if no data is returned
+
         Returns:
             A dataframe with one row per company entity, and one column per
             requested field
         """
-        # TODO: implement as part of Linker class update
-        # build left join clauses
-        # for table, fields in select.items()
-        # get id from STAR and create dataset object
-        # if dim_only is true
-        # check everything in fields is in the dim
-        # else
-        # check everything in fields is in the dim or fact
-        # use dataset obj to add to left join clause
-        # left_clause = """
-        #     left join companieshouse.companies t1 on
-        #         cl.id = t1.id
-        #         and cl.source = 1970
-        # """
-        # retrieve data from clusters, joining on
-        # sql = """
-        #     select
-        #         cl.cluster,
-        #         t1.company_name as companieshouse_companies_company_name,
-        #         t1.company_number as companieshouse_companies_company_number
-        #     from
-        #         "_user_eaf4fd9a"."cm_clusters" cl
-        #     left join
-        #         companieshouse.companies t1 on
-        #             cl.id = t1.id
-        #             and cl.source = 1970
-        #     where
-        #         cl.n < 2
-        #     limit 50;
-        # """
-        pass
+
+        select_items = []
+        join_clauses = ""
+
+        for i, (table, fields) in enumerate(select.items()):
+            data = Dataset(
+                star_id=self.star.get(fact=table, response="id"),
+                star=self.star,
+            )
+            if dim_only:
+                cols = set(data.get_cols("dim"))
+
+                if len(set(fields) - cols) > 0:
+                    raise KeyError(
+                        """
+                        Requested field not in dimension table and dim_only
+                        is True.
+                    """
+                    )
+
+                for field in fields:
+                    clean_name = f"{data.dim_table_clean}_{field}"
+                    select_items.append(f"t{i}.{field} as {clean_name}")
+
+                join_clauses += f"""
+                    left join {data.dim_schema_table} t{i} on
+                        cl.id = t{i}.id
+                        and cl.source = {data.id}
+                """
+            else:
+                cols = set(data.get_cols("fact"))
+
+                if len(set(fields) - cols) > 0:
+                    raise KeyError(
+                        """
+                        Requested field not in fact table.
+                    """
+                    )
+
+                for field in fields:
+                    clean_name = f"{data.fact_table_clean}_{field}"
+                    select_items.append(f"t{i}.{field} as {clean_name}")
+
+                join_clauses += f"""
+                    left join {data.fact_schema_table} t{i} on
+                        cl.id = t{i}.id
+                        and cl.source = {data.id}
+                """
+
+        sql = f"""
+            select
+                cl.cluster,
+                {', '.join(select_items)}
+            from
+                {self.schema_table} cl
+            {join_clauses}
+            where
+                cl.n <= {n};
+        """
+
+        result = du.query(sql)
+
+        if len(result) == 0:
+            raise ValueError("Nothing returned. Something went wrong")
+
+        return result

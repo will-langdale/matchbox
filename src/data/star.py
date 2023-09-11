@@ -153,6 +153,13 @@ class Star(object):
 
         results = filtered_star[response].values.tolist()
 
+        if len(results) != 1:
+            raise ValueError(
+                """
+               Nothing returned. Check the referenced table exists in STAR.
+            """
+            )
+
         return results[0]
 
 

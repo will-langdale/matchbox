@@ -324,7 +324,7 @@ def get_table_columns(table: str) -> list:
         with sql_engine.connect() as connection:
             res = connection.execute(sql_text(sql))
 
-        return res._metadata.keys
+        return list(res._metadata.keys)
 
 
 def get_company_data(
