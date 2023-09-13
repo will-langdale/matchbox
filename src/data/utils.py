@@ -420,3 +420,11 @@ def generate_dummy_df():
 
 def get_duckdb_connection(path=DEFAULT_DUCKDB_PATH.as_posix()):
     return duckdb.connect(database=path, read_only=False)
+
+
+def load_test_data(path):
+    prob = pd.read_csv(Path(path, "probabilities.csv"))
+    clus = pd.read_csv(Path(path, "clusters.csv"))
+    val = pd.read_csv(Path(path, "validate.csv"))
+
+    return prob, clus, val
