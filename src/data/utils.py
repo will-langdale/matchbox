@@ -307,6 +307,47 @@ def check_table_exists(table: str) -> bool:
         return exists
 
 
+def check_table_empty(table: str) -> bool:
+    """
+    Returns true if a table is empty.
+
+    Parameters:
+        table: any valid query string for Postgres. Would prefer a
+        schema to be included, but will attempt to check without
+
+    Raises:
+        ValueError: When a single answer can't be determined
+
+    Returns:
+        bool: whether or not the table is empty
+    """
+
+    schema, tablename = get_schema_table_names(table)
+
+    if schema is not None:
+        table = f"{schema}.{tablename}"
+    else:
+        table = tablename
+
+    sql = f"""
+        select
+            count(*)
+        from (
+            select
+                1
+            from
+                {table}
+            limit 1
+        ) as t;
+    """
+
+    with sql_engine.connect() as connection:
+        res = connection.execute(sql_text(sql))
+        val = res.fetchone()
+
+    return not bool(val[0])
+
+
 def get_table_columns(table: str) -> list:
     """
     Returns a list containing the names of the table's columns.
