@@ -179,7 +179,6 @@ class Clusters(object):
                     {prob} prob
                 where
                     prob.probability >= {threshold}
-                    and cluster != 0
                 order by
                     probability desc;
         """
