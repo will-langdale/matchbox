@@ -89,7 +89,9 @@ class Clusters(object):
     def read(self):
         return du.dataset(self.schema_table)
 
-    def add_clusters(self, probabilities):
+    def add_clusters(
+        self, probabilities: str, validate: str, n: int, threshold: float = 0.7
+    ):
         """
         The core probabilities > clusters algorithm, as proposed in the
         v0.2 output currently described in the README.
@@ -103,12 +105,10 @@ class Clusters(object):
         This algorithm should both work with one step in an additive
         pattern, or a big group of matches made concurrently.
 
-        Instinctively, I think this should read the Postgres table but
-        perform the algorithm in memory. We'll see.
-
         Arguments:
-            dataset: an instantiated dataset object corresponding to the
-            dimension side of the linker job that produced probabilities
+            probabilities: an object of class Probabilities
+            validate: an object of class Validate
+
         """
         # TODO: implement once we've populated a probabilities table
         # DO NOT FORGET: use probabilities.source to get the dim and add
