@@ -8,6 +8,7 @@ import glob
 from pathlib import Path
 import requests
 import duckdb
+import uuid
 
 import os
 from contextlib import closing
@@ -463,9 +464,21 @@ def get_duckdb_connection(path=DEFAULT_DUCKDB_PATH.as_posix()):
     return duckdb.connect(database=path, read_only=False)
 
 
-def load_test_data(path):
+def load_test_data(path, int_to_uuid: bool = False):
     prob = pd.read_csv(Path(path, "probabilities.csv"))
     clus = pd.read_csv(Path(path, "clusters.csv"))
     val = pd.read_csv(Path(path, "validate.csv"))
+
+    if int_to_uuid:
+
+        def int_to_uuid(x):
+            return uuid.UUID(int=x)
+
+        prob["uuid"] = prob["uuid"].apply(int_to_uuid)
+        prob["cluster"] = prob["cluster"].apply(int_to_uuid)
+        clus["uuid"] = clus["uuid"].apply(int_to_uuid)
+        clus["cluster"] = clus["cluster"].apply(int_to_uuid)
+        val["uuid"] = val["uuid"].apply(int_to_uuid)
+        val["cluster"] = val["cluster"].apply(int_to_uuid)
 
     return prob, clus, val

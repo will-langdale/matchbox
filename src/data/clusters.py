@@ -90,11 +90,19 @@ class Clusters(object):
         return du.dataset(self.schema_table)
 
     def add_clusters(
-        self, probabilities: str, validate: str, n: int, threshold: float = 0.7
+        self,
+        probabilities: object,
+        validation: object,
+        n: int,
+        threshold: float = 0.7,
+        add_unmatched_dims: bool = True,
     ):
         """
         The core probabilities > clusters algorithm, as proposed in the
         v0.2 output currently described in the README.
+
+        Reads from the supplied probabilities and validation objects. Writes
+        to the current clusters table.
 
         1. Order probabilities from high to low probability
         2. Take the highest of each unique pair and add to cluster table
@@ -107,13 +115,262 @@ class Clusters(object):
 
         Arguments:
             probabilities: an object of class Probabilities
-            validate: an object of class Validate
-
+            validation: an object of class Validation
+            n: the current step n of the link pipeline
+            threshold: the probability threshold above which we consider a match
+            valid for the current linking method
+            add_unmatched_dims: if True, adds unmatched rows in the dimension table
+            to the clusters table. Should always be True for a link pipeline -- False
+            is useful for testing
         """
-        # TODO: implement once we've populated a probabilities table
-        # DO NOT FORGET: use probabilities.source to get the dim and add
-        # a new cluster for any rows that WEREN'T matched
-        pass
+        prob = probabilities.schema_table
+        val = validation.schema_table
+        clus = self.schema_table
+        clusters_temp = "clusters_temp"
+        probabilities_temp = "probabilities_temp"
+        to_insert_temp = "to_insert_temp"
+
+        # Create a temporary clusters table to work with until the algorithm has
+        # finished, for safety
+        du.query_nonreturn(
+            f"""
+            drop table if exists {clusters_temp};
+            create temporary table {clusters_temp} as
+                select
+                    uuid,
+                    cluster,
+                    id,
+                    source,
+                    n
+                from
+                    {clus}
+                union
+                select
+                    gen_random_uuid() as uuid,
+                    cluster,
+                    id,
+                    source,
+                    {n} as n
+                from
+                    {val}
+                where
+                    source in (
+                        select
+                            source
+                        from
+                            {prob}
+                    );
+        """
+        )
+
+        # Create a temporary probabilities table so we can delete stuff safely
+        du.query_nonreturn(
+            f"""
+            drop table if exists {probabilities_temp};
+            create temporary table {probabilities_temp} as
+                select
+                    uuid,
+                    link_type,
+                    cluster,
+                    id,
+                    source,
+                    probability
+                from
+                    {prob} prob
+                where
+                    prob.probability >= {threshold}
+                    and cluster != 0
+                order by
+                    probability desc;
+        """
+        )
+
+        # Find what we need to insert by comparing clusters_temp and probabilities_temp
+        # Insert it into clusters_temp
+        # Delete it from probabilities_temp
+        # Keep going until there's nothing to find
+        data_to_insert = True
+        while data_to_insert:
+            du.query_nonreturn(
+                f"""
+                drop table if exists {to_insert_temp};
+                create temporary table {to_insert_temp} as
+                    select
+                        distinct on (id_rank.id, id_rank.source)
+                        gen_random_uuid() as uuid,
+                        id_rank.cluster,
+                        id_rank.id,
+                        id_rank.source,
+                        {n} as n
+                    from (
+                        select
+                            distinct on (clus_rank.cluster, clus_rank.source)
+                            clus_rank.*,
+                            rank() over (
+                                partition by
+                                    clus_rank.id,
+                                    clus_rank.source
+                                order by
+                                    clus_rank.probability desc
+                            ) as id_rank
+                        from (
+                            select
+                                prob.*,
+                                rank() over(
+                                    partition by
+                                        prob.cluster,
+                                        prob.source
+                                    order by
+                                        prob.probability desc
+                                ) as clus_rank
+                            from
+                                {probabilities_temp} prob
+                        ) clus_rank
+                        where
+                            clus_rank.clus_rank = 1
+                            and (
+                                not exists (
+                                    select
+                                        id,
+                                        source
+                                    from
+                                        {clusters_temp} clus
+                                    where
+                                        clus.id = clus_rank.id
+                                        and clus.source = clus_rank.source
+                                )
+                                or not exists (
+                                    select
+                                        cluster,
+                                        source
+                                    from
+                                        {clusters_temp} clus
+                                    where
+                                        clus.cluster = clus_rank.cluster
+                                        and clus.source = clus_rank.source
+                                )
+                            )
+                        order by
+                            clus_rank.cluster,
+                            clus_rank.source
+                    ) id_rank
+                    where
+                        id_rank.id_rank = 1
+                    order by
+                        id_rank.id,
+                        id_rank.source;
+            """
+            )
+
+            if du.check_table_empty(f"{to_insert_temp}"):
+                data_to_insert = False
+                break
+
+            du.query_nonreturn(
+                f"""
+                insert into {clusters_temp}
+                select
+                    uuid,
+                    cluster,
+                    id,
+                    source,
+                    n
+                from
+                    {to_insert_temp};
+            """
+            )
+
+            du.query_nonreturn(
+                f"""
+                delete from {probabilities_temp} prob_temp
+                where exists (
+                    select
+                        cl.cluster,
+                        cl.id,
+                        cl.source
+                    from
+                        {to_insert_temp} cl
+                    where
+                        (
+                            cl.id = prob_temp.id
+                            and cl.source = prob_temp.source
+                        )
+                        or (
+                            cl.cluster = prob_temp.cluster
+                            and cl.source = prob_temp.source
+                        )
+                );
+            """
+            )
+
+        # Add new items to clusters from temp where the cluster match UUID is new
+
+        du.query_nonreturn(
+            f"""
+            insert into {clus}
+            select
+                uuid,
+                cluster,
+                id,
+                source,
+                n
+            from
+                {clusters_temp} ct
+            where not exists (
+                select
+                    uuid,
+                    cluster,
+                    id,
+                    source,
+                    n
+                from
+                    {clus} c
+                where
+                    c.uuid = ct.uuid
+            );
+        """
+        )
+
+        # Tidy up
+
+        du.query_nonreturn(
+            f"""
+            drop table if exists {clusters_temp};
+            drop table if exists {probabilities_temp};
+            drop table if exists {to_insert_temp};
+        """
+        )
+
+        if add_unmatched_dims:
+            # Add a new cluster for any rows that weren't matched in the dim tables
+            for table in probabilities.get_sources():
+                dataset = Dataset(
+                    star_id=table,
+                    star=self.star,
+                )
+                du.query_nonreturn(
+                    f"""
+                    insert into {clus}
+                    select
+                        gen_random_uuid() as uuid,
+                        gen_random_uuid() as cluster,
+                        id,
+                        {table} as source,
+                        {n} as n
+                    from
+                        {dataset.dim_schema_table} dim
+                    where not exists (
+                        select
+                            id,
+                            source
+                        from
+                            {clus} c
+                        where
+                            c.id = dim.id
+                            and c.source = dim.source
+                    );
+                """
+                )
 
     def get_data(self, select: dict, dim_only: bool = True, n: int = None):
         """
