@@ -64,8 +64,17 @@ class Probabilities(object):
     def get_sources(self) -> list:
         """
         Returns a list of the sources currently present in the probabilities table.
+
+        Raises:
+            KeyError: if table currently contains no sources
+
+        Returns:
+            A list of source ints, as appear in the star table
         """
         sources = du.query(f"select distinct source from {self.schema_table}")
+
+        if len(sources.index) == 0:
+            raise KeyError("Probabilities table currently contains no sources")
 
         return sources["source"].tolist()
 
