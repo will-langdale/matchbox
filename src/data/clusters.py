@@ -389,7 +389,8 @@ class Clusters(object):
             select: a dict where the key is a Postgres-quoted fact table, with
             values a list of fields you want from that fact table. We use fact
             table as all of these are on Data Workspace, and this will hopefully
-            make a really interpretable dict to pass
+            make a really interpretable dict to pass. Supposes "as" aliasing to
+            allow control of name clashing between datasets
             dim_only: force function to only return data from dimension tables.
             Used to build the left side of a join, where retrieving from the
             fact table would create duplication
@@ -420,10 +421,12 @@ class Clusters(object):
                 star_id=self.star.get(fact=table, response="id"),
                 star=self.star,
             )
+            fields_unaliased = {field.split(" as ")[0] for field in fields}
+
             if dim_only:
                 cols = set(data.get_cols("dim"))
 
-                if len(set(fields) - cols) > 0:
+                if len(fields_unaliased - cols) > 0:
                     raise KeyError(
                         """
                         Requested field not in dimension table and dim_only
@@ -432,8 +435,7 @@ class Clusters(object):
                     )
 
                 for field in fields:
-                    clean_name = f"{data.dim_table_clean}_{field}"
-                    select_items.append(f"t{i}.{field} as {clean_name}")
+                    select_items.append(f"t{i}.{field}")
 
                 join_clauses += f"""
                     left join {data.dim_schema_table} t{i} on
@@ -443,7 +445,7 @@ class Clusters(object):
             else:
                 cols = set(data.get_cols("fact"))
 
-                if len(set(fields) - cols) > 0:
+                if len(set(fields_unaliased) - cols) > 0:
                     raise KeyError(
                         """
                         Requested field not in fact table.
@@ -451,8 +453,7 @@ class Clusters(object):
                     )
 
                 for field in fields:
-                    clean_name = f"{data.fact_table_clean}_{field}"
-                    select_items.append(f"t{i}.{field} as {clean_name}")
+                    select_items.append(f"t{i}.{field}")
 
                 join_clauses += f"""
                     left join {data.fact_schema_table} t{i} on
