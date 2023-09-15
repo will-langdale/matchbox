@@ -30,21 +30,24 @@ class Dataset(object):
         dimension table using the unique fields specified
         * read_dim(): Returns the dimension table
         * read_fact(): Returns the fact table
+        * get_cols(table): Gets the table column names
     """
 
     def __init__(self, star_id: int, star: object):
         self.star = star
         self.id = star_id
-        self.dim_schema_table = star.get(star_id=self.id, response="dim")
 
+        self.dim_schema_table = star.get(star_id=self.id, response="dim")
         self.dim_schema, self.dim_table = du.get_schema_table_names(
             full_name=self.dim_schema_table, validate=True
         )
+        self.dim_table_clean = du.clean_table_name(self.dim_schema_table)
 
         self.fact_schema_table = star.get(star_id=self.id, response="fact")
         self.fact_schema, self.fact_table = du.get_schema_table_names(
             full_name=self.fact_schema_table, validate=True
         )
+        self.fact_table_clean = du.clean_table_name(self.fact_schema_table)
 
     def create_dim(self, unique_fields: list, overwrite: bool):
         """
@@ -102,11 +105,50 @@ class Dataset(object):
 
         du.query_nonreturn(sql)
 
-    def read_dim(self):
-        return du.dataset(self.dim_schema_table)
+    def read_dim(self, dim_select: list = None):
+        fields = "*" if dim_select is None else " ,".join(dim_select)
+        return du.query(
+            f"""
+            select
+                {fields}
+            from
+                {self.dim_schema_table};
+        """
+        )
 
-    def read_fact(self):
-        return du.dataset(self.fact_schema_table)
+    def read_fact(self, fact_select: list = None):
+        fields = "*" if fact_select is None else " ,".join(fact_select)
+        return du.query(
+            f"""
+            select
+                {fields}
+            from
+                {self.fact_schema_table};
+        """
+        )
+
+    def get_cols(self, table: str) -> list:
+        """
+        Returns te columns of either the fact or dimension table.
+
+        Arguments:
+            table: one of 'fact' or 'dim'
+
+        Raises:
+            ValueError: if table not one of 'fact' or 'dim'
+
+        Returns:
+            A list of columns
+        """
+
+        if table == "fact":
+            out = du.get_table_columns(self.fact_schema_table)
+        elif table == "dim":
+            out = du.get_table_columns(self.dim_schema_table)
+        else:
+            raise ValueError("Table much be one of 'fact' or 'dim'")
+
+        return out
 
 
 if __name__ == "__main__":

@@ -9,9 +9,9 @@ class Probabilities(object):
     retrieval of data in various shapes.
 
     Attributes:
-        * schema: the cluster table's schema name
-        * table: the cluster table's table name
-        * schema_table: the cluster table's full name
+        * schema: the probabilities table's schema name
+        * table: the probabilities table's table name
+        * schema_table: the probabilities table's full name
         * star: an object of class Star that wraps the star table
 
     Methods:
@@ -61,6 +61,14 @@ class Probabilities(object):
     def read(self):
         return du.dataset(self.schema_table)
 
+    def get_sources(self) -> list:
+        """
+        Returns a list of the sources currently present in the probabilities table.
+        """
+        sources = du.query(f"select distinct source from {self.schema_table}")
+
+        return sources["source"].tolist()
+
     def add_probabilities(self, probabilities):
         """
         Takes an output from Linker.predict() and adds it to the probabilities
@@ -68,18 +76,21 @@ class Probabilities(object):
 
         Arguments:
             probabilities: A data frame produced by Linker.predict(). Should
-            contain columns cluster, table, id and probability.
+            contain columns cluster, table, id, source and probability.
 
         Raises:
             ValueError:
                 * If probabilities doesn't contain columns cluster, table, id
-                and probability
+                source and probability
                 * If probabilities doesn't contain values between 0 and 1
+
+        Returns:
+            The dataframe of probabilities that were added to the table.
         """
 
         in_cols = set(probabilities.columns.tolist())
-        check_cols = {"cluster", "table", "id", "probability"}
-        if in_cols != check_cols:
+        check_cols = {"cluster", "table", "id", "probability", "source"}
+        if len(in_cols - check_cols) != 0:
             raise ValueError(
                 """
                 Linker.predict() has not produced outputs in an appropriate
@@ -103,3 +114,5 @@ class Probabilities(object):
         du.data_workspace_write(
             df=probabilities, schema=self.schema, table=self.table, if_exists="append"
         )
+
+        return probabilities
