@@ -1,4 +1,6 @@
 from src.data import utils as du
+from src.data.star import Star
+
 import uuid
 
 
@@ -22,7 +24,7 @@ class Probabilities(object):
         table
     """
 
-    def __init__(self, schema: str, table: str, star: object):
+    def __init__(self, schema: str, table: str, star: Star):
         self.schema = schema
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'
@@ -64,8 +66,17 @@ class Probabilities(object):
     def get_sources(self) -> list:
         """
         Returns a list of the sources currently present in the probabilities table.
+
+        Raises:
+            KeyError: if table currently contains no sources
+
+        Returns:
+            A list of source ints, as appear in the star table
         """
         sources = du.query(f"select distinct source from {self.schema_table}")
+
+        if len(sources.index) == 0:
+            raise KeyError("Probabilities table currently contains no sources")
 
         return sources["source"].tolist()
 

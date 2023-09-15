@@ -61,9 +61,10 @@ def validate_against_answer(my_cluster, validated_cluster, n_type="par"):
 tests = [
     "unambig_t2_e4",
     "unambig_t3_e2",
-    "masked_t3_e3",
+    "masked_t3_e2",
     "val_masked_t3_e2",
     "val_unambig_t3_e2",
+    "tied_t3_e2",
 ]
 
 
