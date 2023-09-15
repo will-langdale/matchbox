@@ -1,7 +1,7 @@
-.PHONY: check clear data dims evals train predict clean environment install_git_hooks requirements precommit test
+.PHONY: check clear data dims validation setup evals train predict clean environment install_git_hooks requirements precommit test
 
 #################################################################################
-# GLOBALS                                                                       #
+# GLOBALS																	   #
 #################################################################################
 
 PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
@@ -14,7 +14,7 @@ PYTHON_INTERPRETER = python
 NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 #################################################################################
-# COMMANDS                                                                      #
+# COMMANDS																	  #
 #################################################################################
 
 ## Make STAR table
@@ -24,11 +24,16 @@ star:
 ## Make dimension tables
 dims:
 	$(PYTHON_INTERPRETER) src/data/datasets.py
-    
+
+## Make validation table
+validation:
+	$(PYTHON_INTERPRETER) src/data/validation.py
+
 ## Setup system ready for linking
 setup:
 	make star
 	make dims
+	make validation
 
 ## Make evaluation tables for existing matching service
 evals:
@@ -107,7 +112,7 @@ test:
 
 
 #################################################################################
-# Self Documenting Commands                                                     #
+# Self Documenting Commands													 #
 #################################################################################
 
 .DEFAULT_GOAL := help

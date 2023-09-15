@@ -8,6 +8,7 @@ import glob
 from pathlib import Path
 import requests
 import duckdb
+import uuid
 
 import os
 from contextlib import closing
@@ -307,6 +308,67 @@ def check_table_exists(table: str) -> bool:
         return exists
 
 
+def check_table_empty(table: str) -> bool:
+    """
+    Returns true if a table is empty.
+
+    Parameters:
+        table: any valid query string for Postgres. Would prefer a
+        schema to be included, but will attempt to check without
+
+    Raises:
+        ValueError: When a single answer can't be determined
+
+    Returns:
+        bool: whether or not the table is empty
+    """
+
+    schema, tablename = get_schema_table_names(table)
+
+    if schema is not None:
+        table = f"{schema}.{tablename}"
+    else:
+        table = tablename
+
+    sql = f"""
+        select
+            count(*)
+        from (
+            select
+                1
+            from
+                {table}
+            limit 1
+        ) as t;
+    """
+
+    with sql_engine.connect() as connection:
+        res = connection.execute(sql_text(sql))
+        val = res.fetchone()
+
+    return not bool(val[0])
+
+
+def get_table_columns(table: str) -> list:
+    """
+    Returns a list containing the names of the table's columns.
+
+    Parameters:
+        table: any valid query string for Postgres. Would prefer a
+        schema to be included, but will attempt to check without
+
+    Returns:
+        list of column names
+    """
+
+    if check_table_exists(table):
+        sql = f"select * from {table} limit 0"
+        with sql_engine.connect() as connection:
+            res = connection.execute(sql_text(sql))
+
+        return list(res._metadata.keys)
+
+
 def get_company_data(
     cols: str, dataset: str, where: str = "", sample: int = None, **kwargs
 ):
@@ -400,3 +462,23 @@ def generate_dummy_df():
 
 def get_duckdb_connection(path=DEFAULT_DUCKDB_PATH.as_posix()):
     return duckdb.connect(database=path, read_only=False)
+
+
+def load_test_data(path, int_to_uuid: bool = False):
+    prob = pd.read_csv(Path(path, "probabilities.csv"))
+    clus = pd.read_csv(Path(path, "clusters.csv"))
+    val = pd.read_csv(Path(path, "validate.csv"))
+
+    if int_to_uuid:
+
+        def int_to_uuid(x):
+            return uuid.UUID(int=x)
+
+        prob["uuid"] = prob["uuid"].apply(int_to_uuid)
+        prob["cluster"] = prob["cluster"].apply(int_to_uuid)
+        clus["uuid"] = clus["uuid"].apply(int_to_uuid)
+        clus["cluster"] = clus["cluster"].apply(int_to_uuid)
+        val["uuid"] = val["uuid"].apply(int_to_uuid)
+        val["cluster"] = val["cluster"].apply(int_to_uuid)
+
+    return prob, clus, val
