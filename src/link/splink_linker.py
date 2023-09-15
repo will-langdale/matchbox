@@ -75,7 +75,7 @@ class SplinkLinker(Linker):
         """
         for func in train_pipeline.keys():
             proc_func = getattr(self.linker, train_pipeline[func]["function"])
-            proc_func(**self.pipeline[func]["arguments"])
+            proc_func(**train_pipeline[func]["arguments"])
 
         train_pipeline_json = json.dumps(
             train_pipeline, indent=4, cls=ComparisonEncoder
