@@ -1,4 +1,6 @@
 from src.data import utils as du
+from src.data.star import Star
+
 import uuid
 
 
@@ -22,7 +24,7 @@ class Probabilities(object):
         table
     """
 
-    def __init__(self, schema: str, table: str, star: object):
+    def __init__(self, schema: str, table: str, star: Star):
         self.schema = schema
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'

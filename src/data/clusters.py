@@ -1,5 +1,9 @@
 from src.data import utils as du
 from src.data.datasets import Dataset
+from src.data.probabilities import Probabilities
+from src.data.validation import Validation
+from src.data.star import Star
+
 import uuid
 import logging
 
@@ -29,7 +33,7 @@ class Clusters(object):
         with the requested fields attached
     """
 
-    def __init__(self, schema: str, table: str, star: object):
+    def __init__(self, schema: str, table: str, star: Star):
         self.schema = schema
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'
@@ -91,8 +95,8 @@ class Clusters(object):
 
     def add_clusters(
         self,
-        probabilities: object,
-        validation: object,
+        probabilities: Probabilities,
+        validation: Validation,
         n: int,
         threshold: float = 0.7,
         add_unmatched_dims: bool = True,
@@ -106,6 +110,7 @@ class Clusters(object):
 
         1. Order probabilities from high to low probability
         2. Take the highest of each unique pair and add to cluster table
+            a. On a tie, takes the lowest ID as an arbitrary tiebreaker
         3. Remove all members of matched pairs from either side of
         probabilities
         4. Repeat 2-3 until lookup is empty

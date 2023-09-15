@@ -33,7 +33,7 @@ class Dataset(object):
         * get_cols(table): Gets the table column names
     """
 
-    def __init__(self, star_id: int, star: object):
+    def __init__(self, star_id: int, star: Star):
         self.star = star
         self.id = star_id
 
