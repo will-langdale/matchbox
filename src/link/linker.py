@@ -1,5 +1,8 @@
 from src.data import utils as du
 from src.link import model_utils as mu
+from src.data.datasets import Dataset
+from src.data.probabilities import Probabilities
+from src.data.clusters import Clusters
 
 import mlflow
 import logging
@@ -48,7 +51,7 @@ class Linker(object):
     """
 
     def __init__(
-        self, dataset: object, probabilities: object, clusters: object, n: int
+        self, dataset: Dataset, probabilities: Probabilities, clusters: Clusters, n: int
     ):
         self.dataset = dataset
         self.probabilities = probabilities

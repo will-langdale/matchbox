@@ -1,4 +1,8 @@
 from src.link.linker import Linker
+from src.data import utils as du
+from src.data.datasets import Dataset
+from src.data.probabilities import Probabilities
+from src.data.clusters import Clusters
 
 from splink.duckdb.linker import DuckDBLinker
 from splink.comparison import Comparison
@@ -27,6 +31,8 @@ class SplinkLinker(Linker):
         * probabilities: An object of class Probabilities
         * clusters: An object of class Clusters
         * n: The current step in the pipeline process
+        * db_path: [Optional] If writing to disk, the location to use
+        for duckDB
 
     Methods:
         * get_data(): retrieves the left and right tables: clusters
@@ -43,11 +49,29 @@ class SplinkLinker(Linker):
     """
 
     def __init__(
-        self, dataset: object, probabilities: object, clusters: object, n: int
+        self,
+        dataset: Dataset,
+        probabilities: Probabilities,
+        clusters: Clusters,
+        n: int,
+        db_path: str = ":memory:",
     ):
         super().__init__(dataset, probabilities, clusters, n)
 
         self.linker = None
+        self.db_path = db_path
+        self.con = du.get_duckdb_connection(path=self.db_path)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Don't pickle connection
+        del state["con"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Add connection back when loading pickle
+        self.con = du.get_duckdb_connection(path=self.db_path)
 
     def _clean_data(self, cluster_pipeline: dict, dim_pipeline: dict):
         self.cluster_processed = super()._run_pipeline(
@@ -55,11 +79,12 @@ class SplinkLinker(Linker):
         )
         self.dim_processed = super()._run_pipeline(self.dim_raw, dim_pipeline)
 
-    def _create_linker(self, linker_settings: dict):
+    def _create_linker(self, linker_settings: dict, n: int):
         self.linker = DuckDBLinker(
             input_table_or_tables=[self.cluster_processed, self.dim_processed],
+            input_table_aliases=[str(n), str(self.dataset.id)],
+            connection=self.con,
             settings_dict=linker_settings,
-            input_table_aliases=[0, self.dataset.id],
         )
 
     def _train_linker(self, train_pipeline: dict):
