@@ -156,11 +156,11 @@ def clean_company_name(input_column):
     """
 
 
-def array_except(input_col_name, terms_to_remove_col_name):
+def array_except(input_col_name, terms_to_remove):
     return rf"""
-    ARRAY_FILTER(
+    array_filter(
         {input_col_name},
-        x -> NOT ARRAY_CONTAINS({terms_to_remove_col_name}, x)
+        x -> not array_contains({terms_to_remove}, x)
     )
     """
 
