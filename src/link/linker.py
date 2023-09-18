@@ -4,7 +4,8 @@ from src.link import model_utils as mu
 import mlflow
 import logging
 
-# from pathlib import Path
+from pathlib import Path
+import pickle
 import io
 
 # import json
@@ -34,14 +35,16 @@ class Linker(object):
         * n: The current step in the pipeline process
 
     Methods:
-        * get_data(dim_fields, ): retrieves the left and right tables: clusters
-        and dimensions
+        * get_data(cluster_select, dim_select): retrieves the left and right
+        tables: clusters and dimensions
         * prepare(): a method intended for linkers that need to clean data
         and train model parameters. Can output None to be skipped
         * link(): performs linking and returns a match table appropriate
         for Probabilities
         * evaluate(): runs prepare() and link() and returns a report of
         their performance
+        * save(path): saves the linker object to a file as a pickle
+        * load(path): loads an instance of a Linker class from a pickle file
     """
 
     def __init__(
@@ -308,3 +311,45 @@ class Linker(object):
         logger.info("Done!")
 
         return None
+
+    def save(self, path: str):
+        """
+        Saves the pickled linker object to a file.
+
+        Arguments:
+            path: a valid pathlike string ending with ".pickle"
+
+        Raises:
+            ValueError: if path doesn't end ".pickle"
+        """
+
+        to_write = Path(path)
+
+        if to_write.suffix != ".pickle":
+            raise ValueError("Path must end '.pickle'")
+
+        with open(to_write, "wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load(cls, path: str):
+        """
+        Loads a pickled linker object from a file.
+
+        Arguments:
+            path: a valid pathlike string ending with ".pickle"
+
+        Raises:
+            ValueError: if path doesn't end ".pickle"
+
+        Returns:
+            An instance of Linker or its subclasses
+        """
+
+        to_read = Path(path)
+
+        if to_read.suffix != ".pickle":
+            raise ValueError("Path must end '.pickle'")
+
+        with open(to_read, "rb") as f:
+            return pickle.load(f)
