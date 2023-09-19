@@ -39,6 +39,16 @@ make setup
 
 The matching methodology is often shorthanded as 🔌hybrid additive. This is because there are a core set of tables that are matched additively, one after the other, each using information from all the tables before it. After this, tables can be plugged into this additive core in any order, even in parallel.
 
+<div class="panel panel-info">
+**Facts and dimensions**
+{: .panel-heading}
+<div class="panel-body">
+
+A dimension table contains one row only for each company entity. An example is Companies House. Contrast with a fact table, like HMRC Exporters, where the same company may appear hundreds of times.
+
+</div>
+</div>
+
 To implement this, there are three foundational ideas:
 
 1. Every dataset we're matching must be a dimension table
@@ -76,11 +86,11 @@ The clusters table contains the probabilities and validation tables resolved int
 Broadly, the repo contains two kinds of classes:
 
 * Data classes are wrappers for tables in the database. They contains read/write functions that safeguard the shape of data moving in and out. These are:
-    * Star
-    * Datasets (wraps both fact and dimension tables)
-    * Probabilities
-    * Validation
-    * Clusters
+    * Star -- a singleton class that wraps the star table
+    * Probabilities -- a singleton class that wraps the probabilities table
+    * Validation -- a singleton class that wraps the validation table
+    * Clusters -- a singleton class that wraps the clusters table
+    * Datasets -- a class with one instance per fact and dimension table combination, providing access to both
 * Linker classes define the methodology for a particular link type, such as deterministic or probabilistic links. The parent contains standard functions all Linker subclasses will need
     * Linker subclasses must implement a `prepare()` and `link()` method. In the final prototype we aim to supply:
         * SplinkLinker, for probabilistic linking
