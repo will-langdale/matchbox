@@ -1,3 +1,4 @@
+{::options parse_block_html="true" /}
 # 🔗 Company matching framework
 
 A match orchestration framework to allow the comparison, validation, and orchestration of the best match methods for the company matching job.
