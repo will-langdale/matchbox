@@ -1,4 +1,3 @@
-{::options parse_block_html="true" /}
 # 🔗 Company matching framework
 
 A match orchestration framework to allow the comparison, validation, and orchestration of the best match methods for the company matching job.
@@ -40,10 +39,12 @@ make setup
 
 The matching methodology is often shorthanded as 🔌hybrid additive. This is because there are a core set of tables that are matched additively, one after the other, each using information from all the tables before it. After this, tables can be plugged into this additive core in any order, even in parallel.
 
+{::options parse_block_html="true" /}
 <div class="panel panel-info">
 **Facts and dimensions**
 {: .panel-heading}
 <div class="panel-body">
+{::options parse_block_html="false" /}
 
 A dimension table contains one row only for each company entity. An example is Companies House. Contrast with a fact table, like HMRC Exporters, where the same company may appear hundreds of times.
 
