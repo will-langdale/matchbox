@@ -22,7 +22,7 @@ See [Robin Linacre's series of articles on probabilistic record linkage](https:/
 
 ## Notes
 
-See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3589275785/Company+matching+v2.1+architecture+ideas) for the architecture we're implementing here, codename 🐙blocktopus.
+See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net/wiki/spaces/DT/pages/3589275785/Company+matching+v2.1+architecture+ideas) for the architecture we're implementing here, codename 🔌hybrid additive.
 
 ### Structure notes
 

@@ -383,7 +383,7 @@ class Clusters(object):
 
         Returns a temporary dimension table that can use information from
         across the matched clusters so far to be the left "cluster" side of
-        the next step n of the 🐙blocktopus architecture.
+        the next step n of the 🔌hybrid additive architecture.
 
         Arguments:
             select: a dict where the key is a Postgres-quoted fact table, with
