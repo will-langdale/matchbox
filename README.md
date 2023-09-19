@@ -44,12 +44,12 @@ The matching methodology is often shorthanded as 🔌hybrid additive. This is be
 **Facts and dimensions**
 {: .panel-heading}
 <div class="panel-body">
-{::options parse_block_html="false" /}
 
 A dimension table contains one row only for each company entity. An example is Companies House. Contrast with a fact table, like HMRC Exporters, where the same company may appear hundreds of times.
 
 </div>
 </div>
+{::options parse_block_html="false" /}
 
 To implement this, there are three foundational ideas:
 
