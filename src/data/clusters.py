@@ -376,7 +376,13 @@ class Clusters(object):
                 """
                 )
 
-    def get_data(self, select: dict, dim_only: bool = True, n: int = None):
+    def get_data(
+        self,
+        select: dict,
+        cluster_uuid_to_id: bool = False,
+        dim_only: bool = True,
+        n: int = None,
+    ):
         """
         Wrangle clusters and associated dimension fields into an output
         appropriate for the linker object to join a new dimension table onto.
@@ -391,6 +397,8 @@ class Clusters(object):
             table as all of these are on Data Workspace, and this will hopefully
             make a really interpretable dict to pass. Supposes "as" aliasing to
             allow control of name clashing between datasets
+            cluster_uuid_to_id: alias the cluster UUID to name "id". Used to
+            make comparable field names in link jobs
             dim_only: force function to only return data from dimension tables.
             Used to build the left side of a join, where retrieving from the
             fact table would create duplication
@@ -461,9 +469,11 @@ class Clusters(object):
                         and cl.source = {data.id}
                 """
 
+        id_alias = " as id" if cluster_uuid_to_id else ""
+
         sql = f"""
             select
-                cl.cluster,
+                cl.cluster{id_alias},
                 {', '.join(select_items)}
             from
                 {self.schema_table} cl

@@ -8,7 +8,7 @@ from splink.duckdb.linker import DuckDBLinker
 from splink.comparison import Comparison
 
 import json
-import io
+import pandas as pd
 
 
 class ComparisonEncoder(json.JSONEncoder):
@@ -25,6 +25,10 @@ class SplinkLinker(Linker):
     """
     A class to handle linking a dataset using Splink. Implements linking
     with DuckDB.
+
+    Uses an internal lookup table unique_id_lookup to minimise memory
+    usage during linking. Will create this during a job, and re-join the
+    correct data back on afterwards.
 
     Parameters:
         * dataset: An object of class Dataset
@@ -59,19 +63,27 @@ class SplinkLinker(Linker):
         super().__init__(dataset, probabilities, clusters, n)
 
         self.linker = None
+        self.linker_settings = None
         self.db_path = db_path
         self.con = du.get_duckdb_connection(path=self.db_path)
+        self.id_lookup = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
+        # Only pickle linker settings
+        state["linker"] = state["linker"]._settings_obj.as_dict()
         # Don't pickle connection
         del state["con"]
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        # Add connection back when loading pickle
+        # Add connection and linker back when loading pickle
         self.con = du.get_duckdb_connection(path=self.db_path)
+        if self.cluster_processed is not None and self.dim_processed is not None:
+            self._register_tables()
+        if self.linker is not None:
+            self._create_linker(linker_settings=self.linker)
 
     def _clean_data(self, cluster_pipeline: dict, dim_pipeline: dict):
         self.cluster_processed = super()._run_pipeline(
@@ -79,13 +91,37 @@ class SplinkLinker(Linker):
         )
         self.dim_processed = super()._run_pipeline(self.dim_raw, dim_pipeline)
 
-    def _create_linker(self, linker_settings: dict, n: int):
+    def _substitute_ids(self):
+        cls_len = self.cluster_processed.shape[0]
+        dim_len = self.dim_processed.shape[0]
+
+        self.cluster_processed["duckdb_id"] = range(cls_len)
+        self.dim_processed["duckdb_id"] = range(cls_len, cls_len + dim_len)
+
+        self.id_lookup = pd.concat(
+            objs=[
+                self.cluster_processed[["duckdb_id", "id"]],
+                self.dim_processed[["duckdb_id", "id"]],
+            ],
+            axis=0,
+        )
+        self.cluster_processed["id"] = self.cluster_processed["duckdb_id"]
+        self.cluster_processed.drop("duckdb_id", axis=1, inplace=True)
+        self.dim_processed["id"] = self.dim_processed["duckdb_id"]
+        self.dim_processed.drop("duckdb_id", axis=1, inplace=True)
+
+    def _register_tables(self):
+        self.con.register("cls", self.cluster_processed)
+        self.con.register("dim", self.dim_processed)
+
+    def _create_linker(self, linker_settings: dict):
         self.linker = DuckDBLinker(
-            input_table_or_tables=[self.cluster_processed, self.dim_processed],
-            input_table_aliases=[str(n), str(self.dataset.id)],
+            input_table_or_tables=["cls", "dim"],
+            input_table_aliases=["cls", "dim"],
             connection=self.con,
             settings_dict=linker_settings,
         )
+        self.linker_settings = self.linker._settings_obj.as_dict()
 
     def _train_linker(self, train_pipeline: dict):
         """
@@ -113,8 +149,9 @@ class SplinkLinker(Linker):
             path="config/train_pipeline.json",
         )
 
-        model_json = io.BytesIO()
-        self.linker.save_model_to_json(out_path=model_json.name, overwrite=True)
+        model_json = json.dumps(
+            self.linker._settings_obj.as_dict(), indent=4, cls=ComparisonEncoder
+        )
 
         super()._add_log_item(
             name="model",
@@ -125,12 +162,14 @@ class SplinkLinker(Linker):
 
     def prepare(
         self,
-        linker_settings: dict,
         cluster_pipeline: dict,
         dim_pipeline: dict,
+        linker_settings: dict,
         train_pipeline: dict,
     ):
         self._clean_data(cluster_pipeline, dim_pipeline)
+        self._substitute_ids()
+        self._register_tables()
         self._create_linker(linker_settings)
         self._train_linker(train_pipeline)
 
