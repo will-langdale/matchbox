@@ -63,7 +63,6 @@ class SplinkLinker(Linker):
         super().__init__(dataset, probabilities, clusters, n)
 
         self.linker = None
-        self.linker_settings = None
         self.db_path = db_path
         self.con = du.get_duckdb_connection(path=self.db_path)
         self.id_lookup = None
