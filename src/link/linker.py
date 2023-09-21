@@ -6,16 +6,15 @@ from src.data.clusters import Clusters
 
 import mlflow
 import logging
-
 from pathlib import Path
 import pickle
 import io
+from abc import ABC, abstractmethod
+import json
+from tempfile import NamedTemporaryFile
 
-# import json
-# from os import path, makedirs
 
-
-class Linker(object):
+class Linker(ABC):
     """
     A class to build attributes and methods shared by all Linker subclasses.
     Standardises:
@@ -124,6 +123,7 @@ class Linker(object):
             curr = pipeline[func]["function"](curr, **pipeline[func]["arguments"])
         return curr
 
+    @abstractmethod
     def prepare(self):
         """
         An optional method for functions like data cleaning and linker training.
@@ -153,6 +153,7 @@ class Linker(object):
 
         return False
 
+    @abstractmethod
     def link(self, log_output: bool = True):
         """
         Runs whatever linking logic the subclass implements. Must finish by
@@ -247,6 +248,9 @@ class Linker(object):
         link_experiment: str,
         evaluation_name: str,
         evaluation_description: str,
+        prepare_kwargs: dict,
+        link_kwargs: dict,
+        report_dir: str = None,
         log_mlflow: bool = False,
         log_output: bool = False,
     ) -> dict:
@@ -258,6 +262,12 @@ class Linker(object):
             * evaluation_name: the name of this specific evaluation run
             * evaluation_description: a description of this specific
             evaluation run
+            * prepare_kwargs: a dictionary of keyword arguments to pass to the
+            child class's implemented prepare() method
+            * link_kwargs: a dictionary of keyword arguments to pass to the
+            child class's implemented link() method
+            * report_dir: [optional] if not None, will write report parameters,
+            metrics and artefacts to this directory
             * log_mlflow: whether to use MLflow to log this run
             * log_output: whether to log outputs to the probabilities table
 
@@ -284,20 +294,26 @@ class Linker(object):
                 dev_mode=True,
             ):
                 logger.info("Running prepare() function")
-                self.prepare()
+                self.prepare(**prepare_kwargs)
 
-                logger.info("Running link() fnction")
-                self.link()
+                logger.info("Running link() function")
+                self.link(log_output=log_output, **link_kwargs)
 
                 # TODO: Evaluation method based on validation table
                 # Table not yet implemented
 
-                for artefact in self.report_parameters.keys():
-                    path = self.report_parameters[artefact]["path"]
-                    artefact = self.report_parameters[artefact]["artefact"]
+                for artefact in self.report_artefacts.keys():
+                    path = Path(self.report_artefacts[artefact]["path"])
+                    artefact = self.report_artefacts[artefact]["artefact"]
+                    artefact_io = io.BytesIO(artefact)
 
-                    with io.BytesIO(artefact) as f:
-                        mlflow.log_artifact(local_dir=f.name, artifact_path=path)
+                    with NamedTemporaryFile(
+                        suffix=path.suffix, prefix=f"{path.stem}_"
+                    ) as f:
+                        f.write(artefact_io.read())
+                        mlflow.log_artifact(
+                            local_path=f.name, artifact_path=path.parent.as_posix()
+                        )
 
                 for param in self.report_parameters.keys():
                     mlflow.log_param(
@@ -307,22 +323,43 @@ class Linker(object):
 
                 for metric in self.report_metrics.keys():
                     mlflow.log_metric(
-                        key=self.report_parameters[metric]["name"],
-                        value=self.report_parameters[metric]["value"],
+                        key=self.report_metrics[metric]["name"],
+                        value=self.report_metrics[metric]["value"],
                     )
 
                 # TODO: Make dict of outputs to return
 
         else:
-            logger.info("Experiment not automatically logged")
-            # TODO: non ML-flow logic, potentially with dir to save to
-            # Use shutil to save objects to the path specifid
-            # https://docs.python.org/3/library/shutil.html
-            pass
+            logger.info("Experiment not automatically logged on MLFlow")
+
+            logger.info("Running prepare() function")
+            self.prepare(**prepare_kwargs)
+
+            logger.info("Running link() function")
+            self.link(log_output=log_output, **link_kwargs)
+
+        if report_dir is not None:
+            logger.info(f"Writing parameters to {report_dir}")
+            with open(Path(report_dir, "parameters.json"), "w") as f:
+                json.dump(self.report_parameters, f)
+
+            logger.info(f"Writing metrics to {report_dir}")
+            with open(Path(report_dir, "metrics.json"), "w") as f:
+                json.dump(self.report_metrics, f)
+
+            logger.info(f"Writing artefacts to {report_dir}")
+            for artefact in self.report_artefacts.keys():
+                artefact_path = self.report_artefacts[artefact]["path"]
+                artefact = self.report_artefacts[artefact]["artefact"]
+                artefact_io = io.BytesIO(artefact)
+
+                path = Path(report_dir, artefact_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+
+                with open(path, "wb") as f:
+                    f.write(artefact_io.getbuffer())
 
         logger.info("Done!")
-
-        return None
 
     def save(self, path: str):
         """

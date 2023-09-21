@@ -209,5 +209,11 @@ class SplinkLinker(Linker):
         )[["cluster", "id", "probability"]]
         probabilities["source"] = self.dataset.id
 
+        super()._add_log_item(
+            name="link_threshold", item=str(threshold), item_type="parameter"
+        )
+
         if log_output:
             self.probabilities.add_probabilities(probabilities)
+
+        return self.predictions
