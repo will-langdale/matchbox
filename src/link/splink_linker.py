@@ -66,6 +66,7 @@ class SplinkLinker(Linker):
         self.db_path = db_path
         self.con = du.get_duckdb_connection(path=self.db_path)
         self.id_lookup = None
+        self.predictions = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -84,11 +85,23 @@ class SplinkLinker(Linker):
         if self.linker is not None:
             self._create_linker(linker_settings=self.linker)
 
-    def _clean_data(self, cluster_pipeline: dict, dim_pipeline: dict):
+    def _clean_data(
+        self, cluster_pipeline: dict, dim_pipeline: dict, delete_raw: bool = False
+    ):
+        """
+        Runs the supplied pipelines as per Linker._run_pipeline.
+
+        The only extra parameter is delete_raw. When True, will delete raw
+        data to keep memory use to a minimum.
+        """
         self.cluster_processed = super()._run_pipeline(
             self.cluster_raw, cluster_pipeline
         )
         self.dim_processed = super()._run_pipeline(self.dim_raw, dim_pipeline)
+
+        if delete_raw:
+            self.cluster_raw = None
+            self.dim_raw = None
 
     def _substitute_ids(self):
         cls_len = self.cluster_processed.shape[0]
@@ -165,17 +178,36 @@ class SplinkLinker(Linker):
         dim_pipeline: dict,
         linker_settings: dict,
         train_pipeline: dict,
+        low_memory: bool = False,
     ):
-        self._clean_data(cluster_pipeline, dim_pipeline)
+        """
+        Runs all the linker's private cleaning, shaping and training methods,
+        ready for linking.
+
+        When low_memory is true, raw data is purged after processing.
+        """
+        self._clean_data(cluster_pipeline, dim_pipeline, delete_raw=low_memory)
         self._substitute_ids()
         self._register_tables()
         self._create_linker(linker_settings)
         self._train_linker(train_pipeline)
 
-    def link(self, threshold: int, log_output: bool = True):
-        predictions = None
+    def link(self, threshold: float, log_output: bool = True):
+        self.predictions = self.linker.predict(threshold_match_probability=threshold)
+        probabilities = (
+            self.predictions.as_pandas_dataframe()
+            .merge(
+                right=self.id_lookup.rename(columns={"id": "cluster"}),
+                how="left",
+                left_on="id_l",
+                right_on="duckdb_id",
+            )
+            .merge(
+                right=self.id_lookup, how="left", left_on="id_r", right_on="duckdb_id"
+            )
+            .rename(columns={"match_probability": "probability"})
+        )[["cluster", "id", "probability"]]
+        probabilities["source"] = self.dataset.id
 
         if log_output:
-            self.probabilities.add_probabilities(predictions)
-
-        return predictions
+            self.probabilities.add_probabilities(probabilities)

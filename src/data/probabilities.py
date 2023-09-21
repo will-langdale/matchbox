@@ -100,7 +100,7 @@ class Probabilities(object):
         """
 
         in_cols = set(probabilities.columns.tolist())
-        check_cols = {"cluster", "table", "id", "probability", "source"}
+        check_cols = {"cluster", "id", "probability", "source"}
         if len(in_cols - check_cols) != 0:
             raise ValueError(
                 """

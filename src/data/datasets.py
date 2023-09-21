@@ -105,25 +105,53 @@ class Dataset(object):
 
         du.query_nonreturn(sql)
 
-    def read_dim(self, dim_select: list = None):
+    def read_dim(self, dim_select: list = None, sample: float = None):
+        """
+        Returns the dim table as pandas dataframe.
+
+        Arguments:
+            dim_select: [optional] a list of columns to select. Aliasing
+            and casting permitted
+            sample:[optional] the percentage sample to return. Used to
+            speed up debugging of downstream processes
+        """
         fields = "*" if dim_select is None else " ,".join(dim_select)
+        if sample is not None:
+            sample_clause = f"tablesample system ({sample})"
+        else:
+            sample_clause = ""
+
         return du.query(
             f"""
             select
                 {fields}
             from
-                {self.dim_schema_table};
+                {self.dim_schema_table} {sample_clause};
         """
         )
 
-    def read_fact(self, fact_select: list = None):
+    def read_fact(self, fact_select: list = None, sample: float = None):
+        """
+        Returns the fact table as pandas dataframe.
+
+        Arguments:
+            dim_select: [optional] a list of columns to select. Aliasing
+            and casting permitted
+            sample:[optional] the percentage sample to return. Used to
+            speed up debugging of downstream processes
+        """
         fields = "*" if fact_select is None else " ,".join(fact_select)
+        if sample is not None:
+            sample_clause = f"tablesample system ({sample})"
+        else:
+            sample_clause = ""
+
         return du.query(
             f"""
             select
                 {fields}
             from
-                {self.fact_schema_table};
+                {self.fact_schema_table} {sample_clause};
         """
         )
 

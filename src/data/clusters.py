@@ -382,6 +382,7 @@ class Clusters(object):
         cluster_uuid_to_id: bool = False,
         dim_only: bool = True,
         n: int = None,
+        sample: float = None,
     ):
         """
         Wrangle clusters and associated dimension fields into an output
@@ -402,7 +403,9 @@ class Clusters(object):
             dim_only: force function to only return data from dimension tables.
             Used to build the left side of a join, where retrieving from the
             fact table would create duplication
-            n: (optional) the step at which to retrive values
+            n: [optional] the step at which to retrive values
+            sample: [optional] the sample percentage to take, allowing quicker
+            development of upstream objects that need to run this lots
 
         Raises:
             KeyError:
@@ -470,13 +473,17 @@ class Clusters(object):
                 """
 
         id_alias = " as id" if cluster_uuid_to_id else ""
+        if sample is not None:
+            sample_clause = f"tablesample system ({sample})"
+        else:
+            sample_clause = ""
 
         sql = f"""
             select
                 cl.cluster{id_alias},
                 {', '.join(select_items)}
             from
-                {self.schema_table} cl
+                {self.schema_table} cl {sample_clause}
             {join_clauses}
             {n_clause};
         """

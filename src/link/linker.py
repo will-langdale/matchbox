@@ -68,11 +68,18 @@ class Linker(object):
         self.report_parameters = {}
         self.report_metrics = {}
 
-    def get_data(self, cluster_select: dict, dim_select: list):
+    def get_data(self, cluster_select: dict, dim_select: list, sample: float = None):
+        """
+        Returns the raw data from the cluster table and dimension table as per the
+        dictionary specs of Clusters.get_data and Datasets.read_dim.
+
+        The extra argument, sample, is the percentage of the tables to sample. It
+        helps us run the pipeline quicker during development.
+        """
         self.cluster_raw = self.clusters.get_data(
-            cluster_select, cluster_uuid_to_id=True
+            cluster_select, cluster_uuid_to_id=True, n=self.n, sample=sample
         )
-        self.dim_raw = self.dataset.read_dim(dim_select)
+        self.dim_raw = self.dataset.read_dim(dim_select, sample)
 
     def _run_pipeline(self, table_in, pipeline):
         """
