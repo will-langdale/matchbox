@@ -180,7 +180,9 @@ class Linker(ABC):
         predictions = None
 
         if log_output:
-            self.probabilities.add_probabilities(predictions)
+            self.probabilities.add_probabilities(
+                probabilities=predictions, model=None, overwrite=False
+            )
 
         return predictions
 

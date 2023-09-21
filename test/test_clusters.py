@@ -78,7 +78,11 @@ def test_parallel(test_name):
         schema=os.getenv("SCHEMA"), table=temp_prob, star=star
     )
     probabilities.create(overwrite=True)
-    probabilities.add_probabilities(prob.drop(["uuid", "link_type"], axis=1))
+    probabilities.add_probabilities(
+        probabilities=prob.drop(["uuid", "link_type"], axis=1),
+        model="1",
+        overwrite=False,
+    )
 
     validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)
     validation.create(overwrite=True)
@@ -144,7 +148,11 @@ def test_sequential(test_name):
         schema=os.getenv("SCHEMA"), table=temp_prob, star=star
     )
     probabilities.create(overwrite=True)
-    probabilities.add_probabilities(prob.drop(["uuid", "link_type"], axis=1))
+    probabilities.add_probabilities(
+        probabilities=prob.drop(["uuid", "link_type"], axis=1),
+        model="1",
+        overwrite=False,
+    )
     clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
     clusters.create(overwrite=True)
 
@@ -184,7 +192,11 @@ def test_sequential(test_name):
             schema=os.getenv("SCHEMA"), table=temp_prob, star=star
         )
         probabilities.create(overwrite=True)
-        probabilities.add_probabilities(prob_n.drop(["uuid", "link_type"], axis=1))
+        probabilities.add_probabilities(
+            probabilities=prob_n.drop(["uuid", "link_type"], axis=1),
+            model=str(i),
+            overwrite=False,
+        )
 
         # Create validation table at step n
         try:

@@ -176,6 +176,7 @@ class Clusters(object):
                 select
                     uuid,
                     link_type,
+                    model,
                     cluster,
                     id,
                     source,

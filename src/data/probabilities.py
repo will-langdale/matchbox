@@ -51,6 +51,7 @@ class Probabilities(object):
             create table {exist_clause} {self.schema_table} (
                 uuid uuid primary key,
                 link_type text not null,
+                model text not null,
                 source int not null,
                 cluster uuid not null,
                 id text not null,
@@ -80,20 +81,35 @@ class Probabilities(object):
 
         return sources["source"].tolist()
 
-    def add_probabilities(self, probabilities):
+    def get_models(self) -> list:
+        """
+        Returns a list of the models currently present in the probabilities table.
+
+        Returns:
+            A list of model strings
+        """
+        models = du.query(f"select distinct model from {self.schema_table}")
+
+        return models["model"].tolist()
+
+    def add_probabilities(self, probabilities, model: str, overwrite: bool = False):
         """
         Takes an output from Linker.predict() and adds it to the probabilities
         table.
 
         Arguments:
             probabilities: A data frame produced by Linker.predict(). Should
-            contain columns cluster, table, id, source and probability.
+            contain columns cluster, id, source and probability.
+            model: A unique string that represents this model
+            overwrite: Whether to overwrite existing probabilities inserted by
+            this model
 
         Raises:
             ValueError:
-                * If probabilities doesn't contain columns cluster, table, id
+                * If probabilities doesn't contain columns cluster, model, id
                 source and probability
                 * If probabilities doesn't contain values between 0 and 1
+                * If the model has already
 
         Returns:
             The dataframe of probabilities that were added to the table.
@@ -121,6 +137,20 @@ class Probabilities(object):
 
         probabilities["uuid"] = [uuid.uuid4() for _ in range(len(probabilities.index))]
         probabilities["link_type"] = "link"
+        probabilities["model"] = model
+
+        current_models = self.get_models()
+
+        if model in current_models and overwrite is not True:
+            raise ValueError(f"{model} exists in table and overwrite is False")
+        elif model in current_models and overwrite is True:
+            sql = f"""
+                delete from
+                    {self.schema_table}
+                where
+                    model = {model}
+            """
+            du.query_nonreturn(sql)
 
         du.data_workspace_write(
             df=probabilities, schema=self.schema, table=self.table, if_exists="append"
