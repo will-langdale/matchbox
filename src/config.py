@@ -18,6 +18,7 @@ link_pipeline = {
         "dim": '"companieshouse"."companies"',
         "n": 1,
         "experiment": "cm_companies-house",
+        "model_name": "ch_n0",
     },
     '"dit"."data_hub__companies"': {
         "fact": '"dit"."data_hub__companies"',
@@ -34,6 +35,7 @@ link_pipeline = {
         "dim": '"dit"."data_hub__companies"',
         "n": 2,
         "experiment": "cm_data-hub-companies",
+        "model_name": "dh_n1_splink_basic",
     },
     '"hmrc"."trade__exporters"': {
         "fact": '"hmrc"."trade__exporters"',
@@ -41,6 +43,7 @@ link_pipeline = {
         "dim": f'"{os.getenv("SCHEMA")}"."hmrc_trade__exporters__dim"',
         "n": 3,
         "experiment": "cm_hmrc-trade-exporters",
+        "model_name": "exp_n2_splink_basic",
     },
     '"dit"."export_wins__wins_dataset"': {
         "fact": '"dit"."export_wins__wins_dataset"',
@@ -48,6 +51,7 @@ link_pipeline = {
         "dim": f'"{os.getenv("SCHEMA")}"."export_wins__wins_dataset__dim"',
         "n": 3,
         "experiment": "cm_export-wins",
+        "model_name": "ew_n3_splink_basic",
     },
 }
 

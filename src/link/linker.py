@@ -31,10 +31,14 @@ class Linker(ABC):
     * A single step in the link_pipeline in config.py
 
     Parameters:
+        * name: The name of the linker model you're making. Should be unique --
+        link outputs are keyed to this name
         * dataset: An object of class Dataset
         * probabilities: An object of class Probabilities
         * clusters: An object of class Clusters
         * n: The current step in the pipeline process
+        * overwrite: Whether the link() method should replace existing outputs
+        of models with this linker model's name
 
     Methods:
         * get_data(cluster_select, dim_select): retrieves the left and right
@@ -50,12 +54,20 @@ class Linker(ABC):
     """
 
     def __init__(
-        self, dataset: Dataset, probabilities: Probabilities, clusters: Clusters, n: int
+        self,
+        name: str,
+        dataset: Dataset,
+        probabilities: Probabilities,
+        clusters: Clusters,
+        n: int,
+        overwrite: bool = False,
     ):
+        self.name = name
         self.dataset = dataset
         self.probabilities = probabilities
         self.clusters = clusters
         self.n = n
+        self.overwrite = overwrite
 
         self.cluster_raw = None
         self.dim_raw = None
@@ -154,7 +166,7 @@ class Linker(ABC):
         return False
 
     @abstractmethod
-    def link(self, log_output: bool = True):
+    def link(self, log_output: bool = True, overwrite: bool = None):
         """
         Runs whatever linking logic the subclass implements. Must finish by
         optionally calling Probabilities.add_probabilities(predictions), and then
@@ -179,9 +191,12 @@ class Linker(ABC):
 
         predictions = None
 
+        if overwrite is None:
+            overwrite = self.overwrite
+
         if log_output:
             self.probabilities.add_probabilities(
-                probabilities=predictions, model=None, overwrite=False
+                probabilities=predictions, model=self.name, overwrite=overwrite
             )
 
         return predictions

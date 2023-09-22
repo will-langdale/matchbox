@@ -6,6 +6,7 @@ from src.data.star import Star
 
 import uuid
 import logging
+from typing import Union
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
@@ -96,6 +97,7 @@ class Clusters(object):
     def add_clusters(
         self,
         probabilities: Probabilities,
+        models: Union[str, list[str]],
         validation: Validation,
         n: int,
         threshold: float = 0.7,
@@ -120,6 +122,8 @@ class Clusters(object):
 
         Arguments:
             probabilities: an object of class Probabilities
+            models: a string or list of strings specifying the models from which
+            to retrieve probabilities
             validation: an object of class Validation
             n: the current step n of the link pipeline
             threshold: the probability threshold above which we consider a match
@@ -127,6 +131,10 @@ class Clusters(object):
             add_unmatched_dims: if True, adds unmatched rows in the dimension table
             to the clusters table. Should always be True for a link pipeline -- False
             is useful for testing
+
+        Raises:
+            KeyError: if any specified models aren't in the table the supplied
+            Probabilities object wraps
         """
         prob = probabilities.schema_table
         val = validation.schema_table
@@ -134,6 +142,26 @@ class Clusters(object):
         clusters_temp = "clusters_temp"
         probabilities_temp = "probabilities_temp"
         to_insert_temp = "to_insert_temp"
+
+        if not isinstance(models, list):
+            models = list(models)
+        else:
+            models = [str(name) for name in models]
+
+        model_list_quoted = [f"'{name}'" for name in models]
+        model_list_quoted = ", ".join(model_list_quoted)
+
+        # Check the selected models are in the probabilities table
+        mod_all = set(probabilities.get_models())
+        mod_selected = set(models)
+
+        if not len(mod_all.intersection(mod_selected)) == len(mod_selected):
+            not_found = ", ".join(mod_selected.difference(mod_all))
+            raise KeyError(
+                f"""
+                Model(s) {not_found} not found in supplied probabilities table
+            """
+            )
 
         # Create a temporary clusters table to work with until the algorithm has
         # finished, for safety
@@ -164,6 +192,8 @@ class Clusters(object):
                             source
                         from
                             {prob}
+                        where
+                            model in ({model_list_quoted})
                     );
         """
         )
@@ -185,6 +215,7 @@ class Clusters(object):
                     {prob} prob
                 where
                     prob.probability >= {threshold}
+                    and model in ({model_list_quoted})
                 order by
                     probability desc;
         """

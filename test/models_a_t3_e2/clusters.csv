@@ -1,0 +1,5 @@
+﻿uuid,cluster,id,source,n_seq,n_par
+1,1,will_inc_t1,1,0,0
+2,1,will_inc_t2,2,1,1
+4,2,leo_inc_t1,1,0,0
+5,2,leo_inc_t2,2,1,1

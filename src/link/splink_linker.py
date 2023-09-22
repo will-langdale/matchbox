@@ -54,13 +54,15 @@ class SplinkLinker(Linker):
 
     def __init__(
         self,
+        name: str,
         dataset: Dataset,
         probabilities: Probabilities,
         clusters: Clusters,
         n: int,
+        overwrite: bool = False,
         db_path: str = ":memory:",
     ):
-        super().__init__(dataset, probabilities, clusters, n)
+        super().__init__(name, dataset, probabilities, clusters, n, overwrite)
 
         self.linker = None
         self.db_path = db_path
@@ -192,8 +194,35 @@ class SplinkLinker(Linker):
         self._create_linker(linker_settings)
         self._train_linker(train_pipeline)
 
-    def link(self, threshold: float, log_output: bool = True):
+    def link(self, threshold: float, log_output: bool = True, overwrite: bool = None):
+        """
+        Runs the linker's link job.
+
+        Note threshold is different to the threshold set in Clusters.add_clusters,
+        which represents the threshold at which you believe a link to be a good one.
+        It's likely you'll want this to be lower so you can use validation to discover
+        the right Clusters.add_clusters threshold.
+
+        Arguments:
+            threshold: the probability threshold below which to drop outputs
+            log_output: whether to write outputs to the final table. Likely False as
+            you refine your methodology, then True when you're happy
+            overwrite: whether to overwrite existing outputs keyed to the specified
+            model name. Defaults to option set at linker instantiation
+
+        Returns:
+            The output of Splink's `predict()` method, but with original IDs rejoined
+            and as a pandas dataframe
+        """
+        if overwrite is None:
+            overwrite = self.overwrite
+
         self.predictions = self.linker.predict(threshold_match_probability=threshold)
+
+        super()._add_log_item(
+            name="link_threshold", item=str(threshold), item_type="parameter"
+        )
+
         probabilities = (
             self.predictions.as_pandas_dataframe()
             .merge(
@@ -205,15 +234,17 @@ class SplinkLinker(Linker):
             .merge(
                 right=self.id_lookup, how="left", left_on="id_r", right_on="duckdb_id"
             )
-            .rename(columns={"match_probability": "probability"})
-        )[["cluster", "id", "probability"]]
+            .drop(columns=["id_l", "id_r"])
+        )
         probabilities["source"] = self.dataset.id
 
-        super()._add_log_item(
-            name="link_threshold", item=str(threshold), item_type="parameter"
-        )
-
         if log_output:
-            self.probabilities.add_probabilities(probabilities)
+            out = (probabilities.rename(columns={"match_probability": "probability"}))[
+                ["cluster", "id", "probability"]
+            ]
 
-        return self.predictions
+            self.probabilities.add_probabilities(
+                probabilities=out, model=self.name, overwrite=overwrite
+            )
+
+        return probabilities

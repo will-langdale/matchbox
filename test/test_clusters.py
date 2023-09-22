@@ -58,7 +58,7 @@ def validate_against_answer(my_cluster, validated_cluster, n_type="par"):
     return clus_check_l.df().equals(clus_check_r.df())
 
 
-tests = [
+clustering_tests = [
     "unambig_t2_e4",
     "unambig_t3_e2",
     "masked_t3_e2",
@@ -67,9 +67,25 @@ tests = [
     "tied_t3_e2",
 ]
 
+model_tests = [("a", "models_a_t3_e2"), ("b", "models_b_t3_e2")]
 
-@pytest.mark.parametrize("test_name", tests)
+
+@pytest.mark.parametrize("test_name", clustering_tests)
 def test_parallel(test_name):
+    """
+    Tests whether the clustering algorithm performs against some common data
+    patterns. T indicates the number of tables, E the number of entities they
+    should resolve to.
+
+    This test battery tests the algorithm in a parallel scenario: multiple
+    tables and models resolved at once.
+
+    The patterns:
+
+    * Unambiguous probability pattern (baseline)
+    * A masked probability pattern (see .md in test files for further details)
+    * Validation contradicting the given probabilities
+    """
     # Setup test
     prob, clus, val = du.load_test_data(
         Path(loc.PROJECT_DIR, "test", test_name), int_to_uuid=True
@@ -123,6 +139,7 @@ def test_parallel(test_name):
 
     clusters.add_clusters(
         probabilities=probabilities,
+        models="1",
         validation=validation,
         n=1,
         threshold=0.7,
@@ -134,8 +151,22 @@ def test_parallel(test_name):
     assert passed
 
 
-@pytest.mark.parametrize("test_name", tests)
+@pytest.mark.parametrize("test_name", clustering_tests)
 def test_sequential(test_name):
+    """
+    Tests whether the clustering algorithm performs against some common data
+    patterns. T indicates the number of tables, E the number of entities they
+    should resolve to.
+
+    This test battery tests the algorithm in a sequential scenario, as if we're
+    iterating through a pipeline of probabilities supplied one after the other.
+
+    The patterns:
+
+    * Unambiguous probability pattern (baseline)
+    * A masked probability pattern (see .md in test files for further details)
+    * Validation contradicting the given probabilities
+    """
     # Setup test
     prob, clus, val = du.load_test_data(
         Path(loc.PROJECT_DIR, "test", test_name), int_to_uuid=True
@@ -186,6 +217,7 @@ def test_sequential(test_name):
 
     # Iterate through the sequence resolving at each step
     for i in range(len(prob_sequence_dict)):
+        model = str(i)
         # Create probability table at step n
         prob_n = prob_sequence_dict[i]
         probabilities = Probabilities(
@@ -194,7 +226,7 @@ def test_sequential(test_name):
         probabilities.create(overwrite=True)
         probabilities.add_probabilities(
             probabilities=prob_n.drop(["uuid", "link_type"], axis=1),
-            model=str(i),
+            model=model,
             overwrite=False,
         )
 
@@ -210,6 +242,7 @@ def test_sequential(test_name):
         # Resolve at step n
         clusters.add_clusters(
             probabilities=probabilities,
+            models=model,
             validation=validation,
             n=i,
             threshold=0.7,
@@ -218,5 +251,89 @@ def test_sequential(test_name):
 
     # Check
     passed = validate_against_answer(clusters.read(), clus, n_type="seq")
+
+    assert passed
+
+
+@pytest.mark.parametrize("test", model_tests)
+def test_models(test):
+    """
+    Tests whether the clustering algorithm performs when competing models give
+    contradicting probabilities. We test the same data favouring model "a",
+    then model "b".
+
+    This test battery tests the algorithm in a parallel scenario: multiple
+    tables and models resolved at once.
+
+    """
+    test_name = test[1]
+    model_to_prefer = test[0]
+
+    # Setup test
+    prob, clus, val = du.load_test_data(
+        Path(loc.PROJECT_DIR, "test", test_name), int_to_uuid=True
+    )
+    probabilities = Probabilities(
+        schema=os.getenv("SCHEMA"), table=temp_prob, star=star
+    )
+    probabilities.create(overwrite=True)
+
+    for model in prob.model.unique():
+        to_add = prob.query("model == @model").drop(
+            ["uuid", "link_type", "model"], axis=1
+        )
+        probabilities.add_probabilities(
+            probabilities=to_add,
+            model=model,
+            overwrite=False,
+        )
+
+    validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)
+    validation.create(overwrite=True)
+    validation.add_validation(val.drop("uuid", axis=1))
+
+    clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
+    clusters.create(overwrite=True)
+
+    du.query_nonreturn(
+        f"""
+        insert into {clusters.schema_table}
+            select
+                gen_random_uuid() as uuid,
+                cast(
+                    lpad(
+                        to_hex(
+                            row_number() over ()
+                        ),
+                        32,
+                        '0'
+                    ) as uuid
+                ) as cluster,
+                init.id,
+                init.source,
+                0 as n
+            from (
+                select
+                    *
+                from
+                    {probabilities.schema_table}
+                where
+                    source = 1
+            ) init
+    """
+    )
+
+    # Resolve and check
+
+    clusters.add_clusters(
+        probabilities=probabilities,
+        models=model_to_prefer,
+        validation=validation,
+        n=1,
+        threshold=0.7,
+        add_unmatched_dims=False,
+    )
+
+    passed = validate_against_answer(clusters.read(), clus, n_type="par")
 
     assert passed
