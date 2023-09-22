@@ -2,6 +2,10 @@ from src.data import utils as du
 from src.data.star import Star
 
 import uuid
+from dotenv import load_dotenv, find_dotenv
+import os
+import click
+import logging
 
 
 class Probabilities(object):
@@ -157,3 +161,39 @@ class Probabilities(object):
         )
 
         return probabilities
+
+
+@click.command()
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Required to overwrite an existing table.",
+)
+def create_probabilities_table(overwrite):
+    """
+    Entrypoint if running as script
+    """
+    logger = logging.getLogger(__name__)
+
+    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
+
+    probabilities = Probabilities(
+        schema=os.getenv("SCHEMA"), table=os.getenv("PROBABILITIES_TABLE"), star=star
+    )
+
+    logger.info(f"Creating probabilities table {probabilities.schema_table}")
+
+    probabilities.create(overwrite=overwrite)
+
+    logger.info("Written probabilities table")
+
+
+if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+
+    create_probabilities_table()

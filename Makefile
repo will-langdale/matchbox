@@ -21,19 +21,35 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 star:
 	$(PYTHON_INTERPRETER) src/data/star.py
 
+
 ## Make dimension tables
 dims:
 	$(PYTHON_INTERPRETER) src/data/datasets.py
 
+
+## Make probabilities table
+probabilities:
+	$(PYTHON_INTERPRETER) src/data/probabilities.py --overwrite
+
+
+## Make clusters table with Companies House as the default data
+clusters:
+	$(PYTHON_INTERPRETER) src/data/clusters.py --dim 1970 --overwrite
+
+
 ## Make validation table
 validation:
-	$(PYTHON_INTERPRETER) src/data/validation.py
+	$(PYTHON_INTERPRETER) src/data/validation.py --overwrite
+
 
 ## Setup system ready for linking
 setup:
 	make star
 	make dims
+	make probabilities
+	make clusters
 	make validation
+
 
 ## Make evaluation tables for existing matching service
 evals:

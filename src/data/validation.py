@@ -4,6 +4,7 @@ import logging
 from dotenv import load_dotenv, find_dotenv
 import os
 import uuid
+import click
 
 
 class Validation(object):
@@ -98,14 +99,16 @@ class Validation(object):
         return validation
 
 
-if __name__ == "__main__":
-    dotenv_path = find_dotenv()
-    load_dotenv(dotenv_path)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format=du.LOG_FMT,
-    )
+@click.command()
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Required to overwrite an existing table.",
+)
+def create_validation_table(overwrite):
+    """
+    Entrypoint if running as script
+    """
     logger = logging.getLogger(__name__)
 
     validation = Validation(
@@ -114,6 +117,17 @@ if __name__ == "__main__":
 
     logger.info(f"Creating validation table {validation.schema_table}")
 
-    validation.create(overwrite=True)
+    validation.create(overwrite=overwrite)
 
     logger.info("Written validation table")
+
+
+if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+
+    create_validation_table()

@@ -5,8 +5,11 @@ from src.data.validation import Validation
 from src.data.star import Star
 
 import uuid
+import click
 import logging
 from typing import Union
+from dotenv import load_dotenv, find_dotenv
+import os
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
@@ -526,3 +529,58 @@ class Clusters(object):
             raise ValueError("Nothing returned. Something went wrong")
 
         return result
+
+
+@click.command()
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Required to overwrite an existing table.",
+)
+@click.option(
+    "--dim",
+    required=False,
+    type=int,
+    help="""
+        The STAR ID of the dimenstion table with which to
+        populate the new cluster table.
+    """,
+)
+def create_cluster_table(overwrite, dim):
+    """
+    Entrypoint if running as script
+    """
+    logger = logging.getLogger(__name__)
+
+    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
+
+    clusters = Clusters(
+        schema=os.getenv("SCHEMA"), table=os.getenv("CLUSTERS_TABLE"), star=star
+    )
+
+    if dim:
+        logger.info(
+            f"""
+            Creating clusters table {clusters.schema_table}.
+            Instantiating with clusters from dimension table {dim}.
+        """
+        )
+
+        clusters.create(overwrite=overwrite, dim=dim)
+    else:
+        logger.info(f"Creating clusters table {clusters.schema_table}")
+
+        clusters.create(overwrite=overwrite)
+
+    logger.info("Written clusters table")
+
+
+if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+
+    create_cluster_table()

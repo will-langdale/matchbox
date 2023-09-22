@@ -263,10 +263,10 @@ class Linker(ABC):
     def evaluate(
         self,
         link_experiment: str,
-        evaluation_name: str,
         evaluation_description: str,
         prepare_kwargs: dict,
         link_kwargs: dict,
+        evaluation_name: str = None,
         report_dir: str = None,
         log_mlflow: bool = False,
         log_output: bool = False,
@@ -298,6 +298,9 @@ class Linker(ABC):
         logger = logging.getLogger(__name__)
 
         logger.info("Running pipeline")
+
+        if evaluation_name is None:
+            evaluation_name = self.name
 
         if log_output:
             logger.info("Logging outputs to the Probabilities table")
