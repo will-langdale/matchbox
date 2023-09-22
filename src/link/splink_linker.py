@@ -240,7 +240,7 @@ class SplinkLinker(Linker):
 
         if log_output:
             out = (probabilities.rename(columns={"match_probability": "probability"}))[
-                ["cluster", "id", "probability"]
+                ["cluster", "id", "probability", "source"]
             ]
 
             self.probabilities.add_probabilities(

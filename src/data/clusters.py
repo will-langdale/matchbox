@@ -35,6 +35,9 @@ class Clusters(object):
         entries to the cluster table
         * get_data(fields): returns the cluster table pivoted wide,
         with the requested fields attached
+
+    Raises:
+        ValueError: if schema or table not specified
     """
 
     def __init__(self, schema: str, table: str, star: Star):
@@ -42,6 +45,16 @@ class Clusters(object):
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'
         self.star = star
+
+        if None in [self.schema, self.table]:
+            raise ValueError(
+                f"""
+                Schema and table must be specified
+                schema: {schema}
+                table: {table}
+                Have you used the right environment variable?
+            """
+            )
 
     def create(self, overwrite: bool, dim: int = None):
         """
@@ -88,7 +101,7 @@ class Clusters(object):
             to_insert["uuid"] = [uuid.uuid4() for _ in range(len(to_insert.index))]
             to_insert["cluster"] = [uuid.uuid4() for _ in range(len(to_insert.index))]
             to_insert["source"] = dim
-            to_insert["n"] = 1
+            to_insert["n"] = 0
 
             du.data_workspace_write(
                 df=to_insert, schema=self.schema, table=self.table, if_exists="append"
@@ -105,6 +118,7 @@ class Clusters(object):
         n: int,
         threshold: float = 0.7,
         add_unmatched_dims: bool = True,
+        overwrite: bool = False,
     ):
         """
         The core probabilities > clusters algorithm, as proposed in the
@@ -134,10 +148,13 @@ class Clusters(object):
             add_unmatched_dims: if True, adds unmatched rows in the dimension table
             to the clusters table. Should always be True for a link pipeline -- False
             is useful for testing
+            overwrite: if True, will delete any matches to clusters from tables
+            that exist in the supplied probabilities table
 
         Raises:
             KeyError: if any specified models aren't in the table the supplied
             Probabilities object wraps
+            ValueError: if models aren't supplied as a string or list of strings
         """
         prob = probabilities.schema_table
         val = validation.schema_table
@@ -146,10 +163,12 @@ class Clusters(object):
         probabilities_temp = "probabilities_temp"
         to_insert_temp = "to_insert_temp"
 
-        if not isinstance(models, list):
-            models = list(models)
-        else:
+        if isinstance(models, list):
             models = [str(name) for name in models]
+        elif isinstance(models, str):
+            models = [models]
+        else:
+            ValueError("models argument must be string or list of strings")
 
         model_list_quoted = [f"'{name}'" for name in models]
         model_list_quoted = ", ".join(model_list_quoted)
@@ -163,6 +182,21 @@ class Clusters(object):
             raise KeyError(
                 f"""
                 Model(s) {not_found} not found in supplied probabilities table
+            """
+            )
+
+        # If overwrite, drop existing clusters from the supplied sources
+        source_selected = probabilities.get_sources()
+        source_list_quoted = [f"'{name}'" for name in source_selected]
+        source_list_quoted = ", ".join(source_list_quoted)
+
+        if overwrite:
+            du.query_nonreturn(
+                f"""
+                delete from
+                    {clus}
+                where
+                    source in ({source_list_quoted});
             """
             )
 
@@ -393,20 +427,18 @@ class Clusters(object):
                     select
                         gen_random_uuid() as uuid,
                         gen_random_uuid() as cluster,
-                        id,
+                        id::text as id,
                         {table} as source,
                         {n} as n
                     from
                         {dataset.dim_schema_table} dim
                     where not exists (
                         select
-                            id,
-                            source
+                            id::text as id
                         from
                             {clus} c
                         where
-                            c.id = dim.id
-                            and c.source = dim.source
+                            c.id::text = dim.id::text
                     );
                 """
                 )
@@ -485,7 +517,7 @@ class Clusters(object):
 
                 join_clauses += f"""
                     left join {data.dim_schema_table} t{i} on
-                        cl.id = t{i}.id
+                        cl.id::text = t{i}.id::text
                         and cl.source = {data.id}
                 """
             else:
@@ -503,7 +535,7 @@ class Clusters(object):
 
                 join_clauses += f"""
                     left join {data.fact_schema_table} t{i} on
-                        cl.id = t{i}.id
+                        cl.id::text = t{i}.id::text
                         and cl.source = {data.id}
                 """
 

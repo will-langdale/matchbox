@@ -26,6 +26,9 @@ class Probabilities(object):
         * read(): Returns the probabilities table
         * add_probabilities(lookup): Add new entries to the probabilities
         table
+
+    Raises:
+        ValueError: if schema or table not specified
     """
 
     def __init__(self, schema: str, table: str, star: Star):
@@ -33,6 +36,16 @@ class Probabilities(object):
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'
         self.star = star
+
+        if None in [self.schema, self.table]:
+            raise ValueError(
+                f"""
+                Schema and table must be specified
+                schema: {schema}
+                table: {table}
+                Have you used the right environment variable?
+            """
+            )
 
     def create(self, overwrite: bool):
         """
@@ -152,7 +165,7 @@ class Probabilities(object):
                 delete from
                     {self.schema_table}
                 where
-                    model = {model}
+                    model = '{model}'
             """
             du.query_nonreturn(sql)
 

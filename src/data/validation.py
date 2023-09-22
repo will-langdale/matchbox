@@ -23,12 +23,25 @@ class Validation(object):
         * create(overwrite): Drops all data and recreates the validation
         table
         * read(): Returns the probabilities table
+
+    Raises:
+        ValueError: if schema or table not specified
     """
 
     def __init__(self, schema: str, table: str):
         self.schema = schema
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'
+
+        if None in [self.schema, self.table]:
+            raise ValueError(
+                f"""
+                Schema and table must be specified
+                schema: {schema}
+                table: {table}
+                Have you used the right environment variable?
+            """
+            )
 
     def create(self, overwrite: bool = False):
         """
