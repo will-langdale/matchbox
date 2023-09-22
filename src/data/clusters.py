@@ -299,33 +299,44 @@ class Clusters(object):
                             from
                                 {probabilities_temp} prob
                         ) clus_rank
+                        left outer join
+                            {clusters_temp} clus_id on
+                                clus_id.id = clus_rank.id
+                                and clus_id.source = clus_rank.source
                         where
-                            clus_rank.clus_rank = 1
-                            and (
-                                not exists (
-                                    select
-                                        id,
-                                        source
-                                    from
-                                        {clusters_temp} clus
-                                    where
-                                        clus.id = clus_rank.id
-                                        and clus.source = clus_rank.source
-                                )
-                                or not exists (
-                                    select
-                                        cluster,
-                                        source
-                                    from
-                                        {clusters_temp} clus
-                                    where
-                                        clus.cluster = clus_rank.cluster
-                                        and clus.source = clus_rank.source
-                                )
-                            )
-                        order by
-                            clus_rank.cluster,
-                            clus_rank.source
+                            clus_id.id is null
+                            and clus_id.source is null
+                        union
+                        select
+                            distinct on (clus_rank.cluster, clus_rank.source)
+                            clus_rank.*,
+                            rank() over (
+                                partition by
+                                    clus_rank.id,
+                                    clus_rank.source
+                                order by
+                                    clus_rank.probability desc
+                            ) as id_rank
+                        from (
+                            select
+                                prob.*,
+                                rank() over(
+                                    partition by
+                                        prob.cluster,
+                                        prob.source
+                                    order by
+                                        prob.probability desc
+                                ) as clus_rank
+                            from
+                                {probabilities_temp} prob
+                        ) clus_rank
+                        left outer join
+                            {clusters_temp} clus_cl on
+                                clus_cl.id = clus_rank.id
+                                and clus_cl.source = clus_rank.source
+                        where
+                            clus_cl.id is null
+                            and clus_cl.source is null
                     ) id_rank
                     where
                         id_rank.id_rank = 1
@@ -356,22 +367,34 @@ class Clusters(object):
             du.query_nonreturn(
                 f"""
                 delete from {probabilities_temp} prob_temp
-                where exists (
+                where (prob_temp.id, prob_temp.source) in (
                     select
-                        cl.cluster,
-                        cl.id,
-                        cl.source
+                        prob.id,
+                        prob.source
                     from
-                        {to_insert_temp} cl
+                        {probabilities_temp} prob
+                    left join
+                        {to_insert_temp} clus_id on
+                            clus_id.id = prob.id
+                            and clus_id.source = prob.source
                     where
-                        (
-                            cl.id = prob_temp.id
-                            and cl.source = prob_temp.source
-                        )
-                        or (
-                            cl.cluster = prob_temp.cluster
-                            and cl.source = prob_temp.source
-                        )
+                        clus_id.id is not null
+                        and clus_id.source is not null
+                );
+                delete from {probabilities_temp} prob_temp
+                where (prob_temp.cluster, prob_temp.source) in (
+                    select
+                        prob.cluster,
+                        prob.source
+                    from
+                        {probabilities_temp} prob
+                    left join
+                        {to_insert_temp} clus_cl on
+                            clus_cl.cluster = prob.cluster
+                            and clus_cl.source = prob.source
+                    where
+                        clus_cl.cluster is not null
+                        and clus_cl.source is not null
                 );
             """
             )
@@ -382,25 +405,18 @@ class Clusters(object):
             f"""
             insert into {clus}
             select
-                uuid,
-                cluster,
-                id,
-                source,
-                n
+                ct.uuid,
+                ct.cluster,
+                ct.id,
+                ct.source,
+                ct.n
             from
                 {clusters_temp} ct
-            where not exists (
-                select
-                    uuid,
-                    cluster,
-                    id,
-                    source,
-                    n
-                from
-                    {clus} c
-                where
+            left join
+                {clus} c on
                     c.uuid = ct.uuid
-            );
+            where
+                c.uuid is null;
         """
         )
 
@@ -427,19 +443,16 @@ class Clusters(object):
                     select
                         gen_random_uuid() as uuid,
                         gen_random_uuid() as cluster,
-                        id::text as id,
+                        dim.id::text as id,
                         {table} as source,
                         {n} as n
                     from
                         {dataset.dim_schema_table} dim
-                    where not exists (
-                        select
-                            id::text as id
-                        from
-                            {clus} c
-                        where
+                    left join
+                        {clus} c on
                             c.id::text = dim.id::text
-                    );
+                    where
+                        c.id is null;
                 """
                 )
 
