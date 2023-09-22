@@ -126,7 +126,6 @@ class Probabilities(object):
                 * If probabilities doesn't contain columns cluster, model, id
                 source and probability
                 * If probabilities doesn't contain values between 0 and 1
-                * If the model has already
 
         Returns:
             The dataframe of probabilities that were added to the table.
