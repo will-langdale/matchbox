@@ -1,15 +1,42 @@
-from src.link.linker import Linker
+from src.link.deterministic_linker import DeterministicLinker
 from src.data import utils as du
 from src.data.datasets import Dataset
 from src.data.probabilities import Probabilities
 from src.data.clusters import Clusters
 
 
-class DeterministicLinker(Linker):
+class ExistingCMSPlusLinker(DeterministicLinker):
     """
-    A class to handle deterministic linking: either a match is achieved or
-    it isn't. In the probabilistic framework, can only ever reach one point
-    in the ROC curve.
+    A class to handle an extended version of the existing Company Matching
+    Service's methodology.
+
+    In the existing service, six items are matched deterministically to give a
+    vector of binary values. The service has no opinion on how to combine
+    these values to identify a positive match. The possible items are:
+
+    * Companies House ID
+    * Dun & Bradstreet ID
+    * Company name
+    * Contact email
+    * CDMS ID
+    * Company postcode
+
+    This class attempts to replicate the first part of this methodology as
+    close as possible, calculating a vector of binary values for whichever
+    fields are cleaned and passed to it.
+
+    The methodology is extended to take this vector, combine it with weights
+    for each value, then combine and scale it to 0-1, giving an interpretable
+    probability. In this way we hope to produce as close as possible the best
+    possible usage of the existing service based on knowledge of the datasets
+    it connects, even though this requires taking an opinion on matches that
+    the service doesn't currently give.
+
+    Inherits from DeterministicLinker as the methodology just extends the
+    link_settings and replaces the link() method. prepare() is identical.
+
+    Note prepare(link_settings) now requires an extra field: weight. An exact
+    match between the cluster and dimension fields will be scaled by 1*weight.
 
     Parameters:
         * name: The name of the linker model you're making. Should be unique --
@@ -25,7 +52,8 @@ class DeterministicLinker(Linker):
         * get_data(): retrieves the left and right tables: clusters
         and dimensions
         * prepare(): cleans the data using a data processing dict,
-        establishes which fields to match on with link_settings
+        establishes which fields to match on with link_settings, and the
+        weight each field should be given
         * link(): performs linking and returns a match table appropriate for
         Probabilities
         * evaluate(): runs prepare() and link() and returns a report of
@@ -51,61 +79,19 @@ class DeterministicLinker(Linker):
         self.con.register("cls", self.cluster_processed)
         self.con.register("dim", self.dim_processed)
 
-    def prepare(
-        self,
-        cluster_pipeline: dict,
-        dim_pipeline: dict,
-        link_settings: dict,
-        low_memory: bool = False,
-    ):
+    def link(self, threshold: float, log_output: bool = True, overwrite: bool = None):
         """
-        Cleans the data using the supplied dictionaries of functions.
+        Links the datasets deterministically by the supplied field(s), scales
+        the link vector by the match weights, then scales all vectors to
+        a single probability.
 
-        Controls which fields should be exactly matched post-cleaning. Expects
-        a dictionary where each entry is a another dictionary with keys
-        "cluster" and "dimension". An exact match between these cluster and
-        dimension fields will treated as match probability 1.
-
-        When low_memory is true, raw data is purged after processing.
-
-        Raises:
-            KeyError: if the linker settings use fields not present in the cleaned
-            datasets
-        """
-        self.linker = link_settings
-        self._clean_data(cluster_pipeline, dim_pipeline, delete_raw=low_memory)
-
-        cls_cols = {link["cluster"] for link in link_settings.values()}
-        dim_cols = {link["dimension"] for link in link_settings.values()}
-
-        cls_proc_cols = set(self.cluster_processed.columns)
-        dim_proc_cols = set(self.dim_processed.columns)
-
-        if len(cls_cols.intersection(cls_proc_cols)) != len(cls_cols):
-            missing = ", ".join(cls_proc_cols.difference(cls_cols))
-            raise KeyError(
-                f"""
-                Specified columns {missing} not present in processed cluster
-                data.
-            """
-            )
-
-        if len(dim_cols.intersection(dim_proc_cols)) != len(dim_cols):
-            missing = ", ".join(dim_proc_cols.difference(dim_cols))
-            raise KeyError(
-                f"""
-                Specified columns {missing} not present in processed dimension
-                data.
-            """
-            )
-
-        self._register_tables()
-
-    def link(self, log_output: bool = True, overwrite: bool = None):
-        """
-        Links the datasets deterministically by the supplied field(s).
+        Note threshold is different to the threshold set in Clusters.add_clusters,
+        which represents the threshold at which you believe a link to be a good one.
+        It's likely you'll want this to be lower so you can use validation to discover
+        the right Clusters.add_clusters threshold.
 
         Arguments:
+            threshold: the probability threshold below which to drop outputs
             log_output: whether to write outputs to the final table. Likely False as
             you refine your methodology, then True when you're happy
             overwrite: whether to overwrite existing outputs keyed to the specified
@@ -118,10 +104,8 @@ class DeterministicLinker(Linker):
             overwrite = self.overwrite
 
         join_clause = []
-        for link in self.linker.values():
-            cls = link["cluster"]
-            dim = link["dimension"]
-            join_clause.append(f"cls.{cls} = dim.{dim}")
+        for cls_field, dim_field in self.linker.items():
+            join_clause.append(f"cls.{cls_field} = dim.{dim_field}")
         join_clause = " and ".join(join_clause)
 
         self.predictions = self.con.sql(
