@@ -151,7 +151,7 @@ class DeterministicLinker(Linker):
 
         super()._add_log_item(
             name="match_pct",
-            item=out.probability.sum() / self.dim_processed.shape[0],
+            item=out.id.nunique() / self.dim_processed.shape[0],
             item_type="metric",
         )
 

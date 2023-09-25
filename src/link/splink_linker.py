@@ -220,6 +220,12 @@ class SplinkLinker(Linker):
         )
         probabilities["source"] = self.dataset.id
 
+        super()._add_log_item(
+            name="match_pct",
+            item=probabilities.id.nunique() / self.dim_processed.shape[0],
+            item_type="metric",
+        )
+
         if log_output:
             out = (probabilities.rename(columns={"match_probability": "probability"}))[
                 ["cluster", "id", "probability", "source"]
