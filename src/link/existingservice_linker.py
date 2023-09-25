@@ -119,8 +119,7 @@ class ExistingCMSPlusLinker(DeterministicLinker):
                 """
             )
 
-        join_clause = []
-        proability_clause = []
+        match_subquery = []
         weights = []
 
         for link in self.linker.values():
@@ -128,33 +127,40 @@ class ExistingCMSPlusLinker(DeterministicLinker):
             dim = link["dimension"]
             wgt = link["weight"]
 
-            eq = f"cls.{cls} = dim.{dim}"
-
-            join_clause.append(eq)
-            proability_clause.append(f"case when {eq} then 1 * {wgt} else 0 end")
+            match_subquery.append(
+                f"""
+                select
+                    cls.id as cluster,
+                    dim.id::text as id,
+                    1 * {wgt} as probability
+                from
+                    cls cls
+                left join
+                    dim dim on
+                        cls.{cls} = dim.{dim}
+                where
+                    dim.id is not null
+                """
+            )
             weights.append(wgt)
 
-        join_clause = " or ".join(join_clause)
-        proability_clause = ", ".join(proability_clause)
+        match_subquery = " union all ".join(match_subquery)
         total_weight = sum(weights)
 
         self.predictions = self.con.sql(
             f"""
             select
-                cls.id as cluster,
-                dim.id::text as id,
+                matches.cluster,
+                matches.id,
                 {self.dataset.id} as source,
-                list_aggregate(
-                    [{proability_clause}],
-                    'sum'
-                ) / {total_weight} as probability
+                sum(matches.probability) / {total_weight} as probability
             from
-                cls cls
-            left join
-                dim dim on
-                    {join_clause}
-            where
-                probability > {threshold}
+                ({match_subquery}) matches
+            group by
+                matches.cluster,
+                matches.id
+            having
+                sum(matches.probability) / {total_weight} > {threshold}
         """
         )
 
