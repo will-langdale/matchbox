@@ -4,7 +4,6 @@ from src.data.probabilities import Probabilities
 from src.data.validation import Validation
 from src.data.star import Star
 
-import uuid
 import click
 import logging
 from typing import Union
@@ -88,23 +87,23 @@ class Clusters(object):
         du.query_nonreturn(sql)
 
         if dim is not None:
-            dim_table = self.star.get(star_id=dim, response="dim")
+            dataset = Dataset(
+                star_id=dim,
+                star=self.star,
+            )
 
-            sql = f"""
+            du.query_nonreturn(
+                f"""
+                insert into {self.schema_table}
                 select
-                    id
+                    gen_random_uuid() as uuid,
+                    gen_random_uuid() as cluster,
+                    dim.id::text as id,
+                    {dataset.id} as source,
+                    0 as n
                 from
-                    {dim_table}
-            """
-
-            to_insert = du.query(sql)
-            to_insert["uuid"] = [uuid.uuid4() for _ in range(len(to_insert.index))]
-            to_insert["cluster"] = [uuid.uuid4() for _ in range(len(to_insert.index))]
-            to_insert["source"] = dim
-            to_insert["n"] = 0
-
-            du.data_workspace_write(
-                df=to_insert, schema=self.schema, table=self.table, if_exists="append"
+                    {dataset.schema_table} dim
+                """
             )
 
     def read(self):
