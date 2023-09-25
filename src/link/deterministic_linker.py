@@ -45,8 +45,18 @@ class DeterministicLinker(Linker):
     ):
         super().__init__(name, dataset, probabilities, clusters, n, overwrite)
 
-    def prepare(self):
-        pass
+    def prepare(
+        self,
+        cluster_pipeline: dict,
+        dim_pipeline: dict,
+        low_memory: bool = False,
+    ):
+        """
+        Cleans the data using the supplied dictionaries of functions.
+
+        When low_memory is true, raw data is purged after processing.
+        """
+        self._clean_data(cluster_pipeline, dim_pipeline, delete_raw=low_memory)
 
     def link(self, log_output: bool = True, overwrite: bool = None):
         """
