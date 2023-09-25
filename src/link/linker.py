@@ -12,6 +12,7 @@ import io
 from abc import ABC, abstractmethod
 import json
 from tempfile import NamedTemporaryFile
+from numbers import Number
 
 
 class Linker(ABC):
@@ -281,8 +282,8 @@ class Linker(ABC):
                 raise TypeError("Parameters must be logged as strings")
             self.report_parameters[name] = {"name": name, "value": item}
         elif item_type == "metric":
-            if not isinstance(item, int):
-                raise TypeError("Metrics must be logged as strings")
+            if not isinstance(item, Number):
+                raise TypeError("Metrics must be logged as numbers")
             self.report_metrics[name] = {"name": name, "value": item}
 
     def evaluate(

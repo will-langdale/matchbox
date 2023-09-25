@@ -45,18 +45,62 @@ class DeterministicLinker(Linker):
     ):
         super().__init__(name, dataset, probabilities, clusters, n, overwrite)
 
+        self.con = du.get_duckdb_connection(path=":memory:")
+        self.linker = None
+        self.predictions = None
+
+    def _register_tables(self):
+        self.con.register("cls", self.cluster_processed)
+        self.con.register("dim", self.dim_processed)
+
     def prepare(
         self,
         cluster_pipeline: dict,
         dim_pipeline: dict,
+        link_settings: dict,
         low_memory: bool = False,
     ):
         """
         Cleans the data using the supplied dictionaries of functions.
 
+        Controls which fields should be exactly matched post-cleaning. Expects a
+        dictionary where keys are the field in the cluster table, and values are
+        the comparable field in the dimension table.
+
         When low_memory is true, raw data is purged after processing.
+
+        Raises:
+            KeyError: if the linker settings use fields not present in the cleaned
+            datasets
         """
+        self.linker = link_settings
         self._clean_data(cluster_pipeline, dim_pipeline, delete_raw=low_memory)
+
+        cls_cols = set(self.linker.keys())
+        dim_cols = set(self.linker.values())
+
+        cls_proc_cols = set(self.cluster_processed.columns)
+        dim_proc_cols = set(self.dim_processed.columns)
+
+        if len(cls_cols.intersection(cls_proc_cols)) != len(cls_cols):
+            missing = ", ".join(cls_proc_cols.difference(cls_cols))
+            raise KeyError(
+                f"""
+                Specified columns {missing} not present in processed cluster
+                data.
+            """
+            )
+
+        if len(dim_cols.intersection(dim_proc_cols)) != len(dim_cols):
+            missing = ", ".join(dim_proc_cols.difference(dim_cols))
+            raise KeyError(
+                f"""
+                Specified columns {missing} not present in processed dimension
+                data.
+            """
+            )
+
+        self._register_tables()
 
     def link(self, log_output: bool = True, overwrite: bool = None):
         """
@@ -74,8 +118,46 @@ class DeterministicLinker(Linker):
         if overwrite is None:
             overwrite = self.overwrite
 
-        to_insert = None
+        join_clause = []
+        for cls_field, dim_field in self.linker.items():
+            join_clause.append(f"cls.{cls_field} = dim.{dim_field}")
+        join_clause = " and ".join(join_clause)
 
-        du.data_workspace_write(
-            df=to_insert, schema=self.schema, table=self.table, if_exists="append"
+        self.predictions = self.con.sql(
+            f"""
+            select
+                cls.id as cluster,
+                dim.id::text as id,
+                {self.dataset.id} as source,
+                case when
+                    dim.id is null
+                then
+                    0
+                else
+                    1
+                end as probability
+            from
+                cls cls
+            left join
+                dim dim on
+                    {join_clause}
+            where
+                dim.id is not null
+                and cls.id is not null
+        """
         )
+
+        out = self.predictions.df()
+
+        super()._add_log_item(
+            name="match_pct",
+            item=out.probability.sum() / self.dim_processed.shape[0],
+            item_type="metric",
+        )
+
+        if log_output:
+            self.probabilities.add_probabilities(
+                probabilities=out, model=self.name, overwrite=overwrite
+            )
+
+        return out
