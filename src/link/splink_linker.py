@@ -12,6 +12,12 @@ import pandas as pd
 
 
 class ComparisonEncoder(json.JSONEncoder):
+    """
+    Splink functions can't be encoded to JSON by default, but can be
+    represented as dictionaries with their own implemented as_dict() method.
+    This class allows json.dumps to use that method when encoding.
+    """
+
     def default(self, obj):
         if callable(obj):
             return obj.__name__
@@ -31,14 +37,18 @@ class SplinkLinker(Linker):
     correct data back on afterwards.
 
     Parameters:
+        * name: The name of the linker model you're making. Should be unique --
+        link outputs are keyed to this name
         * dataset: An object of class Dataset
         * probabilities: An object of class Probabilities
         * clusters: An object of class Clusters
         * n: The current step in the pipeline process
+        * overwrite: Whether the link() method should replace existing outputs
+        of models with this linker model's name
         * db_path: [Optional] If writing to disk, the location to use
         for duckDB
 
-    Methods:
+    Public methods:
         * get_data(): retrieves the left and right tables: clusters
         and dimensions
         * prepare(linker_settings, cluster_pipeline, dim_pipeline,
@@ -50,6 +60,19 @@ class SplinkLinker(Linker):
         threshold
         * evaluate(): runs prepare() and link() and returns a report of
         their performance
+
+    Private methods:
+        * _clean_data(): uses the parent _run_pipeline() method to clean
+        cluster and dimension data according to the dictionary of functions
+        provided
+        * _substitute_ids(): swaps string IDs for integers for lower memory
+        use and quicker processing. Joined back in later
+        * _register_tables(): adds pandas dataframes to Splink's duckdb to
+        avoid the need to insert them, and double memory usage
+        * _create_linker(): a wrapper for creating Splink's DuckDBLinker class
+        * _train_linker(): runs the supplied dictionary of DuckDBLinker class
+        methods to train the linker. See Splink's documentation for supported
+        functions
     """
 
     def __init__(
