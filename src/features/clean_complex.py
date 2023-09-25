@@ -8,6 +8,45 @@ from src.features.clean_basic import (
     # get_low_freq_char_sig,
 )
 from src.config import stopwords
+from typing import Callable
+
+
+def duckdb_cleaning_factory(functions: list[Callable]) -> Callable:
+    """
+    Takes a list of basic cleaning functions appropriate for a select
+    statement and add them together into a full cleaning function for use in
+    a linker's _clean_data() method. Runs the cleaning in duckdb.
+
+    Only for use with cleaning methods that take a single column as their
+    argument.
+
+    Arguments:
+        functions: a list of functions appropriate for a select statement.
+        See clean_basic for some examples
+    """
+    if not isinstance(functions, list):
+        functions = [functions]
+
+    def cleaning_method(df, column: str):
+        to_run = []
+
+        for f in functions:
+            to_run.append(
+                f"""
+                select
+                    *
+                    replace ({f(column)} as {column})
+                from
+                    df;
+                """
+            )
+
+        for sql in to_run:
+            df = duckdb.sql(sql).df()
+
+        return df
+
+    return cleaning_method
 
 
 def clean_comp_numbers(df):
