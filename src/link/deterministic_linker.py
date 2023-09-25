@@ -12,12 +12,14 @@ class DeterministicLinker(Linker):
     in the ROC curve.
 
     Parameters:
-        * name: The name of this linking model, which its outputs will be
-        keyed to for model comparison
+        * name: The name of the linker model you're making. Should be unique --
+        link outputs are keyed to this name
         * dataset: An object of class Dataset
         * probabilities: An object of class Probabilities
         * clusters: An object of class Clusters
         * n: The current step in the pipeline process
+        * overwrite: Whether the link() method should replace existing outputs
+        of models with this linker model's name
 
     Methods:
         * get_data(): retrieves the left and right tables: clusters

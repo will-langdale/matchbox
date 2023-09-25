@@ -87,24 +87,6 @@ class SplinkLinker(Linker):
         if self.linker is not None:
             self._create_linker(linker_settings=self.linker)
 
-    def _clean_data(
-        self, cluster_pipeline: dict, dim_pipeline: dict, delete_raw: bool = False
-    ):
-        """
-        Runs the supplied pipelines as per Linker._run_pipeline.
-
-        The only extra parameter is delete_raw. When True, will delete raw
-        data to keep memory use to a minimum.
-        """
-        self.cluster_processed = super()._run_pipeline(
-            self.cluster_raw, cluster_pipeline
-        )
-        self.dim_processed = super()._run_pipeline(self.dim_raw, dim_pipeline)
-
-        if delete_raw:
-            self.cluster_raw = None
-            self.dim_raw = None
-
     def _substitute_ids(self):
         cls_len = self.cluster_processed.shape[0]
         dim_len = self.dim_processed.shape[0]

@@ -40,7 +40,7 @@ class Linker(ABC):
         * overwrite: Whether the link() method should replace existing outputs
         of models with this linker model's name
 
-    Methods:
+    Public methods:
         * get_data(cluster_select, dim_select): retrieves the left and right
         tables: clusters and dimensions
         * prepare(): a method intended for linkers that need to clean data
@@ -51,6 +51,15 @@ class Linker(ABC):
         their performance
         * save(path): saves the linker object to a file as a pickle
         * load(path): loads an instance of a Linker class from a pickle file
+
+    Private methods:
+        * _run_pipeline(): takes a dictionary of functions and arguments and
+        runs them against a dataset one by one
+        * _clean_data(): uses _run_pipeline() to clean cluster and dimension
+        data according to the dictionary of functions provided
+        * _add_log_item(): records an artefact (like a file), a parameter, or
+        a metric to the respective class dictionaries. These are automatically
+        saved as part of the evaluate() method
     """
 
     def __init__(
@@ -134,6 +143,22 @@ class Linker(ABC):
         for func in pipeline.keys():
             curr = pipeline[func]["function"](curr, **pipeline[func]["arguments"])
         return curr
+
+    def _clean_data(
+        self, cluster_pipeline: dict, dim_pipeline: dict, delete_raw: bool = False
+    ):
+        """
+        Runs the supplied pipelines as per _run_pipeline()
+
+        The only extra parameter is delete_raw. When True, will delete raw
+        data to keep memory use to a minimum.
+        """
+        self.cluster_processed = self._run_pipeline(self.cluster_raw, cluster_pipeline)
+        self.dim_processed = self._run_pipeline(self.dim_raw, dim_pipeline)
+
+        if delete_raw:
+            self.cluster_raw = None
+            self.dim_raw = None
 
     @abstractmethod
     def prepare(self):
