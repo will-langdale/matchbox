@@ -79,7 +79,9 @@ class ExistingCMSPlusLinker(DeterministicLinker):
         self.con.register("cls", self.cluster_processed)
         self.con.register("dim", self.dim_processed)
 
-    def link(self, threshold: float, log_output: bool = True, overwrite: bool = None):
+    def link(
+        self, threshold: float = None, log_output: bool = True, overwrite: bool = None
+    ):
         """
         Links the datasets deterministically by the supplied field(s), scales
         the link vector by the match weights, then scales all vectors to
@@ -97,16 +99,44 @@ class ExistingCMSPlusLinker(DeterministicLinker):
             overwrite: whether to overwrite existing outputs keyed to the specified
             model name. Defaults to option set at linker instantiation
 
+        Raises:
+            ValueError: if threshold is not a valid probability
+
         Returns:
             The linked dataframe as it was added to the probabilities table.
         """
         if overwrite is None:
             overwrite = self.overwrite
 
+        if threshold is None:
+            threshold = 0
+
+        if threshold > 1 or threshold < 0:
+            raise ValueError(
+                f"""
+                    threshold must be a valid probability between 0 and 1
+                    Current value: {threshold}
+                """
+            )
+
         join_clause = []
-        for cls_field, dim_field in self.linker.items():
-            join_clause.append(f"cls.{cls_field} = dim.{dim_field}")
-        join_clause = " and ".join(join_clause)
+        proability_clause = []
+        weights = []
+
+        for link in self.linker.values():
+            cls = link["cluster"]
+            dim = link["dimension"]
+            wgt = link["weight"]
+
+            eq = f"cls.{cls} = dim.{dim}"
+
+            join_clause.append(eq)
+            proability_clause.append(f"case when {eq} then 1 * {wgt} else 0 end")
+            weights.append(wgt)
+
+        join_clause = " or ".join(join_clause)
+        proability_clause = ", ".join(proability_clause)
+        total_weight = sum(weights)
 
         self.predictions = self.con.sql(
             f"""
@@ -114,25 +144,25 @@ class ExistingCMSPlusLinker(DeterministicLinker):
                 cls.id as cluster,
                 dim.id::text as id,
                 {self.dataset.id} as source,
-                case when
-                    dim.id is null
-                then
-                    0
-                else
-                    1
-                end as probability
+                list_aggregate(
+                    [{proability_clause}],
+                    'sum'
+                ) / {total_weight} as probability
             from
                 cls cls
             left join
                 dim dim on
                     {join_clause}
             where
-                dim.id is not null
-                and cls.id is not null
+                probability > {threshold}
         """
         )
 
         out = self.predictions.df()
+
+        super()._add_log_item(
+            name="link_threshold", item=str(threshold), item_type="parameter"
+        )
 
         super()._add_log_item(
             name="match_pct",
