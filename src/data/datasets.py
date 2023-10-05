@@ -5,6 +5,7 @@ from src.config import link_pipeline
 import logging
 from dotenv import load_dotenv, find_dotenv
 import os
+from typing import Union
 
 
 class Dataset(object):
@@ -34,12 +35,17 @@ class Dataset(object):
         * get_cols(table): Gets the table column names
     """
 
-    def __init__(self, selector: int | str, star: Star):
+    def __init__(self, selector: Union[int, str], star: Star):
         self.star = star
 
-        if isinstance(selector, int):
-            self.id = selector
-        elif isinstance(selector, str):
+        # Get the STAR ID regardless of what kind of selector was applied
+        try:
+            self.id = int(selector)
+        except ValueError:
+            fact = None
+            dim = None
+            fact_error = ""
+            dim_error = ""
             try:
                 fact = star.get(fact=selector, response="id")
             except ValueError as e:
@@ -48,16 +54,22 @@ class Dataset(object):
                 dim = star.get(dim=selector, response="id")
             except ValueError as e:
                 dim_error = str(e)
-            if fact is not None ^ dim is not None:
-                if fact is not None:
-                    self.id = fact
-                elif dim is not None:
-                    self.id = dim
-            else:
+
+            if fact is None and dim is None:
                 raise ValueError(
                     f"""
                     {fact_error}
                     {dim_error}
+                """
+                )
+            elif fact is not None or (fact == dim):
+                self.id = fact
+            elif dim is not None or (fact == dim):
+                self.id = dim
+            else:
+                raise ValueError(
+                    """
+                    More than one value returned. Refine your request.
                 """
                 )
         else:
@@ -222,7 +234,7 @@ if __name__ == "__main__":
                 dim=link_pipeline[table]["dim"],
                 response="id",
             )
-            data = Dataset(star_id=star_id, star=star)
+            data = Dataset(selector=star_id, star=star)
 
             logger.info(f"Creating {data.dim_schema_table}")
 

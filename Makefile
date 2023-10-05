@@ -34,7 +34,7 @@ probabilities:
 
 ## Make clusters table with Companies House as the default data
 clusters:
-	$(PYTHON_INTERPRETER) src/data/clusters.py --dim 1970 --overwrite
+	$(PYTHON_INTERPRETER) src/data/clusters.py --dim companieshouse.companies --overwrite
 
 
 ## Make validation table

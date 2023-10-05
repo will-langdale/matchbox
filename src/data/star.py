@@ -127,9 +127,18 @@ class Star(object):
             )
 
         where_id = f"id = {star_id}" if star_id is not None else ""
-        where_fact = f"fact = '{fact}'" if fact is not None else ""
-        where_dim = f"dim = '{dim}'" if dim is not None else ""
-        where_clase = " and ".join(
+        if fact is not None:
+            fact_clean = fact.lower().replace('"', "")
+            where_fact = f"replace(lower(fact), '\"', '') like '%{fact_clean}%'"
+        else:
+            where_fact = ""
+        if dim is not None:
+            dim_clean = dim.lower().replace('"', "")
+            where_dim = f"replace(lower(dim), '\"', '') like '%{dim_clean}%'"
+        else:
+            where_dim = ""
+
+        where_clause = " and ".join(
             filter(lambda i: (i != ""), [where_id, where_fact, where_dim])
         )
 
@@ -139,7 +148,7 @@ class Star(object):
             from
                 {self.schema_table}
             where
-                {where_clase}
+                {where_clause}
         """
 
         filtered_star = du.query(sql)

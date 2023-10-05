@@ -55,7 +55,7 @@ class Clusters(object):
             """
             )
 
-    def create(self, overwrite: bool, dim: int | str = None):
+    def create(self, overwrite: bool, dim: Union[int, str] = None):
         """
         Creates a new cluster table. If a dimension table is specified, adds
         each row as a new cluster to the recreated table.
@@ -88,7 +88,7 @@ class Clusters(object):
 
         if dim is not None:
             dataset = Dataset(
-                star_id=dim,
+                selector=dim,
                 star=self.star,
             )
 
@@ -102,7 +102,7 @@ class Clusters(object):
                     {dataset.id} as source,
                     0 as n
                 from
-                    {dataset.schema_table} dim
+                    {dataset.dim_schema_table} dim
                 """
             )
 
@@ -433,7 +433,7 @@ class Clusters(object):
             # Add a new cluster for any rows that weren't matched in the dim tables
             for table in probabilities.get_sources():
                 dataset = Dataset(
-                    star_id=table,
+                    selector=table,
                     star=self.star,
                 )
                 du.query_nonreturn(
@@ -584,10 +584,10 @@ class Clusters(object):
 @click.option(
     "--dim",
     required=False,
-    type=int,
+    type=str,
     help="""
-        The STAR ID of the dimenstion table with which to
-        populate the new cluster table.
+        Any valid selector for an item in the STAR table:
+        a string for a factor or dimension table, or the int ID
     """,
 )
 def create_cluster_table(overwrite, dim):
@@ -603,14 +603,16 @@ def create_cluster_table(overwrite, dim):
     )
 
     if dim:
+        dim = Dataset(selector=dim, star=star)
+
         logger.info(
             f"""
             Creating clusters table {clusters.schema_table}.
-            Instantiating with clusters from dimension table {dim}.
+            Instantiating with clusters from dimension table {dim.dim_schema_table}.
         """
         )
 
-        clusters.create(overwrite=overwrite, dim=dim)
+        clusters.create(overwrite=overwrite, dim=dim.id)
     else:
         logger.info(f"Creating clusters table {clusters.schema_table}")
 
