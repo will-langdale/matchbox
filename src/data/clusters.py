@@ -55,14 +55,14 @@ class Clusters(object):
             """
             )
 
-    def create(self, overwrite: bool, dim: int = None):
+    def create(self, overwrite: bool, dim: int | str = None):
         """
         Creates a new cluster table. If a dimension table is specified, adds
         each row as a new cluster to the recreated table.
 
         Arguments:
-            dim: [Optional] The STAR ID of a dimension table to populate the
-            new cluster table with
+            dim: [Optional] any valid selector for an item in the STAR table:
+            a string for a factor or dimension table, or the int ID
             overwrite: Whether or not to overwrite an existing cluster table
         """
 

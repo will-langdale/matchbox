@@ -35,7 +35,7 @@ make setup
 
 ### How does matching happen?
 
-![The methodology of match orchestration](/docs/hybridadditive_links.png "The 🔌hybrid additive methodology")
+![The methodology of match orchestration](/references/hybridadditive_links.png "The 🔌hybrid additive methodology")
 
 The matching methodology is often shorthanded as 🔌hybrid additive. This is because there are a core set of tables that are matched additively, one after the other, each using information from all the tables before it. After this, tables can be plugged into this additive core in any order, even in parallel.
 
@@ -44,7 +44,7 @@ Recall a **dimension table** contains one row only for each company entity. An e
 To implement 🔌hybrid additive matching, there are three foundational ideas:
 
 1. Every dataset we're matching must be a dimension table
-2. A company entity (a "cluster") can only ever have a maximum of one item from each dimension table
+2. A resolved company entity (a "cluster") can only ever have a maximum of one item from each dimension table
 3. The left side of a join is always constructed from the clusters table
 
 Everything else flows from this. Matching is done in a pipeline where each step is `n`. For each step in a matching pipeline:
@@ -57,11 +57,11 @@ Everything else flows from this. Matching is done in a pipeline where each step 
 
 ### What does the framework's database look like?
 
-![The entity relationship diagram of the framework](/docs/erdiagram.png "The entity relationship diagram")
+![The entity relationship diagram of the framework](/references/erdiagram.png "The entity relationship diagram")
 
 The architecture is loosely based on the star schema.
 
-Every dataset we're matching must be a dimension table. If the dataset in Data Workspace isn't already a dimension table, we create its dimension table through naïve deduping (without cleaning) on the fields that demarcate an entity.
+Every dataset we're matching must be a dimension table. If the dataset in Data Workspace isn't already a dimension table, we create its dimension table through naïve deduping, which we define as matching without cleaning on the fields that demarcate an entity.
 
 The star table is a lookup of these fact and dimension table names, and it's this `id` that's used in the various `source` fields.
 
@@ -73,7 +73,7 @@ The clusters table contains the probabilities and validation tables resolved int
 
 ### What does the code structure look like?
 
-![The class diagram of the framework](/docs/classdiagram.png "The class diagram")
+![The class diagram of the framework](/references/classdiagram.png "The class diagram")
 
 Broadly, the repo contains two kinds of classes:
 

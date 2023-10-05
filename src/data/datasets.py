@@ -13,7 +13,8 @@ class Dataset(object):
     matching framework.
 
     Parameters:
-        * star_id: the ID of the row in the STAR table
+        * selector: any valid selector for an item in the STAR table:
+        a string for a factor or dimension table, or the int ID
         * star: a star object from which to populate key fields
 
     Attributes:
@@ -33,9 +34,34 @@ class Dataset(object):
         * get_cols(table): Gets the table column names
     """
 
-    def __init__(self, star_id: int, star: Star):
+    def __init__(self, selector: int | str, star: Star):
         self.star = star
-        self.id = star_id
+
+        if isinstance(selector, int):
+            self.id = selector
+        elif isinstance(selector, str):
+            try:
+                fact = star.get(fact=selector, response="id")
+            except ValueError as e:
+                fact_error = str(e)
+            try:
+                dim = star.get(dim=selector, response="id")
+            except ValueError as e:
+                dim_error = str(e)
+            if fact is not None ^ dim is not None:
+                if fact is not None:
+                    self.id = fact
+                elif dim is not None:
+                    self.id = dim
+            else:
+                raise ValueError(
+                    f"""
+                    {fact_error}
+                    {dim_error}
+                """
+                )
+        else:
+            ValueError("selector must be of type int or str")
 
         self.dim_schema_table = star.get(star_id=self.id, response="dim")
         self.dim_schema, self.dim_table = du.get_schema_table_names(
