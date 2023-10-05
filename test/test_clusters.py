@@ -97,7 +97,7 @@ def test_parallel(test_name):
     probabilities.add_probabilities(
         probabilities=prob.drop(["uuid", "link_type"], axis=1),
         model="1",
-        overwrite=False,
+        overwrite=True,
     )
 
     validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)
@@ -107,6 +107,7 @@ def test_parallel(test_name):
     clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
     clusters.create(overwrite=True)
 
+    # The long cast() lpad() to_hex() chain makes ints into UUIDs
     du.query_nonreturn(
         f"""
         insert into {clusters.schema_table}
@@ -182,7 +183,7 @@ def test_sequential(test_name):
     probabilities.add_probabilities(
         probabilities=prob.drop(["uuid", "link_type"], axis=1),
         model="1",
-        overwrite=False,
+        overwrite=True,
     )
     clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
     clusters.create(overwrite=True)
@@ -227,7 +228,7 @@ def test_sequential(test_name):
         probabilities.add_probabilities(
             probabilities=prob_n.drop(["uuid", "link_type"], axis=1),
             model=model,
-            overwrite=False,
+            overwrite=True,
         )
 
         # Create validation table at step n
@@ -285,7 +286,7 @@ def test_models(test):
         probabilities.add_probabilities(
             probabilities=to_add,
             model=model,
-            overwrite=False,
+            overwrite=True,
         )
 
     validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)

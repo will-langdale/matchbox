@@ -38,15 +38,10 @@ class ExistingCMSPlusLinker(DeterministicLinker):
     Note prepare(link_settings) now requires an extra field: weight. An exact
     match between the cluster and dimension fields will be scaled by 1*weight.
 
-    Parameters:
-        * name: The name of the linker model you're making. Should be unique --
-        link outputs are keyed to this name
-        * dataset: An object of class Dataset
-        * probabilities: An object of class Probabilities
-        * clusters: An object of class Clusters
-        * n: The current step in the pipeline process
-        * overwrite: Whether the link() method should replace existing outputs
-        of models with this linker model's name
+    Attributes:
+        * linker: The settings used to link
+        * con: The connection object for the duckDB database
+        * predictions: The dataset of predictions, once made
 
     Methods:
         * get_data(): retrieves the left and right tables: clusters
@@ -69,6 +64,17 @@ class ExistingCMSPlusLinker(DeterministicLinker):
         n: int,
         overwrite: bool = False,
     ):
+        """
+        Parameters:
+            * name: The name of the linker model you're making. Should be unique --
+            link outputs are keyed to this name
+            * dataset: An object of class Dataset
+            * probabilities: An object of class Probabilities
+            * clusters: An object of class Clusters
+            * n: The current step in the pipeline process
+            * overwrite: Whether the link() method should replace existing outputs
+            of models with this linker model's name
+        """
         super().__init__(name, dataset, probabilities, clusters, n, overwrite)
 
         self.con = du.get_duckdb_connection(path=":memory:")
@@ -80,7 +86,7 @@ class ExistingCMSPlusLinker(DeterministicLinker):
         self.con.register("dim", self.dim_processed)
 
     def link(
-        self, threshold: float = None, log_output: bool = True, overwrite: bool = None
+        self, threshold: float = None, log_output: bool = False, overwrite: bool = None
     ):
         """
         Links the datasets deterministically by the supplied field(s), scales

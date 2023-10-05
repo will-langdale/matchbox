@@ -11,15 +11,10 @@ class DeterministicLinker(Linker):
     it isn't. In the probabilistic framework, can only ever reach one point
     in the ROC curve.
 
-    Parameters:
-        * name: The name of the linker model you're making. Should be unique --
-        link outputs are keyed to this name
-        * dataset: An object of class Dataset
-        * probabilities: An object of class Probabilities
-        * clusters: An object of class Clusters
-        * n: The current step in the pipeline process
-        * overwrite: Whether the link() method should replace existing outputs
-        of models with this linker model's name
+    Attributes:
+        * linker: The settings used to link
+        * con: The connection object for the duckDB database
+        * predictions: The dataset of predictions, once made
 
     Methods:
         * get_data(): retrieves the left and right tables: clusters
@@ -41,6 +36,17 @@ class DeterministicLinker(Linker):
         n: int,
         overwrite: bool = False,
     ):
+        """
+        Parameters:
+            * name: The name of the linker model you're making. Should be unique --
+            link outputs are keyed to this name
+            * dataset: An object of class Dataset
+            * probabilities: An object of class Probabilities
+            * clusters: An object of class Clusters
+            * n: The current step in the pipeline process
+            * overwrite: Whether the link() method should replace existing outputs
+            of models with this linker model's name
+        """
         super().__init__(name, dataset, probabilities, clusters, n, overwrite)
 
         self.con = du.get_duckdb_connection(path=":memory:")
@@ -56,7 +62,7 @@ class DeterministicLinker(Linker):
         cluster_pipeline: dict,
         dim_pipeline: dict,
         link_settings: dict,
-        low_memory: bool = False,
+        low_memory: bool = True,
     ):
         """
         Cleans the data using the supplied dictionaries of functions.
@@ -101,7 +107,7 @@ class DeterministicLinker(Linker):
 
         self._register_tables()
 
-    def link(self, log_output: bool = True, overwrite: bool = None):
+    def link(self, log_output: bool = False, overwrite: bool = None):
         """
         Links the datasets deterministically by the supplied field(s).
 

@@ -36,19 +36,14 @@ class SplinkLinker(Linker):
     usage during linking. Will create this during a job, and re-join the
     correct data back on afterwards.
 
-    Parameters:
-        * name: The name of the linker model you're making. Should be unique --
-        link outputs are keyed to this name
-        * dataset: An object of class Dataset
-        * probabilities: An object of class Probabilities
-        * clusters: An object of class Clusters
-        * n: The current step in the pipeline process
-        * overwrite: Whether the link() method should replace existing outputs
-        of models with this linker model's name
-        * db_path: [Optional] If writing to disk, the location to use
-        for duckDB
+    Attributes:
+        * linker: The Splink Linker object
+        * db_path: The path to the duckDB database this linker uses
+        * con: The connection object for the duckDB database
+        * id_lookup: A lookup of IDs to minimise strings in memory
+        * predictions: The dataset of predictions, once made
 
-    Public methods:
+    Methods:
         * get_data(): retrieves the left and right tables: clusters
         and dimensions
         * prepare(linker_settings, cluster_pipeline, dim_pipeline,
@@ -60,19 +55,6 @@ class SplinkLinker(Linker):
         threshold
         * evaluate(): runs prepare() and link() and returns a report of
         their performance
-
-    Private methods:
-        * _clean_data(): uses the parent _run_pipeline() method to clean
-        cluster and dimension data according to the dictionary of functions
-        provided
-        * _substitute_ids(): swaps string IDs for integers for lower memory
-        use and quicker processing. Joined back in later
-        * _register_tables(): adds pandas dataframes to Splink's duckdb to
-        avoid the need to insert them, and double memory usage
-        * _create_linker(): a wrapper for creating Splink's DuckDBLinker class
-        * _train_linker(): runs the supplied dictionary of DuckDBLinker class
-        methods to train the linker. See Splink's documentation for supported
-        functions
     """
 
     def __init__(
@@ -85,6 +67,19 @@ class SplinkLinker(Linker):
         overwrite: bool = False,
         db_path: str = ":memory:",
     ):
+        """
+        Parameters:
+            * name: The name of the linker model you're making. Should be unique --
+            link outputs are keyed to this name
+            * dataset: An object of class Dataset
+            * probabilities: An object of class Probabilities
+            * clusters: An object of class Clusters
+            * n: The current step in the pipeline process
+            * overwrite: Whether the link() method should replace existing outputs
+            of models with this linker model's name
+            * db_path: [Optional] If writing to disk, the location to use
+            for duckDB
+        """
         super().__init__(name, dataset, probabilities, clusters, n, overwrite)
 
         self.linker = None
@@ -140,7 +135,6 @@ class SplinkLinker(Linker):
             connection=self.con,
             settings_dict=linker_settings,
         )
-        self.linker_settings = self.linker._settings_obj.as_dict()
 
     def _train_linker(self, train_pipeline: dict):
         """
@@ -185,7 +179,7 @@ class SplinkLinker(Linker):
         dim_pipeline: dict,
         linker_settings: dict,
         train_pipeline: dict,
-        low_memory: bool = False,
+        low_memory: bool = True,
     ):
         """
         Runs all the linker's private cleaning, shaping and training methods,
@@ -199,7 +193,7 @@ class SplinkLinker(Linker):
         self._create_linker(linker_settings)
         self._train_linker(train_pipeline)
 
-    def link(self, threshold: float, log_output: bool = True, overwrite: bool = None):
+    def link(self, threshold: float, log_output: bool = False, overwrite: bool = None):
         """
         Runs the linker's link job.
 

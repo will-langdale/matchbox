@@ -31,17 +31,29 @@ class Linker(ABC):
     * Dicts of settings that configure its process
     * A single step in the link_pipeline in config.py
 
-    Parameters:
-        * name: The name of the linker model you're making. Should be unique --
-        link outputs are keyed to this name
-        * dataset: An object of class Dataset
-        * probabilities: An object of class Probabilities
-        * clusters: An object of class Clusters
-        * n: The current step in the pipeline process
-        * overwrite: Whether the link() method should replace existing outputs
-        of models with this linker model's name
+    Attributes:
+        * name: The name of the linker model you're making. Should be unique
+        -- link outputs are keyed to this name
+        * dataset: The dataset the linker links. On object of class Dataset
+        * probabilities: The probabilities table the linker ouputs to. An
+        object of class Probabilities
+        * clusters: The clusters table the linker will construct a join to.
+        An object of class Cluster
+        * n: The step n in the pipeline this linker is working at
+        * overwrite: Whether the linker will overwrite probabilities
+        recorded against its name
+        * cluster_raw: The raw reconstituted cluster table
+        * dim_raw: The raw dimension table
+        * cluster_processed: The processed cluster table
+        * dim_processed: The processed dimension table
+        * report_artefacts: A dictionary of files to record against a linker
+        run
+        * report_parameters: A dictionary of parameters to record against a
+        linker run
+        * report_metrics: A dictionary of metrics to record against a linker
+        run
 
-    Public methods:
+    Methods:
         * get_data(cluster_select, dim_select): retrieves the left and right
         tables: clusters and dimensions
         * prepare(): a method intended for linkers that need to clean data
@@ -52,15 +64,6 @@ class Linker(ABC):
         their performance
         * save(path): saves the linker object to a file as a pickle
         * load(path): loads an instance of a Linker class from a pickle file
-
-    Private methods:
-        * _run_pipeline(): takes a dictionary of functions and arguments and
-        runs them against a dataset one by one
-        * _clean_data(): uses _run_pipeline() to clean cluster and dimension
-        data according to the dictionary of functions provided
-        * _add_log_item(): records an artefact (like a file), a parameter, or
-        a metric to the respective class dictionaries. These are automatically
-        saved as part of the evaluate() method
     """
 
     def __init__(
@@ -72,6 +75,17 @@ class Linker(ABC):
         n: int,
         overwrite: bool = False,
     ):
+        """
+        Parameters:
+            * name: The name of the linker model you're making. Should be unique --
+            link outputs are keyed to this name
+            * dataset: An object of class Dataset
+            * probabilities: An object of class Probabilities
+            * clusters: An object of class Clusters
+            * n: The current step in the pipeline process
+            * overwrite: Whether the link() method should replace existing outputs
+            of models with this linker model's name
+        """
         self.name = name
         self.dataset = dataset
         self.probabilities = probabilities
