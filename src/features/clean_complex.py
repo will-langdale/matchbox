@@ -57,7 +57,7 @@ def clean_comp_numbers(df):
     """
 
     sql_clean_comp_number = f"""
-    SELECT
+    select
         {remove_notnumbers_leadingzeroes("company_number")} as comp_num_clean,
         *
     from df
@@ -154,10 +154,10 @@ def add_postcode_area(df):
 
     """
     sql_add_postcode_area = f"""
-    SELECT
-        {get_postcode_area("postcode")} AS postcode_area,
+    select
+        {get_postcode_area("postcode")} as postcode_area,
         *
-    FROM df
+    from df
     """
     clean_df = duckdb.sql(sql_add_postcode_area)  # noqa:F841
 
