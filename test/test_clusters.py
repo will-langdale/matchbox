@@ -10,6 +10,8 @@ from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
 import os
 import pytest
+import pandas as pd
+import uuid
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -20,6 +22,26 @@ temp_prob = "temp_prob"
 temp_clus = "temp_clus"
 
 star = Star(schema=os.getenv("SCHEMA"), table=temp_star)
+
+
+def load_test_data(path, int_to_uuid: bool = False):
+    prob = pd.read_csv(Path(path, "probabilities.csv"))
+    clus = pd.read_csv(Path(path, "clusters.csv"))
+    val = pd.read_csv(Path(path, "validate.csv"))
+
+    if int_to_uuid:
+
+        def int_to_uuid(x):
+            return uuid.UUID(int=x)
+
+        prob["uuid"] = prob["uuid"].apply(int_to_uuid)
+        prob["cluster"] = prob["cluster"].apply(int_to_uuid)
+        clus["uuid"] = clus["uuid"].apply(int_to_uuid)
+        clus["cluster"] = clus["cluster"].apply(int_to_uuid)
+        val["uuid"] = val["uuid"].apply(int_to_uuid)
+        val["cluster"] = val["cluster"].apply(int_to_uuid)
+
+    return prob, clus, val
 
 
 def validate_against_answer(my_cluster, validated_cluster, n_type="par"):
@@ -87,7 +109,7 @@ def test_parallel(test_name):
     * Validation contradicting the given probabilities
     """
     # Setup test
-    prob, clus, val = du.load_test_data(
+    prob, clus, val = load_test_data(
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     probabilities = Probabilities(
@@ -169,7 +191,7 @@ def test_sequential(test_name):
     * Validation contradicting the given probabilities
     """
     # Setup test
-    prob, clus, val = du.load_test_data(
+    prob, clus, val = load_test_data(
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     prob_sequence_dict = {i - 1: g for i, g in prob.groupby("source")}
@@ -271,7 +293,7 @@ def test_models(test):
     model_to_prefer = test[0]
 
     # Setup test
-    prob, clus, val = du.load_test_data(
+    prob, clus, val = load_test_data(
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     probabilities = Probabilities(
