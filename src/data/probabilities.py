@@ -56,16 +56,18 @@ class Probabilities(object):
             table
         """
 
+        exists = du.check_table_exists(self.schema_table)
+
         if overwrite:
             drop = f"drop table if exists {self.schema_table};"
-            exist_clause = ""
+        elif exists:
+            raise ValueError("Table exists and overwrite set to false")
         else:
             drop = ""
-            exist_clause = "if not exists"
 
         sql = f"""
             {drop}
-            create table {exist_clause} {self.schema_table} (
+            create table {self.schema_table} (
                 uuid uuid primary key,
                 link_type text not null,
                 model text not null,
