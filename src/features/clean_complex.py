@@ -1,4 +1,7 @@
 import duckdb
+from typing import Callable
+from functools import partial
+
 from src.features.clean_basic import (
     remove_notnumbers_leadingzeroes,
     clean_company_name,
@@ -8,7 +11,6 @@ from src.features.clean_basic import (
     # get_low_freq_char_sig,
 )
 from src.config import stopwords
-from typing import Callable
 
 
 def duckdb_cleaning_factory(functions: list[Callable]) -> Callable:
@@ -18,7 +20,8 @@ def duckdb_cleaning_factory(functions: list[Callable]) -> Callable:
     a linker's _clean_data() method. Runs the cleaning in duckdb.
 
     Only for use with cleaning methods that take a single column as their
-    argument.
+    argument. Consider using functools.partial to coerce functions that need
+    arguments into this shape, if you want.
 
     Arguments:
         functions: a list of functions appropriate for a select statement.
@@ -49,22 +52,51 @@ def duckdb_cleaning_factory(functions: list[Callable]) -> Callable:
     return cleaning_method
 
 
-def clean_comp_numbers(df):
+def unnest_renest(function: Callable) -> Callable:
     """
-    Remove non-numbers, and then leading zeroes
-    Args: dataframe containing company_number column
-    Returns: dataframe with clean company_number
+    Takes a cleaning function and adds unnesting and renesting either side
+    of it. Useful for applying the same function to an array where there are
+    sub-functions that also use arrays, blocking list_transform.
+
+    Arguments:
+        functions: a cleaning function appropriate for a select statement.
+        See clean_basic for some examples
     """
 
-    sql_clean_comp_number = f"""
-    select
-        {remove_notnumbers_leadingzeroes("company_number")} as comp_num_clean,
-        *
-    from df
-    """
-    clean = duckdb.sql(sql_clean_comp_number)
+    def cleaning_method(df, column):
+        unnest = duckdb.sql(
+            f"""
+        select
+            row_number() over () as nest_id,
+            *
+            replace (unnest({column}) as {column})
+        from
+            df;
+        """
+        ).df()
 
-    return clean
+        processed = function(unnest, column)
+
+        any_value = [
+            f"any_value({col}) as {col}"
+            for col in processed.columns
+            if col not in ["nest_id", column]
+        ]
+
+        renest = duckdb.sql(
+            f"""
+        select
+            {", ".join(any_value)},
+            list({column}) as {column}
+        from
+            processed
+        group by nest_id;
+        """
+        ).df()
+
+        return renest
+
+    return cleaning_method
 
 
 def clean_comp_names(
@@ -84,66 +116,43 @@ def clean_comp_names(
     Returns:
         dataframe: the same as went in, but cleaned
     """
-    clean_and_stopwords_primary_sql = f"""
-        select
-            *
-            replace (
-                {list_join_to_string(
-                    array_except(
-                        clean_company_name(primary_col),
-                        stopwords
-                    )
-                )}
-                as {primary_col}
-            )
-        from
-            df;
-    """
+
+    remove_stopwords = partial(array_except, terms_to_remove=stopwords)
+
+    clean_primary = duckdb_cleaning_factory(
+        [
+            clean_company_name,
+            remove_stopwords,
+            list_join_to_string,
+        ]
+    )
+
+    clean_secondary = unnest_renest(clean_primary)
+
+    df = clean_primary(df, primary_col)
 
     if secondary_col is not None:
-        unnest_sql = f"""
-            select
-                *
-                replace (unnest({secondary_col}) as {secondary_col})
-            from
-                df;
-        """
-        clean_and_stopwords_secondary_sql = f"""
-            select
-                *
-                replace (
-                    {list_join_to_string(
-                        array_except(
-                            clean_company_name(secondary_col),
-                            stopwords
-                        )
-                    )}
-                    as {secondary_col}
-                )
-            from
-                df;
-        """
-        renest_sql = f"""
-            select
-                *
-                replace (list({secondary_col}) as {secondary_col})
-            from
-                df
-            group by all;
-        """
-        to_run = [
-            unnest_sql,
-            clean_and_stopwords_secondary_sql,
-            renest_sql,
-            clean_and_stopwords_primary_sql,
-        ]
-    else:
-        to_run = [clean_and_stopwords_primary_sql]
-
-    for sql in to_run:
-        df = duckdb.sql(sql).df()
+        df = clean_secondary(df, secondary_col)
 
     return df
+
+
+def clean_comp_numbers(df):
+    """
+    Remove non-numbers, and then leading zeroes
+    Args: dataframe containing company_number column
+    Returns: dataframe with clean company_number
+    """
+
+    sql_clean_comp_number = f"""
+    select
+        {remove_notnumbers_leadingzeroes("company_number")} as comp_num_clean,
+        *
+    from df
+    """
+    clean = duckdb.sql(sql_clean_comp_number)
+
+    return clean
 
 
 def add_postcode_area(df):

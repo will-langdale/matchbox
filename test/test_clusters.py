@@ -88,7 +88,7 @@ def test_parallel(test_name):
     """
     # Setup test
     prob, clus, val = du.load_test_data(
-        Path(loc.PROJECT_DIR, "test", test_name), int_to_uuid=True
+        Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     probabilities = Probabilities(
         schema=os.getenv("SCHEMA"), table=temp_prob, star=star
@@ -170,7 +170,7 @@ def test_sequential(test_name):
     """
     # Setup test
     prob, clus, val = du.load_test_data(
-        Path(loc.PROJECT_DIR, "test", test_name), int_to_uuid=True
+        Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     prob_sequence_dict = {i - 1: g for i, g in prob.groupby("source")}
     val_sequence_dict = {i - 1: g for i, g in val.groupby("source")}
@@ -272,7 +272,7 @@ def test_models(test):
 
     # Setup test
     prob, clus, val = du.load_test_data(
-        Path(loc.PROJECT_DIR, "test", test_name), int_to_uuid=True
+        Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     probabilities = Probabilities(
         schema=os.getenv("SCHEMA"), table=temp_prob, star=star
