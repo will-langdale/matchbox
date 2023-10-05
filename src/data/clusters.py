@@ -164,9 +164,7 @@ class Clusters(object):
         probabilities_temp = "probabilities_temp"
         to_insert_temp = "to_insert_temp"
 
-        if isinstance(models, list):
-            models = [str(name) for name in models]
-        elif isinstance(models, str):
+        if isinstance(models, str):
             models = [models]
         else:
             ValueError("models argument must be string or list of strings")
@@ -197,7 +195,8 @@ class Clusters(object):
                 delete from
                     {clus}
                 where
-                    source in ({source_list_quoted});
+                    source in ({source_list_quoted})
+                    and n = {n};
             """
             )
 
@@ -584,10 +583,11 @@ class Clusters(object):
     help="Required to overwrite an existing table.",
 )
 @click.option(
-    "--dim",
+    "--dim_init",
     required=False,
     type=str,
     help="""
+        The dimension table with which to initialise the cluster table.
         Any valid selector for an item in the STAR table:
         a string for a factor or dimension table, or the int ID
     """,

@@ -67,7 +67,7 @@ clustering_tests = [
     "tied_t3_e2",
 ]
 
-model_tests = [("a", "models_a_t3_e2"), ("b", "models_b_t3_e2")]
+model_tests = [("a", "models_a_t2_e2"), ("b", "models_b_t2_e2")]
 
 
 @pytest.mark.parametrize("test_name", clustering_tests)
