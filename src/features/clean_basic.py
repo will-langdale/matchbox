@@ -1,3 +1,6 @@
+from src.config import abbreviations
+
+
 def characters_to_spaces(input_column):
     """
     Removes all punctuation and replaces with spaces.
@@ -52,27 +55,42 @@ def clean_punctuation(input_column):
     """
 
 
-def expand_abbreviations(input_column):
+def expand_abbreviations(input_column, replacements: dict = abbreviations):
     """
-    Expand abbreviations: 'co' to 'company' and 'ltd' to 'limited'.
-    Only if followed with a space or at the end of the string.
-    Args: input_column -- the name of the column to clean
+    Expand abbreviations passed as a dictionary where the keys are matches
+    and the values are what to replace them with.
+
+    Matches only when term is surrounded by regex word boundaries.
+
+    Arguments:
+        input_column: the name of the column to clean
+        replacements: a dictionary where keys are matches and values are
+        what the replace them with
+
     Returns: string to insert into SQL query
     """
+    replace_stack = ""
+    for i, (match, replacement) in enumerate(replacements.items()):
+        if i == 0:
+            replace_stack = rf"""
+                regexp_replace(
+                    lower({input_column}),
+                    '\b({match})\b',
+                    '{replacement}',
+                    'g'
+                )
+            """
+        else:
+            replace_stack = rf"""
+                regexp_replace(
+                    {replace_stack},
+                    '\b({match})\b',
+                    '{replacement}',
+                    'g'
+                )
+            """
 
-    return rf"""
-    regexp_replace(
-        regexp_replace(
-            lower({input_column}),
-            '(ltd\s|ltd$)',
-            'limited ',
-            'g'
-        ),
-        '(co\s|co$)',
-        'company ',
-        'g'
-    )
-    """
+    return replace_stack
 
 
 def tokenise(input_column):

@@ -11,6 +11,7 @@ from src.features.clean_basic import (
     array_except,
     list_join_to_string,
     tokenise,
+    expand_abbreviations,
 )
 
 # from src.features.utils import duckdb_cleaning_factory, unnest_renest
@@ -61,6 +62,7 @@ cleaning_tests = [
     ("array_except", array_except_partial),
     ("list_join_to_string", list_join_to_string),
     ("tokenise", tokenise),
+    ("expand_abbreviations", expand_abbreviations),
 ]
 
 

@@ -77,3 +77,5 @@ stopwords = [
     "b v",
     "bv",
 ]
+
+abbreviations = {"co": "company", "ltd": "limited"}
