@@ -165,11 +165,11 @@ def array_except(input_col_name, terms_to_remove):
     """
 
 
-def array_intersect(input_col_name, terms_to_remove):
+def array_intersect(input_col_name, terms_to_keep):
     return rf"""
     array_filter(
         {input_col_name},
-        x -> array_contains({terms_to_remove}, x)
+        x -> array_contains({terms_to_keep}, x)
     )
     """
 

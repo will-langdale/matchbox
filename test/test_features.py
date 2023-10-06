@@ -2,21 +2,30 @@ import pandas as pd
 from pathlib import Path
 import duckdb
 import pytest
+from functools import partial
+import ast
 
 from src import locations as loc
-from src.features.clean_basic import clean_punctuation
+from src.features.clean_basic import clean_punctuation, array_except
 
 # from src.features.clean_complex import duckdb_cleaning_factory
 
 
 def load_test_data(path):
-    dirty = pd.read_csv(Path(path, "dirty.csv"))
-    clean = pd.read_csv(Path(path, "clean.csv"))
+    dirty = pd.read_csv(Path(path, "dirty.csv"), converters={"list": ast.literal_eval})
+    clean = pd.read_csv(Path(path, "clean.csv"), converters={"list": ast.literal_eval})
+    dirty.columns = ["col"]
+    clean.columns = ["col"]
 
     return dirty, clean
 
 
-cleaning_tests = [("clean_punctuation", clean_punctuation)]
+array_except_partial = partial(array_except, terms_to_remove=["ltd", "plc"])
+
+cleaning_tests = [
+    ("clean_punctuation", clean_punctuation),
+    ("array_except", array_except_partial),
+]
 
 
 @pytest.mark.parametrize("test", cleaning_tests)
