@@ -14,7 +14,7 @@ from src.features.clean_basic import (
     expand_abbreviations,
 )
 
-# from src.features.utils import duckdb_cleaning_factory, unnest_renest
+from src.features.utils import duckdb_cleaning_factory, unnest_renest
 
 
 """
@@ -53,6 +53,14 @@ def load_test_data(path):
     clean.columns = ["col"]
 
     return dirty, clean
+
+
+def passthrough(input_column):
+    """
+    A passthrough cleaning function that does nothing. Helps test more complex
+    building functions.
+    """
+    return f"{input_column}"
 
 
 array_except_partial = partial(array_except, terms_to_remove=["ltd", "plc"])
@@ -97,8 +105,26 @@ def test_factory():
     pass
 
 
-def test_nest_unnest():
+nest_unnest_tests = [
+    ("expand_abbreviations", expand_abbreviations),
+    ("pass", passthrough),
+]
+
+
+@pytest.mark.parametrize("test", nest_unnest_tests)
+def test_nest_unnest(test):
     """
     Tests whether the nest_unnest function is working.
     """
-    pass
+    test_name = test[0]
+    cleaning_function = duckdb_cleaning_factory(test[1])
+
+    dirty, clean = load_test_data(
+        Path(loc.PROJECT_DIR, "test", "features", "unnest_renest", test_name)
+    )
+
+    cleaning_function_arrayed = unnest_renest(cleaning_function)
+
+    cleaned = cleaning_function_arrayed(dirty, column="col")
+
+    assert cleaned.equals(clean)

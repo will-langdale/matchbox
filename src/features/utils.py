@@ -48,8 +48,7 @@ def unnest_renest(function: Callable) -> Callable:
     sub-functions that also use arrays, blocking list_transform.
 
     Arguments:
-        functions: a cleaning function appropriate for a select statement.
-        See clean_basic for some examples
+        functions: an outut from a *_cleaning_factory function
     """
 
     def cleaning_method(df, column):
@@ -71,11 +70,15 @@ def unnest_renest(function: Callable) -> Callable:
             for col in processed.columns
             if col not in ["nest_id", column]
         ]
+        if len(any_value) > 0:
+            any_value_select = f"{', '.join(any_value)}, "
+        else:
+            any_value_select = ""
 
         renest = duckdb.sql(
             f"""
         select
-            {", ".join(any_value)},
+            {any_value_select}
             list({column}) as {column}
         from
             processed
