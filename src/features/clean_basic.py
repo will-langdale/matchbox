@@ -1,9 +1,12 @@
+from src.config import abbreviations, stopwords
+
+
 def characters_to_spaces(input_column):
     """
     Removes all punctuation and replaces with spaces.
     """
     return rf"""
-        REGEXP_REPLACE(
+        regexp_replace(
             {input_column},
             '[^a-zA-Z0-9 ]+',
             ' ',
@@ -18,7 +21,7 @@ def characters_to_nothing(input_column):
     """
 
     return rf"""
-        REGEXP_REPLACE(
+        regexp_replace(
             {input_column},
             '[.]+',
             '',
@@ -37,9 +40,9 @@ def clean_punctuation(input_column):
     """
 
     return rf"""
-    TRIM(
-        REGEXP_REPLACE(
-            LOWER({
+    trim(
+        regexp_replace(
+            lower({
                 characters_to_spaces(
                     characters_to_nothing(input_column)
                 )
@@ -52,27 +55,42 @@ def clean_punctuation(input_column):
     """
 
 
-def expand_abbreviations(input_column):
+def expand_abbreviations(input_column, replacements: dict = abbreviations):
     """
-    Expand abbreviations: 'co' to 'company' and 'ltd' to 'limited'.
-    Only if followed with a space or at the end of the string.
-    Args: input_column -- the name of the column to clean
+    Expand abbreviations passed as a dictionary where the keys are matches
+    and the values are what to replace them with.
+
+    Matches only when term is surrounded by regex word boundaries.
+
+    Arguments:
+        input_column: the name of the column to clean
+        replacements: a dictionary where keys are matches and values are
+        what the replace them with
+
     Returns: string to insert into SQL query
     """
+    replace_stack = ""
+    for i, (match, replacement) in enumerate(replacements.items()):
+        if i == 0:
+            replace_stack = rf"""
+                regexp_replace(
+                    lower({input_column}),
+                    '\b({match})\b',
+                    '{replacement}',
+                    'g'
+                )
+            """
+        else:
+            replace_stack = rf"""
+                regexp_replace(
+                    {replace_stack},
+                    '\b({match})\b',
+                    '{replacement}',
+                    'g'
+                )
+            """
 
-    return rf"""
-    REGEXP_REPLACE(
-        REGEXP_REPLACE(
-            LOWER({input_column}),
-            '(ltd\s|ltd$)',
-            'limited ',
-            'g'
-        ),
-        '(co\s|co$)',
-        'company ',
-        'g'
-    )
-    """
+    return replace_stack
 
 
 def tokenise(input_column):
@@ -84,8 +102,8 @@ def tokenise(input_column):
     """
 
     return rf"""
-    REGEXP_SPLIT_TO_ARRAY(
-        TRIM({input_column}),
+    regexp_split_to_array(
+        trim({input_column}),
         '[^a-zA-Z0-9]+'
     )
     """
@@ -99,11 +117,11 @@ def dedupe_and_sort(input_column):
     """
 
     return f"""
-    ARRAY(
-        SELECT DISTINCT UNNEST(
+    array(
+        select distinct unnest(
             {input_column}
-        ) TOKENS
-        ORDER BY TOKENS
+        ) tokens
+        order by tokens
     )
     """
 
@@ -115,8 +133,8 @@ def remove_notnumbers_leadingzeroes(input_column):
     Returns: string to insert into SQL query
     """
     return rf"""
-    REGEXP_REPLACE(
-        REGEXP_REPLACE(
+    regexp_replace(
+        regexp_replace(
             {input_column},
             '[^0-9]',
             '',
@@ -156,31 +174,41 @@ def clean_company_name(input_column):
     """
 
 
-def array_except(input_col_name, terms_to_remove_col_name):
+def array_except(input_column, terms_to_remove):
     return rf"""
-    ARRAY_FILTER(
-        {input_col_name},
-        x -> NOT ARRAY_CONTAINS({terms_to_remove_col_name}, x)
+    array_filter(
+        {input_column},
+        x -> not array_contains({terms_to_remove}, x)
     )
     """
 
 
-def array_intersect(input_col_name, terms_to_retain_col_name):
+def array_intersect(input_column, terms_to_keep):
     return rf"""
-    ARRAY_FILTER(
-        {input_col_name},
-        x -> ARRAY_CONTAINS({terms_to_retain_col_name}, x)
+    array_filter(
+        {input_column},
+        x -> array_contains({terms_to_keep}, x)
     )
     """
 
 
-def regex_remove_list_of_strings(input_col_name, list_of_strings):
+def clean_stopwords(input_column, stopwords: list = stopwords):
+    """
+    A thin optinionated wrapper for array_except to clean the
+    global stopwords list.
+    """
+    return rf"""
+        {array_except(input_column, terms_to_remove=stopwords)}
+    """
+
+
+def regex_remove_list_of_strings(input_column, list_of_strings):
     to_remove = "|".join(list_of_strings)
     return rf"""
-    TRIM(
-        REGEXP_REPLACE(
-            REGEXP_REPLACE(
-                LOWER({input_col_name}),
+    trim(
+        regexp_replace(
+            regexp_replace(
+                lower({input_column}),
                 '{to_remove}',
                 '',
                 'g'
@@ -193,31 +221,25 @@ def regex_remove_list_of_strings(input_col_name, list_of_strings):
     """
 
 
-def regex_extract_list_of_strings(input_col_name, list_of_strings):
+def regex_extract_list_of_strings(input_column, list_of_strings):
     to_extract = "|".join(list_of_strings)
     return rf"""
-    REGEXP_EXTRACT_ALL({input_col_name}, '{to_extract}', 0)
+    regexp_extract_all({input_column}, '{to_extract}', 0)
     """
 
 
-def list_join_to_string(input_col_name, seperator=" "):
+def list_join_to_string(input_column, seperator=" "):
     """ """
-    return rf"""list_aggr({input_col_name},
+    return rf"""list_aggr({input_column},
         'string_agg',
         '{seperator}'
     )
     """
 
 
-def clean_stopwords(input_column):
-    return f"""
-    {list_join_to_string(dedupe_and_sort(input_column))}
-    """
-
-
 def get_postcode_area(input_column):
     return rf"""
-        REGEXP_EXTRACT(
+        regexp_extract(
             {input_column},
             '^[a-zA-Z][a-zA-Z]?'
         )
@@ -230,8 +252,8 @@ def get_low_freq_char_sig(input_column):
     https://en.wikipedia.org/wiki/Letter_frequency
     """
     return rf"""
-        REGEXP_REPLACE(
-            LOWER({input_column}),
+        regexp_replace(
+            lower({input_column}),
             '[rhsnioate ]+',
             '',
             'g'

@@ -3,6 +3,7 @@ scratch/
 
 # DuckDB
 *.duckdb
+*.duckdb.*
 
 # Splink
 .tmp/

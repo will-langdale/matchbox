@@ -4,8 +4,11 @@ from src.data.probabilities import Probabilities
 from src.data.validation import Validation
 from src.data.star import Star
 
-import uuid
+import click
 import logging
+from typing import Union
+from dotenv import load_dotenv, find_dotenv
+import os
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
@@ -31,6 +34,9 @@ class Clusters(object):
         entries to the cluster table
         * get_data(fields): returns the cluster table pivoted wide,
         with the requested fields attached
+
+    Raises:
+        ValueError: if schema or table not specified
     """
 
     def __init__(self, schema: str, table: str, star: Star):
@@ -39,27 +45,39 @@ class Clusters(object):
         self.schema_table = f'"{self.schema}"."{self.table}"'
         self.star = star
 
-    def create(self, overwrite: bool, dim: int = None):
+        if None in [self.schema, self.table]:
+            raise ValueError(
+                f"""
+                Schema and table must be specified
+                schema: {schema}
+                table: {table}
+                Have you used the right environment variable?
+            """
+            )
+
+    def create(self, overwrite: bool, dim: Union[int, str] = None):
         """
         Creates a new cluster table. If a dimension table is specified, adds
         each row as a new cluster to the recreated table.
 
         Arguments:
-            dim: [Optional] The STAR ID of a dimension table to populate the
-            new cluster table with
+            dim: [Optional] any valid selector for an item in the STAR table:
+            a string for a factor or dimension table, or the int ID
             overwrite: Whether or not to overwrite an existing cluster table
         """
 
+        exists = du.check_table_exists(self.schema_table)
+
         if overwrite:
             drop = f"drop table if exists {self.schema_table};"
-            exist_clause = ""
+        elif exists:
+            raise ValueError("Table exists and overwrite set to false")
         else:
             drop = ""
-            exist_clause = "if not exists"
 
         sql = f"""
             {drop}
-            create table {exist_clause} {self.schema_table} (
+            create table {self.schema_table} (
                 uuid uuid primary key,
                 cluster uuid not null,
                 id text not null,
@@ -71,23 +89,23 @@ class Clusters(object):
         du.query_nonreturn(sql)
 
         if dim is not None:
-            dim_table = self.star.get(star_id=dim, response="dim")
+            dataset = Dataset(
+                selector=dim,
+                star=self.star,
+            )
 
-            sql = f"""
+            du.query_nonreturn(
+                f"""
+                insert into {self.schema_table}
                 select
-                    id
+                    gen_random_uuid() as uuid,
+                    gen_random_uuid() as cluster,
+                    dim.id::text as id,
+                    {dataset.id} as source,
+                    0 as n
                 from
-                    {dim_table}
-            """
-
-            to_insert = du.query(sql)
-            to_insert["uuid"] = [uuid.uuid4() for _ in range(len(to_insert.index))]
-            to_insert["cluster"] = [uuid.uuid4() for _ in range(len(to_insert.index))]
-            to_insert["source"] = dim
-            to_insert["n"] = 1
-
-            du.data_workspace_write(
-                df=to_insert, schema=self.schema, table=self.table, if_exists="append"
+                    {dataset.dim_schema_table} dim
+                """
             )
 
     def read(self):
@@ -96,10 +114,12 @@ class Clusters(object):
     def add_clusters(
         self,
         probabilities: Probabilities,
+        models: Union[str, list[str]],
         validation: Validation,
         n: int,
         threshold: float = 0.7,
         add_unmatched_dims: bool = True,
+        overwrite: bool = False,
     ):
         """
         The core probabilities > clusters algorithm, as proposed in the
@@ -120,6 +140,8 @@ class Clusters(object):
 
         Arguments:
             probabilities: an object of class Probabilities
+            models: a string or list of strings specifying the models from which
+            to retrieve probabilities
             validation: an object of class Validation
             n: the current step n of the link pipeline
             threshold: the probability threshold above which we consider a match
@@ -127,6 +149,13 @@ class Clusters(object):
             add_unmatched_dims: if True, adds unmatched rows in the dimension table
             to the clusters table. Should always be True for a link pipeline -- False
             is useful for testing
+            overwrite: if True, will delete any matches to clusters from tables
+            that exist in the supplied probabilities table
+
+        Raises:
+            KeyError: if any specified models aren't in the table the supplied
+            Probabilities object wraps
+            ValueError: if models aren't supplied as a string or list of strings
         """
         prob = probabilities.schema_table
         val = validation.schema_table
@@ -134,6 +163,42 @@ class Clusters(object):
         clusters_temp = "clusters_temp"
         probabilities_temp = "probabilities_temp"
         to_insert_temp = "to_insert_temp"
+
+        if isinstance(models, str):
+            models = [models]
+        else:
+            ValueError("models argument must be string or list of strings")
+
+        model_list_quoted = [f"'{name}'" for name in models]
+        model_list_quoted = ", ".join(model_list_quoted)
+
+        # Check the selected models are in the probabilities table
+        mod_all = set(probabilities.get_models())
+        mod_selected = set(models)
+
+        if not len(mod_all.intersection(mod_selected)) == len(mod_selected):
+            not_found = ", ".join(mod_selected.difference(mod_all))
+            raise KeyError(
+                f"""
+                Model(s) {not_found} not found in supplied probabilities table
+            """
+            )
+
+        # If overwrite, drop existing clusters from the supplied sources
+        source_selected = probabilities.get_sources()
+        source_list_quoted = [f"'{name}'" for name in source_selected]
+        source_list_quoted = ", ".join(source_list_quoted)
+
+        if overwrite:
+            du.query_nonreturn(
+                f"""
+                delete from
+                    {clus}
+                where
+                    source in ({source_list_quoted})
+                    and n = {n};
+            """
+            )
 
         # Create a temporary clusters table to work with until the algorithm has
         # finished, for safety
@@ -164,6 +229,8 @@ class Clusters(object):
                             source
                         from
                             {prob}
+                        where
+                            model in ({model_list_quoted})
                     );
         """
         )
@@ -176,6 +243,7 @@ class Clusters(object):
                 select
                     uuid,
                     link_type,
+                    model,
                     cluster,
                     id,
                     source,
@@ -184,6 +252,7 @@ class Clusters(object):
                     {prob} prob
                 where
                     prob.probability >= {threshold}
+                    and model in ({model_list_quoted})
                 order by
                     probability desc;
         """
@@ -230,33 +299,44 @@ class Clusters(object):
                             from
                                 {probabilities_temp} prob
                         ) clus_rank
+                        left outer join
+                            {clusters_temp} clus_id on
+                                clus_id.id = clus_rank.id
+                                and clus_id.source = clus_rank.source
                         where
-                            clus_rank.clus_rank = 1
-                            and (
-                                not exists (
-                                    select
-                                        id,
-                                        source
-                                    from
-                                        {clusters_temp} clus
-                                    where
-                                        clus.id = clus_rank.id
-                                        and clus.source = clus_rank.source
-                                )
-                                or not exists (
-                                    select
-                                        cluster,
-                                        source
-                                    from
-                                        {clusters_temp} clus
-                                    where
-                                        clus.cluster = clus_rank.cluster
-                                        and clus.source = clus_rank.source
-                                )
-                            )
-                        order by
-                            clus_rank.cluster,
-                            clus_rank.source
+                            clus_id.id is null
+                            and clus_id.source is null
+                        union
+                        select
+                            distinct on (clus_rank.cluster, clus_rank.source)
+                            clus_rank.*,
+                            rank() over (
+                                partition by
+                                    clus_rank.id,
+                                    clus_rank.source
+                                order by
+                                    clus_rank.probability desc
+                            ) as id_rank
+                        from (
+                            select
+                                prob.*,
+                                rank() over(
+                                    partition by
+                                        prob.cluster,
+                                        prob.source
+                                    order by
+                                        prob.probability desc
+                                ) as clus_rank
+                            from
+                                {probabilities_temp} prob
+                        ) clus_rank
+                        left outer join
+                            {clusters_temp} clus_cl on
+                                clus_cl.id = clus_rank.id
+                                and clus_cl.source = clus_rank.source
+                        where
+                            clus_cl.id is null
+                            and clus_cl.source is null
                     ) id_rank
                     where
                         id_rank.id_rank = 1
@@ -287,22 +367,34 @@ class Clusters(object):
             du.query_nonreturn(
                 f"""
                 delete from {probabilities_temp} prob_temp
-                where exists (
+                where (prob_temp.id, prob_temp.source) in (
                     select
-                        cl.cluster,
-                        cl.id,
-                        cl.source
+                        prob.id,
+                        prob.source
                     from
-                        {to_insert_temp} cl
+                        {probabilities_temp} prob
+                    left join
+                        {to_insert_temp} clus_id on
+                            clus_id.id = prob.id
+                            and clus_id.source = prob.source
                     where
-                        (
-                            cl.id = prob_temp.id
-                            and cl.source = prob_temp.source
-                        )
-                        or (
-                            cl.cluster = prob_temp.cluster
-                            and cl.source = prob_temp.source
-                        )
+                        clus_id.id is not null
+                        and clus_id.source is not null
+                );
+                delete from {probabilities_temp} prob_temp
+                where (prob_temp.cluster, prob_temp.source) in (
+                    select
+                        prob.cluster,
+                        prob.source
+                    from
+                        {probabilities_temp} prob
+                    left join
+                        {to_insert_temp} clus_cl on
+                            clus_cl.cluster = prob.cluster
+                            and clus_cl.source = prob.source
+                    where
+                        clus_cl.cluster is not null
+                        and clus_cl.source is not null
                 );
             """
             )
@@ -313,25 +405,18 @@ class Clusters(object):
             f"""
             insert into {clus}
             select
-                uuid,
-                cluster,
-                id,
-                source,
-                n
+                ct.uuid,
+                ct.cluster,
+                ct.id,
+                ct.source,
+                ct.n
             from
                 {clusters_temp} ct
-            where not exists (
-                select
-                    uuid,
-                    cluster,
-                    id,
-                    source,
-                    n
-                from
-                    {clus} c
-                where
+            left join
+                {clus} c on
                     c.uuid = ct.uuid
-            );
+            where
+                c.uuid is null;
         """
         )
 
@@ -349,7 +434,7 @@ class Clusters(object):
             # Add a new cluster for any rows that weren't matched in the dim tables
             for table in probabilities.get_sources():
                 dataset = Dataset(
-                    star_id=table,
+                    selector=table,
                     star=self.star,
                 )
                 du.query_nonreturn(
@@ -358,42 +443,49 @@ class Clusters(object):
                     select
                         gen_random_uuid() as uuid,
                         gen_random_uuid() as cluster,
-                        id,
+                        dim.id::text as id,
                         {table} as source,
                         {n} as n
                     from
                         {dataset.dim_schema_table} dim
-                    where not exists (
-                        select
-                            id,
-                            source
-                        from
-                            {clus} c
-                        where
-                            c.id = dim.id
-                            and c.source = dim.source
-                    );
+                    left join
+                        {clus} c on
+                            c.id::text = dim.id::text
+                    where
+                        c.id is null;
                 """
                 )
 
-    def get_data(self, select: dict, dim_only: bool = True, n: int = None):
+    def get_data(
+        self,
+        select: dict,
+        cluster_uuid_to_id: bool = False,
+        dim_only: bool = True,
+        n: int = None,
+        sample: float = None,
+    ):
         """
         Wrangle clusters and associated dimension fields into an output
         appropriate for the linker object to join a new dimension table onto.
 
         Returns a temporary dimension table that can use information from
         across the matched clusters so far to be the left "cluster" side of
-        the next step n of the 🐙blocktopus architecture.
+        the next step n of the 🔌hybrid additive architecture.
 
         Arguments:
             select: a dict where the key is a Postgres-quoted fact table, with
             values a list of fields you want from that fact table. We use fact
             table as all of these are on Data Workspace, and this will hopefully
-            make a really interpretable dict to pass
+            make a really interpretable dict to pass. Supposes "as" aliasing to
+            allow control of name clashing between datasets
+            cluster_uuid_to_id: alias the cluster UUID to name "id". Used to
+            make comparable field names in link jobs
             dim_only: force function to only return data from dimension tables.
             Used to build the left side of a join, where retrieving from the
             fact table would create duplication
-            n: (optional) the step at which to retrive values
+            n: [optional] the step at which to retrive values
+            sample: [optional] the sample percentage to take, allowing quicker
+            development of upstream objects that need to run this lots
 
         Raises:
             KeyError:
@@ -420,10 +512,12 @@ class Clusters(object):
                 star_id=self.star.get(fact=table, response="id"),
                 star=self.star,
             )
+            fields_unaliased = {field.split(" as ")[0] for field in fields}
+
             if dim_only:
                 cols = set(data.get_cols("dim"))
 
-                if len(set(fields) - cols) > 0:
+                if len(fields_unaliased - cols) > 0:
                     raise KeyError(
                         """
                         Requested field not in dimension table and dim_only
@@ -432,18 +526,17 @@ class Clusters(object):
                     )
 
                 for field in fields:
-                    clean_name = f"{data.dim_table_clean}_{field}"
-                    select_items.append(f"t{i}.{field} as {clean_name}")
+                    select_items.append(f"t{i}.{field}")
 
                 join_clauses += f"""
                     left join {data.dim_schema_table} t{i} on
-                        cl.id = t{i}.id
+                        cl.id::text = t{i}.id::text
                         and cl.source = {data.id}
                 """
             else:
                 cols = set(data.get_cols("fact"))
 
-                if len(set(fields) - cols) > 0:
+                if len(set(fields_unaliased) - cols) > 0:
                     raise KeyError(
                         """
                         Requested field not in fact table.
@@ -451,21 +544,26 @@ class Clusters(object):
                     )
 
                 for field in fields:
-                    clean_name = f"{data.fact_table_clean}_{field}"
-                    select_items.append(f"t{i}.{field} as {clean_name}")
+                    select_items.append(f"t{i}.{field}")
 
                 join_clauses += f"""
                     left join {data.fact_schema_table} t{i} on
-                        cl.id = t{i}.id
+                        cl.id::text = t{i}.id::text
                         and cl.source = {data.id}
                 """
 
+        id_alias = " as id" if cluster_uuid_to_id else ""
+        if sample is not None:
+            sample_clause = f"tablesample system ({sample})"
+        else:
+            sample_clause = ""
+
         sql = f"""
             select
-                cl.cluster,
+                cl.cluster{id_alias},
                 {', '.join(select_items)}
             from
-                {self.schema_table} cl
+                {self.schema_table} cl {sample_clause}
             {join_clauses}
             {n_clause};
         """
@@ -476,3 +574,61 @@ class Clusters(object):
             raise ValueError("Nothing returned. Something went wrong")
 
         return result
+
+
+@click.command()
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Required to overwrite an existing table.",
+)
+@click.option(
+    "--dim_init",
+    required=False,
+    type=str,
+    help="""
+        The dimension table with which to initialise the cluster table.
+        Any valid selector for an item in the STAR table:
+        a string for a factor or dimension table, or the int ID
+    """,
+)
+def create_cluster_table(overwrite, dim):
+    """
+    Entrypoint if running as script
+    """
+    logger = logging.getLogger(__name__)
+
+    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
+
+    clusters = Clusters(
+        schema=os.getenv("SCHEMA"), table=os.getenv("CLUSTERS_TABLE"), star=star
+    )
+
+    if dim:
+        dim = Dataset(selector=dim, star=star)
+
+        logger.info(
+            f"""
+            Creating clusters table {clusters.schema_table}.
+            Instantiating with clusters from dimension table {dim.dim_schema_table}.
+        """
+        )
+
+        clusters.create(overwrite=overwrite, dim=dim.id)
+    else:
+        logger.info(f"Creating clusters table {clusters.schema_table}")
+
+        clusters.create(overwrite=overwrite)
+
+    logger.info("Written clusters table")
+
+
+if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+
+    create_cluster_table()

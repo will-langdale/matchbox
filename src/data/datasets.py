@@ -5,6 +5,7 @@ from src.config import link_pipeline
 import logging
 from dotenv import load_dotenv, find_dotenv
 import os
+from typing import Union
 
 
 class Dataset(object):
@@ -13,7 +14,8 @@ class Dataset(object):
     matching framework.
 
     Parameters:
-        * star_id: the ID of the row in the STAR table
+        * selector: any valid selector for an item in the STAR table:
+        a string for a factor or dimension table, or the int ID
         * star: a star object from which to populate key fields
 
     Attributes:
@@ -33,9 +35,45 @@ class Dataset(object):
         * get_cols(table): Gets the table column names
     """
 
-    def __init__(self, star_id: int, star: Star):
+    def __init__(self, selector: Union[int, str], star: Star):
         self.star = star
-        self.id = star_id
+
+        # Get the STAR ID regardless of what kind of selector was applied
+        try:
+            self.id = int(selector)
+        except ValueError:
+            fact = None
+            dim = None
+            fact_error = ""
+            dim_error = ""
+            try:
+                fact = star.get(fact=selector, response="id")
+            except ValueError as e:
+                fact_error = str(e)
+            try:
+                dim = star.get(dim=selector, response="id")
+            except ValueError as e:
+                dim_error = str(e)
+
+            if fact is None and dim is None:
+                raise ValueError(
+                    f"""
+                    {fact_error}
+                    {dim_error}
+                """
+                )
+            elif fact is not None or (fact == dim):
+                self.id = fact
+            elif dim is not None or (fact == dim):
+                self.id = dim
+            else:
+                raise ValueError(
+                    """
+                    More than one value returned. Refine your request.
+                """
+                )
+        else:
+            ValueError("selector must be of type int or str")
 
         self.dim_schema_table = star.get(star_id=self.id, response="dim")
         self.dim_schema, self.dim_table = du.get_schema_table_names(
@@ -105,25 +143,53 @@ class Dataset(object):
 
         du.query_nonreturn(sql)
 
-    def read_dim(self, dim_select: list = None):
+    def read_dim(self, dim_select: list = None, sample: float = None):
+        """
+        Returns the dim table as pandas dataframe.
+
+        Arguments:
+            dim_select: [optional] a list of columns to select. Aliasing
+            and casting permitted
+            sample:[optional] the percentage sample to return. Used to
+            speed up debugging of downstream processes
+        """
         fields = "*" if dim_select is None else " ,".join(dim_select)
+        if sample is not None:
+            sample_clause = f"tablesample system ({sample})"
+        else:
+            sample_clause = ""
+
         return du.query(
             f"""
             select
                 {fields}
             from
-                {self.dim_schema_table};
+                {self.dim_schema_table} {sample_clause};
         """
         )
 
-    def read_fact(self, fact_select: list = None):
+    def read_fact(self, fact_select: list = None, sample: float = None):
+        """
+        Returns the fact table as pandas dataframe.
+
+        Arguments:
+            dim_select: [optional] a list of columns to select. Aliasing
+            and casting permitted
+            sample:[optional] the percentage sample to return. Used to
+            speed up debugging of downstream processes
+        """
         fields = "*" if fact_select is None else " ,".join(fact_select)
+        if sample is not None:
+            sample_clause = f"tablesample system ({sample})"
+        else:
+            sample_clause = ""
+
         return du.query(
             f"""
             select
                 {fields}
             from
-                {self.fact_schema_table};
+                {self.fact_schema_table} {sample_clause};
         """
         )
 
@@ -168,7 +234,7 @@ if __name__ == "__main__":
                 dim=link_pipeline[table]["dim"],
                 response="id",
             )
-            data = Dataset(star_id=star_id, star=star)
+            data = Dataset(selector=star_id, star=star)
 
             logger.info(f"Creating {data.dim_schema_table}")
 

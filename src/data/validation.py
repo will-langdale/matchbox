@@ -4,6 +4,7 @@ import logging
 from dotenv import load_dotenv, find_dotenv
 import os
 import uuid
+import click
 
 
 class Validation(object):
@@ -22,12 +23,25 @@ class Validation(object):
         * create(overwrite): Drops all data and recreates the validation
         table
         * read(): Returns the probabilities table
+
+    Raises:
+        ValueError: if schema or table not specified
     """
 
     def __init__(self, schema: str, table: str):
         self.schema = schema
         self.table = table
         self.schema_table = f'"{self.schema}"."{self.table}"'
+
+        if None in [self.schema, self.table]:
+            raise ValueError(
+                f"""
+                Schema and table must be specified
+                schema: {schema}
+                table: {table}
+                Have you used the right environment variable?
+            """
+            )
 
     def create(self, overwrite: bool = False):
         """
@@ -38,16 +52,18 @@ class Validation(object):
             table
         """
 
+        exists = du.check_table_exists(self.schema_table)
+
         if overwrite:
             drop = f"drop table if exists {self.schema_table};"
-            exist_clause = ""
+        elif exists:
+            raise ValueError("Table exists and overwrite set to false")
         else:
             drop = ""
-            exist_clause = "if not exists"
 
         sql = f"""
             {drop}
-            create table {exist_clause} {self.schema_table} (
+            create table {self.schema_table} (
                 uuid uuid primary key,
                 id text not null,
                 cluster uuid not null,
@@ -98,14 +114,16 @@ class Validation(object):
         return validation
 
 
-if __name__ == "__main__":
-    dotenv_path = find_dotenv()
-    load_dotenv(dotenv_path)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format=du.LOG_FMT,
-    )
+@click.command()
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Required to overwrite an existing table.",
+)
+def create_validation_table(overwrite):
+    """
+    Entrypoint if running as script
+    """
     logger = logging.getLogger(__name__)
 
     validation = Validation(
@@ -114,6 +132,17 @@ if __name__ == "__main__":
 
     logger.info(f"Creating validation table {validation.schema_table}")
 
-    validation.create(overwrite=True)
+    validation.create(overwrite=overwrite)
 
     logger.info("Written validation table")
+
+
+if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+
+    create_validation_table()
