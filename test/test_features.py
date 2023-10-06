@@ -8,7 +8,7 @@ import ast
 from src import locations as loc
 from src.features.clean_basic import (
     clean_punctuation,
-    array_except,
+    clean_stopwords,
     list_join_to_string,
     tokenise,
     expand_abbreviations,
@@ -30,9 +30,9 @@ To test clean_comp_names, therefore, we test the leaf functions in the stack:
 
 * clean_comp_names
     * clean_company_name
-        * tokenise
-        * expand_abbreviations
         * clean_punctuation
+        * expand_abbreviations
+        * tokenise
     * array_except
     * list_join_to_string
 
@@ -63,14 +63,17 @@ def passthrough(input_column):
     return f"{input_column}"
 
 
-array_except_partial = partial(array_except, terms_to_remove=["ltd", "plc"])
+clean_stopwords_partial = partial(clean_stopwords, stopwords=["ltd", "plc"])
+expand_abbreviations_partial = partial(
+    expand_abbreviations, replacements={"co": "company", "ltd": "limited"}
+)
 
 cleaning_tests = [
     ("clean_punctuation", clean_punctuation),
-    ("array_except", array_except_partial),
+    ("clean_stopwords", clean_stopwords_partial),
     ("list_join_to_string", list_join_to_string),
     ("tokenise", tokenise),
-    ("expand_abbreviations", expand_abbreviations),
+    ("expand_abbreviations", expand_abbreviations_partial),
 ]
 
 
@@ -97,16 +100,42 @@ def test_basic_functions(test):
     assert cleaned.equals(clean)
 
 
-def test_factory():
+factory_tests = [
+    ("tokenise", [tokenise]),
+    ("pass", [passthrough]),
+    (
+        "clean_comp_names",
+        [
+            clean_punctuation,
+            expand_abbreviations_partial,
+            tokenise,
+            clean_stopwords_partial,
+            list_join_to_string,
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize("test", factory_tests)
+def test_factory(test):
     """
     Tests whether the cleaning factory is accurately combining basic
     functions.
     """
-    pass
+    test_name = test[0]
+    cleaning_function = duckdb_cleaning_factory(test[1])
+
+    dirty, clean = load_test_data(
+        Path(loc.PROJECT_DIR, "test", "features", "duckdb_cleaning_factory", test_name)
+    )
+
+    cleaned = cleaning_function(dirty, column="col")
+
+    assert cleaned.equals(clean)
 
 
 nest_unnest_tests = [
-    ("expand_abbreviations", expand_abbreviations),
+    ("expand_abbreviations", expand_abbreviations_partial),
     ("pass", passthrough),
 ]
 

@@ -1,4 +1,4 @@
-# array_except
+# clean_stopwords
 
 Should remove all array items in the list passed to it.
 

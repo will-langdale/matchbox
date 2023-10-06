@@ -1,4 +1,4 @@
-from src.config import abbreviations
+from src.config import abbreviations, stopwords
 
 
 def characters_to_spaces(input_column):
@@ -174,31 +174,41 @@ def clean_company_name(input_column):
     """
 
 
-def array_except(input_col_name, terms_to_remove):
+def array_except(input_column, terms_to_remove):
     return rf"""
     array_filter(
-        {input_col_name},
+        {input_column},
         x -> not array_contains({terms_to_remove}, x)
     )
     """
 
 
-def array_intersect(input_col_name, terms_to_keep):
+def array_intersect(input_column, terms_to_keep):
     return rf"""
     array_filter(
-        {input_col_name},
+        {input_column},
         x -> array_contains({terms_to_keep}, x)
     )
     """
 
 
-def regex_remove_list_of_strings(input_col_name, list_of_strings):
+def clean_stopwords(input_column, stopwords: list = stopwords):
+    """
+    A thin optinionated wrapper for array_except to clean the
+    global stopwords list.
+    """
+    return rf"""
+        {array_except(input_column, terms_to_remove=stopwords)}
+    """
+
+
+def regex_remove_list_of_strings(input_column, list_of_strings):
     to_remove = "|".join(list_of_strings)
     return rf"""
     trim(
         regexp_replace(
             regexp_replace(
-                lower({input_col_name}),
+                lower({input_column}),
                 '{to_remove}',
                 '',
                 'g'
@@ -211,25 +221,19 @@ def regex_remove_list_of_strings(input_col_name, list_of_strings):
     """
 
 
-def regex_extract_list_of_strings(input_col_name, list_of_strings):
+def regex_extract_list_of_strings(input_column, list_of_strings):
     to_extract = "|".join(list_of_strings)
     return rf"""
-    regexp_extract_all({input_col_name}, '{to_extract}', 0)
+    regexp_extract_all({input_column}, '{to_extract}', 0)
     """
 
 
-def list_join_to_string(input_col_name, seperator=" "):
+def list_join_to_string(input_column, seperator=" "):
     """ """
-    return rf"""list_aggr({input_col_name},
+    return rf"""list_aggr({input_column},
         'string_agg',
         '{seperator}'
     )
-    """
-
-
-def clean_stopwords(input_column):
-    return f"""
-    {list_join_to_string(dedupe_and_sort(input_column))}
     """
 
 
