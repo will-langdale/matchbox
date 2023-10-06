@@ -6,9 +6,43 @@ from functools import partial
 import ast
 
 from src import locations as loc
-from src.features.clean_basic import clean_punctuation, array_except
+from src.features.clean_basic import (
+    clean_punctuation,
+    array_except,
+    list_join_to_string,
+    tokenise,
+)
 
-# from src.features.clean_complex import duckdb_cleaning_factory
+# from src.features.utils import duckdb_cleaning_factory, unnest_renest
+
+
+"""
+----------------------------
+-- Feature cleaning tests --
+----------------------------
+
+To avoid bug-prone unit tests for complex cleaning functions like
+src.features.clean_complex.clean_comp_names, we instead test the constituent
+parts, and the methods that build those parts into something complex.
+
+To test clean_comp_names, therefore, we test the leaf functions in the stack:
+
+* clean_comp_names
+    * clean_company_name
+        * tokenise
+        * expand_abbreviations
+        * clean_punctuation
+    * array_except
+    * list_join_to_string
+
+And the methods that assemble them:
+
+* duckdb_cleaning_factory
+* unnest_renest
+
+See features/ directory for more information on specific tests.
+
+"""
 
 
 def load_test_data(path):
@@ -25,6 +59,8 @@ array_except_partial = partial(array_except, terms_to_remove=["ltd", "plc"])
 cleaning_tests = [
     ("clean_punctuation", clean_punctuation),
     ("array_except", array_except_partial),
+    ("list_join_to_string", list_join_to_string),
+    ("tokenise", tokenise),
 ]
 
 
