@@ -31,80 +31,258 @@ To set up the database in your specificed schema run:
 make setup
 ```
 
-## Design
+## Usage
 
-### How does matching happen?
+The below is **unimplemented code** to help refine where we want the API to get to. By writing instructions for the end product, we'll flush out the problems with it before they occur.
 
-![The methodology of match orchestration](/references/hybridadditive_links.png "The 🔌hybrid additive methodology")
+### Installation
 
-The matching methodology is often shorthanded as 🔌hybrid additive. This is because there are a core set of tables that are matched additively, one after the other, each using information from all the tables before it. After this, tables can be plugged into this additive core in any order, even in parallel.
+```bash
+pip install company-matching-framework
+```
 
-Recall a **dimension table** contains one row only for each company entity. An example is Companies House. Contrast with a **fact table**, like HMRC Exporters, where the same company may appear hundreds of times.
+### I have a public dataset I want to connect to existing companies
 
-To implement 🔌hybrid additive matching, there are three foundational ideas:
+I want to connect data.data_hub_statistics to the existing company clusters. It contains a data hub ID and company name, both of which were entered by hand, so they'll need cleaning up.
 
-1. Every dataset we're matching must be a dimension table
-2. A resolved company entity (a "cluster") can only ever have a maximum of one item from each dimension table
-3. The left side of a join is always constructed from the clusters table
+What fields exist to connect my dataset to?
 
-Everything else flows from this. Matching is done in a pipeline where each step is `n`. For each step in a matching pipeline:
+```python
+import cmf.utils as cmfu
+cmfu.cluster_report()
+```
 
-1. Construct the **left table** from clusters, potentially using data from several dimension tables
-2. Construct the **right table** from a dimension
-3. Match using whatever methodology you like, as long as the result matches the structure of the probabilities table
-4. Resolve the probabilities into company entity clusters with a max of one item from the right table, the dimension
-5. Repeat for every step in the pipeline
+```console
+foo@bar:~$
+Field           Source                         Coverage    Accuracy
+-------------------------------------------------------------------
+company_name    companieshouse.companies       95%         99%
+company_id      companieshouse.companies       76%         97%
+data_hub_id     dit.data_hub__companies        21%         88%
+address_1       companieshouse.companies       74%         89%
+address_2       dit.data_hub__companies        65%         74%
+address_3       dit.export_wins__wins_dataset  22%         45%
+...             ...                            ...         ...
+```
 
-### What does the framework's database look like?
+Great, `company_name` and `data_hub_id` seem right for my dataset.
 
-![The entity relationship diagram of the framework](/references/erdiagram.png "The entity relationship diagram")
+What linkers already work with these tables and fields? How have other people cleaned this data?
 
-The architecture is loosely based on the star schema.
+```python
+import cmf.utils as cmfu
+cmfu.link_report(
+    {
+        "companieshouse.companies": [
+            "company_name"
+        ],
+        "dit.data_hub__companies": [
+            "data_hub_id"
+        ]
+    }
+)
+```
 
-Every dataset we're matching must be a dimension table. If the dataset in Data Workspace isn't already a dimension table, we create its dimension table through naïve deduping, which we define as matching without cleaning on the fields that demarcate an entity.
+```console
+foo@bar:~$
+Table                      Field          Link experiment          Match %ge   AOC
+-----------------------------------------------------------------------------------
+companieshouse.companies   company_name   n1_deterministic_basic   35%         0.23
+companieshouse.companies   company_name   n1_cms_basic             46%         0.67
+companieshouse.companies   company_name   n1_splink_basic          87%         0.89
+dit.data_hub__companies    data_hub_id    n3_deterministic_basic   88%         0.9
+dit.data_hub__companies    data_hub_id    n3_cms_basic             98%         0.98
+dit.data_hub__companies    data_hub_id    n3_splink_basic          86%         0.97
+...                        ...            ...                      ...         ...
+```
 
-The star table is a lookup of these fact and dimension table names, and it's this `id` that's used in the various `source` fields.
+It looks like both a Splink and CMS-based linker might be helpful here. Let's fit both, validate some matches, and see which wins.
 
-The probabilities table contains the raw outputs of a link job.
+Let's start with CMS.
 
-The validation table contains verified matches made by users.
+```python
+from cmf.linkers import CMSLinker
+CMSLinker.help()
+```
 
-The clusters table contains the probabilities and validation tables resolved into company entities.
+```console
+foo@bar:~$
+The Company Matching Service linker requires the following objects:
 
-### What does the code structure look like?
+clusters: A dictionary of tables and fields you wish to link into
+dataset: A dictionary of one table and fields you wish to join in
+link_settings: A dictionary of fields you wish to match on
 
-![The class diagram of the framework](/references/classdiagram.png "The class diagram")
+You may also wish to define:
 
-Broadly, the repo contains two kinds of classes:
+cluster_pipeline: A dictionary of fields and cleaning functions you wish to apply in order to the clusters data
+dataset_pipeline: A dictionary of fields and cleaning functions you wish to apply in order to the dataset
+```
 
-* Data classes are wrappers for tables in the database. They contains read/write functions that safeguard the shape of data moving in and out. These are:
-    * Star -- a singleton class that wraps the star table
-    * Probabilities -- a singleton class that wraps the probabilities table
-    * Validation -- a singleton class that wraps the validation table
-    * Clusters -- a singleton class that wraps the clusters table
-    * Datasets -- a class with one instance per fact and dimension table combination, providing access to both
-* Linker classes define the methodology for a particular link type, such as deterministic or probabilistic links. The parent contains standard functions all Linker subclasses will need
-    * Linker subclasses must implement a `prepare()` and `link()` method. In the final prototype we aim to supply:
-        * SplinkLinker, for probabilistic linking
-        * DeterministicLinker, for straight clean and join links
-     
-A cold run of the pipeline will:
+Let's start with those required fields.
 
-1. Set up the database
-    1. Create all tables
-    2. Make missing dimension tables
-    3. Add first table in link job to the clusters table
-2. Iterate over the pipeline in `config.py`
-    1. Use scipts in `/pipeline` to instantiate the configured Linker subclasses
-    2. Get cluster and dimension data
-    3. Link it and output to probabilities
-    4. Resolve probabilities to entities in clusters
-    5. Repeat
-  
-While not yet implemented, we intend to supply a dashboard that will read from probabilities and clusters to allow users to hand-verify matches. The output will be written to the validation table and used:
+I could look up how other people have done this, but let's let the object itself help me configure it.
 
-* To compare models, by getting users to verify matches where models disagree
-* To improve the service overall, by getting users to verify weak or disputed matches
+```python
+CMSLinker.help('clusters')
+```
+
+```console
+foo@bar:~$
+The Company Matching Service linker requires a clusters dictionary in the following shape:
+
+{
+    "table_1": [
+        "field_1",
+        "field_2",
+        ...
+    ],
+    "table_2": [
+        "field_1",
+        "field_2",
+        ...
+    ],
+}
+
+Use CMSLinker.help('clusters', table="table_1", fields=["field_1, field_2"] to let the linker format this dictionary for you.
+```
+
+I'll follow this process for each required field until I'm ready to configure my linker.
+
+```python
+data_hub_statistics_linker = CMSLinker(
+    clusters={
+        "companieshouse.companies": [
+            "company_name"
+        ],
+        "dit.data_hub__companies": [
+            "data_hub_id"
+        ]
+    },
+    dataset={
+        "data.data_hub_statistics": [
+            "comp_name as company_name",
+            "dh_id as data_hub_id"
+        ]
+    },
+    link_settings={
+        "company_name": {
+            "cluster": "company_name",
+            "dimension": "company_name"
+        },
+        "postcode": {
+            "cluster": "data_hub_id",
+            "dimension": "data_hub_id"
+        }
+    }
+)
+data_hub_statistics_linker.get_data()
+```
+
+I've now collected my raw data. Let's take a look at those functions that were used to clean the data before, in `n3_cms_basic` for `data_hub_id`, and in `n1_splink_basic` for `company_name`.
+
+```python
+import cmf.utils as cmfu
+cmfu.cleaning_report(experiment="n3_cms_basic", field="data_hub_id")
+```
+
+```console
+foo@bar:~$
+In n3_cms_basic, data_hub_id was cleaned with the following functions:
+
+import cmf.features.clean_basic as cmf_cb
+
+{
+    "data_hub_id": {
+        "function": cmf_cb.clean_punctuation,
+        "arguments": {
+            "column": "data_hub_id"
+        },
+        "function": cmf_cb.lowercase,
+        "arguments": {
+            "column": "data_hub_id"
+        }
+    }
+}
+```
+
+And `company_name`?
+
+```python
+import cmf.utils as cmfu
+cmfu.cleaning_report(experiment="n1_splink_basic", field="company_name")
+```
+
+```console
+foo@bar:~$
+In n3_cms_basic, data_hub_id was cleaned with the following functions:
+
+import cmf.features.clean_complex as cmf_cc
+
+{
+    "company_name": {
+        "function": cmf_cc.clean_company_name,
+        "arguments": {
+            "column": "company_name"
+        }
+    }
+}
+```
+
+Let's just use these right out of the box. Every linker contains a `prepare()` function to clean the data, and a `link()` function to do the linking. As we've already supplied `link_settings`, we can `link()` right away. 
+
+```python
+import cmf.features.clean_basic as cmf_cb
+import cmf.features.clean_complex as cmf_cc
+
+data_hub_statistics_linker.prepare(
+    cluster_pipeline={
+        "data_hub_id": {
+            "function": cmf_cb.clean_punctuation,
+            "arguments": {
+                "column": "data_hub_id"
+            },
+            "function": cmf_cb.lowercase,
+            "arguments": {
+                "column": "data_hub_id"
+            }
+        }
+        "company_name": {
+            "function": cmf_cc.clean_company_name,
+            "arguments": {
+                "column": "company_name"
+            }
+        }
+    },
+    dataset_pipeline={
+        "data_hub_id": {
+            "function": cmf_cb.clean_punctuation,
+            "arguments": {
+                "column": "data_hub_id"
+            },
+            "function": cmf_cb.lowercase,
+            "arguments": {
+                "column": "data_hub_id"
+            }
+        }
+        "company_name": {
+            "function": cmf_cc.clean_company_name,
+            "arguments": {
+                "column": "company_name"
+            }
+        }
+    }
+)
+
+```
+
+### I have a private dataset I want to connect to existing companies
+
+🛠 Coming soon!
+
+### I have a new matching methodology I want to implement
+
+🛠 Coming soon!
 
 ## Release metrics
 
