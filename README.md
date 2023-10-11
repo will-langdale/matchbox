@@ -41,6 +41,114 @@ The below is **unimplemented code** to help refine where we want the API to get 
 pip install company-matching-framework
 ```
 
+### I want data from linked datasets
+
+I want the name of a company as it appears in Companies House and its ID from Data Hub.
+
+```sql
+select
+    ch.company_name,
+    dh.data_hub_id
+from
+    company_matching_service([
+        'companieshouse.companies as ch',
+        'dit.data_hub__companies as dh'
+    ])
+```
+
+```python
+import cmf.utils as cmfu
+
+cmfu.query(
+    select={
+        "companieshouse.companies": [
+            "company_name"
+        ],
+        "dit.data_hub__companies": [
+            "data_hub_id"
+        ]
+    }
+)
+```
+
+Some companies in Companies House might have several linked entries in Data Hub. By default the service returns them all, but the service can be opinionated about which one is preferred.
+
+```sql
+select
+    ch.company_name,
+    dh.data_hub_id
+from
+    company_matching_service(
+        tables => [
+            'companieshouse.companies as ch',
+            'dit.data_hub__companies as dh'
+        ],
+        preferred => true
+    )
+```
+
+```python
+import cmf.utils as cmfu
+
+cmfu.query(
+    select={
+        "companieshouse.companies": [
+            "company_name"
+        ],
+        "dit.data_hub__companies": [
+            "data_hub_id"
+        ]
+    },
+    preferred=True
+)
+```
+
+Consider the HMRC Exporters table. The same company appears hundreds of times. If you pass it to the service, it will assume you want every row. To aggregate, use the service in a subquery.
+
+```sql
+select
+    agg.company_name,
+    agg.data_hub_id,
+    count(agg."month")
+from (
+    select
+        ch.company_name as company_name,
+        dh.data_hub_id as data_hub_id,
+        exp."month" as "month"
+    from
+        company_matching_service(
+            tables => [
+                'companieshouse.companies as ch',
+                'dit.data_hub__companies as dh',
+                'hmrc.trade__exporters as exp'
+            ]
+        )
+) agg;
+
+```
+
+```python
+import cmf.utils as cmfu
+
+df = cmfu.query(
+    select={
+        "companieshouse.companies": [
+            "company_name"
+        ],
+        "dit.data_hub__companies": [
+            "data_hub_id"
+        ],
+        "hmrc.trade__exporters": [
+            "month"
+        ]
+    },
+    preferred=True,
+    return_type="pandas"
+)
+
+df.groupby(["company_name", "data_hub_id"]).count("month")
+```
+
 ### I have a public dataset I want to connect to existing companies
 
 I want to connect data.data_hub_statistics to the existing company clusters. It contains a data hub ID and company name, both of which were entered by hand, so they'll need cleaning up.
