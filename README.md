@@ -1,4 +1,4 @@
-# 🔗 Company matching framework
+s# 🔗 Company matching framework
 
 A match orchestration framework to allow the comparison, validation, and orchestration of the best match methods for the company matching job.
 
@@ -35,12 +35,12 @@ make setup
 
 The below is **unimplemented code** to help refine where we want the API to get to. By writing instructions for the end product, we'll flush out the problems with it before they occur.
 
-I think there are four levels of engagement a user might have with the framework, and each of these is made up of a patchwork of 7 tasks.
+I think there are five levels of engagement a user might have with the framework, and each of these is made up of a patchwork of eight tasks.
 
 * Reading data from the company entity clusters
     * Reading
 * Reading data from the company entity clusters, then joining new data themselves cleaned with the framework's cleaning functions
-    * Extraction
+    * Reading
     * Cleaning
 * Joining new data to the service in an evaluatable pipeline for personal/team-based usage
     * Reading
@@ -55,6 +55,8 @@ I think there are four levels of engagement a user might have with the framework
     * Link creation
     * Evaluation
     * Adding to the existing service
+* Developing new methodologies and the Company Matching Framework itself
+    * Adding linker methodologies
  
 Those tasks broken out are:
 
@@ -65,8 +67,9 @@ Those tasks broken out are:
 * Entity creation
 * Persisting the process
 * Adding to the existing service
+* Adding linker methodologies
 
-Let's break these down one by one. In our example we have a dataset of Data Hub statistics, `data.data_hub_statistics`, that we wll eventually want to bring into the service.
+Let's break these down one by one. In our example we have a dataset of Data Hub statistics, `data.data_hub_statistics`, that we will eventually want to bring into the service.
 
 ### Installation
 
@@ -88,7 +91,7 @@ from
     company_matching_service([
         'companieshouse.companies as ch',
         'dit.data_hub__companies as dh'
-    ])
+    ]);
 ```
 
 ```python
@@ -226,341 +229,126 @@ df.groupby("id").agg({"company_name": "max", "data_hub_id": "max", "month": "cou
 
 ### Cleaning
 
-This is all handled by collections of functions in `cmf.clean`. Functions are written in SQL to be run in-DBMS or in duckDB. We can either use some pre-made cleaning functions in collections like `cmf.clean.funcs`, or roll our own using `cmf.clean.utils` to amalgamate functions in collections like `cmf.clean.blocks`.
+This is all handled by collections of functions in `cmf.clean`. Functions are written in SQL to be run in-DBMS or in duckDB. We can either use some pre-made cleaning functions in collections like `cmf.clean`, or roll our own using `cmf.clean.cleaning_function` to amalgamate functions in collections like `cmf.clean.blocks` -- or make your own block!
 
 We want to clean the company name in `data.data_hub_statistics` so we can left join it onto some extracted data ourselves.
 
-`
+We offer several cleaning functions for fields found in lots of datasets.
 
 ```python
-from cmf.clean import utils as cu
-from cmf.clean import basic
+from cmf import clean
 
-nopunc_lower = cu.duckdb_cleaner(
-    basic.clean_punctuation,
-    basic.lowercase,
-)
+clean.company_name(df, input_column="company_name")
+clean.postcode(df, input_column="postcode")
+clean.companies_house_id(df, input_column="ch_id")
 
+# Can also be used on remote tables
+
+clean.company_name("data.data_hub_statistics", input_column="company_name", return_type="pandas")
+clean.postcode("data.data_hub_statistics", input_column="postcode", return_type="sql", sql_out="_user_eaf4fd9a.data_hub_statistics_cleaned")
 ```
 
-import cmf.features.clean_basic as cmf_cb
-import cmf.features.clean_complex as cmf_cc
+Our cleaning functions are all amagamations of blocks of small, basic cleaning SQL. Block functions all apply to a single column and need to be wrapped in `cleaning_function` which allows them to be used locally or on the DBMS.
 
-dh_clean_punctuation = cleaner(
-    function=cmf_cb.clean_punctuation,
+```python
+from cmf import clean
+
+nopunc_lower = clean.cleaning_functon(
+    clean.blocks.clean_punctuation,
+    clean.blocks.lowercase,
+)
+
+nopunc_lower(df, input_column="company_name", return_type="pandas")
+```
+
+Sometimes you don't need to clean a company name -- you need to clean a list of them. `cleaning_function` can handle it.
+
+```python
+from cmf import clean
+
+nopunc_lower_array = clean.cleaning_functon(
+    clean.blocks.clean_punctuation,
+    clean.blocks.lowercase,
+    array=True
+)
+
+nopunc_lower_array(df, input_column="all_company_names", return_type="pandas")
+```
+
+### Link creation
+
+To make a link we're going to need:
+
+* To ensure our data is appropriate for linking
+* To create pipelines of cleaning functions
+* To create linker settings
+* To run a data collection, preparation and link job
+
+And to help with all this we might want:
+
+* To check for the one row per entity rule
+* To know what kinds of linkers have worked well in the past
+* To know how certain fields were cleaned in the past
+
+#### Making linkers: core functions
+
+To be appropriate for linking, your dataset must have **one row per company entity**, otherwise known as observational independence. This doesn't need to be perfect -- we expect and handle some duplication for you, but something like HMRC Exporters can't be linked out of the box.
+
+The linker will check that every row in your `selecter` statement is unique, and will stop if it isn't. This behaviour can be overridden if you wish.
+
+You can also pass a `selecter` object to the `cmf.linker(data_deduper=)` argument and the linker will perform what we call naïve deduping -- creating new unique rows based on the fields you specify. The service will handle making sure that when data comes from your table, it still returns _all_ the data in your original table.
+
+Our dataset doesn't have this problem, so we can move on.
+
+Before it can run, every linker will need at least:
+
+* Cleaning pipelines for the clusters and the data
+* Settings for the linker
+
+We've seen how to make cleaning functions. Let's see how to make a pipeline of them.
+
+To do this we offer `cleaner` and `cleaners`. Similar to `selecter(s)`, they are just ways of making dictionaries that linkers can undersand to run a pipeline of data cleaning.
+
+```python
+import cmf
+from cmf import clean
+
+cleaner_dh_id = cmf.cleaner(
+    function=clean.data_hub_id,
     column="data_hub_id"
 )
-dh_clean_lowercase = cleaner(
-    function=cmf_cb.lowercase,
-    column="data_hub_id"
-)
-comp_clean_company_name = cleaner(
-    function=cmf_cc.clean_company_name,
+cleaner_company_name = cmf.cleaner(
+    function=clean.company_name,
     column="company_name"
 )
 
 my_cleaners = cleaners(
-    dh_clean_punctuation,
-    dh_clean_lowercase,
-    comp_clean_company_name
-)
-
-
-
-
-
-
-
-
-
-
-
-* Extraction
-* Cleaning
-* Link creation
-* Evaluation
-* Entity creation
-* Persisting the process
-* Adding to the existing service
-
-### Installation
-
-```bash
-pip install company-matching-framework
-```
-
-### I want data from linked datasets
-
-I want the name of a company as it appears in Companies House, and its ID from Data Hub. We can do this in the DBMS, or in Python. 
-
-```sql
-select
-    ch.company_name,
-    dh.data_hub_id
-from
-    company_matching_service([
-        'companieshouse.companies as ch',
-        'dit.data_hub__companies as dh'
-    ])
-```
-
-```python
-import cmf.utils as cmfu
-
-cmfu.query(
-    select={
-        "companieshouse.companies": [
-            "company_name"
-        ],
-        "dit.data_hub__companies": [
-            "data_hub_id"
-        ]
-    }
+    cleaner_dh_id,
+    cleaner_company_name
 )
 ```
 
-Some companies in Companies House might have several linked entries in Data Hub. By default the service returns them all, but the service can be opinionated about which one is preferred.
+Every linker will need slightly different things in its settings. You can use `cmf.report.linkers(linker="cms")` to see the docstring of the linker, which will help you deal with its requirements.
 
-```sql
-select
-    ch.company_name,
-    dh.data_hub_id
-from
-    company_matching_service(
-        tables => [
-            'companieshouse.companies as ch',
-            'dit.data_hub__companies as dh'
-        ],
-        preferred => true
-    )
-```
+One common task is building comparisons. Just like `selecter` and `selecters`, `comparison` and `comparisons` can help us build a comparison object for some linkers. Write SQL conditions using `l_column` and `r_column`.
 
 ```python
-import cmf.utils as cmfu
+import cmf
 
-cmfu.query(
-    select={
-        "companieshouse.companies": [
-            "company_name"
-        ],
-        "dit.data_hub__companies": [
-            "data_hub_id"
-        ]
-    },
-    preferred=True
-)
-```
-
-Consider the HMRC Exporters table. The same company appears hundreds of times. If you pass it to the service, it will assume you want every row, and the duplicated rows will contain lots of `null`s. To aggregate, use the service in a subquery. The unique company entity ID can be returned with `cms.id`, to help you group.
-
-```sql
-select
-    agg.id,
-    max(agg.company_name),
-    max(agg.data_hub_id),
-    count(agg."month")
-from (
-    select
-        cms.id as id,
-        ch.company_name as company_name,
-        dh.data_hub_id as data_hub_id,
-        exp."month" as "month"
-    from
-        company_matching_service(
-            tables => [
-                'companieshouse.companies as ch',
-                'dit.data_hub__companies as dh',
-                'hmrc.trade__exporters as exp'
-            ]
-        )
-) agg
-group by
-    agg.id;
-```
-
-```python
-import cmf.utils as cmfu
-
-df = cmfu.query(
-    select={
-        "companieshouse.companies": [
-            "company_name"
-        ],
-        "dit.data_hub__companies": [
-            "data_hub_id"
-        ],
-        "hmrc.trade__exporters": [
-            "month"
-        ]
-    },
-    preferred=True,
-    return_id=True,
-    return_type="pandas"
-)
-
-df.groupby("id").agg({"company_name": "max", "data_hub_id": "max", "month": "count"})
-```
-
-### I have a dataset I want to connect to company enties
-
-Your dataset should first be added to Data Workspace, even if it's in a personal schema. The Company Matching Framework works entirely in the DBMS.
-
-Say you want to connect `data.data_hub_statistics` to the existing company clusters and you want to do this really well -- not just a simple left join. It contains a data hub ID and company name, both of which were entered by hand, so they'll need cleaning up.
-
-What fields exist to connect this dataset to?
-
-```python
-import cmf.utils as cmfu
-cmfu.cluster_report()
-```
-
-```console
-foo@bar:~$
-Field           Source                         Coverage    Accuracy
--------------------------------------------------------------------
-company_name    companieshouse.companies       95%         99%
-company_id      companieshouse.companies       76%         97%
-data_hub_id     dit.data_hub__companies        21%         88%
-address_1       companieshouse.companies       74%         89%
-address_2       dit.data_hub__companies        65%         74%
-address_3       dit.export_wins__wins_dataset  22%         45%
-...             ...                            ...         ...
-```
-
-Great, `company_name` and `data_hub_id` seem right for my dataset.
-
-We're going to be doing a lot of selecting from various tables and clusters. The `selecter` function can help us build the dictionaries to do this. For one dataset, `selecter` is all we need. For getting information across several datasets, we can add several `selecter`s together with `selecters`.
-
-```python
-import cmf.utils as cmfu
-
-ch_selecter = cmfu.selecter(
-    table="companieshouse.companies",
-    fields=[
-        "company_name"
-    ]
-)
-dh_selecter = cmfu.selecter(
-    table="cdit.data_hub__companies",
-    fields=[
-        "data_hub_id"
-    ]
-)
-
-ch_dh_selecter = cmfu.selecters(
-    ch_selecter,
-    dh_selecter
-)
-
-ch_dh_selecter
-```
-
-This is just a fancy way to format dictionaries. You can write them out manually if you prefer.
-
-```console
-foo@bar:~$
-{
-    "companieshouse.companies": [
-        "company_name"
-    ],
-    "dit.data_hub__companies": [
-        "data_hub_id"
-    ]
-}
-```
-
-What linkers already work with these tables and fields? How have other people cleaned this data?
-
-```python
-import cmf.utils as cmfu
-cmfu.link_report(select=ch_dh_selecter)
-```
-
-```console
-foo@bar:~$
-Table                      Field          Link experiment          Match %ge   AOC
------------------------------------------------------------------------------------
-companieshouse.companies   company_name   n1_deterministic_basic   35%         0.23
-companieshouse.companies   company_name   n1_cms_basic             46%         0.67
-companieshouse.companies   company_name   n1_splink_basic          87%         0.89
-dit.data_hub__companies    data_hub_id    n3_deterministic_basic   88%         0.9
-dit.data_hub__companies    data_hub_id    n3_cms_basic             98%         0.98
-dit.data_hub__companies    data_hub_id    n3_splink_basic          86%         0.97
-...                        ...            ...                      ...         ...
-```
-
-It looks like both a Splink and CMS-based linker might be helpful here. Let's fit both, validate some matches, and see which wins.
-
-Let's start with CMS.
-
-```python
-from cmf.linkers import CMSLinker
-CMSLinker.help()
-```
-
-```console
-foo@bar:~$
-The Company Matching Service linker requires the following objects:
-
-cluster_select: A selecter to get fields from one or more tables. Use cmf.utils.selecter(s) to help
-data_select: A selecter to get fields from the table you wish to join. Use cmf.utils.selecter(s) to help
-link_settings: A dictionary of fields you wish to match on. Use CMSLinker.help("link_settings") to help
-
-You may also wish to define:
-
-cluster_cleaner: A cleaner to clean the clusters data. Use cmf.utils.cleaner(s) to help
-dataset_cleaner: A cleaner to clean the dataset. Use cmf.utils.cleaner(s) to help
-```
-
-Let's start with those required fields.
-
-We've already seen how to build selecters, so lets move onto `link_settings`.
-
-I could look up how other people have done this, but let's let the object itself help me configure it.
-
-```python
-CMSLinker.help("link_settings")
-```
-
-```console
-foo@bar:~$
-The Company Matching Service linker requires a link settings in the following shape:
-
-{
-    "comparisons": [
-        {
-            "output_column_name": "company_name",
-            "sql_condition": "l.company_name = r.company_name"
-        },
-        {
-            "output_column_name": "data_hub_id",
-            "sql_condition": "l.data_hub_id = r.data_hub_id"
-        }
-    ]
-}
-
-Use cmf.utils.comparison(s) to help
-```
-
-Just like `selecter` and `selecters`, `comparison` and `comparisons` can help us build a comparison object for this linker. Write SQL conditions using `l_column` and `r_column`.
-
-```python
-import cmf.utils as cmfu
-
-company_name_comparison = cmfu.comparison(
+company_name_comparison = cmf.comparison(
     output_column="company_name,
     l_column="company_name",
     r_column="company_name",
     sql_condition="l_column = r_column"
 )
-dh_id_comparison = cmfu.comparison(
+dh_id_comparison = cmf.comparison(
     output_column="data_hub_id,
     l_column="data_hub_id",
     r_column="data_hub_id",
     sql_condition="l_column = r_column"
 )
 
-all_comparisons = cmfu.comparisons(
+all_comparisons = cmf.comparisons(
     ch_selecter,
     dh_selecter
 )
@@ -586,126 +374,195 @@ foo@bar:~$
 }
 ```
 
+We've made our cleaning pipeline and our comparisons, which is all we need for the `cms` linker. Let's put it all together.
+
 Every linker needs a `link_experiment` name and `description`. The `link_experiment` is used to record the probabilities a linker generates, and means you can either overwrite a previous run with your ever-refined methodology, or start a new one.
 
 ```python
-data_hub_statistics_linker = CMSLinker(
+import cmf
+
+data_hub_statistics_linker = cmf.linker(
+    type="cms",
     link_experiment="data_hub_stats",
     description="""
         Using company name and ID with existing cleaning methods
     """,
     cluster_select=ch_dh_selecter,
-    data_select=cmfu.selecter(
+    cluster_cleaner=my_cleaners,
+    data_select=cmf.selecter(
+        table="data.data_hub_statistics",
+        fields=[
+            "data_hub_id",
+            "company_name"
+        ]
+    ),
+    data_cleaner=my_cleaners,
+    link_settings=all_comparisons
+)
+```
+
+We're now ready to perform our core operations.
+
+We retrieve the data. Note we could also supply `cluster_select` and `data_select` at this stage if we wanted. This allows us to test our method in Jupyter.
+
+```python
+data_hub_statistics_linker.get_data()
+```
+
+We can view the raw data to check we're happy with it:
+
+```python
+data_hub_statistics_linker.get(type="cluster", stage="raw")
+data_hub_statistics_linker.get(type="data", stage="raw")
+```
+
+Now we prepare the data. We could also supply `cluster_cleaner`, `data_cleaner` and `link_settings` at this stage, allowing experimentation. To view the cleaned data at this stage we would use the "processed" stage.
+
+```python
+data_hub_statistics_linker.prepare()
+data_hub_statistics_linker.get(type="cluster", stage="processed")
+data_hub_statistics_linker.get(type="data", stage="processed")
+```
+
+Note that if you're using a more complicated linker, like `splink`, your linker may have lots of smaller functions within `.prepare()` you can use to test and refine your pipeline. Check the linker's demo notebook to find out about its intricacies.
+
+Finally it's time to actually make our link. For most linkers `link_settings` could be supplied at this stage -- `splink` is the notable exception.
+
+```python
+data_hub_statistics_linker.link()
+```
+
+By default this outputs to the Company Matching Framework's probabilities table, enabling the use of our evaluation tools. You can turn this off and return your probabilities to a different table or pandas dataframe if you wish.
+
+Regardless, we can see the result:
+
+```python
+data_hub_statistics_linker.get(type="link")
+```
+
+#### Making linkers: helper functions
+
+How do we know that our data is appropriate for linking, or whether we need to do some naïve deduping? `cmf.report` can help.
+
+```python
+import cmf.report
+report.data(
+    df, # or data.data_hub_statistics
+    select=cmf.selecter(
         table="data.data_hub_statistics",
         fields=[
             "data_hub_id"
         ]
-    ),
-    link_settings=all_comparisons
+    )
 )
-data_hub_statistics_linker.get_data()
 ```
 
-I've now collected my raw data. Let's take a look at those functions that were used to clean the data before, in `n3_cms_basic` for `data_hub_id`, and in `n1_splink_basic` for `company_name`.
+```console
+foo@bar:~$
+Field 
+data.data_hub_statistics
+------------------------
+
+data_hub_id: 98.7% unique
+
+Use cmf.linker(data_deduper=) to naïve-dedupe in your linking process, or add another field to reach 100%
+```
+
+How do we know what linkers have worked well in the past? What fields can we join into and how were they cleaned?
+
+Let's start with the fields that exist.
 
 ```python
-import cmf.utils as cmfu
-cmfu.cleaning_report(experiment="n3_cms_basic", field="data_hub_id")
+import cmf.report
+report.fields()
+```
+
+```console
+foo@bar:~$
+Field           Source                         Coverage    Accuracy
+-------------------------------------------------------------------
+company_name    companieshouse.companies       95%         99%
+company_id      companieshouse.companies       76%         97%
+data_hub_id     dit.data_hub__companies        21%         88%
+address_1       companieshouse.companies       74%         89%
+address_2       dit.data_hub__companies        65%         74%
+address_3       dit.export_wins__wins_dataset  22%         45%
+...             ...                            ...         ...
+```
+
+What about linkers that have worked well for fields we want to join onto? We can use the `selecter` we built earlier.
+
+```python
+import cmf.report
+report.linkers(select=ch_dh_selecter)
+```
+
+```console
+foo@bar:~$
+Table                      Field          Link experiment          Match %ge   AOC
+-----------------------------------------------------------------------------------
+companieshouse.companies   company_name   n1_deterministic_basic   35%         0.23
+companieshouse.companies   company_name   n1_cms_basic             46%         0.67
+companieshouse.companies   company_name   n1_splink_basic          87%         0.89
+dit.data_hub__companies    data_hub_id    n3_deterministic_basic   88%         0.9
+dit.data_hub__companies    data_hub_id    n3_cms_basic             98%         0.98
+dit.data_hub__companies    data_hub_id    n3_splink_basic          86%         0.97
+...                        ...            ...                      ...         ...
+```
+
+And how was a specific field cleaned in a specific linker?
+
+```python
+import cmf.report
+report.cleaners(link_experiment="n3_cms_basic", field="data_hub_id")
 ```
 
 ```console
 foo@bar:~$
 In n3_cms_basic, data_hub_id was cleaned with the following functions:
 
-import cmf.features.clean_basic as cmf_cb
+from cmf import clean
 
 {
     "data_hub_id": {
-        "function": cmf_cb.clean_punctuation,
+        "function": clean.block.remove_punctuation,
         "arguments": {
             "column": "data_hub_id"
         },
-        "function": cmf_cb.lowercase,
+        "function": clean.block.lowercase,
         "arguments": {
             "column": "data_hub_id"
         }
     }
 }
 
-Use cmf.utils.cleaner(s) to help.
+Use cmf.clean to help.
 ```
 
-And `company_name`?
+We can even get guidelines for using a speficic linker. This can be helpful for tricky `linker_settings`.
 
 ```python
-import cmf.utils as cmfu
-cmfu.cleaning_report(experiment="n1_splink_basic", field="company_name")
+import cmf.report
+report.linkers(linker="cms")
 ```
 
 ```console
 foo@bar:~$
-In n3_cms_basic, data_hub_id was cleaned with the following functions:
+The Company Matching Service linker requires the following objects:
 
-import cmf.features.clean_complex as cmf_cc
+cluster_select: A selecter to get fields from one or more tables. Use cmf.selecter(s) to help
+data_select: A selecter to get fields from the table you wish to join. Use cmf.selecter(s) to help
+link_settings: A dictionary of fields you wish to match on. Use cmf.report.linkers(linker="cms", arg="link_settings") to help
 
-{
-    "company_name": {
-        "function": cmf_cc.clean_company_name,
-        "arguments": {
-            "column": "company_name"
-        }
-    }
-}
+You may also wish to define:
 
-Use cmf.utils.cleaner and cmf.utils.cleaners to help.
+cluster_cleaner: A cleaner to clean the clusters data. Use cmf.cleaner(s) to help
+dataset_cleaner: A cleaner to clean the dataset. Use cmf.cleaner(s) to help
 ```
 
-As before, we can use `cleaner` and `cleaners` to build these cleaning dictionaries, though there's nothing stopping us from just making them ourselves. This particular pipeline is made easier because we're cleaning both cluster and dataset using the same functions, but there's no reason you'd have to stick to this.
+### Evaluation
 
-```python
-import cmf.features.clean_basic as cmf_cb
-import cmf.features.clean_complex as cmf_cc
-
-dh_clean_punctuation = cleaner(
-    function=cmf_cb.clean_punctuation,
-    column="data_hub_id"
-)
-dh_clean_lowercase = cleaner(
-    function=cmf_cb.lowercase,
-    column="data_hub_id"
-)
-comp_clean_company_name = cleaner(
-    function=cmf_cc.clean_company_name,
-    column="company_name"
-)
-
-my_cleaners = cleaners(
-    dh_clean_punctuation,
-    dh_clean_lowercase,
-    comp_clean_company_name
-)
-```
-
-Time to clean. Every linker contains:
-
-* A `prepare()` function to clean the data, which needs at least: 
-    * `cluster_cleaner`
-    * `data_cleaner`
-* A `link()` function to do the linking, which needs at least:
-    * `link_settings`
-
-As we've already supplied `link_settings`, we can `link()` right away. 
-
-```python
-data_hub_statistics_linker.prepare(
-    cluster_cleaner=my_cleaners,
-    data_cleaner=my_cleaners
-)
-
-data_hub_statistics_linker.link()
-```
-
-Let's take a look and see how that did.
+Let's take a look and see how our `data_hub_statistics_linker` did.
 
 ```python
 data_hub_statistics_linker.report()
@@ -737,30 +594,13 @@ To do it yourself:
     * Improvement. Will weight sampling towards low-probability matches. An AOC against this method will be artificially low, but this will help you focus on what needs improving
     * Disagreement. Will weight sampling towards matches where similar experiments disagree. This will artificially increase the difference in AOC between several experiments, helping make the best matching method more obvious
 
-So you've configured and tested a linker. What now?
+### Entity creation
 
-#### Test another linker
+We've made a linker that connects `data.data_hub_statistics` to the wider group of company entities. We've rigorously validated our output and measured how good it is. But if we want to use the core `cmf.query()` function to pull data from every entity and include data from `data.data_hub_statistics`, we need to turn our probabilities into entity clusters. 
 
-We identified SplinkLinker as a potential rival to CMSLinker for this dataset. Both linkers share some arguments to their `prepare()` methods, but SplinkLinker has some important differences:
+To do this we need to choose a threshold above which we consider a probability to become truth. When we're linking we might keep all probabilities above 0.7, but when we're making entities, we might only want to keep those where we're really sure, like 0.95 or above. You need to explore your results and decide on this figure for yourself. Some linkers are more sensitive than others.
 
-* `prepare()` requires a configuration for training the linker
-* `link()`'s `link_settings` is more complex, and needs more things to be configured
-
-You can read about the linker's requirements in its `SplinkLinker.help()` method, or by copying existing linkers in the pipelines repo.
-
-#### Iterate on our linker
-
-We might:
-
-* Make more sophisticated data cleaning methods
-* Add new fields and update the settings
-* Make more sophisticated SQL matching conditions
-
-Play around and see how the AOC changes. Remember, a new `link_experiment` means a new set of probabilities are output, and you can compare between them.
-
-#### Read data from company entities
-
-You did all this so you could join data from all company entities to your data. To properly add your probabilities to the service see "Add your dataset to the service", but for now you can build your own local version of the clusters table:
+We can create your custom entity clusters locally or remotely:
 
 ```python
 my_clusters = data_hub_statistics_linker.to_clusters(return_type="pandas")
@@ -787,15 +627,18 @@ from
 ```
 
 ```python
-import cmf.utils as cmfu
+import cmf
 
-cmfu.query(
+cmf.query(
     select={
         "companieshouse.companies": [
             "company_name"
         ],
         "dit.data_hub__companies": [
             "data_hub_id"
+        ],
+        "data.data_hub_statistics": [
+            "total_clicks"
         ]
     },
     preferred=True,
@@ -803,7 +646,7 @@ cmfu.query(
 )
 ```
 
-#### Save my linker so I can run it again
+### Persisting the process
 
 Your linker is a process -- it gets data, cleans it, links it, and outputs it. We can `save()` a linker in two ways:
 
@@ -830,16 +673,22 @@ foo@bar:~$ python myfiles/dh_stats.py --sql_out=_user_eaf4fd9a.my_clusters --ove
 
 Re-running this script will ensure your clusters stay up to date with changes in both the service, and your data.
 
-#### Add your dataset to the service
+### Adding to the existing service
 
 We want everyone to benefit from the hard work you've put into linking up your data. We've tried to make it as easy as possible to add new methodologies, or replace old ones with better versions. Each dataset will only ever have one "canonical" linking method, even though we might experiment with lots of different ones to improve the service.
 
-To add or update the canonical link for a dataset:
+The Company Matching Framework exists in three repositories:
+
+* Company Matching Framework. The Python library installed with `pip install company-matching-framework`
+* Company Matching Framework pipelines. A collection of scripts which uses `cmf` to run the "canonical" pipeline that everyone uses
+* Company Matching Framework reporting. The dashboard that allows everyone to help to validate links
+
+To add to the existing service, we need to use the second repo, the pipelines. To add or update the canonical link for a dataset:
 
 * Go to the Company Matching Framework pipeline repo
 * Create a new branch. In there:
     * Place your linker script in the `pipelines/` subdirectory
-    * Add any new cleaning functions to the `features/` subdirectory
+    * Add any new cleaning functions to the `cleaning/` subdirectory
     * If it replaces an existing script, delete the old one
     * Add or update the `config.py` to include a reference to your script and dataset. Unless you're a data engineer, add your dataset to the end of the `n` queue
 * Create a merge request. In it state:
@@ -849,7 +698,7 @@ To add or update the canonical link for a dataset:
  
 The data team will review your request, and once it's accepted, your data will have joined the service and everyone will be able to make use of it.
 
-### I have a new matching methodology I want to implement
+### Adding linker methodologies
 
 A matching methodology is a way of linking data that can be applied in different ways to lots of different datasets. The linkers included in the Company Matching Framework should be enough to cover most use cases, and do it inside the DBMS. But let's say you want to implement something new, like the [Python Record Linkage Toolkit](https://recordlinkage.readthedocs.io/en/latest/about.html).
 
@@ -861,14 +710,15 @@ The key things to know are:
     * Accept at least:
         * `cluster_cleaner` and `data_cleaner` arguments, which it can pass to `cmf.link.utils.cluster_cleaner` and `cmf.link.utils.data_cleaner` if you want to let them work as they do in other linkers
         * `cluster_raw` and `data_raw` arguments, which you should assume to be a reference to a PostgreSQL or duckDB table
-    * And return a tuple of `(cluster_processed, data_processed)`, which should be references to a PostgreSQL or duckDB table
+    * Return a tuple of `(cluster_processed, data_processed)`, which should be references to a PostgreSQL or duckDB table
 * `link()` must
     * Accept at least:
-        * `link_settings`. This can look however you want, but we try to follow Splink's settings dictionary syntax in `cmf.utils.comparison(s)` so users can move between linkers easily
+        * `link_settings`. This can look however you want, but we try to follow Splink's settings dictionary syntax in `cmf.comparison(s)` so users can move between linkers easily
         * `cluster_processed` and `data_processed` arguments, which you should assume to be a reference to a PostgreSQL or duckDB table
-    * And call `cmf.utils.probabilities` to write its output to the proabilities table
-* You must implement the `LINKER_CLASS_NAME` and `LINKER_ABBREVIATION` global variables, which provide the class name users will import, and the abbreviation added to experiment names
-* Consider putting a "Help" section in your docstrings for the `help()` method to show the user. If not present, it'll show the whole docstring
+    * Call `cmf.link.utils.probabilities` to write its output to the proabilities table
+* You must implement the `LINKER_NAME` and `LINKER_DESCRIPTION` global variables, which provide the name users will pass to `cmf.linker()`, and added to experiment names
+* Consider putting a "Help" section in your docstrings for the `cmf.report.linkers(linker=, arg=)` function to show the user. If not present, it'll show the whole docstring
+* Consider adding a demonstation notebook in `notebooks/` to help users see how to use the intricacies of your method
  
 Linkers are composed based on the above, and the following public methods are added for users:
 
@@ -877,7 +727,6 @@ Linkers are composed based on the above, and the following public methods are ad
 * `to_clusters()`
 * `save()`
 * `load()`
-* `help()`
 
 Other helpful private methods are also present. Find them in `cmf.link.utils`.
 
