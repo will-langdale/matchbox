@@ -35,6 +35,254 @@ make setup
 
 The below is **unimplemented code** to help refine where we want the API to get to. By writing instructions for the end product, we'll flush out the problems with it before they occur.
 
+I think there are four levels of engagement a user might have with the framework, and each of these is made up of a patchwork of 7 tasks.
+
+* Reading data from the company entity clusters
+    * Reading
+* Reading data from the company entity clusters, then joining new data themselves cleaned with the framework's cleaning functions
+    * Extraction
+    * Cleaning
+* Joining new data to the service in an evaluatable pipeline for personal/team-based usage
+    * Reading
+    * Cleaning
+    * Link creation
+    * Evaluation
+    * Entity creation
+    * Persisting the process
+* Joining new data to the service in an evaluatable pipeline to add to the deployed service
+    * Reading
+    * Cleaning
+    * Link creation
+    * Evaluation
+    * Adding to the existing service
+ 
+Those tasks broken out are:
+
+* Reading
+* Cleaning
+* Link creation
+* Evaluation
+* Entity creation
+* Persisting the process
+* Adding to the existing service
+
+Let's break these down one by one. In our example we have a dataset of Data Hub statistics, `data.data_hub_statistics`, that we wll eventually want to bring into the service.
+
+### Installation
+
+```bash
+pip install company-matching-framework
+```
+
+### Reading
+
+This is all handled by `cmf.query()`, or with functions in PostgreSQL directly.
+
+I want the name of a company as it appears in Companies House, and its ID from Data Hub. We can do this in the DBMS, or in Python. 
+
+```sql
+select
+    ch.company_name,
+    dh.data_hub_id
+from
+    company_matching_service([
+        'companieshouse.companies as ch',
+        'dit.data_hub__companies as dh'
+    ])
+```
+
+```python
+import cmf
+
+cmf.query(
+    select={
+        "companieshouse.companies": [
+            "company_name"
+        ],
+        "dit.data_hub__companies": [
+            "data_hub_id"
+        ]
+    }
+)
+```
+
+Lots of functions in the Framework will require a dictionary be passed to a `select` argument. We provide `selecter` and `selecters` to aid with this creation.
+
+```python
+import cmf
+
+ch_selecter = cmf.selecter(
+    table="companieshouse.companies",
+    fields=[
+        "company_name"
+    ]
+)
+dh_selecter = cmf.selecter(
+    table="dit.data_hub__companies",
+    fields=[
+        "data_hub_id"
+    ]
+)
+
+ch_dh_selecter = cmf.selecters(
+    ch_selecter,
+    dh_selecter
+)
+
+ch_dh_selecter
+```
+
+This is just a fancy way to format dictionaries. You can write them out manually if you prefer.
+
+```console
+foo@bar:~$
+{
+    "companieshouse.companies": [
+        "company_name"
+    ],
+    "dit.data_hub__companies": [
+        "data_hub_id"
+    ]
+}
+```
+
+Let's get back to reading data out. Some companies in Companies House might have several linked entries in Data Hub. By default the service returns them all, but the service can be opinionated about which one is preferred.
+
+```sql
+select
+    ch.company_name,
+    dh.data_hub_id
+from
+    company_matching_service(
+        tables => [
+            'companieshouse.companies as ch',
+            'dit.data_hub__companies as dh'
+        ],
+        preferred => true
+    )
+```
+
+```python
+import cmf
+
+cmf.query(
+    select=ch_dh_selecter,
+    preferred=True
+)
+```
+
+Consider the HMRC Exporters table. The same company appears hundreds of times. If you pass it to the service, it will assume you want every row, and the duplicated rows will contain lots of `null`s. To aggregate, use the service in a subquery. The unique company entity ID can be returned with `cms.id`, to help you group.
+
+```sql
+select
+    agg.id,
+    max(agg.company_name),
+    max(agg.data_hub_id),
+    count(agg."month")
+from (
+    select
+        cms.id as id,
+        ch.company_name as company_name,
+        dh.data_hub_id as data_hub_id,
+        exp."month" as "month"
+    from
+        company_matching_service(
+            tables => [
+                'companieshouse.companies as ch',
+                'dit.data_hub__companies as dh',
+                'hmrc.trade__exporters as exp'
+            ]
+        )
+) agg
+group by
+    agg.id;
+```
+
+```python
+import cmf
+
+exp_selecter = cmf.selecter(
+    table="hmrc.trade__exporters",
+    fields=[
+        "month"
+    ]
+)
+
+ch_dh_exp_selecter = cmf.selecters(
+    ch_selecter,
+    dh_selecter,
+    exp_selecter
+)
+
+df = cmf.query(
+    select=exp_selecter,
+    preferred=True,
+    return_id=True,
+    return_type="pandas"
+)
+
+df.groupby("id").agg({"company_name": "max", "data_hub_id": "max", "month": "count"})
+```
+
+### Cleaning
+
+This is all handled by collections of functions in `cmf.clean`. Functions are written in SQL to be run in-DBMS or in duckDB. We can either use some pre-made cleaning functions in collections like `cmf.clean.funcs`, or roll our own using `cmf.clean.utils` to amalgamate functions in collections like `cmf.clean.blocks`.
+
+We want to clean the company name in `data.data_hub_statistics` so we can left join it onto some extracted data ourselves.
+
+`
+
+```python
+from cmf.clean import utils as cu
+from cmf.clean import basic
+
+nopunc_lower = cu.duckdb_cleaner(
+    basic.clean_punctuation,
+    basic.lowercase,
+)
+
+```
+
+import cmf.features.clean_basic as cmf_cb
+import cmf.features.clean_complex as cmf_cc
+
+dh_clean_punctuation = cleaner(
+    function=cmf_cb.clean_punctuation,
+    column="data_hub_id"
+)
+dh_clean_lowercase = cleaner(
+    function=cmf_cb.lowercase,
+    column="data_hub_id"
+)
+comp_clean_company_name = cleaner(
+    function=cmf_cc.clean_company_name,
+    column="company_name"
+)
+
+my_cleaners = cleaners(
+    dh_clean_punctuation,
+    dh_clean_lowercase,
+    comp_clean_company_name
+)
+
+
+
+
+
+
+
+
+
+
+
+* Extraction
+* Cleaning
+* Link creation
+* Evaluation
+* Entity creation
+* Persisting the process
+* Adding to the existing service
+
 ### Installation
 
 ```bash
