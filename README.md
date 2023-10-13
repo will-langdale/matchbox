@@ -61,8 +61,8 @@ I think there are five levels of engagement a user might have with the framework
 Those tasks broken out are:
 
 * Reading (`cmf`)
-* Cleaning (`cmf`, `cmf.clean`)
-* Link creation (`cmf`'s `linker` function)
+* Cleaning (`cmf`, `cmf.clean`, `cmf.report`)
+* Link creation (`cmf`'s `linker` function, `cmf.report`)
 * Evaluation (methods from `cmf`'s `linker` function, `https://matching.data.trade.gov.uk/`)
 * Entity creation (methods from `cmf`'s `linker` function)
 * Persisting the process (methods from `cmf`'s `linker` function)
