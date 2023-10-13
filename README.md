@@ -1,4 +1,4 @@
-s# 🔗 Company matching framework
+# 🔗 Company matching framework
 
 A match orchestration framework to allow the comparison, validation, and orchestration of the best match methods for the company matching job.
 
@@ -60,14 +60,14 @@ I think there are five levels of engagement a user might have with the framework
  
 Those tasks broken out are:
 
-* Reading
-* Cleaning
-* Link creation
-* Evaluation
-* Entity creation
-* Persisting the process
-* Adding to the existing service
-* Adding linker methodologies
+* Reading (`cmf`)
+* Cleaning (`cmf`, `cmf.clean`)
+* Link creation (`cmf`'s `linker` function)
+* Evaluation (methods from `cmf`'s `linker` function, `https://matching.data.trade.gov.uk/`)
+* Entity creation (methods from `cmf`'s `linker` function)
+* Persisting the process (methods from `cmf`'s `linker` function)
+* Adding to the existing service (the pipeline repo)
+* Adding linker methodologies (improving the `cmf` repo, `cmf.link`)
 
 Let's break these down one by one. In our example we have a dataset of Data Hub statistics, `data.data_hub_statistics`, that we will eventually want to bring into the service.
 
