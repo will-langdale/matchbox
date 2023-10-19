@@ -4,7 +4,7 @@ This document currently reflects the state of the design at tag v0.2.
 
 ## How does matching happen?
 
-![The methodology of match orchestration](/hybridadditive_links.png "The 🔌hybrid additive methodology")
+![The methodology of match orchestration](references/hybridadditive_links.png "The 🔌hybrid additive methodology")
 
 The matching methodology is often shorthanded as 🔌hybrid additive. This is because there are a core set of tables that are matched additively, one after the other, each using information from all the tables before it. After this, tables can be plugged into this additive core in any order, even in parallel.
 
@@ -26,7 +26,7 @@ Everything else flows from this. Matching is done in a pipeline where each step 
 
 ## What does the framework's database look like?
 
-![The entity relationship diagram of the framework](/erdiagram.png "The entity relationship diagram")
+![The entity relationship diagram of the framework](references/erdiagram.png "The entity relationship diagram")
 
 The architecture is loosely based on the star schema.
 
@@ -42,7 +42,7 @@ The clusters table contains the probabilities and validation tables resolved int
 
 ## What does the code structure look like?
 
-![The class diagram of the framework](/classdiagram.png "The class diagram")
+![The class diagram of the framework](references/classdiagram.png "The class diagram")
 
 Broadly, the repo contains two kinds of classes:
 
