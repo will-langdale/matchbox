@@ -5,8 +5,8 @@ import pytest
 from functools import partial
 import ast
 
-from src import locations as loc
-from src.features.clean_basic import (
+from cmf import locations as loc
+from cmf.features.clean_basic import (
     clean_punctuation,
     clean_stopwords,
     list_join_to_string,
@@ -14,7 +14,7 @@ from src.features.clean_basic import (
     expand_abbreviations,
 )
 
-from src.features.utils import duckdb_cleaning_factory, unnest_renest
+from cmf.features.utils import duckdb_cleaning_factory, unnest_renest
 
 
 """

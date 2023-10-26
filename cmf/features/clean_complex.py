@@ -1,7 +1,7 @@
 import duckdb
 from functools import partial
 
-from src.features.clean_basic import (
+from cmf.features.clean_basic import (
     remove_notnumbers_leadingzeroes,
     clean_company_name,
     array_except,
@@ -9,8 +9,8 @@ from src.features.clean_basic import (
     get_postcode_area,
     # get_low_freq_char_sig,
 )
-from src.config import stopwords
-import src.features.utils as fu
+from cmf.config import stopwords
+import cmf.features.utils as fu
 
 
 def clean_comp_names(

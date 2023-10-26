@@ -1,9 +1,9 @@
-from src import locations as loc
-from src.data import utils as du
-from src.data.star import Star
-from src.data.probabilities import Probabilities
-from src.data.validation import Validation
-from src.data.clusters import Clusters
+from cmf import locations as loc
+from cmf.data import utils as du
+from cmf.data.star import Star
+from cmf.data.probabilities import Probabilities
+from cmf.data.validation import Validation
+from cmf.data.clusters import Clusters
 
 import duckdb
 from pathlib import Path

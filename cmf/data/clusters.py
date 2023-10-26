@@ -1,8 +1,8 @@
-from src.data import utils as du
-from src.data.datasets import Dataset
-from src.data.probabilities import Probabilities
-from src.data.validation import Validation
-from src.data.star import Star
+from cmf.data import utils as du
+from cmf.data.datasets import Dataset
+from cmf.data.probabilities import Probabilities
+from cmf.data.validation import Validation
+from cmf.data.star import Star
 
 import click
 import logging
@@ -592,7 +592,7 @@ class Clusters(object):
         a string for a factor or dimension table, or the int ID
     """,
 )
-def create_cluster_table(overwrite, dim):
+def create_cluster_table(overwrite, dim_init):
     """
     Entrypoint if running as script
     """
@@ -604,8 +604,8 @@ def create_cluster_table(overwrite, dim):
         schema=os.getenv("SCHEMA"), table=os.getenv("CLUSTERS_TABLE"), star=star
     )
 
-    if dim:
-        dim = Dataset(selector=dim, star=star)
+    if dim_init:
+        dim = Dataset(selector=dim_init, star=star)
 
         logger.info(
             f"""

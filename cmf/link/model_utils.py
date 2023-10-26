@@ -1,5 +1,5 @@
-import src
-from src.locations import REFERENCES_HOME, PROJECT_DIR, MODELS_HOME
+import cmf
+from cmf.locations import REFERENCES_HOME, PROJECT_DIR, MODELS_HOME
 
 from git import Repo
 import mlflow.pyfunc
@@ -109,7 +109,7 @@ def log_python_pipeline(steps, predict_dependencies, signature=None):
     # In this way, the environment loading the MLFlow model will not need
     # the `src` package as a dependency
     # See https://github.com/cloudpipe/cloudpickle/pull/417
-    cloudpickle.register_pickle_by_value(src)
+    cloudpickle.register_pickle_by_value(cmf)
 
     formatted_dependencies = [f"{k}=={v}" for k, v in predict_dependencies.items()]
 

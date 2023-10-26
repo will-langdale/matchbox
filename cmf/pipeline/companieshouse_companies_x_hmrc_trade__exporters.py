@@ -1,6 +1,6 @@
-from src.config import stopwords
-from src.features.clean_complex import clean_comp_names
-from src.link.make_link import LinkDatasets
+from cmf.config import stopwords
+from cmf.features.clean_complex import clean_comp_names
+from cmf.link.make_link import LinkDatasets
 
 import splink.duckdb.comparison_library as cl
 import splink.duckdb.comparison_template_library as ctl

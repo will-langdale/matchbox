@@ -1,8 +1,8 @@
-from src.link.deterministic_linker import DeterministicLinker
-from src.data import utils as du
-from src.data.datasets import Dataset
-from src.data.probabilities import Probabilities
-from src.data.clusters import Clusters
+from cmf.link.deterministic_linker import DeterministicLinker
+from cmf.data import utils as du
+from cmf.data.datasets import Dataset
+from cmf.data.probabilities import Probabilities
+from cmf.data.clusters import Clusters
 
 
 class ExistingCMSPlusLinker(DeterministicLinker):

@@ -1,4 +1,4 @@
-from src.locations import DATA_SUBDIR, PROJECT_DIR, DATA_HOME
+from cmf.locations import DATA_SUBDIR, PROJECT_DIR, DATA_HOME
 
 import pandas as pd
 import sqlalchemy

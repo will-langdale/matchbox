@@ -1,5 +1,5 @@
-from src.data import utils as du
-from src.config import link_pipeline
+from cmf.data import utils as du
+from cmf.config import link_pipeline
 
 import logging
 from dotenv import load_dotenv, find_dotenv

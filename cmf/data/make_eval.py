@@ -1,5 +1,5 @@
-from src.config import tables, pairs
-from src.data import utils as du
+from cmf.config import tables, pairs
+from cmf.data import utils as du
 
 
 class MakeEval(object):

@@ -1,8 +1,8 @@
-from src.data import utils as du
-from src.link import model_utils as mu
-from src.data.datasets import Dataset
-from src.data.probabilities import Probabilities
-from src.data.clusters import Clusters
+from cmf.data import utils as du
+from cmf.link import model_utils as mu
+from cmf.data.datasets import Dataset
+from cmf.data.probabilities import Probabilities
+from cmf.data.clusters import Clusters
 
 import mlflow
 import logging

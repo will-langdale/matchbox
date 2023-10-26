@@ -1,4 +1,4 @@
-from src.data import utils as du
+from cmf.data import utils as du
 
 import logging
 from dotenv import load_dotenv, find_dotenv

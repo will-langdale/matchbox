@@ -1,4 +1,4 @@
-from src.config import abbreviations, stopwords
+from cmf.config import abbreviations, stopwords
 
 
 def characters_to_spaces(input_column):

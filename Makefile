@@ -19,27 +19,27 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 ## Make STAR table
 star:
-	$(PYTHON_INTERPRETER) src/data/star.py
+	$(PYTHON_INTERPRETER) cmf/data/star.py
 
 
 ## Make dimension tables
 dims:
-	$(PYTHON_INTERPRETER) src/data/datasets.py
+	$(PYTHON_INTERPRETER) cmf/data/datasets.py
 
 
 ## Make probabilities table
 probabilities:
-	$(PYTHON_INTERPRETER) src/data/probabilities.py --overwrite
+	$(PYTHON_INTERPRETER) cmf/data/probabilities.py --overwrite
 
 
 ## Make clusters table with Companies House as the default data
 clusters:
-	$(PYTHON_INTERPRETER) src/data/clusters.py --dim_init companieshouse.companies --overwrite
+	$(PYTHON_INTERPRETER) cmf/data/clusters.py --dim_init companieshouse.companies --overwrite
 
 
 ## Make validation table
 validation:
-	$(PYTHON_INTERPRETER) src/data/validation.py --overwrite
+	$(PYTHON_INTERPRETER) cmf/data/validation.py --overwrite
 
 
 ## Setup system ready for linking
@@ -53,7 +53,7 @@ setup:
 
 ## Make evaluation tables for existing matching service
 evals:
-	$(PYTHON_INTERPRETER) src/data/make_eval.py
+	$(PYTHON_INTERPRETER) cmf/data/make_eval.py
 
 
 ## Shows disk usage across repo
@@ -68,17 +68,17 @@ clear:
 
 ## Load data to parquet
 data:
-	$(PYTHON_INTERPRETER) src/data/get_datasets.py --output_dir company-matching__$(NOW) --sample 100000
+	$(PYTHON_INTERPRETER) cmf/data/get_datasets.py --output_dir company-matching__$(NOW) --sample 100000
 
 
 ## Train model
 train:
-	$(PYTHON_INTERPRETER) src/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --input_dir company-matching__06-26-23_11-40-51 --dev
+	$(PYTHON_INTERPRETER) cmf/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --input_dir company-matching__06-26-23_11-40-51 --dev
 
 
 ## Build lookup and write to data workspace
 predict:
-	$(PYTHON_INTERPRETER) src/models/predict.py --run --input_dir company-matching__06-26-23_11-40-51 --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
+	$(PYTHON_INTERPRETER) cmf/models/predict.py --run --input_dir company-matching__06-26-23_11-40-51 --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
 
 
 ## Delete all compiled Python files

@@ -1,5 +1,5 @@
-from src.data import utils as du
-from src.data.star import Star
+from cmf.data import utils as du
+from cmf.data.star import Star
 
 import uuid
 from dotenv import load_dotenv, find_dotenv
