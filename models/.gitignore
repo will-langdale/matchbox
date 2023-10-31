@@ -1,7 +1,0 @@
-# This is a special gitignore file to ignore any model file but not the models folder
-
-## Ignore all files in this folder
-*
-## But keep this file and the .gitkeep
-!.gitkeep
-!.gitignore
