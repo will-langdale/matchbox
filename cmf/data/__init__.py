@@ -3,3 +3,4 @@ from cmf.data.datasets import Dataset  # noqa:F401
 from cmf.data.probabilities import Probabilities  # noqa:F401
 from cmf.data.db import DB  # noqa:F401
 from cmf.data.validation import Validation  # noqa:F401
+from cmf.data.models import Table  # noqa:F401

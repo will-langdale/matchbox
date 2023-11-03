@@ -1,9 +1,6 @@
 from cmf import locations as loc
 from cmf.data import utils as du
-from cmf.data.star import Star
-from cmf.data.probabilities import Probabilities
-from cmf.data.validation import Validation
-from cmf.data.clusters import Clusters
+from cmf.data import DB, Probabilities, Validation, Clusters, Table
 
 import duckdb
 from pathlib import Path
@@ -21,7 +18,7 @@ temp_val = "temp_val"
 temp_prob = "temp_prob"
 temp_clus = "temp_clus"
 
-star = Star(schema=os.getenv("SCHEMA"), table=temp_star)
+db = DB(db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DB_TABLE")))
 
 
 def load_test_data(path, int_to_uuid: bool = False):
@@ -113,7 +110,7 @@ def test_parallel(test_name):
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     probabilities = Probabilities(
-        schema=os.getenv("SCHEMA"), table=temp_prob, star=star
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
     )
     probabilities.create(overwrite=True)
     probabilities.add_probabilities(
@@ -122,17 +119,21 @@ def test_parallel(test_name):
         overwrite=True,
     )
 
-    validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)
+    validation = Validation(
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
+    )
     validation.create(overwrite=True)
     validation.add_validation(val.drop("uuid", axis=1))
 
-    clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
+    clusters = Clusters(
+        db=db, db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus)
+    )
     clusters.create(overwrite=True)
 
     # The long cast() lpad() to_hex() chain makes ints into UUIDs
     du.query_nonreturn(
         f"""
-        insert into {clusters.schema_table}
+        insert into {clusters.db_table.db_schema_table}
             select
                 gen_random_uuid() as uuid,
                 cast(
@@ -151,7 +152,7 @@ def test_parallel(test_name):
                 select
                     *
                 from
-                    {probabilities.schema_table}
+                    {probabilities.db_table.db_schema_table}
                 where
                     source = 1
             ) init
@@ -169,7 +170,7 @@ def test_parallel(test_name):
         add_unmatched_dims=False,
     )
 
-    passed = validate_against_answer(clusters.read(), clus, n_type="par")
+    passed = validate_against_answer(clusters.db_table.read(), clus, n_type="par")
 
     assert passed
 
@@ -199,7 +200,7 @@ def test_sequential(test_name):
 
     # Initialise clusters -- involves some messy work with the prob table but nvm
     probabilities = Probabilities(
-        schema=os.getenv("SCHEMA"), table=temp_prob, star=star
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
     )
     probabilities.create(overwrite=True)
     probabilities.add_probabilities(
@@ -207,12 +208,14 @@ def test_sequential(test_name):
         model="1",
         overwrite=True,
     )
-    clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
+    clusters = Clusters(
+        db=db, db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus)
+    )
     clusters.create(overwrite=True)
 
     du.query_nonreturn(
         f"""
-        insert into {clusters.schema_table}
+        insert into {clusters.db_table.db_schema_table}
             select
                 gen_random_uuid() as uuid,
                 cast(
@@ -231,7 +234,7 @@ def test_sequential(test_name):
                 select
                     *
                 from
-                    {probabilities.schema_table}
+                    {probabilities.db_table.db_schema_table}
                 where
                     source = 1
             ) init
@@ -244,7 +247,7 @@ def test_sequential(test_name):
         # Create probability table at step n
         prob_n = prob_sequence_dict[i]
         probabilities = Probabilities(
-            schema=os.getenv("SCHEMA"), table=temp_prob, star=star
+            db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
         )
         probabilities.create(overwrite=True)
         probabilities.add_probabilities(
@@ -258,7 +261,9 @@ def test_sequential(test_name):
             val_n = val_sequence_dict[i]
         except KeyError:
             val_n = val.iloc[0:0]
-        validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)
+        validation = Validation(
+            db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
+        )
         validation.create(overwrite=True)
         validation.add_validation(val_n.drop("uuid", axis=1))
 
@@ -273,7 +278,7 @@ def test_sequential(test_name):
         )
 
     # Check
-    passed = validate_against_answer(clusters.read(), clus, n_type="seq")
+    passed = validate_against_answer(clusters.db_table.read(), clus, n_type="seq")
 
     assert passed
 
@@ -297,7 +302,7 @@ def test_models(test):
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
     probabilities = Probabilities(
-        schema=os.getenv("SCHEMA"), table=temp_prob, star=star
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
     )
     probabilities.create(overwrite=True)
 
@@ -311,16 +316,20 @@ def test_models(test):
             overwrite=True,
         )
 
-    validation = Validation(schema=os.getenv("SCHEMA"), table=temp_val)
+    validation = Validation(
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
+    )
     validation.create(overwrite=True)
     validation.add_validation(val.drop("uuid", axis=1))
 
-    clusters = Clusters(schema=os.getenv("SCHEMA"), table=temp_clus, star=star)
+    clusters = Clusters(
+        db=db, db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus)
+    )
     clusters.create(overwrite=True)
 
     du.query_nonreturn(
         f"""
-        insert into {clusters.schema_table}
+        insert into {clusters.db_table.db_schema_table}
             select
                 gen_random_uuid() as uuid,
                 cast(
@@ -339,7 +348,7 @@ def test_models(test):
                 select
                     *
                 from
-                    {probabilities.schema_table}
+                    {probabilities.db_table.db_schema_table}
                 where
                     source = 1
             ) init
@@ -357,6 +366,6 @@ def test_models(test):
         add_unmatched_dims=False,
     )
 
-    passed = validate_against_answer(clusters.read(), clus, n_type="par")
+    passed = validate_against_answer(clusters.db_table.read(), clus, n_type="par")
 
     assert passed

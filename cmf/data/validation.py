@@ -85,8 +85,8 @@ class Validation(BaseModel):
 
         du.data_workspace_write(
             df=validation,
-            schema=self.db_table.schema,
-            table=self.db_table.table,
+            schema=self.db_table.db_schema,
+            table=self.db_table.db_table,
             if_exists="append",
         )
 
