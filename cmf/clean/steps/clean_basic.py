@@ -1,13 +1,15 @@
+from typing import Dict, List
+
 from cmf.clean.utils import ABBREVIATIONS, STOPWORDS
 
 
-def characters_to_spaces(input_column):
+def characters_to_spaces(column: str) -> str:
     """
     Removes all punctuation and replaces with spaces.
     """
     return rf"""
         regexp_replace(
-            {input_column},
+            {column},
             '[^a-zA-Z0-9 ]+',
             ' ',
             'g'
@@ -15,14 +17,14 @@ def characters_to_spaces(input_column):
     """
 
 
-def characters_to_nothing(input_column):
+def characters_to_nothing(column: str) -> str:
     """
     Removes periods and replaces with nothing (U.K. -> UK)
     """
 
     return rf"""
         regexp_replace(
-            {input_column},
+            {column},
             '[.]+',
             '',
             'g'
@@ -30,12 +32,12 @@ def characters_to_nothing(input_column):
     """
 
 
-def clean_punctuation(input_column):
+def clean_punctuation(column: str) -> str:
     """
     Set to lower case, remove punctuation
     and replace multiple spaces with single space.
     Finally, trim leading and trailing spaces.
-    Args: input_column -- the name of the column to clean
+    Args: column -- the name of the column to clean
     Returns: string to insert into SQL query
     """
 
@@ -44,7 +46,7 @@ def clean_punctuation(input_column):
         regexp_replace(
             lower({
                 characters_to_spaces(
-                    characters_to_nothing(input_column)
+                    characters_to_nothing(column)
                 )
             }),
             '\s+',
@@ -55,7 +57,9 @@ def clean_punctuation(input_column):
     """
 
 
-def expand_abbreviations(input_column, replacements: dict = ABBREVIATIONS):
+def expand_abbreviations(
+    column: str, replacements: Dict[str, str] = ABBREVIATIONS
+) -> str:
     """
     Expand abbreviations passed as a dictionary where the keys are matches
     and the values are what to replace them with.
@@ -63,7 +67,7 @@ def expand_abbreviations(input_column, replacements: dict = ABBREVIATIONS):
     Matches only when term is surrounded by regex word boundaries.
 
     Arguments:
-        input_column: the name of the column to clean
+        column: the name of the column to clean
         replacements: a dictionary where keys are matches and values are
         what the replace them with
 
@@ -74,7 +78,7 @@ def expand_abbreviations(input_column, replacements: dict = ABBREVIATIONS):
         if i == 0:
             replace_stack = rf"""
                 regexp_replace(
-                    lower({input_column}),
+                    lower({column}),
                     '\b({match})\b',
                     '{replacement}',
                     'g'
@@ -93,49 +97,49 @@ def expand_abbreviations(input_column, replacements: dict = ABBREVIATIONS):
     return replace_stack
 
 
-def tokenise(input_column):
+def tokenise(column: str) -> str:
     """
-    Split the text in input_column into an array
+    Split the text in column into an array
     using any char that is _not_ alphanumeric, as delimeter
-    Args: input_column -- the name of the column to tokenise
+    Args: column -- the name of the column to tokenise
     Returns: string to insert into SQL query
     """
 
     return rf"""
     regexp_split_to_array(
-        trim({input_column}),
+        trim({column}),
         '[^a-zA-Z0-9]+'
     )
     """
 
 
-def dedupe_and_sort(input_column):
+def dedupe_and_sort(column: str) -> str:
     """
     De-duplicate an array of tokens and sort alphabetically
-    Args: input_column -- the name of the column to deduplicate (must contain an array)
+    Args: column -- the name of the column to deduplicate (must contain an array)
     Returns: string to insert into SQL query
     """
 
     return f"""
     array(
         select distinct unnest(
-            {input_column}
+            {column}
         ) tokens
         order by tokens
     )
     """
 
 
-def remove_notnumbers_leadingzeroes(input_column):
+def remove_notnumbers_leadingzeroes(column: str) -> str:
     """
     Remove any char that is not a number, then remove all leading zeroes
-    Args: input_column -- the name of the column to treat
+    Args: column -- the name of the column to treat
     Returns: string to insert into SQL query
     """
     return rf"""
     regexp_replace(
         regexp_replace(
-            {input_column},
+            {column},
             '[^0-9]',
             '',
             'g'
@@ -146,41 +150,41 @@ def remove_notnumbers_leadingzeroes(input_column):
     """
 
 
-def array_except(input_column, terms_to_remove):
+def array_except(column: str, terms_to_remove: List[str]) -> str:
     return rf"""
     array_filter(
-        {input_column},
+        {column},
         x -> not array_contains({terms_to_remove}, x)
     )
     """
 
 
-def array_intersect(input_column, terms_to_keep):
+def array_intersect(column: str, terms_to_keep: List[str]) -> str:
     return rf"""
     array_filter(
-        {input_column},
+        {column},
         x -> array_contains({terms_to_keep}, x)
     )
     """
 
 
-def remove_stopwords(input_column, stopwords: list = STOPWORDS):
+def remove_stopwords(column: str, stopwords: List[str] = STOPWORDS) -> str:
     """
     A thin optinionated wrapper for array_except to clean the
     global stopwords list.
     """
     return rf"""
-        {array_except(input_column, terms_to_remove=stopwords)}
+        {array_except(column, terms_to_remove=stopwords)}
     """
 
 
-def regex_remove_list_of_strings(input_column, list_of_strings):
+def regex_remove_list_of_strings(column: str, list_of_strings: List[str]) -> str:
     to_remove = "|".join(list_of_strings)
     return rf"""
     trim(
         regexp_replace(
             regexp_replace(
-                lower({input_column}),
+                lower({column}),
                 '{to_remove}',
                 '',
                 'g'
@@ -193,41 +197,55 @@ def regex_remove_list_of_strings(input_column, list_of_strings):
     """
 
 
-def regex_extract_list_of_strings(input_column, list_of_strings):
+def regex_extract_list_of_strings(column: str, list_of_strings: List[str]) -> str:
     to_extract = "|".join(list_of_strings)
     return rf"""
-    regexp_extract_all({input_column}, '{to_extract}', 0)
+    regexp_extract_all({column}, '{to_extract}', 0)
     """
 
 
-def list_join_to_string(input_column, seperator=" "):
+def list_join_to_string(column: str, seperator: str = " ") -> str:
     """ """
-    return rf"""list_aggr({input_column},
+    return rf"""list_aggr({column},
         'string_agg',
         '{seperator}'
     )
     """
 
 
-def get_postcode_area(input_column):
+def get_postcode_area(column: str) -> str:
     return rf"""
         regexp_extract(
-            {input_column},
+            {column},
             '^[a-zA-Z][a-zA-Z]?'
         )
     """
 
 
-def get_low_freq_char_sig(input_column):
+def get_low_freq_char_sig(column: str) -> str:
     """
     Removes letters with a frequency of 5% or higher, and spaces
     https://en.wikipedia.org/wiki/Letter_frequency
     """
     return rf"""
         regexp_replace(
-            lower({input_column}),
+            lower({column}),
             '[rhsnioate ]+',
             '',
             'g'
         )
     """
+
+
+def to_upper(column: str) -> str:
+    """
+    All characters to uppercase
+    """
+    return f"upper({column})"
+
+
+def to_lower(column: str) -> str:
+    """
+    All characters to lowercase
+    """
+    return f"lower({column})"

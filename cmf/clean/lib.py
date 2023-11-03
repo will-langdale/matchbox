@@ -7,8 +7,8 @@ from cmf.clean import steps
 
 def company_name(
     df: DataFrame,
-    input_column: str,
-    input_column_secondary: str = None,
+    column: str,
+    column_secondary: str = None,
     stopwords: str = cu.STOPWORDS,
 ) -> DataFrame:
     """
@@ -38,15 +38,15 @@ def company_name(
 
     clean_secondary = cu.unnest_renest(clean_primary)
 
-    df = clean_primary(df, input_column)
+    df = clean_primary(df, column)
 
-    if input_column_secondary is not None:
-        df = clean_secondary(df, input_column_secondary)
+    if column_secondary is not None:
+        df = clean_secondary(df, column_secondary)
 
     return df
 
 
-def company_number(df: DataFrame, input_column: str) -> DataFrame:
+def company_number(df: DataFrame, column: str) -> DataFrame:
     """
     Remove non-numbers, and then leading zeroes
 
@@ -59,12 +59,12 @@ def company_number(df: DataFrame, input_column: str) -> DataFrame:
 
     clean_number = cu.cleaning_function(steps.remove_notnumbers_leadingzeroes)
 
-    df = clean_number(df, input_column)
+    df = clean_number(df, column)
 
     return df
 
 
-def postcode_to_area(df: DataFrame, input_column: str) -> DataFrame:
+def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
     """
     Extracts postcode area from a postcode
 
@@ -77,6 +77,6 @@ def postcode_to_area(df: DataFrame, input_column: str) -> DataFrame:
 
     extract_area = cu.cleaning_function(steps.get_postcode_area)
 
-    df = extract_area(df, input_column)
+    df = extract_area(df, column)
 
     return df

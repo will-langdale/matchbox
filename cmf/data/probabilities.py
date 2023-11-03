@@ -21,17 +21,20 @@ class Probabilities(BaseModel):
     @field_validator("db_table")
     @classmethod
     def check_table(cls, v: Table) -> Table:
-        fields = {
-            "uuid",
-            "link_type",
-            "model",
-            "source",
-            "cluster",
-            "id",
-            "probability",
-        }
-        assert set(v.db_fields) == fields
-        return v
+        if v.exists:
+            fields = {
+                "uuid",
+                "link_type",
+                "model",
+                "source",
+                "cluster",
+                "id",
+                "probability",
+            }
+            assert set(v.db_fields) == fields
+            return v
+        else:
+            return v
 
     @computed_field
     def sources(self) -> list:

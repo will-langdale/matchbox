@@ -1,4 +1,5 @@
 import duckdb
+from pandas import DataFrame
 from typing import Callable
 
 STOPWORDS = [
@@ -27,7 +28,7 @@ STOPWORDS = [
 ABBREVIATIONS = {"co": "company", "ltd": "limited"}
 
 
-def cleaning_function(*functions: list[Callable]) -> Callable:
+def cleaning_function(*functions: Callable) -> Callable:
     """
     Takes a list of basic cleaning functions appropriate for a select
     statement and add them together into a full cleaning function for use in
@@ -42,7 +43,7 @@ def cleaning_function(*functions: list[Callable]) -> Callable:
         See clean_basic for some examples
     """
 
-    def cleaning_method(df, column: str):
+    def cleaning_method(df: DataFrame, column: str) -> DataFrame:
         to_run = []
 
         for f in functions:

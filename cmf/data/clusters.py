@@ -29,9 +29,12 @@ class Clusters(BaseModel):
     @field_validator("db_table")
     @classmethod
     def check_table(cls, v: Table) -> Table:
-        fields = {"uuid", "id", "cluster", "source", "n"}
-        assert set(v.db_fields) == fields
-        return v
+        if v.exists:
+            fields = {"uuid", "id", "cluster", "source", "n"}
+            assert set(v.db_fields) == fields
+            return v
+        else:
+            return v
 
     def create(self, overwrite: bool, dim: Union[int, str] = None):
         """

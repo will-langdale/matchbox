@@ -23,9 +23,12 @@ class DB(BaseModel):
     @field_validator("db_table")
     @classmethod
     def check_table(cls, v: Table) -> Table:
-        fields = {"id", "fact", "dim"}
-        assert set(v.db_fields) == fields
-        return v
+        if v.exists:
+            fields = {"id", "fact", "dim"}
+            assert set(v.db_fields) == fields
+            return v
+        else:
+            return v
 
     @computed_field
     def db_datasets(self) -> Dict[str, Table]:
