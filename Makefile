@@ -17,9 +17,9 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 # COMMANDS																	  #
 #################################################################################
 
-## Make STAR table
-star:
-	$(PYTHON_INTERPRETER) cmf/data/star.py
+## Make DB table
+db:
+	$(PYTHON_INTERPRETER) cmf/data/db.py
 
 
 ## Make dimension tables
@@ -44,7 +44,7 @@ validation:
 
 ## Setup system ready for linking
 setup:
-	make star
+	make db
 	make dims
 	make probabilities
 	make clusters

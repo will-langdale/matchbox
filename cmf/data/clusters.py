@@ -39,7 +39,7 @@ class Clusters(BaseModel):
         each row as a new cluster to the recreated table.
 
         Arguments:
-            dim: [Optional] any valid selector for an item in the STAR table:
+            dim: [Optional] any valid selector for an item in the DB table:
             a string for a factor or dimension table, or the int ID
             overwrite: Whether or not to overwrite an existing cluster table
         """
@@ -551,7 +551,7 @@ class Clusters(BaseModel):
     type=str,
     help="""
         The dimension table with which to initialise the cluster table.
-        Any valid selector for an item in the STAR table:
+        Any valid selector for an item in the DB table:
         a string for a factor or dimension table, or the int ID
     """,
 )
@@ -562,7 +562,7 @@ def create_cluster_table(overwrite, dim_init):
     logger = logging.getLogger(__name__)
 
     db = DB(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("STAR_TABLE"))
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DB_TABLE"))
     )
 
     clusters = Clusters(
@@ -581,7 +581,7 @@ def create_cluster_table(overwrite, dim_init):
             f"{dataset.db_dim.db_schema_table}."
         )
 
-        clusters.create(overwrite=overwrite, dim=dataset.id)
+        clusters.create(overwrite=overwrite, dim=dataset.db_id)
     else:
         logger.info(f"Creating clusters table {clusters.db_table.db_schema_table}")
 

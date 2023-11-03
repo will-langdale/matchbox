@@ -57,7 +57,7 @@ class DB(BaseModel):
 
     def create(self, link_pipeline: dict, overwrite: bool):
         """
-        Creates a STAR lookup table from a link_pipeline settings object.
+        Creates a lookup table from a link_pipeline settings object.
 
         Arguments:
             link_pipeline: The source link_pipeline settings object
@@ -71,7 +71,7 @@ class DB(BaseModel):
 
         if_exists = "replace" if overwrite else "fail"
 
-        if self.table.exists and not overwrite:
+        if self.db_table.exists and not overwrite:
             raise ValueError(
                 """
                 Table exists. Set overwrite to True if you want to proceed.
@@ -97,9 +97,9 @@ class DB(BaseModel):
             out["fact"].append(fact)
             out["dim"].append(dim)
 
-        star = pd.DataFrame.from_dict(out)
+        db = pd.DataFrame.from_dict(out)
 
-        if len(star) != len(star.id.unique()):
+        if len(db) != len(db.id.unique()):
             raise ValueError(
                 """
                 Hash function has failed to produce unique keys. Change it.
@@ -107,9 +107,9 @@ class DB(BaseModel):
             )
 
         du.data_workspace_write(
-            df=star,
-            schema=self.table.db_schema,
-            table=self.table.db_table,
+            df=db,
+            schema=self.db_table.db_schema,
+            table=self.db_table.db_table,
             if_exists=if_exists,
         )
 
@@ -123,12 +123,10 @@ if __name__ == "__main__":
         format=du.LOG_FMT,
     )
     logger = logging.getLogger(__name__)
-    logger.info(
-        f'Creating STAR table "{os.getenv("SCHEMA")}"."{os.getenv("STAR_TABLE")}"'
-    )
+    logger.info(f'Creating DB table "{os.getenv("SCHEMA")}"."{os.getenv("DB_TABLE")}"')
 
     db = DB(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("STAR_TABLE"))
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DB_TABLE"))
     )
 
     db.create(
@@ -136,4 +134,4 @@ if __name__ == "__main__":
         overwrite=True,
     )
 
-    logger.info("Written STAR table")
+    logger.info("Written DB table")

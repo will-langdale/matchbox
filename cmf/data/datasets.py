@@ -59,7 +59,7 @@ class Dataset(BaseModel):
         dotenv_path = find_dotenv()
         load_dotenv(dotenv_path)
 
-        if os.getenv("SCHEMA") != self.db_dim.schema:
+        if os.getenv("SCHEMA") != self.db_dim.db_schema:
             raise IOError(
                 f"""
                 Dimension schema is not {os.getenv("SCHEMA")}.
