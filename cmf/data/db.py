@@ -22,9 +22,9 @@ class DB(BaseModel):
 
     @field_validator("db_table")
     @classmethod
-    def check_star(cls, v: Table) -> Table:
-        star_fields = {"id", "fact", "dim"}
-        assert set(v.db_fields) == star_fields
+    def check_db(cls, v: Table) -> Table:
+        db_fields = {"id", "fact", "dim"}
+        assert set(v.db_fields) == db_fields
         return v
 
     @computed_field
