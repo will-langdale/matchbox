@@ -114,7 +114,7 @@ class Linker(ABC):
         self.cluster_raw = self.clusters.get_data(
             cluster_select, cluster_uuid_to_id=True, n=self.n, sample=sample
         )
-        self.dim_raw = self.dataset.read_dim(dim_select, sample)
+        self.dim_raw = self.dataset.db_dim.read(select=dim_select, sample=sample)
 
     def _run_pipeline(self, table_in, pipeline):
         """

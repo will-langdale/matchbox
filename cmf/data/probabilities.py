@@ -1,51 +1,63 @@
 from cmf.data import utils as du
-from cmf.data.star import Star
+from cmf.data.models import Table
 
 import uuid
 from dotenv import load_dotenv, find_dotenv
 import os
 import click
 import logging
+from pydantic import BaseModel, computed_field, field_validator
 
 
-class Probabilities(object):
+class Probabilities(BaseModel):
     """
     A class to interact with the company matching framework's probabilities
     table. Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
-
-    Attributes:
-        * schema: the probabilities table's schema name
-        * table: the probabilities table's table name
-        * schema_table: the probabilities table's full name
-        * star: an object of class Star that wraps the star table
-
-    Methods:
-        * create(overwrite): Drops all data and recreates the probabilities
-        table
-        * read(): Returns the probabilities table
-        * add_probabilities(lookup): Add new entries to the probabilities
-        table
-
-    Raises:
-        ValueError: if schema or table not specified
     """
 
-    def __init__(self, schema: str, table: str, star: Star):
-        self.schema = schema
-        self.table = table
-        self.schema_table = f'"{self.schema}"."{self.table}"'
-        self.star = star
+    db_table: Table
 
-        if None in [self.schema, self.table]:
-            raise ValueError(
-                f"""
-                Schema and table must be specified
-                schema: {schema}
-                table: {table}
-                Have you used the right environment variable?
-            """
-            )
+    @field_validator("db_table")
+    @classmethod
+    def check_table(cls, v: Table) -> Table:
+        fields = {
+            "uuid",
+            "link_type",
+            "model",
+            "source",
+            "cluster",
+            "id",
+            "probability",
+        }
+        assert set(v.db_fields) == fields
+        return v
+
+    @computed_field
+    def sources(self) -> list:
+        """
+        Returns a set of the sources currently present in the probabilities table.
+
+        Returns:
+            A list of source ints, as appear in the DB table
+        """
+        sources = du.query(
+            "select distinct source from " f"{self.db_table.db_schema_table}"
+        )
+        return set(sources["source"].tolist())
+
+    @computed_field
+    def models(self) -> list:
+        """
+        Returns a set of the models currently present in the probabilities table.
+
+        Returns:
+            A list of model strings
+        """
+        models = du.query(
+            "select distinct model from " f"{self.db_table.db_schema_table}"
+        )
+        return set(models["model"].tolist())
 
     def create(self, overwrite: bool):
         """
@@ -56,18 +68,16 @@ class Probabilities(object):
             table
         """
 
-        exists = du.check_table_exists(self.schema_table)
-
         if overwrite:
-            drop = f"drop table if exists {self.schema_table};"
-        elif exists:
+            drop = f"drop table if exists {self.db_table.db_schema_table};"
+        elif self.db_table.exists:
             raise ValueError("Table exists and overwrite set to false")
         else:
             drop = ""
 
         sql = f"""
             {drop}
-            create table {self.schema_table} (
+            create table {self.db_table.db_schema_table} (
                 uuid uuid primary key,
                 link_type text not null,
                 model text not null,
@@ -79,37 +89,6 @@ class Probabilities(object):
         """
 
         du.query_nonreturn(sql)
-
-    def read(self):
-        return du.dataset(self.schema_table)
-
-    def get_sources(self) -> list:
-        """
-        Returns a list of the sources currently present in the probabilities table.
-
-        Raises:
-            KeyError: if table currently contains no sources
-
-        Returns:
-            A list of source ints, as appear in the star table
-        """
-        sources = du.query(f"select distinct source from {self.schema_table}")
-
-        if len(sources.index) == 0:
-            raise KeyError("Probabilities table currently contains no sources")
-
-        return sources["source"].tolist()
-
-    def get_models(self) -> list:
-        """
-        Returns a list of the models currently present in the probabilities table.
-
-        Returns:
-            A list of model strings
-        """
-        models = du.query(f"select distinct model from {self.schema_table}")
-
-        return models["model"].tolist()
 
     def add_probabilities(self, probabilities, model: str, overwrite: bool = False):
         """
@@ -157,21 +136,22 @@ class Probabilities(object):
         probabilities["link_type"] = "link"
         probabilities["model"] = model
 
-        current_models = self.get_models()
-
-        if model in current_models and overwrite is not True:
+        if model in self.models and overwrite is not True:
             raise ValueError(f"{model} exists in table and overwrite is False")
-        elif model in current_models and overwrite is True:
+        elif model in self.models and overwrite is True:
             sql = f"""
                 delete from
-                    {self.schema_table}
+                    {self.db_table.db_schema_table}
                 where
                     model = '{model}'
             """
             du.query_nonreturn(sql)
 
         du.data_workspace_write(
-            df=probabilities, schema=self.schema, table=self.table, if_exists="append"
+            df=probabilities,
+            schema=self.db_table.db_schema,
+            table=self.db_table.db_table,
+            if_exists="append",
         )
 
         return probabilities
@@ -189,13 +169,15 @@ def create_probabilities_table(overwrite):
     """
     logger = logging.getLogger(__name__)
 
-    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
-
     probabilities = Probabilities(
-        schema=os.getenv("SCHEMA"), table=os.getenv("PROBABILITIES_TABLE"), star=star
+        db_table=Table(
+            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("PROBABILITIES_TABLE")
+        )
     )
 
-    logger.info(f"Creating probabilities table {probabilities.schema_table}")
+    logger.info(
+        "Creating probabilities table " f"{probabilities.db_table.db_schema_table}"
+    )
 
     probabilities.create(overwrite=overwrite)
 

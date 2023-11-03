@@ -14,6 +14,8 @@ altair==5.0.1
     # via
     #   -r requirements.in
     #   splink
+annotated-types==0.6.0
+    # via pydantic
 astroid==2.15.5
     # via pylint
 asttokens==2.2.1
@@ -270,6 +272,10 @@ pyarrow==12.0.1
     #   pgpq
 pycodestyle==2.10.0
     # via flake8
+pydantic==2.4.2
+    # via -r requirements.in
+pydantic-core==2.10.1
+    # via pydantic
 pyflakes==3.0.1
     # via flake8
 pygments==2.15.1
@@ -384,6 +390,8 @@ typing-extensions==4.6.3
     #   black
     #   ipython
     #   psycopg
+    #   pydantic
+    #   pydantic-core
     #   pylint
 urllib3==1.26.16
     # via

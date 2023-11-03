@@ -235,7 +235,7 @@ class SplinkLinker(Linker):
             )
             .drop(columns=["id_l", "id_r"])
         )
-        probabilities["source"] = self.dataset.id
+        probabilities["source"] = self.dataset.db_id
 
         super()._add_log_item(
             name="match_pct",

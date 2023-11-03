@@ -1,91 +1,40 @@
 from cmf.data import utils as du
-from cmf.data.star import Star
+from cmf.data.models import Table
 from cmf.config import link_pipeline
 
 import logging
 from dotenv import load_dotenv, find_dotenv
 import os
-from typing import Union
+from pydantic import BaseModel, computed_field
+import hashlib
 
 
-class Dataset(object):
+class Dataset(BaseModel):
     """
     A class to interact with fact and dimension tables in the company
     matching framework.
-
-    Parameters:
-        * selector: any valid selector for an item in the STAR table:
-        a string for a factor or dimension table, or the int ID
-        * star: a star object from which to populate key fields
-
-    Attributes:
-        * id: the key of the fact/dim row in the STAR table
-        * dim_schema: the schema of the data's dimension table
-        * dim_table: the name of the data's dimension table
-        * dim_schema_table: the data's dimention table full name
-        * fact_schema: the schema of the data's dimension table
-        * fact_table: the name of the data's dimension table
-        * fact_schema_table: the data's dimention table full name
-
-    Methods:
-        * create_dim(unique_fields, overwrite): Drops all data and recreates the
-        dimension table using the unique fields specified
-        * read_dim(): Returns the dimension table
-        * read_fact(): Returns the fact table
-        * get_cols(table): Gets the table column names
     """
 
-    def __init__(self, selector: Union[int, str], star: Star):
-        self.star = star
+    db_dim: Table
+    db_fact: Table
 
-        # Get the STAR ID regardless of what kind of selector was applied
-        try:
-            self.id = int(selector)
-        except ValueError:
-            fact = None
-            dim = None
-            fact_error = ""
-            dim_error = ""
-            try:
-                fact = star.get(fact=selector, response="id")
-            except ValueError as e:
-                fact_error = str(e)
-            try:
-                dim = star.get(dim=selector, response="id")
-            except ValueError as e:
-                dim_error = str(e)
-
-            if fact is None and dim is None:
-                raise ValueError(
-                    f"""
-                    {fact_error}
-                    {dim_error}
-                """
-                )
-            elif fact is not None or (fact == dim):
-                self.id = fact
-            elif dim is not None or (fact == dim):
-                self.id = dim
-            else:
-                raise ValueError(
-                    """
-                    More than one value returned. Refine your request.
-                """
-                )
-        else:
-            ValueError("selector must be of type int or str")
-
-        self.dim_schema_table = star.get(star_id=self.id, response="dim")
-        self.dim_schema, self.dim_table = du.get_schema_table_names(
-            full_name=self.dim_schema_table, validate=True
-        )
-        self.dim_table_clean = du.clean_table_name(self.dim_schema_table)
-
-        self.fact_schema_table = star.get(star_id=self.id, response="fact")
-        self.fact_schema, self.fact_table = du.get_schema_table_names(
-            full_name=self.fact_schema_table, validate=True
-        )
-        self.fact_table_clean = du.clean_table_name(self.fact_schema_table)
+    @computed_field
+    def db_id(self) -> str:
+        to_encode = f"""\
+            {self.db_dim.db_schema_table}\
+            {self.db_fact.db_schema_table}\
+        """
+        hash_hex = hashlib.sha256(
+            to_encode.encode(encoding="UTF-8", errors="strict")
+        ).hexdigest()
+        # We need a hash that:
+        # * Is an integer
+        # * Is stable
+        # * Is unique for the amount of dims we'll ever see
+        # I therefore manipulate the hex to 0-65535 to fit in a 16-bit unsigned
+        # int field
+        hash_int = int(hash_hex, 16) % 65536
+        return hash_int
 
     def create_dim(self, unique_fields: list, overwrite: bool):
         """
@@ -110,7 +59,7 @@ class Dataset(object):
         dotenv_path = find_dotenv()
         load_dotenv(dotenv_path)
 
-        if os.getenv("SCHEMA") != self.dim_schema:
+        if os.getenv("SCHEMA") != self.db_dim.db_schema:
             raise IOError(
                 f"""
                 Dimension schema is not {os.getenv("SCHEMA")}.
@@ -120,101 +69,28 @@ class Dataset(object):
 
         unique_fields = ", ".join(unique_fields)
 
-        if du.check_table_exists(self.dim_schema_table) and not overwrite:
+        if self.db_dim.exists and not overwrite:
             raise ValueError(
                 "Table exists. Set overwrite to True if you want to proceed."
             )
 
         if overwrite:
-            sql = f"drop table if exists {self.dim_schema_table};"
+            sql = f"drop table if exists {self.db_dim.db_schema_table};"
             du.query_nonreturn(sql)
 
         sql = f"""
-            create table {self.dim_schema_table} as (
+            create table {self.db_dim.db_schema_table} as (
                 select distinct on ({unique_fields})
                     id,
                     {unique_fields}
                 from
-                    {self.fact_schema_table}
+                    {self.db_fact.db_schema_table}
                 order by
                     {unique_fields}
             );
         """
 
         du.query_nonreturn(sql)
-
-    def read_dim(self, dim_select: list = None, sample: float = None):
-        """
-        Returns the dim table as pandas dataframe.
-
-        Arguments:
-            dim_select: [optional] a list of columns to select. Aliasing
-            and casting permitted
-            sample:[optional] the percentage sample to return. Used to
-            speed up debugging of downstream processes
-        """
-        fields = "*" if dim_select is None else " ,".join(dim_select)
-        if sample is not None:
-            sample_clause = f"tablesample system ({sample})"
-        else:
-            sample_clause = ""
-
-        return du.query(
-            f"""
-            select
-                {fields}
-            from
-                {self.dim_schema_table} {sample_clause};
-        """
-        )
-
-    def read_fact(self, fact_select: list = None, sample: float = None):
-        """
-        Returns the fact table as pandas dataframe.
-
-        Arguments:
-            dim_select: [optional] a list of columns to select. Aliasing
-            and casting permitted
-            sample:[optional] the percentage sample to return. Used to
-            speed up debugging of downstream processes
-        """
-        fields = "*" if fact_select is None else " ,".join(fact_select)
-        if sample is not None:
-            sample_clause = f"tablesample system ({sample})"
-        else:
-            sample_clause = ""
-
-        return du.query(
-            f"""
-            select
-                {fields}
-            from
-                {self.fact_schema_table} {sample_clause};
-        """
-        )
-
-    def get_cols(self, table: str) -> list:
-        """
-        Returns te columns of either the fact or dimension table.
-
-        Arguments:
-            table: one of 'fact' or 'dim'
-
-        Raises:
-            ValueError: if table not one of 'fact' or 'dim'
-
-        Returns:
-            A list of columns
-        """
-
-        if table == "fact":
-            out = du.get_table_columns(self.fact_schema_table)
-        elif table == "dim":
-            out = du.get_table_columns(self.dim_schema_table)
-        else:
-            raise ValueError("Table much be one of 'fact' or 'dim'")
-
-        return out
 
 
 if __name__ == "__main__":
@@ -225,23 +101,27 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.info("Creating dim tables")
 
-    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
-
     for table in link_pipeline:
         if link_pipeline[table]["fact"] != link_pipeline[table]["dim"]:
-            star_id = star.get(
-                fact=link_pipeline[table]["fact"],
-                dim=link_pipeline[table]["dim"],
-                response="id",
-            )
-            data = Dataset(selector=star_id, star=star)
 
-            logger.info(f"Creating {data.dim_schema_table}")
+            dim_schema, dim_table = du.get_schema_table_names(
+                full_name=link_pipeline[table]["dim"], validate=True
+            )
+            fact_schema, fact_table = du.get_schema_table_names(
+                full_name=link_pipeline[table]["fact"], validate=True
+            )
+
+            data = Dataset(
+                db_dim=Table(db_schema=dim_schema, db_table=dim_table),
+                db_fact=Table(db_schema=fact_schema, db_table=fact_table),
+            )
+
+            logger.info(f"Creating {data.db_dim.db_schema_table}")
 
             data.create_dim(
                 unique_fields=link_pipeline[table]["key_fields"], overwrite=True
             )
 
-            logger.info(f"Written {data.dim_schema_table}")
+            logger.info(f"Written {data.db_dim.db_schema_table}")
 
     logger.info("Finished")
