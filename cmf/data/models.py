@@ -74,6 +74,9 @@ class Table(BaseModel):
         else:
             return None
 
+    def __hash__(self) -> int:
+        return self.db_schema_table.__hash__()
+
     def read(self, select: list = None, sample: float = None) -> DataFrame:
         """
         Returns the table as pandas dataframe.
@@ -98,11 +101,3 @@ class Table(BaseModel):
                 {self.db_schema_table} {sample_clause};
         """
         )
-
-
-if __name__ == "__main__":
-    # y = Table(db_schema="_user_eaf4fd9a", db_table="cm_test")
-    # print(y)
-    # x = Table(db_schema="_user_eaf4fd9a", db_table="cm_star")
-    # print(x)
-    pass
