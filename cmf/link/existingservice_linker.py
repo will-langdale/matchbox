@@ -158,7 +158,7 @@ class ExistingCMSPlusLinker(DeterministicLinker):
             select
                 matches.cluster,
                 matches.id,
-                {self.dataset.id} as source,
+                {self.dataset.db_id} as source,
                 sum(matches.probability) / {total_weight} as probability
             from
                 ({match_subquery}) matches

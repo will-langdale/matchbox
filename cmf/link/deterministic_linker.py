@@ -135,7 +135,7 @@ class DeterministicLinker(Linker):
             select
                 cls.id as cluster,
                 dim.id::text as id,
-                {self.dataset.id} as source,
+                {self.dataset.db_id} as source,
                 case when
                     dim.id is null
                 then
