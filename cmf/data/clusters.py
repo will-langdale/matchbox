@@ -1,59 +1,37 @@
 from cmf.data import utils as du
-from cmf.data.datasets import Dataset
+from cmf.data.models import Table
 from cmf.data.probabilities import Probabilities
 from cmf.data.validation import Validation
-from cmf.data.star import Star
+from cmf.data.db import DB
 
 import click
 import logging
 from typing import Union
 from dotenv import load_dotenv, find_dotenv
 import os
+from pydantic import BaseModel, field_validator
+
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
 
 
-class Clusters(object):
+class Clusters(BaseModel):
     """
     A class to interact with the company matching framework's clusters table.
     Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
-
-    Attributes:
-        * schema: the cluster table's schema name
-        * table: the cluster table's table name
-        * schema_table: the cluster table's full name
-        * star: an object of class Star that wraps the star table
-
-    Methods:
-        * create(dim=None, overwrite): Drops all data and recreates the cluster
-        table. If a dimension table is specified, adds each row as a new cluster
-        * read(): Returns the cluster table
-        * add_clusters(probabilities): Using a probabilities table, adds new
-        entries to the cluster table
-        * get_data(fields): returns the cluster table pivoted wide,
-        with the requested fields attached
-
-    Raises:
-        ValueError: if schema or table not specified
     """
 
-    def __init__(self, schema: str, table: str, star: Star):
-        self.schema = schema
-        self.table = table
-        self.schema_table = f'"{self.schema}"."{self.table}"'
-        self.star = star
+    db: DB
+    db_table: Table
 
-        if None in [self.schema, self.table]:
-            raise ValueError(
-                f"""
-                Schema and table must be specified
-                schema: {schema}
-                table: {table}
-                Have you used the right environment variable?
-            """
-            )
+    @field_validator("db_table")
+    @classmethod
+    def check_table(cls, v: Table) -> Table:
+        fields = {"uuid", "id", "cluster", "source", "n"}
+        assert set(v.db_fields) == fields
+        return v
 
     def create(self, overwrite: bool, dim: Union[int, str] = None):
         """
@@ -65,19 +43,16 @@ class Clusters(object):
             a string for a factor or dimension table, or the int ID
             overwrite: Whether or not to overwrite an existing cluster table
         """
-
-        exists = du.check_table_exists(self.schema_table)
-
         if overwrite:
-            drop = f"drop table if exists {self.schema_table};"
-        elif exists:
+            drop = f"drop table if exists {self.db_table.db_schema_table};"
+        elif self.db_table.exists:
             raise ValueError("Table exists and overwrite set to false")
         else:
             drop = ""
 
         sql = f"""
             {drop}
-            create table {self.schema_table} (
+            create table {self.db_table.db_schema_table} (
                 uuid uuid primary key,
                 cluster uuid not null,
                 id text not null,
@@ -89,27 +64,21 @@ class Clusters(object):
         du.query_nonreturn(sql)
 
         if dim is not None:
-            dataset = Dataset(
-                selector=dim,
-                star=self.star,
-            )
+            dataset = self.db.db_datasets[dim]
 
             du.query_nonreturn(
                 f"""
-                insert into {self.schema_table}
+                insert into {self.db_table.db_schema_table}
                 select
                     gen_random_uuid() as uuid,
                     gen_random_uuid() as cluster,
                     dim.id::text as id,
-                    {dataset.id} as source,
+                    {dataset.db_id} as source,
                     0 as n
                 from
-                    {dataset.dim_schema_table} dim
+                    {dataset.db_dim.db_schema_table} dim
                 """
             )
-
-    def read(self):
-        return du.dataset(self.schema_table)
 
     def add_clusters(
         self,
@@ -157,9 +126,9 @@ class Clusters(object):
             Probabilities object wraps
             ValueError: if models aren't supplied as a string or list of strings
         """
-        prob = probabilities.schema_table
-        val = validation.schema_table
-        clus = self.schema_table
+        prob = probabilities.db_table.db_schema_table
+        val = validation.db_table.db_schema_table
+        clus = self.db_table.db_schema_table
         clusters_temp = "clusters_temp"
         probabilities_temp = "probabilities_temp"
         to_insert_temp = "to_insert_temp"
@@ -173,7 +142,7 @@ class Clusters(object):
         model_list_quoted = ", ".join(model_list_quoted)
 
         # Check the selected models are in the probabilities table
-        mod_all = set(probabilities.get_models())
+        mod_all = probabilities.models
         mod_selected = set(models)
 
         if not len(mod_all.intersection(mod_selected)) == len(mod_selected):
@@ -185,7 +154,7 @@ class Clusters(object):
             )
 
         # If overwrite, drop existing clusters from the supplied sources
-        source_selected = probabilities.get_sources()
+        source_selected = probabilities.sources
         source_list_quoted = [f"'{name}'" for name in source_selected]
         source_list_quoted = ", ".join(source_list_quoted)
 
@@ -432,11 +401,8 @@ class Clusters(object):
 
         if add_unmatched_dims:
             # Add a new cluster for any rows that weren't matched in the dim tables
-            for table in probabilities.get_sources():
-                dataset = Dataset(
-                    selector=table,
-                    star=self.star,
-                )
+            for table in probabilities.sources:
+                dataset = self.db.db_datasets[table]
                 du.query_nonreturn(
                     f"""
                     insert into {clus}
@@ -447,7 +413,7 @@ class Clusters(object):
                         {table} as source,
                         {n} as n
                     from
-                        {dataset.dim_schema_table} dim
+                        {dataset.db_dim.db_schema_table} dim
                     left join
                         {clus} c on
                             c.id::text = dim.id::text
@@ -508,14 +474,11 @@ class Clusters(object):
             n_clause = ""
 
         for i, (table, fields) in enumerate(select.items()):
-            data = Dataset(
-                star_id=self.star.get(fact=table, response="id"),
-                star=self.star,
-            )
+            dataset = self.db.db_datasets[table]
             fields_unaliased = {field.split(" as ")[0] for field in fields}
 
             if dim_only:
-                cols = set(data.get_cols("dim"))
+                cols = set(dataset.db_dim.db_fields)
 
                 if len(fields_unaliased - cols) > 0:
                     raise KeyError(
@@ -529,12 +492,12 @@ class Clusters(object):
                     select_items.append(f"t{i}.{field}")
 
                 join_clauses += f"""
-                    left join {data.dim_schema_table} t{i} on
+                    left join {dataset.db_dim.db_schema_table} t{i} on
                         cl.id::text = t{i}.id::text
-                        and cl.source = {data.id}
+                        and cl.source = {dataset.db_id}
                 """
             else:
-                cols = set(data.get_cols("fact"))
+                cols = set(dataset.db_fact.db_fields)
 
                 if len(set(fields_unaliased) - cols) > 0:
                     raise KeyError(
@@ -547,9 +510,9 @@ class Clusters(object):
                     select_items.append(f"t{i}.{field}")
 
                 join_clauses += f"""
-                    left join {data.fact_schema_table} t{i} on
+                    left join {dataset.db_fact.db_schema_table} t{i} on
                         cl.id::text = t{i}.id::text
-                        and cl.source = {data.id}
+                        and cl.source = {dataset.db_id}
                 """
 
         id_alias = " as id" if cluster_uuid_to_id else ""
@@ -563,7 +526,7 @@ class Clusters(object):
                 cl.cluster{id_alias},
                 {', '.join(select_items)}
             from
-                {self.schema_table} cl {sample_clause}
+                {self.db_table.db_schema_table} cl {sample_clause}
             {join_clauses}
             {n_clause};
         """
@@ -598,25 +561,29 @@ def create_cluster_table(overwrite, dim_init):
     """
     logger = logging.getLogger(__name__)
 
-    star = Star(schema=os.getenv("SCHEMA"), table=os.getenv("STAR_TABLE"))
+    db = DB(
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("STAR_TABLE"))
+    )
 
     clusters = Clusters(
-        schema=os.getenv("SCHEMA"), table=os.getenv("CLUSTERS_TABLE"), star=star
+        db=db,
+        db_table=Table(
+            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("CLUSTERS_TABLE")
+        ),
     )
 
     if dim_init:
-        dim = Dataset(selector=dim_init, star=star)
+        dataset = db.db_datasets[dim_init]
 
         logger.info(
-            f"""
-            Creating clusters table {clusters.schema_table}.
-            Instantiating with clusters from dimension table {dim.dim_schema_table}.
-        """
+            f"Creating clusters table {clusters.db_table.db_schema_table}. \n"
+            "Instantiating with clusters from dimension table "
+            f"{dataset.db_dim.db_schema_table}."
         )
 
-        clusters.create(overwrite=overwrite, dim=dim.id)
+        clusters.create(overwrite=overwrite, dim=dataset.id)
     else:
-        logger.info(f"Creating clusters table {clusters.schema_table}")
+        logger.info(f"Creating clusters table {clusters.db_table.db_schema_table}")
 
         clusters.create(overwrite=overwrite)
 

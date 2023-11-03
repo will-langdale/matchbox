@@ -36,7 +36,7 @@ class Probabilities(BaseModel):
     @computed_field
     def sources(self) -> list:
         """
-        Returns a list of the sources currently present in the probabilities table.
+        Returns a set of the sources currently present in the probabilities table.
 
         Returns:
             A list of source ints, as appear in the DB table
@@ -44,12 +44,12 @@ class Probabilities(BaseModel):
         sources = du.query(
             "select distinct source from " f"{self.db_table.db_schema_table}"
         )
-        return sources["source"].tolist()
+        return set(sources["source"].tolist())
 
     @computed_field
     def models(self) -> list:
         """
-        Returns a list of the models currently present in the probabilities table.
+        Returns a set of the models currently present in the probabilities table.
 
         Returns:
             A list of model strings
@@ -57,7 +57,7 @@ class Probabilities(BaseModel):
         models = du.query(
             "select distinct model from " f"{self.db_table.db_schema_table}"
         )
-        return models["model"].tolist()
+        return set(models["model"].tolist())
 
     def create(self, overwrite: bool):
         """

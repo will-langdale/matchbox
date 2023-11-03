@@ -43,6 +43,26 @@ class Table(BaseModel):
 
         return exists
 
+    @computed_field
+    def empty(self) -> bool:
+        sql = f"""
+            select
+                count(*)
+            from (
+                select
+                    1
+                from
+                    {self.db_schema_table}
+                limit 1
+            ) as t;
+        """
+
+        with du.sql_engine.connect() as connection:
+            res = connection.execute(sql_text(sql))
+            val = res.fetchone()
+
+        return not bool(val[0])
+
     @model_validator(mode="after")
     def get_db_fields(self) -> "Table":
         if self.exists:
