@@ -1,47 +1,29 @@
 from cmf.data import utils as du
+from cmf.data.models import Table
 
 import logging
 from dotenv import load_dotenv, find_dotenv
 import os
 import uuid
 import click
+from pydantic import BaseModel, field_validator
 
 
-class Validation(object):
+class Validation(BaseModel):
     """
     A class to interact with the company matching framework's validation
     table. Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
-
-    Attributes:
-        * schema: the validation table's schema name
-        * table: the validation table's table name
-        * schema_table: the validation table's full name
-        * star: an object of class Star that wraps the star table
-
-    Methods:
-        * create(overwrite): Drops all data and recreates the validation
-        table
-        * read(): Returns the probabilities table
-
-    Raises:
-        ValueError: if schema or table not specified
     """
 
-    def __init__(self, schema: str, table: str):
-        self.schema = schema
-        self.table = table
-        self.schema_table = f'"{self.schema}"."{self.table}"'
+    db_table: Table
 
-        if None in [self.schema, self.table]:
-            raise ValueError(
-                f"""
-                Schema and table must be specified
-                schema: {schema}
-                table: {table}
-                Have you used the right environment variable?
-            """
-            )
+    @field_validator("db_table")
+    @classmethod
+    def check_table(cls, v: Table) -> Table:
+        fields = {"uuid", "id", "cluster", "source", "user", "match"}
+        assert set(v.db_fields) == fields
+        return v
 
     def create(self, overwrite: bool = False):
         """
@@ -51,19 +33,16 @@ class Validation(object):
             overwrite: Whether or not to overwrite an existing validation
             table
         """
-
-        exists = du.check_table_exists(self.schema_table)
-
         if overwrite:
-            drop = f"drop table if exists {self.schema_table};"
-        elif exists:
+            drop = f"drop table if exists {self.db_table.db_schema_table};"
+        elif self.db_table.exists:
             raise ValueError("Table exists and overwrite set to false")
         else:
             drop = ""
 
         sql = f"""
             {drop}
-            create table {self.schema_table} (
+            create table {self.db_table.db_schema_table} (
                 uuid uuid primary key,
                 id text not null,
                 cluster uuid not null,
@@ -74,9 +53,6 @@ class Validation(object):
         """
 
         du.query_nonreturn(sql)
-
-    def read(self):
-        return du.dataset(self.schema_table)
 
     def add_validation(self, validation):
         """
@@ -108,7 +84,10 @@ class Validation(object):
         validation["uuid"] = [uuid.uuid4() for _ in range(len(validation.index))]
 
         du.data_workspace_write(
-            df=validation, schema=self.schema, table=self.table, if_exists="append"
+            df=validation,
+            schema=self.db_table.schema,
+            table=self.db_table.table,
+            if_exists="append",
         )
 
         return validation
@@ -127,10 +106,12 @@ def create_validation_table(overwrite):
     logger = logging.getLogger(__name__)
 
     validation = Validation(
-        schema=os.getenv("SCHEMA"), table=os.getenv("VALIDATE_TABLE")
+        db_table=Table(
+            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("VALIDATE_TABLE")
+        )
     )
 
-    logger.info(f"Creating validation table {validation.schema_table}")
+    logger.info("Creating validation table " f"{validation.db_table.db_schema_table}")
 
     validation.create(overwrite=overwrite)
 

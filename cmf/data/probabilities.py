@@ -20,8 +20,8 @@ class Probabilities(BaseModel):
 
     @field_validator("db_table")
     @classmethod
-    def check_prob(cls, v: Table) -> Table:
-        prob_fields = {
+    def check_table(cls, v: Table) -> Table:
+        fields = {
             "uuid",
             "link_type",
             "model",
@@ -30,7 +30,7 @@ class Probabilities(BaseModel):
             "id",
             "probability",
         }
-        assert set(v.db_fields) == prob_fields
+        assert set(v.db_fields) == fields
         return v
 
     @computed_field
