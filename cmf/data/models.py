@@ -1,7 +1,7 @@
 from cmf.data import utils as du
 
 from typing import List, Optional
-from pydantic import BaseModel, computed_field, field_validator, model_validator
+from pydantic import BaseModel, computed_field, field_validator
 from sqlalchemy.sql import text as sql_text
 from sqlalchemy.exc import MultipleResultsFound
 from pandas import DataFrame
@@ -10,7 +10,6 @@ from pandas import DataFrame
 class Table(BaseModel):
     db_schema: str
     db_table: str
-    db_fields: Optional[List[str]] = None
 
     @field_validator("db_schema", "db_table")
     @classmethod
@@ -56,22 +55,24 @@ class Table(BaseModel):
                 limit 1
             ) as t;
         """
+        if self.exists:
+            with du.sql_engine.connect() as connection:
+                res = connection.execute(sql_text(sql))
+                val = res.fetchone()
+            return not bool(val[0])
+        else:
+            return True
 
-        with du.sql_engine.connect() as connection:
-            res = connection.execute(sql_text(sql))
-            val = res.fetchone()
-
-        return not bool(val[0])
-
-    @model_validator(mode="after")
-    def get_db_fields(self) -> "Table":
+    @computed_field
+    def db_fields(self) -> Optional[List[str]]:
         if self.exists:
             with du.sql_engine.connect() as connection:
                 res = connection.execute(
                     sql_text(f"select * from {self.db_schema_table} limit 0")
                 )
-            self.db_fields = list(res._metadata.keys)
-        return self
+            return list(res._metadata.keys)
+        else:
+            return None
 
     def read(self, select: list = None, sample: float = None) -> DataFrame:
         """
