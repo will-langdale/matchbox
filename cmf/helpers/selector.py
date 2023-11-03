@@ -8,7 +8,6 @@ def selector(table: str, fields: List[str]) -> Dict[Table, List[str]]:
     db_schema, db_table = du.get_schema_table_names(full_name=table, validate=True)
     selected_table = Table(db_schema=db_schema, db_table=db_table)
 
-    # Check the selected models are in the probabilities table
     if selected_table.exists:
         all_cols = set(selected_table.db_fields)
         selected_cols = set(fields)
