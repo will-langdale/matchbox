@@ -1,4 +1,4 @@
-from cmf.config import abbreviations, stopwords
+from cmf.clean.utils import ABBREVIATIONS, STOPWORDS
 
 
 def characters_to_spaces(input_column):
@@ -55,7 +55,7 @@ def clean_punctuation(input_column):
     """
 
 
-def expand_abbreviations(input_column, replacements: dict = abbreviations):
+def expand_abbreviations(input_column, replacements: dict = ABBREVIATIONS):
     """
     Expand abbreviations passed as a dictionary where the keys are matches
     and the values are what to replace them with.
@@ -146,34 +146,6 @@ def remove_notnumbers_leadingzeroes(input_column):
     """
 
 
-def clean_company_name_ORIG(input_column):
-    """ """
-    return f"""
-        {
-            dedupe_and_sort(
-                tokenise(
-                expand_abbreviations(
-                    clean_punctuation(input_column)
-                    )
-                )
-            )
-        }
-    """
-
-
-def clean_company_name(input_column):
-    """ """
-    return f"""
-        {
-            tokenise(
-                expand_abbreviations(
-                    clean_punctuation(input_column)
-                    )
-            )
-        }
-    """
-
-
 def array_except(input_column, terms_to_remove):
     return rf"""
     array_filter(
@@ -192,7 +164,7 @@ def array_intersect(input_column, terms_to_keep):
     """
 
 
-def clean_stopwords(input_column, stopwords: list = stopwords):
+def remove_stopwords(input_column, stopwords: list = STOPWORDS):
     """
     A thin optinionated wrapper for array_except to clean the
     global stopwords list.

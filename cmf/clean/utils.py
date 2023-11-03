@@ -1,8 +1,33 @@
 import duckdb
 from typing import Callable
 
+STOPWORDS = [
+    "limited",
+    "uk",
+    "company",
+    "international",
+    "group",
+    "of",
+    "the",
+    "inc",
+    "and",
+    "plc",
+    "corporation",
+    "llp",
+    "pvt",
+    "gmbh",
+    "u k",
+    "pte",
+    "usa",
+    "bank",
+    "b v",
+    "bv",
+]
 
-def duckdb_cleaning_factory(functions: list[Callable]) -> Callable:
+ABBREVIATIONS = {"co": "company", "ltd": "limited"}
+
+
+def cleaning_function(*functions: list[Callable]) -> Callable:
     """
     Takes a list of basic cleaning functions appropriate for a select
     statement and add them together into a full cleaning function for use in
@@ -16,8 +41,6 @@ def duckdb_cleaning_factory(functions: list[Callable]) -> Callable:
         functions: a list of functions appropriate for a select statement.
         See clean_basic for some examples
     """
-    if not isinstance(functions, list):
-        functions = [functions]
 
     def cleaning_method(df, column: str):
         to_run = []
