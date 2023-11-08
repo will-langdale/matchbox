@@ -1,6 +1,7 @@
 from cmf.data import utils as du
-from cmf.data.models import Table
+from cmf.data.table import Table
 from cmf.data.datasets import Dataset
+import cmf.data.mixin as mixin
 from cmf.config import link_pipeline
 
 import logging
@@ -8,27 +9,17 @@ from dotenv import load_dotenv, find_dotenv
 import os
 from hashlib import sha256
 import pandas as pd
-from pydantic import BaseModel, computed_field, field_validator
+from pydantic import computed_field
 from sqlalchemy.sql import text as sql_text
-from typing import Dict
+from typing import Dict, List
 
 
-class DB(BaseModel):
+class DB(mixin.TableMixin):
     """
     The entrypoint to the whole Company Matching Framework database.
     """
 
-    db_table: Table
-
-    @field_validator("db_table")
-    @classmethod
-    def check_table(cls, v: Table) -> Table:
-        if v.exists:
-            fields = {"id", "fact", "dim"}
-            assert set(v.db_fields) == fields
-            return v
-        else:
-            return v
+    _db_expected_fields: List[str] = ["id", "fact", "dim"]
 
     @computed_field
     def db_datasets(self) -> Dict[str, Table]:

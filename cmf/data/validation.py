@@ -1,32 +1,30 @@
 from cmf.data import utils as du
-from cmf.data.models import Table
+from cmf.data.table import Table
+import cmf.data.mixin as mixin
 
 import logging
 from dotenv import load_dotenv, find_dotenv
 import os
 import uuid
 import click
-from pydantic import BaseModel, field_validator
+from typing import List
 
 
-class Validation(BaseModel):
+class Validation(mixin.TableMixin):
     """
     A class to interact with the company matching framework's validation
     table. Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
     """
 
-    db_table: Table
-
-    @field_validator("db_table")
-    @classmethod
-    def check_table(cls, v: Table) -> Table:
-        if v.exists:
-            fields = {"uuid", "id", "cluster", "source", "user", "match"}
-            assert set(v.db_fields) == fields
-            return v
-        else:
-            return v
+    _db_expected_fields: List[str] = [
+        "uuid",
+        "id",
+        "cluster",
+        "source",
+        "user",
+        "match",
+    ]
 
     def create(self, overwrite: bool = False):
         """

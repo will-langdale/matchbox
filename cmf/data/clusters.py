@@ -1,40 +1,29 @@
 from cmf.data import utils as du
-from cmf.data.models import Table
+from cmf.data.table import Table
 from cmf.data.probabilities import Probabilities
 from cmf.data.validation import Validation
 from cmf.data.db import DB
+import cmf.data.mixin as mixin
 
 import click
 import logging
-from typing import Union
+from typing import Union, List
 from dotenv import load_dotenv, find_dotenv
 import os
-from pydantic import BaseModel, field_validator
 
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
 
 
-class Clusters(BaseModel):
+class Clusters(mixin.DBMixin, mixin.TableMixin):
     """
     A class to interact with the company matching framework's clusters table.
     Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
     """
 
-    db: DB
-    db_table: Table
-
-    @field_validator("db_table")
-    @classmethod
-    def check_table(cls, v: Table) -> Table:
-        if v.exists:
-            fields = {"uuid", "id", "cluster", "source", "n"}
-            assert set(v.db_fields) == fields
-            return v
-        else:
-            return v
+    _db_expected_fields: List[str] = ["uuid", "id", "cluster", "source", "n"]
 
     def create(self, overwrite: bool, dim: Union[int, str] = None):
         """

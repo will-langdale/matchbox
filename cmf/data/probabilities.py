@@ -1,40 +1,32 @@
 from cmf.data import utils as du
-from cmf.data.models import Table
+from cmf.data.table import Table
+import cmf.data.mixin as mixin
 
 import uuid
 from dotenv import load_dotenv, find_dotenv
 import os
 import click
 import logging
-from pydantic import BaseModel, computed_field, field_validator
+from pydantic import computed_field
+from typing import List
 
 
-class Probabilities(BaseModel):
+class Probabilities(mixin.TableMixin):
     """
     A class to interact with the company matching framework's probabilities
     table. Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
     """
 
-    db_table: Table
-
-    @field_validator("db_table")
-    @classmethod
-    def check_table(cls, v: Table) -> Table:
-        if v.exists:
-            fields = {
-                "uuid",
-                "link_type",
-                "model",
-                "source",
-                "cluster",
-                "id",
-                "probability",
-            }
-            assert set(v.db_fields) == fields
-            return v
-        else:
-            return v
+    _db_expected_fields: List[str] = [
+        "uuid",
+        "link_type",
+        "model",
+        "source",
+        "cluster",
+        "id",
+        "probability",
+    ]
 
     @computed_field
     def sources(self) -> list:
