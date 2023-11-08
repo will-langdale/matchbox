@@ -3,7 +3,7 @@ from cmf.data.table import Table
 from cmf.data.probabilities import Probabilities
 from cmf.data.validation import Validation
 from cmf.data.db import DB
-import cmf.data.mixin as mixin
+from cmf.data.mixin import DBMixin, TableMixin
 
 import click
 import logging
@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
 
 
-class Clusters(mixin.DBMixin, mixin.TableMixin):
+class Clusters(DBMixin, TableMixin):
     """
     A class to interact with the company matching framework's clusters table.
     Enforces things are written in the right shape, and facilates easy

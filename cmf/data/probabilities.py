@@ -1,6 +1,6 @@
 from cmf.data import utils as du
 from cmf.data.table import Table
-import cmf.data.mixin as mixin
+from cmf.data.mixin import TableMixin
 
 import uuid
 from dotenv import load_dotenv, find_dotenv
@@ -11,7 +11,7 @@ from pydantic import computed_field
 from typing import List
 
 
-class Probabilities(mixin.TableMixin):
+class Probabilities(TableMixin):
     """
     A class to interact with the company matching framework's probabilities
     table. Enforces things are written in the right shape, and facilates easy

@@ -1,9 +1,13 @@
-from cmf.data.db import DB
-from cmf.data.table import Table
+from __future__ import annotations
 
-from typing import List
+from typing import List, TYPE_CHECKING
 from pydantic import BaseModel, model_validator
 from abc import ABC
+
+
+if TYPE_CHECKING:
+    from cmf.data.db import DB
+    from cmf.data.table import Table
 
 
 class DBMixin(BaseModel, ABC):

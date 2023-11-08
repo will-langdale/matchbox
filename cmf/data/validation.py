@@ -1,6 +1,6 @@
 from cmf.data import utils as du
 from cmf.data.table import Table
-import cmf.data.mixin as mixin
+from cmf.data.mixin import TableMixin
 
 import logging
 from dotenv import load_dotenv, find_dotenv
@@ -10,7 +10,7 @@ import click
 from typing import List
 
 
-class Validation(mixin.TableMixin):
+class Validation(TableMixin):
     """
     A class to interact with the company matching framework's validation
     table. Enforces things are written in the right shape, and facilates easy

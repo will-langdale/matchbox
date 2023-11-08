@@ -1,7 +1,7 @@
 from cmf.data import utils as du
 from cmf.data.table import Table
 from cmf.data.datasets import Dataset
-import cmf.data.mixin as mixin
+from cmf.data.mixin import TableMixin
 from cmf.config import link_pipeline
 
 import logging
@@ -14,7 +14,7 @@ from sqlalchemy.sql import text as sql_text
 from typing import Dict, List
 
 
-class DB(mixin.TableMixin):
+class DB(TableMixin):
     """
     The entrypoint to the whole Company Matching Framework database.
     """
