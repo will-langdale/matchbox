@@ -61,7 +61,7 @@ def cms_original_clean_company_name_ch(column):
         r"\sllp\.?$|\splc\.?$|\sllc\.?$|\sand\s|\sco[\.|\s]|\scompany[\s|$]"
     )
     regex_2 = r"\.|\s"
-    return rf"""
+    return f"""
         lower(
             coalesce(
                 nullif(

@@ -74,9 +74,6 @@ class Table(BaseModel):
         else:
             return None
 
-    def __hash__(self) -> int:
-        return self.db_schema_table.__hash__()
-
     def read(self, select: list = None, sample: float = None) -> DataFrame:
         """
         Returns the table as pandas dataframe.

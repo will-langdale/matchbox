@@ -7,7 +7,7 @@ def characters_to_spaces(column: str) -> str:
     """
     Removes all punctuation and replaces with spaces.
     """
-    return rf"""
+    return f"""
         regexp_replace(
             {column},
             '[^a-zA-Z0-9 ]+',
@@ -22,7 +22,7 @@ def characters_to_nothing(column: str) -> str:
     Removes periods and replaces with nothing (U.K. -> UK)
     """
 
-    return rf"""
+    return f"""
         regexp_replace(
             {column},
             '[.]+',
@@ -105,7 +105,7 @@ def tokenise(column: str) -> str:
     Returns: string to insert into SQL query
     """
 
-    return rf"""
+    return f"""
     regexp_split_to_array(
         trim({column}),
         '[^a-zA-Z0-9]+'
@@ -136,7 +136,7 @@ def remove_notnumbers_leadingzeroes(column: str) -> str:
     Args: column -- the name of the column to treat
     Returns: string to insert into SQL query
     """
-    return rf"""
+    return f"""
     regexp_replace(
         regexp_replace(
             {column},
@@ -151,7 +151,7 @@ def remove_notnumbers_leadingzeroes(column: str) -> str:
 
 
 def array_except(column: str, terms_to_remove: List[str]) -> str:
-    return rf"""
+    return f"""
     array_filter(
         {column},
         x -> not array_contains({terms_to_remove}, x)
@@ -160,7 +160,7 @@ def array_except(column: str, terms_to_remove: List[str]) -> str:
 
 
 def array_intersect(column: str, terms_to_keep: List[str]) -> str:
-    return rf"""
+    return f"""
     array_filter(
         {column},
         x -> array_contains({terms_to_keep}, x)
@@ -173,7 +173,7 @@ def remove_stopwords(column: str, stopwords: List[str] = STOPWORDS) -> str:
     A thin optinionated wrapper for array_except to clean the
     global stopwords list.
     """
-    return rf"""
+    return f"""
         {array_except(column, terms_to_remove=stopwords)}
     """
 
@@ -199,14 +199,13 @@ def regex_remove_list_of_strings(column: str, list_of_strings: List[str]) -> str
 
 def regex_extract_list_of_strings(column: str, list_of_strings: List[str]) -> str:
     to_extract = "|".join(list_of_strings)
-    return rf"""
+    return f"""
     regexp_extract_all({column}, '{to_extract}', 0)
     """
 
 
 def list_join_to_string(column: str, seperator: str = " ") -> str:
-    """ """
-    return rf"""list_aggr({column},
+    return f"""list_aggr({column},
         'string_agg',
         '{seperator}'
     )
@@ -214,7 +213,7 @@ def list_join_to_string(column: str, seperator: str = " ") -> str:
 
 
 def get_postcode_area(column: str) -> str:
-    return rf"""
+    return f"""
         regexp_extract(
             {column},
             '^[a-zA-Z][a-zA-Z]?'
@@ -227,7 +226,7 @@ def get_low_freq_char_sig(column: str) -> str:
     Removes letters with a frequency of 5% or higher, and spaces
     https://en.wikipedia.org/wiki/Letter_frequency
     """
-    return rf"""
+    return f"""
         regexp_replace(
             lower({column}),
             '[rhsnioate ]+',
