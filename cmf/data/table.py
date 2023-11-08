@@ -98,11 +98,3 @@ class Table(BaseModel):
                 {self.db_schema_table} {sample_clause};
         """
         )
-
-
-if __name__ == "__main__":
-    # y = Table(db_schema="_user_eaf4fd9a", db_table="cm_test")
-    # print(y)
-    # x = Table(db_schema="_user_eaf4fd9a", db_table="cm_star")
-    # print(x)
-    pass

@@ -1,4 +1,4 @@
-def cms_original_clean_company_name_general(input_column):
+def cms_original_clean_company_name_general(column):
     """
     Replicates the original Company Matching Service company name cleaning
     regex exactly. Intended to help replicate the methodology for comparison.
@@ -26,7 +26,7 @@ def cms_original_clean_company_name_general(input_column):
                     regexp_replace(
                         regexp_replace(
                             regexp_replace(
-                                {input_column},
+                                {column},
                                 '{regex_1}',
                                 ' ',
                                 'gi'
@@ -41,13 +41,13 @@ def cms_original_clean_company_name_general(input_column):
                     ),
                     ''
                 ),
-                {input_column}
+                {column}
             )
         )
     """
 
 
-def cms_original_clean_company_name_ch(input_column):
+def cms_original_clean_company_name_ch(column):
     """
     Replicates the original Company Matching Service company name cleaning
     regex exactly. Intended to help replicate the methodology for comparison.
@@ -61,13 +61,13 @@ def cms_original_clean_company_name_ch(input_column):
         r"\sllp\.?$|\splc\.?$|\sllc\.?$|\sand\s|\sco[\.|\s]|\scompany[\s|$]"
     )
     regex_2 = r"\.|\s"
-    return rf"""
+    return f"""
         lower(
             coalesce(
                 nullif(
                     regexp_replace(
                         regexp_replace(
-                            {input_column},
+                            {column},
                             '{regex_1}',
                             ' ',
                             'gi'
@@ -78,29 +78,29 @@ def cms_original_clean_company_name_ch(input_column):
                     ),
                     ''
                 ),
-                {input_column}
+                {column}
             )
         )
     """
 
 
-def cms_original_clean_postcode(input_column):
+def cms_original_clean_postcode(column):
     """
     Replicates the original Company Matching Service postcode cleaning SQL
     exactly. Intended to help replicate the methodology for comparison.
     """
-    return f"lower(replace({input_column}, ' ', ''))"
+    return f"lower(replace({column}, ' ', ''))"
 
 
-def cms_original_clean_email(input_column):
+def cms_original_clean_email(column):
     """
     Replicates the original Company Matching Service email cleaning SQL
     exactly. Intended to help replicate the methodology for comparison.
     """
-    return f"lower(split_part({input_column}, '@', 2))"
+    return f"lower(split_part({column}, '@', 2))"
 
 
-def cms_original_clean_ch_id(input_column):
+def cms_original_clean_ch_id(column):
     """
     Replicates the original Company Matching Service Companies House ID
     cleaning SQL exactly. Intended to help replicate the methodology for
@@ -108,20 +108,20 @@ def cms_original_clean_ch_id(input_column):
     """
     return f"""
         case when
-            lower({input_column}) = ANY(
+            lower({column}) = ANY(
                 '{{notregis, not reg,n/a, none, 0, ""}}'::text[]
             )
         then
             null
         else
-            lower({input_column})
+            lower({column})
         end
     """
 
 
-def cms_original_clean_cdms_id(input_column):
+def cms_original_clean_cdms_id(column):
     """
     Replicates the original Company Matching Service CDMS ID cleaning SQL
     exactly. Intended to help replicate the methodology for comparison.
     """
-    return f"regexp_replace({input_column}, '\\D', '', 'g')"
+    return f"regexp_replace({column}, '\\D', '', 'g')"

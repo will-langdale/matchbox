@@ -6,15 +6,14 @@ from functools import partial
 import ast
 
 from cmf import locations as loc
-from cmf.features.clean_basic import (
+from cmf.clean.steps import (
     clean_punctuation,
-    clean_stopwords,
+    remove_stopwords,
     list_join_to_string,
     tokenise,
     expand_abbreviations,
 )
-
-from cmf.features.utils import duckdb_cleaning_factory, unnest_renest
+from cmf.clean.utils import cleaning_function, unnest_renest
 
 
 """
@@ -23,25 +22,24 @@ from cmf.features.utils import duckdb_cleaning_factory, unnest_renest
 ----------------------------
 
 To avoid bug-prone unit tests for complex cleaning functions like
-src.features.clean_complex.clean_comp_names, we instead test the constituent
+cmf.clean.company_name, we instead test the constituent
 parts, and the methods that build those parts into something complex.
 
-To test clean_comp_names, therefore, we test the leaf functions in the stack:
+To test company_name, therefore, we test the leaf functions in the stack:
 
 * clean_comp_names
-    * clean_company_name
-        * clean_punctuation
-        * expand_abbreviations
-        * tokenise
+    * clean_punctuation
+    * expand_abbreviations
+    * tokenise
     * array_except
     * list_join_to_string
 
 And the methods that assemble them:
 
-* duckdb_cleaning_factory
+* cleaning_function
 * unnest_renest
 
-See features/ directory for more information on specific tests.
+See cleaning/ directory for more information on specific tests.
 
 """
 
@@ -63,14 +61,14 @@ def passthrough(input_column):
     return f"{input_column}"
 
 
-clean_stopwords_partial = partial(clean_stopwords, stopwords=["ltd", "plc"])
+remove_stopwords_partial = partial(remove_stopwords, stopwords=["ltd", "plc"])
 expand_abbreviations_partial = partial(
     expand_abbreviations, replacements={"co": "company", "ltd": "limited"}
 )
 
 cleaning_tests = [
     ("clean_punctuation", clean_punctuation),
-    ("clean_stopwords", clean_stopwords_partial),
+    ("remove_stopwords", remove_stopwords_partial),
     ("list_join_to_string", list_join_to_string),
     ("tokenise", tokenise),
     ("expand_abbreviations", expand_abbreviations_partial),
@@ -84,14 +82,14 @@ def test_basic_functions(test):
     to. More complex functions should follow from here.
     """
     test_name = test[0]
-    cleaning_function = test[1]
+    test_cleaning_function = test[1]
 
-    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "features", test_name))
+    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", test_name))
 
     cleaned = duckdb.sql(
         f"""
         select
-            {cleaning_function("col")} as col
+            {test_cleaning_function("col")} as col
         from
             dirty
     """
@@ -100,7 +98,7 @@ def test_basic_functions(test):
     assert cleaned.equals(clean)
 
 
-factory_tests = [
+function_tests = [
     ("tokenise", [tokenise]),
     ("pass", [passthrough]),
     (
@@ -109,27 +107,27 @@ factory_tests = [
             clean_punctuation,
             expand_abbreviations_partial,
             tokenise,
-            clean_stopwords_partial,
+            remove_stopwords_partial,
             list_join_to_string,
         ],
     ),
 ]
 
 
-@pytest.mark.parametrize("test", factory_tests)
-def test_factory(test):
+@pytest.mark.parametrize("test", function_tests)
+def test_function(test):
     """
-    Tests whether the cleaning factory is accurately combining basic
+    Tests whether the cleaning function is accurately combining basic
     functions.
     """
     test_name = test[0]
-    cleaning_function = duckdb_cleaning_factory(test[1])
+    test_cleaning_function = cleaning_function(*test[1])
 
     dirty, clean = load_test_data(
-        Path(loc.PROJECT_DIR, "test", "features", "duckdb_cleaning_factory", test_name)
+        Path(loc.PROJECT_DIR, "test", "cleaning", "cleaning_function", test_name)
     )
 
-    cleaned = cleaning_function(dirty, column="col")
+    cleaned = test_cleaning_function(dirty, column="col")
 
     assert cleaned.equals(clean)
 
@@ -146,14 +144,14 @@ def test_nest_unnest(test):
     Tests whether the nest_unnest function is working.
     """
     test_name = test[0]
-    cleaning_function = duckdb_cleaning_factory(test[1])
+    test_cleaning_function = cleaning_function(test[1])
 
     dirty, clean = load_test_data(
-        Path(loc.PROJECT_DIR, "test", "features", "unnest_renest", test_name)
+        Path(loc.PROJECT_DIR, "test", "cleaning", "unnest_renest", test_name)
     )
 
-    cleaning_function_arrayed = unnest_renest(cleaning_function)
+    test_cleaning_function_arrayed = unnest_renest(test_cleaning_function)
 
-    cleaned = cleaning_function_arrayed(dirty, column="col")
+    cleaned = test_cleaning_function_arrayed(dirty, column="col")
 
     assert cleaned.equals(clean)
