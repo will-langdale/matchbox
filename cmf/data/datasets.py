@@ -1,5 +1,5 @@
 from cmf.data import utils as du
-from cmf.data.models import Table
+from cmf.data.table import Table
 from cmf.config import link_pipeline
 
 import logging

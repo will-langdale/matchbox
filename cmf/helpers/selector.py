@@ -4,7 +4,7 @@ from cmf.data import Table
 from typing import List, Dict
 
 
-def selector(table: str, fields: List[str]) -> Dict[Table, List[str]]:
+def selector(table: str, fields: List[str]) -> Dict[str, List[str]]:
     db_schema, db_table = du.get_schema_table_names(full_name=table, validate=True)
     selected_table = Table(db_schema=db_schema, db_table=db_table)
 
@@ -19,12 +19,8 @@ def selector(table: str, fields: List[str]) -> Dict[Table, List[str]]:
     else:
         raise ValueError(f"{selected_table.db_schema_table} not found")
 
-    return {selected_table: fields}
+    return {selected_table.db_schema_table: fields}
 
 
-def selectors(*selector: Dict[Table, List[str]]) -> Dict[Table, List[str]]:
-    return {k: v for d in selector for k, v in d.items()}
-
-
-if __name__ == "__main__":
-    pass
+def selectors(*selector: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    return {k: v for d in (selector) for k, v in d.items()}
