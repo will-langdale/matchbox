@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from typing import List, TYPE_CHECKING
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, ConfigDict
 from abc import ABC
 
 
 if TYPE_CHECKING:
     from cmf.data.db import DB
     from cmf.data.table import Table
+    from pandas import DataFrame
 
 
 class DBMixin(BaseModel, ABC):
@@ -20,9 +21,33 @@ class TableMixin(BaseModel, ABC):
 
     @model_validator(mode="after")
     def check_table(self) -> Table:
-        if self.db_table.exists:
-            table_fields = set(self.db_table.db_fields)
-            expected_fields = set(self._db_expected_fields)
+        if self.db_table is not None:
+            if self.db_table.exists:
+                table_fields = sorted(self.db_table.db_fields)
+                expected_fields = sorted(self._db_expected_fields)
+
+                if table_fields != expected_fields:
+                    raise ValueError(
+                        f"""\
+                        Expected {expected_fields}.
+                        Found {table_fields}.
+                    """
+                    )
+
+        return self
+
+
+class DataFrameMixin(BaseModel, ABC):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dataframe: DataFrame
+    _df_expected_fields: List[str]
+
+    @model_validator(mode="after")
+    def check_dataframe(self) -> Table:
+        if self.dataframe is not None:
+            table_fields = sorted(self.dataframe.columns)
+            expected_fields = sorted(self._df_expected_fields)
 
             if table_fields != expected_fields:
                 raise ValueError(
@@ -32,6 +57,4 @@ class TableMixin(BaseModel, ABC):
                 """
                 )
 
-            return self
-        else:
-            return self
+        return self
