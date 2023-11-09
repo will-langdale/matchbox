@@ -16,6 +16,13 @@ class Table(BaseModel):
     def unquote(cls, v: str) -> str:
         return v.replace('"', "")
 
+    @classmethod
+    def from_schema_table(cls, full_name: str, validate: bool = True) -> "Table":
+        db_schema, db_table = du.get_schema_table_names(
+            full_name=full_name, validate=validate
+        )
+        return cls(db_schema=db_schema, db_table=db_table)
+
     @computed_field
     def db_schema_table(self) -> str:
         return f"{self.db_schema}.{self.db_table}"
@@ -74,7 +81,7 @@ class Table(BaseModel):
         else:
             return None
 
-    def read(self, select: list = None, sample: float = None) -> DataFrame:
+    def read(self, select: list = None, sample: Optional[float] = None) -> DataFrame:
         """
         Returns the table as pandas dataframe.
 

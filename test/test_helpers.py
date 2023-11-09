@@ -1,9 +1,11 @@
 from cmf.data import Table
 from cmf.helpers import selector, selectors, cleaner, cleaners, comparison, comparisons
 from cmf.clean import company_name, company_number
+from cmf import query
 
 import os
 from dotenv import load_dotenv, find_dotenv
+from pandas import DataFrame
 
 
 def test_tables():
@@ -28,6 +30,16 @@ def test_selectors():
     select_dh_ch = selectors(select_dh, select_ch)
 
     assert select_dh_ch is not None
+
+
+def test_query():
+    select_ch = selector(
+        table="companieshouse.companies", fields=["company_number", "company_name"]
+    )
+    ch_sample = query(select=select_ch, sample=0.05)
+
+    assert isinstance(ch_sample, DataFrame)
+    assert len(ch_sample.index) > 0
 
 
 def test_cleaners():
