@@ -28,6 +28,7 @@ class Naive(Deduper):
 
     def dedupe(self, data: DataFrame) -> DataFrame:
         unique_fields = ", ".join(self.settings.unique_fields)
+        # TODO: This needs to return PROBABILITIES
         return duckdb.sql(
             f"""
             select distinct on ({unique_fields})

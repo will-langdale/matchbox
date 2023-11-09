@@ -32,5 +32,5 @@ def test_naive():
 
     exp_deduped = exp_naive_deduper()
 
-    assert isinstance(exp_deduped, DataFrame)
+    assert isinstance(exp_deduped.to_df(), DataFrame)
     assert len(exp_deduped.index) > 0

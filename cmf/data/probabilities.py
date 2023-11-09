@@ -11,6 +11,8 @@ from pydantic import computed_field, ConfigDict
 from typing import List, Optional
 from pandas import DataFrame
 
+load_dotenv(find_dotenv())
+
 
 class Probabilities(TableMixin):
     """
@@ -159,7 +161,7 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
     dataframe: Optional[DataFrame] = None
     db_table: Optional[Table] = None
     run_name: str
-    run_description: str
+    description: str
 
     _db_expected_fields: Optional[List[str]] = [
         "source",
