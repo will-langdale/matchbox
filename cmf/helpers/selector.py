@@ -1,6 +1,7 @@
 from cmf.data import Table
 
 from typing import List, Dict, Optional
+from pandas import DataFrame
 
 
 def selector(table: str, fields: List[str]) -> Dict[str, List[str]]:
@@ -26,7 +27,7 @@ def selectors(*selector: Dict[str, List[str]]) -> Dict[str, List[str]]:
 
 def query(
     select: Dict[str, List[str]], raw: bool = False, sample: Optional[float] = None
-):
+) -> DataFrame:
     if len(select) == 1:
         table, fields = tuple(select.items())[0]
         selected_table = Table.from_schema_table(full_name=table)

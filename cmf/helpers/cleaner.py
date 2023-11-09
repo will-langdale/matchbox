@@ -1,4 +1,5 @@
 from typing import Dict, Callable, Any
+from pandas import DataFrame
 
 
 def cleaner(function: Callable, arguments: Dict) -> Dict[str, Dict[str, Any]]:
@@ -7,3 +8,10 @@ def cleaner(function: Callable, arguments: Dict) -> Dict[str, Dict[str, Any]]:
 
 def cleaners(*cleaner: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return {k: v for d in cleaner for k, v in d.items()}
+
+
+def process(data: DataFrame, pipeline: Dict[str, Dict[str, Any]]) -> DataFrame:
+    curr = data
+    for func in pipeline.keys():
+        curr = pipeline[func]["function"](curr, **pipeline[func]["arguments"])
+    return curr
