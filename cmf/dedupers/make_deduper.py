@@ -1,0 +1,35 @@
+from pydantic import BaseModel
+from pandas import DataFrame
+from typing import Dict, List, Any
+from abc import ABC
+
+
+class Deduper(BaseModel, ABC):
+    settings: Dict[str, Any]
+
+    @classmethod
+    def from_settings(cls) -> "Deduper":
+        raise NotImplementedError(
+            """\
+            Must implement method to instantiate from settings \
+            -- consider creating a pydantic model to enforce shape.
+        """
+        )
+
+    def dedupe(self, data) -> DataFrame:
+        raise NotImplementedError("Must implement dedupe method")
+
+
+def make_deduper(
+    dedupe_run_name: str,
+    description: str,
+    deduper: Deduper,
+    data: DataFrame,
+    dedupe_settings=Dict[str, List],
+):
+    deduper_instance = deduper.from_settings(**dedupe_settings)
+
+    def dedupe(data=data):
+        return deduper_instance.dedupe(data=data)
+
+    return dedupe
