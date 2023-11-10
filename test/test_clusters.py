@@ -1,6 +1,11 @@
 from cmf import locations as loc
 from cmf.data import utils as du
-from cmf.data import DB, Probabilities, Validation, Clusters, Table
+from cmf.data.datasets import Datasets
+from cmf.data.probabilities import Probabilities
+from cmf.data.validation import Validation
+from cmf.data.clusters import Clusters
+from cmf.data.db import CMFDB
+from cmf.data import Table
 
 import duckdb
 from pathlib import Path
@@ -13,14 +18,36 @@ import uuid
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
-temp_star = "temp_star"
-temp_val = "temp_val"
-temp_prob = "temp_prob"
-temp_clus = "temp_clus"
 
-db = DB(
-    db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DATASETS_TABLE"))
-)
+def make_temp_cmfdb():
+    temp_val = "temp_val"
+    temp_prob = "temp_prob"
+    temp_clus = "temp_clus"
+
+    datasets = Datasets(
+        db_table=Table(
+            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DATASETS_TABLE")
+        )
+    )
+    clusters = Clusters(
+        db_datasets=datasets,
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus),
+    )
+    probabilities = Probabilities(
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
+    )
+    validation = Validation(
+        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
+    )
+
+    cmf_conn = CMFDB(
+        datasets=datasets,
+        clusters=clusters,
+        probabilities=probabilities,
+        validation=validation,
+    )
+
+    return cmf_conn
 
 
 def load_test_data(path, int_to_uuid: bool = False):
@@ -107,35 +134,26 @@ def test_parallel(test_name):
     * A masked probability pattern (see .md in test files for further details)
     * Validation contradicting the given probabilities
     """
+    cmf_conn = make_temp_cmfdb()
+
     # Setup test
     prob, clus, val = load_test_data(
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
-    probabilities = Probabilities(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
-    )
-    probabilities.create(overwrite=True)
-    probabilities.add_probabilities(
+    cmf_conn.probabilities.create(overwrite=True)
+    cmf_conn.probabilities.add_probabilities(
         probabilities=prob.drop(["uuid", "link_type"], axis=1),
         model="1",
         overwrite=True,
     )
-
-    validation = Validation(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
-    )
-    validation.create(overwrite=True)
-    validation.add_validation(val.drop("uuid", axis=1))
-
-    clusters = Clusters(
-        db=db, db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus)
-    )
-    clusters.create(overwrite=True)
+    cmf_conn.validation.create(overwrite=True)
+    cmf_conn.validation.add_validation(val.drop("uuid", axis=1))
+    cmf_conn.clusters.create(overwrite=True)
 
     # The long cast() lpad() to_hex() chain makes ints into UUIDs
     du.query_nonreturn(
         f"""
-        insert into {clusters.db_table.db_schema_table}
+        insert into {cmf_conn.clusters.db_table.db_schema_table}
             select
                 gen_random_uuid() as uuid,
                 cast(
@@ -154,7 +172,7 @@ def test_parallel(test_name):
                 select
                     *
                 from
-                    {probabilities.db_table.db_schema_table}
+                    {cmf_conn.probabilities.db_table.db_schema_table}
                 where
                     source = 1
             ) init
@@ -163,16 +181,18 @@ def test_parallel(test_name):
 
     # Resolve and check
 
-    clusters.add_clusters(
-        probabilities=probabilities,
+    cmf_conn.clusters.add_clusters(
+        probabilities=cmf_conn.probabilities,
         models="1",
-        validation=validation,
+        validation=cmf_conn.validation,
         n=1,
         threshold=0.7,
         add_unmatched_dims=False,
     )
 
-    passed = validate_against_answer(clusters.db_table.read(), clus, n_type="par")
+    passed = validate_against_answer(
+        cmf_conn.clusters.db_table.read(), clus, n_type="par"
+    )
 
     assert passed
 
@@ -193,6 +213,8 @@ def test_sequential(test_name):
     * A masked probability pattern (see .md in test files for further details)
     * Validation contradicting the given probabilities
     """
+    cmf_conn = make_temp_cmfdb()
+
     # Setup test
     prob, clus, val = load_test_data(
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
@@ -201,23 +223,17 @@ def test_sequential(test_name):
     val_sequence_dict = {i - 1: g for i, g in val.groupby("source")}
 
     # Initialise clusters -- involves some messy work with the prob table but nvm
-    probabilities = Probabilities(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
-    )
-    probabilities.create(overwrite=True)
-    probabilities.add_probabilities(
+    cmf_conn.probabilities.create(overwrite=True)
+    cmf_conn.probabilities.add_probabilities(
         probabilities=prob.drop(["uuid", "link_type"], axis=1),
         model="1",
         overwrite=True,
     )
-    clusters = Clusters(
-        db=db, db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus)
-    )
-    clusters.create(overwrite=True)
+    cmf_conn.clusters.create(overwrite=True)
 
     du.query_nonreturn(
         f"""
-        insert into {clusters.db_table.db_schema_table}
+        insert into {cmf_conn.clusters.db_table.db_schema_table}
             select
                 gen_random_uuid() as uuid,
                 cast(
@@ -236,7 +252,7 @@ def test_sequential(test_name):
                 select
                     *
                 from
-                    {probabilities.db_table.db_schema_table}
+                    {cmf_conn.probabilities.db_table.db_schema_table}
                 where
                     source = 1
             ) init
@@ -248,11 +264,8 @@ def test_sequential(test_name):
         model = str(i)
         # Create probability table at step n
         prob_n = prob_sequence_dict[i]
-        probabilities = Probabilities(
-            db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
-        )
-        probabilities.create(overwrite=True)
-        probabilities.add_probabilities(
+        cmf_conn.probabilities.create(overwrite=True)
+        cmf_conn.probabilities.add_probabilities(
             probabilities=prob_n.drop(["uuid", "link_type"], axis=1),
             model=model,
             overwrite=True,
@@ -263,24 +276,24 @@ def test_sequential(test_name):
             val_n = val_sequence_dict[i]
         except KeyError:
             val_n = val.iloc[0:0]
-        validation = Validation(
-            db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
-        )
-        validation.create(overwrite=True)
-        validation.add_validation(val_n.drop("uuid", axis=1))
+
+        cmf_conn.validation.create(overwrite=True)
+        cmf_conn.validation.add_validation(val_n.drop("uuid", axis=1))
 
         # Resolve at step n
-        clusters.add_clusters(
-            probabilities=probabilities,
+        cmf_conn.clusters.add_clusters(
+            probabilities=cmf_conn.probabilities,
             models=model,
-            validation=validation,
+            validation=cmf_conn.validation,
             n=i,
             threshold=0.7,
             add_unmatched_dims=False,
         )
 
     # Check
-    passed = validate_against_answer(clusters.db_table.read(), clus, n_type="seq")
+    passed = validate_against_answer(
+        cmf_conn.clusters.db_table.read(), clus, n_type="seq"
+    )
 
     assert passed
 
@@ -296,6 +309,7 @@ def test_models(test):
     tables and models resolved at once.
 
     """
+    cmf_conn = make_temp_cmfdb()
     test_name = test[1]
     model_to_prefer = test[0]
 
@@ -303,35 +317,25 @@ def test_models(test):
     prob, clus, val = load_test_data(
         Path(loc.PROJECT_DIR, "test", "clusters", test_name), int_to_uuid=True
     )
-    probabilities = Probabilities(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_prob)
-    )
-    probabilities.create(overwrite=True)
+    cmf_conn.probabilities.create(overwrite=True)
 
     for model in prob.model.unique():
         to_add = prob.query("model == @model").drop(
             ["uuid", "link_type", "model"], axis=1
         )
-        probabilities.add_probabilities(
+        cmf_conn.probabilities.add_probabilities(
             probabilities=to_add,
             model=model,
             overwrite=True,
         )
 
-    validation = Validation(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_val)
-    )
-    validation.create(overwrite=True)
-    validation.add_validation(val.drop("uuid", axis=1))
-
-    clusters = Clusters(
-        db=db, db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=temp_clus)
-    )
-    clusters.create(overwrite=True)
+    cmf_conn.validation.create(overwrite=True)
+    cmf_conn.validation.add_validation(val.drop("uuid", axis=1))
+    cmf_conn.clusters.create(overwrite=True)
 
     du.query_nonreturn(
         f"""
-        insert into {clusters.db_table.db_schema_table}
+        insert into {cmf_conn.clusters.db_table.db_schema_table}
             select
                 gen_random_uuid() as uuid,
                 cast(
@@ -350,7 +354,7 @@ def test_models(test):
                 select
                     *
                 from
-                    {probabilities.db_table.db_schema_table}
+                    {cmf_conn.probabilities.db_table.db_schema_table}
                 where
                     source = 1
             ) init
@@ -359,15 +363,17 @@ def test_models(test):
 
     # Resolve and check
 
-    clusters.add_clusters(
-        probabilities=probabilities,
+    cmf_conn.clusters.add_clusters(
+        probabilities=cmf_conn.probabilities,
         models=model_to_prefer,
-        validation=validation,
+        validation=cmf_conn.validation,
         n=1,
         threshold=0.7,
         add_unmatched_dims=False,
     )
 
-    passed = validate_against_answer(clusters.db_table.read(), clus, n_type="par")
+    passed = validate_against_answer(
+        cmf_conn.clusters.db_table.read(), clus, n_type="par"
+    )
 
     assert passed
