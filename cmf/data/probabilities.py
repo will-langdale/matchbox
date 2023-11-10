@@ -10,6 +10,8 @@ import logging
 from pydantic import computed_field
 from typing import List
 
+load_dotenv(find_dotenv())
+
 
 class Probabilities(TableMixin):
     """
