@@ -9,9 +9,10 @@ from dotenv import load_dotenv, find_dotenv
 import os
 import click
 import logging
-from pydantic import computed_field, ConfigDict
+from pydantic import computed_field, ConfigDict, field_validator
 from typing import List, Optional, TYPE_CHECKING
 from pandas import DataFrame
+import pandas as pd
 
 if TYPE_CHECKING:
     from cmf.data.db import CMFDB
@@ -26,11 +27,11 @@ class Probabilities(TableMixin):
 
     _db_expected_fields: List[str] = [
         "uuid",
-        "link_type",
         "model",
+        "target",
+        "target_id",
         "source",
-        "cluster",
-        "id",
+        "source_id",
         "probability",
     ]
 
@@ -40,12 +41,25 @@ class Probabilities(TableMixin):
         Returns a set of the sources currently present in the probabilities table.
 
         Returns:
-            A list of source ints, as appear in the DB table
+            A list of source strings
         """
         sources = du.query(
             "select distinct source from " f"{self.db_table.db_schema_table}"
         )
         return set(sources["source"].tolist())
+
+    @computed_field
+    def targets(self) -> list:
+        """
+        Returns a set of the targets currently present in the probabilities table.
+
+        Returns:
+            A list of target strings
+        """
+        sources = du.query(
+            "select distinct target from " f"{self.db_table.db_schema_table}"
+        )
+        return set(sources["target"].tolist())
 
     @computed_field
     def models(self) -> list:
@@ -80,18 +94,20 @@ class Probabilities(TableMixin):
             {drop}
             create table {self.db_table.db_schema_table} (
                 uuid uuid primary key,
-                link_type text not null,
                 model text not null,
-                source int not null,
-                cluster uuid not null,
-                id text not null,
+                target text not null,
+                target_id text not null,
+                source text not null,
+                source_id text not null,
                 probability float not null
             );
         """
 
         du.query_nonreturn(sql)
 
-    def add_probabilities(self, probabilities, model: str, overwrite: bool = False):
+    def add_probabilities(
+        self, probabilities: DataFrame, model: str, overwrite: bool = False
+    ):
         """
         Takes an output from Linker.predict() and adds it to the probabilities
         table.
@@ -113,13 +129,16 @@ class Probabilities(TableMixin):
             The dataframe of probabilities that were added to the table.
         """
 
-        in_cols = set(probabilities.columns.tolist())
-        check_cols = {"cluster", "id", "probability", "source"}
-        if len(in_cols - check_cols) != 0:
+        in_cols = sorted(probabilities.columns.tolist())
+        check_cols = sorted(
+            ["target", "target_id", "source", "source_id", "probability"]
+        )
+        if in_cols != check_cols:
             raise ValueError(
-                """
-                Linker.predict() has not produced outputs in an appropriate
-                format for the probabilities table.
+                f"""
+                Probabilities not in an appropriate format for the table.
+                Expected: {check_cols}
+                Got: {in_cols}
             """
             )
         max_prob = max(probabilities.probability)
@@ -133,9 +152,10 @@ class Probabilities(TableMixin):
             """
             )
 
-        probabilities["uuid"] = [uuid.uuid4() for _ in range(len(probabilities.index))]
-        probabilities["link_type"] = "link"
+        pd.options.mode.chained_assignment = None
         probabilities["model"] = model
+        probabilities["uuid"] = [uuid.uuid4() for _ in range(len(probabilities.index))]
+        pd.options.mode.chained_assignment = "warn"
 
         if model in self.models and overwrite is not True:
             raise ValueError(f"{model} exists in table and overwrite is False")
@@ -165,23 +185,34 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
     db_table: Optional[Table] = None
     run_name: str
     description: str
+    target: str
+    source: str
 
     _db_expected_fields: Optional[List[str]] = [
-        "source",
-        "cluster",
-        "id",
+        "target_id",
+        "source_id",
         "probability",
     ]
     _df_expected_fields: Optional[List[str]] = [
-        "source",
-        "cluster",
-        "id",
+        "target_id",
+        "source_id",
         "probability",
     ]
 
+    @field_validator("target", "source")
+    @classmethod
+    def validate_source(cls, v: str):
+        db_table = Table.from_schema_table(full_name=v, validate=True)
+        assert db_table.exists
+        return v
+
     def to_df(self):
         if self.dataframe is not None:
-            return self.dataframe
+            res = self.dataframe
+            res["target"] = self.target
+            res["source"] = self.target
+            res = res[["target", "target_id", "source", "source_id", "probability"]]
+            return res
 
     def to_cmf(
         self,
@@ -190,7 +221,7 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
     ):
         if self.dataframe is not None:
             cmf_conn.probabilities.add_probabilities(
-                probabilities=self.dataframe, model=self.run_name
+                probabilities=self.to_df(), model=self.run_name, overwrite=overwrite
             )
 
 

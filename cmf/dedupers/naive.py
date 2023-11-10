@@ -7,7 +7,7 @@ from typing import List
 
 class NaiveSettings(BaseModel):
     """
-    A data class to enforce Naive's settings dictionary shape
+    A data class to enforce the Naive deduper's settings dictionary shape
     """
 
     id: str = Field(description="A unique ID column in the table to dedupe")
@@ -27,16 +27,23 @@ class Naive(Deduper):
         return cls(settings=settings)
 
     def dedupe(self, data: DataFrame) -> DataFrame:
-        unique_fields = ", ".join(self.settings.unique_fields)
-        # TODO: This needs to return PROBABILITIES
+        join_clause = []
+        for field in self.settings.unique_fields:
+            join_clause.append(f"l.{field} = r.{field}")
+        join_clause_compiled = " and ".join(join_clause)
+
         return duckdb.sql(
             f"""
-            select distinct on ({unique_fields})
-                {self.settings.id},
-                {unique_fields}
+            select
+                l.{self.settings.id}::text as target_id,
+                r.{self.settings.id}::text as source_id,
+                1 as probability
             from
-                data
-            order by
-                {unique_fields};
+                exp_sample_cleaned l
+            inner join exp_sample_cleaned r on
+                (
+                    {join_clause_compiled}
+                ) and
+                    l.{self.settings.id} != r.{self.settings.id};
         """
         ).df()

@@ -27,6 +27,7 @@ def make_deduper(
     description: str,
     deduper: Deduper,
     data: DataFrame,
+    data_source: str,
     dedupe_settings=Dict[str, List],
 ):
     deduper_instance = deduper.from_settings(**dedupe_settings)
@@ -36,6 +37,8 @@ def make_deduper(
             dataframe=deduper_instance.dedupe(data=data),
             run_name=dedupe_run_name,
             description=description,
+            target=data_source,
+            source=data_source,
         )
 
     return dedupe
