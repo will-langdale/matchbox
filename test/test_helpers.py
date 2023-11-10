@@ -1,9 +1,11 @@
 from cmf.data import Table
 from cmf.helpers import selector, selectors, cleaner, cleaners, comparison, comparisons
 from cmf.clean import company_name, company_number
+from cmf import query, process
 
 import os
 from dotenv import load_dotenv, find_dotenv
+from pandas import DataFrame
 
 
 def test_tables():
@@ -30,6 +32,16 @@ def test_selectors():
     assert select_dh_ch is not None
 
 
+def test_query():
+    select_ch = selector(
+        table="companieshouse.companies", fields=["company_number", "company_name"]
+    )
+    ch_sample = query(select=select_ch, sample=0.05)
+
+    assert isinstance(ch_sample, DataFrame)
+    assert len(ch_sample.index) > 0
+
+
 def test_cleaners():
     cleaner_name = cleaner(function=company_name, arguments={"column": "company_name"})
     cleaner_number = cleaner(
@@ -38,6 +50,24 @@ def test_cleaners():
     cleaner_name_number = cleaners(cleaner_name, cleaner_number)
 
     assert cleaner_name_number is not None
+
+
+def test_process():
+    select_ch = selector(
+        table="companieshouse.companies", fields=["company_number", "company_name"]
+    )
+    ch_sample = query(select=select_ch, sample=0.05)
+
+    cleaner_name = cleaner(function=company_name, arguments={"column": "company_name"})
+    cleaner_number = cleaner(
+        function=company_number, arguments={"column": "company_number"}
+    )
+    cleaner_name_number = cleaners(cleaner_name, cleaner_number)
+
+    ch_sample_cleaned = process(data=ch_sample, pipeline=cleaner_name_number)
+
+    assert isinstance(ch_sample_cleaned, DataFrame)
+    assert len(ch_sample_cleaned.index) > 0
 
 
 def test_comparisons():

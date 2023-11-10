@@ -7,3 +7,4 @@ nbconvert # operations on notebooks
 pre-commit # for automatic checks before git commit
 pytest # test runner
 pylint # for Theia
+icecream # cause I like it for debug
