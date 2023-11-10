@@ -13,6 +13,8 @@ from pandas import DataFrame
 
 load_dotenv(find_dotenv())
 
+load_dotenv(find_dotenv())
+
 
 class Probabilities(TableMixin):
     """
