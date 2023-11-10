@@ -206,7 +206,7 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
         assert db_table.exists
         return v
 
-    def to_df(self):
+    def to_df(self) -> DataFrame:
         if self.dataframe is not None:
             res = self.dataframe
             res["target"] = self.target
@@ -218,7 +218,7 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
         self,
         cmf_conn: CMFDB,
         overwrite: bool = False,
-    ):
+    ) -> None:
         if self.dataframe is not None:
             cmf_conn.probabilities.add_probabilities(
                 probabilities=self.to_df(), model=self.run_name, overwrite=overwrite

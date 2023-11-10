@@ -26,11 +26,14 @@ def test_naive():
             Clean company name, extract postcode area
         """,
         deduper=Naive,
+        data_source="hmrc.trade__exporters",
         data=exp_sample_cleaned,
         dedupe_settings={"id": "id", "unique_fields": ["company_name", "postcode"]},
     )
 
     exp_deduped = exp_naive_deduper()
 
-    assert isinstance(exp_deduped.to_df(), DataFrame)
-    assert len(exp_deduped.index) > 0
+    exp_deduped_df = exp_deduped.to_df()
+
+    assert isinstance(exp_deduped_df, DataFrame)
+    assert len(exp_deduped_df.index) > 0

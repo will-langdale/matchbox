@@ -2,7 +2,7 @@ from cmf.data.probabilities import ProbabilityResults
 
 from pydantic import BaseModel
 from pandas import DataFrame
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Callable
 from abc import ABC
 
 
@@ -29,10 +29,10 @@ def make_deduper(
     data: DataFrame,
     data_source: str,
     dedupe_settings=Dict[str, List],
-):
+) -> Callable[[DataFrame], ProbabilityResults]:
     deduper_instance = deduper.from_settings(**dedupe_settings)
 
-    def dedupe(data=data):
+    def dedupe(data: DataFrame = data) -> ProbabilityResults:
         return ProbabilityResults(
             dataframe=deduper_instance.dedupe(data=data),
             run_name=dedupe_run_name,
