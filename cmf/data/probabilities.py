@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from cmf.data import utils as du
 from cmf.data.table import Table
 from cmf.data.mixin import TableMixin, DataFrameMixin
@@ -8,12 +10,11 @@ import os
 import click
 import logging
 from pydantic import computed_field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from pandas import DataFrame
 
-load_dotenv(find_dotenv())
-
-load_dotenv(find_dotenv())
+if TYPE_CHECKING:
+    from cmf.data.db import CMFDB
 
 
 class Probabilities(TableMixin):
@@ -184,15 +185,11 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
 
     def to_cmf(
         self,
-        probabilities: Probabilities = Probabilities(
-            db_table=Table(
-                db_schema=os.getenv("SCHEMA"), db_table=os.getenv("PROBABILITIES_TABLE")
-            )
-        ),
+        cmf_conn: CMFDB,
         overwrite: bool = False,
     ):
         if self.dataframe is not None:
-            probabilities.add_probabilities(
+            cmf_conn.probabilities.add_probabilities(
                 probabilities=self.dataframe, model=self.run_name
             )
 
