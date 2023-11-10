@@ -1,15 +1,14 @@
 from cmf.data import utils as du
 from cmf.data.table import Table
-from cmf.data.mixin import TableMixin, DataFrameMixin
+from cmf.data.mixin import TableMixin
 
 import uuid
 from dotenv import load_dotenv, find_dotenv
 import os
 import click
 import logging
-from pydantic import computed_field, ConfigDict
-from typing import List, Optional
-from pandas import DataFrame
+from pydantic import computed_field
+from typing import List
 
 load_dotenv(find_dotenv())
 
@@ -153,46 +152,6 @@ class Probabilities(TableMixin):
         )
 
         return probabilities
-
-
-class ProbabilityResults(TableMixin, DataFrameMixin):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    dataframe: Optional[DataFrame] = None
-    db_table: Optional[Table] = None
-    run_name: str
-    description: str
-
-    _db_expected_fields: Optional[List[str]] = [
-        "source",
-        "cluster",
-        "id",
-        "probability",
-    ]
-    _df_expected_fields: Optional[List[str]] = [
-        "source",
-        "cluster",
-        "id",
-        "probability",
-    ]
-
-    def to_df(self):
-        if self.dataframe is not None:
-            return self.dataframe
-
-    def to_cmf(
-        self,
-        probabilities: Probabilities = Probabilities(
-            db_table=Table(
-                db_schema=os.getenv("SCHEMA"), db_table=os.getenv("PROBABILITIES_TABLE")
-            )
-        ),
-        overwrite: bool = False,
-    ):
-        if self.dataframe is not None:
-            probabilities.add_probabilities(
-                probabilities=self.dataframe, model=self.run_name
-            )
 
 
 @click.command()
