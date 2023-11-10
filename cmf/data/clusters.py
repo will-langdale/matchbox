@@ -2,8 +2,8 @@ from cmf.data import utils as du
 from cmf.data.table import Table
 from cmf.data.probabilities import Probabilities
 from cmf.data.validation import Validation
-from cmf.data.db import DB
-from cmf.data.mixin import DBMixin, TableMixin
+from cmf.data.datasets import Datasets
+from cmf.data.mixin import TableMixin
 
 import click
 import logging
@@ -16,13 +16,14 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("clusters")
 
 
-class Clusters(DBMixin, TableMixin):
+class Clusters(TableMixin):
     """
     A class to interact with the company matching framework's clusters table.
     Enforces things are written in the right shape, and facilates easy
     retrieval of data in various shapes.
     """
 
+    db_datasets: Datasets
     _db_expected_fields: List[str] = ["uuid", "id", "cluster", "source", "n"]
 
     def create(self, overwrite: bool, dim: Union[int, str] = None):
@@ -56,7 +57,7 @@ class Clusters(DBMixin, TableMixin):
         du.query_nonreturn(sql)
 
         if dim is not None:
-            dataset = self.db.db_datasets[dim]
+            dataset = self.db_datasets.db_datasets[dim]
 
             du.query_nonreturn(
                 f"""
@@ -553,19 +554,21 @@ def create_cluster_table(overwrite, dim_init):
     """
     logger = logging.getLogger(__name__)
 
-    db = DB(
-        db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DB_TABLE"))
+    datasets = Datasets(
+        db_table=Table(
+            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DATASETS_TABLE")
+        )
     )
 
     clusters = Clusters(
-        db=db,
+        db_datasets=datasets,
         db_table=Table(
             db_schema=os.getenv("SCHEMA"), db_table=os.getenv("CLUSTERS_TABLE")
         ),
     )
 
     if dim_init:
-        dataset = db.db_datasets[dim_init]
+        dataset = datasets.db_datasets[dim_init]
 
         logger.info(
             f"Creating clusters table {clusters.db_table.db_schema_table}. \n"

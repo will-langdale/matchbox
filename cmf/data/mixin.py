@@ -6,13 +6,13 @@ from abc import ABC
 
 
 if TYPE_CHECKING:
-    from cmf.data.db import DB
     from cmf.data.table import Table
+    from cmf.data.datasets import Datasets
     from pandas import DataFrame
 
 
-class DBMixin(BaseModel, ABC):
-    db: DB
+class DatasetsMixin(BaseModel, ABC):
+    db_datasets: Datasets
 
 
 class TableMixin(BaseModel, ABC):

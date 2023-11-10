@@ -18,7 +18,9 @@ temp_val = "temp_val"
 temp_prob = "temp_prob"
 temp_clus = "temp_clus"
 
-db = DB(db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DB_TABLE")))
+db = DB(
+    db_table=Table(db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DATASETS_TABLE"))
+)
 
 
 def load_test_data(path, int_to_uuid: bool = False):

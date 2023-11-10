@@ -17,14 +17,14 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 # COMMANDS																	  #
 #################################################################################
 
-## Make DB table
-db:
-	$(PYTHON_INTERPRETER) cmf/data/db.py
+## Make datasets table
+datasets:
+	$(PYTHON_INTERPRETER) cmf/data/datasets.py datasets
 
 
 ## Make dimension tables
 dims:
-	$(PYTHON_INTERPRETER) cmf/data/datasets.py
+	$(PYTHON_INTERPRETER) cmf/data/datasets.py dimensions
 
 
 ## Make probabilities table
@@ -44,7 +44,7 @@ validation:
 
 ## Setup system ready for linking
 setup:
-	make db
+	make datasets
 	make dims
 	make probabilities
 	make clusters
