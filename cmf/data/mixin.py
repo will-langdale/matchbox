@@ -7,11 +7,6 @@ from abc import ABC
 
 if TYPE_CHECKING:
     from cmf.data.table import Table
-    from cmf.data.datasets import Datasets
-
-
-class DatasetsMixin(BaseModel, ABC):
-    db_datasets: Datasets
 
 
 class TableMixin(BaseModel, ABC):
