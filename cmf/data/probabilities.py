@@ -4,7 +4,6 @@ from cmf.data import utils as du
 from cmf.data.table import Table
 from cmf.data.mixin import TableMixin, DataFrameMixin
 
-import uuid
 from dotenv import load_dotenv, find_dotenv
 import os
 import click
@@ -12,7 +11,6 @@ import logging
 from pydantic import computed_field, field_validator
 from typing import List, Optional, TYPE_CHECKING
 from pandas import DataFrame
-import pandas as pd
 
 if TYPE_CHECKING:
     from cmf.data.db import CMFDB
@@ -93,7 +91,7 @@ class Probabilities(TableMixin):
         sql = f"""
             {drop}
             create table {self.db_table.db_schema_table} (
-                uuid uuid primary key,
+                uuid uuid primary key default uuid_generate_v4(),
                 model text not null,
                 target text not null,
                 target_id text not null,
@@ -106,76 +104,40 @@ class Probabilities(TableMixin):
         du.query_nonreturn(sql)
 
     def add_probabilities(
-        self, probabilities: DataFrame, model: str, overwrite: bool = False
-    ):
+        self, probabilities: ProbabilityResults, overwrite: bool = False
+    ) -> None:
         """
-        Takes an output from Linker.predict() and adds it to the probabilities
-        table.
+        Takes an output from a linker or deduper and adds it to the
+        probabilities table.
 
         Arguments:
-            probabilities: A data frame produced by Linker.predict(). Should
-            contain columns cluster, id, source and probability.
-            model: A unique string that represents this model
+            probabilities: A ProbabilityResults produced by a deduper or linker
             overwrite: Whether to overwrite existing probabilities inserted by
             this model
-
-        Raises:
-            ValueError:
-                * If probabilities doesn't contain columns cluster, model, id
-                source and probability
-                * If probabilities doesn't contain values between 0 and 1
-
-        Returns:
-            The dataframe of probabilities that were added to the table.
         """
 
-        in_cols = sorted(probabilities.columns.tolist())
-        check_cols = sorted(
-            ["target", "target_id", "source", "source_id", "probability"]
-        )
-        if in_cols != check_cols:
-            raise ValueError(
-                f"""
-                Probabilities not in an appropriate format for the table.
-                Expected: {check_cols}
-                Got: {in_cols}
-            """
-            )
-        max_prob = max(probabilities.probability)
-        min_prob = min(probabilities.probability)
-        if max_prob > 1 or min_prob < 0:
-            raise ValueError(
-                f"""
-                Probability column should contain valid probabilities.
-                Max: {max_prob}
-                Min: {min_prob}
-            """
-            )
+        if not isinstance(probabilities, ProbabilityResults):
+            raise ValueError("Probabilities must be of class ProbabilityResults")
 
-        pd.options.mode.chained_assignment = None
-        probabilities["model"] = model
-        probabilities["uuid"] = [uuid.uuid4() for _ in range(len(probabilities.index))]
-        pd.options.mode.chained_assignment = "warn"
-
-        if model in self.models and overwrite is not True:
-            raise ValueError(f"{model} exists in table and overwrite is False")
-        elif model in self.models and overwrite is True:
+        if probabilities.run_name in self.models and overwrite is not True:
+            raise ValueError(
+                f"{probabilities.run_name} exists in table and overwrite" " is False"
+            )
+        elif probabilities.run_name in self.models and overwrite is True:
             sql = f"""
                 delete from
                     {self.db_table.db_schema_table}
                 where
-                    model = '{model}'
+                    model = '{probabilities.run_name}'
             """
             du.query_nonreturn(sql)
 
         du.data_workspace_write(
-            df=probabilities,
+            df=probabilities.to_df(),
             schema=self.db_table.db_schema,
             table=self.db_table.db_table,
             if_exists="append",
         )
-
-        return probabilities
 
 
 class ProbabilityResults(TableMixin, DataFrameMixin):
@@ -201,11 +163,11 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
 
     def to_df(self) -> DataFrame:
         if self.dataframe is not None:
-            res = self.dataframe
-            res["target"] = self.target
-            res["source"] = self.target
-            res = res[["target", "target_id", "source", "source_id", "probability"]]
-            return res
+            return (
+                self.dataframe.assign(
+                    target=self.target, source=self.source, model=self.run_name
+                )
+            )[["model", "target", "target_id", "source", "source_id", "probability"]]
 
     def to_cmf(
         self,
@@ -214,7 +176,7 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
     ) -> None:
         if self.dataframe is not None:
             cmf_conn.probabilities.add_probabilities(
-                probabilities=self.to_df(), model=self.run_name, overwrite=overwrite
+                probabilities=self, overwrite=overwrite
             )
 
 
