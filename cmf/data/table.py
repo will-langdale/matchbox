@@ -81,7 +81,9 @@ class Table(BaseModel):
         else:
             return None
 
-    def read(self, select: list = None, sample: Optional[float] = None) -> DataFrame:
+    def read(
+        self, select: Optional[List] = None, sample: Optional[float] = None
+    ) -> DataFrame:
         """
         Returns the table as pandas dataframe.
 
@@ -92,6 +94,7 @@ class Table(BaseModel):
             speed up debugging of downstream processes
         """
         fields = "*" if select is None else " ,".join(select)
+
         if sample is not None:
             sample_clause = f"tablesample system ({sample})"
         else:

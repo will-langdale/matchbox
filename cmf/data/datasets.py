@@ -20,7 +20,7 @@ class Datasets(TableMixin):
     framework. Previously the STAR table.
     """
 
-    _db_expected_fields: List[str] = ["id", "fact", "dim"]
+    _expected_fields: List[str] = ["id", "fact", "dim"]
 
     @computed_field
     def db_datasets(self) -> Dict[str, Table]:

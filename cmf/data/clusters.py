@@ -24,7 +24,7 @@ class Clusters(TableMixin):
     """
 
     db_datasets: Datasets
-    _db_expected_fields: List[str] = ["uuid", "id", "cluster", "source", "n"]
+    _expected_fields: List[str] = ["uuid", "id", "cluster", "source", "n"]
 
     def create(self, overwrite: bool, dim: Union[int, str] = None):
         """
@@ -46,7 +46,7 @@ class Clusters(TableMixin):
         sql = f"""
             {drop}
             create table {self.db_table.db_schema_table} (
-                uuid uuid primary key,
+                uuid uuid primary key default uuid_generate_v4(),
                 cluster uuid not null,
                 id text not null,
                 source int not null,
@@ -61,9 +61,13 @@ class Clusters(TableMixin):
 
             du.query_nonreturn(
                 f"""
-                insert into {self.db_table.db_schema_table}
+                insert into {self.db_table.db_schema_table} (
+                    cluster,
+                    id,
+                    source,
+                    n
+                )
                 select
-                    gen_random_uuid() as uuid,
                     gen_random_uuid() as cluster,
                     dim.id::text as id,
                     {dataset.db_id} as source,
