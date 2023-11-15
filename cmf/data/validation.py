@@ -17,7 +17,7 @@ class Validation(TableMixin):
     retrieval of data in various shapes.
     """
 
-    _db_expected_fields: List[str] = [
+    _expected_fields: List[str] = [
         "uuid",
         "id",
         "cluster",

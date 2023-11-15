@@ -24,7 +24,7 @@ class Clusters(TableMixin):
     """
 
     db_datasets: Datasets
-    _db_expected_fields: List[str] = ["uuid", "id", "cluster", "source", "n"]
+    _expected_fields: List[str] = ["uuid", "id", "cluster", "source", "n"]
 
     def create(self, overwrite: bool, dim: Union[int, str] = None):
         """

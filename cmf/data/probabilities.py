@@ -9,7 +9,7 @@ from dotenv import load_dotenv, find_dotenv
 import os
 import click
 import logging
-from pydantic import computed_field, ConfigDict, field_validator
+from pydantic import computed_field, field_validator
 from typing import List, Optional, TYPE_CHECKING
 from pandas import DataFrame
 import pandas as pd
@@ -25,7 +25,7 @@ class Probabilities(TableMixin):
     retrieval of data in various shapes.
     """
 
-    _db_expected_fields: List[str] = [
+    _expected_fields: List[str] = [
         "uuid",
         "model",
         "target",
@@ -179,8 +179,6 @@ class Probabilities(TableMixin):
 
 
 class ProbabilityResults(TableMixin, DataFrameMixin):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     dataframe: Optional[DataFrame] = None
     db_table: Optional[Table] = None
     run_name: str
@@ -188,12 +186,7 @@ class ProbabilityResults(TableMixin, DataFrameMixin):
     target: str
     source: str
 
-    _db_expected_fields: Optional[List[str]] = [
-        "target_id",
-        "source_id",
-        "probability",
-    ]
-    _df_expected_fields: Optional[List[str]] = [
+    _expected_fields: List[str] = [
         "target_id",
         "source_id",
         "probability",
