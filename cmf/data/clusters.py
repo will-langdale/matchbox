@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from cmf.data.db import CMFBase
-from cmf.data.mixin import UUIDMixin, SHA1Mixin
+from typing import TYPE_CHECKING, List
 
-from sqlalchemy import ForeignKey, UniqueConstraint, Column, Table
+from sqlalchemy import Column, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from typing import List, TYPE_CHECKING
+from cmf.data.db import CMFBase
+from cmf.data.mixin import SHA1Mixin, UUIDMixin
 
 if TYPE_CHECKING:
     from cmf.data import Models

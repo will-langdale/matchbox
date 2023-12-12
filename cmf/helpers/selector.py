@@ -1,7 +1,8 @@
-from cmf.data import Table
+from typing import Dict, List, Optional
 
-from typing import List, Dict, Optional
 from pandas import DataFrame
+
+from cmf.data import Table
 
 
 def selector(table: str, fields: List[str]) -> Dict[str, List[str]]:

@@ -1,10 +1,10 @@
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import List
+
 from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cmf.data.db import CMFBase
-from cmf.data.mixin import UUIDMixin, SHA1Mixin
-
-from typing import List
+from cmf.data.mixin import SHA1Mixin, UUIDMixin
 
 
 class Links(SHA1Mixin, CMFBase):

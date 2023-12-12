@@ -1,12 +1,19 @@
 repos:
   - repo: local
     hooks:
-      - id: black-check
-        name: black-check
+      - id: isort
+        name: isort
+        args: [ "--profile", "black", "--filter-files" ]
+        language: system
+        entry: isort
+  - repo: local
+    hooks:
+      - id: black
+        name: black
         files: \.py$
         stages: [commit]
         language: system
-        entry: black --check
+        entry: black
   - repo: local
     hooks:
       - id: flake8

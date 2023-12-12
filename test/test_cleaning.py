@@ -1,20 +1,20 @@
-import pandas as pd
-from pathlib import Path
-import duckdb
-import pytest
-from functools import partial
 import ast
+from functools import partial
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+import pytest
 
 from cmf import locations as loc
 from cmf.clean.steps import (
     clean_punctuation,
-    remove_stopwords,
-    list_join_to_string,
-    tokenise,
     expand_abbreviations,
+    list_join_to_string,
+    remove_stopwords,
+    tokenise,
 )
 from cmf.clean.utils import cleaning_function, unnest_renest
-
 
 """
 ----------------------------

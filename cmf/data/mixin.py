@@ -1,6 +1,7 @@
+from uuid import UUID, uuid4
+
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped, mapped_column
-from uuid import UUID, uuid4
 
 
 class SHA1Mixin:

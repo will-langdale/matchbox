@@ -1,18 +1,19 @@
-from cmf.data import utils as du
-from cmf.link import model_utils as mu
-from cmf.data.datasets import Dataset
-from cmf.data.probabilities import Probabilities
-from cmf.data.clusters import Clusters
+import io
+import json
+import logging
+import pickle
+from abc import ABC, abstractmethod
+from numbers import Number
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import mlflow
-import logging
-from pathlib import Path
-import pickle
-import io
-from abc import ABC, abstractmethod
-import json
-from tempfile import NamedTemporaryFile
-from numbers import Number
+
+from cmf.data import utils as du
+from cmf.data.clusters import Clusters
+from cmf.data.datasets import Dataset
+from cmf.data.probabilities import Probabilities
+from cmf.link import model_utils as mu
 
 
 class Linker(ABC):

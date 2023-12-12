@@ -48,6 +48,7 @@ install_git_hooks:
 
 ## Reformat, lint, clear notebook outputs if necessary
 precommit:
+	isort . --profile black --filter-files
 	black . --extend-exclude \.ipynb$ 
 	flake8 . --exclude scratch,.ipynb_checkpoints
 ifeq (yes,$(SENSITIVE_PROJECT))

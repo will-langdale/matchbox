@@ -1,14 +1,14 @@
-from cmf.link.linker import Linker
+import json
+
+import pandas as pd
+from splink.comparison import Comparison
+from splink.duckdb.linker import DuckDBLinker
+
 from cmf.data import utils as du
+from cmf.data.clusters import Clusters
 from cmf.data.datasets import Dataset
 from cmf.data.probabilities import Probabilities
-from cmf.data.clusters import Clusters
-
-from splink.duckdb.linker import DuckDBLinker
-from splink.comparison import Comparison
-
-import json
-import pandas as pd
+from cmf.link.linker import Linker
 
 
 class ComparisonEncoder(json.JSONEncoder):

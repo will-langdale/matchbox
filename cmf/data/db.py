@@ -1,9 +1,8 @@
-from sqlalchemy import MetaData, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-
 import os
 
 from dotenv import find_dotenv, load_dotenv
+from sqlalchemy import MetaData, create_engine
+from sqlalchemy.ext.declarative import declarative_base
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)

@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from cmf.data.db import CMFBase
-from cmf.data.mixin import SHA1Mixin
-from cmf.data.clusters import clusters_association
-from cmf.data.link import LinkProbabilities
-from cmf.data.dedupe import DDupeProbabilities
-
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.orm.collections import attribute_keyed_dict
 
-from typing import Optional, List, Dict, TYPE_CHECKING
+from cmf.data.clusters import clusters_association
+from cmf.data.db import CMFBase
+from cmf.data.dedupe import DDupeProbabilities
+from cmf.data.link import LinkProbabilities
+from cmf.data.mixin import SHA1Mixin
 
 if TYPE_CHECKING:
     from cmf.data import Clusters, Dedupes, Links

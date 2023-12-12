@@ -6,8 +6,7 @@ import pstats
 from sqlalchemy import Engine, MetaData, Table
 from sqlalchemy.orm import Session
 
-from cmf.data import SourceDataset, ENGINE
-
+from cmf.data import ENGINE, SourceDataset
 
 # Data conversion
 

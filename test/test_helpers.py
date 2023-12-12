@@ -1,11 +1,12 @@
-from cmf.data import Table
-from cmf.helpers import selector, selectors, cleaner, cleaners, comparison, comparisons
-from cmf.clean import company_name, company_number
-from cmf import query, process
-
 import os
-from dotenv import load_dotenv, find_dotenv
+
+from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
+
+from cmf import process, query
+from cmf.clean import company_name, company_number
+from cmf.data import Table
+from cmf.helpers import cleaner, cleaners, comparison, comparisons, selector, selectors
 
 
 def test_tables():

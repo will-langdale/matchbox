@@ -1,17 +1,16 @@
-import yaml
-import click
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Dict
+
+import click
+import yaml
+from sqlalchemy import Engine, String, func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
 
 from cmf import locations as loc
-from cmf.data import CMFBase, ENGINE, SourceDataset, SourceData
+from cmf.data import ENGINE, CMFBase, SourceData, SourceDataset
 from cmf.data import utils as du
-
-from sqlalchemy import Engine, func, select, String
-from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
-
-from typing import Dict
 
 
 def init_db(base, engine: Engine = ENGINE):

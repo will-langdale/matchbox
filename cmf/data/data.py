@@ -1,13 +1,12 @@
 from typing import List
-
-from sqlalchemy import ForeignKey, UniqueConstraint, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import ARRAY
-
 from uuid import UUID
 
+from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from cmf.data.db import CMFBase
-from cmf.data.mixin import UUIDMixin, SHA1Mixin
+from cmf.data.mixin import SHA1Mixin, UUIDMixin
 
 
 class SourceDataset(UUIDMixin, CMFBase):
