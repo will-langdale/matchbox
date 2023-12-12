@@ -1,4 +1,4 @@
-from cmf.data.probabilities import ProbabilityResults
+from cmf.data import ProbabilityResults
 
 from pydantic import BaseModel
 from pandas import DataFrame

@@ -18,3 +18,5 @@ tqdm
 psycopg[binary]
 pgpq
 pydantic
+pyyaml
+rustworkx
