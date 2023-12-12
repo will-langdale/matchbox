@@ -22,7 +22,7 @@ class SourceDataset(UUIDMixin, CMFBase):
 
 class SourceData(SHA1Mixin, CMFBase):
     __tablename__ = "source_data"
-    __table_args__ = (UniqueConstraint("id", "dataset"),)
+    __table_args__ = (UniqueConstraint("sha1", "dataset"),)  # id array can change
 
     id: Mapped[List[str]] = mapped_column(
         ARRAY(String), index=True

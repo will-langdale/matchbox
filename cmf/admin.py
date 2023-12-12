@@ -80,8 +80,8 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         # Insert it
         ins_stmt = insert(SourceData)
-        ins_stmt = ins_stmt.on_conflict_do_nothing(
-            index_elements=[SourceData.id, SourceData.dataset]
+        ins_stmt = ins_stmt.on_conflict_do_update(
+            index_elements=[SourceData.sha1, SourceData.dataset], set_=ins_stmt.excluded
         )
         session.execute(ins_stmt, to_insert)
 
@@ -109,7 +109,7 @@ def make_cmf() -> None:
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
-        format=du.LOG_FMT,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     make_cmf()
