@@ -1,11 +1,14 @@
 import yaml
+import click
 from pathlib import Path
+import logging
 
 from cmf import locations as loc
 from cmf.data import CMFBase, ENGINE, SourceDataset, SourceData
 from cmf.data import utils as du
 
-from sqlalchemy import Engine, Session, func, select, String
+from sqlalchemy import Engine, func, select, String
+from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 
 from typing import Dict
@@ -16,10 +19,13 @@ def init_db(base, engine: Engine = ENGINE):
 
 
 def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
+    logger = logging.getLogger(__name__)
     with Session(engine) as session:
         ##########################
         # Insert dataset section #
         ##########################
+
+        logger.info(f"Adding {dataset['schema']}.{dataset['table']}")
 
         to_insert = [
             {
@@ -39,14 +45,15 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         session.execute(ins_stmt, to_insert)
 
-        get_uuid_stmt = select(SourceDataset).where(
-            SourceDataset.db_schema == dataset["schema"],
-            SourceDataset.db_table == dataset["table"],
+        new_dataset = (
+            session.query(SourceDataset)
+            .filter_by(db_schema=dataset["schema"], db_table=dataset["table"])
+            .first()
         )
 
-        new_dataset = session.execute(get_uuid_stmt).scalar()
-
         session.commit()
+
+        logger.info(f"{dataset['schema']}.{dataset['table']} added to SourceDataset")
 
         #######################
         # Insert data section #
@@ -62,7 +69,10 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
             func.digest(func.concat(*source_table.c[cols]), "sha1").label("sha1"),
             func.array_agg(source_table.c[dataset["id"]].cast(String)).label("id"),
         ).group_by(*source_table.c[cols])
+
         raw_result = session.execute(slct_stmt)
+
+        logger.info(f"Retrieved raw data from {dataset['schema']}.{dataset['table']}")
 
         to_insert = [
             dict(data._mapping, **{"dataset": new_dataset.uuid})
@@ -71,22 +81,36 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         # Insert it
         ins_stmt = insert(SourceData)
-        ins_stmt = ins_stmt.on_conflict_do_update(
-            index_elements=[SourceData.sha1], set_=ins_stmt.excluded
+        ins_stmt = ins_stmt.on_conflict_do_nothing(
+            index_elements=[SourceData.id, SourceData.dataset]
         )
         session.execute(ins_stmt, to_insert)
 
         session.commit()
+
+        logger.info(f"Inserted raw data from {dataset['schema']}.{dataset['table']}")
+
+        logger.info(f"Finished {dataset['schema']}.{dataset['table']}")
 
 
 def update_db_with_datasets(engine: Engine = ENGINE) -> None:
     with open(Path(loc.CMF, "datasets.yaml"), "rb") as f:
         datasets = yaml.load(f, yaml.Loader)
 
-    for dataset in datasets:
+    for dataset in datasets.values():
         add_dataset(dataset, engine)
 
 
-if __name__ == "__main__":
+@click.command()
+def make_cmf() -> None:
     init_db(CMFBase, ENGINE)
     update_db_with_datasets(ENGINE)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format=du.LOG_FMT,
+    )
+
+    make_cmf()
