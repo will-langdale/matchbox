@@ -69,7 +69,7 @@ requirements:
 
 ## Run Python tests
 test:
-	pytest -s -vv --log-cli-level=INFO --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)" --log-cli-date-format="%Y-%m-%d %H:%M:%S" test
+	pytest -s -vv --log-cli-level=INFO --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)" --log-cli-date-format="%Y-%m-%d %H:%M:%S" test/test_db.py
 
 
 #################################################################################
