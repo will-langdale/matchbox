@@ -28,15 +28,11 @@ Clone the repo, then run:
 Create a `.env` with your development schema to write tables into. Copy the sample with `cp .env.sample .env` then fill it in.
 
 * `SCHEMA` is where any tables the service creates will be written by default
-* `STAR_TABLE` is where fact and dimension tables will be recorded and checked
-* `PROBABILITIES_TABLE` is where match probabilities will be recorded and checked
-* `CLUSTERS_TABLE` is where company entities will be recorded and checked
-* `VALIDATE_TABLE` is where user validation outputs will be recorded and checked
 
 To set up the database in your specificed schema run:
 
 ```bash
-make setup
+make cmf
 ```
 
 ## Usage
