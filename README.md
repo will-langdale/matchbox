@@ -8,8 +8,6 @@ We envisage this forming one of three repos in the Company Matching Framework:
 * `company-matching-framework-dash`, or https://matching.data.trade.gov.uk/. A dashboard for verifying links and deduplications, and comparing the performance metrics of different approaches. Uses `company-matching-framework`
 * `company-matching-framework-pipeline`. The live pipeline of matching and deduping methods, running in production. Uses `company-matching-framework`
 
-[[_TOC_]]
-
 ## Coverage
 
 * [Companies House](https://data.trade.gov.uk/datasets/a777d199-53a4-4d0a-bbbb-1559a86f8c4c#companies-house-company-data)
