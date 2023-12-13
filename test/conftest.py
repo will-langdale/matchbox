@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.schema import CreateSchema
 
 import cmf.locations as loc
+from cmf.admin import add_dataset
 from cmf.data import CMFBase
 
 dotenv_path = find_dotenv()
@@ -21,10 +22,11 @@ LOGGER = logging.getLogger(__name__)
 CMF_POSTGRES = testing.postgresql.PostgresqlFactory(cache_initialized_db=True)
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def all_companies():
     """
     Raw, correct company data.
+    1,000 entries.
     """
     df = pd.read_csv(Path(loc.TEST, "data", "all_companies.csv")).reset_index(
         names="id"
@@ -32,10 +34,11 @@ def all_companies():
     return df
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def crn_companies(all_companies):
     """
     Company data split into CRN version.
+    3,000 entries, 1,000 unique.
     """
     # Company name and CRN repeated 3 times
     df_crn = pd.DataFrame(
@@ -47,10 +50,11 @@ def crn_companies(all_companies):
     return df_crn
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def duns_companies(all_companies):
     """
     Company data split into DUNS version.
+    500 entries.
     """
     # Company name and duns number, but only half
     df_duns = (
@@ -63,10 +67,11 @@ def duns_companies(all_companies):
     return df_duns
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def cdms_companies(all_companies):
     """
     Company data split into CDMS version.
+    3,000 entries, 1,000 unique.
     """
     # CRN and CDMS refs repeated 3 times
     df_cdms = pd.DataFrame(
@@ -78,8 +83,8 @@ def cdms_companies(all_companies):
     return df_cdms
 
 
-@pytest.fixture()
-def db_engine(crn_companies):
+@pytest.fixture(scope="session")
+def db_engine(crn_companies, duns_companies, cdms_companies):
     """
     Yield engine to mock in-memory database.
     """
@@ -101,6 +106,8 @@ def db_engine(crn_companies):
         CMFBase.metadata.create_all(conn)
         conn.commit()
 
+        LOGGER.info("Created in-memory CMF database")
+
         # Insert data
         crn_companies.to_sql(
             "crn",
@@ -109,8 +116,44 @@ def db_engine(crn_companies):
             if_exists="replace",
             index=False,
         )
+        duns_companies.to_sql(
+            "duns",
+            con=conn,
+            schema=os.getenv("SCHEMA"),
+            if_exists="replace",
+            index=False,
+        )
+        cdms_companies.to_sql(
+            "cdms",
+            con=conn,
+            schema=os.getenv("SCHEMA"),
+            if_exists="replace",
+            index=False,
+        )
 
-        LOGGER.info("Created in-memory CMF database")
+        LOGGER.info("Inserted raw data to database")
+
+        datasets = {
+            "crn_table": {
+                "schema": os.getenv("SCHEMA"),
+                "table": "crn",
+                "id": "id",
+            },
+            "duns_table": {
+                "schema": os.getenv("SCHEMA"),
+                "table": "duns",
+                "id": "id",
+            },
+            "cdms_table": {
+                "schema": os.getenv("SCHEMA"),
+                "table": "cdms",
+                "id": "id",
+            },
+        }
+        for dataset in datasets.values():
+            add_dataset(dataset, conn)
+
+        LOGGER.info("Raw data referenced in CMF")
 
     return postgresql, engine
 
