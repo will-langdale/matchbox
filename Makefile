@@ -58,8 +58,9 @@ endif
 	@echo "Done."
 
 
-## Install Python Dependencies
+## Install Python and Debian dependencies
 requirements:
+	sudo dw-install libpq-dev postgresql
 	$(PYTHON_INTERPRETER) -m piptools compile --output-file=requirements.txt --resolver=backtracking requirements.in requirements-dev.in
 	$(PYTHON_INTERPRETER) -m piptools sync requirements.txt
 	$(PYTHON_INTERPRETER) -m ipykernel install --user --name=$(PROJECT_NAME)
@@ -68,7 +69,7 @@ requirements:
 
 ## Run Python tests
 test:
-	pytest test
+	pytest -s -vv --log-cli-level=INFO --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)" --log-cli-date-format="%Y-%m-%d %H:%M:%S" test
 
 
 #################################################################################

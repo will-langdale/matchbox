@@ -16,6 +16,8 @@ altair==5.1.2
     #   splink
 annotated-types==0.6.0
     # via pydantic
+asn1crypto==1.5.1
+    # via scramp
 astroid==3.0.1
     # via pylint
 asttokens==2.4.1
@@ -245,6 +247,8 @@ pathspec==0.11.2
     # via black
 pexpect==4.9.0
     # via ipython
+pg8000==1.30.3
+    # via testing-postgresql
 pgpq==0.9.0
     # via -r requirements.in
 phonetics==1.0.5
@@ -310,6 +314,7 @@ python-dateutil==2.8.2
     #   jupyter-client
     #   matplotlib
     #   pandas
+    #   pg8000
 python-dotenv==1.0.0
     # via -r requirements.in
 pytz==2023.3.post1
@@ -350,6 +355,8 @@ scipy==1.11.4
     # via
     #   mlflow
     #   scikit-learn
+scramp==1.4.4
+    # via pg8000
 six==1.16.0
     # via
     #   asttokens
@@ -376,6 +383,10 @@ stack-data==0.6.3
     # via ipython
 tabulate==0.9.0
     # via databricks-cli
+testing-common-database==2.0.3
+    # via testing-postgresql
+testing-postgresql==1.3.0
+    # via -r requirements-dev.in
 threadpoolctl==3.2.0
     # via scikit-learn
 tinycss2==1.2.1
