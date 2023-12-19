@@ -1,3 +1,4 @@
+import logging
 import os
 
 from dotenv import find_dotenv, load_dotenv
@@ -5,10 +6,12 @@ from sqlalchemy import MetaData, Table, insert, inspect
 from sqlalchemy.orm import Session
 
 from cmf.admin import add_dataset
-from cmf.data import SourceData, SourceDataset
+from cmf.data import Clusters, Models, SourceData, SourceDataset, clusters_association
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
+
+LOGGER = logging.getLogger(__name__)
 
 
 def test_database(db_engine):
@@ -126,7 +129,29 @@ def test_model_cluster_association(db_engine):
     Test that model deletion works as expected, removing the model and
     its creates edges in the association table, but not the clusters.
     """
-    pass
+    # Model has cluster_count number clusters
+    with Session(db_engine[1]) as session:
+        m = session.query(Models).filter_by(name="l_m1").first()
+        clusters_in_db = session.query(Clusters).count()
+        creates_in_db = session.query(clusters_association).count()
+
+        assert len(m.creates) == 6
+        assert creates_in_db == 12  # two models in db, l_m1 and l_m2
+        assert clusters_in_db == 6
+
+        # Clear the edges for the next test
+        m.creates.clear()
+        session.commit()
+
+    # Model creates no clusters but clusters still exist
+    with Session(db_engine[1]) as session:
+        m = session.query(Models).filter_by(name="l_m1").first()
+        clusters_in_db = session.query(Clusters).count()
+        creates_in_db = session.query(clusters_association).count()
+
+        assert len(m.creates) == 0
+        assert creates_in_db == 6  # now one model in db, l_m2
+        assert clusters_in_db == 6
 
 
 def test_model_ddupe_association(db_engine):
@@ -137,6 +162,9 @@ def test_model_ddupe_association(db_engine):
     its proposes edges in the association object, but not the deduplications.
     """
     pass
+    # Get some data
+    # with Session(db_engine[1]) as session:
+    #     data = session.query(SourceData).limit(10).all()
 
 
 def test_model_link_association(db_engine):
@@ -147,3 +175,26 @@ def test_model_link_association(db_engine):
     its proposes edges in the association object, but not the links.
     """
     pass
+
+
+def test_delete(db_engine, db_clear_data, db_clear_models, db_add_data, db_add_models):
+    """
+    Test that clearing data works.
+    """
+    with Session(db_engine[1]) as session:
+        data_before = session.query(SourceData).count()
+        models_before = session.query(Models).count()
+
+    db_clear_models(db_engine)
+    db_clear_data(db_engine)
+
+    with Session(db_engine[1]) as session:
+        data_after = session.query(SourceData).count()
+        models_after = session.query(Models).count()
+
+    assert data_before != data_after
+    assert models_before != models_after
+
+    # Add it all back
+    db_add_data(db_engine)
+    db_add_models(db_engine)
