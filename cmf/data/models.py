@@ -41,24 +41,23 @@ class Models(SHA1Mixin, CMFBase):
     # https://docs.sqlalchemy.org/en/20/orm/extensions
     # /associationproxy.html#proxying-to-dictionary-based-collections
 
-    # Dedupe associations
+    # Dedupe probability associations and proxy
     dedupe_associations: Mapped[Dict["Dedupes", "DDupeProbabilities"]] = relationship(
-        backref="proposed_by",
-        collection_class=attribute_keyed_dict("comparison"),
+        back_populates="proposed_by",
+        collection_class=attribute_keyed_dict("dedupes"),
         cascade="all, delete-orphan",
     )
 
     proposes_dedupes: AssociationProxy[Dict["Dedupes", float]] = association_proxy(
         target_collection="dedupe_associations",
         attr="probability",
-        # attr="comparison",
         creator=lambda k, v: DDupeProbabilities(comparison=k, probability=v),
     )
 
-    # Link associations
+    # Link probability associations and proxy
     links_associations: Mapped[Dict["Links", "LinkProbabilities"]] = relationship(
-        backref="proposed_by",
-        collection_class=attribute_keyed_dict("comparison"),
+        back_populates="proposed_by",
+        collection_class=attribute_keyed_dict("links"),
         cascade="all, delete-orphan",
     )
 
@@ -98,6 +97,9 @@ class ModelsFrom(CMFBase):
     __tablename__ = "models_from"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
+    # Using PostgreSQL delete cascade to handle model deletion correctly
+    # https://docs.sqlalchemy.org/en/20/orm/
+    # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     parent: Mapped[bytes] = mapped_column(
         ForeignKey("models.sha1", ondelete="CASCADE"), primary_key=True
     )
@@ -106,10 +108,14 @@ class ModelsFrom(CMFBase):
     )
 
     child_model = relationship(
-        Models, primaryjoin=child == Models.sha1, back_populates="child_edges"
+        Models,
+        primaryjoin="ModelsFrom.child == Models.sha1",
+        back_populates="child_edges",
     )
     parent_model = relationship(
-        Models, primaryjoin=parent == Models.sha1, back_populates="parent_edges"
+        Models,
+        primaryjoin="ModelsFrom.parent == Models.sha1",
+        back_populates="parent_edges",
     )
 
     def __init__(self, parent, child):

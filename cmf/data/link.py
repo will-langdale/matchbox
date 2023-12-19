@@ -1,10 +1,15 @@
-from typing import List
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cmf.data.db import CMFBase
 from cmf.data.mixin import SHA1Mixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from cmf.data.models import Models
 
 
 class Links(SHA1Mixin, CMFBase):
@@ -15,6 +20,7 @@ class Links(SHA1Mixin, CMFBase):
     right: Mapped[bytes] = mapped_column(ForeignKey("clusters.sha1"))
 
     validation: Mapped[List["LinkValidation"]] = relationship()
+    proposers: Mapped["LinkProbabilities"] = relationship(back_populates="links")
 
 
 class LinkProbabilities(CMFBase):
@@ -25,14 +31,18 @@ class LinkProbabilities(CMFBase):
     __tablename__ = "link_probabilities"
 
     link: Mapped[bytes] = mapped_column(ForeignKey("links.sha1"), primary_key=True)
+    # Using PostgreSQL delete cascade to handle model deletion correctly
+    # https://docs.sqlalchemy.org/en/20/orm/
+    # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     model: Mapped[bytes] = mapped_column(
         ForeignKey("models.sha1", ondelete="CASCADE"), primary_key=True
     )
     probability: Mapped[float]
 
-    comparison: Mapped["Links"] = relationship(
-        backref="proposers", cascade="save-update, merge"
+    links: Mapped["Links"] = relationship(
+        back_populates="proposers", cascade="save-update, merge"
     )
+    proposed_by: Mapped["Models"] = relationship(back_populates="links_associations")
 
 
 class LinkContains(UUIDMixin, CMFBase):

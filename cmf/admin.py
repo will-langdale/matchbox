@@ -18,13 +18,16 @@ def init_db(base, engine: Engine = ENGINE):
 
 
 def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
-    logger = logging.getLogger(__name__)
+    logic_logger = logging.getLogger("cmf_logic")
+    db_logger = logging.getLogger("sqlalchemy.engine")
+    db_logger.setLevel(logging.WARNING)
+
     with Session(engine) as session:
         ##########################
         # Insert dataset section #
         ##########################
 
-        logger.info(f"Adding {dataset['schema']}.{dataset['table']}")
+        logic_logger.info(f"Adding {dataset['schema']}.{dataset['table']}")
 
         to_insert = [
             {
@@ -52,7 +55,9 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         session.commit()
 
-        logger.info(f"{dataset['schema']}.{dataset['table']} added to SourceDataset")
+        logic_logger.info(
+            f"{dataset['schema']}.{dataset['table']} added to SourceDataset"
+        )
 
         #######################
         # Insert data section #
@@ -60,7 +65,8 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         source_table = du.dataset_to_table(new_dataset, engine)
 
-        # Retrieve the SHA1 and ID of each row
+        # Retrieve the SHA1 of data and an array of row IDs (as strings)
+        # Array because we can't guarantee non-duplicated data
         cols = tuple(
             [col for col in list(source_table.c.keys()) if col != dataset["id"]]
         )
@@ -71,14 +77,21 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         raw_result = session.execute(slct_stmt)
 
-        logger.info(f"Retrieved raw data from {dataset['schema']}.{dataset['table']}")
+        logic_logger.info(
+            f"Retrieved raw data from {dataset['schema']}.{dataset['table']}"
+        )
 
+        # Create list of (sha1, id, dataset)-keyed dicts using RowMapping:
+        # https://docs.sqlalchemy.org/en/20/core/
+        # connections.html#sqlalchemy.engine.Row._mapping
         to_insert = [
             dict(data._mapping, **{"dataset": new_dataset.uuid})
             for data in raw_result.all()
         ]
 
-        # Insert it
+        # Insert it using PostgreSQL upsert
+        # https://docs.sqlalchemy.org/en/20/dialects/
+        # postgresql.html#insert-on-conflict-upsert
         ins_stmt = insert(SourceData)
         ins_stmt = ins_stmt.on_conflict_do_update(
             index_elements=[SourceData.sha1, SourceData.dataset], set_=ins_stmt.excluded
@@ -87,9 +100,11 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
         session.commit()
 
-        logger.info(f"Inserted raw data from {dataset['schema']}.{dataset['table']}")
+        logic_logger.info(
+            f"Inserted raw data from {dataset['schema']}.{dataset['table']}"
+        )
 
-        logger.info(f"Finished {dataset['schema']}.{dataset['table']}")
+        logic_logger.info(f"Finished {dataset['schema']}.{dataset['table']}")
 
 
 def update_db_with_datasets(engine: Engine = ENGINE) -> None:

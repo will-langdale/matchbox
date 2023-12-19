@@ -10,4 +10,4 @@ load_dotenv(dotenv_path)
 cmf_meta = MetaData(schema=os.getenv("SCHEMA"))
 CMFBase = declarative_base(metadata=cmf_meta)
 
-ENGINE = create_engine("postgresql://", echo=False)
+ENGINE = create_engine("postgresql://", logging_name="cmf_db")
