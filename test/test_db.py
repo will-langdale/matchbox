@@ -6,7 +6,17 @@ from sqlalchemy import MetaData, Table, insert, inspect
 from sqlalchemy.orm import Session
 
 from cmf.admin import add_dataset
-from cmf.data import Clusters, Models, SourceData, SourceDataset, clusters_association
+from cmf.data import (
+    Clusters,
+    DDupeProbabilities,
+    Dedupes,
+    LinkProbabilities,
+    Links,
+    Models,
+    SourceData,
+    SourceDataset,
+    clusters_association,
+)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -122,22 +132,23 @@ def test_insert_data(db_engine, crn_companies, duns_companies, cdms_companies):
     assert inserted_rows == raw_rows_plus5
 
 
-def test_model_cluster_association(db_engine):
+def test_model_cluster_association(db_engine, db_clear_models, db_add_models):
     """
     Test that cluster read/write via the association objects works as expected.
-
-    Test that model deletion works as expected, removing the model and
-    its creates edges in the association table, but not the clusters.
     """
-    # Model has cluster_count number clusters
+    # Refresh model layer
+    db_clear_models(db_engine)
+    db_add_models(db_engine)
+
+    # Model has six clusters
     with Session(db_engine[1]) as session:
         m = session.query(Models).filter_by(name="l_m1").first()
         clusters_in_db = session.query(Clusters).count()
         creates_in_db = session.query(clusters_association).count()
 
         assert len(m.creates) == 6
-        assert creates_in_db == 12  # two models in db, l_m1 and l_m2
         assert clusters_in_db == 6
+        assert creates_in_db == 12  # two models in db, l_m1 and l_m2
 
         # Clear the edges for the next test
         m.creates.clear()
@@ -150,36 +161,88 @@ def test_model_cluster_association(db_engine):
         creates_in_db = session.query(clusters_association).count()
 
         assert len(m.creates) == 0
+        assert clusters_in_db == 6  # nothing deleted
         assert creates_in_db == 6  # now one model in db, l_m2
-        assert clusters_in_db == 6
 
 
-def test_model_ddupe_association(db_engine):
+# DDupeProbabilities, Dedupes, LinkProbabilities, Links
+def test_model_ddupe_association(db_engine, db_clear_models, db_add_models):
     """
     Test that dedupe read/write via the association objects works as expected.
 
     Test that model deletion works as expected, removing the model and
     its proposes edges in the association object, but not the deduplications.
     """
-    pass
-    # Get some data
-    # with Session(db_engine[1]) as session:
-    #     data = session.query(SourceData).limit(10).all()
+    # Refresh model layer
+    db_clear_models(db_engine)
+    db_add_models(db_engine)
+
+    # Model proposes deduplications across six data nodes, 6**2
+    with Session(db_engine[1]) as session:
+        m = session.query(Models).filter_by(name="dd_m1").first()
+        ddupes_in_db = session.query(Dedupes).count()
+        ddupe_probs_in_db = session.query(DDupeProbabilities).count()
+
+        assert len(m.proposes_dedupes) == 36  # 6 * 6 data comparisons
+        assert ddupes_in_db == 36
+        assert ddupe_probs_in_db == 72  # two models in db, dd_m1 and dd_m2
+
+        # Clear the edges for the next test
+        m.proposes_dedupes.clear()
+        session.commit()
+
+    # Model proposes no deduplications but dedupes still exist
+    with Session(db_engine[1]) as session:
+        m = session.query(Models).filter_by(name="dd_m1").first()
+        ddupes_in_db = session.query(Dedupes).count()
+        ddupe_probs_in_db = session.query(DDupeProbabilities).count()
+
+        assert len(m.proposes_dedupes) == 0
+        assert ddupes_in_db == 36  # nothing deleted
+        assert ddupe_probs_in_db == 36  # now one model in db, dd_m2
 
 
-def test_model_link_association(db_engine):
+def test_model_link_association(db_engine, db_clear_models, db_add_models):
     """
     Test that link read/write via the association objects works as expected.
 
     Test that model deletion works as expected, removing the model and
     its proposes edges in the association object, but not the links.
     """
-    pass
+    # Refresh model layer
+    db_clear_models(db_engine)
+    db_add_models(db_engine)
+
+    # Model proposes links across six cluster nodes, 6**2
+    with Session(db_engine[1]) as session:
+        m = session.query(Models).filter_by(name="l_m1").first()
+        links_in_db = session.query(Links).count()
+        link_probs_in_db = session.query(LinkProbabilities).count()
+
+        assert len(m.proposes_links) == 36  # 6 * 6 cluster comparisons
+        assert links_in_db == 36
+        assert link_probs_in_db == 72  # two models in db, dd_m1 and dd_m2
+
+        # Clear the edges for the next test
+        m.proposes_links.clear()
+        session.commit()
+
+    # Model proposes no linkings but links still exist
+    with Session(db_engine[1]) as session:
+        m = session.query(Models).filter_by(name="l_m1").first()
+        links_in_db = session.query(Links).count()
+        link_probs_in_db = session.query(LinkProbabilities).count()
+
+        assert len(m.proposes_dedupes) == 0
+        assert links_in_db == 36  # nothing deleted
+        assert link_probs_in_db == 36  # now one model in db, dd_m2
 
 
-def test_delete(db_engine, db_clear_data, db_clear_models, db_add_data, db_add_models):
+def test_db_delete(
+    db_engine, db_clear_data, db_clear_models, db_add_data, db_add_models
+):
     """
-    Test that clearing data works.
+    Test that the clearing test functions works.
     """
     with Session(db_engine[1]) as session:
         data_before = session.query(SourceData).count()
