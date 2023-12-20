@@ -1,9 +1,9 @@
-from cmf.helpers import selector, cleaner, cleaners
+from pandas import DataFrame
+
+from cmf import make_deduper, process, query
 from cmf.clean import company_name, postcode_to_area
 from cmf.dedupers import Naive
-from cmf import query, process, make_deduper
-
-from pandas import DataFrame
+from cmf.helpers import cleaner, cleaners, selector
 
 
 def test_naive():

@@ -1,8 +1,9 @@
 from functools import partial
+
 from pandas import DataFrame
 
-from cmf.clean import utils as cu
 from cmf.clean import steps
+from cmf.clean import utils as cu
 
 
 def company_name(

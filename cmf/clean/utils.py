@@ -1,6 +1,7 @@
+from typing import Callable
+
 import duckdb
 from pandas import DataFrame
-from typing import Callable
 
 STOPWORDS = [
     "limited",

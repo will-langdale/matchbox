@@ -1,53 +1,13 @@
-from cmf.data.clusters import Clusters
-from cmf.data.datasets import Datasets
-from cmf.data.probabilities import Probabilities
-from cmf.data.validation import Validation
-from cmf.data.table import Table
-
-from dotenv import load_dotenv, find_dotenv
 import os
-from pydantic import BaseModel
 
+from dotenv import find_dotenv, load_dotenv
+from sqlalchemy import MetaData, create_engine
+from sqlalchemy.orm import declarative_base
 
-class CMFDB(BaseModel):
-    """
-    The entrypoint to the whole Company Matching Framework database.
-    """
+dotenv_path = find_dotenv()
+load_dotenv(dotenv_path)
 
-    datasets: Datasets
-    clusters: Clusters
-    probabilities: Probabilities
-    validation: Validation
+cmf_meta = MetaData(schema=os.getenv("SCHEMA"))
+CMFBase = declarative_base(metadata=cmf_meta)
 
-
-def make_cmf_connection() -> CMFDB:
-    load_dotenv(find_dotenv())
-
-    datasets = Datasets(
-        db_table=Table(
-            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("DATASETS_TABLE")
-        ),
-    )
-    clusters = Clusters(
-        db_datasets=datasets,
-        db_table=Table(
-            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("CLUSTERS_TABLE")
-        ),
-    )
-    probabilities = Probabilities(
-        db_table=Table(
-            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("PROBABILITIES_TABLE")
-        )
-    )
-    validation = Validation(
-        db_table=Table(
-            db_schema=os.getenv("SCHEMA"), db_table=os.getenv("VALIDATE_TABLE")
-        )
-    )
-
-    return CMFDB(
-        datasets=datasets,
-        clusters=clusters,
-        probabilities=probabilities,
-        validation=validation,
-    )
+ENGINE = create_engine("postgresql://", logging_name="cmf_db")

@@ -8,39 +8,41 @@
 
 -e file:.
     # via -r requirements.in
-alembic==1.11.1
+alembic==1.12.1
     # via mlflow
-altair==5.0.1
+altair==5.1.2
     # via
     #   -r requirements.in
     #   splink
 annotated-types==0.6.0
     # via pydantic
-astroid==2.15.5
+asn1crypto==1.5.1
+    # via scramp
+astroid==3.0.1
     # via pylint
-asttokens==2.2.1
+asttokens==2.4.1
     # via
     #   icecream
     #   stack-data
 attrs==23.1.0
-    # via jsonschema
-backcall==0.2.0
-    # via ipython
+    # via
+    #   jsonschema
+    #   referencing
 beautifulsoup4==4.12.2
     # via nbconvert
-black==22.12.0
+black==23.11.0
     # via -r requirements-dev.in
-bleach==6.0.0
+bleach==6.1.0
     # via nbconvert
-blinker==1.6.2
+blinker==1.6.3
     # via flask
-certifi==2023.5.7
+certifi==2023.11.17
     # via requests
-cfgv==3.3.1
+cfgv==3.4.0
     # via pre-commit
-charset-normalizer==3.1.0
+charset-normalizer==3.3.1
     # via requests
-click==8.1.3
+click==8.1.7
     # via
     #   -r requirements.in
     #   black
@@ -51,129 +53,136 @@ cloudpickle==2.2.1
     # via mlflow
 colorama==0.4.6
     # via icecream
-comm==0.1.3
+comm==0.1.4
     # via ipykernel
-contourpy==1.1.0
+contourpy==1.1.1
     # via matplotlib
-cycler==0.11.0
+cycler==0.12.1
     # via matplotlib
-databricks-cli==0.17.7
+databricks-cli==0.18.0
     # via mlflow
-debugpy==1.6.7
+debugpy==1.8.0
     # via ipykernel
 decorator==5.1.1
     # via ipython
 defusedxml==0.7.1
     # via nbconvert
-dill==0.3.6
+dill==0.3.7
     # via pylint
-distlib==0.3.6
+distlib==0.3.7
     # via virtualenv
 docker==6.1.3
     # via mlflow
-duckdb==0.8.1
+duckdb==0.9.2
     # via
     #   -r requirements.in
     #   splink
 entrypoints==0.4
     # via mlflow
-exceptiongroup==1.1.1
-    # via pytest
-executing==1.2.0
+exceptiongroup==1.1.3
+    # via
+    #   ipython
+    #   pytest
+executing==2.0.1
     # via
     #   icecream
     #   stack-data
-fastjsonschema==2.17.1
+fastjsonschema==2.19.0
     # via nbformat
-filelock==3.12.2
+filelock==3.13.1
     # via virtualenv
-flake8==6.0.0
+flake8==6.1.0
     # via -r requirements-dev.in
-flask==2.3.2
-    # via
-    #   mlflow
-    #   prometheus-flask-exporter
-fonttools==4.40.0
+flask==3.0.0
+    # via mlflow
+fonttools==4.44.3
     # via matplotlib
-gitdb==4.0.10
+gitdb==4.0.11
     # via gitpython
-gitpython==3.1.31
+gitpython==3.1.40
     # via
     #   -r requirements.in
     #   mlflow
-greenlet==2.0.2
+greenlet==3.0.1
     # via sqlalchemy
-gunicorn==20.1.0
+gunicorn==21.2.0
     # via mlflow
 icecream==2.1.3
     # via -r requirements-dev.in
-identify==2.5.24
+identify==2.5.32
     # via pre-commit
-idna==3.4
+idna==3.6
     # via requests
-importlib-metadata==5.2.0
+importlib-metadata==6.8.0
     # via
     #   flask
     #   jupyter-client
     #   markdown
     #   mlflow
     #   nbconvert
-importlib-resources==5.12.0
+importlib-resources==6.1.1
     # via matplotlib
 iniconfig==2.0.0
     # via pytest
-ipykernel==6.23.2
+ipykernel==6.27.0
     # via -r requirements-dev.in
-ipython==8.14.0
+ipython==8.18.1
     # via ipykernel
 isort==5.12.0
-    # via pylint
+    # via
+    #   -r requirements-dev.in
+    #   pylint
 itsdangerous==2.1.2
     # via flask
-jedi==0.18.2
+jedi==0.19.1
     # via ipython
 jinja2==3.1.2
     # via
     #   altair
     #   flask
+    #   mlflow
     #   nbconvert
     #   splink
-joblib==1.2.0
+joblib==1.3.2
     # via scikit-learn
-jsonschema==4.17.3
+jsonschema==4.20.0
     # via
     #   altair
     #   nbformat
     #   splink
-jupyter-client==8.2.0
+jsonschema-specifications==2023.11.1
+    # via jsonschema
+jupyter-client==8.6.0
     # via
     #   ipykernel
     #   nbclient
-jupyter-core==5.3.1
+jupyter-core==5.5.0
     # via
     #   ipykernel
     #   jupyter-client
     #   nbclient
     #   nbconvert
     #   nbformat
-jupyterlab-pygments==0.2.2
+jupyterlab-pygments==0.3.0
     # via nbconvert
-kiwisolver==1.4.4
+kiwisolver==1.4.5
     # via matplotlib
-lazy-object-proxy==1.9.0
-    # via astroid
-mako==1.2.4
+mako==1.3.0
     # via alembic
-markdown==3.4.3
-    # via -r requirements.in
+markdown==3.5.1
+    # via
+    #   -r requirements.in
+    #   mlflow
 markupsafe==2.1.3
     # via
     #   jinja2
     #   mako
     #   nbconvert
     #   werkzeug
-matplotlib==3.7.1
-    # via -r requirements.in
+matplotlib==3.8.2
+    # via
+    #   -r requirements.in
+    #   mlflow
 matplotlib-inline==0.1.6
     # via
     #   ipykernel
@@ -182,25 +191,25 @@ mccabe==0.7.0
     # via
     #   flake8
     #   pylint
-mistune==3.0.1
+mistune==3.0.2
     # via nbconvert
-mlflow==1.30.0
+mlflow==2.8.1
     # via -r requirements.in
 mypy-extensions==1.0.0
     # via black
-nbclient==0.8.0
+nbclient==0.9.0
     # via nbconvert
-nbconvert==7.6.0
+nbconvert==7.11.0
     # via -r requirements-dev.in
-nbformat==5.9.0
+nbformat==5.9.2
     # via
     #   nbclient
     #   nbconvert
-nest-asyncio==1.5.6
+nest-asyncio==1.5.8
     # via ipykernel
 nodeenv==1.8.0
     # via pre-commit
-numpy==1.25.0
+numpy==1.26.2
     # via
     #   altair
     #   contourpy
@@ -208,19 +217,23 @@ numpy==1.25.0
     #   mlflow
     #   pandas
     #   pyarrow
+    #   rustworkx
     #   scikit-learn
     #   scipy
 oauthlib==3.2.2
     # via databricks-cli
-packaging==21.3
+packaging==23.2
     # via
+    #   altair
+    #   black
     #   docker
+    #   gunicorn
     #   ipykernel
     #   matplotlib
     #   mlflow
     #   nbconvert
     #   pytest
-pandas==1.3.5
+pandas==2.1.3
     # via
     #   -r requirements.in
     #   altair
@@ -230,111 +243,120 @@ pandocfilters==1.5.0
     # via nbconvert
 parso==0.8.3
     # via jedi
-pathspec==0.11.1
+pathspec==0.11.2
     # via black
-pexpect==4.8.0
+pexpect==4.9.0
     # via ipython
-pgpq==0.7.3
+pg8000==1.30.3
+    # via testing-postgresql
+pgpq==0.9.0
     # via -r requirements.in
 phonetics==1.0.5
     # via splink
-pickleshare==0.7.5
-    # via ipython
-pillow==9.5.0
+pillow==10.1.0
     # via matplotlib
-platformdirs==3.8.0
+platformdirs==3.11.0
     # via
     #   black
     #   jupyter-core
     #   pylint
     #   virtualenv
-pluggy==1.2.0
+pluggy==1.3.0
     # via pytest
-polars==0.18.3
+polars==0.19.16
     # via -r requirements.in
-pre-commit==3.3.3
+pre-commit==3.5.0
     # via -r requirements-dev.in
-prometheus-client==0.17.0
-    # via prometheus-flask-exporter
-prometheus-flask-exporter==0.22.4
-    # via mlflow
-prompt-toolkit==3.0.38
+prompt-toolkit==3.0.41
     # via ipython
-protobuf==4.23.3
+protobuf==4.25.1
     # via mlflow
-psutil==5.9.5
+psutil==5.9.6
     # via ipykernel
-psycopg[binary]==3.1.9
+psycopg[binary]==3.1.13
     # via -r requirements.in
-psycopg-binary==3.1.9
+psycopg-binary==3.1.13
     # via psycopg
-psycopg2-binary==2.9.6
+psycopg2-binary==2.9.9
     # via -r requirements.in
 ptyprocess==0.7.0
     # via pexpect
 pure-eval==0.2.2
     # via stack-data
-pyarrow==12.0.1
+pyarrow==14.0.1
     # via
     #   -r requirements.in
+    #   mlflow
     #   pgpq
-pycodestyle==2.10.0
+pycodestyle==2.11.1
     # via flake8
-pydantic==2.4.2
+pydantic==2.5.1
     # via -r requirements.in
-pydantic-core==2.10.1
+pydantic-core==2.14.3
     # via pydantic
-pyflakes==3.0.1
+pyflakes==3.1.0
     # via flake8
-pygments==2.15.1
+pygments==2.17.2
     # via
     #   icecream
     #   ipython
     #   nbconvert
-pyjwt==2.7.0
+pyjwt==2.8.0
     # via databricks-cli
-pylint==2.17.4
+pylint==3.0.2
     # via -r requirements-dev.in
-pyparsing==3.1.0
-    # via
-    #   matplotlib
-    #   packaging
-pyrsistent==0.19.3
-    # via jsonschema
-pytest==7.3.2
+pyparsing==3.1.1
+    # via matplotlib
+pytest==7.4.3
     # via -r requirements-dev.in
 python-dateutil==2.8.2
     # via
     #   jupyter-client
     #   matplotlib
     #   pandas
+    #   pg8000
 python-dotenv==1.0.0
     # via -r requirements.in
-pytz==2022.7.1
+pytz==2023.3.post1
     # via
     #   mlflow
     #   pandas
-pyyaml==6.0
+pyyaml==6.0.1
     # via
+    #   -r requirements.in
     #   mlflow
     #   pre-commit
-pyzmq==25.1.0
+pyzmq==25.1.1
     # via
     #   ipykernel
     #   jupyter-client
 querystring-parser==1.2.4
     # via mlflow
+referencing==0.31.0
+    # via
+    #   jsonschema
+    #   jsonschema-specifications
 requests==2.31.0
     # via
     #   databricks-cli
     #   docker
     #   mlflow
-scikit-learn==1.2.2
+rpds-py==0.13.1
+    # via
+    #   jsonschema
+    #   referencing
+rustworkx==0.13.2
     # via -r requirements.in
-scipy==1.10.1
+scikit-learn==1.3.2
+    # via
+    #   -r requirements.in
+    #   mlflow
+scipy==1.11.4
     # via
     #   mlflow
     #   scikit-learn
+scramp==1.4.4
+    # via pg8000
 six==1.16.0
     # via
     #   asttokens
@@ -342,26 +364,30 @@ six==1.16.0
     #   databricks-cli
     #   python-dateutil
     #   querystring-parser
-smmap==5.0.0
+smmap==5.0.1
     # via gitdb
-soupsieve==2.4.1
+soupsieve==2.5
     # via beautifulsoup4
-splink==3.9.2
+splink==3.9.9
     # via -r requirements.in
-sqlalchemy==1.4.48
+sqlalchemy==2.0.23
     # via
     #   -r requirements.in
     #   alembic
     #   mlflow
-sqlglot==11.4.1
+sqlglot==18.17.0
     # via splink
 sqlparse==0.4.4
     # via mlflow
-stack-data==0.6.2
+stack-data==0.6.3
     # via ipython
 tabulate==0.9.0
     # via databricks-cli
-threadpoolctl==3.1.0
+testing-common-database==2.0.3
+    # via testing-postgresql
+testing-postgresql==1.3.0
+    # via -r requirements-dev.in
+threadpoolctl==3.2.0
     # via scikit-learn
 tinycss2==1.2.1
     # via nbconvert
@@ -370,17 +396,17 @@ tomli==2.0.1
     #   black
     #   pylint
     #   pytest
-tomlkit==0.11.8
+tomlkit==0.12.3
     # via pylint
 toolz==0.12.0
     # via altair
-tornado==6.3.2
+tornado==6.3.3
     # via
     #   ipykernel
     #   jupyter-client
-tqdm==4.65.0
+tqdm==4.66.1
     # via -r requirements.in
-traitlets==5.9.0
+traitlets==5.13.0
     # via
     #   comm
     #   ipykernel
@@ -391,7 +417,7 @@ traitlets==5.9.0
     #   nbclient
     #   nbconvert
     #   nbformat
-typing-extensions==4.6.3
+typing-extensions==4.8.0
     # via
     #   alembic
     #   altair
@@ -402,26 +428,27 @@ typing-extensions==4.6.3
     #   pydantic
     #   pydantic-core
     #   pylint
-urllib3==1.26.16
+    #   sqlalchemy
+tzdata==2023.3
+    # via pandas
+urllib3==2.1.0
     # via
     #   databricks-cli
     #   docker
     #   requests
-virtualenv==20.23.1
+virtualenv==20.24.6
     # via pre-commit
-wcwidth==0.2.6
+wcwidth==0.2.10
     # via prompt-toolkit
 webencodings==0.5.1
     # via
     #   bleach
     #   tinycss2
-websocket-client==1.6.0
+websocket-client==1.6.4
     # via docker
-werkzeug==2.3.6
+werkzeug==3.0.1
     # via flask
-wrapt==1.15.0
-    # via astroid
-zipp==3.15.0
+zipp==3.17.0
     # via
     #   importlib-metadata
     #   importlib-resources

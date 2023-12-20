@@ -1,17 +1,17 @@
-import cmf
-from cmf.locations import REFERENCES_HOME, PROJECT_DIR, MODELS_HOME
+import contextlib
+import re
+import traceback
+from os import environ, path
+from sys import version_info
 
-from git import Repo
-import mlflow.pyfunc
 import cloudpickle
 import jinja2
 import markdown
+import mlflow.pyfunc
+from git import Repo
 
-from sys import version_info
-from os import environ, path
-import re
-import contextlib
-import traceback
+import cmf
+from cmf.locations import MODELS_HOME, PROJECT_DIR, REFERENCES_HOME
 
 DEFAULT_ARTIFACT_PATH = "model"
 DEFAULT_EXPERIMENT_NAME = "company_matching"

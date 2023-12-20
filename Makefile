@@ -1,4 +1,4 @@
-.PHONY: check clear data dims validation setup evals train predict clean environment install_git_hooks requirements precommit test
+.PHONY: cmf clean environment install_git_hooks requirements precommit test
 
 #################################################################################
 # GLOBALS																	   #
@@ -10,7 +10,6 @@ SENSITIVE_PROJECT = no
 PYTHON_VERSION = 3.9
 PYTHON_INTERPRETER = python
 
-
 NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 #################################################################################
@@ -18,67 +17,8 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 #################################################################################
 
 ## Make datasets table
-datasets:
-	$(PYTHON_INTERPRETER) cmf/data/datasets.py datasets
-
-
-## Make dimension tables
-dims:
-	$(PYTHON_INTERPRETER) cmf/data/datasets.py dimensions
-
-
-## Make probabilities table
-probabilities:
-	$(PYTHON_INTERPRETER) cmf/data/probabilities.py --overwrite
-
-
-## Make clusters table with Companies House as the default data
-clusters:
-	$(PYTHON_INTERPRETER) cmf/data/clusters.py --dim_init companieshouse.companies --overwrite
-
-
-## Make validation table
-validation:
-	$(PYTHON_INTERPRETER) cmf/data/validation.py --overwrite
-
-
-## Setup system ready for linking
-setup:
-	make datasets
-	make dims
-	make probabilities
-	make clusters
-	make validation
-
-
-## Make evaluation tables for existing matching service
-evals:
-	$(PYTHON_INTERPRETER) cmf/data/make_eval.py
-
-
-## Shows disk usage across repo
-check:
-	du -hs ~/$(PROJECT_NAME)/.[^.]* * | sort -rh
-
-
-## Removes all processed datasets
-clear:
-	rm -Rf data/processed/*
-
-
-## Load data to parquet
-data:
-	$(PYTHON_INTERPRETER) cmf/data/get_datasets.py --output_dir company-matching__$(NOW) --sample 100000
-
-
-## Train model
-train:
-	$(PYTHON_INTERPRETER) cmf/models/train.py --description "Initial test of the model training pipeline" --run_name company-matching__$(NOW) --input_dir company-matching__06-26-23_11-40-51 --dev
-
-
-## Build lookup and write to data workspace
-predict:
-	$(PYTHON_INTERPRETER) cmf/models/predict.py --run --input_dir company-matching__06-26-23_11-40-51 --output_schema "_user_eaf4fd9a" --output_table "lge_lookup"
+cmf:
+	$(PYTHON_INTERPRETER) cmf/admin.py
 
 
 ## Delete all compiled Python files
@@ -105,8 +45,10 @@ endif
 install_git_hooks:
 	pre-commit install
 
+
 ## Reformat, lint, clear notebook outputs if necessary
 precommit:
+	isort . --profile black --filter-files
 	black . --extend-exclude \.ipynb$ 
 	flake8 . --exclude scratch,.ipynb_checkpoints
 ifeq (yes,$(SENSITIVE_PROJECT))
@@ -115,16 +57,19 @@ ifeq (yes,$(SENSITIVE_PROJECT))
 endif
 	@echo "Done."
 
-## Install Python Dependencies
+
+## Install Python and Debian dependencies
 requirements:
+	sudo dw-install libpq-dev postgresql
 	$(PYTHON_INTERPRETER) -m piptools compile --output-file=requirements.txt --resolver=backtracking requirements.in requirements-dev.in
 	$(PYTHON_INTERPRETER) -m piptools sync requirements.txt
 	$(PYTHON_INTERPRETER) -m ipykernel install --user --name=$(PROJECT_NAME)
 	make install_git_hooks
 
+
 ## Run Python tests
 test:
-	pytest test
+	pytest -s -vv --log-cli-level=INFO --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)" --log-cli-date-format="%Y-%m-%d %H:%M:%S" test/test_db.py
 
 
 #################################################################################

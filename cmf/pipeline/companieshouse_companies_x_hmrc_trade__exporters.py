@@ -1,10 +1,9 @@
-from cmf.config import stopwords
-from cmf.features.clean_complex import clean_comp_names
-from cmf.link.make_link import LinkDatasets
-
 import splink.duckdb.comparison_library as cl
 import splink.duckdb.comparison_template_library as ctl
 
+from cmf.config import stopwords
+from cmf.features.clean_complex import clean_comp_names
+from cmf.link.make_link import LinkDatasets
 
 settings = {
     "link_type": "link_only",

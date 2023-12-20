@@ -1,19 +1,20 @@
-from cmf import locations as loc
-from cmf.data import utils as du
-from cmf.data.datasets import Datasets
-from cmf.data.probabilities import Probabilities
-from cmf.data.validation import Validation
-from cmf.data.clusters import Clusters
-from cmf.data.db import CMFDB
-from cmf.data import Table
+import os
+import uuid
+from pathlib import Path
 
 import duckdb
-from pathlib import Path
-from dotenv import load_dotenv, find_dotenv
-import os
-import pytest
 import pandas as pd
-import uuid
+import pytest
+from dotenv import find_dotenv, load_dotenv
+
+from cmf import locations as loc
+from cmf.data import Table
+from cmf.data import utils as du
+from cmf.data.clusters import Clusters
+from cmf.data.datasets import Datasets
+from cmf.data.db import CMFDB
+from cmf.data.probabilities import Probabilities
+from cmf.data.validation import Validation
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)

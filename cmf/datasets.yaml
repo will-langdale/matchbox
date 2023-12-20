@@ -1,0 +1,16 @@
+companies_house:
+    schema: "companieshouse"
+    table: "companies"
+    id: "id"
+data_hub_companies:
+    schema: "dit"
+    table: "data_hub__companies"
+    id: "id"
+hmrc_exporters:
+    schema: "hmrc"
+    table: "trade__exporters"
+    id: "id"
+export_wins:
+    schema: "dit"
+    table: "export_wins__wins_dataset"
+    id: "id"

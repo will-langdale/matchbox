@@ -1,8 +1,8 @@
-from cmf.link.linker import Linker
 from cmf.data import utils as du
+from cmf.data.clusters import Clusters
 from cmf.data.datasets import Dataset
 from cmf.data.probabilities import Probabilities
-from cmf.data.clusters import Clusters
+from cmf.link.linker import Linker
 
 
 class DeterministicLinker(Linker):

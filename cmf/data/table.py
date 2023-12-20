@@ -1,10 +1,11 @@
-from cmf.data import utils as du
-
 from typing import List, Optional
-from pydantic import BaseModel, computed_field, field_validator
-from sqlalchemy.sql import text as sql_text
-from sqlalchemy.exc import MultipleResultsFound
+
 from pandas import DataFrame
+from pydantic import BaseModel, computed_field, field_validator
+from sqlalchemy.exc import MultipleResultsFound
+from sqlalchemy.sql import text as sql_text
+
+from cmf.data import utils as du
 
 
 class Table(BaseModel):

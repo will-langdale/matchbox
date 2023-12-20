@@ -1,9 +1,10 @@
-from cmf.data.probabilities import ProbabilityResults
-
-from pydantic import BaseModel
-from pandas import DataFrame
-from typing import Dict, List, Any, Callable
 from abc import ABC
+from typing import Any, Callable, Dict, List
+
+from pandas import DataFrame
+from pydantic import BaseModel
+
+from cmf.data import ProbabilityResults
 
 
 class Deduper(BaseModel, ABC):

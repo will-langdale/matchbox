@@ -1,8 +1,10 @@
-from cmf.dedupers.make_deduper import Deduper
-from pandas import DataFrame
-import duckdb
-from pydantic import BaseModel, Field
 from typing import List
+
+import duckdb
+from pandas import DataFrame
+from pydantic import BaseModel, Field
+
+from cmf.dedupers.make_deduper import Deduper
 
 
 class NaiveSettings(BaseModel):
