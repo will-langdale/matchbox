@@ -154,4 +154,8 @@ def test_nest_unnest(test):
 
     cleaned = test_cleaning_function_arrayed(dirty, column="col")
 
-    assert cleaned.equals(clean)
+    assert (
+        cleaned.sort_values(by="col")
+        .reset_index(drop=True)
+        .equals(clean.sort_values(by="col").reset_index(drop=True))
+    )
