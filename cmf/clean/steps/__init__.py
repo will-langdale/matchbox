@@ -4,8 +4,13 @@ from cmf.clean.steps.clean_basic import (
     characters_to_nothing,
     characters_to_spaces,
     clean_punctuation,
+    clean_punctuation_except_hyphens,
     dedupe_and_sort,
     expand_abbreviations,
+    filter_cdms_number,
+    filter_company_number,
+    filter_duns_number,
+    get_digits_only,
     get_low_freq_char_sig,
     get_postcode_area,
     list_join_to_string,
@@ -13,6 +18,8 @@ from cmf.clean.steps.clean_basic import (
     regex_remove_list_of_strings,
     remove_notnumbers_leadingzeroes,
     remove_stopwords,
+    to_lower,
+    to_upper,
     tokenise,
 )
 from cmf.clean.steps.clean_basic_original import (

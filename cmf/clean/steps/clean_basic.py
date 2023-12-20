@@ -57,6 +57,23 @@ def clean_punctuation(column: str) -> str:
     """
 
 
+def clean_punctuation_except_hyphens(column: str) -> str:
+    """
+    Revove all punctuation and spaces except hyphens, trim.
+    Useful for cleaning reference numbers.
+    """
+    return f"""
+        trim(
+            regexp_replace(
+                {column},
+                '[^a-zA-Z0-9-]+',
+                '',
+                'g'
+            )
+        )
+    """
+
+
 def expand_abbreviations(
     column: str, replacements: Dict[str, str] = ABBREVIATIONS
 ) -> str:
@@ -236,6 +253,75 @@ def get_low_freq_char_sig(column: str) -> str:
     """
 
 
+def filter_cdms_number(column: str) -> str:
+    """
+    Returns a CASE WHEN filter on the specified column that will
+    match only CDMS numbers. Must be either:
+
+    * 6 or 12 digits long
+    * Start with '000'
+    * Start with 'ORG-'
+
+    Will return false positives on some CRN numbers when they are
+    8 digits long and begin with '000'.
+    """
+    return f"""
+        case
+            when (
+                length({column}) = 12
+                or length({column}) = 6
+                or left({column}, 3) = '000'
+                or left({column}, 4) = 'ORG-'
+            )
+            then {column}
+            else null
+        end
+    """
+
+
+def filter_company_number(column: str) -> str:
+    """
+    Returns a CASE WHEN filter on the specified column that will
+    match only Companies House numbers, CRNs.
+
+    Uses regex derived from:
+    https://gist.github.com/rob-murray/01d43581114a6b319034732bcbda29e1
+    """
+    crn_regex = (
+        r"^(((AC|CE|CS|FC|FE|GE|GS|IC|LP|NC|NF|NI|NL|NO|NP|OC|OE|PC|R0|RC|"
+        r"SA|SC|SE|SF|SG|SI|SL|SO|SR|SZ|ZC|\d{2})\d{6})|((IP|SP|RS)[A-Z\d]"
+        r"{6})|(SL\d{5}[\dA]))$"
+    )
+    return f"""
+        case
+            when regexp_full_match({column}, '{crn_regex}')
+            then {column}
+            else null
+        end
+    """
+
+
+def filter_duns_number(column: str) -> str:
+    """
+    Returns a CASE WHEN filter on the specified column that will
+    match only a Dun & Bradstreet DUNS number. Must be both:
+
+    * 9 characters
+    * Numeric
+
+    """
+    return rf"""
+        case
+            when (
+                length({column}) = 9
+                and regexp_full_match({column}, '\d+')
+            )
+            then {column}
+            else null
+        end
+    """
+
+
 def to_upper(column: str) -> str:
     """
     All characters to uppercase
@@ -248,3 +334,19 @@ def to_lower(column: str) -> str:
     All characters to lowercase
     """
     return f"lower({column})"
+
+
+def get_digits_only(column: str) -> str:
+    """
+    Extract digits only, including nonconsecutive
+    """
+    return rf"""
+        nullif(
+            list_aggregate(
+                regexp_extract_all({column}, '\d+'),
+                'string_agg',
+                ''
+            ),
+            ''
+        )
+    """
