@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from cmf import locations as loc
+from cmf.clean import drop
 from cmf.clean.steps import (
     clean_punctuation,
     expand_abbreviations,
@@ -14,7 +15,7 @@ from cmf.clean.steps import (
     remove_stopwords,
     tokenise,
 )
-from cmf.clean.utils import cleaning_function, unnest_renest
+from cmf.clean.utils import alias, cleaning_function, unnest_renest
 
 """
 ----------------------------
@@ -159,3 +160,29 @@ def test_nest_unnest(test):
         .reset_index(drop=True)
         .equals(clean.sort_values(by="col").reset_index(drop=True))
     )
+
+
+def test_alias():
+    """
+    Tests whether the alias function is working.
+    """
+    test_cleaning_function = cleaning_function(passthrough)
+
+    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", "alias"))
+
+    alias_function = alias(test_cleaning_function, "foo")
+
+    cleaned = alias_function(dirty, column="col")
+
+    assert "foo" in cleaned.columns
+
+
+def test_drop():
+    """
+    Tests whether the drop function is working.
+    """
+    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", "alias"))
+
+    cleaned = drop(dirty, column="col")
+
+    assert len(cleaned.columns) == 0
