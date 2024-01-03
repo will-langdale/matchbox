@@ -66,6 +66,32 @@ def cleaning_function(*functions: Callable) -> Callable:
     return cleaning_method
 
 
+def alias(function: Callable, alias: str) -> Callable:
+    """
+    Takes a cleaning function and aliases the output to a new column.
+
+    Arguments:
+        function: an outut from a cleaning_function function
+    """
+
+    def cleaning_method(df: DataFrame, column: str) -> DataFrame:
+        aliased = duckdb.sql(
+            f"""
+            select
+                *,
+                {column} as {alias}
+            from
+                df;
+        """
+        ).df()
+
+        processed = function(aliased, alias)
+
+        return processed
+
+    return cleaning_method
+
+
 def unnest_renest(function: Callable) -> Callable:
     """
     Takes a cleaning function and adds unnesting and renesting either side
@@ -73,10 +99,10 @@ def unnest_renest(function: Callable) -> Callable:
     sub-functions that also use arrays, blocking list_transform.
 
     Arguments:
-        functions: an outut from a *_cleaning_factory function
+        function: an outut from a cleaning_function function
     """
 
-    def cleaning_method(df, column):
+    def cleaning_method(df: DataFrame, column: str) -> DataFrame:
         unnest = duckdb.sql(
             f"""
         select

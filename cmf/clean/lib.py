@@ -19,8 +19,8 @@ def company_name(
 
     Args:
         df: a dataframe
-        input_column: a column containing the company's main name
-        input_column_secondary: a column containing an array of the company's
+        column: a column containing the company's main name
+        column_secondary: a column containing an array of the company's
             secondary names
         stopwords: a list of stopwords to use for this clean
     Returns:
@@ -53,7 +53,7 @@ def company_number(df: DataFrame, column: str) -> DataFrame:
 
     Args:
         df: a dataframe
-        input_column: a column containing a company number
+        column: a column containing a company number
     Returns:
         dataframe: the same as went in, but cleaned
     """
@@ -71,7 +71,7 @@ def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
 
     Args:
         df: a dataframe
-        input_column: a column containing a postcode
+        column: a column containing a postcode
     Returns:
         dataframe: the same as went in, but cleaned
     """
@@ -81,3 +81,94 @@ def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
     df = extract_area(df, column)
 
     return df
+
+
+def extract_company_number_to_new(
+    df: DataFrame, column: str, new_column: str
+) -> DataFrame:
+    """
+    Detects the Companies House CRN in a column and moves it to a new column.
+
+    Args:
+        df: a dataframe
+        column: a column containing some company numbers
+        new_column: the name of the column to add
+    Returns:
+        dataframe: the same as went in with a new column for CRNs
+    """
+
+    clean_crn = cu.cleaning_function(
+        steps.clean_punctuation_except_hyphens,
+        steps.to_upper,
+        steps.filter_company_number,
+    )
+
+    clean_crn_aliased = cu.alias(clean_crn, alias=new_column)
+
+    df = clean_crn_aliased(df, column)
+
+    return df
+
+
+def extract_duns_number_to_new(
+    df: DataFrame, column: str, new_column: str
+) -> DataFrame:
+    """
+    Detects the Dun & Bradstreet DUNS nuber in a column and moves it to
+    a new column.
+
+    Args:
+        df: a dataframe
+        column: a column containing some DUNS numbers
+        new_column: the name of the column to add
+    Returns:
+        dataframe: the same as went in with a new column for DUNs numbers
+    """
+
+    clean_duns = cu.cleaning_function(
+        steps.clean_punctuation_except_hyphens, steps.to_upper, steps.filter_duns_number
+    )
+
+    clean_duns_aliased = cu.alias(clean_duns, alias=new_column)
+
+    df = clean_duns_aliased(df, column)
+
+    return df
+
+
+def extract_cdms_number_to_new(
+    df: DataFrame, column: str, new_column: str
+) -> DataFrame:
+    """
+    Detects the CDMS nuber in a column and moves it to a new column.
+
+    Args:
+        df: a dataframe
+        column: a column containing some CDMS numbers
+        new_column: the name of the column to add
+    Returns:
+        dataframe: the same as went in with a new column for CDMS numbers
+    """
+
+    clean_cdms = cu.cleaning_function(
+        steps.clean_punctuation_except_hyphens, steps.to_upper, steps.filter_cdms_number
+    )
+
+    clean_cdms_aliased = cu.alias(clean_cdms, alias=new_column)
+
+    df = clean_cdms_aliased(df, column)
+
+    return df
+
+
+def drop(df: DataFrame, column: str) -> DataFrame:
+    """
+    Drops the column from the dataframe.
+
+    Args:
+        df: a dataframe
+        column: a column
+    Returns:
+        dataframe: the same as went in without the column
+    """
+    return df.drop(columns=[column])
