@@ -27,6 +27,7 @@ def test_selectors(db_engine):
 
 
 def test_single_table_no_model_query(db_engine):
+    """Tests query() on a single table. No point of truth to derive clusters"""
     select_crn = selector(
         table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
     )
@@ -55,6 +56,7 @@ def test_single_table_no_model_query(db_engine):
 
 
 def test_multi_table_no_model_query(db_engine):
+    """Tests query() on multiple tables. No point of truth to derive clusters"""
     select_crn = selector(
         table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
     )
@@ -68,6 +70,19 @@ def test_multi_table_no_model_query(db_engine):
     )
 
     assert df_crn_duns_full.shape[0] == 3500
+    assert (
+        df_crn_duns_full[
+            df_crn_duns_full[f"{os.getenv('SCHEMA')}_duns_id"].notnull()
+        ].shape[0]
+        == 500
+    )
+    assert (
+        df_crn_duns_full[
+            df_crn_duns_full[f"{os.getenv('SCHEMA')}_crn_id"].notnull()
+        ].shape[0]
+        == 3000
+    )
+
     assert set(df_crn_duns_full.columns) == {
         "data_sha1",
         f"{os.getenv('SCHEMA')}_crn_id",
@@ -78,10 +93,52 @@ def test_multi_table_no_model_query(db_engine):
 
 
 def test_single_table_with_model_query(db_engine):
+    """Tests query() on a single table using a model point of truth
+
+    TODO: Implement. Will be a LOT easier to write when I have dedupers and
+    linkers to generate data to query on -- not part of this MR.
+
+    """
+    # select_crn = selector(
+    #     table=f"{os.getenv('SCHEMA')}.crn",
+    #     fields=["id", "crn"],
+    #     engine=db_engine[1]
+    # )
+
+    # df_crn_full = query(
+    #     selector=select_crn,
+    #     model=None,
+    #     return_type="pandas",
+    #     engine=db_engine[1]
+    # )
     pass
 
 
 def test_multi_table_with_model_query(db_engine):
+    """Tests query() on multiple tables using a model point of truth
+
+    TODO: Implement. Will be a LOT easier to write when I have dedupers and
+    linkers to generate data to query on -- not part of this MR.
+
+    """
+    # select_crn = selector(
+    #     table=f"{os.getenv('SCHEMA')}.crn",
+    #     fields=["id", "crn"],
+    #     engine=db_engine[1]
+    # )
+    # select_duns = selector(
+    #     table=f"{os.getenv('SCHEMA')}.duns",
+    #     fields=["id", "duns"],
+    #     engine=db_engine[1]
+    # )
+    # select_crn_duns = selectors(select_crn, select_duns)
+
+    # df_crn_duns_full = query(
+    #     selector=select_crn_duns,
+    #     model="dd_m1",
+    #     return_type="pandas",
+    #     engine=db_engine[1]
+    # )
     pass
 
 
