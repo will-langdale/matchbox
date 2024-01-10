@@ -1,7 +1,15 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import pandas as pd
-from sqlalchemy import Engine, String, and_, func, or_, select
+from sqlalchemy import (
+    LABEL_STYLE_TABLENAME_PLUS_COL,
+    Engine,
+    String,
+    and_,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
@@ -144,8 +152,8 @@ def tree_to_reachable_stmt(model_tree: List[bytes]) -> Select:
 
 def reachable_to_parent_data_stmt(reachable_stmt: Select, parent_sha1: bytes) -> Select:
     """
-    Takes a select statement representing the reachable edges of a parent \
-    model and returns a statement to create a parent cluster to child data \
+    Takes a select statement representing the reachable edges of a parent
+    model and returns a statement to create a parent cluster to child data
     lookup
     """
     allowed = reachable_stmt.cte("allowed")
@@ -207,6 +215,7 @@ def selector_to_data(
         stmt = stmt.join(**join_stmt, isouter=True)
 
     stmt = stmt.where(or_(*where_stmts))
+    stmt = stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
 
     return stmt
 

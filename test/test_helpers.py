@@ -1,3 +1,4 @@
+import logging
 import os
 
 from dotenv import find_dotenv, load_dotenv
@@ -5,42 +6,83 @@ from pandas import DataFrame
 
 from cmf import process, query
 from cmf.clean import company_name, company_number
-from cmf.data import Table
 from cmf.helpers import cleaner, cleaners, comparison, comparisons, selector, selectors
 
+dotenv_path = find_dotenv()
+load_dotenv(dotenv_path)
 
-def test_tables():
-    load_dotenv(find_dotenv())
+LOGGER = logging.getLogger(__name__)
 
-    fake_table = Table(db_schema=os.getenv("SCHEMA"), db_table="my_fake_table")
-    real_table = Table(
-        db_schema=os.getenv("SCHEMA"), db_table=os.getenv("PROBABILITIES_TABLE")
+
+def test_selectors(db_engine):
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
+    )
+    select_duns = selector(
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine[1]
+    )
+    select_crn_duns = selectors(select_crn, select_duns)
+
+    assert select_crn_duns is not None
+
+
+def test_single_table_no_model_query(db_engine):
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
     )
 
-    assert fake_table is not None
-    assert real_table is not None
-
-
-def test_selectors():
-    select_dh = selector(
-        table="dit.data_hub__companies", fields=["id", "company_number"]
+    df_crn_sample = query(
+        selector=select_crn,
+        model=None,
+        return_type="pandas",
+        engine=db_engine[1],
+        limit=10,
     )
-    select_ch = selector(
-        table="companieshouse.companies", fields=["company_number", "company_name"]
+
+    assert isinstance(df_crn_sample, DataFrame)
+    assert df_crn_sample.shape[0] == 10
+
+    df_crn_full = query(
+        selector=select_crn, model=None, return_type="pandas", engine=db_engine[1]
     )
-    select_dh_ch = selectors(select_dh, select_ch)
 
-    assert select_dh_ch is not None
+    assert df_crn_full.shape[0] == 3000
+    assert set(df_crn_full.columns) == {
+        "data_sha1",
+        f"{os.getenv('SCHEMA')}_crn_id",
+        f"{os.getenv('SCHEMA')}_crn_crn",
+    }
 
 
-def test_query():
-    select_ch = selector(
-        table="companieshouse.companies", fields=["company_number", "company_name"]
+def test_multi_table_no_model_query(db_engine):
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
     )
-    ch_sample = query(select=select_ch, sample=0.05)
+    select_duns = selector(
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine[1]
+    )
+    select_crn_duns = selectors(select_crn, select_duns)
 
-    assert isinstance(ch_sample, DataFrame)
-    assert len(ch_sample.index) > 0
+    df_crn_duns_full = query(
+        selector=select_crn_duns, model=None, return_type="pandas", engine=db_engine[1]
+    )
+
+    assert df_crn_duns_full.shape[0] == 3500
+    assert set(df_crn_duns_full.columns) == {
+        "data_sha1",
+        f"{os.getenv('SCHEMA')}_crn_id",
+        f"{os.getenv('SCHEMA')}_crn_crn",
+        f"{os.getenv('SCHEMA')}_duns_id",
+        f"{os.getenv('SCHEMA')}_duns_duns",
+    }
+
+
+def test_single_table_with_model_query(db_engine):
+    pass
+
+
+def test_multi_table_with_model_query(db_engine):
+    pass
 
 
 def test_cleaners():
@@ -53,22 +95,30 @@ def test_cleaners():
     assert cleaner_name_number is not None
 
 
-def test_process():
-    select_ch = selector(
-        table="companieshouse.companies", fields=["company_number", "company_name"]
+def test_process(db_engine):
+    select_name = selector(
+        table=f"{os.getenv('SCHEMA')}.crn",
+        fields=["crn", "company_name"],
+        engine=db_engine[1],
     )
-    ch_sample = query(select=select_ch, sample=0.05)
 
-    cleaner_name = cleaner(function=company_name, arguments={"column": "company_name"})
+    df_name = query(
+        selector=select_name, model=None, return_type="pandas", engine=db_engine[1]
+    )
+
+    cleaner_name = cleaner(
+        function=company_name,
+        arguments={"column": f"{os.getenv('SCHEMA')}_crn_company_name"},
+    )
     cleaner_number = cleaner(
-        function=company_number, arguments={"column": "company_number"}
+        function=company_number, arguments={"column": f"{os.getenv('SCHEMA')}_crn_crn"}
     )
     cleaner_name_number = cleaners(cleaner_name, cleaner_number)
 
-    ch_sample_cleaned = process(data=ch_sample, pipeline=cleaner_name_number)
+    df_name_cleaned = process(data=df_name, pipeline=cleaner_name_number)
 
-    assert isinstance(ch_sample_cleaned, DataFrame)
-    assert len(ch_sample_cleaned.index) > 0
+    assert isinstance(df_name_cleaned, DataFrame)
+    assert df_name_cleaned.shape[0] == 3000
 
 
 def test_comparisons():
