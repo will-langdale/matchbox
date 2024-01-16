@@ -59,17 +59,35 @@ def selector(
 
 
 def selectors(*selector: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """
+    Builds individual selector dictionaries into one object appropriate for
+    the query() function.
+
+    Args:
+        selector: any number of selectors
+
+    Returns:
+        A dictionary of selectors
+    """
     return {k: v for d in (selector) for k, v in d.items()}
 
 
-def get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
+def _get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
     """
     Takes a Models object and returns all items in its parent tree.
+
+    Intended as a lower-level function for other functions to use.
+
+    Args:
+        model: a single Model object.
+
+    Returns:
+        A list of all the model's ancestor models.
     """
     result = []
     if isinstance(model, list):
         for mod in model:
-            parents = get_all_parents(mod)
+            parents = _get_all_parents(mod)
             result.append(parents)
         return result
     elif isinstance(model, Models):
@@ -79,19 +97,27 @@ def get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
             return result
         else:
             for mod in parent_neighbours:
-                parents = get_all_parents(mod)
+                parents = _get_all_parents(mod)
                 result += parents
             return result
 
 
-def get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
+def _get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
     """
     Takes a Models object and returns all items in its child tree.
+
+    Intended as a lower-level function for other functions to use.
+
+    Args:
+        model: a single Model object.
+
+    Returns:
+        A list of all the model's decendent models.
     """
     result = []
     if isinstance(model, list):
         for mod in model:
-            children = get_all_children(mod)
+            children = _get_all_children(mod)
             result.append(children)
         return result
     elif isinstance(model, Models):
@@ -101,31 +127,50 @@ def get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
             return result
         else:
             for mod in child_neighbours:
-                children = get_all_children(mod)
+                children = _get_all_children(mod)
                 result += children
             return result
 
 
-def parent_to_tree(
+def _parent_to_tree(
     model_name: str, engine: Engine = ENGINE
 ) -> Tuple[bytes, List[bytes]]:
     """
     Takes the string name of a model and returns a tuple of its SHA-1,
     and the SHA-1 list of its children.
+
+    See query() for an overview and glossary of this function's role.
+
+    Args:
+        model_name (str): the name of a model
+        engine: the SQLAlchemy engine to use
+
+    Returns:
+        A tuple of the model's SHA-1 value, and a list of the SHA-1s values
+        of its decendents
     """
 
     with Session(engine) as session:
         model = session.query(Models).filter_by(name=model_name).first()
-        model_children = get_all_children(model)
+        model_children = _get_all_children(model)
         model_children.pop(0)  # includes original model
 
     return model.sha1, [m.sha1 for m in model_children]
 
 
-def tree_to_reachable_stmt(model_tree: List[bytes]) -> Select:
+def _tree_to_reachable_stmt(model_tree: List[bytes]) -> Select:
     """
     Takes a list of models and returns a query to select their reachable
     edges.
+
+    See query() for an overview and glossary of this function's role.
+
+    Args:
+        model_tree: a list of model SHA-1 values, likely produced by
+            _parent_to_tree
+
+    Returns:
+        A SQL query in the form of a SQLAlchemy Select object
     """
     c1 = aliased(Clusters)
     c2 = aliased(Clusters)
@@ -150,11 +195,24 @@ def tree_to_reachable_stmt(model_tree: List[bytes]) -> Select:
     return dd_stmt.union(lk_stmt)
 
 
-def reachable_to_parent_data_stmt(reachable_stmt: Select, parent_sha1: bytes) -> Select:
+def _reachable_to_parent_data_stmt(
+    reachable_stmt: Select, parent_sha1: bytes
+) -> Select:
     """
     Takes a select statement representing the reachable edges of a parent
     model and returns a statement to create a parent cluster to child data
     lookup
+
+    See query() for an overview and glossary of this function's role.
+
+    Args:
+        reachable_stmt: a SQLAlchemy Select object that defines the reachable
+            edges of the combined LinkContains and DDupeContains tables
+        parent_sha1: the SHA-1 to use as the ultimate parent model, the point
+            of truth
+
+    Returns:
+        A SQL query in the form of a SQLAlchemy Select object
     """
     allowed = reachable_stmt.cte("allowed")
 
@@ -176,10 +234,26 @@ def reachable_to_parent_data_stmt(reachable_stmt: Select, parent_sha1: bytes) ->
     return recurse
 
 
-def selector_to_data(
+def _selector_to_data(
     selector: Dict[str, List[str]],
     engine: Engine = ENGINE,
 ) -> Select:
+    """
+    Takes a dictionary of tables and fields, usually outputted by selectors,
+    and returns a SQL statement to return them in the form of a SQLAlchemy
+    Select object.
+
+    See query() for an overview and glossary of this function's role.
+
+    Args:
+        selector: a dictionary with keys of table names, and values of a list
+            of data required from that table, likely output by selector() or
+            selectors()
+        engine: the SQLAlchemy engine to use
+
+    Returns:
+        A SQL query in the form of a SQLAlchemy Select object
+    """
     select_stmt = []
     join_stmts = []
     where_stmts = []
@@ -231,19 +305,49 @@ def query(
     Takes the dictionaries of tables and fields outputted by selectors and
     queries database for them. If a model "point of truth" is supplied, will
     attach the clusters this data belongs to.
+
+    To resolve a model point of truth's clusters with the data that belongs to
+    them we:
+
+        * Find all the model's decendent models: the "model tree"
+        * Filter all clusters in the system that models in this tree create:
+        the "reachable clusters"
+        * Union the LinkContains and DDupeContains tables and filter to rows
+        that connect reachable clustes: the "reachable edges"
+        * Recurse on reachable edges to create a lookup of the point of
+        truth's cluster SHA-1 to the ultimate decendent SHA-1 in the chain:
+        the SHA-1 key of the SourceData
+
+    Args:
+        selector: a dictionary with keys of table names, and values of a list
+            of data required from that table, likely output by selector() or
+            selectors()
+        model (str): Optional. A model considered the point of truth to decide which
+            clusters data belongs to
+        return_type (str): the form to return data in, one of "pandas" or
+            "sqlalchemy"
+        engine: the SQLAlchemy engine to use
+        limit (int): the number to use in a limit clause. Useful for testing
+
+    Returns:
+        A table containing the requested data from each table, unioned together,
+        with the SHA-1 key of each row in the Company Matching Framework, in the
+        requested return type. If a model was given, also contains the SHA-1
+        cluster of each data -- the company entity the data belongs to according
+        to the model.
     """
     if model is None:
         # We want raw data with no clusters
-        final_stmt = selector_to_data(selector, engine=engine)
+        final_stmt = _selector_to_data(selector, engine=engine)
     else:
         # We want raw data with clusters attached
-        parent, child = parent_to_tree(model, engine=engine)
+        parent, child = _parent_to_tree(model, engine=engine)
         if len(parent) == 0:
             raise ValueError(f"Model {model} not found")
         tree = [parent] + child
-        reachable_stmt = tree_to_reachable_stmt(tree)
-        lookup_stmt = reachable_to_parent_data_stmt(reachable_stmt, parent)
-        data_stmt = selector_to_data(selector, engine=engine).cte()
+        reachable_stmt = _tree_to_reachable_stmt(tree)
+        lookup_stmt = _reachable_to_parent_data_stmt(reachable_stmt, parent)
+        data_stmt = _selector_to_data(selector, engine=engine).cte()
 
         final_stmt = select(lookup_stmt.c.parent.label("cluster_sha1"), data_stmt).join(
             lookup_stmt, lookup_stmt.c.child == data_stmt.c.data_sha1
