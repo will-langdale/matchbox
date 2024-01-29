@@ -1,0 +1,104 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "company-matching-framework"
+version = "0.1.0"
+description = "A framework for orchestrating and comparing various company matching methodologies."
+authors = [{ name = "DDaTDataScienceTeam" }]
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">3.8"
+dependencies = [
+    "click",
+    "GitPython",
+    "markdown",
+    "matplotlib",
+    "mlflow == 2.7.*",
+    "pandas",
+    "pyarrow",
+    "python-dotenv",
+    "sqlalchemy",
+    "splink",
+    "duckdb",
+    "polars",
+    "altair",
+    "tqdm",
+    "psycopg2-binary",
+    "pgpq",
+    "pydantic",
+    "pyyaml",
+    "rustworkx"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pre-commit",
+    "pytest",
+    "testing.postgresql",
+    "pylint",
+    "ipykernel"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+# Ruff defaults mostly taken from https://docs.astral.sh/ruff/configuration/
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+line-length = 88
+indent-width = 4
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    # "D"
+]
+ignore = []
+fixable = ["ALL"]
+unfixable = []
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/{test,docs}/*" = ["D"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
