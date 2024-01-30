@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict
 from pandas import DataFrame
 from pydantic import BaseModel
 
-from cmf.data.probabilities import ProbabilityResults
+from cmf.data.results import ProbabilityResults
 
 
 class Deduper(BaseModel, ABC):
