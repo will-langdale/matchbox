@@ -28,6 +28,9 @@ class Naive(Deduper):
         settings = NaiveSettings(id=id, unique_fields=unique_fields)
         return cls(settings=settings)
 
+    def prepare(self, data: DataFrame) -> None:
+        pass
+
     def dedupe(self, data: DataFrame) -> DataFrame:
         join_clause = []
         for field in self.settings.unique_fields:
@@ -36,16 +39,21 @@ class Naive(Deduper):
 
         return duckdb.sql(
             f"""
-            select
-                l.{self.settings.id}::text as target_id,
-                r.{self.settings.id}::text as source_id,
+            select distinct on (list_sort([raw.left_id, raw.right_id]))
+                raw.left_id,
+                raw.right_id,
                 1 as probability
-            from
-                exp_sample_cleaned l
-            inner join exp_sample_cleaned r on
-                (
-                    {join_clause_compiled}
-                ) and
-                    l.{self.settings.id} != r.{self.settings.id};
+            from (
+                select
+                    l.{self.settings.id} as left_id,
+                    r.{self.settings.id} as right_id
+                from
+                    data l
+                inner join data r on
+                    (
+                        {join_clause_compiled}
+                    ) and
+                        l.{self.settings.id} != r.{self.settings.id}
+            ) raw;
         """
         ).df()

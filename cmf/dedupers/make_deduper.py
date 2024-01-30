@@ -1,16 +1,17 @@
-from abc import ABC
-from typing import Any, Callable, Dict, List
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict
 
 from pandas import DataFrame
 from pydantic import BaseModel
 
-from cmf.data import ProbabilityResults
+from cmf.data.probabilities import ProbabilityResults
 
 
 class Deduper(BaseModel, ABC):
     settings: Dict[str, Any]
 
     @classmethod
+    @abstractmethod
     def from_settings(cls) -> "Deduper":
         raise NotImplementedError(
             """\
@@ -19,27 +20,34 @@ class Deduper(BaseModel, ABC):
         """
         )
 
-    def dedupe(self, data) -> DataFrame:
-        raise NotImplementedError("Must implement dedupe method")
+    @abstractmethod
+    def prepare(self, data: DataFrame) -> None:
+        return
+
+    @abstractmethod
+    def dedupe(self, data: DataFrame) -> DataFrame:
+        return
 
 
 def make_deduper(
     dedupe_run_name: str,
     description: str,
     deduper: Deduper,
+    deduper_settings: Dict[str, Any],
     data: DataFrame,
     data_source: str,
-    dedupe_settings=Dict[str, List],
 ) -> Callable[[DataFrame], ProbabilityResults]:
-    deduper_instance = deduper.from_settings(**dedupe_settings)
+    deduper_instance = deduper.from_settings(**deduper_settings)
+    deduper_instance.prepare(data)
 
     def dedupe(data: DataFrame = data) -> ProbabilityResults:
         return ProbabilityResults(
             dataframe=deduper_instance.dedupe(data=data),
             run_name=dedupe_run_name,
             description=description,
-            target=data_source,
-            source=data_source,
+            left=data_source,
+            right=data_source,
+            validate_as="tables",
         )
 
     return dedupe
