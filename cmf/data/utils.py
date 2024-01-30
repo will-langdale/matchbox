@@ -1,12 +1,16 @@
 import contextlib
 import cProfile
+import hashlib
 import io
 import pstats
+from typing import Any, List, Union
 
-from sqlalchemy import Engine, MetaData, Table
+from pandas import DataFrame, Series
+from sqlalchemy import Engine, MetaData, Table, select
 from sqlalchemy.orm import Session
 
 from cmf.data import ENGINE, SourceDataset
+from cmf.data.models import Models
 
 # Data conversion
 
@@ -55,6 +59,7 @@ def get_schema_table_names(full_name: str, validate: bool = False) -> (str, str)
 
 
 def dataset_to_table(dataset: SourceDataset, engine: Engine = ENGINE) -> Table:
+    """Takes a CMF SourceDataset object and returns a SQLAlchemy Table."""
     with Session(engine) as session:
         source_schema = MetaData(schema=dataset.db_schema)
         source_table = Table(
@@ -67,6 +72,7 @@ def dataset_to_table(dataset: SourceDataset, engine: Engine = ENGINE) -> Table:
 
 
 def string_to_table(db_schema: str, db_table: str, engine: Engine = ENGINE) -> Table:
+    """Takes strings and returns a SQLAlchemy Table."""
     with Session(engine) as session:
         source_schema = MetaData(schema=db_schema)
         source_table = Table(
@@ -81,6 +87,7 @@ def string_to_table(db_schema: str, db_table: str, engine: Engine = ENGINE) -> T
 def string_to_dataset(
     db_schema: str, db_table: str, engine: Engine = ENGINE
 ) -> SourceDataset:
+    """Takes a CMF SourceDataset object and returns a CMF SourceDataset"""
     with Session(engine) as session:
         dataset = (
             session.query(SourceDataset)
@@ -88,6 +95,60 @@ def string_to_dataset(
             .first()
         )
     return dataset
+
+
+# SHA-1 hashing helper functions
+
+
+def table_name_to_sha1(schema_table: str, engine: Engine = ENGINE) -> bytes:
+    """Takes a table's full schema.table name and returns its SHA-1 hash."""
+    db_schema, db_table = get_schema_table_names(schema_table)
+
+    with Session(engine) as session:
+        stmt = select(SourceDataset.uuid).where(
+            SourceDataset.db_schema == db_schema, SourceDataset.db_table == db_table
+        )
+        dataset_sha1 = session.execute(stmt).scalar()
+
+    return dataset_sha1
+
+
+def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
+    """Takes a model's name and returns its SHA-1 hash."""
+    with Session(engine) as session:
+        stmt = select(Models.sha1).where(Models.name == run_name)
+        model_sha1 = session.execute(stmt).scalar()
+
+    return model_sha1
+
+
+def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes:
+    """Encodes strings so they can be hashed, otherwises, passes through."""
+    if isinstance(item, str):
+        return bytes(item.encode())
+    else:
+        return bytes(item)
+
+
+def list_to_value_ordered_sha1(list_: List[Any]) -> bytes:
+    """Returns the SHA1 hash of a list ordered by its values."""
+    out_hash = hashlib.sha1()
+    list_processed = [prep_for_hash(i) for i in list_]
+
+    for hash in sorted(list_processed):
+        out_hash.update(str(hash).encode())
+
+    return out_hash.digest()
+
+
+def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
+    """Returns the SHA1 hash of columns ordered by their values."""
+    res = [
+        list_to_value_ordered_sha1(row)
+        for row in data.filter(columns).itertuples(index=False, name=None)
+    ]
+
+    return Series(res)
 
 
 # SQLAlchemy profiling
