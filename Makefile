@@ -1,4 +1,4 @@
-.PHONY: cmf clean environment install_git_hooks requirements precommit test
+.PHONY: cmf clean environment linux_requirements python_requirements requirements precommit test
 
 #################################################################################
 # GLOBALS																	   #
@@ -41,16 +41,10 @@ endif
 	@echo ">>> New conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
 
 
-## Install pre-commit hook
-install_git_hooks:
-	pre-commit install
-
-
 ## Reformat, lint, clear notebook outputs if necessary
 precommit:
-	isort . --profile black --filter-files
-	black . --extend-exclude \.ipynb$ 
-	flake8 . --exclude scratch,.ipynb_checkpoints
+	ruff format .
+	ruff check . --fix
 ifeq (yes,$(SENSITIVE_PROJECT))
 	@echo "Clearing output of all notebooks:"
 	export JUPYTER_CONFIG_DIR=${HOME}/.jupyter_conf; jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/*.ipynb
@@ -58,13 +52,24 @@ endif
 	@echo "Done."
 
 
-## Install Python and Debian dependencies
-requirements:
+## Install Linux dependencies
+linux_requirements:
 	sudo dw-install libpq-dev postgresql
-	$(PYTHON_INTERPRETER) -m piptools compile --output-file=requirements.txt --resolver=backtracking requirements.in requirements-dev.in
+
+
+## Install Python dependencies
+python_requirements:
+	$(PYTHON_INTERPRETER) -m piptools compile --extra dev --resolver=backtracking --output-file=requirements.txt pyproject.toml
 	$(PYTHON_INTERPRETER) -m piptools sync requirements.txt
+	$(PYTHON_INTERPRETER) -m pip install --editable .
 	$(PYTHON_INTERPRETER) -m ipykernel install --user --name=$(PROJECT_NAME)
-	make install_git_hooks
+	pre-commit install
+
+
+## Install combined dependencies
+requirements:
+	make linux_requirements
+	make python_requirements
 
 
 ## Run Python tests
