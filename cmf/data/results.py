@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import Any, Dict, List
 
+from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import Engine, bindparam, select
+from sqlalchemy import Engine, Table, bindparam, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
@@ -14,10 +13,6 @@ from cmf.data.db import ENGINE
 from cmf.data.dedupe import Dedupes
 from cmf.data.link import Links
 from cmf.data.models import Models, ModelsFrom
-
-if TYPE_CHECKING:
-    from pandas import DataFrame
-    from sqlalchemy import Engine, Table
 
 
 class Results(BaseModel, ABC):

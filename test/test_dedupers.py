@@ -1,39 +1,113 @@
+import os
+
+import pytest
 from pandas import DataFrame
 
 from cmf import make_deduper, process, query
-from cmf.clean import company_name, postcode_to_area
+from cmf.clean import company_name, company_number
 from cmf.dedupers import Naive
 from cmf.helpers import cleaner, cleaners, selector
 
 
-def test_naive():
+@pytest.fixture(scope="function")
+def query_clean_crn(db_engine):
     # Select
-    select_exp = selector(
-        table="hmrc.trade__exporters", fields=["id", "company_name", "postcode"]
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn",
+        fields=["id", "crn", "company_name"],
+        engine=db_engine[1],
     )
-    exp_sample = query(select=select_exp, sample=0.05)
+
+    crn = query(
+        selector=select_crn, model=None, return_type="pandas", engine=db_engine[1]
+    )
 
     # Clean
-    cleaner_name = cleaner(function=company_name, arguments={"column": "company_name"})
-    cleaner_pc = cleaner(function=postcode_to_area, arguments={"column": "postcode"})
-    cleaner_name_pc = cleaners(cleaner_name, cleaner_pc)
+    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    cleaner_name = cleaner(
+        function=company_name, arguments={"column": f"{col_prefix}company_name"}
+    )
+    cleaner_crn = cleaner(
+        function=company_number, arguments={"column": f"{col_prefix}crn"}
+    )
+    cleaner_name_crn = cleaners(cleaner_name, cleaner_crn)
 
-    exp_sample_cleaned = process(data=exp_sample, pipeline=cleaner_name_pc)
+    crn_cleaned = process(data=crn, pipeline=cleaner_name_crn)
 
-    exp_naive_deduper = make_deduper(
-        dedupe_run_name="basic_hmrc_exp",
-        description="""
-            Clean company name, extract postcode area
-        """,
-        deduper=Naive,
-        data_source="hmrc.trade__exporters",
-        data=exp_sample_cleaned,
-        dedupe_settings={"id": "id", "unique_fields": ["company_name", "postcode"]},
+    return crn_cleaned
+
+
+@pytest.fixture(scope="function")
+def query_clean_duns(db_engine):
+    # Select
+    select_duns = selector(
+        table=f"{os.getenv('SCHEMA')}.duns",
+        fields=["id", "duns", "company_name"],
+        engine=db_engine[1],
     )
 
-    exp_deduped = exp_naive_deduper()
+    duns = query(
+        selector=select_duns, model=None, return_type="pandas", engine=db_engine[1]
+    )
 
-    exp_deduped_df = exp_deduped.to_df()
+    # Clean
+    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    cleaner_name = cleaner(
+        function=company_name, arguments={"column": f"{col_prefix}company_name"}
+    )
+    cleaner_duns = cleaner(
+        function=company_number, arguments={"column": f"{col_prefix}duns"}
+    )
+    cleaner_name_duns = cleaners(cleaner_name, cleaner_duns)
 
-    assert isinstance(exp_deduped_df, DataFrame)
-    assert len(exp_deduped_df.index) > 0
+    duns_cleaned = process(data=duns, pipeline=cleaner_name_duns)
+
+    return duns_cleaned
+
+
+def test_naive_crn(db_engine, query_clean_crn):
+    """Dedupes a table made entirely of 3000 duplicates."""
+
+    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    crn_naive_deduper = make_deduper(
+        dedupe_run_name="basic_crn",
+        description="Clean company name, CRN",
+        deduper=Naive,
+        deduper_settings={
+            "id": f"{col_prefix}id",
+            "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}crn"],
+        },
+        data_source=f"{os.getenv('SCHEMA')}.crn",
+        data=query_clean_crn,
+    )
+
+    crn_deduped = crn_naive_deduper()
+
+    crn_deduped_df = crn_deduped.to_df()
+
+    assert isinstance(crn_deduped_df, DataFrame)
+    assert crn_deduped_df.shape[0] == 3000  # every row is a duplicate
+
+
+def test_naive_duns(db_engine, query_clean_duns):
+    """Dedupes a table made entirely of 500 unique items."""
+
+    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    duns_naive_deduper = make_deduper(
+        dedupe_run_name="basic_duns",
+        description="Clean company name, DUNS",
+        deduper=Naive,
+        deduper_settings={
+            "id": f"{col_prefix}id",
+            "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}duns"],
+        },
+        data_source=f"{os.getenv('SCHEMA')}.duns",
+        data=query_clean_duns,
+    )
+
+    duns_deduped = duns_naive_deduper()
+
+    duns_deduped_df = duns_deduped.to_df()
+
+    assert isinstance(duns_deduped_df, DataFrame)
+    assert duns_deduped_df.shape[0] == 0  # no duplicated rows
