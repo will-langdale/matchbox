@@ -3,6 +3,7 @@ import cProfile
 import hashlib
 import io
 import pstats
+import uuid
 from typing import Any, List, Union
 
 from pandas import DataFrame, Series
@@ -126,6 +127,8 @@ def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes
     """Encodes strings so they can be hashed, otherwises, passes through."""
     if isinstance(item, str):
         return bytes(item.encode())
+    elif isinstance(item, uuid.UUID):
+        return item.bytes
     else:
         return bytes(item)
 

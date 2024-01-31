@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 from pandas import DataFrame
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from sqlalchemy import Engine, Table, bindparam, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import NoSuchTableError
@@ -111,6 +111,13 @@ class ProbabilityResults(Results):
         "probability",
     ]
 
+    @field_validator("dataframe")
+    @classmethod
+    def _cols_to_str(cls, v: DataFrame) -> DataFrame:
+        """Enforces all columns but the probability are strings."""
+        v[["left_id", "right_id"]] = v[["left_id", "right_id"]].astype(str)
+        return v
+
     def inspect_with_source(
         self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
     ) -> DataFrame:
@@ -168,7 +175,7 @@ class ProbabilityResults(Results):
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe)
 
-        if not self._validate_tables():
+        if not self._validate_tables(engine=engine):
             raise ValueError(
                 "Tables not found in database. Check your deduplication sources."
             )
@@ -191,6 +198,7 @@ class ProbabilityResults(Results):
                 session.query(Models).filter_by(name=self.run_name).first()
             )  # Required to add association class to session
 
+            # Insert any new Dedupe nodes, without probabilities
             ins_dd_stmt = insert(Dedupes)
             ins_dd_stmt = ins_dd_stmt.on_conflict_do_nothing(
                 index_elements=[Dedupes.sha1]
@@ -204,6 +212,7 @@ class ProbabilityResults(Results):
             )
             session.commit()
 
+            # Add probabilities to the appropriate model.proposes_dedupes
             to_insert = (
                 session.query(Dedupes)
                 .filter(
@@ -235,7 +244,7 @@ class ProbabilityResults(Results):
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe)
 
-        if not self._validate_sources(engine):
+        if not self._validate_sources(engine=engine):
             raise ValueError("Source not found in database. Check your link sources.")
 
         with Session(engine) as session:
@@ -275,6 +284,7 @@ class ProbabilityResults(Results):
                 session.query(Models).filter_by(name=self.run_name).first()
             )  # Required to add association class to session
 
+            # Insert any new Link nodes, without probabilities
             ins_li_stmt = insert(Links)
             ins_li_stmt = ins_li_stmt.on_conflict_do_nothing(
                 index_elements=[Links.sha1]
@@ -288,6 +298,7 @@ class ProbabilityResults(Results):
             )
             session.commit()
 
+            # Add probabilities to the appropriate model.proposes_links
             to_insert = (
                 session.query(Links)
                 .filter(

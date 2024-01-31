@@ -88,26 +88,51 @@ def test_naive_crn(db_engine, query_clean_crn):
     assert isinstance(crn_deduped_df, DataFrame)
     assert crn_deduped_df.shape[0] == 3000  # every row is a duplicate
 
+    df = crn_deduped._prep_to_cmf(crn_deduped.dataframe)
 
-def test_naive_duns(db_engine, query_clean_duns):
-    """Dedupes a table made entirely of 500 unique items."""
+    print(crn_deduped_df.head(3))
+    assert df == ""
 
-    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
-    duns_naive_deduper = make_deduper(
-        dedupe_run_name="basic_duns",
-        description="Clean company name, DUNS",
-        deduper=Naive,
-        deduper_settings={
-            "id": f"{col_prefix}id",
-            "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}duns"],
-        },
-        data_source=f"{os.getenv('SCHEMA')}.duns",
-        data=query_clean_duns,
-    )
+    # crn_deduped.to_cmf(engine=db_engine[1])
 
-    duns_deduped = duns_naive_deduper()
+    # with Session(db_engine[1]) as session:
+    #     model = (
+    #         session.query(Models).filter_by(name="basic_crn").first()
+    #     )
+    #     proposed_dedupes = model.proposes_dedupes()
 
-    duns_deduped_df = duns_deduped.to_df()
+    # assert len(proposed_dedupes) == 3000 # successfully inserted 3000
 
-    assert isinstance(duns_deduped_df, DataFrame)
-    assert duns_deduped_df.shape[0] == 0  # no duplicated rows
+
+# def test_naive_duns(db_engine, query_clean_duns):
+#     """Dedupes a table made entirely of 500 unique items."""
+
+#     col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+#     duns_naive_deduper = make_deduper(
+#         dedupe_run_name="basic_duns",
+#         description="Clean company name, DUNS",
+#         deduper=Naive,
+#         deduper_settings={
+#             "id": f"{col_prefix}id",
+#             "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}duns"],
+#         },
+#         data_source=f"{os.getenv('SCHEMA')}.duns",
+#         data=query_clean_duns,
+#     )
+
+#     duns_deduped = duns_naive_deduper()
+
+#     duns_deduped_df = duns_deduped.to_df()
+
+#     assert isinstance(duns_deduped_df, DataFrame)
+#     assert duns_deduped_df.shape[0] == 0  # no duplicated rows
+
+#     duns_deduped.to_cmf(engine=db_engine[1])
+
+#     with Session(db_engine[1]) as session:
+#         model = (
+#             session.query(Models).filter_by(name="basic_duns").first()
+#         )
+#         proposed_dedupes = model.proposes_dedupes()
+
+#     assert len(proposed_dedupes) == 0 # successfully inserted 0

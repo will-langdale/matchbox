@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import random
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -42,12 +43,13 @@ CMF_POSTGRES = testing.postgresql.PostgresqlFactory(cache_initialized_db=True)
 @pytest.fixture(scope="session")
 def all_companies():
     """
-    Raw, correct company data.
+    Raw, correct company data. Uses UUID as ID to replicate Data Workspace.
     1,000 entries.
     """
     df = pd.read_csv(Path(loc.TEST, "data", "all_companies.csv")).reset_index(
         names="id"
     )
+    df["id"] = df["id"].apply(lambda x: uuid.UUID(int=x))
     return df
 
 
