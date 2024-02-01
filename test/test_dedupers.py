@@ -5,7 +5,7 @@ from pandas import DataFrame, Series, concat
 from sqlalchemy.orm import Session
 
 from cmf import make_deduper, process, query
-from cmf.clean import company_name, company_number
+from cmf.clean import company_name
 from cmf.data import Models
 from cmf.data import utils as du
 from cmf.dedupers import Naive
@@ -17,7 +17,7 @@ def query_clean_crn(db_engine):
     # Select
     select_crn = selector(
         table=f"{os.getenv('SCHEMA')}.crn",
-        fields=["id", "crn", "company_name"],
+        fields=["crn", "company_name"],
         engine=db_engine[1],
     )
 
@@ -30,12 +30,9 @@ def query_clean_crn(db_engine):
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
-    cleaner_crn = cleaner(
-        function=company_number, arguments={"column": f"{col_prefix}crn"}
-    )
-    cleaner_name_crn = cleaners(cleaner_name, cleaner_crn)
+    cleaner_crn = cleaners(cleaner_name)
 
-    crn_cleaned = process(data=crn, pipeline=cleaner_name_crn)
+    crn_cleaned = process(data=crn, pipeline=cleaner_crn)
 
     return crn_cleaned
 
@@ -45,7 +42,7 @@ def query_clean_duns(db_engine):
     # Select
     select_duns = selector(
         table=f"{os.getenv('SCHEMA')}.duns",
-        fields=["id", "duns", "company_name"],
+        fields=["duns", "company_name"],
         engine=db_engine[1],
     )
 
@@ -58,12 +55,9 @@ def query_clean_duns(db_engine):
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
-    cleaner_duns = cleaner(
-        function=company_number, arguments={"column": f"{col_prefix}duns"}
-    )
-    cleaner_name_duns = cleaners(cleaner_name, cleaner_duns)
+    cleaner_duns = cleaners(cleaner_name)
 
-    duns_cleaned = process(data=duns, pipeline=cleaner_name_duns)
+    duns_cleaned = process(data=duns, pipeline=cleaner_duns)
 
     return duns_cleaned
 
@@ -103,25 +97,74 @@ def test_sha1_conversion(all_companies):
     assert sha1_series_1.equals(sha1_series_2)
 
 
-def test_naive_crn(db_engine, query_clean_crn):
+def test_naive_crn(db_engine, query_clean_crn, crn_companies):
     """Dedupes a table made entirely of 3000 duplicates."""
-
     col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+
+    # Confirm this is 3000 duplicates
+    assert isinstance(query_clean_crn, DataFrame)
+    assert query_clean_crn.shape[0] == 3000
+    assert (
+        query_clean_crn[[f"{col_prefix}company_name", f"{col_prefix}crn"]]
+        .drop_duplicates()
+        .shape[0]
+        == 1000
+    )
+
+    # Confirm query table and original table are more or less the same
+    # df1 = query_clean_crn[[
+    #     '_team_cmf_crn_company_name',
+    #     '_team_cmf_crn_crn'
+    # ]].rename(columns={
+    #     "_team_cmf_crn_company_name":"company_name",
+    #     "_team_cmf_crn_crn":"crn",
+    # })
+    # df1 = df1.reset_index(names="id")
+    # df2 = crn_companies[[
+    #     'company_name',
+    #     'crn'
+    # ]]
+    # print(df1)
+    # print(df2)
+
+    # query_clean_crn = query_clean_crn.reset_index(names="id_test")
+
+    # print(query_clean_crn["data_sha1"])
+
     crn_naive_deduper = make_deduper(
         dedupe_run_name="basic_crn",
         description="Clean company name, CRN",
         deduper=Naive,
         deduper_settings={
-            "id": f"{col_prefix}id",
+            "id": "data_sha1",
             "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}crn"],
         },
         data_source=f"{os.getenv('SCHEMA')}.crn",
         data=query_clean_crn,
     )
+    # crn_naive_deduper = make_deduper(
+    #     dedupe_run_name="basic_crn",
+    #     description="Clean company name, CRN",
+    #     deduper=Naive,
+    #     deduper_settings={
+    #         "id": "id",
+    #         "unique_fields": [
+    #             'company_name',
+    #             'crn'
+    #         ],
+    #     },
+    #     data_source=f"{os.getenv('SCHEMA')}.crn",
+    #     data=crn_companies,
+    # )
 
     crn_deduped = crn_naive_deduper()
 
     crn_deduped_df = crn_deduped.to_df()
+    # We're at 9000. I think this is because each of the 3000 has two duplicates
+    # But then why not 6000?
+    print(crn_deduped_df)
+
+    # print(query_clean_crn[[f"{col_prefix}company_name", f"{col_prefix}crn"]].head(3))
 
     assert isinstance(crn_deduped_df, DataFrame)
     assert crn_deduped_df.shape[0] == 3000  # every row is a duplicate

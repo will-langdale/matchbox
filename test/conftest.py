@@ -5,7 +5,6 @@ import random
 import uuid
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 import testing.postgresql
@@ -57,14 +56,22 @@ def all_companies():
 def crn_companies(all_companies):
     """
     Company data split into CRN version.
+
+    Company name has Limited, UK and Company added -- our first three stopwords.
+
     3,000 entries, 1,000 unique.
     """
-    # Company name and CRN repeated 3 times
-    df_crn = pd.DataFrame(
-        np.repeat(all_companies.filter(["company_name", "crn"]).values, 3, axis=0)
+    df_raw = all_companies.filter(["company_name", "crn"])
+    df_crn = pd.concat(
+        [
+            df_raw.assign(company_name=lambda df: df["company_name"] + " Limited"),
+            df_raw.assign(company_name=lambda df: df["company_name"] + " UK"),
+            df_raw.assign(company_name=lambda df: df["company_name"] + " Company"),
+        ]
     )
-    df_crn.columns = ["company_name", "crn"]
+
     df_crn.reset_index(names="id", inplace=True)
+    df_crn["id"] = df_crn["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_crn
 
@@ -78,10 +85,11 @@ def duns_companies(all_companies):
     # Company name and duns number, but only half
     df_duns = (
         all_companies.filter(["company_name", "duns"])
-        .sample(frac=0.5)
+        .sample(n=500)
         .reset_index(drop=True)
         .reset_index(names="id")
     )
+    df_duns["id"] = df_duns["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_duns
 
@@ -90,14 +98,18 @@ def duns_companies(all_companies):
 def cdms_companies(all_companies):
     """
     Company data split into CDMS version.
-    3,000 entries, 1,000 unique.
+
+    CDMS is repeated twice, with spaces added the second time.
+
+    2,000 entries, 1,000 unique.
     """
-    # CRN and CDMS refs repeated 3 times
-    df_cdms = pd.DataFrame(
-        np.repeat(all_companies.filter(["crn", "cdms"]).values, 3, axis=0)
+    df_raw = all_companies.filter(["crn", "cdms"])
+    df_cdms = pd.concat(
+        [df_raw, df_raw.assign(company_name=lambda df: df["cdms"] + "   ")]
     )
-    df_cdms.columns = ["crn", "cdms"]
+
     df_cdms.reset_index(names="id", inplace=True)
+    df_cdms["id"] = df_cdms["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_cdms
 

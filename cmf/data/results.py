@@ -2,17 +2,30 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 from pandas import DataFrame
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import Engine, Table, bindparam, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from cmf.data import utils as du
+from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
 from cmf.data.dedupe import Dedupes
 from cmf.data.link import Links
 from cmf.data.models import Models, ModelsFrom
+
+
+class CMFSourceDataError(Exception):
+    "Data doesn't exist in the SourceData table."
+
+    pass
+
+
+class CMFClusterError(Exception):
+    "Data doesn't exist in the Cluster table."
+
+    pass
 
 
 class Results(BaseModel, ABC):
@@ -111,13 +124,6 @@ class ProbabilityResults(Results):
         "probability",
     ]
 
-    @field_validator("dataframe")
-    @classmethod
-    def _cols_to_str(cls, v: DataFrame) -> DataFrame:
-        """Enforces all columns but the probability are strings."""
-        v[["left_id", "right_id"]] = v[["left_id", "right_id"]].astype(str)
-        return v
-
     def inspect_with_source(
         self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
     ) -> DataFrame:
@@ -151,19 +157,46 @@ class ProbabilityResults(Results):
 
         return df
 
-    def _prep_to_cmf(self, df) -> Dict[str, Any]:
+    def _prep_to_cmf(self, df: DataFrame, engine: Engine = ENGINE) -> Dict[str, Any]:
         """Transforms data to dictionary and calculates SHA-1 hash."""
-        probabilities_to_add = (
-            df.assign(
-                sha1=du.columns_to_value_ordered_sha1(
-                    data=self.dataframe, columns=["left_id", "right_id"]
+        pre_prep_df = df.copy()
+        cols = ["left_id", "right_id"]
+
+        # Verify data is in the CMF
+        pre_prep_df[cols] = pre_prep_df[cols].astype(bytes)
+
+        for col in cols:
+            data_unique = pre_prep_df[col].unique().tolist()
+
+            with Session(engine) as session:
+                data_inner_join = (
+                    session.query(SourceData)
+                    .filter(
+                        SourceData.sha1.in_(
+                            bindparam(
+                                "ins_sha1s",
+                                data_unique,
+                                expanding=True,
+                            )
+                        )
+                    )
+                    .all()
                 )
-            )
-            .rename(columns={"left_id": "left", "right_id": "right"})
-            .to_dict("records")
+                if len(data_inner_join) != len(data_unique):
+                    raise CMFSourceDataError(
+                        f"Some items in {col} don't exist in SourceData table. "
+                        "Did you use data_sha1 as your ID when deduplicating?"
+                    )
+
+        # Transform for insert
+        pre_prep_df["sha1"] = du.columns_to_value_ordered_sha1(
+            data=self.dataframe, columns=cols
+        )
+        pre_prep_df = pre_prep_df.rename(
+            columns={"left_id": "left", "right_id": "right"}
         )
 
-        return probabilities_to_add
+        return pre_prep_df.to_dict("records")
 
     def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a deduper to the CMF database.
@@ -173,7 +206,7 @@ class ProbabilityResults(Results):
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
         """
-        probabilities_to_add = self._prep_to_cmf(self.dataframe)
+        probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         if not self._validate_tables(engine=engine):
             raise ValueError(
@@ -242,7 +275,7 @@ class ProbabilityResults(Results):
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
         """
-        probabilities_to_add = self._prep_to_cmf(self.dataframe)
+        probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         if not self._validate_sources(engine=engine):
             raise ValueError("Source not found in database. Check your link sources.")
