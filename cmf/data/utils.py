@@ -125,7 +125,9 @@ def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
 
 def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes:
     """Encodes strings so they can be hashed, otherwises, passes through."""
-    if isinstance(item, str):
+    if isinstance(item, bytes):
+        return item
+    elif isinstance(item, str):
         return bytes(item.encode())
     elif isinstance(item, uuid.UUID):
         return item.bytes
@@ -135,23 +137,26 @@ def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes
 
 def list_to_value_ordered_sha1(list_: List[Any]) -> bytes:
     """Returns the SHA1 hash of a list ordered by its values."""
-    out_hash = hashlib.sha1()
-    list_processed = [prep_for_hash(i) for i in list_]
+    sorted_vals = sorted(list_)
+    hashed_vals_list = [hashlib.sha1(prep_for_hash(i)) for i in sorted_vals]
 
-    for hash in sorted(list_processed):
-        out_hash.update(str(hash).encode())
+    hashed_vals = hashed_vals_list[0]
+    for val in hashed_vals_list[1:]:
+        hashed_vals.update(val.digest())
 
-    return out_hash.digest()
+    return hashed_vals.digest()
 
 
 def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
     """Returns the SHA1 hash of columns ordered by their values."""
-    res = [
-        list_to_value_ordered_sha1(row)
-        for row in data.filter(columns).itertuples(index=False, name=None)
-    ]
+    bytes_records = data.filter(columns).astype(bytes).to_dict("records")
+    hashed_records = []
 
-    return Series(res)
+    for record in bytes_records:
+        hashed_vals = list_to_value_ordered_sha1(record.values())
+        hashed_records.append(hashed_vals)
+
+    return Series(hashed_records)
 
 
 # SQLAlchemy profiling
