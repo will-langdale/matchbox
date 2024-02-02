@@ -150,7 +150,9 @@ data_test_params = [
 @pytest.mark.parametrize(
     "source, data_fixture, fields, curr_n, tgt_n", data_test_params
 )
-def test_dedupers(db_engine, source, data_fixture, fields, curr_n, tgt_n, request):
+def test_dedupers(
+    db_engine, db_clear_models, source, data_fixture, fields, curr_n, tgt_n, request
+):
     """Runs all deduper methodologies over exemplar tables.
 
     To add in future: also parameterise different dedupers. The key problem is
@@ -189,3 +191,5 @@ def test_dedupers(db_engine, source, data_fixture, fields, curr_n, tgt_n, reques
         proposed_dedupes = model.proposes_dedupes
 
     assert len(proposed_dedupes) == tgt_n
+
+    db_clear_models(db_engine)
