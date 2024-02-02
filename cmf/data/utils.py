@@ -180,9 +180,3 @@ def sqa_profiled():
     # uncomment this to see who's calling what
     # ps.print_callers()
     print(s.getvalue())
-
-
-if __name__ == "__main__":
-    tbl = string_to_table(db_schema="companieshouse", db_table="companies")
-    tbl = string_to_table(db_schema="companieshouse", db_table="compa")
-    print(tbl)
