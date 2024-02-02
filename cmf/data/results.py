@@ -130,16 +130,16 @@ class ProbabilityResults(Results):
         """Enriches the results with the source data."""
         df = (
             self.dataframe.filter(["left_id", "right_id"])
-            .map(bytes)
+            .map(str)
             .merge(
-                left_data.assign(**{left_key: lambda d: d[left_key].apply(bytes)}),
+                left_data.assign(**{left_key: lambda d: d[left_key].apply(str)}),
                 how="left",
                 left_on="left_id",
                 right_on=left_key,
             )
             .drop(columns=[left_key])
             .merge(
-                right_data.assign(**{right_key: lambda d: d[right_key].apply(bytes)}),
+                right_data.assign(**{right_key: lambda d: d[right_key].apply(str)}),
                 how="left",
                 left_on="right_id",
                 right_on=right_key,

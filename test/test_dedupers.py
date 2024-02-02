@@ -62,6 +62,23 @@ def query_clean_duns(db_engine):
     return duns_cleaned
 
 
+@pytest.fixture(scope="function")
+def query_clean_cdms(db_engine):
+    # Select
+    select_cdms = selector(
+        table=f"{os.getenv('SCHEMA')}.cdms",
+        fields=["crn", "cdms"],
+        engine=db_engine[1],
+    )
+
+    cdms = query(
+        selector=select_cdms, model=None, return_type="pandas", engine=db_engine[1]
+    )
+
+    # No cleaning needed, see original data
+    return cdms
+
+
 def test_sha1_conversion(all_companies):
     """Tests SHA1 conversion works as expected."""
     sha1_series_1 = du.columns_to_value_ordered_sha1(
@@ -167,7 +184,8 @@ def test_naive_crn(db_engine, query_clean_crn, crn_companies):
     # print(query_clean_crn[[f"{col_prefix}company_name", f"{col_prefix}crn"]].head(3))
 
     assert isinstance(crn_deduped_df, DataFrame)
-    assert crn_deduped_df.shape[0] == 3000  # every row is a duplicate
+    # every row is a duplicate, order doesn't count, so 3000
+    assert crn_deduped_df.shape[0] == 3000
 
     # df = crn_deduped._prep_to_cmf(crn_deduped.dataframe)
 

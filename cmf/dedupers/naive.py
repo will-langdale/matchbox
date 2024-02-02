@@ -31,6 +31,8 @@ class Naive(Deduper):
         pass
 
     def dedupe(self, data: DataFrame) -> DataFrame:
+        df = data.copy()
+
         join_clause = []
         for field in self.settings.unique_fields:
             join_clause.append(f"l.{field} = r.{field}")
@@ -38,7 +40,7 @@ class Naive(Deduper):
 
         # Generate a new PK to remove row self-match but ALLOW true duplicate
         # rows where all data items are identical in the source
-        data["_unique_e4003b"] = range(data.shape[0])
+        df["_unique_e4003b"] = range(df.shape[0])
 
         return duckdb.sql(
             f"""
@@ -51,8 +53,8 @@ class Naive(Deduper):
                     l.{self.settings.id} as left_id,
                     r.{self.settings.id} as right_id
                 from
-                    data l
-                inner join data r on
+                    df l
+                inner join df r on
                     (
                         {join_clause_compiled}
                     ) and

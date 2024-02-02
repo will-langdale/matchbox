@@ -5,6 +5,7 @@ import random
 import uuid
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 import testing.postgresql
@@ -59,6 +60,8 @@ def crn_companies(all_companies):
 
     Company name has Limited, UK and Company added -- our first three stopwords.
 
+    Tests a link/dedupe situation with dirty duplicates.
+
     3,000 entries, 1,000 unique.
     """
     df_raw = all_companies.filter(["company_name", "crn"])
@@ -70,7 +73,8 @@ def crn_companies(all_companies):
         ]
     )
 
-    df_crn.reset_index(names="id", inplace=True)
+    df_crn["id"] = range(df_crn.shape[0])
+    df_crn = df_crn.filter(["id", "company_name", "crn"])
     df_crn["id"] = df_crn["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_crn
@@ -80,9 +84,13 @@ def crn_companies(all_companies):
 def duns_companies(all_companies):
     """
     Company data split into DUNS version.
+
+    Data is clean.
+
+    Tests a link/dedupe situation with no duplicates.
+
     500 entries.
     """
-    # Company name and duns number, but only half
     df_duns = (
         all_companies.filter(["company_name", "duns"])
         .sample(n=500)
@@ -99,14 +107,17 @@ def cdms_companies(all_companies):
     """
     Company data split into CDMS version.
 
-    CDMS is repeated twice, with spaces added the second time.
+    All rows are repeated twice.
+
+    Tests a link/dedupe situation with clean duplicates: edge case in prod,
+    but exists in some of the HMRC tables.
 
     2,000 entries, 1,000 unique.
     """
-    df_raw = all_companies.filter(["crn", "cdms"])
-    df_cdms = pd.concat(
-        [df_raw, df_raw.assign(company_name=lambda df: df["cdms"] + "   ")]
+    df_cdms = pd.DataFrame(
+        np.repeat(all_companies.filter(["crn", "cdms"]).values, 2, axis=0)
     )
+    df_cdms.columns = ["crn", "cdms"]
 
     df_cdms.reset_index(names="id", inplace=True)
     df_cdms["id"] = df_cdms["id"].apply(lambda x: uuid.UUID(int=x))
