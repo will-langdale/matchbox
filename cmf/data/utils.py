@@ -149,7 +149,13 @@ def list_to_value_ordered_sha1(list_: List[Any]) -> bytes:
 
 def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
     """Returns the SHA1 hash of columns ordered by their values."""
-    bytes_records = data.filter(columns).astype(bytes).to_dict("records")
+    try:
+        # Deals with byte arrays from duckdb's .df()
+        bytes_records = data.filter(columns).map(bytes).to_dict("records")
+    except TypeError:
+        # Deals with objects found in normal dataframes for offline joins
+        bytes_records = data.filter(columns).astype(bytes).to_dict("records")
+
     hashed_records = []
 
     for record in bytes_records:

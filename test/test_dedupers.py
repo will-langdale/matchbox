@@ -114,91 +114,66 @@ def test_sha1_conversion(all_companies):
     assert sha1_series_1.equals(sha1_series_2)
 
 
-def test_naive_crn(db_engine, query_clean_crn, crn_companies):
-    """Dedupes a table made entirely of 3000 duplicates."""
-    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+# To parameterise
 
-    # Confirm this is 3000 duplicates
-    assert isinstance(query_clean_crn, DataFrame)
-    assert query_clean_crn.shape[0] == 3000
-    assert (
-        query_clean_crn[[f"{col_prefix}company_name", f"{col_prefix}crn"]]
-        .drop_duplicates()
-        .shape[0]
-        == 1000
+# Dedupers
+# Name
+# Class
+# Settings
+
+# Data
+# Name
+# Fields we care about
+# Current count
+# Target count
+
+data_test_params = [
+    (
+        f"{os.getenv('SCHEMA')}.crn",
+        "query_clean_crn",
+        [f"{os.getenv('SCHEMA')}_crn_company_name", f"{os.getenv('SCHEMA')}_crn_crn"],
+        3000,
+        3000,  # every row is a duplicate, order doesn't count, so 3000
     )
+]
 
-    # Confirm query table and original table are more or less the same
-    # df1 = query_clean_crn[[
-    #     '_team_cmf_crn_company_name',
-    #     '_team_cmf_crn_crn'
-    # ]].rename(columns={
-    #     "_team_cmf_crn_company_name":"company_name",
-    #     "_team_cmf_crn_crn":"crn",
-    # })
-    # df1 = df1.reset_index(names="id")
-    # df2 = crn_companies[[
-    #     'company_name',
-    #     'crn'
-    # ]]
-    # print(df1)
-    # print(df2)
 
-    # query_clean_crn = query_clean_crn.reset_index(names="id_test")
+@pytest.mark.parametrize(
+    "source, data_fixture, fields, curr_n, tgt_n", data_test_params
+)
+def test_dedupers(db_engine, source, data_fixture, fields, curr_n, tgt_n, request):
+    """Runs all deduper methodologies over exemplar tables."""
+    df = request.getfixturevalue(data_fixture)
+    # Confirm current and target shape from extremely naive dedupe
+    assert isinstance(df, DataFrame)
+    assert df.shape[0] == curr_n
 
-    # print(query_clean_crn["data_sha1"])
-
-    crn_naive_deduper = make_deduper(
-        dedupe_run_name="basic_crn",
-        description="Clean company name, CRN",
+    deduper = make_deduper(
+        dedupe_run_name=source,
+        description=f"Testing dedupe of {source}",
         deduper=Naive,
         deduper_settings={
             "id": "data_sha1",
-            "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}crn"],
+            "unique_fields": fields,
         },
-        data_source=f"{os.getenv('SCHEMA')}.crn",
-        data=query_clean_crn,
+        data_source=source,
+        data=df,
     )
-    # crn_naive_deduper = make_deduper(
-    #     dedupe_run_name="basic_crn",
-    #     description="Clean company name, CRN",
-    #     deduper=Naive,
-    #     deduper_settings={
-    #         "id": "id",
-    #         "unique_fields": [
-    #             'company_name',
-    #             'crn'
-    #         ],
-    #     },
-    #     data_source=f"{os.getenv('SCHEMA')}.crn",
-    #     data=crn_companies,
-    # )
 
-    crn_deduped = crn_naive_deduper()
+    deduped = deduper()
 
-    crn_deduped_df = crn_deduped.to_df()
-    # We're at 9000. I think this is because each of the 3000 has two duplicates
-    # But then why not 6000?
-    print(crn_deduped_df)
+    deduped_df = deduped.to_df()
 
-    # print(query_clean_crn[[f"{col_prefix}company_name", f"{col_prefix}crn"]].head(3))
+    assert isinstance(deduped_df, DataFrame)
+    assert deduped_df.shape[0] == tgt_n
 
-    assert isinstance(crn_deduped_df, DataFrame)
-    # every row is a duplicate, order doesn't count, so 3000
-    assert crn_deduped_df.shape[0] == 3000
-
-    # df = crn_deduped._prep_to_cmf(crn_deduped.dataframe)
-
-    # print(crn_deduped_df.head(3))
-    # assert df == ""
-
-    crn_deduped.to_cmf(engine=db_engine[1])
+    deduped.to_cmf(engine=db_engine[1])
 
     with Session(db_engine[1]) as session:
-        model = session.query(Models).filter_by(name="basic_crn").first()
-        proposed_dedupes = model.proposes_dedupes()
+        model = session.query(Models).filter_by(name=source).first()
+        proposed_dedupes = model.proposes_dedupes
 
-    assert len(proposed_dedupes) == 3000  # successfully inserted 3000
+    assert len(proposed_dedupes) == tgt_n  # successfully inserted 3000
 
 
 # def test_naive_duns(db_engine, query_clean_duns):

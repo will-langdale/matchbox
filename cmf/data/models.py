@@ -51,7 +51,7 @@ class Models(SHA1Mixin, CMFBase):
     proposes_dedupes: AssociationProxy[Dict["Dedupes", float]] = association_proxy(
         target_collection="dedupe_associations",
         attr="probability",
-        creator=lambda k, v: DDupeProbabilities(comparison=k, probability=v),
+        creator=lambda k, v: DDupeProbabilities(dedupes=k, probability=v),
     )
 
     # Link probability associations and proxy
@@ -64,7 +64,7 @@ class Models(SHA1Mixin, CMFBase):
     proposes_links: AssociationProxy[Dict["Links", float]] = association_proxy(
         target_collection="links_associations",
         attr="probability",
-        creator=lambda k, v: LinkProbabilities(comparison=k, probability=v),
+        creator=lambda k, v: LinkProbabilities(links=k, probability=v),
     )
 
     # This approach taken from the SQLAlchemy examples

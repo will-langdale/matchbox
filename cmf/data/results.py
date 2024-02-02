@@ -163,7 +163,7 @@ class ProbabilityResults(Results):
         cols = ["left_id", "right_id"]
 
         # Verify data is in the CMF
-        pre_prep_df[cols] = pre_prep_df[cols].astype(bytes)
+        pre_prep_df[cols] = pre_prep_df[cols].map(bytes)
 
         for col in cols:
             data_unique = pre_prep_df[col].unique().tolist()
