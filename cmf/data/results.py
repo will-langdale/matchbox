@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
@@ -14,6 +15,8 @@ from cmf.data.db import ENGINE
 from cmf.data.dedupe import Dedupes
 from cmf.data.link import Links
 from cmf.data.models import Models, ModelsFrom
+
+logic_logger = logging.getLogger("cmf_logic")
 
 
 class CMFSourceDataError(Exception):
@@ -105,14 +108,82 @@ class Results(BaseModel, ABC):
         """Writes the results of a linker to the CMF database."""
         return
 
+    def _model_to_cmf(
+        self, deduplicates: bytes = None, engine: Engine = ENGINE
+    ) -> None:
+        """Writes the model to the CMF."""
+        with Session(engine) as session:
+            if deduplicates is None:
+                # Linker
+                # Construct model SHA1 from parent model SHA1s
+                left_sha1 = du.model_name_to_sha1(self.left, engine=engine)
+                right_sha1 = du.model_name_to_sha1(self.right, engine=engine)
+                model_sha1 = du.list_to_value_ordered_sha1(
+                    [self.run_name, left_sha1, right_sha1]
+                )
+            else:
+                # Deduper
+                model_sha1 = du.list_to_value_ordered_sha1([self.run_name, self.left])
+
+            model = Models(
+                sha1=model_sha1,
+                name=self.run_name,
+                description=self.description,
+                deduplicates=deduplicates,
+            )
+
+            session.merge(model)
+            session.commit()
+
+            if deduplicates is None:
+                # Linker
+                # Insert reference to parent models
+                models_from_to_insert = [
+                    {"parent": model_sha1, "child": left_sha1},
+                    {"parent": model_sha1, "child": right_sha1},
+                ]
+
+                ins_stmt = insert(ModelsFrom)
+                ins_stmt = ins_stmt.on_conflict_do_nothing(
+                    index_elements=[
+                        ModelsFrom.parent,
+                        ModelsFrom.child,
+                    ]
+                )
+                session.execute(ins_stmt, models_from_to_insert)
+                session.commit()
+
     def to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results to the CMF database."""
         if self.left == self.right:
             # Deduper
-            self._deduper_to_cmf(engine=engine)
+            # Write model
+            logic_logger.info("Registering model")
+            self._model_to_cmf(
+                deduplicates=du.table_name_to_sha1(self.left, engine=engine),
+                engine=engine,
+            )
+
+            # Write data
+            if self.dataframe.shape[0] == 0:
+                logic_logger.info("No deduplication data to insert")
+            else:
+                logic_logger.info("Writing deduplication data")
+                self._deduper_to_cmf(engine=engine)
         else:
             # Linker
-            self._linker_to_cmf(engine=engine)
+            # Write model
+            logic_logger.info("Registering model")
+            self._model_to_cmf(engine=engine)
+
+            # Write data
+            if self.dataframe.shape[0] == 0:
+                logic_logger.info("No link data to insert")
+            else:
+                logic_logger.info("Writing link data")
+                self._linker_to_cmf(engine=engine)
+
+        logic_logger.info("Complete!")
 
 
 class ProbabilityResults(Results):
@@ -202,7 +273,6 @@ class ProbabilityResults(Results):
         """Writes the results of a deduper to the CMF database.
 
         * Turns data into a left, right, sha1, probability dataframe
-        * Adds the model
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
         """
@@ -214,18 +284,6 @@ class ProbabilityResults(Results):
             )
 
         with Session(engine) as session:
-            # Add model
-            deduper_sha1 = du.list_to_value_ordered_sha1([self.run_name, self.left])
-            model = Models(
-                sha1=deduper_sha1,
-                name=self.run_name,
-                description=self.description,
-                deduplicates=du.table_name_to_sha1(self.left, engine=engine),
-            )
-
-            session.merge(model)
-            session.commit()
-
             # Add probabilities
             model = (
                 session.query(Models).filter_by(name=self.run_name).first()
@@ -271,7 +329,6 @@ class ProbabilityResults(Results):
         """Writes the results of a linker to the CMF database.
 
         * Turns data into a left, right, sha1, probability dataframe
-        * Adds the model
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
         """
@@ -281,37 +338,6 @@ class ProbabilityResults(Results):
             raise ValueError("Source not found in database. Check your link sources.")
 
         with Session(engine) as session:
-            # Add model
-            left_sha1 = du.model_name_to_sha1(self.left, engine=engine)
-            right_sha1 = du.model_name_to_sha1(self.right, engine=engine)
-            link_model_sha1 = du.list_to_value_ordered_sha1(
-                [self.run_name, left_sha1, right_sha1]
-            )
-
-            model = Models(
-                sha1=link_model_sha1,
-                name=self.run_name,
-                description=self.description,
-                deduplicates=None,
-            )
-            models_from_to_insert = [
-                {"parent": link_model_sha1, "child": left_sha1},
-                {"parent": link_model_sha1, "child": right_sha1},
-            ]
-
-            session.merge(model)
-            session.commit()
-
-            ins_stmt = insert(ModelsFrom)
-            ins_stmt = ins_stmt.on_conflict_do_nothing(
-                index_elements=[
-                    ModelsFrom.parent,
-                    ModelsFrom.child,
-                ]
-            )
-            session.execute(ins_stmt, models_from_to_insert)
-            session.commit()
-
             # Add probabilities
             model = (
                 session.query(Models).filter_by(name=self.run_name).first()

@@ -114,27 +114,36 @@ def test_sha1_conversion(all_companies):
     assert sha1_series_1.equals(sha1_series_2)
 
 
-# To parameterise
-
-# Dedupers
-# Name
-# Class
-# Settings
-
-# Data
-# Name
-# Fields we care about
-# Current count
-# Target count
-
 data_test_params = [
     (
         f"{os.getenv('SCHEMA')}.crn",
         "query_clean_crn",
         [f"{os.getenv('SCHEMA')}_crn_company_name", f"{os.getenv('SCHEMA')}_crn_crn"],
         3000,
-        3000,  # every row is a duplicate, order doesn't count, so 3000
-    )
+        # every row is a triple duplicate, order doesn't count, so 3000
+        # (a -> b, a -> c, b -> c) -- other combination orders dropped
+        3000,
+    ),
+    (
+        f"{os.getenv('SCHEMA')}.duns",
+        "query_clean_duns",
+        [
+            f"{os.getenv('SCHEMA')}_duns_company_name",
+            f"{os.getenv('SCHEMA')}_duns_duns",
+        ],
+        500,
+        # every row is unique: no duplicates
+        0,
+    ),
+    (
+        f"{os.getenv('SCHEMA')}.cdms",
+        "query_clean_cdms",
+        [f"{os.getenv('SCHEMA')}_cdms_crn", f"{os.getenv('SCHEMA')}_cdms_cdms"],
+        2000,
+        # every row is a double duplicate, order doesn't count, so 1000
+        # (a -> b) -- other combination order dropped
+        1000,
+    ),
 ]
 
 
@@ -142,7 +151,13 @@ data_test_params = [
     "source, data_fixture, fields, curr_n, tgt_n", data_test_params
 )
 def test_dedupers(db_engine, source, data_fixture, fields, curr_n, tgt_n, request):
-    """Runs all deduper methodologies over exemplar tables."""
+    """Runs all deduper methodologies over exemplar tables.
+
+    To add in future: also parameterise different dedupers. The key problem is
+    forming a settings dictionary from the data_test_params. Suspect a
+    parameterised fixture as the layer before that forms the deduper then passes
+    everything down is the right call.
+    """
     df = request.getfixturevalue(data_fixture)
     # Confirm current and target shape from extremely naive dedupe
     assert isinstance(df, DataFrame)
@@ -173,38 +188,4 @@ def test_dedupers(db_engine, source, data_fixture, fields, curr_n, tgt_n, reques
         model = session.query(Models).filter_by(name=source).first()
         proposed_dedupes = model.proposes_dedupes
 
-    assert len(proposed_dedupes) == tgt_n  # successfully inserted 3000
-
-
-# def test_naive_duns(db_engine, query_clean_duns):
-#     """Dedupes a table made entirely of 500 unique items."""
-
-#     col_prefix = f"{os.getenv('SCHEMA')}_duns_"
-#     duns_naive_deduper = make_deduper(
-#         dedupe_run_name="basic_duns",
-#         description="Clean company name, DUNS",
-#         deduper=Naive,
-#         deduper_settings={
-#             "id": f"{col_prefix}id",
-#             "unique_fields": [f"{col_prefix}company_name", f"{col_prefix}duns"],
-#         },
-#         data_source=f"{os.getenv('SCHEMA')}.duns",
-#         data=query_clean_duns,
-#     )
-
-#     duns_deduped = duns_naive_deduper()
-
-#     duns_deduped_df = duns_deduped.to_df()
-
-#     assert isinstance(duns_deduped_df, DataFrame)
-#     assert duns_deduped_df.shape[0] == 0  # no duplicated rows
-
-#     duns_deduped.to_cmf(engine=db_engine[1])
-
-#     with Session(db_engine[1]) as session:
-#         model = (
-#             session.query(Models).filter_by(name="basic_duns").first()
-#         )
-#         proposed_dedupes = model.proposes_dedupes()
-
-#     assert len(proposed_dedupes) == 0 # successfully inserted 0
+    assert len(proposed_dedupes) == tgt_n
