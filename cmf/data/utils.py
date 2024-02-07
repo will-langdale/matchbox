@@ -138,7 +138,10 @@ def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes
 
 
 def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
-    """Returns the SHA1 hash of a list ordered by its values."""
+    """Returns a single SHA1 hash of a list ordered by its values.
+
+    List must be sorted as the different orders of value must produce the same hash.
+    """
     sorted_vals = sorted(list_)
     hashed_vals_list = [hashlib.sha1(prep_for_hash(i)) for i in sorted_vals]
 
