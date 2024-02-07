@@ -4,7 +4,7 @@ import hashlib
 import io
 import pstats
 import uuid
-from typing import Any, List, Union
+from typing import List, TypeVar, Union
 
 from pandas import DataFrame, Series
 from sqlalchemy import Engine, MetaData, Table, select
@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from cmf.data import ENGINE, SourceDataset
 from cmf.data.models import Models
+
+T = TypeVar("T")
 
 # Data conversion
 
@@ -135,7 +137,7 @@ def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes
         return bytes(item)
 
 
-def list_to_value_ordered_sha1(list_: List[Any]) -> bytes:
+def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
     """Returns the SHA1 hash of a list ordered by its values."""
     sorted_vals = sorted(list_)
     hashed_vals_list = [hashlib.sha1(prep_for_hash(i)) for i in sorted_vals]
