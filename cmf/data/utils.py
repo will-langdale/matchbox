@@ -153,7 +153,11 @@ def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
 
 
 def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
-    """Returns the SHA1 hash of columns ordered by their values."""
+    """Returns the rowwise SHA1 hash of columns ordered by the row's values.
+
+    Used to add a column to a dataframe that represents the SHA1 hash of each its
+    rows, but where the order of the row values doesn't change the hash value.
+    """
     try:
         # Deals with byte arrays from duckdb's .df()
         bytes_records = data.filter(columns).map(bytes).to_dict("records")
