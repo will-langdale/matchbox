@@ -74,7 +74,7 @@ requirements:
 
 ## Run Python tests
 test:
-	pytest -s -vv --log-cli-level=INFO --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)" --log-cli-date-format="%Y-%m-%d %H:%M:%S" test/test_db.py test/test_cleaning.py test/test_helpers.py
+	pytest test/test_db.py test/test_cleaning.py test/test_helpers.py test/test_dedupers.py
 
 
 #################################################################################

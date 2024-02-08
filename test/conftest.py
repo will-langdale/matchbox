@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import random
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -42,12 +43,13 @@ CMF_POSTGRES = testing.postgresql.PostgresqlFactory(cache_initialized_db=True)
 @pytest.fixture(scope="session")
 def all_companies():
     """
-    Raw, correct company data.
+    Raw, correct company data. Uses UUID as ID to replicate Data Workspace.
     1,000 entries.
     """
     df = pd.read_csv(Path(loc.TEST, "data", "all_companies.csv")).reset_index(
         names="id"
     )
+    df["id"] = df["id"].apply(lambda x: uuid.UUID(int=x))
     return df
 
 
@@ -55,14 +57,25 @@ def all_companies():
 def crn_companies(all_companies):
     """
     Company data split into CRN version.
+
+    Company name has Limited, UK and Company added -- our first three stopwords.
+
+    Tests a link/dedupe situation with dirty duplicates.
+
     3,000 entries, 1,000 unique.
     """
-    # Company name and CRN repeated 3 times
-    df_crn = pd.DataFrame(
-        np.repeat(all_companies.filter(["company_name", "crn"]).values, 3, axis=0)
+    df_raw = all_companies.filter(["company_name", "crn"])
+    df_crn = pd.concat(
+        [
+            df_raw.assign(company_name=lambda df: df["company_name"] + " Limited"),
+            df_raw.assign(company_name=lambda df: df["company_name"] + " UK"),
+            df_raw.assign(company_name=lambda df: df["company_name"] + " Company"),
+        ]
     )
-    df_crn.columns = ["company_name", "crn"]
-    df_crn.reset_index(names="id", inplace=True)
+
+    df_crn["id"] = range(df_crn.shape[0])
+    df_crn = df_crn.filter(["id", "company_name", "crn"])
+    df_crn["id"] = df_crn["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_crn
 
@@ -71,15 +84,20 @@ def crn_companies(all_companies):
 def duns_companies(all_companies):
     """
     Company data split into DUNS version.
+
+    Data is clean.
+
+    Tests a link/dedupe situation with no duplicates.
+
     500 entries.
     """
-    # Company name and duns number, but only half
     df_duns = (
         all_companies.filter(["company_name", "duns"])
-        .sample(frac=0.5)
+        .sample(n=500)
         .reset_index(drop=True)
         .reset_index(names="id")
     )
+    df_duns["id"] = df_duns["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_duns
 
@@ -88,14 +106,21 @@ def duns_companies(all_companies):
 def cdms_companies(all_companies):
     """
     Company data split into CDMS version.
-    3,000 entries, 1,000 unique.
+
+    All rows are repeated twice.
+
+    Tests a link/dedupe situation with clean duplicates: edge case in prod,
+    but exists in some of the HMRC tables.
+
+    2,000 entries, 1,000 unique.
     """
-    # CRN and CDMS refs repeated 3 times
     df_cdms = pd.DataFrame(
-        np.repeat(all_companies.filter(["crn", "cdms"]).values, 3, axis=0)
+        np.repeat(all_companies.filter(["crn", "cdms"]).values, 2, axis=0)
     )
     df_cdms.columns = ["crn", "cdms"]
+
     df_cdms.reset_index(names="id", inplace=True)
+    df_cdms["id"] = df_cdms["id"].apply(lambda x: uuid.UUID(int=x))
 
     return df_cdms
 

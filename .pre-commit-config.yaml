@@ -7,7 +7,7 @@ repos:
       description: "Run 'ruff format' for extremely fast Python formatting"
       entry: ruff format
       language: python
-      types_or: [python, pyi, jupyter]
+      types_or: [python, pyi]
     # Run the linter.
     - id: ruff
       name: ruff
@@ -15,4 +15,4 @@ repos:
       entry: ruff check
       args: [ --fix ] # Enable lint fixes.
       language: python
-      types_or: [python, pyi, jupyter]
+      types_or: [python, pyi]
