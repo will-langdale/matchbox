@@ -8,7 +8,7 @@ from cmf import make_deduper, process, query
 from cmf.clean import company_name
 from cmf.data import Models
 from cmf.data import utils as du
-from cmf.dedupers import Naive
+from cmf.dedupers import NaiveDeduper
 from cmf.helpers import cleaner, cleaners, selector
 
 
@@ -147,11 +147,11 @@ data_test_params = [
 ]
 
 
-def make_naive_settings(source, data_fixture, fields, curr_n, tgt_n):
+def make_naive_dd_settings(source, data_fixture, fields, curr_n, tgt_n):
     return {"id": "data_sha1", "unique_fields": fields}
 
 
-deduper_test_params = [("naive", Naive, make_naive_settings)]
+deduper_test_params = [("naive", NaiveDeduper, make_naive_dd_settings)]
 
 
 @pytest.mark.parametrize(
