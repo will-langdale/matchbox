@@ -31,7 +31,7 @@ class CMFClusterError(Exception):
     pass
 
 
-class Results(BaseModel, ABC):
+class ResultsBaseDataclass(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     dataframe: DataFrame
@@ -186,7 +186,7 @@ class Results(BaseModel, ABC):
         logic_logger.info("Complete!")
 
 
-class ProbabilityResults(Results):
+class ProbabilityResults(ResultsBaseDataclass):
     """Probabilistic matches produced by linkers and dedupers."""
 
     _expected_fields: List[str] = [
@@ -380,7 +380,7 @@ class ProbabilityResults(Results):
             session.commit()
 
 
-class ClusterResults(Results):
+class ClusterResults(ResultsBaseDataclass):
     """Cluster data produced by using to_clusters on ProbabilityResults."""
 
     pass

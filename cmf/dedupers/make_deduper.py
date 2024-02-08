@@ -61,7 +61,7 @@ def make_deduper(
     deduper_instance = deduper.from_settings(**deduper_settings)
     deduper_instance.prepare(data)
 
-    def dedupe(data: DataFrame = data) -> ProbabilityResults:
+    def deduper(data: DataFrame = data) -> ProbabilityResults:
         return ProbabilityResults(
             dataframe=deduper_instance.dedupe(data=data),
             run_name=dedupe_run_name,
@@ -71,4 +71,4 @@ def make_deduper(
             validate_as="tables",
         )
 
-    return dedupe
+    return deduper
