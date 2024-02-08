@@ -142,7 +142,11 @@ def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
 
     List must be sorted as the different orders of value must produce the same hash.
     """
-    sorted_vals = sorted(list_)
+    try:
+        sorted_vals = sorted(list_)
+    except Exception as e:
+        raise TypeError("Can only order lists or columns of the same datatype.") from e
+
     hashed_vals_list = [hashlib.sha1(prep_for_hash(i)) for i in sorted_vals]
 
     hashed_vals = hashed_vals_list[0]
