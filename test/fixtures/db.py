@@ -279,6 +279,17 @@ def db_add_models():
 
 
 @pytest.fixture(scope="session")
+def db_add_dedupe_models():
+    """
+    Returns a function to add Naive-deduplicated model probabilities and
+    clusters to the database.
+
+    Can be used to reset and repopulate between tests, when necessary.
+    """
+    pass
+
+
+@pytest.fixture(scope="session")
 def db_engine(db_add_data, db_add_models):
     """
     Yield engine to mock in-memory database.
