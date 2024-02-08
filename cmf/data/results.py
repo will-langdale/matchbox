@@ -200,7 +200,8 @@ class ProbabilityResults(ResultsBaseDataclass):
     ) -> DataFrame:
         """Enriches the results with the source data."""
         df = (
-            self.dataframe.filter(["left_id", "right_id"])
+            self.to_df()
+            .filter(["left_id", "right_id"])
             .map(str)
             .merge(
                 left_data.assign(**{left_key: lambda d: d[left_key].apply(str)}),
