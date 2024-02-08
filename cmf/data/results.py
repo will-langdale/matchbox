@@ -187,7 +187,21 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
 
 class ProbabilityResults(ResultsBaseDataclass):
-    """Probabilistic matches produced by linkers and dedupers."""
+    """Probabilistic matches produced by linkers and dedupers.
+
+    Inherits the following attributes from ResultsBaseDataclass.
+
+    _expected_fields enforces the shape of the dataframe.
+
+    Args:
+        dataframe (pd.DataFrame): the DataFrame holding the results
+        run_name (str): the name of the run or experiment
+        description (str): a description of the model generating the results
+        left (str): the source dataset or source model for the left side of
+            the comparison
+        right (str): the source dataset or source model for the right side of
+            the comparison
+    """
 
     _expected_fields: List[str] = [
         "left_id",
