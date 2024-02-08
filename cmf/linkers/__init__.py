@@ -1,3 +1,3 @@
-from cmf.linkers.naive import NaiveLinker
+from cmf.linkers.deterministic import DeterministicLinker
 
-__all__ = ("NaiveLinker",)
+__all__ = ("DeterministicLinker",)

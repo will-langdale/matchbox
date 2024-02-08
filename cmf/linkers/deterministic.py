@@ -3,7 +3,7 @@ from pandas import DataFrame
 from pydantic import Field, field_validator
 
 from cmf.helpers import comparison
-from cmf.linker.make_linker import Linker, LinkerSettings
+from cmf.linkers.make_linker import Linker, LinkerSettings
 
 
 class DeterministicSettings(LinkerSettings):

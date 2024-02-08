@@ -1,8 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from pandas import DataFrame
+import rustworkx as rx
+from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import Engine, Table, bindparam, select
 from sqlalchemy.dialects.postgresql import insert
@@ -20,15 +21,18 @@ logic_logger = logging.getLogger("cmf_logic")
 
 
 class CMFSourceDataError(Exception):
-    "Data doesn't exist in the SourceData table."
-
-    pass
+    """Data doesn't exist in the SourceData table."""
 
 
 class CMFClusterError(Exception):
-    "Data doesn't exist in the Cluster table."
+    """Data doesn't exist in the Cluster table."""
 
-    pass
+
+class CMFModelError(Exception):
+    """Data doesn't exist in the Model table."""
+
+    def __init__(self, message, model):
+        super().__init__(message)
 
 
 class ResultsBaseDataclass(BaseModel, ABC):
@@ -194,7 +198,7 @@ class ProbabilityResults(ResultsBaseDataclass):
     _expected_fields enforces the shape of the dataframe.
 
     Args:
-        dataframe (pd.DataFrame): the DataFrame holding the results
+        dataframe (DataFrame): the DataFrame holding the results
         run_name (str): the name of the run or experiment
         description (str): a description of the model generating the results
         left (str): the source dataset or source model for the left side of
@@ -300,9 +304,12 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         with Session(engine) as session:
             # Add probabilities
-            model = (
-                session.query(Models).filter_by(name=self.run_name).first()
-            )  # Required to add association class to session
+            # Get model, including association proxy classes
+            model = session.query(Models).filter_by(name=self.run_name).first()
+            if model is None:
+                raise CMFModelError(
+                    "Model not found in Company Matching Framework", self.run_name
+                )
 
             # Insert any new Dedupe nodes, without probabilities
             ins_dd_stmt = insert(Dedupes)
@@ -354,9 +361,12 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         with Session(engine) as session:
             # Add probabilities
-            model = (
-                session.query(Models).filter_by(name=self.run_name).first()
-            )  # Required to add association class to session
+            # Get model, including association proxy classes
+            model = session.query(Models).filter_by(name=self.run_name).first()
+            if model is None:
+                raise CMFModelError(
+                    "Model not found in Company Matching Framework", self.run_name
+                )
 
             # Insert any new Link nodes, without probabilities
             ins_li_stmt = insert(Links)
@@ -396,6 +406,175 @@ class ProbabilityResults(ResultsBaseDataclass):
 
 
 class ClusterResults(ResultsBaseDataclass):
-    """Cluster data produced by using to_clusters on ProbabilityResults."""
+    """Cluster data produced by using to_clusters on ProbabilityResults.
 
-    pass
+    Inherits the following attributes from ResultsBaseDataclass.
+
+    _expected_fields enforces the shape of the dataframe.
+
+    Args:
+        dataframe (DataFrame): the DataFrame holding the results
+        run_name (str): the name of the run or experiment
+        description (str): a description of the model generating the results
+        left (str): the source dataset or source model for the left side of
+            the comparison
+        right (str): the source dataset or source model for the right side of
+            the comparison
+    """
+
+    _expected_fields: List[str] = ["parent", "child"]
+
+    def inspect_with_source(
+        self,
+        left_data: DataFrame,
+        left_key: str,
+        right_data: DataFrame,
+        right_key: str,
+    ) -> DataFrame:
+        """Enriches the results with the source data."""
+        return (
+            self.to_df()
+            .filter(["parent", "child"])
+            .map(str)
+            .merge(
+                left_data.assign(**{left_key: lambda d: d[left_key].apply(str)}),
+                how="left",
+                left_on="child",
+                right_on=left_key,
+            )
+            .drop(columns=[left_key])
+            .merge(
+                right_data.assign(**{right_key: lambda d: d[right_key].apply(str)}),
+                how="left",
+                left_on="child",
+                right_on=right_key,
+            )
+            .drop(columns=[right_key])
+        )
+
+    def to_df(self) -> DataFrame:
+        """Returns the results as a DataFrame."""
+        return self.dataframe.copy()
+
+    @abstractmethod
+    def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
+        """Writes the results of a deduper to the CMF database."""
+        return
+
+    @abstractmethod
+    def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
+        """Writes the results of a linker to the CMF database."""
+        return
+
+
+def get_unclustered(
+    clusters: ClusterResults, data: DataFrame, key: str
+) -> ClusterResults:
+    """
+    Creates a ClusterResult for data that wasn't linked or deduped.
+
+    When writing to the Company Matching Framework this allows a model to
+    endorse an existing Cluster if it wasn't linked or deduped.
+
+    Args:
+        clusters (ClusterResults): a ClusterResults generated by a linker
+        data (DataFrame): cleaned data that went into the model
+        key (str): the column that was matched, usually data_sha1 or cluster_sha1
+    """
+    no_parent = {"parent": [], "child": []}
+
+    clustered_children = set(clusters.to_df().child)
+    unclustered_children = set(data[key].map(bytes))
+
+    cluster_diff = list(unclustered_children.difference(clustered_children))
+
+    no_parent = {
+        "parent": cluster_diff,
+        "child": cluster_diff,
+    }
+
+    return ClusterResults(
+        dataframe=DataFrame(no_parent),
+        run_name=clusters.run_name,
+        description=clusters.description,
+        left=clusters.left,
+        right=clusters.right,
+    )
+
+
+def to_clusters(
+    results: ProbabilityResults, key: str, *data: Optional[DataFrame]
+) -> ClusterResults:
+    """
+    Takes a models probabilistic outputs and turns them into clusters.
+
+    If the original data is supplied, will add unmatched data, the expected
+    output for adding to the database.
+
+    Args:
+        results: An object of class ProbabilityResults
+        key: The column that was matched, usually data_sha1 or cluster_sha1
+        data: [Optional] Any number of cleaned data that went into the model.
+            Typically this is one dataset for a deduper or two for a linker
+    Returns
+        A ClusterResults object
+    """
+    all_edges = results.to_df().filter(["left_id", "right_id"]).map(bytes).stack()
+
+    G = rx.PyGraph()
+    added = {}
+
+    for edge in all_edges.groupby(level=0):
+        edge_idx = []
+        for i, sha1 in edge[1].items():
+            sha1_idx = added.get(sha1)
+            if sha1_idx is None:
+                sha1_idx = G.add_node(sha1)
+                added[sha1] = sha1_idx
+            edge_idx.append(sha1_idx)
+        edge_idx.append(None)
+        _ = G.add_edge(*edge_idx)
+
+    res = {"parent": [], "child": []}  # new clusters, existing hashes
+
+    for component in rx.connected_components(G):
+        child_hashes = []
+        for child in component:
+            child_hash = G.get_node_data(child)
+            child_hashes.append(child_hash)
+            res["child"].append(child_hash)
+
+        # Must be sorted to be symmetric
+        parent_hash = du.list_to_value_ordered_sha1(child_hashes)
+
+        res["parent"] += [parent_hash] * len(component)
+
+    matched_results = ClusterResults(
+        dataframe=DataFrame(res),
+        run_name=results.run_name,
+        description=results.description,
+        left=results.left,
+        right=results.right,
+    )
+
+    if len(data) > 0:
+        all_unmatched_results = []
+
+        for df in data:
+            unmatched_results = get_unclustered(
+                clusters=matched_results, data=df, key=key
+            )
+            all_unmatched_results.append(unmatched_results)
+
+        return ClusterResults(
+            dataframe=concat(
+                [matched_results.dataframe]
+                + [cluster_result.dataframe for cluster_result in all_unmatched_results]
+            ),
+            run_name=results.run_name,
+            description=results.description,
+            left=results.left,
+            right=results.right,
+        )
+    else:
+        return matched_results
