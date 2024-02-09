@@ -553,7 +553,7 @@ class ClusterResults(ResultsBaseDataclass):
 
 
 def get_unclustered(
-    clusters: ClusterResults, data: DataFrame, key: str, threshold: float = 0.0
+    clusters: ClusterResults, data: DataFrame, key: str
 ) -> ClusterResults:
     """
     Creates a ClusterResult for data that wasn't linked or deduped.
@@ -572,7 +572,7 @@ def get_unclustered(
     """
     no_parent = {"parent": [], "child": []}
 
-    clustered_children = set(clusters.to_df().query("probability > @threshold").child)
+    clustered_children = set(clusters.to_df().child)
     unclustered_children = set(data[key].map(bytes))
 
     cluster_diff = list(unclustered_children.difference(clustered_children))
@@ -592,10 +592,10 @@ def get_unclustered(
 
 
 def to_clusters(
+    *data: Optional[DataFrame],
     results: ProbabilityResults,
     key: str,
     threshold: float = 0.0,
-    *data: Optional[DataFrame],
 ) -> ClusterResults:
     """
     Takes a models probabilistic outputs and turns them into clusters.
@@ -662,7 +662,7 @@ def to_clusters(
 
         for df in data:
             unmatched_results = get_unclustered(
-                clusters=matched_results, data=df, key=key, threshold=threshold
+                clusters=matched_results, data=df, key=key
             )
             all_unmatched_results.append(unmatched_results)
 

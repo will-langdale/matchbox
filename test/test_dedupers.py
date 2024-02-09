@@ -78,7 +78,7 @@ def test_dedupers(
 
     # 4. Correct number of clusters are resolved
 
-    clusters_dupes = to_clusters(results=deduped, key="data_sha1")
+    clusters_dupes = to_clusters(results=deduped, key="data_sha1", threshold=0)
 
     clusters_dupes_df = clusters_dupes.to_df()
     clusters_dupes_df_with_source = clusters_dupes.inspect_with_source(
@@ -94,13 +94,21 @@ def test_dedupers(
             clusters_dupes_df_with_source[field + "_y"]
         )
 
-    # assert clusters_merge_only_df
+    clusters_all = to_clusters(df, results=deduped, key="data_sha1", threshold=0)
 
-    # clusters_all = to_clusters(df, results=deduped, key="data_sha1")
+    clusters_all_df = clusters_all.to_df()
+    clusters_all_df_with_source = clusters_all.inspect_with_source(
+        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+    )
 
-    # clusters_all_df = clusters_all.to_df()
+    assert isinstance(clusters_all_df, DataFrame)
+    assert clusters_all_df.parent.nunique() == data.unique_n
 
-    # assert clusters_all_df
+    assert isinstance(clusters_all_df_with_source, DataFrame)
+    for field in data.fields:
+        assert clusters_all_df_with_source[field + "_x"].equals(
+            clusters_all_df_with_source[field + "_y"]
+        )
 
     # 5. Resolved clusters are inserted correctly
 
