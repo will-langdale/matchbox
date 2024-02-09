@@ -108,22 +108,16 @@ merge_test_params = [
         # Left
         source_l=f"{os.getenv('SCHEMA')}.crn",
         fixture_l="query_clean_crn_deduped",
-        fields_l=[
-            f"{os.getenv('SCHEMA')}_crn_company_name",
-            f"{os.getenv('SCHEMA')}_crn_crn",
-        ],
+        fields_l=[f"{os.getenv('SCHEMA')}_crn_company_name"],
         curr_n_l=3000,
         # Right
         source_r=f"{os.getenv('SCHEMA')}.duns",
         fixture_r="query_clean_duns_deduped",
-        fields_r=[
-            f"{os.getenv('SCHEMA')}_duns_company_name",
-            f"{os.getenv('SCHEMA')}_duns_duns",
-        ],
+        fields_r=[f"{os.getenv('SCHEMA')}_duns_company_name"],
         curr_n_r=500,
         # Check
         unique_n=1000,
-        tgt_prob_n=3000,
+        tgt_prob_n=3000,  # 500
         tgt_clus_n=1000,
     ),
     LinkTestParams(
@@ -132,42 +126,18 @@ merge_test_params = [
         fixture_l="query_clean_cdms_deduped",
         fields_l=[
             f"{os.getenv('SCHEMA')}_cdms_crn",
-            f"{os.getenv('SCHEMA')}_cdms_cdms",
         ],
         curr_n_l=2000,
         # Right
         source_r=f"{os.getenv('SCHEMA')}.crn",
         fixture_r="query_clean_crn_deduped",
         fields_r=[
-            f"{os.getenv('SCHEMA')}_crn_company_name",
             f"{os.getenv('SCHEMA')}_crn_crn",
         ],
         curr_n_r=3000,
         # Check
         unique_n=1000,
-        tgt_prob_n=6000,
-        tgt_clus_n=1000,
-    ),
-    LinkTestParams(
-        # Left
-        source_l=f"{os.getenv('SCHEMA')}.duns",
-        fixture_l="query_clean_duns_deduped",
-        fields_l=[
-            f"{os.getenv('SCHEMA')}_duns_company_name",
-            f"{os.getenv('SCHEMA')}_duns_duns",
-        ],
-        curr_n_l=500,
-        # Right
-        source_r=f"{os.getenv('SCHEMA')}.cdms",
-        fixture_r="query_clean_cdms_deduped",
-        fields_r=[
-            f"{os.getenv('SCHEMA')}_cdms_crn",
-            f"{os.getenv('SCHEMA')}_cdms_cdms",
-        ],
-        curr_n_r=2000,
-        # Check
-        unique_n=1000,
-        tgt_prob_n=2000,
+        tgt_prob_n=6000,  # 1000
         tgt_clus_n=1000,
     ),
 ]

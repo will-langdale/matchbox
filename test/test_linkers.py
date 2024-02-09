@@ -73,6 +73,11 @@ def test_linkers(
         right_key="cluster_sha1",
     )
 
+    # print(linked_df_with_source.drop(columns=["cluster_sha1", "data_sha1"]))
+    assert linked.dataframe == ""
+    assert linked_df == ""
+    assert linked_df_with_source == ""
+
     assert isinstance(linked_df, DataFrame)
     assert linked_df.shape[0] == data.tgt_prob_n
 

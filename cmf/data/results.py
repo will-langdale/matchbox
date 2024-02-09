@@ -167,7 +167,7 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
     def to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results to the CMF database."""
-        metadata = f"{self._get_results_type()}, {self.run_name}"
+        metadata = f"{self.run_name}, {self._get_results_type()}"
 
         if self.left == self.right:
             # Deduper

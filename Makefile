@@ -76,7 +76,8 @@ requirements:
 test:
 	# pytest test/test_db.py test/test_cleaning.py test/test_helpers.py test/test_dedupers.py
 	# pytest test/test_dedupers.py test/test_linkers.py test/test_utils.py 
-	pytest test/test_linkers.py
+	# pytest -k test_linkers\[linker0-data0\]
+	pytest test/test_helpers.py::test_single_table_with_model_query
 
 
 #################################################################################

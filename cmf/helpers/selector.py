@@ -355,6 +355,14 @@ def query(
 
     if limit is not None:
         final_stmt = final_stmt.limit(limit)
+    # import logging
+    # logic_logger = logging.getLogger("cmf_logic")
+    # logic_logger.info(final_stmt)
+    with engine.connect() as conn:
+        cursor = conn.connection.cursor()
+        compiled = final_stmt.compile(engine)
+        compiled_bound = cursor.mogrify(str(compiled), compiled.params)
+        print(compiled_bound.decode("utf-8"))
 
     if return_type == "pandas":
         with Session(engine) as session:
