@@ -112,6 +112,14 @@ def test_dedupers(
 
     # 5. Resolved clusters are inserted correctly
 
+    clusters_all.to_cmf(engine=db_engine[1])
+
+    with Session(db_engine[1]) as session:
+        model = session.query(Models).filter_by(name=deduper_name).first()
+        created_clusters = model.creates
+
+    assert len(created_clusters) == data.unique_n
+
     # i. Clean up
 
     db_clear_models(db_engine)
