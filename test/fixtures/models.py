@@ -117,7 +117,8 @@ merge_test_params = [
         curr_n_r=500,
         # Check
         unique_n=1000,
-        tgt_prob_n=3000,  # 500
+        # Remember these are deduped: 1000 unique in the left, 500 in the right
+        tgt_prob_n=500,
         tgt_clus_n=1000,
     ),
     LinkTestParams(
@@ -137,7 +138,8 @@ merge_test_params = [
         curr_n_r=3000,
         # Check
         unique_n=1000,
-        tgt_prob_n=6000,  # 1000
+        # Remember these are deduped: 1000 unique in the left, 1000 in the right
+        tgt_prob_n=1000,
         tgt_clus_n=1000,
     ),
 ]

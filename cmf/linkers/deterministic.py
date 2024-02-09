@@ -48,8 +48,9 @@ class DeterministicLinker(Linker):
         pass
 
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
-        left_df = left  # NoQA: F841. It's used below but ruff can't detect
-        right_df = right  # NoQA: F841. It's used below but ruff can't detect
+        left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
+        right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
+
         return duckdb.sql(
             f"""
             select distinct on (list_sort([raw.left_id, raw.right_id]))

@@ -112,13 +112,19 @@ def test_single_table_with_model_query(
     crn = query(
         selector=select_crn,
         model=f"naive_{os.getenv('SCHEMA')}.crn",
-        return_type="sqlalchemy",
+        return_type="pandas",
         engine=db_engine[1],
     )
 
-    assert crn.all() == ""
     assert isinstance(crn, DataFrame)
     assert crn.shape[0] == 3000
+    assert set(crn.columns) == {
+        "cluster_sha1",
+        "data_sha1",
+        f"{os.getenv('SCHEMA')}_crn_crn",
+        f"{os.getenv('SCHEMA')}_crn_company_name",
+    }
+    assert crn.cluster_sha1.nunique() == 1000
 
 
 def test_multi_table_with_model_query(db_engine):
