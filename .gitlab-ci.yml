@@ -6,8 +6,8 @@ image: "python:3.9"
 #commands to run in the Docker container before starting each job.
 
 before_script:
-  - python --version
-  - pip install -r requirements.txt
+  - python3 --version
+  - pip3 install -r requirements.txt
 
 # different stages in the pipeline
 stages:
