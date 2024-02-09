@@ -114,10 +114,29 @@ def test_linkers(
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
     for field_l, field_r in zip(data.fields_l, data.fields_r):
-        # We don't drop NA here because this is speficially matched clusters
-        assert clusters_links_df_with_source[field_l].equals(
-            clusters_links_df_with_source[field_r]
+        # Different to a deduper as the join will always produce NaNs
+        # We therefore coalesce by cluster to unique joined values, which
+        # we can expect to equal the target cluster number, and have matching
+        # rows of data
+        def unique_non_null(s):
+            return s.dropna().unique()
+
+        cluster_vals = (
+            clusters_links_df_with_source.filter(["parent", field_l, field_r])
+            .groupby("parent")
+            .agg(
+                {
+                    field_l: unique_non_null,
+                    field_r: unique_non_null,
+                }
+            )
+            .explode(column=[field_l, field_r])
+            .reset_index()
         )
+
+        assert cluster_vals[field_l].equals(cluster_vals[field_r])
+        assert cluster_vals.parent.nunique() == data.tgt_clus_n
+        assert cluster_vals.shape[0] == data.tgt_clus_n
 
     clusters_all = to_clusters(
         df_l, df_r, results=linked, key="cluster_sha1", threshold=0
@@ -136,9 +155,32 @@ def test_linkers(
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
     for field_l, field_r in zip(data.fields_l, data.fields_r):
-        assert clusters_all_df_with_source[field_l].equals(
-            clusters_all_df_with_source[field_r]
+        # See above for method
+        # Only change is that we've now introduced expected NaNs for data
+        # that contains different number of entities
+        def unique_non_null(s):
+            return s.dropna().unique()
+
+        cluster_vals = (
+            clusters_all_df_with_source.filter(["parent", field_l, field_r])
+            .groupby("parent")
+            .agg(
+                {
+                    field_l: unique_non_null,
+                    field_r: unique_non_null,
+                }
+            )
+            .explode(column=[field_l, field_r])
+            .reset_index()
         )
+
+        assert cluster_vals.parent.nunique() == data.unique_n
+        assert cluster_vals.shape[0] == data.unique_n
+
+        cluster_vals_no_na = cluster_vals.dropna()
+
+        assert cluster_vals_no_na[field_l].equals(cluster_vals_no_na[field_r])
+        assert cluster_vals_no_na.parent.nunique() == data.tgt_clus_n
 
     # 5. Resolved clusters are inserted correctly
 

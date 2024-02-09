@@ -74,7 +74,7 @@ requirements:
 
 ## Run Python tests
 test:
-	pytest test/test_linkers.py
+	pytest
 
 
 #################################################################################

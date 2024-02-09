@@ -226,7 +226,11 @@ class ProbabilityResults(ResultsBaseDataclass):
     def inspect_with_source(
         self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
     ) -> DataFrame:
-        """Enriches the results with the source data."""
+        """Enriches the results with the source data.
+
+        For probabilities we need to STRING encode keys so users can work with
+        local data.
+        """
         df = (
             self.to_df()
             .filter(["left_id", "right_id"])
@@ -471,20 +475,23 @@ class ClusterResults(ResultsBaseDataclass):
         right_data: DataFrame,
         right_key: str,
     ) -> DataFrame:
-        """Enriches the results with the source data."""
+        """Enriches the results with the source data.
+
+        For clusters we need to BYTE encode keys.
+        """
         return (
             self.to_df()
             .filter(["parent", "child"])
-            .map(str)
+            .map(bytes)
             .merge(
-                left_data.assign(**{left_key: lambda d: d[left_key].apply(str)}),
+                left_data.assign(**{left_key: lambda d: d[left_key].apply(bytes)}),
                 how="left",
                 left_on="child",
                 right_on=left_key,
             )
             .drop(columns=[left_key])
             .merge(
-                right_data.assign(**{right_key: lambda d: d[right_key].apply(str)}),
+                right_data.assign(**{right_key: lambda d: d[right_key].apply(bytes)}),
                 how="left",
                 left_on="child",
                 right_on=right_key,
