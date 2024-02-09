@@ -4,7 +4,7 @@ import pytest
 from pandas import DataFrame
 from sqlalchemy.orm import Session
 
-from cmf import make_deduper
+from cmf import make_deduper, to_clusters
 from cmf.data import Models
 
 
@@ -59,6 +59,8 @@ def test_dedupers(
 
     assert isinstance(deduped_df, DataFrame)
     assert deduped_df.shape[0] == data.tgt_prob_n
+
+    assert isinstance(deduped_df_with_source, DataFrame)
     for field in data.fields:
         assert deduped_df_with_source[field + "_x"].equals(
             deduped_df_with_source[field + "_y"]
@@ -76,9 +78,21 @@ def test_dedupers(
 
     # 4. Correct number of clusters are resolved
 
-    # clusters_merge_only = to_clusters(results=deduped, key="data_sha1")
+    clusters_dupes = to_clusters(results=deduped, key="data_sha1")
 
-    # clusters_merge_only_df = clusters_merge_only.to_df()
+    clusters_dupes_df = clusters_dupes.to_df()
+    clusters_dupes_df_with_source = clusters_dupes.inspect_with_source(
+        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+    )
+
+    assert isinstance(clusters_dupes_df, DataFrame)
+    assert clusters_dupes_df.parent.nunique() == data.tgt_clus_n
+
+    assert isinstance(clusters_dupes_df_with_source, DataFrame)
+    for field in data.fields:
+        assert clusters_dupes_df_with_source[field + "_x"].equals(
+            clusters_dupes_df_with_source[field + "_y"]
+        )
 
     # assert clusters_merge_only_df
 

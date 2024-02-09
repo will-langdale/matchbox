@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import rustworkx as rx
 from pandas import DataFrame, concat
@@ -11,10 +11,11 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from cmf.data import utils as du
+from cmf.data.clusters import Clusters
 from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
-from cmf.data.dedupe import Dedupes
-from cmf.data.link import Links
+from cmf.data.dedupe import DDupeContains, Dedupes
+from cmf.data.link import LinkContains, Links
 from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
@@ -22,6 +23,10 @@ logic_logger = logging.getLogger("cmf_logic")
 
 class CMFSourceDataError(Exception):
     """Data doesn't exist in the SourceData table."""
+
+
+class CMFSourceDatasetError(Exception):
+    """Tables not found in wider database, outside of the framework."""
 
 
 class CMFClusterError(Exception):
@@ -78,13 +83,12 @@ class ResultsBaseDataclass(BaseModel, ABC):
         return True
 
     def _validate_sources(self, engine: Engine = ENGINE) -> bool:
-        """Validates existence of left and right tables in CMF database."""
+        """Validates existence of left and right models in CMF database."""
         stmt_left = select(Models.name).where(Models.name == self.left)
         stmt_right = select(Models.name).where(Models.name == self.right)
 
         with Session(engine) as session:
             res_left = session.execute(stmt_left).scalar()
-        with Session(engine) as session:
             res_right = session.execute(stmt_right).scalar()
 
         if res_left is not None and res_right is not None:
@@ -294,21 +298,26 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Turns data into a left, right, sha1, probability dataframe
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
+
+        Raises:
+            CMFSourceDatasetError is source tables aren't in the wider database
+            CMFModelError if current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         if not self._validate_tables(engine=engine):
-            raise ValueError(
-                "Tables not found in database. Check your deduplication sources."
+            raise CMFSourceDatasetError(
+                "Source tables not found in wider database. Check your "
+                "deduplication sources."
             )
 
         with Session(engine) as session:
             # Add probabilities
-            # Get model, including association proxy classes
+            # Get model, including adding association proxy classes to session
             model = session.query(Models).filter_by(name=self.run_name).first()
             if model is None:
                 raise CMFModelError(
-                    "Model not found in Company Matching Framework", self.run_name
+                    "Results model not found in database", self.run_name
                 )
 
             # Insert any new Dedupe nodes, without probabilities
@@ -353,19 +362,27 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Turns data into a left, right, sha1, probability dataframe
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
+
+        Raises:
+            CMFModelError
+                * If source models weren't found in the database
+                * If current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         if not self._validate_sources(engine=engine):
-            raise ValueError("Source not found in database. Check your link sources.")
+            raise CMFModelError(
+                "Source models not found in database. Check your link sources.",
+                [self.left, self.right],
+            )
 
         with Session(engine) as session:
             # Add probabilities
-            # Get model, including association proxy classes
+            # Get model, including adding association proxy classes to session
             model = session.query(Models).filter_by(name=self.run_name).first()
             if model is None:
                 raise CMFModelError(
-                    "Model not found in Company Matching Framework", self.run_name
+                    "Results model not found in database", self.run_name
                 )
 
             # Insert any new Link nodes, without probabilities
@@ -456,15 +473,83 @@ class ClusterResults(ResultsBaseDataclass):
         """Returns the results as a DataFrame."""
         return self.dataframe.copy()
 
-    @abstractmethod
+    def _to_cmf_logic(
+        self,
+        contains_class: Union[DDupeContains, LinkContains],
+        engine: Engine = ENGINE,
+    ) -> None:
+        """Handles common logic for writing dedupe or link clusters to the database.
+
+        In ClusterResults, the only difference is the tables being written to.
+
+        * Adds the new cluster nodes
+        * Adds model endorsement of these nodes with "creates" edge
+        * Adds the contains edges to show which clusters contain which
+
+        Args:
+            contains_class: the target table, one of DDupeContains or LinkContains
+            engine: a SQLAlchemy Engine object for the database
+
+        Raises:
+            CMFModelError if model wasn't inserted correctly
+        """
+        Contains = contains_class
+        with Session(engine) as session:
+            # Get model, including adding association proxy classes to session
+            model = session.query(Models).filter_by(name=self.run_name).first()
+            if model is None:
+                raise CMFModelError(
+                    "Results model not found in database", self.run_name
+                )
+
+            # Add new cluster nodes
+            clusters_to_add = [
+                {"sha1": edge} for edge in self.dataframe.parent.drop_duplicates()
+            ]
+
+            ins_stmt = insert(Clusters)
+            ins_stmt = ins_stmt.on_conflict_do_nothing(index_elements=[Clusters.sha1])
+
+            session.execute(ins_stmt, clusters_to_add)
+            session.commit()
+
+            to_insert = (
+                session.query(Clusters)
+                .filter(
+                    Clusters.sha1.in_(
+                        bindparam(
+                            "ins_sha1s",
+                            [cl["sha1"] for cl in clusters_to_add],
+                            expanding=True,
+                        )
+                    )
+                )
+                .all()
+            )
+
+            # Add model endorsement of clusters
+            model.creates.clear()
+            model.creates = to_insert
+
+            session.commit()
+
+            # Add new contains edges
+            ins_stmt = insert(Contains)
+            ins_stmt = ins_stmt.on_conflict_do_update(
+                index_elements=[Contains.parent, Contains.child],
+                set_=ins_stmt.excluded,
+            )
+
+            session.execute(ins_stmt, self.dataframe.to_dict("records"))
+            session.commit()
+
     def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a deduper to the CMF database."""
-        return
+        self._to_cmf_logic(contains_class=DDupeContains, engine=engine)
 
-    @abstractmethod
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database."""
-        return
+        self._to_cmf_logic(contains_class=LinkContains, engine=engine)
 
 
 def get_unclustered(

@@ -46,8 +46,7 @@ data_test_params = [
             curr_n=3000,
             # Unordered pairs of sets of three, so (3 choose 2) = 3, * 1000 = 3000
             tgt_prob_n=3000,
-            # TO UPDATE
-            tgt_clus_n=0000,
+            tgt_clus_n=1000,
         )
     ),
     (
@@ -63,8 +62,7 @@ data_test_params = [
             curr_n=500,
             # No duplicates
             tgt_prob_n=0,
-            # TO UPDATE
-            tgt_clus_n=0000,
+            tgt_clus_n=0,
         )
     ),
     (
@@ -80,8 +78,7 @@ data_test_params = [
             curr_n=2000,
             # Unordered pairs of sets of two, so (2 choose 2) = 1, * 1000 = 1000
             tgt_prob_n=1000,
-            # TO UPDATE
-            tgt_clus_n=0000,
+            tgt_clus_n=1000,
         )
     ),
 ]
