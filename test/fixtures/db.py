@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import random
+from test.fixtures.models import dedupe_test_params, deduper_test_params
 
 import pytest
 import testing.postgresql
@@ -10,6 +11,7 @@ from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema
 
+from cmf import make_deduper, to_clusters
 from cmf.admin import add_dataset
 from cmf.data import (
     Clusters,
@@ -286,7 +288,34 @@ def db_add_dedupe_models():
 
     Can be used to reset and repopulate between tests, when necessary.
     """
-    pass
+
+    def _db_add_dedupe_models(db_engine, request):
+        for data in dedupe_test_params:
+            for ddupe in deduper_test_params:
+                df = request.getfixturevalue(data.fixture)
+
+                deduper_name = f"{ddupe.name}_{data.source}"
+                deduper_settings = ddupe.build_settings(data)
+
+                deduper = make_deduper(
+                    dedupe_run_name=deduper_name,
+                    description=f"Dedupe of {data.source} with {ddupe.name} method",
+                    deduper=ddupe.cls,
+                    deduper_settings=deduper_settings,
+                    data_source=data.source,
+                    data=df,
+                )
+
+                deduped = deduper()
+
+                clustered = to_clusters(
+                    df, results=deduped, key="data_sha1", threshold=0
+                )
+
+                deduped.to_cmf(engine=db_engine[1])
+                clustered.to_cmf(engine=db_engine[1])
+
+    return _db_add_dedupe_models
 
 
 @pytest.fixture(scope="session")

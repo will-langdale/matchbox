@@ -1,4 +1,4 @@
-from test.fixtures.models import data_test_params, deduper_test_params
+from test.fixtures.models import dedupe_test_params, deduper_test_params
 
 import pytest
 from pandas import DataFrame
@@ -8,15 +8,15 @@ from cmf import make_deduper, to_clusters
 from cmf.data import Models
 
 
-@pytest.mark.parametrize("data", data_test_params)
-@pytest.mark.parametrize("ddupe", deduper_test_params)
+@pytest.mark.parametrize("data", dedupe_test_params)
+@pytest.mark.parametrize("dduper", deduper_test_params)
 def test_dedupers(
     # Fixtures
     db_engine,
     db_clear_models,
     # Parameterised data classes
     data,
-    ddupe,
+    dduper,
     # Pytest
     request,
 ):
@@ -26,9 +26,13 @@ def test_dedupers(
         1. That the input data is as expected
         2. That the data is deduplicated correctly
         3. That the deduplicated probabilities are inserted correctly
-        4. The the correct number of clusters are resolved
+        4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
+    # i. Ensure database is clean, collect fixtures
+
+    db_clear_models(db_engine)
+
     df = request.getfixturevalue(data.fixture)
 
     # 1. Input data is as expected
@@ -38,13 +42,13 @@ def test_dedupers(
 
     # 2. Data is deduplicated correctly
 
-    deduper_name = f"{ddupe.name}_{data.source}"
-    deduper_settings = ddupe.build_settings(data)
+    deduper_name = f"{dduper.name}_{data.source}"
+    deduper_settings = dduper.build_settings(data)
 
     deduper = make_deduper(
         dedupe_run_name=deduper_name,
-        description=f"Testing dedupe of {data.source} with {ddupe.name} method",
-        deduper=ddupe.deduper,
+        description=f"Testing dedupe of {data.source} with {dduper.name} method",
+        deduper=dduper.cls,
         deduper_settings=deduper_settings,
         data_source=data.source,
         data=df,
@@ -120,6 +124,6 @@ def test_dedupers(
 
     assert len(created_clusters) == data.unique_n
 
-    # i. Clean up
+    # i. Clean up after ourselves
 
     db_clear_models(db_engine)

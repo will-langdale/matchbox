@@ -172,3 +172,79 @@ def query_clean_cdms(db_engine):
 
     # No cleaning needed, see original data
     return cdms
+
+
+@pytest.fixture(scope="function")
+def query_clean_crn_deduped(db_engine):
+    # Select
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn",
+        fields=["crn", "company_name"],
+        engine=db_engine[1],
+    )
+
+    crn = query(
+        selector=select_crn,
+        model=f"naive_{os.getenv('SCHEMA')}.crn",
+        return_type="pandas",
+        engine=db_engine[1],
+    )
+
+    # Clean
+    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    cleaner_name = cleaner(
+        function=company_name, arguments={"column": f"{col_prefix}company_name"}
+    )
+    cleaner_crn = cleaners(cleaner_name)
+
+    crn_cleaned = process(data=crn, pipeline=cleaner_crn)
+
+    return crn_cleaned
+
+
+@pytest.fixture(scope="function")
+def query_clean_duns_deduped(db_engine):
+    # Select
+    select_duns = selector(
+        table=f"{os.getenv('SCHEMA')}.duns",
+        fields=["duns", "company_name"],
+        engine=db_engine[1],
+    )
+
+    duns = query(
+        selector=select_duns,
+        model=f"naive_{os.getenv('SCHEMA')}.duns",
+        return_type="pandas",
+        engine=db_engine[1],
+    )
+
+    # Clean
+    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    cleaner_name = cleaner(
+        function=company_name, arguments={"column": f"{col_prefix}company_name"}
+    )
+    cleaner_duns = cleaners(cleaner_name)
+
+    duns_cleaned = process(data=duns, pipeline=cleaner_duns)
+
+    return duns_cleaned
+
+
+@pytest.fixture(scope="function")
+def query_clean_cdms_deduped(db_engine):
+    # Select
+    select_cdms = selector(
+        table=f"{os.getenv('SCHEMA')}.cdms",
+        fields=["crn", "cdms"],
+        engine=db_engine[1],
+    )
+
+    cdms = query(
+        selector=select_cdms,
+        model=f"naive_{os.getenv('SCHEMA')}.cdms",
+        return_type="pandas",
+        engine=db_engine[1],
+    )
+
+    # No cleaning needed, see original data
+    return cdms
