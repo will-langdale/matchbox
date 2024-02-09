@@ -116,6 +116,10 @@ class ResultsBaseDataclass(BaseModel, ABC):
         """Writes the results of a linker to the CMF database."""
         return
 
+    @classmethod
+    def _get_results_type(cls):
+        return cls.__name__
+
     def _model_to_cmf(
         self, deduplicates: bytes = None, engine: Engine = ENGINE
     ) -> None:
@@ -163,10 +167,12 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
     def to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results to the CMF database."""
+        metadata = f"{self._get_results_type()}, {self.run_name}"
+
         if self.left == self.right:
             # Deduper
             # Write model
-            logic_logger.info("Registering model")
+            logic_logger.info(f"[{metadata}] Registering model")
             self._model_to_cmf(
                 deduplicates=du.table_name_to_sha1(self.left, engine=engine),
                 engine=engine,
@@ -174,24 +180,24 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
             # Write data
             if self.dataframe.shape[0] == 0:
-                logic_logger.info("No deduplication data to insert")
+                logic_logger.info(f"[{metadata}] No deduplication data to insert")
             else:
-                logic_logger.info("Writing deduplication data")
+                logic_logger.info(f"[{metadata}] Writing deduplication data")
                 self._deduper_to_cmf(engine=engine)
         else:
             # Linker
             # Write model
-            logic_logger.info("Registering model")
+            logic_logger.info(f"[{metadata}] Registering model")
             self._model_to_cmf(engine=engine)
 
             # Write data
             if self.dataframe.shape[0] == 0:
-                logic_logger.info("No link data to insert")
+                logic_logger.info(f"[{metadata}] No link data to insert")
             else:
-                logic_logger.info("Writing link data")
+                logic_logger.info(f"[{metadata}] Writing link data")
                 self._linker_to_cmf(engine=engine)
 
-        logic_logger.info("Complete!")
+        logic_logger.info(f"[{metadata}] Complete!")
 
 
 class ProbabilityResults(ResultsBaseDataclass):

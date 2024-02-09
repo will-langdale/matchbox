@@ -3,6 +3,8 @@ from test.fixtures.models import linker_test_params, merge_test_params
 import pytest
 from pandas import DataFrame
 
+from cmf import make_linker
+
 
 @pytest.mark.parametrize("data", merge_test_params)
 @pytest.mark.parametrize("linker", linker_test_params)
@@ -43,6 +45,45 @@ def test_linkers(
     assert df_r.shape[0] == data.curr_n_r
 
     # 2. Data is linked correctly
+
+    linker_name = f"{linker.name}_{data.source_l}_{data.source_r}"
+    linker_settings = linker.build_settings(data)
+
+    linker = make_linker(
+        link_run_name=linker_name,
+        description=(
+            f"Testing link of {data.source_l} and {data.source_r} "
+            f"with {linker.name} method."
+        ),
+        linker=linker.cls,
+        linker_settings=linker_settings,
+        left_data=df_l,
+        left_source=data.source_l,
+        right_data=df_r,
+        right_source=data.source_r,
+    )
+
+    linked = linker()
+
+    linked_df = linked.to_df()
+    linked_df_with_source = linked.inspect_with_source(
+        left_data=df_l,
+        left_key="cluster_sha1",
+        right_data=df_r,
+        right_key="cluster_sha1",
+    )
+
+    assert isinstance(linked_df, DataFrame)
+    assert linked_df.shape[0] == data.tgt_prob_n
+
+    assert isinstance(linked_df_with_source, DataFrame)
+    for field_l, field_r in zip(data.fields_l, data.fields_r):
+        if field_l == field_r:
+            assert linked_df_with_source[field_l + "_x"].equals(
+                linked_df_with_source[field_r + "_y"]
+            )
+        else:
+            assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
     # 3. Linked probabilities are inserted correctly
 

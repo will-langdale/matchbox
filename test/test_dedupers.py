@@ -50,8 +50,8 @@ def test_dedupers(
         description=f"Testing dedupe of {data.source} with {dduper.name} method",
         deduper=dduper.cls,
         deduper_settings=deduper_settings,
-        data_source=data.source,
         data=df,
+        data_source=data.source,
     )
 
     deduped = deduper()
