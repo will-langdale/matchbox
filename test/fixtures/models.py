@@ -106,12 +106,12 @@ dedupe_test_params = [
 merge_test_params = [
     LinkTestParams(
         # Left
-        source_l=f"{os.getenv('SCHEMA')}.crn",
+        source_l=f"naive_{os.getenv('SCHEMA')}.crn",
         fixture_l="query_clean_crn_deduped",
         fields_l=[f"{os.getenv('SCHEMA')}_crn_company_name"],
         curr_n_l=3000,
         # Right
-        source_r=f"{os.getenv('SCHEMA')}.duns",
+        source_r=f"naive_{os.getenv('SCHEMA')}.duns",
         fixture_r="query_clean_duns_deduped",
         fields_r=[f"{os.getenv('SCHEMA')}_duns_company_name"],
         curr_n_r=500,
@@ -119,18 +119,18 @@ merge_test_params = [
         unique_n=1000,
         # Remember these are deduped: 1000 unique in the left, 500 in the right
         tgt_prob_n=500,
-        tgt_clus_n=1000,
+        tgt_clus_n=500,
     ),
     LinkTestParams(
         # Left
-        source_l=f"{os.getenv('SCHEMA')}.cdms",
+        source_l=f"naive_{os.getenv('SCHEMA')}.cdms",
         fixture_l="query_clean_cdms_deduped",
         fields_l=[
             f"{os.getenv('SCHEMA')}_cdms_crn",
         ],
         curr_n_l=2000,
         # Right
-        source_r=f"{os.getenv('SCHEMA')}.crn",
+        source_r=f"naive_{os.getenv('SCHEMA')}.crn",
         fixture_r="query_clean_crn_deduped",
         fields_r=[
             f"{os.getenv('SCHEMA')}_crn_crn",

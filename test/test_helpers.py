@@ -193,10 +193,9 @@ def test_process(db_engine):
 
 def test_comparisons():
     comparison_name_id = comparison(
-        sql_condition="""
-        company_name = company_name
-        and data_hub_id = data_hub_id
-    """
+        sql_condition=(
+            "l.company_name = r.company_name" " and l.data_hub_id = r.data_hub_id"
+        )
     )
 
     assert comparison_name_id is not None
