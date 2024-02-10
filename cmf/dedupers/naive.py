@@ -19,11 +19,11 @@ class NaiveSettings(DeduperSettings):
     )
 
 
-class Naive(Deduper):
+class NaiveDeduper(Deduper):
     settings: NaiveSettings
 
     @classmethod
-    def from_settings(cls, id: str, unique_fields: List[str]) -> "Naive":
+    def from_settings(cls, id: str, unique_fields: List[str]) -> "NaiveDeduper":
         settings = NaiveSettings(id=id, unique_fields=unique_fields)
         return cls(settings=settings)
 

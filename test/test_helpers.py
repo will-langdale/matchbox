@@ -6,7 +6,7 @@ from pandas import DataFrame
 
 from cmf import process, query
 from cmf.clean import company_name, company_number
-from cmf.helpers import cleaner, cleaners, comparison, comparisons, selector, selectors
+from cmf.helpers import cleaner, cleaners, comparison, selector, selectors
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -92,26 +92,39 @@ def test_multi_table_no_model_query(db_engine):
     }
 
 
-def test_single_table_with_model_query(db_engine):
-    """Tests query() on a single table using a model point of truth
+def test_single_table_with_model_query(
+    db_engine, db_clear_models, db_add_dedupe_models, request
+):
+    """Tests query() on a single table using a model point of truth."""
+    # Ensure database is clean, insert deduplicated models
 
-    TODO: Implement. Will be a LOT easier to write when I have dedupers and
-    linkers to generate data to query on -- not part of this MR.
+    db_clear_models(db_engine)
+    db_add_dedupe_models(db_engine, request)
 
-    """
-    # select_crn = selector(
-    #     table=f"{os.getenv('SCHEMA')}.crn",
-    #     fields=["id", "crn"],
-    #     engine=db_engine[1]
-    # )
+    # Query
 
-    # df_crn_full = query(
-    #     selector=select_crn,
-    #     model=None,
-    #     return_type="pandas",
-    #     engine=db_engine[1]
-    # )
-    pass
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn",
+        fields=["crn", "company_name"],
+        engine=db_engine[1],
+    )
+
+    crn = query(
+        selector=select_crn,
+        model=f"naive_{os.getenv('SCHEMA')}.crn",
+        return_type="pandas",
+        engine=db_engine[1],
+    )
+
+    assert isinstance(crn, DataFrame)
+    assert crn.shape[0] == 3000
+    assert set(crn.columns) == {
+        "cluster_sha1",
+        "data_sha1",
+        f"{os.getenv('SCHEMA')}_crn_crn",
+        f"{os.getenv('SCHEMA')}_crn_company_name",
+    }
+    assert crn.cluster_sha1.nunique() == 1000
 
 
 def test_multi_table_with_model_query(db_engine):
@@ -179,8 +192,10 @@ def test_process(db_engine):
 
 
 def test_comparisons():
-    comparison_name = comparison(sql_condition="company_name = company_name")
-    comparison_id = comparison(sql_condition="data_hub_id = data_hub_id")
-    comparison_name_id = comparisons(comparison_name, comparison_id)
+    comparison_name_id = comparison(
+        sql_condition=(
+            "l.company_name = r.company_name" " and l.data_hub_id = r.data_hub_id"
+        )
+    )
 
     assert comparison_name_id is not None

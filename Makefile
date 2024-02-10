@@ -74,7 +74,7 @@ requirements:
 
 ## Run Python tests
 test:
-	pytest test/test_db.py test/test_cleaning.py test/test_helpers.py test/test_dedupers.py
+	pytest
 
 
 #################################################################################

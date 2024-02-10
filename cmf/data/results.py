@@ -1,8 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
-from pandas import DataFrame
+import rustworkx as rx
+from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import Engine, Table, bindparam, select
 from sqlalchemy.dialects.postgresql import insert
@@ -10,25 +11,27 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from cmf.data import utils as du
+from cmf.data.clusters import Clusters
 from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
-from cmf.data.dedupe import Dedupes
-from cmf.data.link import Links
+from cmf.data.dedupe import DDupeContains, Dedupes
+from cmf.data.link import LinkContains, Links
 from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
 
 
-class CMFSourceDataError(Exception):
-    "Data doesn't exist in the SourceData table."
+class CMFSourceError(Exception):
+    """Data doesn't exist in the source company matching framework table."""
 
-    pass
+    def __init__(self, message, source, data=None):
+        super().__init__(message)
+        self.source = source
+        self.data = data
 
 
-class CMFClusterError(Exception):
-    "Data doesn't exist in the Cluster table."
-
-    pass
+class CMFSourceDatasetError(Exception):
+    """Tables not found in wider database, outside of the framework."""
 
 
 class ResultsBaseDataclass(BaseModel, ABC):
@@ -74,13 +77,12 @@ class ResultsBaseDataclass(BaseModel, ABC):
         return True
 
     def _validate_sources(self, engine: Engine = ENGINE) -> bool:
-        """Validates existence of left and right tables in CMF database."""
+        """Validates existence of left and right models in CMF database."""
         stmt_left = select(Models.name).where(Models.name == self.left)
         stmt_right = select(Models.name).where(Models.name == self.right)
 
         with Session(engine) as session:
             res_left = session.execute(stmt_left).scalar()
-        with Session(engine) as session:
             res_right = session.execute(stmt_right).scalar()
 
         if res_left is not None and res_right is not None:
@@ -108,6 +110,10 @@ class ResultsBaseDataclass(BaseModel, ABC):
         """Writes the results of a linker to the CMF database."""
         return
 
+    @classmethod
+    def _get_results_type(cls):
+        return cls.__name__
+
     def _model_to_cmf(
         self, deduplicates: bytes = None, engine: Engine = ENGINE
     ) -> None:
@@ -118,9 +124,15 @@ class ResultsBaseDataclass(BaseModel, ABC):
                 # Construct model SHA1 from parent model SHA1s
                 left_sha1 = du.model_name_to_sha1(self.left, engine=engine)
                 right_sha1 = du.model_name_to_sha1(self.right, engine=engine)
-                model_sha1 = du.list_to_value_ordered_sha1(
-                    [self.run_name, left_sha1, right_sha1]
-                )
+
+                if not self._validate_sources(engine=engine):
+                    raise CMFSourceError(
+                        "Model(s) not found in database",
+                        source=Models,
+                        data=[self.left, self.right],
+                    )
+
+                model_sha1 = du.list_to_value_ordered_sha1([left_sha1, right_sha1])
             else:
                 # Deduper
                 model_sha1 = du.list_to_value_ordered_sha1([self.run_name, self.left])
@@ -155,10 +167,12 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
     def to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results to the CMF database."""
+        metadata = f"{self.run_name}, {self._get_results_type()}"
+
         if self.left == self.right:
             # Deduper
             # Write model
-            logic_logger.info("Registering model")
+            logic_logger.info(f"[{metadata}] Registering model")
             self._model_to_cmf(
                 deduplicates=du.table_name_to_sha1(self.left, engine=engine),
                 engine=engine,
@@ -166,24 +180,24 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
             # Write data
             if self.dataframe.shape[0] == 0:
-                logic_logger.info("No deduplication data to insert")
+                logic_logger.info(f"[{metadata}] No deduplication data to insert")
             else:
-                logic_logger.info("Writing deduplication data")
+                logic_logger.info(f"[{metadata}] Writing deduplication data")
                 self._deduper_to_cmf(engine=engine)
         else:
             # Linker
             # Write model
-            logic_logger.info("Registering model")
+            logic_logger.info(f"[{metadata}] Registering model")
             self._model_to_cmf(engine=engine)
 
             # Write data
             if self.dataframe.shape[0] == 0:
-                logic_logger.info("No link data to insert")
+                logic_logger.info(f"[{metadata}] No link data to insert")
             else:
-                logic_logger.info("Writing link data")
+                logic_logger.info(f"[{metadata}] Writing link data")
                 self._linker_to_cmf(engine=engine)
 
-        logic_logger.info("Complete!")
+        logic_logger.info(f"[{metadata}] Complete!")
 
 
 class ProbabilityResults(ResultsBaseDataclass):
@@ -194,7 +208,7 @@ class ProbabilityResults(ResultsBaseDataclass):
     _expected_fields enforces the shape of the dataframe.
 
     Args:
-        dataframe (pd.DataFrame): the DataFrame holding the results
+        dataframe (DataFrame): the DataFrame holding the results
         run_name (str): the name of the run or experiment
         description (str): a description of the model generating the results
         left (str): the source dataset or source model for the left side of
@@ -212,7 +226,11 @@ class ProbabilityResults(ResultsBaseDataclass):
     def inspect_with_source(
         self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
     ) -> DataFrame:
-        """Enriches the results with the source data."""
+        """Enriches the results with the source data.
+
+        For probabilities we need to STRING encode keys so users can work with
+        local data.
+        """
         df = (
             self.to_df()
             .filter(["left_id", "right_id"])
@@ -249,6 +267,16 @@ class ProbabilityResults(ResultsBaseDataclass):
         cols = ["left_id", "right_id"]
 
         # Verify data is in the CMF
+        # Check SourceData for dedupers and Clusters for linkers
+        if self.left == self.right:
+            # Deduper
+            Source = SourceData
+            tgt_col = "data_sha1"
+        else:
+            # Linker
+            Source = Clusters
+            tgt_col = "cluster_sha1"
+
         pre_prep_df[cols] = pre_prep_df[cols].map(bytes)
 
         for col in cols:
@@ -256,9 +284,9 @@ class ProbabilityResults(ResultsBaseDataclass):
 
             with Session(engine) as session:
                 data_inner_join = (
-                    session.query(SourceData)
+                    session.query(Source)
                     .filter(
-                        SourceData.sha1.in_(
+                        Source.sha1.in_(
                             bindparam(
                                 "ins_sha1s",
                                 data_unique,
@@ -268,11 +296,13 @@ class ProbabilityResults(ResultsBaseDataclass):
                     )
                     .all()
                 )
-                if len(data_inner_join) != len(data_unique):
-                    raise CMFSourceDataError(
-                        f"Some items in {col} don't exist in SourceData table. "
-                        "Did you use data_sha1 as your ID when deduplicating?"
-                    )
+
+            if len(data_inner_join) != len(data_unique):
+                raise CMFSourceError(
+                    f"Some items in {col} don't exist the target table. "
+                    f"Did you use {tgt_col} as your ID when deduplicating?",
+                    source=Source,
+                )
 
         # Transform for insert
         pre_prep_df["sha1"] = du.columns_to_value_ordered_sha1(
@@ -290,19 +320,29 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Turns data into a left, right, sha1, probability dataframe
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
+
+        Raises:
+            CMFSourceDatasetError is source tables aren't in the wider database
+            CMFSourceError if current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         if not self._validate_tables(engine=engine):
-            raise ValueError(
-                "Tables not found in database. Check your deduplication sources."
+            raise CMFSourceDatasetError(
+                "Source tables not found in wider database. Check your "
+                "deduplication sources."
             )
 
         with Session(engine) as session:
             # Add probabilities
-            model = (
-                session.query(Models).filter_by(name=self.run_name).first()
-            )  # Required to add association class to session
+            # Get model, including adding association proxy classes to session
+            model = session.query(Models).filter_by(name=self.run_name).first()
+            if model is None:
+                raise CMFSourceError(
+                    "Results model not found in database.",
+                    source=Models,
+                    data=self.run_name,
+                )
 
             # Insert any new Dedupe nodes, without probabilities
             ins_dd_stmt = insert(Dedupes)
@@ -346,17 +386,31 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Turns data into a left, right, sha1, probability dataframe
         * Upserts data then queries it back as SQLAlchemy objects
         * Attaches these objects to the model
+
+        Raises:
+            CMFSourceError
+                * If source models weren't found in the database
+                * If current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         if not self._validate_sources(engine=engine):
-            raise ValueError("Source not found in database. Check your link sources.")
+            raise CMFSourceError(
+                "Source models not found in database. Check your link sources.",
+                source=Models,
+                data=[self.left, self.right],
+            )
 
         with Session(engine) as session:
             # Add probabilities
-            model = (
-                session.query(Models).filter_by(name=self.run_name).first()
-            )  # Required to add association class to session
+            # Get model, including adding association proxy classes to session
+            model = session.query(Models).filter_by(name=self.run_name).first()
+            if model is None:
+                raise CMFSourceError(
+                    "Results model not found in database.",
+                    source=Models,
+                    data=self.run_name,
+                )
 
             # Insert any new Link nodes, without probabilities
             ins_li_stmt = insert(Links)
@@ -396,6 +450,263 @@ class ProbabilityResults(ResultsBaseDataclass):
 
 
 class ClusterResults(ResultsBaseDataclass):
-    """Cluster data produced by using to_clusters on ProbabilityResults."""
+    """Cluster data produced by using to_clusters on ProbabilityResults.
 
-    pass
+    Inherits the following attributes from ResultsBaseDataclass.
+
+    _expected_fields enforces the shape of the dataframe.
+
+    Args:
+        dataframe (DataFrame): the DataFrame holding the results
+        run_name (str): the name of the run or experiment
+        description (str): a description of the model generating the results
+        left (str): the source dataset or source model for the left side of
+            the comparison
+        right (str): the source dataset or source model for the right side of
+            the comparison
+    """
+
+    _expected_fields: List[str] = ["parent", "child"]
+
+    def inspect_with_source(
+        self,
+        left_data: DataFrame,
+        left_key: str,
+        right_data: DataFrame,
+        right_key: str,
+    ) -> DataFrame:
+        """Enriches the results with the source data.
+
+        For clusters we need to BYTE encode keys.
+        """
+        return (
+            self.to_df()
+            .filter(["parent", "child"])
+            .map(bytes)
+            .merge(
+                left_data.assign(**{left_key: lambda d: d[left_key].apply(bytes)}),
+                how="left",
+                left_on="child",
+                right_on=left_key,
+            )
+            .drop(columns=[left_key])
+            .merge(
+                right_data.assign(**{right_key: lambda d: d[right_key].apply(bytes)}),
+                how="left",
+                left_on="child",
+                right_on=right_key,
+            )
+            .drop(columns=[right_key])
+        )
+
+    def to_df(self) -> DataFrame:
+        """Returns the results as a DataFrame."""
+        return self.dataframe.copy()
+
+    def _to_cmf_logic(
+        self,
+        contains_class: Union[DDupeContains, LinkContains],
+        engine: Engine = ENGINE,
+    ) -> None:
+        """Handles common logic for writing dedupe or link clusters to the database.
+
+        In ClusterResults, the only difference is the tables being written to.
+
+        * Adds the new cluster nodes
+        * Adds model endorsement of these nodes with "creates" edge
+        * Adds the contains edges to show which clusters contain which
+
+        Args:
+            contains_class: the target table, one of DDupeContains or LinkContains
+            engine: a SQLAlchemy Engine object for the database
+
+        Raises:
+            CMFSourceError if model wasn't inserted correctly
+        """
+        Contains = contains_class
+        with Session(engine) as session:
+            # Get model, including adding association proxy classes to session
+            model = session.query(Models).filter_by(name=self.run_name).first()
+            if model is None:
+                raise CMFSourceError(
+                    "Results model not found in database.",
+                    source=Models,
+                    data=self.run_name,
+                )
+
+            # Add new cluster nodes
+            clusters_to_add = [
+                {"sha1": edge} for edge in self.dataframe.parent.drop_duplicates()
+            ]
+
+            ins_stmt = insert(Clusters)
+            ins_stmt = ins_stmt.on_conflict_do_nothing(index_elements=[Clusters.sha1])
+
+            session.execute(ins_stmt, clusters_to_add)
+            session.commit()
+
+            to_insert = (
+                session.query(Clusters)
+                .filter(
+                    Clusters.sha1.in_(
+                        bindparam(
+                            "ins_sha1s",
+                            [cl["sha1"] for cl in clusters_to_add],
+                            expanding=True,
+                        )
+                    )
+                )
+                .all()
+            )
+
+            # Add model endorsement of clusters
+            model.creates.clear()
+            model.creates = to_insert
+
+            session.commit()
+
+            # Add new contains edges
+            ins_stmt = insert(Contains)
+            ins_stmt = ins_stmt.on_conflict_do_update(
+                index_elements=[Contains.parent, Contains.child],
+                set_=ins_stmt.excluded,
+            )
+
+            session.execute(ins_stmt, self.dataframe.to_dict("records"))
+            session.commit()
+
+    def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
+        """Writes the results of a deduper to the CMF database."""
+        self._to_cmf_logic(contains_class=DDupeContains, engine=engine)
+
+    def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
+        """Writes the results of a linker to the CMF database."""
+        self._to_cmf_logic(contains_class=LinkContains, engine=engine)
+
+
+def get_unclustered(
+    clusters: ClusterResults, data: DataFrame, key: str
+) -> ClusterResults:
+    """
+    Creates a ClusterResult for data that wasn't linked or deduped.
+
+    When writing to the Company Matching Framework this allows a model to
+    endorse an existing Cluster if it wasn't linked or deduped.
+
+    Args:
+        clusters (ClusterResults): a ClusterResults generated by a linker
+        data (DataFrame): cleaned data that went into the model
+        key (str): the column that was matched, usually data_sha1 or cluster_sha1
+        threshold (float): the value above which to consider probabilities true
+
+    Returns:
+        A ClusterResults object
+    """
+    no_parent = {"parent": [], "child": []}
+
+    clustered_children = set(clusters.to_df().child)
+    unclustered_children = set(data[key].map(bytes))
+
+    cluster_diff = list(unclustered_children.difference(clustered_children))
+
+    no_parent = {
+        "parent": cluster_diff,
+        "child": cluster_diff,
+    }
+
+    return ClusterResults(
+        dataframe=DataFrame(no_parent),
+        run_name=clusters.run_name,
+        description=clusters.description,
+        left=clusters.left,
+        right=clusters.right,
+    )
+
+
+def to_clusters(
+    *data: Optional[DataFrame],
+    results: ProbabilityResults,
+    key: str,
+    threshold: float = 0.0,
+) -> ClusterResults:
+    """
+    Takes a models probabilistic outputs and turns them into clusters.
+
+    If the original data is supplied, will add unmatched data, the expected
+    output for adding to the database.
+
+    Args:
+        results (ProbabilityResults): an object of class ProbabilityResults
+        key (str): the column that was matched, usually data_sha1 or cluster_sha1
+        threshold (float): the value above which to consider probabilities true
+        data (DataFrame): (optional) Any number of cleaned data that went into
+            the model. Typically this is one dataset for a deduper or two for a
+            linker
+    Returns
+        A ClusterResults object
+    """
+    all_edges = (
+        results.to_df()
+        .query("probability > @threshold")
+        .filter(["left_id", "right_id"])
+        .map(bytes)
+        .stack()
+    )
+
+    G = rx.PyGraph()
+    added = {}
+
+    for edge in all_edges.groupby(level=0):
+        edge_idx = []
+        for i, sha1 in edge[1].items():
+            sha1_idx = added.get(sha1)
+            if sha1_idx is None:
+                sha1_idx = G.add_node(sha1)
+                added[sha1] = sha1_idx
+            edge_idx.append(sha1_idx)
+        edge_idx.append(None)
+        _ = G.add_edge(*edge_idx)
+
+    res = {"parent": [], "child": []}  # new clusters, existing hashes
+
+    for component in rx.connected_components(G):
+        child_hashes = []
+        for child in component:
+            child_hash = G.get_node_data(child)
+            child_hashes.append(child_hash)
+            res["child"].append(child_hash)
+
+        # Must be sorted to be symmetric
+        parent_hash = du.list_to_value_ordered_sha1(child_hashes)
+
+        res["parent"] += [parent_hash] * len(component)
+
+    matched_results = ClusterResults(
+        dataframe=DataFrame(res),
+        run_name=results.run_name,
+        description=results.description,
+        left=results.left,
+        right=results.right,
+    )
+
+    if len(data) > 0:
+        all_unmatched_results = []
+
+        for df in data:
+            unmatched_results = get_unclustered(
+                clusters=matched_results, data=df, key=key
+            )
+            all_unmatched_results.append(unmatched_results)
+
+        return ClusterResults(
+            dataframe=concat(
+                [matched_results.dataframe]
+                + [cluster_result.dataframe for cluster_result in all_unmatched_results]
+            ),
+            run_name=results.run_name,
+            description=results.description,
+            left=results.left,
+            right=results.right,
+        )
+    else:
+        return matched_results
