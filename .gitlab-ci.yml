@@ -1,16 +1,30 @@
-image: ubuntu:latest
+# This file is a template, and might need editing before it works on your project.
+# Official language image. Look for the different tagged releases at:
+# https://hub.docker.com/r/library/python/tags/
+
+image: "python:3.9"
+#commands to run in the Docker container before starting each job.
 
 before_script:
-  - apt-get -yq update
-  - apt-get -yq install software-properties-common
-  - add-apt-repository -y ppa:deadsnakes/ppa
-  - apt-get -yq update
-  - apt-get -yq install python-minimal python3.9 python-pip
-  - pip install -r requirements.txt
+  - echo '' | sudo -S yum update
+  - sudo yum groupinstall "Development tools"
+  - sudo yum -y install git gcc zlib-devel bzip2-devel readline-devel sqlite-devel openssl-devel
+  - curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
+  - echo PATH
+  - echo ~
+  - echo ‘export PATH=”~/.pyenv/bin:$PATH”
+  - eval “$(pyenv init -)”
+  - eval “$(pyenv virtualenv-init -)”’ >> .bashrc
+  - pyenv install 3.9 -v
+  - pyenv versions
+  - python --version
+  - pip3 install -r requirements.txt
 
+# different stages in the pipeline
 stages:
   - Test
 
+# defines the testing stage
 pytest:
   stage: Test
   script:
