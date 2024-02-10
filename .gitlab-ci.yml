@@ -6,17 +6,7 @@ image: "python:3.9"
 #commands to run in the Docker container before starting each job.
 
 before_script:
-  - sudo yum update
-  - sudo yum groupinstall "Development tools"
-  - sudo yum -y install git gcc zlib-devel bzip2-devel readline-devel sqlite-devel openssl-devel
-  - curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
-  - echo PATH
-  - echo ~
-  - echo ‘export PATH=”~/.pyenv/bin:$PATH”
-  - eval “$(pyenv init -)”
-  - eval “$(pyenv virtualenv-init -)”’ >> .bashrc
-  - pyenv install 3.9 -v
-  - pyenv versions
+  - cat /etc/os-release
   - python --version
   - pip3 install -r requirements.txt
 
