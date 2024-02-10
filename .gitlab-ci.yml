@@ -1,8 +1,7 @@
 image: ubuntu:latest
 
 before_script:
-  - ls /etc/gitlab-runner/
-  - ls ~/.gitlab-runner/
+  - more /etc/gitlab-runner/config.toml
   - pip install -r requirements.txt
 
 stages:
