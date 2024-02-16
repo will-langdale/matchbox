@@ -5,7 +5,6 @@ from cmf.data.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from cmf.data.link import LinkContains, LinkProbabilities, Links, LinkValidation
 from cmf.data.models import Models, ModelsFrom
 from cmf.data.results import ClusterResults, ProbabilityResults
-from cmf.data.table import Table  # will be removed eventually
 
 __all__ = (
     # Clusters
@@ -33,6 +32,4 @@ __all__ = (
     # Results
     "ClusterResults",
     "ProbabilityResults",
-    # to be removed
-    "Table",
 )

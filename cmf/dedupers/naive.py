@@ -42,8 +42,9 @@ class NaiveDeduper(Deduper):
         # rows where all data items are identical in the source
         df["_unique_e4003b"] = range(df.shape[0])
 
-        return duckdb.sql(
-            f"""
+        return (
+            duckdb.sql(
+                f"""
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
                 raw.right_id,
@@ -61,4 +62,7 @@ class NaiveDeduper(Deduper):
                         l._unique_e4003b != r._unique_e4003b
             ) raw;
         """
-        ).df()
+            )
+            .arrow()
+            .to_pandas()
+        )  # correctly returns bytes -- .df() returns bytesarray
