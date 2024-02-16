@@ -51,8 +51,9 @@ class DeterministicLinker(Linker):
         left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
         right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
 
-        return duckdb.sql(
-            f"""
+        return (
+            duckdb.sql(
+                f"""
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
                 raw.right_id,
@@ -67,4 +68,7 @@ class DeterministicLinker(Linker):
                     {self.settings.comparisons}
             ) raw;
         """
-        ).df()
+            )
+            .arrow()
+            .to_pandas()
+        )  # correctly returns bytes -- .df() returns bytesarray

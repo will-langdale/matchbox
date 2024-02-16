@@ -177,11 +177,7 @@ class ProbabilityResults(ResultsBaseDataclass):
     def inspect_with_source(
         self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
     ) -> DataFrame:
-        """Enriches the results with the source data.
-
-        For probabilities we need to STRING encode keys so users can work with
-        local data.
-        """
+        """Enriches the results with the source data."""
         df = (
             self.to_df()
             .filter(["left_id", "right_id"])

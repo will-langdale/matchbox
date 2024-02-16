@@ -3,6 +3,7 @@ from functools import partial
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -130,6 +131,10 @@ def test_function(test):
 
     cleaned = test_cleaning_function(dirty, column="col")
 
+    # Handle Arrow returning arrays but read_csv ingesting lists
+    if isinstance(cleaned["col"][0], np.ndarray):
+        cleaned["col"] = cleaned["col"].apply(list)
+
     assert cleaned.equals(clean)
 
 
@@ -155,11 +160,14 @@ def test_nest_unnest(test):
 
     cleaned = test_cleaning_function_arrayed(dirty, column="col")
 
-    assert (
-        cleaned.sort_values(by="col")
-        .reset_index(drop=True)
-        .equals(clean.sort_values(by="col").reset_index(drop=True))
-    )
+    # Handle Arrow returning arrays but read_csv ingesting lists
+    if isinstance(cleaned["col"][0], np.ndarray):
+        cleaned["col"] = cleaned["col"].apply(list)
+
+    cleaned = cleaned.sort_values(by="col").reset_index(drop=True)
+    clean = clean.sort_values(by="col").reset_index(drop=True)
+
+    assert cleaned.equals(clean)
 
 
 def test_alias():
