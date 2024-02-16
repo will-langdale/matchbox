@@ -6,8 +6,6 @@
 #
 --index-url https://s3-eu-west-2.amazonaws.com/mirrors.notebook.uktrade.io/pypi/
 
-alembic==1.13.1
-    # via mlflow
 altair==5.2.0
     # via
     #   company-matching-framework (pyproject.toml)
@@ -16,54 +14,32 @@ annotated-types==0.6.0
     # via pydantic
 asn1crypto==1.5.1
     # via scramp
-astroid==3.0.2
-    # via pylint
 asttokens==2.4.1
     # via stack-data
 attrs==23.2.0
     # via
     #   jsonschema
     #   referencing
-blinker==1.7.0
-    # via flask
-certifi==2023.11.17
-    # via requests
 cfgv==3.4.0
     # via pre-commit
-charset-normalizer==3.3.2
-    # via requests
 click==8.1.7
-    # via
-    #   company-matching-framework (pyproject.toml)
-    #   databricks-cli
-    #   flask
-    #   mlflow
-cloudpickle==2.2.1
-    # via mlflow
+    # via company-matching-framework (pyproject.toml)
 comm==0.2.1
     # via ipykernel
 contourpy==1.2.0
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
-databricks-cli==0.18.0
-    # via mlflow
 debugpy==1.8.0
     # via ipykernel
 decorator==5.1.1
     # via ipython
-dill==0.3.8
-    # via pylint
 distlib==0.3.8
     # via virtualenv
-docker==6.1.3
-    # via mlflow
 duckdb==0.9.2
     # via
     #   company-matching-framework (pyproject.toml)
     #   splink
-entrypoints==0.4
-    # via mlflow
 exceptiongroup==1.2.0
     # via
     #   ipython
@@ -72,30 +48,14 @@ executing==2.0.1
     # via stack-data
 filelock==3.13.1
     # via virtualenv
-flask==2.3.3
-    # via mlflow
 fonttools==4.47.2
     # via matplotlib
-gitdb==4.0.11
-    # via gitpython
-gitpython==3.1.41
-    # via
-    #   company-matching-framework (pyproject.toml)
-    #   mlflow
 greenlet==3.0.3
     # via sqlalchemy
-gunicorn==21.2.0
-    # via mlflow
 identify==2.5.33
     # via pre-commit
-idna==3.6
-    # via requests
 importlib-metadata==6.11.0
-    # via
-    #   flask
-    #   jupyter-client
-    #   markdown
-    #   mlflow
+    # via jupyter-client
 importlib-resources==6.1.1
     # via matplotlib
 iniconfig==2.0.0
@@ -104,20 +64,12 @@ ipykernel==6.29.0
     # via company-matching-framework (pyproject.toml)
 ipython==8.18.1
     # via ipykernel
-isort==5.13.2
-    # via pylint
-itsdangerous==2.1.2
-    # via flask
 jedi==0.19.1
     # via ipython
 jinja2==3.1.3
     # via
     #   altair
-    #   flask
-    #   mlflow
     #   splink
-joblib==1.3.2
-    # via scikit-learn
 jsonschema==4.21.1
     # via
     #   altair
@@ -132,29 +84,14 @@ jupyter-core==5.7.1
     #   jupyter-client
 kiwisolver==1.4.5
     # via matplotlib
-mako==1.3.1
-    # via alembic
-markdown==3.5.2
-    # via
-    #   company-matching-framework (pyproject.toml)
-    #   mlflow
 markupsafe==2.1.4
-    # via
-    #   jinja2
-    #   mako
-    #   werkzeug
+    # via jinja2
 matplotlib==3.8.2
-    # via
-    #   company-matching-framework (pyproject.toml)
-    #   mlflow
+    # via company-matching-framework (pyproject.toml)
 matplotlib-inline==0.1.6
     # via
     #   ipykernel
     #   ipython
-mccabe==0.7.0
-    # via pylint
-mlflow==2.7.1
-    # via company-matching-framework (pyproject.toml)
 nest-asyncio==1.6.0
     # via ipykernel
 nodeenv==1.8.0
@@ -164,28 +101,19 @@ numpy==1.26.3
     #   altair
     #   contourpy
     #   matplotlib
-    #   mlflow
     #   pandas
     #   pyarrow
     #   rustworkx
-    #   scikit-learn
-    #   scipy
-oauthlib==3.2.2
-    # via databricks-cli
 packaging==23.2
     # via
     #   altair
-    #   docker
-    #   gunicorn
     #   ipykernel
     #   matplotlib
-    #   mlflow
     #   pytest
 pandas==2.2.0
     # via
     #   altair
     #   company-matching-framework (pyproject.toml)
-    #   mlflow
     #   splink
 parso==0.8.3
     # via jedi
@@ -193,8 +121,6 @@ pexpect==4.9.0
     # via ipython
 pg8000==1.30.4
     # via testing-postgresql
-pgpq==0.9.0
-    # via company-matching-framework (pyproject.toml)
 phonetics==1.0.5
     # via splink
 pillow==10.2.0
@@ -202,18 +128,13 @@ pillow==10.2.0
 platformdirs==3.11.0
     # via
     #   jupyter-core
-    #   pylint
     #   virtualenv
 pluggy==1.4.0
     # via pytest
-polars==0.20.6
-    # via company-matching-framework (pyproject.toml)
 pre-commit==3.6.0
     # via company-matching-framework (pyproject.toml)
 prompt-toolkit==3.0.43
     # via ipython
-protobuf==4.25.2
-    # via mlflow
 psutil==5.9.8
     # via ipykernel
 psycopg2-binary==2.9.9
@@ -222,21 +143,14 @@ ptyprocess==0.7.0
     # via pexpect
 pure-eval==0.2.2
     # via stack-data
-pyarrow==13.0.0
-    # via
-    #   company-matching-framework (pyproject.toml)
-    #   mlflow
-    #   pgpq
+pyarrow==15.0.0
+    # via company-matching-framework (pyproject.toml)
 pydantic==2.5.3
     # via company-matching-framework (pyproject.toml)
 pydantic-core==2.14.6
     # via pydantic
 pygments==2.17.2
     # via ipython
-pyjwt==2.8.0
-    # via databricks-cli
-pylint==3.0.3
-    # via company-matching-framework (pyproject.toml)
 pyparsing==3.1.1
     # via matplotlib
 pytest==8.0.0
@@ -250,29 +164,19 @@ python-dateutil==2.8.2
 python-dotenv==1.0.1
     # via company-matching-framework (pyproject.toml)
 pytz==2023.3.post1
-    # via
-    #   mlflow
-    #   pandas
+    # via pandas
 pyyaml==6.0.1
     # via
     #   company-matching-framework (pyproject.toml)
-    #   mlflow
     #   pre-commit
 pyzmq==25.1.2
     # via
     #   ipykernel
     #   jupyter-client
-querystring-parser==1.2.4
-    # via mlflow
 referencing==0.33.0
     # via
     #   jsonschema
     #   jsonschema-specifications
-requests==2.31.0
-    # via
-    #   databricks-cli
-    #   docker
-    #   mlflow
 rpds-py==0.17.1
     # via
     #   jsonschema
@@ -281,57 +185,32 @@ ruff==0.1.14
     # via company-matching-framework (pyproject.toml)
 rustworkx==0.14.0
     # via company-matching-framework (pyproject.toml)
-scikit-learn==1.4.0
-    # via mlflow
-scipy==1.12.0
-    # via
-    #   mlflow
-    #   scikit-learn
 scramp==1.4.4
     # via pg8000
 six==1.16.0
     # via
     #   asttokens
-    #   databricks-cli
     #   python-dateutil
-    #   querystring-parser
-smmap==5.0.1
-    # via gitdb
 splink==3.9.11
     # via company-matching-framework (pyproject.toml)
 sqlalchemy==2.0.25
-    # via
-    #   alembic
-    #   company-matching-framework (pyproject.toml)
-    #   mlflow
+    # via company-matching-framework (pyproject.toml)
 sqlglot==18.17.0
     # via splink
-sqlparse==0.4.4
-    # via mlflow
 stack-data==0.6.3
     # via ipython
-tabulate==0.9.0
-    # via databricks-cli
 testing-common-database==2.0.3
     # via testing-postgresql
 testing-postgresql==1.3.0
     # via company-matching-framework (pyproject.toml)
-threadpoolctl==3.2.0
-    # via scikit-learn
 tomli==2.0.1
-    # via
-    #   pylint
-    #   pytest
-tomlkit==0.12.3
-    # via pylint
+    # via pytest
 toolz==0.12.0
     # via altair
 tornado==6.3.3
     # via
     #   ipykernel
     #   jupyter-client
-tqdm==4.66.1
-    # via company-matching-framework (pyproject.toml)
 traitlets==5.13.0
     # via
     #   comm
@@ -342,29 +221,17 @@ traitlets==5.13.0
     #   matplotlib-inline
 typing-extensions==4.8.0
     # via
-    #   alembic
     #   altair
-    #   astroid
     #   ipython
     #   pydantic
     #   pydantic-core
-    #   pylint
     #   sqlalchemy
 tzdata==2023.3
     # via pandas
-urllib3==2.1.0
-    # via
-    #   databricks-cli
-    #   docker
-    #   requests
 virtualenv==20.24.6
     # via pre-commit
 wcwidth==0.2.10
     # via prompt-toolkit
-websocket-client==1.6.4
-    # via docker
-werkzeug==3.0.1
-    # via flask
 zipp==3.17.0
     # via
     #   importlib-metadata
