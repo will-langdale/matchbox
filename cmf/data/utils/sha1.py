@@ -7,6 +7,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from cmf.data import ENGINE, SourceDataset
+from cmf.data.exceptions import CMFDBDataError
 from cmf.data.models import Models
 from cmf.data.utils.db import get_schema_table_names
 
@@ -14,7 +15,18 @@ T = TypeVar("T")
 
 
 def table_name_to_sha1(schema_table: str, engine: Engine = ENGINE) -> bytes:
-    """Takes a table's full schema.table name and returns its SHA-1 hash."""
+    """Takes a table's full schema.table name and returns its SHA-1 hash.
+
+    Args:
+        schema_table (str): The string name of the table in the form schema.table
+        engine (sqlalchemy.Engine): The CMF connection engine
+
+    Raises:
+        CMFSourceError if table not found in database
+
+    Returns:
+        The SHA-1 hash of the dataset
+    """
     db_schema, db_table = get_schema_table_names(schema_table)
 
     with Session(engine) as session:
@@ -23,14 +35,31 @@ def table_name_to_sha1(schema_table: str, engine: Engine = ENGINE) -> bytes:
         )
         dataset_sha1 = session.execute(stmt).scalar()
 
+    if dataset_sha1 is None:
+        raise CMFDBDataError(source=SourceDataset, data=schema_table)
+
     return dataset_sha1
 
 
 def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
-    """Takes a model's name and returns its SHA-1 hash."""
+    """Takes a model's name and returns its SHA-1 hash.
+
+    Args:
+        run_name (str): The string name of the model in the database
+        engine (sqlalchemy.Engine): The CMF connection engine
+
+    Raises:
+        CMFSourceError if model not found in database
+
+    Returns:
+        The SHA-1 hash of the model
+    """
     with Session(engine) as session:
         stmt = select(Models.sha1).where(Models.name == run_name)
         model_sha1 = session.execute(stmt).scalar()
+
+    if model_sha1 is None:
+        raise CMFDBDataError(source=Models, data=run_name)
 
     return model_sha1
 

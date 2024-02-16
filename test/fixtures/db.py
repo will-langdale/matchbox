@@ -38,6 +38,11 @@ CMF_POSTGRES = testing.postgresql.PostgresqlFactory(cache_initialized_db=True)
 
 
 @pytest.fixture
+def mock_env_schema(monkeypatch):
+    monkeypatch.setenv("SCHEMA", "test")
+
+
+@pytest.fixture
 def db_clear_all():
     """
     Returns a function to clear the database.

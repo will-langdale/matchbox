@@ -1,6 +1,7 @@
 from cmf.data.utils.db import (
     dataset_to_table,
     get_schema_table_names,
+    schema_table_to_table,
     sqa_profiled,
     string_to_dataset,
     string_to_table,
@@ -16,6 +17,7 @@ __all__ = (
     # Data conversion and profiling
     "get_schema_table_names",
     "dataset_to_table",
+    "schema_table_to_table",
     "string_to_table",
     "string_to_dataset",
     "sqa_profiled",

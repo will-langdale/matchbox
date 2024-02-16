@@ -18,13 +18,13 @@ if TYPE_CHECKING:
 
 
 class Models(SHA1Mixin, CMFBase):
-    __tablename__ = "models"
+    __tablename__ = "cmf__models"
     __table_args__ = (UniqueConstraint("name"),)
 
     name: Mapped[str]
     description: Mapped[str]
     deduplicates: Mapped[Optional[bytes]] = mapped_column(
-        ForeignKey("source_dataset.uuid")
+        ForeignKey("cmf__source_dataset.uuid")
     )
 
     # ORM Many to Many pattern
@@ -94,17 +94,17 @@ class Models(SHA1Mixin, CMFBase):
 
 
 class ModelsFrom(CMFBase):
-    __tablename__ = "models_from"
+    __tablename__ = "cmf__models_from"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
     # Using PostgreSQL delete cascade to handle model deletion correctly
     # https://docs.sqlalchemy.org/en/20/orm/
     # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     parent: Mapped[bytes] = mapped_column(
-        ForeignKey("models.sha1", ondelete="CASCADE"), primary_key=True
+        ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
     child: Mapped[bytes] = mapped_column(
-        ForeignKey("models.sha1", ondelete="CASCADE"), primary_key=True
+        ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
 
     child_model = relationship(

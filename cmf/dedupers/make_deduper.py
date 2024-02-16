@@ -69,7 +69,6 @@ def make_deduper(
             description=description,
             left=data_source,
             right=data_source,
-            validate_as="tables",
         )
 
     return deduper
