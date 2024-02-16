@@ -125,7 +125,7 @@ class ResultsBaseDataclass(BaseModel, ABC):
             # Write model
             logic_logger.info(f"[{metadata}] Registering model")
             self._model_to_cmf(
-                deduplicates=du.table_name_to_sha1(self.left, engine=engine),
+                deduplicates=du.table_name_to_uuid(self.left, engine=engine),
                 engine=engine,
             )
 

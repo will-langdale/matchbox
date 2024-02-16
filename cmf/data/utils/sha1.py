@@ -14,8 +14,8 @@ from cmf.data.utils.db import get_schema_table_names
 T = TypeVar("T")
 
 
-def table_name_to_sha1(schema_table: str, engine: Engine = ENGINE) -> bytes:
-    """Takes a table's full schema.table name and returns its SHA-1 hash.
+def table_name_to_uuid(schema_table: str, engine: Engine = ENGINE) -> bytes:
+    """Takes a table's full schema.table name and returns its UUID.
 
     Args:
         schema_table (str): The string name of the table in the form schema.table
@@ -25,7 +25,7 @@ def table_name_to_sha1(schema_table: str, engine: Engine = ENGINE) -> bytes:
         CMFSourceError if table not found in database
 
     Returns:
-        The SHA-1 hash of the dataset
+        The UUID of the dataset
     """
     db_schema, db_table = get_schema_table_names(schema_table)
 
@@ -33,12 +33,12 @@ def table_name_to_sha1(schema_table: str, engine: Engine = ENGINE) -> bytes:
         stmt = select(SourceDataset.uuid).where(
             SourceDataset.db_schema == db_schema, SourceDataset.db_table == db_table
         )
-        dataset_sha1 = session.execute(stmt).scalar()
+        dataset_uuid = session.execute(stmt).scalar()
 
-    if dataset_sha1 is None:
+    if dataset_uuid is None:
         raise CMFDBDataError(source=SourceDataset, data=schema_table)
 
-    return dataset_sha1
+    return dataset_uuid
 
 
 def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
@@ -83,7 +83,7 @@ def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
     """
     try:
         sorted_vals = sorted(list_)
-    except Exception as e:
+    except TypeError as e:
         raise TypeError("Can only order lists or columns of the same datatype.") from e
 
     hashed_vals_list = [hashlib.sha1(prep_for_hash(i)) for i in sorted_vals]
@@ -98,15 +98,11 @@ def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
 def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
     """Returns the rowwise SHA1 hash of columns ordered by the row's values.
 
-    Used to add a column to a dataframe that represents the SHA1 hash of each its
-    rows, but where the order of the row values doesn't change the hash value.
+    This function is used to add a column to a dataframe that represents the SHA1
+    hash of each its rows, but where the order of the row values doesn't change the
+    hash value.
     """
-    try:
-        # Deals with byte arrays from duckdb's .df()
-        bytes_records = data.filter(columns).map(bytes).to_dict("records")
-    except TypeError:
-        # Deals with objects found in normal dataframes for offline joins
-        bytes_records = data.filter(columns).astype(bytes).to_dict("records")
+    bytes_records = data.filter(columns).astype(bytes).to_dict("records")
 
     hashed_records = []
 
