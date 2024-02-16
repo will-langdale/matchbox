@@ -5,9 +5,8 @@ from typing import Any, Dict, List, Optional, Union
 import rustworkx as rx
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import Engine, Table, bindparam, select
+from sqlalchemy import Engine, Table, bindparam
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from cmf.data import utils as du
@@ -15,23 +14,11 @@ from cmf.data.clusters import Clusters
 from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
 from cmf.data.dedupe import DDupeContains, Dedupes
+from cmf.data.exceptions import CMFDBDataError
 from cmf.data.link import LinkContains, Links
 from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
-
-
-class CMFSourceError(Exception):
-    """Data doesn't exist in the source company matching framework table."""
-
-    def __init__(self, message, source, data=None):
-        super().__init__(message)
-        self.source = source
-        self.data = data
-
-
-class CMFSourceDatasetError(Exception):
-    """Tables not found in wider database, outside of the framework."""
 
 
 class ResultsBaseDataclass(BaseModel, ABC):
@@ -55,40 +42,6 @@ class ResultsBaseDataclass(BaseModel, ABC):
             raise ValueError(f"Expected {expected_fields}. \n" f"Found {table_fields}.")
 
         return self
-
-    def _validate_tables(self, engine: Engine = ENGINE) -> bool:
-        """Validates existence of left and right tables in wider database."""
-        try:
-            db_left_schema, db_left_table = du.get_schema_table_names(
-                full_name=self.left, validate=True
-            )
-            _ = du.string_to_table(
-                db_schema=db_left_schema, db_table=db_left_table, engine=engine
-            )
-            db_right_schema, db_right_table = du.get_schema_table_names(
-                full_name=self.right, validate=True
-            )
-            _ = du.string_to_table(
-                db_schema=db_right_schema, db_table=db_right_table, engine=engine
-            )
-        except NoSuchTableError:
-            return False
-
-        return True
-
-    def _validate_sources(self, engine: Engine = ENGINE) -> bool:
-        """Validates existence of left and right models in CMF database."""
-        stmt_left = select(Models.name).where(Models.name == self.left)
-        stmt_right = select(Models.name).where(Models.name == self.right)
-
-        with Session(engine) as session:
-            res_left = session.execute(stmt_left).scalar()
-            res_right = session.execute(stmt_right).scalar()
-
-        if res_left is not None and res_right is not None:
-            return True
-        else:
-            return False
 
     @abstractmethod
     def inspect_with_source(self) -> DataFrame:
@@ -117,20 +70,18 @@ class ResultsBaseDataclass(BaseModel, ABC):
     def _model_to_cmf(
         self, deduplicates: bytes = None, engine: Engine = ENGINE
     ) -> None:
-        """Writes the model to the CMF."""
+        """Writes the model to the CMF.
+
+        Raises
+            CMFDBDataError if, for a linker, the source models weren't found in
+                the database
+        """
         with Session(engine) as session:
             if deduplicates is None:
                 # Linker
                 # Construct model SHA1 from parent model SHA1s
                 left_sha1 = du.model_name_to_sha1(self.left, engine=engine)
                 right_sha1 = du.model_name_to_sha1(self.right, engine=engine)
-
-                if not self._validate_sources(engine=engine):
-                    raise CMFSourceError(
-                        "Model(s) not found in database",
-                        source=Models,
-                        data=[self.left, self.right],
-                    )
 
                 model_sha1 = du.list_to_value_ordered_sha1([left_sha1, right_sha1])
             else:
@@ -298,9 +249,11 @@ class ProbabilityResults(ResultsBaseDataclass):
                 )
 
             if len(data_inner_join) != len(data_unique):
-                raise CMFSourceError(
-                    f"Some items in {col} don't exist the target table. "
-                    f"Did you use {tgt_col} as your ID when deduplicating?",
+                raise CMFDBDataError(
+                    message=(
+                        f"Some items in {col} don't exist the target table. "
+                        f"Did you use {tgt_col} as your ID when deduplicating?"
+                    ),
                     source=Source,
                 )
 
@@ -322,27 +275,22 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Attaches these objects to the model
 
         Raises:
-            CMFSourceDatasetError is source tables aren't in the wider database
-            CMFSourceError if current model wasn't inserted correctly
+            CMFSourceTableError is source tables aren't in the wider database
+            CMFDBDataError if current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
-        if not self._validate_tables(engine=engine):
-            raise CMFSourceDatasetError(
-                "Source tables not found in wider database. Check your "
-                "deduplication sources."
-            )
+        # Validate tables exist
+        _ = du.schema_table_to_table(full_name=self.left, validate=True, engine=engine)
+        _ = du.schema_table_to_table(full_name=self.right, validate=True, engine=engine)
 
         with Session(engine) as session:
             # Add probabilities
             # Get model, including adding association proxy classes to session
             model = session.query(Models).filter_by(name=self.run_name).first()
+
             if model is None:
-                raise CMFSourceError(
-                    "Results model not found in database.",
-                    source=Models,
-                    data=self.run_name,
-                )
+                raise CMFDBDataError(source=Models, data=self.run_name)
 
             # Insert any new Dedupe nodes, without probabilities
             ins_dd_stmt = insert(Dedupes)
@@ -388,29 +336,17 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Attaches these objects to the model
 
         Raises:
-            CMFSourceError
-                * If source models weren't found in the database
-                * If current model wasn't inserted correctly
+            CMFDBDataError if current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
-
-        if not self._validate_sources(engine=engine):
-            raise CMFSourceError(
-                "Source models not found in database. Check your link sources.",
-                source=Models,
-                data=[self.left, self.right],
-            )
 
         with Session(engine) as session:
             # Add probabilities
             # Get model, including adding association proxy classes to session
             model = session.query(Models).filter_by(name=self.run_name).first()
+
             if model is None:
-                raise CMFSourceError(
-                    "Results model not found in database.",
-                    source=Models,
-                    data=self.run_name,
-                )
+                raise CMFDBDataError(source=Models, data=self.run_name)
 
             # Insert any new Link nodes, without probabilities
             ins_li_stmt = insert(Links)
@@ -521,18 +457,15 @@ class ClusterResults(ResultsBaseDataclass):
             engine: a SQLAlchemy Engine object for the database
 
         Raises:
-            CMFSourceError if model wasn't inserted correctly
+            CMFDBDataError if model wasn't inserted correctly
         """
         Contains = contains_class
         with Session(engine) as session:
             # Get model, including adding association proxy classes to session
             model = session.query(Models).filter_by(name=self.run_name).first()
+
             if model is None:
-                raise CMFSourceError(
-                    "Results model not found in database.",
-                    source=Models,
-                    data=self.run_name,
-                )
+                raise CMFDBDataError(source=Models, data=self.run_name)
 
             # Add new cluster nodes
             clusters_to_add = [
@@ -594,10 +527,9 @@ def get_unclustered(
     endorse an existing Cluster if it wasn't linked or deduped.
 
     Args:
-        clusters (ClusterResults): a ClusterResults generated by a linker
+        clusters (ClusterResults): a ClusterResults generated by a linker or deduper
         data (DataFrame): cleaned data that went into the model
         key (str): the column that was matched, usually data_sha1 or cluster_sha1
-        threshold (float): the value above which to consider probabilities true
 
     Returns:
         A ClusterResults object

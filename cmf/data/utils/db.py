@@ -4,9 +4,11 @@ import io
 import pstats
 
 from sqlalchemy import Engine, MetaData, Table
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from cmf.data import ENGINE, SourceDataset
+from cmf.data.exceptions import CMFSourceTableError
 
 # Data conversion
 
@@ -58,12 +60,18 @@ def dataset_to_table(dataset: SourceDataset, engine: Engine = ENGINE) -> Table:
     """Takes a CMF SourceDataset object and returns a SQLAlchemy Table."""
     with Session(engine) as session:
         source_schema = MetaData(schema=dataset.db_schema)
-        source_table = Table(
-            dataset.db_table,
-            source_schema,
-            schema=dataset.db_schema,
-            autoload_with=session.get_bind(),
-        )
+        try:
+            source_table = Table(
+                dataset.db_table,
+                source_schema,
+                schema=dataset.db_schema,
+                autoload_with=session.get_bind(),
+            )
+        except NoSuchTableError as e:
+            raise CMFSourceTableError(
+                table_name=f"{dataset.db_schema}.{dataset.db_table}"
+            ) from e
+
     return source_table
 
 
@@ -71,12 +79,29 @@ def string_to_table(db_schema: str, db_table: str, engine: Engine = ENGINE) -> T
     """Takes strings and returns a SQLAlchemy Table."""
     with Session(engine) as session:
         source_schema = MetaData(schema=db_schema)
-        source_table = Table(
-            db_table,
-            source_schema,
-            schema=db_schema,
-            autoload_with=session.get_bind(),
-        )
+        try:
+            source_table = Table(
+                db_table,
+                source_schema,
+                schema=db_schema,
+                autoload_with=session.get_bind(),
+            )
+        except NoSuchTableError as e:
+            raise CMFSourceTableError(table_name=f"{db_schema}.{db_table}") from e
+
+    return source_table
+
+
+def schema_table_to_table(
+    full_name: str, validate: bool = False, engine: Engine = ENGINE
+) -> Table:
+    """Thin wrapper combining get_schema_table_names and string_to_table."""
+
+    db_schema, db_table = get_schema_table_names(full_name=full_name, validate=validate)
+    source_table = string_to_table(
+        db_schema=db_schema, db_table=db_table, engine=engine
+    )
+
     return source_table
 
 
