@@ -1,199 +1,57 @@
-import os
+from test.fixtures.models import dedupe_test_params, deduper_test_params
 
 import pytest
-from pandas import DataFrame, Series, concat
+from pandas import DataFrame
 from sqlalchemy.orm import Session
 
-from cmf import make_deduper, process, query
-from cmf.clean import company_name
+from cmf import make_deduper, to_clusters
 from cmf.data import Models
-from cmf.data import utils as du
-from cmf.dedupers import Naive
-from cmf.helpers import cleaner, cleaners, selector
 
 
-@pytest.fixture(scope="function")
-def query_clean_crn(db_engine):
-    # Select
-    select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
-        fields=["crn", "company_name"],
-        engine=db_engine[1],
-    )
-
-    crn = query(
-        selector=select_crn, model=None, return_type="pandas", engine=db_engine[1]
-    )
-
-    # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
-    cleaner_name = cleaner(
-        function=company_name, arguments={"column": f"{col_prefix}company_name"}
-    )
-    cleaner_crn = cleaners(cleaner_name)
-
-    crn_cleaned = process(data=crn, pipeline=cleaner_crn)
-
-    return crn_cleaned
-
-
-@pytest.fixture(scope="function")
-def query_clean_duns(db_engine):
-    # Select
-    select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns",
-        fields=["duns", "company_name"],
-        engine=db_engine[1],
-    )
-
-    duns = query(
-        selector=select_duns, model=None, return_type="pandas", engine=db_engine[1]
-    )
-
-    # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
-    cleaner_name = cleaner(
-        function=company_name, arguments={"column": f"{col_prefix}company_name"}
-    )
-    cleaner_duns = cleaners(cleaner_name)
-
-    duns_cleaned = process(data=duns, pipeline=cleaner_duns)
-
-    return duns_cleaned
-
-
-@pytest.fixture(scope="function")
-def query_clean_cdms(db_engine):
-    # Select
-    select_cdms = selector(
-        table=f"{os.getenv('SCHEMA')}.cdms",
-        fields=["crn", "cdms"],
-        engine=db_engine[1],
-    )
-
-    cdms = query(
-        selector=select_cdms, model=None, return_type="pandas", engine=db_engine[1]
-    )
-
-    # No cleaning needed, see original data
-    return cdms
-
-
-def test_sha1_conversion(all_companies):
-    """Tests SHA1 conversion works as expected."""
-    sha1_series_1 = du.columns_to_value_ordered_sha1(
-        data=all_companies,
-        columns=["id", "company_name", "address", "crn", "duns", "cdms"],
-    )
-
-    assert isinstance(sha1_series_1, Series)
-    assert len(sha1_series_1) == all_companies.shape[0]
-
-    all_companies_reordered_top = (
-        all_companies.head(500)
-        .rename(
-            columns={
-                "company_name": "address",
-                "address": "company_name",
-                "duns": "crn",
-                "crn": "duns",
-            }
-        )
-        .filter(["id", "company_name", "address", "crn", "duns", "cdms"])
-    )
-
-    all_companies_reodered = concat(
-        [all_companies_reordered_top, all_companies.tail(500)]
-    )
-
-    sha1_series_2 = du.columns_to_value_ordered_sha1(
-        data=all_companies_reodered,
-        columns=["id", "company_name", "address", "crn", "duns", "cdms"],
-    )
-
-    assert sha1_series_1.equals(sha1_series_2)
-
-
-data_test_params = [
-    (
-        f"{os.getenv('SCHEMA')}.crn",
-        "query_clean_crn",
-        [f"{os.getenv('SCHEMA')}_crn_company_name", f"{os.getenv('SCHEMA')}_crn_crn"],
-        3000,
-        # 1000 unique items repeated three times
-        # Unordered pairs of sets of three, so (3 choose 2) = 3, * 1000 = 3000
-        3000,
-    ),
-    (
-        f"{os.getenv('SCHEMA')}.duns",
-        "query_clean_duns",
-        [
-            f"{os.getenv('SCHEMA')}_duns_company_name",
-            f"{os.getenv('SCHEMA')}_duns_duns",
-        ],
-        500,
-        # every row is unique: no duplicates
-        0,
-    ),
-    (
-        f"{os.getenv('SCHEMA')}.cdms",
-        "query_clean_cdms",
-        [f"{os.getenv('SCHEMA')}_cdms_crn", f"{os.getenv('SCHEMA')}_cdms_cdms"],
-        2000,
-        # 1000 unique items repeated two times
-        # Unordered pairs of sets of two, so (2 choose 2) = 1, * 1000 = 1000
-        1000,
-    ),
-]
-
-
-def make_naive_settings(source, data_fixture, fields, curr_n, tgt_n):
-    return {"id": "data_sha1", "unique_fields": fields}
-
-
-deduper_test_params = [("naive", Naive, make_naive_settings)]
-
-
-@pytest.mark.parametrize(
-    "source, data_fixture, fields, curr_n, tgt_n", data_test_params
-)
-@pytest.mark.parametrize(
-    "deduper_name, deduper_class, build_deduper_settings", deduper_test_params
-)
+@pytest.mark.parametrize("data", dedupe_test_params)
+@pytest.mark.parametrize("dduper", deduper_test_params)
 def test_dedupers(
     # Fixtures
     db_engine,
     db_clear_models,
-    # Data params
-    source,
-    data_fixture,
-    fields,
-    curr_n,
-    tgt_n,
-    # Methodology params
-    deduper_name,
-    deduper_class,
-    build_deduper_settings,
+    # Parameterised data classes
+    data,
+    dduper,
     # Pytest
     request,
 ):
-    """Runs all deduper methodologies over exemplar tables."""
-    df = request.getfixturevalue(data_fixture)
-    # Confirm current and target shape from extremely naive dedupe
-    assert isinstance(df, DataFrame)
-    assert df.shape[0] == curr_n
+    """Runs all deduper methodologies over exemplar tables.
 
-    deduper_settings = build_deduper_settings(
-        source, data_fixture, fields, curr_n, tgt_n
-    )
+    Tests:
+        1. That the input data is as expected
+        2. That the data is deduplicated correctly
+        3. That the deduplicated probabilities are inserted correctly
+        4. That the correct number of clusters are resolved
+        5. That the resolved clusters are inserted correctly
+    """
+    # i. Ensure database is clean, collect fixtures
+
+    db_clear_models(db_engine)
+
+    df = request.getfixturevalue(data.fixture)
+
+    # 1. Input data is as expected
+
+    assert isinstance(df, DataFrame)
+    assert df.shape[0] == data.curr_n
+
+    # 2. Data is deduplicated correctly
+
+    deduper_name = f"{dduper.name}_{data.source}"
+    deduper_settings = dduper.build_settings(data)
 
     deduper = make_deduper(
-        dedupe_run_name=f"{deduper_name}_{source}",
-        description=f"Testing dedupe of {source} with {deduper_name} method",
-        deduper=deduper_class,
+        dedupe_run_name=deduper_name,
+        description=f"Testing dedupe of {data.source} with {dduper.name} method",
+        deduper=dduper.cls,
         deduper_settings=deduper_settings,
-        data_source=source,
         data=df,
+        data_source=data.source,
     )
 
     deduped = deduper()
@@ -204,18 +62,68 @@ def test_dedupers(
     )
 
     assert isinstance(deduped_df, DataFrame)
-    assert deduped_df.shape[0] == tgt_n
-    for field in fields:
+    assert deduped_df.shape[0] == data.tgt_prob_n
+
+    assert isinstance(deduped_df_with_source, DataFrame)
+    for field in data.fields:
         assert deduped_df_with_source[field + "_x"].equals(
             deduped_df_with_source[field + "_y"]
         )
 
+    # 3. Deduplicated probabilities are inserted correctly
+
     deduped.to_cmf(engine=db_engine[1])
 
     with Session(db_engine[1]) as session:
-        model = session.query(Models).filter_by(name=f"{deduper_name}_{source}").first()
+        model = session.query(Models).filter_by(name=deduper_name).first()
         proposed_dedupes = model.proposes_dedupes
 
-    assert len(proposed_dedupes) == tgt_n
+    assert len(proposed_dedupes) == data.tgt_prob_n
+
+    # 4. Correct number of clusters are resolved
+
+    clusters_dupes = to_clusters(results=deduped, key="data_sha1", threshold=0)
+
+    clusters_dupes_df = clusters_dupes.to_df()
+    clusters_dupes_df_with_source = clusters_dupes.inspect_with_source(
+        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+    )
+
+    assert isinstance(clusters_dupes_df, DataFrame)
+    assert clusters_dupes_df.parent.nunique() == data.tgt_clus_n
+
+    assert isinstance(clusters_dupes_df_with_source, DataFrame)
+    for field in data.fields:
+        assert clusters_dupes_df_with_source[field + "_x"].equals(
+            clusters_dupes_df_with_source[field + "_y"]
+        )
+
+    clusters_all = to_clusters(df, results=deduped, key="data_sha1", threshold=0)
+
+    clusters_all_df = clusters_all.to_df()
+    clusters_all_df_with_source = clusters_all.inspect_with_source(
+        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+    )
+
+    assert isinstance(clusters_all_df, DataFrame)
+    assert clusters_all_df.parent.nunique() == data.unique_n
+
+    assert isinstance(clusters_all_df_with_source, DataFrame)
+    for field in data.fields:
+        assert clusters_all_df_with_source[field + "_x"].equals(
+            clusters_all_df_with_source[field + "_y"]
+        )
+
+    # 5. Resolved clusters are inserted correctly
+
+    clusters_all.to_cmf(engine=db_engine[1])
+
+    with Session(db_engine[1]) as session:
+        model = session.query(Models).filter_by(name=deduper_name).first()
+        created_clusters = model.creates
+
+    assert len(created_clusters) == data.unique_n
+
+    # i. Clean up after ourselves
 
     db_clear_models(db_engine)

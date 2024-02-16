@@ -1,3 +1,3 @@
-from cmf.dedupers.naive import Naive
+from cmf.dedupers.naive import NaiveDeduper
 
-__all__ = ("Naive",)
+__all__ = ("NaiveDeduper",)

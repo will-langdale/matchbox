@@ -12,21 +12,15 @@ readme = "README.md"
 requires-python = ">3.8"
 dependencies = [
     "click",
-    "GitPython",
-    "markdown",
     "matplotlib",
-    "mlflow == 2.7.*",
     "pandas",
-    "pyarrow",
+    "pyarrow > 14.9",
     "python-dotenv",
     "sqlalchemy",
     "splink",
     "duckdb",
-    "polars",
     "altair",
-    "tqdm",
     "psycopg2-binary",
-    "pgpq",
     "pydantic",
     "pyyaml",
     "rustworkx"
@@ -38,7 +32,6 @@ dev = [
     "pre-commit",
     "pytest",
     "testing.postgresql",
-    "pylint",
     "ipykernel"
 ]
 
