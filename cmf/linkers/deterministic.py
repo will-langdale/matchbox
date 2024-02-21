@@ -12,11 +12,11 @@ class DeterministicSettings(LinkerSettings):
     """
 
     comparisons: str = Field(
-        description=""""\
-            A valid ON clause to compare fields between the left and \
+        description="""
+            A valid ON clause to compare fields between the left and 
             the right data.
 
-            Use left.field and right.field to refer to columns in the \
+            Use left.field and right.field to refer to columns in the 
             respective sources.
 
             For example:
@@ -54,20 +54,20 @@ class DeterministicLinker(Linker):
         return (
             duckdb.sql(
                 f"""
-            select distinct on (list_sort([raw.left_id, raw.right_id]))
-                raw.left_id,
-                raw.right_id,
-                1 as probability
-            from (
-                select
-                    l.{self.settings.left_id} as left_id,
-                    r.{self.settings.right_id} as right_id,
-                from
-                    left_df l
-                inner join right_df r on
-                    {self.settings.comparisons}
-            ) raw;
-        """
+                    select distinct on (list_sort([raw.left_id, raw.right_id]))
+                        raw.left_id,
+                        raw.right_id,
+                        1 as probability
+                    from (
+                        select
+                            l.{self.settings.left_id} as left_id,
+                            r.{self.settings.right_id} as right_id,
+                        from
+                            left_df l
+                        inner join right_df r on
+                            {self.settings.comparisons}
+                    ) raw;
+                """
             )
             .arrow()
             .to_pandas()
