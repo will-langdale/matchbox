@@ -8,16 +8,16 @@ from cmf import make_linker, to_clusters
 from cmf.data import Models
 
 
-@pytest.mark.parametrize("data", merge_test_params)
-@pytest.mark.parametrize("linker", linker_test_params)
+@pytest.mark.parametrize("fx_data", merge_test_params)
+@pytest.mark.parametrize("fx_linker", linker_test_params)
 def test_linkers(
     # Fixtures
     db_engine,
     db_clear_models,
     db_add_dedupe_models,
     # Parameterised data classes
-    data,
-    linker,
+    fx_data,
+    fx_linker,
     # Pytest
     request,
 ):
@@ -35,34 +35,34 @@ def test_linkers(
     db_clear_models(db_engine)
     db_add_dedupe_models(db_engine, request)
 
-    df_l = request.getfixturevalue(data.fixture_l)
-    df_r = request.getfixturevalue(data.fixture_r)
+    df_l = request.getfixturevalue(fx_data.fixture_l)
+    df_r = request.getfixturevalue(fx_data.fixture_r)
 
     # 1. Input data is as expected
 
     assert isinstance(df_l, DataFrame)
-    assert df_l.shape[0] == data.curr_n_l
+    assert df_l.shape[0] == fx_data.curr_n_l
 
     assert isinstance(df_r, DataFrame)
-    assert df_r.shape[0] == data.curr_n_r
+    assert df_r.shape[0] == fx_data.curr_n_r
 
     # 2. Data is linked correctly
 
-    linker_name = f"{linker.name}_{data.source_l}_{data.source_r}"
-    linker_settings = linker.build_settings(data)
+    linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
+    linker_settings = fx_linker.build_settings(fx_data)
 
     linker = make_linker(
         link_run_name=linker_name,
         description=(
-            f"Testing link of {data.source_l} and {data.source_r} "
-            f"with {linker.name} method."
+            f"Testing link of {fx_data.source_l} and {fx_data.source_r} "
+            f"with {fx_linker.name} method."
         ),
-        linker=linker.cls,
+        linker=fx_linker.cls,
         linker_settings=linker_settings,
         left_data=df_l,
-        left_source=data.source_l,
+        left_source=fx_data.source_l,
         right_data=df_r,
-        right_source=data.source_r,
+        right_source=fx_data.source_r,
     )
 
     linked = linker()
@@ -76,10 +76,10 @@ def test_linkers(
     )
 
     assert isinstance(linked_df, DataFrame)
-    assert linked_df.shape[0] == data.tgt_prob_n
+    assert linked_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(linked_df_with_source, DataFrame)
-    for field_l, field_r in zip(data.fields_l, data.fields_r):
+    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
         # Drop NA because in data where entities are imbalanced we include the
         # unmatched rows from the source data. This is not a fair check
         linked_df_with_source_no_na = linked_df_with_source.dropna()
@@ -95,7 +95,7 @@ def test_linkers(
         model = session.query(Models).filter_by(name=linker_name).first()
         proposed_links = model.proposes_links
 
-    assert len(proposed_links) == data.tgt_prob_n
+    assert len(proposed_links) == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
@@ -110,10 +110,10 @@ def test_linkers(
     )
 
     assert isinstance(clusters_links_df, DataFrame)
-    assert clusters_links_df.parent.nunique() == data.tgt_clus_n
+    assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
-    for field_l, field_r in zip(data.fields_l, data.fields_r):
+    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
         # Different to a deduper as the join will always produce NaNs
         # We therefore coalesce by cluster to unique joined values, which
         # we can expect to equal the target cluster number, and have matching
@@ -135,8 +135,8 @@ def test_linkers(
         )
 
         assert cluster_vals[field_l].equals(cluster_vals[field_r])
-        assert cluster_vals.parent.nunique() == data.tgt_clus_n
-        assert cluster_vals.shape[0] == data.tgt_clus_n
+        assert cluster_vals.parent.nunique() == fx_data.tgt_clus_n
+        assert cluster_vals.shape[0] == fx_data.tgt_clus_n
 
     clusters_all = to_clusters(
         df_l, df_r, results=linked, key="cluster_sha1", threshold=0
@@ -151,10 +151,10 @@ def test_linkers(
     )
 
     assert isinstance(clusters_all_df, DataFrame)
-    assert clusters_all_df.parent.nunique() == data.unique_n
+    assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field_l, field_r in zip(data.fields_l, data.fields_r):
+    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
         # See above for method
         # Only change is that we've now introduced expected NaNs for data
         # that contains different number of entities
@@ -174,13 +174,13 @@ def test_linkers(
             .reset_index()
         )
 
-        assert cluster_vals.parent.nunique() == data.unique_n
-        assert cluster_vals.shape[0] == data.unique_n
+        assert cluster_vals.parent.nunique() == fx_data.unique_n
+        assert cluster_vals.shape[0] == fx_data.unique_n
 
         cluster_vals_no_na = cluster_vals.dropna()
 
         assert cluster_vals_no_na[field_l].equals(cluster_vals_no_na[field_r])
-        assert cluster_vals_no_na.parent.nunique() == data.tgt_clus_n
+        assert cluster_vals_no_na.parent.nunique() == fx_data.tgt_clus_n
 
     # 5. Resolved clusters are inserted correctly
 
@@ -190,7 +190,7 @@ def test_linkers(
         model = session.query(Models).filter_by(name=linker_name).first()
         created_clusters = model.creates
 
-    assert len(created_clusters) == data.unique_n
+    assert len(created_clusters) == fx_data.unique_n
 
     # i. Clean up after ourselves
 
