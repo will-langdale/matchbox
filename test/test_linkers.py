@@ -80,12 +80,7 @@ def test_linkers(
 
     assert isinstance(linked_df_with_source, DataFrame)
     for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
-        # Drop NA because in data where entities are imbalanced we include the
-        # unmatched rows from the source data. This is not a fair check
-        linked_df_with_source_no_na = linked_df_with_source.dropna()
-        assert linked_df_with_source_no_na[field_l].equals(
-            linked_df_with_source_no_na[field_r]
-        )
+        assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
     # 3. Linked probabilities are inserted correctly
 
@@ -114,8 +109,13 @@ def test_linkers(
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
     for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
-        # Different to a deduper as the join will always produce NaNs
-        # We therefore coalesce by cluster to unique joined values, which
+        # When we enrich the ClusterResults in a deduplication job, every child
+        # hash will match something in the source data, because we're only using
+        # one dataset. NaNs are therefore impossible.
+        # When we enrich the ClusterResults in a link job, some child hashes
+        # will match something in the left data, and others in the right data.
+        # NaNs are therefore guaranteed.
+        # We therefore coalesce by parent to unique joined values, which
         # we can expect to equal the target cluster number, and have matching
         # rows of data
         def unique_non_null(s):
