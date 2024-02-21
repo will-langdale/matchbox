@@ -96,11 +96,14 @@ def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
 
 
 def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
-    """Returns the rowwise SHA1 hash of columns ordered by the row's values.
+    """Returns the rowwise SHA1 hash ordered by the row's values, ignoring column order.
 
     This function is used to add a column to a dataframe that represents the SHA1
     hash of each its rows, but where the order of the row values doesn't change the
-    hash value.
+    hash value. Column order is ignored in favour of value order.
+
+    This is primarily used to give a consistent hash to a new cluster no matter whether
+    its parent hashes were used in the left or right table.
     """
     bytes_records = data.filter(columns).astype(bytes).to_dict("records")
 
