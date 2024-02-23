@@ -1,4 +1,5 @@
 import rustworkx as rx
+from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
@@ -6,7 +7,7 @@ from sqlalchemy.orm import Session
 from cmf.data import ENGINE, Models, ModelsFrom, SourceDataset
 
 
-def draw_model_tree(engine: Engine = ENGINE):
+def draw_model_tree(engine: Engine = ENGINE) -> Figure:
     """
     Draws the model subgraph.
     """
@@ -49,9 +50,7 @@ def draw_model_tree(engine: Engine = ENGINE):
         elif type == "model":
             colours.append((1, 0, 0, 0.2))
 
-    colours
-
-    mpl_draw(
+    return mpl_draw(
         G,
         pos=rx.spring_layout(
             G,

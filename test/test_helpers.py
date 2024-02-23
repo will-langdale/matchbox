@@ -2,6 +2,7 @@ import logging
 import os
 
 from dotenv import find_dotenv, load_dotenv
+from matplotlib.figure import Figure
 from pandas import DataFrame
 
 from cmf import process, query
@@ -10,6 +11,7 @@ from cmf.helpers import (
     cleaner,
     cleaners,
     comparison,
+    draw_model_tree,
     selector,
     selectors,
 )
@@ -208,4 +210,5 @@ def test_comparisons():
 
 
 def test_draw_model_tree(db_engine):
-    pass
+    plt = draw_model_tree(db_engine[1])
+    assert isinstance(plt, Figure)
