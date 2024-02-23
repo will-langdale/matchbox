@@ -6,7 +6,13 @@ from pandas import DataFrame
 
 from cmf import process, query
 from cmf.clean import company_name, company_number
-from cmf.helpers import cleaner, cleaners, comparison, selector, selectors
+from cmf.helpers import (
+    cleaner,
+    cleaners,
+    comparison,
+    selector,
+    selectors,
+)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -199,3 +205,7 @@ def test_comparisons():
     )
 
     assert comparison_name_id is not None
+
+
+def test_draw_model_tree(db_engine):
+    pass

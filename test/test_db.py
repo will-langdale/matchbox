@@ -1,5 +1,9 @@
 import logging
 import os
+from test.fixtures.models import (
+    dedupe_test_params,
+    link_test_params,
+)
 
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import MetaData, Table, insert, inspect
@@ -261,3 +265,55 @@ def test_db_delete(
     # Add it all back
     db_add_data(db_engine)
     db_add_models(db_engine)
+
+
+def test_add_dedupers(db_engine, db_clear_models, db_add_dedupe_models, request):
+    """
+    Test that adding deduplication models works.
+    """
+    db_clear_models(db_engine)
+    db_add_dedupe_models(db_engine, request)
+
+    dedupe_test_params_dict = {
+        test_param.source: test_param for test_param in dedupe_test_params
+    }
+
+    with Session(db_engine[1]) as session:
+        model_count = session.query(Models).count()
+        assert model_count == len(dedupe_test_params)
+
+        model_list = session.query(Models).all()
+        for model in model_list:
+            deduplicates = (
+                session.query(SourceDataset.db_schema, SourceDataset.db_table)
+                .filter(SourceDataset.uuid == model.deduplicates)
+                .first()
+            )
+
+            test_param = dedupe_test_params_dict[f"{deduplicates[0]}.{deduplicates[1]}"]
+
+            assert len(model.proposes_dedupes) == test_param.tgt_prob_n
+            assert len(model.creates) == test_param.unique_n
+
+    db_clear_models(db_engine)
+
+
+def test_add_linkers(
+    db_engine, db_clear_models, db_add_dedupe_models, db_add_link_models, request
+):
+    """
+    Test that adding link models works.
+    """
+    db_clear_models(db_engine)
+    db_add_link_models(db_engine, db_add_dedupe_models, request)
+
+    with Session(db_engine[1]) as session:
+        model_count = session.query(Models).count()
+        assert model_count == len(dedupe_test_params) + len(link_test_params)
+
+        model_list = session.query(Models).all()
+        for model in model_list:
+            assert len(model.proposes_dedupes) > 0 or len(model.proposes_links) > 0
+            assert len(model.creates) > 0
+
+    db_clear_models(db_engine)

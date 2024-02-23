@@ -1,4 +1,4 @@
-from test.fixtures.models import linker_test_params, merge_test_params
+from test.fixtures.models import link_test_params, linker_test_params
 
 import pytest
 from pandas import DataFrame
@@ -8,7 +8,7 @@ from cmf import make_linker, to_clusters
 from cmf.data import Models
 
 
-@pytest.mark.parametrize("fx_data", merge_test_params)
+@pytest.mark.parametrize("fx_data", link_test_params)
 @pytest.mark.parametrize("fx_linker", linker_test_params)
 def test_linkers(
     # Fixtures

@@ -103,7 +103,7 @@ dedupe_test_params = [
 ]
 
 
-merge_test_params = [
+link_test_params = [
     LinkTestParams(
         # Left
         source_l=f"naive_{os.getenv('SCHEMA')}.crn",
