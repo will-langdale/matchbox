@@ -59,7 +59,7 @@ def cleaning_function(*functions: Callable) -> Callable:
             )
 
         for sql in to_run:
-            df = duckdb.sql(sql).df()
+            df = duckdb.sql(sql).arrow().to_pandas()
 
         return df
 
@@ -75,15 +75,19 @@ def alias(function: Callable, alias: str) -> Callable:
     """
 
     def cleaning_method(df: DataFrame, column: str) -> DataFrame:
-        aliased = duckdb.sql(
-            f"""
+        aliased = (
+            duckdb.sql(
+                f"""
             select
                 *,
                 {column} as {alias}
             from
                 df;
         """
-        ).df()
+            )
+            .arrow()
+            .to_pandas()
+        )
 
         processed = function(aliased, alias)
 
@@ -103,8 +107,9 @@ def unnest_renest(function: Callable) -> Callable:
     """
 
     def cleaning_method(df: DataFrame, column: str) -> DataFrame:
-        unnest = duckdb.sql(
-            f"""
+        unnest = (
+            duckdb.sql(
+                f"""
         select
             row_number() over () as nest_id,
             *
@@ -112,7 +117,10 @@ def unnest_renest(function: Callable) -> Callable:
         from
             df;
         """
-        ).df()
+            )
+            .arrow()
+            .to_pandas()
+        )
 
         processed = function(unnest, column)
 
@@ -126,8 +134,9 @@ def unnest_renest(function: Callable) -> Callable:
         else:
             any_value_select = ""
 
-        renest = duckdb.sql(
-            f"""
+        renest = (
+            duckdb.sql(
+                f"""
         select
             {any_value_select}
             list({column}) as {column}
@@ -135,7 +144,10 @@ def unnest_renest(function: Callable) -> Callable:
             processed
         group by nest_id;
         """
-        ).df()
+            )
+            .arrow()
+            .to_pandas()
+        )
 
         return renest
 

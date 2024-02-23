@@ -8,15 +8,15 @@ from cmf import make_deduper, to_clusters
 from cmf.data import Models
 
 
-@pytest.mark.parametrize("data", dedupe_test_params)
-@pytest.mark.parametrize("dduper", deduper_test_params)
+@pytest.mark.parametrize("fx_data", dedupe_test_params)
+@pytest.mark.parametrize("fx_deduper", deduper_test_params)
 def test_dedupers(
     # Fixtures
     db_engine,
     db_clear_models,
     # Parameterised data classes
-    data,
-    dduper,
+    fx_data,
+    fx_deduper,
     # Pytest
     request,
 ):
@@ -33,25 +33,25 @@ def test_dedupers(
 
     db_clear_models(db_engine)
 
-    df = request.getfixturevalue(data.fixture)
+    df = request.getfixturevalue(fx_data.fixture)
 
     # 1. Input data is as expected
 
     assert isinstance(df, DataFrame)
-    assert df.shape[0] == data.curr_n
+    assert df.shape[0] == fx_data.curr_n
 
     # 2. Data is deduplicated correctly
 
-    deduper_name = f"{dduper.name}_{data.source}"
-    deduper_settings = dduper.build_settings(data)
+    deduper_name = f"{fx_deduper.name}_{fx_data.source}"
+    deduper_settings = fx_deduper.build_settings(fx_data)
 
     deduper = make_deduper(
         dedupe_run_name=deduper_name,
-        description=f"Testing dedupe of {data.source} with {dduper.name} method",
-        deduper=dduper.cls,
+        description=f"Testing dedupe of {fx_data.source} with {fx_deduper.name} method",
+        deduper=fx_deduper.cls,
         deduper_settings=deduper_settings,
         data=df,
-        data_source=data.source,
+        data_source=fx_data.source,
     )
 
     deduped = deduper()
@@ -62,10 +62,10 @@ def test_dedupers(
     )
 
     assert isinstance(deduped_df, DataFrame)
-    assert deduped_df.shape[0] == data.tgt_prob_n
+    assert deduped_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(deduped_df_with_source, DataFrame)
-    for field in data.fields:
+    for field in fx_data.fields:
         assert deduped_df_with_source[field + "_x"].equals(
             deduped_df_with_source[field + "_y"]
         )
@@ -78,7 +78,7 @@ def test_dedupers(
         model = session.query(Models).filter_by(name=deduper_name).first()
         proposed_dedupes = model.proposes_dedupes
 
-    assert len(proposed_dedupes) == data.tgt_prob_n
+    assert len(proposed_dedupes) == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
@@ -90,10 +90,10 @@ def test_dedupers(
     )
 
     assert isinstance(clusters_dupes_df, DataFrame)
-    assert clusters_dupes_df.parent.nunique() == data.tgt_clus_n
+    assert clusters_dupes_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_dupes_df_with_source, DataFrame)
-    for field in data.fields:
+    for field in fx_data.fields:
         assert clusters_dupes_df_with_source[field + "_x"].equals(
             clusters_dupes_df_with_source[field + "_y"]
         )
@@ -106,10 +106,10 @@ def test_dedupers(
     )
 
     assert isinstance(clusters_all_df, DataFrame)
-    assert clusters_all_df.parent.nunique() == data.unique_n
+    assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field in data.fields:
+    for field in fx_data.fields:
         assert clusters_all_df_with_source[field + "_x"].equals(
             clusters_all_df_with_source[field + "_y"]
         )
@@ -122,7 +122,7 @@ def test_dedupers(
         model = session.query(Models).filter_by(name=deduper_name).first()
         created_clusters = model.creates
 
-    assert len(created_clusters) == data.unique_n
+    assert len(created_clusters) == fx_data.unique_n
 
     # i. Clean up after ourselves
 

@@ -1,10 +1,12 @@
 import os
-from typing import Any, Callable, Dict, List, Type
+from typing import Any, Callable, Dict, List, Type, Union
 
 from pydantic import BaseModel, Field
 
 from cmf.dedupers import NaiveDeduper
 from cmf.dedupers.make_deduper import Deduper
+from cmf.linkers import DeterministicLinker
+from cmf.linkers.make_linker import Linker
 
 
 class DedupeTestParams(BaseModel):
@@ -19,8 +21,26 @@ class DedupeTestParams(BaseModel):
     tgt_clus_n: int = Field(description="Expected count of resolved clusters")
 
 
-Model = Type[Deduper]
-DataSettings = Callable[[DedupeTestParams], Dict[str, Any]]
+class LinkTestParams(BaseModel):
+    """Data class for deduped dataset testing parameters and attributes."""
+
+    source_l: str = Field(description="SQL reference for the left source table")
+    fixture_l: str = Field(description="pytest fixture of the clean left data")
+    fields_l: List[str] = Field(description="Left data fields to select and work with")
+    curr_n_l: int = Field(description="Current row count of the left data")
+
+    source_r: str = Field(description="SQL reference for the right source table")
+    fixture_r: str = Field(description="pytest fixture of the clean right data")
+    fields_r: List[str] = Field(description="Right data fields to select and work with")
+    curr_n_r: int = Field(description="Current row count of the right data")
+
+    unique_n: int = Field(description="Unique items in the merged data")
+    tgt_prob_n: int = Field(description="Expected count of generated probabilities")
+    tgt_clus_n: int = Field(description="Expected count of resolved clusters")
+
+
+Model = Type[Union[Deduper, Linker]]
+DataSettings = Callable[[Union[DedupeTestParams, LinkTestParams]], Dict[str, Any]]
 
 
 class ModelTestParams(BaseModel):
@@ -83,6 +103,48 @@ dedupe_test_params = [
 ]
 
 
+merge_test_params = [
+    LinkTestParams(
+        # Left
+        source_l=f"naive_{os.getenv('SCHEMA')}.crn",
+        fixture_l="query_clean_crn_deduped",
+        fields_l=[f"{os.getenv('SCHEMA')}_crn_company_name"],
+        curr_n_l=3000,
+        # Right
+        source_r=f"naive_{os.getenv('SCHEMA')}.duns",
+        fixture_r="query_clean_duns_deduped",
+        fields_r=[f"{os.getenv('SCHEMA')}_duns_company_name"],
+        curr_n_r=500,
+        # Check
+        unique_n=1000,
+        # Remember these are deduped: 1000 unique in the left, 500 in the right
+        tgt_prob_n=500,
+        tgt_clus_n=500,
+    ),
+    LinkTestParams(
+        # Left
+        source_l=f"naive_{os.getenv('SCHEMA')}.cdms",
+        fixture_l="query_clean_cdms_deduped",
+        fields_l=[
+            f"{os.getenv('SCHEMA')}_cdms_crn",
+        ],
+        curr_n_l=2000,
+        # Right
+        source_r=f"naive_{os.getenv('SCHEMA')}.crn",
+        fixture_r="query_clean_crn_deduped",
+        fields_r=[
+            f"{os.getenv('SCHEMA')}_crn_crn",
+        ],
+        curr_n_r=3000,
+        # Check
+        unique_n=1000,
+        # Remember these are deduped: 1000 unique in the left, 1000 in the right
+        tgt_prob_n=1000,
+        tgt_clus_n=1000,
+    ),
+]
+
+
 def make_naive_dd_settings(data: DedupeTestParams) -> Dict[str, Any]:
     return {"id": "data_sha1", "unique_fields": data.fields}
 
@@ -90,5 +152,27 @@ def make_naive_dd_settings(data: DedupeTestParams) -> Dict[str, Any]:
 deduper_test_params = [
     ModelTestParams(
         name="naive", cls=NaiveDeduper, build_settings=make_naive_dd_settings
+    )
+]
+
+
+def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+    comparisons = []
+
+    for field_l, field_r in zip(data.fields_l, data.fields_r):
+        comparisons.append(f"l.{field_l} = r.{field_r}")
+
+    return {
+        "left_id": "cluster_sha1",
+        "right_id": "cluster_sha1",
+        "comparisons": " and ".join(comparisons),
+    }
+
+
+linker_test_params = [
+    ModelTestParams(
+        name="deterministic",
+        cls=DeterministicLinker,
+        build_settings=make_deterministic_li_settings,
     )
 ]

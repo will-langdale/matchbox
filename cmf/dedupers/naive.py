@@ -13,9 +13,7 @@ class NaiveSettings(DeduperSettings):
     """
 
     unique_fields: List[str] = Field(
-        description="""\
-            A list of columns that will form a unique, deduplicated record\
-        """
+        description="A list of columns that will form a unique, deduplicated record"
     )
 
 
@@ -45,23 +43,23 @@ class NaiveDeduper(Deduper):
         return (
             duckdb.sql(
                 f"""
-            select distinct on (list_sort([raw.left_id, raw.right_id]))
-                raw.left_id,
-                raw.right_id,
-                1 as probability
-            from (
-                select
-                    l.{self.settings.id} as left_id,
-                    r.{self.settings.id} as right_id
-                from
-                    df l
-                inner join df r on
-                    (
-                        {join_clause_compiled}
-                    ) and
-                        l._unique_e4003b != r._unique_e4003b
-            ) raw;
-        """
+                    select distinct on (list_sort([raw.left_id, raw.right_id]))
+                        raw.left_id,
+                        raw.right_id,
+                        1 as probability
+                    from (
+                        select
+                            l.{self.settings.id} as left_id,
+                            r.{self.settings.id} as right_id
+                        from
+                            df l
+                        inner join df r on
+                            (
+                                {join_clause_compiled}
+                            ) and
+                                l._unique_e4003b != r._unique_e4003b
+                    ) raw;
+                """
             )
             .arrow()
             .to_pandas()
