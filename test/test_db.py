@@ -279,10 +279,10 @@ def test_add_dedupers(db_engine, db_clear_models, db_add_dedupe_models, request)
     }
 
     with Session(db_engine[1]) as session:
-        model_count = session.query(Models).count()
-        assert model_count == len(dedupe_test_params)
-
         model_list = session.query(Models).all()
+
+        assert len(model_list) == len(dedupe_test_params)
+
         for model in model_list:
             deduplicates = (
                 session.query(SourceDataset.db_schema, SourceDataset.db_table)
@@ -292,6 +292,8 @@ def test_add_dedupers(db_engine, db_clear_models, db_add_dedupe_models, request)
 
             test_param = dedupe_test_params_dict[f"{deduplicates[0]}.{deduplicates[1]}"]
 
+            # We assert unique_n rather than tgt_prob_clus because tgt_prob_clus
+            # checks what the deduper found, not what was inserted
             assert len(model.proposes_dedupes) == test_param.tgt_prob_n
             assert len(model.creates) == test_param.unique_n
 
@@ -308,12 +310,34 @@ def test_add_linkers(
     db_add_link_models(db_engine, db_add_dedupe_models, request)
 
     with Session(db_engine[1]) as session:
-        model_count = session.query(Models).count()
-        assert model_count == len(dedupe_test_params) + len(link_test_params)
+        model_list = session.query(Models).filter(Models.deduplicates == None).all()  # NoQA E711
 
-        model_list = session.query(Models).all()
+        assert len(model_list) == len(link_test_params)
+
         for model in model_list:
-            assert len(model.proposes_dedupes) > 0 or len(model.proposes_links) > 0
-            assert len(model.creates) > 0
+            # Fetch linker's source models
+            child_l, child_r = model.child_neighbours()
+
+            # Get the relevant test result parameters based on source datasets
+            test_param = None
+
+            for link_test_param in link_test_params:
+                lr_match = (
+                    link_test_param.source_l == child_l.name
+                    and link_test_param.source_r == child_r.name
+                )
+                rl_match = (
+                    link_test_param.source_l == child_r.name
+                    and link_test_param.source_r == child_l.name
+                )
+                if lr_match or rl_match:
+                    test_param = link_test_param
+
+            assert test_param is not None
+
+            # We assert unique_n rather than tgt_prob_clus because tgt_prob_clus
+            # checks what the linker found, not what was inserted
+            assert len(model.proposes_links) == test_param.tgt_prob_n
+            assert len(model.creates) == test_param.unique_n
 
     db_clear_models(db_engine)
