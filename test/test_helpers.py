@@ -4,13 +4,16 @@ import os
 from dotenv import find_dotenv, load_dotenv
 from matplotlib.figure import Figure
 from pandas import DataFrame
+from sqlalchemy.orm import Session
 
 from cmf import process, query
 from cmf.clean import company_name, company_number
+from cmf.data import Models
 from cmf.helpers import (
     cleaner,
     cleaners,
     comparison,
+    delete_model,
     draw_model_tree,
     selector,
     selectors,
@@ -212,3 +215,30 @@ def test_comparisons():
 def test_draw_model_tree(db_engine):
     plt = draw_model_tree(db_engine[1])
     assert isinstance(plt, Figure)
+
+
+def test_model_deletion(
+    db_engine, db_clear_models, db_add_dedupe_models, db_add_link_models, request
+):
+    """
+    Tests the deletion of:
+
+    * The model from the model table
+    * The creates edges the model made
+    * Any models that depended on this model, and their creates edges
+    * Any probability values associated with the model
+    * All of the above for all parent models. As every model is defined by
+        its children, deleting a model means cascading deletion to all ancestors
+    """
+    db_clear_models(db_engine)
+    db_add_link_models(db_engine, db_add_dedupe_models, request)
+
+    with Session(db_engine[1]) as session:
+        model_list_pre_delete = session.query(Models).all()
+        assert len(model_list_pre_delete) > 0
+
+    delete_model(model_list_pre_delete[0].name, engine=db_engine[1], certain=True)
+
+    with Session(db_engine[1]) as session:
+        model_list_post_delete = session.query(Models).all()
+        assert len(model_list_post_delete) == len(model_list_pre_delete) - 1
