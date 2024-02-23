@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from cmf.dedupers import NaiveDeduper
 from cmf.dedupers.make_deduper import Deduper
-from cmf.linkers import DeterministicLinker
+from cmf.linkers import DeterministicLinker, WeightedDeterministicLinker
 from cmf.linkers.make_linker import Linker
 
 
@@ -169,10 +169,29 @@ def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     }
 
 
+def make_weighted_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+    weighted_comparisons = []
+
+    for field_l, field_r in zip(data.fields_l, data.fields_r):
+        weighted_comparisons.append((f"l.{field_l} = r.{field_r}", 1))
+
+    return {
+        "left_id": "cluster_sha1",
+        "right_id": "cluster_sha1",
+        "weighted_comparisons": weighted_comparisons,
+        "threshold": 1,
+    }
+
+
 linker_test_params = [
     ModelTestParams(
         name="deterministic",
         cls=DeterministicLinker,
         build_settings=make_deterministic_li_settings,
-    )
+    ),
+    ModelTestParams(
+        name="weighted_deterministic",
+        cls=WeightedDeterministicLinker,
+        build_settings=make_weighted_deterministic_li_settings,
+    ),
 ]
