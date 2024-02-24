@@ -1,5 +1,6 @@
 import logging
 import os
+from test.fixtures.models import dedupe_test_params, link_test_params
 
 from dotenv import find_dotenv, load_dotenv
 from matplotlib.figure import Figure
@@ -8,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from cmf import process, query
 from cmf.clean import company_name, company_number
-from cmf.data import Models
+from cmf.data import (
+    Clusters,
+    DDupeProbabilities,
+    Dedupes,
+    LinkProbabilities,
+    Links,
+    Models,
+    clusters_association,
+)
 from cmf.helpers import (
     cleaner,
     cleaners,
@@ -233,12 +242,50 @@ def test_model_deletion(
     db_clear_models(db_engine)
     db_add_link_models(db_engine, db_add_dedupe_models, request)
 
+    # Expect it to delete itself, its probabilities,
+    # its parents, and their probabilities
+    deduper_to_delete = f"naive_{os.getenv('SCHEMA')}.crn"
+    total_models = len(dedupe_test_params) + len(link_test_params)
+
     with Session(db_engine[1]) as session:
         model_list_pre_delete = session.query(Models).all()
-        assert len(model_list_pre_delete) > 0
+        assert len(model_list_pre_delete) == total_models
 
-    delete_model(model_list_pre_delete[0].name, engine=db_engine[1], certain=True)
+        cluster_count_pre_delete = session.query(Clusters).count()
+        cluster_assoc_count_pre_delete = session.query(clusters_association).count()
+        ddupe_count_pre_delete = session.query(Dedupes).count()
+        ddupe_prob_count_pre_delete = session.query(DDupeProbabilities).count()
+        link_count_pre_delete = session.query(Links).count()
+        link_prob_count_pre_delete = session.query(LinkProbabilities).count()
+
+        assert cluster_count_pre_delete > 0
+        assert cluster_assoc_count_pre_delete > 0
+        assert ddupe_count_pre_delete > 0
+        assert ddupe_prob_count_pre_delete > 0
+        assert link_count_pre_delete > 0
+        assert link_prob_count_pre_delete > 0
+
+    # Perform deletion
+    delete_model(deduper_to_delete, engine=db_engine[1], certain=True)
 
     with Session(db_engine[1]) as session:
         model_list_post_delete = session.query(Models).all()
-        assert len(model_list_post_delete) == len(model_list_pre_delete) - 1
+        # Deletes deduper and parent linkers: 3 models gone
+        assert len(model_list_post_delete) == len(model_list_pre_delete) - 3
+
+        cluster_count_post_delete = session.query(Clusters).count()
+        cluster_assoc_count_post_delete = session.query(clusters_association).count()
+        ddupe_count_post_delete = session.query(Dedupes).count()
+        ddupe_prob_count_post_delete = session.query(DDupeProbabilities).count()
+        link_count_post_delete = session.query(Links).count()
+        link_prob_count_post_delete = session.query(LinkProbabilities).count()
+
+        # Cluster, dedupe and link count unaffected
+        assert cluster_count_post_delete == cluster_count_pre_delete
+        assert ddupe_count_post_delete == ddupe_count_pre_delete
+        assert link_count_post_delete == link_count_pre_delete
+
+        # But count of propose and create edges has dropped
+        assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
+        assert ddupe_prob_count_post_delete < ddupe_prob_count_pre_delete
+        assert link_prob_count_post_delete < link_prob_count_pre_delete
