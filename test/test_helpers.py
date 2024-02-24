@@ -116,7 +116,7 @@ def test_single_table_with_model_query(
     db_engine, db_clear_models, db_add_dedupe_models, request
 ):
     """Tests query() on a single table using a model point of truth."""
-    # Ensure database is clean, insert deduplicated models
+    # Ensure database is clean, insert deduplication models
 
     db_clear_models(db_engine)
     db_add_dedupe_models(db_engine, request)
@@ -144,35 +144,52 @@ def test_single_table_with_model_query(
         f"{os.getenv('SCHEMA')}_crn_crn",
         f"{os.getenv('SCHEMA')}_crn_company_name",
     }
+    assert crn.data_sha1.nunique() == 3000
     assert crn.cluster_sha1.nunique() == 1000
 
 
-def test_multi_table_with_model_query(db_engine):
-    """Tests query() on multiple tables using a model point of truth
+def test_multi_table_with_model_query(
+    db_engine, db_clear_models, db_add_dedupe_models, db_add_link_models, request
+):
+    """Tests query() on multiple tables using a model point of truth."""
+    # Ensure database is clean, insert deduplication and linker models
 
-    TODO: Implement. Will be a LOT easier to write when I have dedupers and
-    linkers to generate data to query on -- not part of this MR.
+    db_clear_models(db_engine)
+    db_add_link_models(db_engine, db_add_dedupe_models, request)
 
-    """
-    # select_crn = selector(
-    #     table=f"{os.getenv('SCHEMA')}.crn",
-    #     fields=["id", "crn"],
-    #     engine=db_engine[1]
-    # )
-    # select_duns = selector(
-    #     table=f"{os.getenv('SCHEMA')}.duns",
-    #     fields=["id", "duns"],
-    #     engine=db_engine[1]
-    # )
-    # select_crn_duns = selectors(select_crn, select_duns)
+    # Query
 
-    # df_crn_duns_full = query(
-    #     selector=select_crn_duns,
-    #     model="dd_m1",
-    #     return_type="pandas",
-    #     engine=db_engine[1]
-    # )
-    pass
+    linker_name = (
+        f"deterministic_"
+        f"naive_{os.getenv('SCHEMA')}.crn_"
+        f"naive_{os.getenv('SCHEMA')}.duns"
+    )
+
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["crn"], engine=db_engine[1]
+    )
+    select_duns = selector(
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["duns"], engine=db_engine[1]
+    )
+    select_crn_duns = selectors(select_crn, select_duns)
+
+    crn_duns = query(
+        selector=select_crn_duns,
+        model=linker_name,
+        return_type="pandas",
+        engine=db_engine[1],
+    )
+
+    assert isinstance(crn_duns, DataFrame)
+    assert crn_duns.shape[0] == 3500
+    assert set(crn_duns.columns) == {
+        "cluster_sha1",
+        "data_sha1",
+        f"{os.getenv('SCHEMA')}_crn_crn",
+        f"{os.getenv('SCHEMA')}_duns_duns",
+    }
+    assert crn_duns.data_sha1.nunique() == 3500
+    assert crn_duns.cluster_sha1.nunique() == 1000
 
 
 def test_cleaners():
