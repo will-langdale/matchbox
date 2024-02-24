@@ -2,10 +2,11 @@ import os
 from typing import Any, Callable, Dict, List, Type, Union
 
 from pydantic import BaseModel, Field
+from splink.duckdb.linker import DuckDBLinker
 
 from cmf.dedupers import NaiveDeduper
 from cmf.dedupers.make_deduper import Deduper
-from cmf.linkers import DeterministicLinker
+from cmf.linkers import DeterministicLinker, SplinkLinker
 from cmf.linkers.make_linker import Linker
 
 
@@ -169,10 +170,58 @@ def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     }
 
 
+def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+    comparisons = []
+
+    for field_l, field_r in zip(data.fields_l, data.fields_r):
+        comparisons.append(f"l.{field_l} = r.{field_r}")
+
+    blocking_rule = " or ".join(comparisons)
+
+    linker_training = [
+        {
+            "function": "estimate_probability_two_random_records_match",
+            "arguments": {
+                "deterministic_matching_rules": blocking_rule,
+                "recall": 0.7,
+            },
+        },
+        {
+            "function": "estimate_u_using_random_sampling",
+            "arguments": {"max_pairs": 1e4},
+        },
+        {
+            "function": "estimate_parameters_using_expectation_maximisation",
+            "arguments": {"blocking_rule": blocking_rule},
+        },
+    ]
+
+    linker_settings = {
+        "retain_matching_columns": False,
+        "retain_intermediate_calculation_columns": False,
+        "blocking_rules_to_generate_predictions": comparisons,
+        "comparisons": comparisons,
+    }
+
+    return {
+        "left_id": "cluster_sha1",
+        "right_id": "cluster_sha1",
+        "linker_class": DuckDBLinker,
+        "linker_training": linker_training,
+        "linker_settings": linker_settings,
+        "threshold": 1,
+    }
+
+
 linker_test_params = [
     ModelTestParams(
         name="deterministic",
         cls=DeterministicLinker,
         build_settings=make_deterministic_li_settings,
-    )
+    ),
+    ModelTestParams(
+        name="splink",
+        cls=SplinkLinker,
+        build_settings=make_splink_li_settings,
+    ),
 ]
