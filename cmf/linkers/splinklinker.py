@@ -1,8 +1,9 @@
 import inspect
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Type
 
 from pandas import DataFrame
 from pydantic import BaseModel, Field, model_validator
+from splink.duckdb.linker import DuckDBLinker
 from splink.linker import Linker as SplinkLibLinkerClass
 
 from cmf.linkers.make_linker import Linker, LinkerSettings
@@ -41,9 +42,17 @@ class SplinkSettings(LinkerSettings):
     A data class to enforce the Splink linker's settings dictionary shape.
     """
 
+    linker_class: Type[SplinkLibLinkerClass] = Field(
+        default=DuckDBLinker,
+        description="""
+            A Splink Linker class. Defaults to DuckDBLinker, and has only been tested
+            with this class.
+        """,
+        validate_default=True,
+    )
     linker_training: List[SplinkLinkerFunction] = Field(
         description="""
-            Am ordered list of dictionaries keyed to functions, with values of the
+            An ordered list of dictionaries keyed to functions, with values of the
             function's argument dictionary, to be run against the Linker.
 
             Example:
@@ -152,11 +161,14 @@ class SplinkSettings(LinkerSettings):
 class SplinkLinker(Linker):
     settings: SplinkSettings
 
+    _linker: SplinkLibLinkerClass = None
+
     @classmethod
     def from_settings(
         cls,
         left_id: str,
         right_id: str,
+        linker_class: SplinkLibLinkerClass,
         linker_training: List[Dict[str, Any]],
         linker_settings: Dict[str, Any],
         threshold: float,
@@ -164,6 +176,7 @@ class SplinkLinker(Linker):
         settings = SplinkSettings(
             left_id=left_id,
             right_id=right_id,
+            linker_class=linker_class,
             linker_training=[SplinkLinkerFunction(**func) for func in linker_training],
             linker_settings=linker_settings,
             threshold=threshold,
@@ -171,13 +184,34 @@ class SplinkLinker(Linker):
         return cls(settings=settings)
 
     def prepare(self, left: DataFrame, right: DataFrame) -> None:
-        pass
+        self._linker = self.settings.linker_class(
+            input_table_or_tables=[left, right],
+            input_table_aliases=["l", "r"],
+            settings_dict=self.linker_settings,
+        )
+        for func in self.linker_training.keys():
+            proc_func = getattr(self._linker, self.linker_training[func]["function"])
+            proc_func(**self.linker_training[func]["arguments"])
 
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
-        left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
-        right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
+    def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
+        if left is not None or right is not None:
+            raise ValueError(
+                "Left and right data is declared in .prepare() for SplinkLinker"
+            )
 
-        pass
+        res = self._linker.predict(threshold_match_probability=self.threshold)
+
+        return (
+            res.as_pandas_dataframe()
+            .rename(
+                {
+                    f"{self.settings.left_id}_l": "left_id",
+                    f"{self.settings.right_id}_r": "right_id",
+                    "match_probability": "probability",
+                }
+            )
+            .filter(["left_id", "right_id", "probability"])
+        )
 
 
 if __name__ == "__main__":
@@ -219,6 +253,7 @@ if __name__ == "__main__":
     splink_linker = SplinkLinker.from_settings(
         left_id="cluster_sha1",
         right_id="cluster_sha1",
+        linker_class=DuckDBLinker,
         linker_training=linker_training,
         linker_settings=linker_settings,
         threshold=0.8,
