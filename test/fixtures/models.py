@@ -1,12 +1,14 @@
 import os
 from typing import Any, Callable, Dict, Type, Union
 
+import splink.duckdb.comparison_library as cl
 from pydantic import BaseModel, Field
+from splink.duckdb.blocking_rule_library import block_on
 from splink.duckdb.linker import DuckDBLinker
 
 from cmf.dedupers import NaiveDeduper
 from cmf.dedupers.make_deduper import Deduper
-from cmf.linkers import DeterministicLinker
+from cmf.linkers import DeterministicLinker, SplinkLinker
 from cmf.linkers.make_linker import Linker
 
 
@@ -199,10 +201,17 @@ def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
 
 
 def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+    fields_l = data.fields_l.values()
+    fields_r = data.fields_r.values()
+    if set(fields_l) != set(fields_r):
+        raise ValueError("Splink requires fields have identical names")
+    else:
+        fields = fields_l
+
     comparisons = []
 
-    for field_l, field_r in zip(data.fields_l, data.fields_r):
-        comparisons.append(f"l.{field_l} = r.{field_r}")
+    for field in fields:
+        comparisons.append(f"l.{field} = r.{field}")
 
     blocking_rule = " or ".join(comparisons)
 
@@ -227,8 +236,8 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     linker_settings = {
         "retain_matching_columns": False,
         "retain_intermediate_calculation_columns": False,
-        "blocking_rules_to_generate_predictions": comparisons,
-        "comparisons": comparisons,
+        "blocking_rules_to_generate_predictions": [block_on(field) for field in fields],
+        "comparisons": [cl.exact_match(field) for field in fields],
     }
 
     return {
@@ -248,10 +257,10 @@ linker_test_params = [
         build_settings=make_deterministic_li_settings,
         rename_fields=False,
     ),
-    # ModelTestParams(
-    #     name="splink",
-    #     cls=SplinkLinker,
-    #     build_settings=make_splink_li_settings,
-    #     rename_fields=True,
-    # ),
+    ModelTestParams(
+        name="splink",
+        cls=SplinkLinker,
+        build_settings=make_splink_li_settings,
+        rename_fields=True,
+    ),
 ]

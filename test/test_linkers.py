@@ -43,6 +43,10 @@ def test_linkers(
         df_r = df_r.rename(columns=fx_data.fields_r)
         fields_l = fx_data.fields_l.values()
         fields_r = fx_data.fields_r.values()
+        df_l = df_l.filter(fields_l)
+        df_r = df_r.filter(fields_r)
+        assert set(df_l.columns) == set(df_r.columns)
+        assert df_l.dtypes.equals(df_r.dtypes)
     else:
         fields_l = fx_data.fields_l.keys()
         fields_r = fx_data.fields_r.keys()
@@ -76,7 +80,11 @@ def test_linkers(
 
     linked = linker()
 
+    print(linked.dataframe)
+    assert 0 == 1
+
     linked_df = linked.to_df()
+
     linked_df_with_source = linked.inspect_with_source(
         left_data=df_l,
         left_key="cluster_sha1",
