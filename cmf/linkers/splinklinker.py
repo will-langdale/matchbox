@@ -184,14 +184,24 @@ class SplinkLinker(Linker):
         return cls(settings=settings)
 
     def prepare(self, left: DataFrame, right: DataFrame) -> None:
+        if (set(left.columns) != set(right.columns)) or not left.dtypes.equals(
+            right.dtypes
+        ):
+            raise ValueError(
+                "SplinkLinker requires input datasets to be conformant, meaning they "
+                "share the same column names and data formats."
+            )
+
         self._linker = self.settings.linker_class(
             input_table_or_tables=[left, right],
             input_table_aliases=["l", "r"],
-            settings_dict=self.linker_settings,
+            settings_dict=self.settings.linker_settings,
         )
         for func in self.linker_training.keys():
-            proc_func = getattr(self._linker, self.linker_training[func]["function"])
-            proc_func(**self.linker_training[func]["arguments"])
+            proc_func = getattr(
+                self._linker, self.settings.linker_training[func]["function"]
+            )
+            proc_func(**self.settings.linker_training[func]["arguments"])
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
         if left is not None or right is not None:
@@ -199,7 +209,7 @@ class SplinkLinker(Linker):
                 "Left and right data is declared in .prepare() for SplinkLinker"
             )
 
-        res = self._linker.predict(threshold_match_probability=self.threshold)
+        res = self._linker.predict(threshold_match_probability=self.settings.threshold)
 
         return (
             res.as_pandas_dataframe()

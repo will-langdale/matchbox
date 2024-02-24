@@ -29,11 +29,18 @@ def test_dedupers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures
+    # i. Ensure database is clean, collect fixtures, perform any special
+    # deduper cleaning
 
     db_clear_models(db_engine)
 
     df = request.getfixturevalue(fx_data.fixture)
+
+    if fx_deduper.rename_fields:
+        df = df.rename(columns=fx_data.fields)
+        fields = fx_data.fields.values()
+    else:
+        fields = fx_data.fields.keys()
 
     # 1. Input data is as expected
 
@@ -65,7 +72,7 @@ def test_dedupers(
     assert deduped_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(deduped_df_with_source, DataFrame)
-    for field in fx_data.fields:
+    for field in fields:
         assert deduped_df_with_source[field + "_x"].equals(
             deduped_df_with_source[field + "_y"]
         )
@@ -93,7 +100,7 @@ def test_dedupers(
     assert clusters_dupes_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_dupes_df_with_source, DataFrame)
-    for field in fx_data.fields:
+    for field in fields:
         assert clusters_dupes_df_with_source[field + "_x"].equals(
             clusters_dupes_df_with_source[field + "_y"]
         )
@@ -109,7 +116,7 @@ def test_dedupers(
     assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field in fx_data.fields:
+    for field in fields:
         assert clusters_all_df_with_source[field + "_x"].equals(
             clusters_all_df_with_source[field + "_y"]
         )

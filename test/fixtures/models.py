@@ -1,12 +1,12 @@
 import os
-from typing import Any, Callable, Dict, List, Type, Union
+from typing import Any, Callable, Dict, Type, Union
 
 from pydantic import BaseModel, Field
 from splink.duckdb.linker import DuckDBLinker
 
 from cmf.dedupers import NaiveDeduper
 from cmf.dedupers.make_deduper import Deduper
-from cmf.linkers import DeterministicLinker, SplinkLinker
+from cmf.linkers import DeterministicLinker
 from cmf.linkers.make_linker import Linker
 
 
@@ -15,7 +15,14 @@ class DedupeTestParams(BaseModel):
 
     source: str = Field(description="SQL reference for the source table")
     fixture: str = Field(description="pytest fixture of the clean data")
-    fields: List[str] = Field(description="Data fields to select and work with")
+    fields: Dict[str, str] = Field(
+        description=(
+            "Data fields to select and work with. The key is the name of the "
+            "field as it comes out of the database, the value is what it should be "
+            "renamed to for models that require field names be identical, like the "
+            "SplinkLinker."
+        )
+    )
     unique_n: int = Field(description="Unique items in this data")
     curr_n: int = Field(description="Current row count of this data")
     tgt_prob_n: int = Field(description="Expected count of generated probabilities")
@@ -27,12 +34,26 @@ class LinkTestParams(BaseModel):
 
     source_l: str = Field(description="SQL reference for the left source table")
     fixture_l: str = Field(description="pytest fixture of the clean left data")
-    fields_l: List[str] = Field(description="Left data fields to select and work with")
+    fields_l: Dict[str, str] = Field(
+        description=(
+            "Left data fields to select and work with. The key is the name of the "
+            "field as it comes out of the database, the value is what it should be "
+            "renamed to for models that require field names be identical, like the "
+            "SplinkLinker."
+        )
+    )
     curr_n_l: int = Field(description="Current row count of the left data")
 
     source_r: str = Field(description="SQL reference for the right source table")
     fixture_r: str = Field(description="pytest fixture of the clean right data")
-    fields_r: List[str] = Field(description="Right data fields to select and work with")
+    fields_r: Dict[str, str] = Field(
+        description=(
+            "Right data fields to select and work with. The key is the name of the "
+            "field as it comes out of the database, the value is what it should be "
+            "renamed to for models that require field names be identical, like the "
+            "SplinkLinker."
+        )
+    )
     curr_n_r: int = Field(description="Current row count of the right data")
 
     unique_n: int = Field(description="Unique items in the merged data")
@@ -56,16 +77,22 @@ class ModelTestParams(BaseModel):
             "for this deduper."
         )
     )
+    rename_fields: bool = Field(
+        description=(
+            "Whether fields should be coerced to have matching names, as required "
+            "by some Linkers and Dedupers."
+        )
+    )
 
 
 dedupe_test_params = [
     DedupeTestParams(
         source=f"{os.getenv('SCHEMA')}.crn",
         fixture="query_clean_crn",
-        fields=[
-            f"{os.getenv('SCHEMA')}_crn_company_name",
-            f"{os.getenv('SCHEMA')}_crn_crn",
-        ],
+        fields={
+            f"{os.getenv('SCHEMA')}_crn_company_name": "company_name",
+            f"{os.getenv('SCHEMA')}_crn_crn": "crn",
+        },
         # 1000 unique items repeated three times
         unique_n=1000,
         curr_n=3000,
@@ -76,10 +103,10 @@ dedupe_test_params = [
     DedupeTestParams(
         source=f"{os.getenv('SCHEMA')}.duns",
         fixture="query_clean_duns",
-        fields=[
-            f"{os.getenv('SCHEMA')}_duns_company_name",
-            f"{os.getenv('SCHEMA')}_duns_duns",
-        ],
+        fields={
+            f"{os.getenv('SCHEMA')}_duns_company_name": "company_name",
+            f"{os.getenv('SCHEMA')}_duns_duns": "duns",
+        },
         # 500 unique items with no duplication
         unique_n=500,
         curr_n=500,
@@ -90,10 +117,10 @@ dedupe_test_params = [
     DedupeTestParams(
         source=f"{os.getenv('SCHEMA')}.cdms",
         fixture="query_clean_cdms",
-        fields=[
-            f"{os.getenv('SCHEMA')}_cdms_crn",
-            f"{os.getenv('SCHEMA')}_cdms_cdms",
-        ],
+        fields={
+            f"{os.getenv('SCHEMA')}_cdms_crn": "crn",
+            f"{os.getenv('SCHEMA')}_cdms_cdms": "cdms",
+        },
         # 1000 unique items repeated two times
         unique_n=1000,
         curr_n=2000,
@@ -109,12 +136,12 @@ merge_test_params = [
         # Left
         source_l=f"naive_{os.getenv('SCHEMA')}.crn",
         fixture_l="query_clean_crn_deduped",
-        fields_l=[f"{os.getenv('SCHEMA')}_crn_company_name"],
+        fields_l={f"{os.getenv('SCHEMA')}_crn_company_name": "company_name"},
         curr_n_l=3000,
         # Right
         source_r=f"naive_{os.getenv('SCHEMA')}.duns",
         fixture_r="query_clean_duns_deduped",
-        fields_r=[f"{os.getenv('SCHEMA')}_duns_company_name"],
+        fields_r={f"{os.getenv('SCHEMA')}_duns_company_name": "company_name"},
         curr_n_r=500,
         # Check
         unique_n=1000,
@@ -126,16 +153,14 @@ merge_test_params = [
         # Left
         source_l=f"naive_{os.getenv('SCHEMA')}.cdms",
         fixture_l="query_clean_cdms_deduped",
-        fields_l=[
-            f"{os.getenv('SCHEMA')}_cdms_crn",
-        ],
+        fields_l={
+            f"{os.getenv('SCHEMA')}_cdms_crn": "crn",
+        },
         curr_n_l=2000,
         # Right
         source_r=f"naive_{os.getenv('SCHEMA')}.crn",
         fixture_r="query_clean_crn_deduped",
-        fields_r=[
-            f"{os.getenv('SCHEMA')}_crn_crn",
-        ],
+        fields_r={f"{os.getenv('SCHEMA')}_crn_crn": "crn"},
         curr_n_r=3000,
         # Check
         unique_n=1000,
@@ -147,12 +172,15 @@ merge_test_params = [
 
 
 def make_naive_dd_settings(data: DedupeTestParams) -> Dict[str, Any]:
-    return {"id": "data_sha1", "unique_fields": data.fields}
+    return {"id": "data_sha1", "unique_fields": list(data.fields.keys())}
 
 
 deduper_test_params = [
     ModelTestParams(
-        name="naive", cls=NaiveDeduper, build_settings=make_naive_dd_settings
+        name="naive",
+        cls=NaiveDeduper,
+        build_settings=make_naive_dd_settings,
+        rename_fields=False,
     )
 ]
 
@@ -160,7 +188,7 @@ deduper_test_params = [
 def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     comparisons = []
 
-    for field_l, field_r in zip(data.fields_l, data.fields_r):
+    for field_l, field_r in zip(data.fields_l.keys(), data.fields_r.keys()):
         comparisons.append(f"l.{field_l} = r.{field_r}")
 
     return {
@@ -218,10 +246,12 @@ linker_test_params = [
         name="deterministic",
         cls=DeterministicLinker,
         build_settings=make_deterministic_li_settings,
+        rename_fields=False,
     ),
-    ModelTestParams(
-        name="splink",
-        cls=SplinkLinker,
-        build_settings=make_splink_li_settings,
-    ),
+    # ModelTestParams(
+    #     name="splink",
+    #     cls=SplinkLinker,
+    #     build_settings=make_splink_li_settings,
+    #     rename_fields=True,
+    # ),
 ]

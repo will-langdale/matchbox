@@ -30,13 +30,22 @@ def test_linkers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures
+    # i. Ensure database is clean, collect fixtures, perform any special linker cleaning
 
     db_clear_models(db_engine)
     db_add_dedupe_models(db_engine, request)
 
     df_l = request.getfixturevalue(fx_data.fixture_l)
     df_r = request.getfixturevalue(fx_data.fixture_r)
+
+    if fx_linker.rename_fields:
+        df_l = df_l.rename(columns=fx_data.fields_l)
+        df_r = df_r.rename(columns=fx_data.fields_r)
+        fields_l = fx_data.fields_l.values()
+        fields_r = fx_data.fields_r.values()
+    else:
+        fields_l = fx_data.fields_l.keys()
+        fields_r = fx_data.fields_r.keys()
 
     # 1. Input data is as expected
 
@@ -79,7 +88,7 @@ def test_linkers(
     assert linked_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(linked_df_with_source, DataFrame)
-    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
+    for field_l, field_r in zip(fields_l, fields_r):
         assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
     # 3. Linked probabilities are inserted correctly
@@ -108,7 +117,7 @@ def test_linkers(
     assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
-    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
+    for field_l, field_r in zip(fields_l, fields_r):
         # When we enrich the ClusterResults in a deduplication job, every child
         # hash will match something in the source data, because we're only using
         # one dataset. NaNs are therefore impossible.
@@ -154,7 +163,7 @@ def test_linkers(
     assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
+    for field_l, field_r in zip(fields_l, fields_r):
         # See above for method
         # Only change is that we've now introduced expected NaNs for data
         # that contains different number of entities
