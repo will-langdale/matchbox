@@ -41,10 +41,10 @@ def test_linkers(
     if fx_linker.rename_fields:
         df_l = df_l.rename(columns=fx_data.fields_l)
         df_r = df_r.rename(columns=fx_data.fields_r)
-        fields_l = fx_data.fields_l.values()
-        fields_r = fx_data.fields_r.values()
-        df_l = df_l.filter(fields_l)
-        df_r = df_r.filter(fields_r)
+        fields_l = list(fx_data.fields_l.values())
+        fields_r = list(fx_data.fields_r.values())
+        df_l = df_l.filter(["cluster_sha1"] + fields_l)
+        df_r = df_r.filter(["cluster_sha1"] + fields_r)
         assert set(df_l.columns) == set(df_r.columns)
         assert df_l.dtypes.equals(df_r.dtypes)
     else:

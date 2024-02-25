@@ -1,4 +1,5 @@
 import inspect
+import logging
 from typing import Any, Dict, List, Type
 
 from pandas import DataFrame
@@ -7,6 +8,8 @@ from splink.duckdb.linker import DuckDBLinker
 from splink.linker import Linker as SplinkLibLinkerClass
 
 from cmf.linkers.make_linker import Linker, LinkerSettings
+
+logic_logger = logging.getLogger("cmf_logic")
 
 
 class SplinkLinkerFunction(BaseModel):
@@ -162,6 +165,8 @@ class SplinkLinker(Linker):
     settings: SplinkSettings
 
     _linker: SplinkLibLinkerClass = None
+    _id_dtype_l: Type = None
+    _id_dtype_r: Type = None
 
     @classmethod
     def from_settings(
@@ -192,20 +197,24 @@ class SplinkLinker(Linker):
                 "share the same column names and data formats."
             )
 
+        self._id_dtype_l = type(left[self.settings.left_id][0])
+        self._id_dtype_r = type(right[self.settings.right_id][0])
+
+        left[self.settings.left_id] = left[self.settings.left_id].apply(str)
+        right[self.settings.right_id] = right[self.settings.right_id].apply(str)
+
         self._linker = self.settings.linker_class(
             input_table_or_tables=[left, right],
             input_table_aliases=["l", "r"],
             settings_dict=self.settings.linker_settings,
         )
-        for func in self.linker_training.keys():
-            proc_func = getattr(
-                self._linker, self.settings.linker_training[func]["function"]
-            )
-            proc_func(**self.settings.linker_training[func]["arguments"])
+        for func in self.settings.linker_training:
+            proc_func = getattr(self._linker, func.function)
+            proc_func(**func.arguments)
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
         if left is not None or right is not None:
-            raise ValueError(
+            logic_logger.warning(
                 "Left and right data is declared in .prepare() for SplinkLinker"
             )
 
@@ -219,6 +228,10 @@ class SplinkLinker(Linker):
                     f"{self.settings.right_id}_r": "right_id",
                     "match_probability": "probability",
                 }
+            )
+            .assign(
+                left_id=lambda df: df.left_id.apply(self._id_dtype_l),
+                right_id=lambda df: df.right_id.apply(self._id_dtype_r),
             )
             .filter(["left_id", "right_id", "probability"])
         )
