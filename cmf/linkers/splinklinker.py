@@ -14,7 +14,7 @@ logic_logger = logging.getLogger("cmf_logic")
 
 
 class SplinkLinkerFunction(BaseModel):
-    """A method of x to train the linker."""
+    """A method of splink.linker.Linker used to train the linker."""
 
     function: str
     arguments: Dict[str, Any]
@@ -219,6 +219,7 @@ class SplinkLinker(Linker):
             input_table_aliases=["l", "r"],
             settings_dict=self.settings.linker_settings,
         )
+
         for func in self.settings.linker_training:
             proc_func = getattr(self._linker, func.function)
             proc_func(**func.arguments)
