@@ -1,6 +1,7 @@
+import ast
 import inspect
 import logging
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Optional, Type
 
 from pandas import DataFrame
 from pydantic import BaseModel, Field, model_validator
@@ -128,14 +129,17 @@ class SplinkSettings(LinkerSettings):
             
         """
     )
-    threshold: float = Field(
+    threshold: Optional[float] = Field(
+        default=None,
         description="""
-            The probability above which matches will be kept. 
+            The probability above which matches will be kept.
+
+            None is used to indicate no threshold.
             
             Inclusive, so a value of 1 will keep only exact matches across all 
             comparisons.
         """,
-        ge=0,
+        gt=0,
         le=1,
     )
 
@@ -200,6 +204,13 @@ class SplinkLinker(Linker):
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
+        # Deal with converting back to bytes from string b-representation,
+        # the most common datatype we expect
+        if self._id_dtype_l.__name__ == "bytes":
+            self._id_dtype_l = ast.literal_eval
+        if self._id_dtype_r.__name__ == "bytes":
+            self._id_dtype_r = ast.literal_eval
+
         left[self.settings.left_id] = left[self.settings.left_id].apply(str)
         right[self.settings.right_id] = right[self.settings.right_id].apply(str)
 
@@ -215,7 +226,7 @@ class SplinkLinker(Linker):
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
         if left is not None or right is not None:
             logic_logger.warning(
-                "Left and right data is declared in .prepare() for SplinkLinker"
+                "Left and right data are declared in .prepare() for SplinkLinker"
             )
 
         res = self._linker.predict(threshold_match_probability=self.settings.threshold)
@@ -223,7 +234,7 @@ class SplinkLinker(Linker):
         return (
             res.as_pandas_dataframe()
             .rename(
-                {
+                columns={
                     f"{self.settings.left_id}_l": "left_id",
                     f"{self.settings.right_id}_r": "right_id",
                     "match_probability": "probability",
@@ -234,53 +245,6 @@ class SplinkLinker(Linker):
                 right_id=lambda df: df.right_id.apply(self._id_dtype_r),
             )
             .filter(["left_id", "right_id", "probability"])
+            .drop_duplicates()
+            .reset_index(drop=True)
         )
-
-
-if __name__ == "__main__":
-    import splink.duckdb.comparison_library as cl
-    import splink.duckdb.comparison_template_library as ctl
-    from splink.duckdb.blocking_rule_library import block_on
-
-    linker_training = [
-        {
-            "function": "estimate_probability_two_random_records_match",
-            "arguments": {
-                "deterministic_matching_rules": """
-                    l.company_name = r.company_name
-                """,
-                "recall": 0.7,
-            },
-        },
-        {
-            "function": "estimate_u_using_random_sampling",
-            "arguments": {"max_pairs": 1e4},
-        },
-    ]
-
-    linker_settings = {
-        "retain_matching_columns": False,
-        "retain_intermediate_calculation_columns": False,
-        "blocking_rules_to_generate_predictions": [
-            block_on("company_name"),
-            block_on("postcode"),
-        ],
-        "comparisons": [
-            cl.jaro_winkler_at_thresholds(
-                "company_name", [0.9, 0.6], term_frequency_adjustments=True
-            ),
-            ctl.postcode_comparison("postcode"),
-        ],
-    }
-
-    splink_linker = SplinkLinker.from_settings(
-        left_id="cluster_sha1",
-        right_id="cluster_sha1",
-        linker_class=DuckDBLinker,
-        linker_training=linker_training,
-        linker_settings=linker_settings,
-        threshold=0.8,
-    )
-
-    print(splink_linker.settings.linker_training)
-    print(splink_linker.settings.linker_settings)

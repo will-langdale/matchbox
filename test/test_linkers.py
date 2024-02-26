@@ -38,26 +38,34 @@ def test_linkers(
     df_l = request.getfixturevalue(fx_data.fixture_l)
     df_r = request.getfixturevalue(fx_data.fixture_r)
 
+    fields_l = list(fx_data.fields_l.keys())
+    fields_r = list(fx_data.fields_r.keys())
+
     if fx_linker.rename_fields:
-        df_l = df_l.rename(columns=fx_data.fields_l)
-        df_r = df_r.rename(columns=fx_data.fields_r)
-        fields_l = list(fx_data.fields_l.values())
-        fields_r = list(fx_data.fields_r.values())
-        df_l = df_l.filter(["cluster_sha1"] + fields_l)
-        df_r = df_r.filter(["cluster_sha1"] + fields_r)
-        assert set(df_l.columns) == set(df_r.columns)
-        assert df_l.dtypes.equals(df_r.dtypes)
-    else:
-        fields_l = fx_data.fields_l.keys()
-        fields_r = fx_data.fields_r.keys()
+        df_l_renamed = df_l.copy().rename(columns=fx_data.fields_l)
+        df_r_renamed = df_r.copy().rename(columns=fx_data.fields_r)
+        fields_l_renamed = list(fx_data.fields_l.values())
+        fields_r_renamed = list(fx_data.fields_r.values())
+        df_l_renamed = df_l_renamed.filter(["cluster_sha1"] + fields_l_renamed)
+        df_r_renamed = df_r_renamed.filter(["cluster_sha1"] + fields_r_renamed)
+        assert set(df_l_renamed.columns) == set(df_r_renamed.columns)
+        assert df_l_renamed.dtypes.equals(df_r_renamed.dtypes)
 
     # 1. Input data is as expected
 
-    assert isinstance(df_l, DataFrame)
-    assert df_l.shape[0] == fx_data.curr_n_l
+    if fx_linker.rename_fields:
+        assert isinstance(df_l_renamed, DataFrame)
+        assert df_l_renamed.shape[0] == fx_data.curr_n_l
+    else:
+        assert isinstance(df_l, DataFrame)
+        assert df_l.shape[0] == fx_data.curr_n_l
 
-    assert isinstance(df_r, DataFrame)
-    assert df_r.shape[0] == fx_data.curr_n_r
+    if fx_linker.rename_fields:
+        assert isinstance(df_r_renamed, DataFrame)
+        assert df_r_renamed.shape[0] == fx_data.curr_n_r
+    else:
+        assert isinstance(df_r, DataFrame)
+        assert df_r.shape[0] == fx_data.curr_n_r
 
     # 2. Data is linked correctly
 
@@ -72,16 +80,13 @@ def test_linkers(
         ),
         linker=fx_linker.cls,
         linker_settings=linker_settings,
-        left_data=df_l,
+        left_data=df_l_renamed if fx_linker.rename_fields else df_l,
         left_source=fx_data.source_l,
-        right_data=df_r,
+        right_data=df_r_renamed if fx_linker.rename_fields else df_r,
         right_source=fx_data.source_r,
     )
 
     linked = linker()
-
-    print(linked.dataframe)
-    assert 0 == 1
 
     linked_df = linked.to_df()
 

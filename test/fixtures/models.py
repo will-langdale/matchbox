@@ -218,28 +218,27 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
             "function": "estimate_probability_two_random_records_match",
             "arguments": {
                 "deterministic_matching_rules": comparisons,
-                "recall": 0.7,
+                "recall": 1,
             },
         },
         {
             "function": "estimate_u_using_random_sampling",
             "arguments": {"max_pairs": 1e4},
         },
-        # {
-        #     "function": "estimate_parameters_using_expectation_maximisation",
-        #     "arguments": {
-        #         "blocking_rule": brl.block_on(fields)
-        #     },
-        # },
     ]
 
+    # The m parameter is 1 because we're testing in a deterministic system, and
+    # many of these tests only have one field, so we can't use expectation
+    # maximisation to estimate. For testing raw functionality, fine to use 1
     linker_settings = {
         "retain_matching_columns": False,
         "retain_intermediate_calculation_columns": False,
         "blocking_rules_to_generate_predictions": [
             brl.block_on(field) for field in fields
         ],
-        "comparisons": [cl.exact_match(field) for field in fields],
+        "comparisons": [
+            cl.exact_match(field, m_probability_exact_match=1) for field in fields
+        ],
     }
 
     return {
@@ -248,7 +247,7 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
         "linker_class": DuckDBLinker,
         "linker_training": linker_training,
         "linker_settings": linker_settings,
-        "threshold": 1,
+        "threshold": None,
     }
 
 
