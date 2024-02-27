@@ -83,7 +83,9 @@ class ResultsBaseDataclass(BaseModel, ABC):
                 left_sha1 = du.model_name_to_sha1(self.left, engine=engine)
                 right_sha1 = du.model_name_to_sha1(self.right, engine=engine)
 
-                model_sha1 = du.list_to_value_ordered_sha1([left_sha1, right_sha1])
+                model_sha1 = du.list_to_value_ordered_sha1(
+                    [bytes(self.run_name, encoding="utf-8"), left_sha1, right_sha1]
+                )
             else:
                 # Deduper
                 model_sha1 = du.list_to_value_ordered_sha1([self.run_name, self.left])

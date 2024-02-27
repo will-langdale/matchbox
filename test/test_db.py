@@ -1,8 +1,10 @@
 import logging
 import os
 from test.fixtures.models import (
-    dedupe_test_params,
-    link_test_params,
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
 )
 
 from dotenv import find_dotenv, load_dotenv
@@ -21,6 +23,7 @@ from cmf.data import (
     SourceDataset,
     clusters_association,
 )
+from cmf.data import utils as du
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -267,21 +270,28 @@ def test_db_delete(
     db_add_models(db_engine)
 
 
-def test_add_dedupers(db_engine, db_clear_models, db_add_dedupe_models, request):
+def test_add_dedupers_and_data(
+    db_engine, db_clear_models, db_add_dedupe_models_and_data, request
+):
     """
-    Test that adding deduplication models works.
+    Test that adding models and generated data for deduplication processes works.
     """
     db_clear_models(db_engine)
-    db_add_dedupe_models(db_engine, request)
+    db_add_dedupe_models_and_data(
+        db_engine=db_engine,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        request=request,
+    )
 
     dedupe_test_params_dict = {
-        test_param.source: test_param for test_param in dedupe_test_params
+        test_param.source: test_param for test_param in dedupe_data_test_params
     }
 
     with Session(db_engine[1]) as session:
         model_list = session.query(Models).all()
 
-        assert len(model_list) == len(dedupe_test_params)
+        assert len(model_list) == len(dedupe_data_test_params)
 
         for model in model_list:
             deduplicates = (
@@ -300,19 +310,31 @@ def test_add_dedupers(db_engine, db_clear_models, db_add_dedupe_models, request)
     db_clear_models(db_engine)
 
 
-def test_add_linkers(
-    db_engine, db_clear_models, db_add_dedupe_models, db_add_link_models, request
+def test_add_linkers_and_data(
+    db_engine,
+    db_clear_models,
+    db_add_dedupe_models_and_data,
+    db_add_link_models_and_data,
+    request,
 ):
     """
-    Test that adding link models works.
+    Test that adding models and generated data for link processes works.
     """
     db_clear_models(db_engine)
-    db_add_link_models(db_engine, db_add_dedupe_models, request)
+    db_add_link_models_and_data(
+        db_engine=db_engine,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
 
     with Session(db_engine[1]) as session:
         model_list = session.query(Models).filter(Models.deduplicates == None).all()  # NoQA E711
 
-        assert len(model_list) == len(link_test_params)
+        assert len(model_list) == len(link_data_test_params)
 
         for model in model_list:
             # Fetch linker's source models
@@ -321,17 +343,37 @@ def test_add_linkers(
             # Get the relevant test result parameters based on source datasets
             test_param = None
 
-            for link_test_param in link_test_params:
-                lr_match = (
-                    link_test_param.source_l == child_l.name
-                    and link_test_param.source_r == child_r.name
+            data_test_lookup = {}
+
+            for data_param in link_data_test_params:
+                source_l_sha1 = (
+                    session.query(Models.sha1)
+                    .filter(Models.name == data_param.source_l)
+                    .scalar()
                 )
-                rl_match = (
-                    link_test_param.source_l == child_r.name
-                    and link_test_param.source_r == child_l.name
+                source_r_sha1 = (
+                    session.query(Models.sha1)
+                    .filter(Models.name == data_param.source_r)
+                    .scalar()
                 )
-                if lr_match or rl_match:
-                    test_param = link_test_param
+                model_sha1 = du.list_to_value_ordered_sha1(
+                    [bytes(model.name, encoding="utf-8"), source_l_sha1, source_r_sha1]
+                )
+                data_test_lookup[model_sha1] = data_param
+
+            test_param = data_test_lookup.get(model.sha1)
+
+            # for data_param in link_data_test_params:
+            # lr_match = (
+            #     data_param.source_l == child_l.name
+            #     and data_param.source_r == child_r.name
+            # )
+            # rl_match = (
+            #     data_param.source_l == child_r.name
+            #     and data_param.source_r == child_l.name
+            # )
+            # if lr_match or rl_match:
+            #     test_param = data_param
 
             assert test_param is not None
 

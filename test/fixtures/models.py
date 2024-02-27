@@ -57,7 +57,7 @@ class ModelTestParams(BaseModel):
     )
 
 
-dedupe_test_params = [
+dedupe_data_test_params = [
     DedupeTestParams(
         source=f"{os.getenv('SCHEMA')}.crn",
         fixture="query_clean_crn",
@@ -103,7 +103,7 @@ dedupe_test_params = [
 ]
 
 
-link_test_params = [
+link_data_test_params = [
     LinkTestParams(
         # Left
         source_l=f"naive_{os.getenv('SCHEMA')}.crn",
@@ -149,7 +149,7 @@ def make_naive_dd_settings(data: DedupeTestParams) -> Dict[str, Any]:
     return {"id": "data_sha1", "unique_fields": data.fields}
 
 
-deduper_test_params = [
+dedupe_model_test_params = [
     ModelTestParams(
         name="naive", cls=NaiveDeduper, build_settings=make_naive_dd_settings
     )
@@ -169,7 +169,7 @@ def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     }
 
 
-linker_test_params = [
+link_model_test_params = [
     ModelTestParams(
         name="deterministic",
         cls=DeterministicLinker,

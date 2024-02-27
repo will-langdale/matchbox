@@ -1,4 +1,4 @@
-from test.fixtures.models import dedupe_test_params, deduper_test_params
+from test.fixtures.models import dedupe_data_test_params, dedupe_model_test_params
 
 import pytest
 from pandas import DataFrame
@@ -8,8 +8,8 @@ from cmf import make_deduper, to_clusters
 from cmf.data import Models
 
 
-@pytest.mark.parametrize("fx_data", dedupe_test_params)
-@pytest.mark.parametrize("fx_deduper", deduper_test_params)
+@pytest.mark.parametrize("fx_data", dedupe_data_test_params)
+@pytest.mark.parametrize("fx_deduper", dedupe_model_test_params)
 def test_dedupers(
     # Fixtures
     db_engine,

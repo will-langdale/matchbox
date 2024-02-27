@@ -1,6 +1,11 @@
 import logging
 import os
-from test.fixtures.models import dedupe_test_params, link_test_params
+from test.fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 from dotenv import find_dotenv, load_dotenv
 from matplotlib.figure import Figure
@@ -113,13 +118,18 @@ def test_multi_table_no_model_query(db_engine):
 
 
 def test_single_table_with_model_query(
-    db_engine, db_clear_models, db_add_dedupe_models, request
+    db_engine, db_clear_models, db_add_dedupe_models_and_data, request
 ):
     """Tests query() on a single table using a model point of truth."""
     # Ensure database is clean, insert deduplication models
 
     db_clear_models(db_engine)
-    db_add_dedupe_models(db_engine, request)
+    db_add_dedupe_models_and_data(
+        db_engine=db_engine,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        request=request,
+    )
 
     # Query
 
@@ -149,13 +159,25 @@ def test_single_table_with_model_query(
 
 
 def test_multi_table_with_model_query(
-    db_engine, db_clear_models, db_add_dedupe_models, db_add_link_models, request
+    db_engine,
+    db_clear_models,
+    db_add_dedupe_models_and_data,
+    db_add_link_models_and_data,
+    request,
 ):
     """Tests query() on multiple tables using a model point of truth."""
     # Ensure database is clean, insert deduplication and linker models
 
     db_clear_models(db_engine)
-    db_add_link_models(db_engine, db_add_dedupe_models, request)
+    db_add_link_models_and_data(
+        db_engine=db_engine,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
 
     # Query
 
@@ -244,7 +266,11 @@ def test_draw_model_tree(db_engine):
 
 
 def test_model_deletion(
-    db_engine, db_clear_models, db_add_dedupe_models, db_add_link_models, request
+    db_engine,
+    db_clear_models,
+    db_add_dedupe_models_and_data,
+    db_add_link_models_and_data,
+    request,
 ):
     """
     Tests the deletion of:
@@ -257,12 +283,20 @@ def test_model_deletion(
         its children, deleting a model means cascading deletion to all ancestors
     """
     db_clear_models(db_engine)
-    db_add_link_models(db_engine, db_add_dedupe_models, request)
+    db_add_link_models_and_data(
+        db_engine=db_engine,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
 
     # Expect it to delete itself, its probabilities,
     # its parents, and their probabilities
     deduper_to_delete = f"naive_{os.getenv('SCHEMA')}.crn"
-    total_models = len(dedupe_test_params) + len(link_test_params)
+    total_models = len(dedupe_data_test_params) + len(link_data_test_params)
 
     with Session(db_engine[1]) as session:
         model_list_pre_delete = session.query(Models).all()
