@@ -21,10 +21,10 @@ class WeightedComparison(BaseModel):
 
             For example:
 
-            "left.name = right.name and left.company_id = right.id"
+            "left.company_name = right.company_name"
         """
     )
-    weight: int = Field(
+    weight: float = Field(
         description="""
             A weight to give this comparison. Use 1 for all comparisons to give
             uniform weight to each.
@@ -41,25 +41,23 @@ class WeightedComparison(BaseModel):
 class WeightedDeterministicSettings(LinkerSettings):
     """
     A data class to enforce the Weighted linker's settings dictionary shape.
+
+    Example:
+
+        >>> {
+        ...     left_id: "cluster_sha1",
+        ...     right_id: "cluster_sha1",
+        ...     weighted_comparisons: [
+        ...         ("l.company_name = r.company_name", .7),
+        ...         ("l.postcode = r.postcode", .7),
+        ...         ("l.company_id = r.company_id", 1)
+        ...     ],
+        ...     threshold: 0.8
+        ... }
     """
 
     weighted_comparisons: List[WeightedComparison] = Field(
-        description="""
-            A list of tuples in the form of a comparison, and a weight.
-
-            Example:
-
-                >>> {
-                ...     left_id: "cluster_sha1",
-                ...     right_id: "cluster_sha1",
-                ...     weighted_comparisons: [
-                ...         ("l.company_name = r.company_name", 1),
-                ...         ("l.postcode = r.postcode", 1),
-                ...         ("l.company_id = r.company_id", 2)
-                ...     ],
-                ...     threshold: 0.8
-                ... }
-        """
+        description="A list of tuples in the form of a comparison, and a weight."
     )
     threshold: float = Field(
         description="""
@@ -83,6 +81,7 @@ class WeightedDeterministicLinker(Linker):
         settings = WeightedDeterministicSettings(
             left_id=left_id,
             right_id=right_id,
+            # No change in weighted_comparisons data, just validates the input list
             weighted_comparisons=[
                 WeightedComparison(comparison=comparison[0], weight=comparison[1])
                 for comparison in weighted_comparisons
