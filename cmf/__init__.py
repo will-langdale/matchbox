@@ -13,5 +13,7 @@ __all__ = ("make_deduper", "make_linker", "to_clusters", "process", "query")
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
+print(dotenv_path)
+
 if "SCHEMA" not in environ:
     raise KeyError("SCHEMA environment variable not set.")
