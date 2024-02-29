@@ -73,7 +73,6 @@ exclude = [
 line-length = 88
 indent-width = 4
 target-version = "py39"
-ignore-init-module-imports = true
 
 [tool.ruff.lint]
 select = [
@@ -86,6 +85,7 @@ ignore = []
 fixable = ["ALL"]
 unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+ignore-init-module-imports = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

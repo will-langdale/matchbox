@@ -8,7 +8,7 @@ from cmf.linkers.make_linker import Linker, LinkerSettings
 
 class DeterministicSettings(LinkerSettings):
     """
-    A data class to enforce the Naive deduper's settings dictionary shape
+    A data class to enforce the Deterministic linker's settings dictionary shape
     """
 
     comparisons: str = Field(
