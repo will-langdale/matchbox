@@ -10,7 +10,7 @@ from cmf.linkers.make_linker import make_linker
 
 __all__ = ("make_deduper", "make_linker", "to_clusters", "process", "query")
 
-dotenv_path = find_dotenv()
+dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 print(dotenv_path)
