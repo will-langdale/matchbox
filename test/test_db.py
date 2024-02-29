@@ -302,9 +302,9 @@ def test_add_dedupers_and_data(
 
             test_param = dedupe_test_params_dict[f"{deduplicates[0]}.{deduplicates[1]}"]
 
-            # We assert unique_n rather than tgt_prob_clus because tgt_prob_clus
-            # checks what the deduper found, not what was inserted
             assert len(model.proposes_dedupes) == test_param.tgt_prob_n
+            # We assert unique_n rather than tgt_clus_n because tgt_clus_n
+            # checks what the deduper found, not what was inserted
             assert len(model.creates) == test_param.unique_n
 
     db_clear_models(db_engine)
@@ -363,23 +363,11 @@ def test_add_linkers_and_data(
 
             test_param = data_test_lookup.get(model.sha1)
 
-            # for data_param in link_data_test_params:
-            # lr_match = (
-            #     data_param.source_l == child_l.name
-            #     and data_param.source_r == child_r.name
-            # )
-            # rl_match = (
-            #     data_param.source_l == child_r.name
-            #     and data_param.source_r == child_l.name
-            # )
-            # if lr_match or rl_match:
-            #     test_param = data_param
-
             assert test_param is not None
 
-            # We assert unique_n rather than tgt_prob_clus because tgt_prob_clus
-            # checks what the linker found, not what was inserted
             assert len(model.proposes_links) == test_param.tgt_prob_n
+            # We assert unique_n rather than tgt_clus_n because tgt_clus_n
+            # checks what the linker found, not what was inserted
             assert len(model.creates) == test_param.unique_n
 
     db_clear_models(db_engine)
