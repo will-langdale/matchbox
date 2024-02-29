@@ -1,4 +1,4 @@
-import os.environ
+from os import environ
 
 from cmf.data.results import to_clusters
 from cmf.dedupers.make_deduper import make_deduper
@@ -8,5 +8,5 @@ from cmf.linkers.make_linker import make_linker
 
 __all__ = ("make_deduper", "make_linker", "to_clusters", "process", "query")
 
-if "SCHEMA" not in os.environ:
+if "SCHEMA" not in environ:
     raise KeyError("SCHEMA environment variable not set.")
