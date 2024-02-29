@@ -1,3 +1,4 @@
+import itertools
 import logging
 import os
 from test.fixtures.models import (
@@ -23,7 +24,6 @@ from cmf.data import (
     SourceDataset,
     clusters_association,
 )
-from cmf.data import utils as du
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -320,14 +320,17 @@ def test_add_linkers_and_data(
     """
     Test that adding models and generated data for link processes works.
     """
+    naive_deduper_params = [dedupe_model_test_params[0]]  # Naive deduper
+    deterministic_linker_params = [link_model_test_params[0]]  # Deterministic linker
+
     db_clear_models(db_engine)
     db_add_link_models_and_data(
         db_engine=db_engine,
         db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
         dedupe_data=dedupe_data_test_params,
-        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        dedupe_models=naive_deduper_params,
         link_data=link_data_test_params,
-        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        link_models=deterministic_linker_params,
         request=request,
     )
 
@@ -336,38 +339,17 @@ def test_add_linkers_and_data(
 
         assert len(model_list) == len(link_data_test_params)
 
-        for model in model_list:
-            # Fetch linker's source models
-            child_l, child_r = model.child_neighbours()
+    for fx_linker, fx_data in itertools.product(
+        deterministic_linker_params, link_data_test_params
+    ):
+        linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
 
-            # Get the relevant test result parameters based on source datasets
-            test_param = None
+        with Session(db_engine[1]) as session:
+            model = session.query(Models).filter(Models.name == linker_name).first()
 
-            data_test_lookup = {}
-
-            for data_param in link_data_test_params:
-                source_l_sha1 = (
-                    session.query(Models.sha1)
-                    .filter(Models.name == data_param.source_l)
-                    .scalar()
-                )
-                source_r_sha1 = (
-                    session.query(Models.sha1)
-                    .filter(Models.name == data_param.source_r)
-                    .scalar()
-                )
-                model_sha1 = du.list_to_value_ordered_sha1(
-                    [bytes(model.name, encoding="utf-8"), source_l_sha1, source_r_sha1]
-                )
-                data_test_lookup[model_sha1] = data_param
-
-            test_param = data_test_lookup.get(model.sha1)
-
-            assert test_param is not None
-
-            assert len(model.proposes_links) == test_param.tgt_prob_n
+            assert len(model.proposes_links) == fx_data.tgt_prob_n
             # We assert unique_n rather than tgt_clus_n because tgt_clus_n
             # checks what the linker found, not what was inserted
-            assert len(model.creates) == test_param.unique_n
+            assert len(model.creates) == fx_data.unique_n
 
     db_clear_models(db_engine)
