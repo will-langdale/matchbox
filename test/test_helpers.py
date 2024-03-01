@@ -1,12 +1,37 @@
 import logging
 import os
+from test.fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 from dotenv import find_dotenv, load_dotenv
+from matplotlib.figure import Figure
 from pandas import DataFrame
+from sqlalchemy.orm import Session
 
 from cmf import process, query
 from cmf.clean import company_name, company_number
-from cmf.helpers import cleaner, cleaners, comparison, selector, selectors
+from cmf.data import (
+    Clusters,
+    DDupeProbabilities,
+    Dedupes,
+    LinkProbabilities,
+    Links,
+    Models,
+    clusters_association,
+)
+from cmf.helpers import (
+    cleaner,
+    cleaners,
+    comparison,
+    delete_model,
+    draw_model_tree,
+    selector,
+    selectors,
+)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -93,13 +118,18 @@ def test_multi_table_no_model_query(db_engine):
 
 
 def test_single_table_with_model_query(
-    db_engine, db_clear_models, db_add_dedupe_models, request
+    db_engine, db_clear_models, db_add_dedupe_models_and_data, request
 ):
     """Tests query() on a single table using a model point of truth."""
-    # Ensure database is clean, insert deduplicated models
+    # Ensure database is clean, insert deduplication models
 
     db_clear_models(db_engine)
-    db_add_dedupe_models(db_engine, request)
+    db_add_dedupe_models_and_data(
+        db_engine=db_engine,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        request=request,
+    )
 
     # Query
 
@@ -124,35 +154,64 @@ def test_single_table_with_model_query(
         f"{os.getenv('SCHEMA')}_crn_crn",
         f"{os.getenv('SCHEMA')}_crn_company_name",
     }
+    assert crn.data_sha1.nunique() == 3000
     assert crn.cluster_sha1.nunique() == 1000
 
 
-def test_multi_table_with_model_query(db_engine):
-    """Tests query() on multiple tables using a model point of truth
+def test_multi_table_with_model_query(
+    db_engine,
+    db_clear_models,
+    db_add_dedupe_models_and_data,
+    db_add_link_models_and_data,
+    request,
+):
+    """Tests query() on multiple tables using a model point of truth."""
+    # Ensure database is clean, insert deduplication and linker models
 
-    TODO: Implement. Will be a LOT easier to write when I have dedupers and
-    linkers to generate data to query on -- not part of this MR.
+    db_clear_models(db_engine)
+    db_add_link_models_and_data(
+        db_engine=db_engine,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
 
-    """
-    # select_crn = selector(
-    #     table=f"{os.getenv('SCHEMA')}.crn",
-    #     fields=["id", "crn"],
-    #     engine=db_engine[1]
-    # )
-    # select_duns = selector(
-    #     table=f"{os.getenv('SCHEMA')}.duns",
-    #     fields=["id", "duns"],
-    #     engine=db_engine[1]
-    # )
-    # select_crn_duns = selectors(select_crn, select_duns)
+    # Query
 
-    # df_crn_duns_full = query(
-    #     selector=select_crn_duns,
-    #     model="dd_m1",
-    #     return_type="pandas",
-    #     engine=db_engine[1]
-    # )
-    pass
+    linker_name = (
+        f"deterministic_"
+        f"naive_{os.getenv('SCHEMA')}.crn_"
+        f"naive_{os.getenv('SCHEMA')}.duns"
+    )
+
+    select_crn = selector(
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["crn"], engine=db_engine[1]
+    )
+    select_duns = selector(
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["duns"], engine=db_engine[1]
+    )
+    select_crn_duns = selectors(select_crn, select_duns)
+
+    crn_duns = query(
+        selector=select_crn_duns,
+        model=linker_name,
+        return_type="pandas",
+        engine=db_engine[1],
+    )
+
+    assert isinstance(crn_duns, DataFrame)
+    assert crn_duns.shape[0] == 3500
+    assert set(crn_duns.columns) == {
+        "cluster_sha1",
+        "data_sha1",
+        f"{os.getenv('SCHEMA')}_crn_crn",
+        f"{os.getenv('SCHEMA')}_duns_duns",
+    }
+    assert crn_duns.data_sha1.nunique() == 3500
+    assert crn_duns.cluster_sha1.nunique() == 1000
 
 
 def test_cleaners():
@@ -199,3 +258,85 @@ def test_comparisons():
     )
 
     assert comparison_name_id is not None
+
+
+def test_draw_model_tree(db_engine):
+    plt = draw_model_tree(db_engine[1])
+    assert isinstance(plt, Figure)
+
+
+def test_model_deletion(
+    db_engine,
+    db_clear_models,
+    db_add_dedupe_models_and_data,
+    db_add_link_models_and_data,
+    request,
+):
+    """
+    Tests the deletion of:
+
+    * The model from the model table
+    * The creates edges the model made
+    * Any models that depended on this model, and their creates edges
+    * Any probability values associated with the model
+    * All of the above for all parent models. As every model is defined by
+        its children, deleting a model means cascading deletion to all ancestors
+    """
+    db_clear_models(db_engine)
+    db_add_link_models_and_data(
+        db_engine=db_engine,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
+
+    # Expect it to delete itself, its probabilities,
+    # its parents, and their probabilities
+    deduper_to_delete = f"naive_{os.getenv('SCHEMA')}.crn"
+    total_models = len(dedupe_data_test_params) + len(link_data_test_params)
+
+    with Session(db_engine[1]) as session:
+        model_list_pre_delete = session.query(Models).all()
+        assert len(model_list_pre_delete) == total_models
+
+        cluster_count_pre_delete = session.query(Clusters).count()
+        cluster_assoc_count_pre_delete = session.query(clusters_association).count()
+        ddupe_count_pre_delete = session.query(Dedupes).count()
+        ddupe_prob_count_pre_delete = session.query(DDupeProbabilities).count()
+        link_count_pre_delete = session.query(Links).count()
+        link_prob_count_pre_delete = session.query(LinkProbabilities).count()
+
+        assert cluster_count_pre_delete > 0
+        assert cluster_assoc_count_pre_delete > 0
+        assert ddupe_count_pre_delete > 0
+        assert ddupe_prob_count_pre_delete > 0
+        assert link_count_pre_delete > 0
+        assert link_prob_count_pre_delete > 0
+
+    # Perform deletion
+    delete_model(deduper_to_delete, engine=db_engine[1], certain=True)
+
+    with Session(db_engine[1]) as session:
+        model_list_post_delete = session.query(Models).all()
+        # Deletes deduper and parent linkers: 3 models gone
+        assert len(model_list_post_delete) == len(model_list_pre_delete) - 3
+
+        cluster_count_post_delete = session.query(Clusters).count()
+        cluster_assoc_count_post_delete = session.query(clusters_association).count()
+        ddupe_count_post_delete = session.query(Dedupes).count()
+        ddupe_prob_count_post_delete = session.query(DDupeProbabilities).count()
+        link_count_post_delete = session.query(Links).count()
+        link_prob_count_post_delete = session.query(LinkProbabilities).count()
+
+        # Cluster, dedupe and link count unaffected
+        assert cluster_count_post_delete == cluster_count_pre_delete
+        assert ddupe_count_post_delete == ddupe_count_pre_delete
+        assert link_count_post_delete == link_count_pre_delete
+
+        # But count of propose and create edges has dropped
+        assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
+        assert ddupe_prob_count_post_delete < ddupe_prob_count_pre_delete
+        assert link_prob_count_post_delete < link_prob_count_pre_delete
