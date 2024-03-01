@@ -26,14 +26,16 @@ class SplinkLinkerFunction(BaseModel):
                 f"Function {self.function} not found as method of Splink Linker class"
             )
 
-        linker_func = getattr(SplinkLibLinkerClass, self.function)
-        linker_func_param_set = set(inspect.signature(linker_func).parameters.keys())
-        func_param_set = set(self.arguments.keys())
+        splink_linker_func = getattr(SplinkLibLinkerClass, self.function)
+        splink_linker_func_param_set = set(
+            inspect.signature(splink_linker_func).parameters.keys()
+        )
+        current_func_param_set = set(self.arguments.keys())
 
-        if not func_param_set <= linker_func_param_set:
+        if not current_func_param_set <= splink_linker_func_param_set:
             raise ValueError(
                 f"Function {self.function} given incorrect arguments: "
-                f"{func_param_set.difference(linker_func_param_set)}. "
+                f"{current_func_param_set.difference(splink_linker_func_param_set)}. "
                 "Consider referring back to the Splink documentation: "
                 "https://moj-analytical-services.github.io/splink/linker.html"
             )
@@ -54,14 +56,14 @@ class SplinkSettings(LinkerSettings):
         """,
         validate_default=True,
     )
-    linker_training: List[SplinkLinkerFunction] = Field(
+    linker_training_functions: List[SplinkLinkerFunction] = Field(
         description="""
-            An ordered list of dictionaries keyed to functions, with values of the
-            function's argument dictionary, to be run against the Linker.
+            A list of dictionaries keyed to functions, with values of the function's
+            argument dictionary, to be run against the Linker in the order supplied.
 
             Example:
             
-                >>> linker_training=[
+                >>> linker_training_functions=[
                 ...     {
                 ...         "function": "estimate_probability_two_random_records_match",
                 ...         "arguments": {
@@ -178,7 +180,7 @@ class SplinkLinker(Linker):
         left_id: str,
         right_id: str,
         linker_class: SplinkLibLinkerClass,
-        linker_training: List[Dict[str, Any]],
+        linker_training_functions: List[Dict[str, Any]],
         linker_settings: Dict[str, Any],
         threshold: float,
     ) -> "SplinkLinker":
@@ -186,7 +188,9 @@ class SplinkLinker(Linker):
             left_id=left_id,
             right_id=right_id,
             linker_class=linker_class,
-            linker_training=[SplinkLinkerFunction(**func) for func in linker_training],
+            linker_training_functions=[
+                SplinkLinkerFunction(**func) for func in linker_training_functions
+            ],
             linker_settings=linker_settings,
             threshold=threshold,
         )
@@ -220,14 +224,15 @@ class SplinkLinker(Linker):
             settings_dict=self.settings.linker_settings,
         )
 
-        for func in self.settings.linker_training:
+        for func in self.settings.linker_training_functions:
             proc_func = getattr(self._linker, func.function)
             proc_func(**func.arguments)
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
         if left is not None or right is not None:
             logic_logger.warning(
-                "Left and right data are declared in .prepare() for SplinkLinker"
+                "Left and right data are declared in .prepare() for SplinkLinker. "
+                "These values will be ignored"
             )
 
         res = self._linker.predict(threshold_match_probability=self.settings.threshold)

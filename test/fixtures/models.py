@@ -213,7 +213,7 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     for field in fields:
         comparisons.append(f"l.{field} = r.{field}")
 
-    linker_training = [
+    linker_training_functions = [
         {
             "function": "estimate_probability_two_random_records_match",
             "arguments": {
@@ -245,7 +245,7 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
         "left_id": "cluster_sha1",
         "right_id": "cluster_sha1",
         "linker_class": DuckDBLinker,
-        "linker_training": linker_training,
+        "linker_training_functions": linker_training_functions,
         "linker_settings": linker_settings,
         "threshold": None,
     }
