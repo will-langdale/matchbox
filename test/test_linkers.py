@@ -1,4 +1,9 @@
-from test.fixtures.models import linker_test_params, merge_test_params
+from test.fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 import pytest
 from pandas import DataFrame
@@ -8,13 +13,13 @@ from cmf import make_linker, to_clusters
 from cmf.data import Models
 
 
-@pytest.mark.parametrize("fx_data", merge_test_params)
-@pytest.mark.parametrize("fx_linker", linker_test_params)
+@pytest.mark.parametrize("fx_data", link_data_test_params)
+@pytest.mark.parametrize("fx_linker", link_model_test_params)
 def test_linkers(
     # Fixtures
     db_engine,
     db_clear_models,
-    db_add_dedupe_models,
+    db_add_dedupe_models_and_data,
     # Parameterised data classes
     fx_data,
     fx_linker,
@@ -33,7 +38,12 @@ def test_linkers(
     # i. Ensure database is clean, collect fixtures
 
     db_clear_models(db_engine)
-    db_add_dedupe_models(db_engine, request)
+    db_add_dedupe_models_and_data(
+        db_engine=db_engine,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        request=request,
+    )
 
     df_l = request.getfixturevalue(fx_data.fixture_l)
     df_r = request.getfixturevalue(fx_data.fixture_r)
