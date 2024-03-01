@@ -49,7 +49,7 @@ def company_name(
 
 def company_number(df: DataFrame, column: str) -> DataFrame:
     """
-    Remove non-numbers, and then leading zeroes
+    Remove non-numbers, and then leading zeroes.
 
     Args:
         df: a dataframe
@@ -61,6 +61,27 @@ def company_number(df: DataFrame, column: str) -> DataFrame:
     clean_number = cu.cleaning_function(steps.remove_notnumbers_leadingzeroes)
 
     df = clean_number(df, column)
+
+    return df
+
+
+def postcode(df: DataFrame, column: str) -> DataFrame:
+    """
+    Removes all punctuation, converts to upper, removes all spaces.
+
+    Args:
+        df: a dataframe
+        column: a column containing a postcode
+    Returns:
+        dataframe: the same as went in, but cleaned
+
+    """
+
+    clean_postcode = cu.cleaning_function(
+        steps.characters_to_spaces, steps.to_upper, steps.remove_whitespace
+    )
+
+    df = clean_postcode(df, column)
 
     return df
 
