@@ -3,11 +3,12 @@ import cProfile
 import io
 import pstats
 
+import rustworkx as rx
 from sqlalchemy import Engine, MetaData, Table
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
-from cmf.data import ENGINE, SourceDataset
+from cmf.data import ENGINE, Models, ModelsFrom, SourceDataset
 from cmf.data.exceptions import CMFSourceTableError
 
 # Data conversion
@@ -108,7 +109,7 @@ def schema_table_to_table(
 def string_to_dataset(
     db_schema: str, db_table: str, engine: Engine = ENGINE
 ) -> SourceDataset:
-    """Takes a CMF SourceDataset object and returns a CMF SourceDataset"""
+    """Takes strings and returns a CMF SourceDataset"""
     with Session(engine) as session:
         dataset = (
             session.query(SourceDataset)
@@ -116,6 +117,43 @@ def string_to_dataset(
             .first()
         )
     return dataset
+
+
+# Retrieval
+
+
+def get_model_subgraph(engine: Engine = ENGINE) -> rx.PyDiGraph:
+    """Retrieves the model subgraph as a PyDiGraph."""
+    G = rx.PyDiGraph()
+    models = {}
+    datasets = {}
+
+    with Session(engine) as session:
+        for dataset in session.query(SourceDataset).all():
+            dataset_idx = G.add_node(
+                {
+                    "id": str(dataset.uuid),
+                    "name": f"{dataset.db_schema}.{dataset.db_table}",
+                    "type": "dataset",
+                }
+            )
+            datasets[dataset.uuid] = dataset_idx
+
+        for model in session.query(Models).all():
+            model_idx = G.add_node(
+                {"id": str(model.sha1), "name": model.name, "type": "model"}
+            )
+            models[model.sha1] = model_idx
+            if model.deduplicates is not None:
+                dataset_idx = datasets.get(model.deduplicates)
+                _ = G.add_edge(model_idx, dataset_idx, {"type": "deduplicates"})
+
+        for edge in session.query(ModelsFrom).all():
+            parent_idx = models.get(edge.parent)
+            child_idx = models.get(edge.child)
+            _ = G.add_edge(parent_idx, child_idx, {"type": "from"})
+
+    return G
 
 
 # SQLAlchemy profiling

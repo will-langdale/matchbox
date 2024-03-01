@@ -572,7 +572,7 @@ def to_clusters(
     """
     all_edges = (
         results.to_df()
-        .query("probability > @threshold")
+        .query("probability >= @threshold")
         .filter(["left_id", "right_id"])
         .map(bytes)
         .stack()

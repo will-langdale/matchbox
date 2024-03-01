@@ -1,5 +1,6 @@
 from cmf.data.utils.db import (
     dataset_to_table,
+    get_model_subgraph,
     get_schema_table_names,
     schema_table_to_table,
     sqa_profiled,
@@ -26,4 +27,6 @@ __all__ = (
     "model_name_to_sha1",
     "list_to_value_ordered_sha1",
     "columns_to_value_ordered_sha1",
+    # Retrieval
+    "get_model_subgraph",
 )
