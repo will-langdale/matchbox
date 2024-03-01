@@ -3,6 +3,17 @@ from typing import Dict, List
 from cmf.clean.utils import ABBREVIATIONS, STOPWORDS
 
 
+def remove_whitespace(column: str) -> str:
+    """Removes all whitespaces."""
+    return f"""
+        replace(
+            {column},
+            ' ',
+            ''
+        )
+    """
+
+
 def characters_to_spaces(column: str) -> str:
     """
     Removes all punctuation and replaces with spaces.

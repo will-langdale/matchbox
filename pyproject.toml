@@ -23,7 +23,8 @@ dependencies = [
     "psycopg2-binary",
     "pydantic",
     "pyyaml",
-    "rustworkx"
+    "rustworkx",
+    "tomli"
 ]
 
 [project.optional-dependencies]
