@@ -2,45 +2,23 @@ import rustworkx as rx
 from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 from sqlalchemy import Engine
-from sqlalchemy.orm import Session
 
-from cmf.data import ENGINE, Models, ModelsFrom, SourceDataset
+from cmf.data import ENGINE
+from cmf.data.utils import get_model_subgraph
 
 
 def draw_model_tree(engine: Engine = ENGINE) -> Figure:
     """
     Draws the model subgraph.
     """
-    G = rx.PyDiGraph()
-    models = {}
-    datasets = {}
-
-    with Session(engine) as session:
-        for dataset in session.query(SourceDataset).all():
-            dataset_idx = G.add_node(
-                {
-                    "id": str(dataset.uuid),
-                    "name": f"{dataset.db_schema}.{dataset.db_table}",
-                    "type": "dataset",
-                }
-            )
-            datasets[dataset.uuid] = dataset_idx
-
-        for model in session.query(Models).all():
-            model_idx = G.add_node(
-                {"id": str(model.sha1), "name": model.name, "type": "model"}
-            )
-            models[model.sha1] = model_idx
-            if model.deduplicates is not None:
-                dataset_idx = datasets.get(model.deduplicates)
-                _ = G.add_edge(model_idx, dataset_idx, {"type": "deduplicates"})
-
-        for edge in session.query(ModelsFrom).all():
-            parent_idx = models.get(edge.parent)
-            child_idx = models.get(edge.child)
-            _ = G.add_edge(parent_idx, child_idx, {"type": "from"})
+    G = get_model_subgraph(engine=engine)
 
     node_indices = G.node_indices()
+    datasets = {
+        G[node_indices[i]]["id"]: i
+        for i in node_indices
+        if G[node_indices[i]]["type"] == "dataset"
+    }
 
     colours = []
     for i in node_indices:
