@@ -22,7 +22,6 @@ dependencies = [
     "altair",
     "psycopg2-binary",
     "pydantic",
-    "pyyaml",
     "rustworkx",
     "tomli",
     "matplotlib"

@@ -4,7 +4,7 @@ table = "companies"
 id = "id"
 
 [datasets.data_hub_companies]
-schema = "dit"
+schema = "dbt"
 table = "data_hub__companies"
 id = "id"
 
@@ -14,6 +14,6 @@ table = "trade__exporters"
 id = "id"
 
 [datasets.export_wins]
-schema = "dit"
+schema = "dbt"
 table = "export_wins__wins_dataset"
 id = "id"

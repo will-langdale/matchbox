@@ -5,16 +5,17 @@ from cmf.clean.utils import ABBREVIATIONS, STOPWORDS
 
 def remove_whitespace(column: str) -> str:
     """Removes all whitespaces."""
-    return f"""
-        replace(
+    return rf"""
+        regexp_replace(
             {column},
-            ' ',
-            ''
+            '\s',
+            '',
+            'g'
         )
     """
 
 
-def characters_to_spaces(column: str) -> str:
+def punctuation_to_spaces(column: str) -> str:
     """
     Removes all punctuation and replaces with spaces.
     """
@@ -28,7 +29,7 @@ def characters_to_spaces(column: str) -> str:
     """
 
 
-def characters_to_nothing(column: str) -> str:
+def periods_to_nothing(column: str) -> str:
     """
     Removes periods and replaces with nothing (U.K. -> UK)
     """
@@ -56,8 +57,8 @@ def clean_punctuation(column: str) -> str:
     trim(
         regexp_replace(
             lower({
-                characters_to_spaces(
-                    characters_to_nothing(column)
+                punctuation_to_spaces(
+                    periods_to_nothing(column)
                 )
             }),
             '\s+',

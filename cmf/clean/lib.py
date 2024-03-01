@@ -78,7 +78,7 @@ def postcode(df: DataFrame, column: str) -> DataFrame:
     """
 
     clean_postcode = cu.cleaning_function(
-        steps.characters_to_spaces, steps.to_upper, steps.remove_whitespace
+        steps.punctuation_to_spaces, steps.to_upper, steps.remove_whitespace
     )
 
     df = clean_postcode(df, column)
