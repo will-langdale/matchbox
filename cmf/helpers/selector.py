@@ -72,7 +72,7 @@ def selectors(*selector: Dict[str, List[str]]) -> Dict[str, List[str]]:
     return {k: v for d in (selector) for k, v in d.items()}
 
 
-def _get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
+def get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
     """
     Takes a Models object and returns all items in its parent tree.
 
@@ -87,7 +87,7 @@ def _get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
     result = []
     if isinstance(model, list):
         for mod in model:
-            parents = _get_all_parents(mod)
+            parents = get_all_parents(mod)
             result.append(parents)
         return result
     elif isinstance(model, Models):
@@ -97,12 +97,12 @@ def _get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
             return result
         else:
             for mod in parent_neighbours:
-                parents = _get_all_parents(mod)
+                parents = get_all_parents(mod)
                 result += parents
             return result
 
 
-def _get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
+def get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
     """
     Takes a Models object and returns all items in its child tree.
 
@@ -117,7 +117,7 @@ def _get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
     result = []
     if isinstance(model, list):
         for mod in model:
-            children = _get_all_children(mod)
+            children = get_all_children(mod)
             result.append(children)
         return result
     elif isinstance(model, Models):
@@ -127,7 +127,7 @@ def _get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
             return result
         else:
             for mod in child_neighbours:
-                children = _get_all_children(mod)
+                children = get_all_children(mod)
                 result += children
             return result
 
@@ -152,7 +152,7 @@ def _parent_to_tree(
 
     with Session(engine) as session:
         model = session.query(Models).filter_by(name=model_name).first()
-        model_children = _get_all_children(model)
+        model_children = get_all_children(model)
         model_children.pop(0)  # includes original model
 
     return model.sha1, [m.sha1 for m in model_children]

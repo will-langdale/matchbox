@@ -1,0 +1,19 @@
+[datasets.companies_house]
+schema = "companieshouse"
+table = "companies"
+id = "id"
+
+[datasets.data_hub_companies]
+schema = "dbt"
+table = "data_hub__companies"
+id = "id"
+
+[datasets.hmrc_exporters]
+schema = "hmrc"
+table = "trade__exporters"
+id = "id"
+
+[datasets.export_wins]
+schema = "dbt"
+table = "export_wins__wins_dataset"
+id = "id"

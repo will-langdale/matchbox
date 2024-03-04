@@ -1,5 +1,12 @@
+import itertools
 import logging
 import os
+from test.fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import MetaData, Table, insert, inspect
@@ -261,3 +268,88 @@ def test_db_delete(
     # Add it all back
     db_add_data(db_engine)
     db_add_models(db_engine)
+
+
+def test_add_dedupers_and_data(
+    db_engine, db_clear_models, db_add_dedupe_models_and_data, request
+):
+    """
+    Test that adding models and generated data for deduplication processes works.
+    """
+    db_clear_models(db_engine)
+    db_add_dedupe_models_and_data(
+        db_engine=db_engine,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        request=request,
+    )
+
+    dedupe_test_params_dict = {
+        test_param.source: test_param for test_param in dedupe_data_test_params
+    }
+
+    with Session(db_engine[1]) as session:
+        model_list = session.query(Models).all()
+
+        assert len(model_list) == len(dedupe_data_test_params)
+
+        for model in model_list:
+            deduplicates = (
+                session.query(SourceDataset.db_schema, SourceDataset.db_table)
+                .filter(SourceDataset.uuid == model.deduplicates)
+                .first()
+            )
+
+            test_param = dedupe_test_params_dict[f"{deduplicates[0]}.{deduplicates[1]}"]
+
+            assert len(model.proposes_dedupes) == test_param.tgt_prob_n
+            # We assert unique_n rather than tgt_clus_n because tgt_clus_n
+            # checks what the deduper found, not what was inserted
+            assert len(model.creates) == test_param.unique_n
+
+    db_clear_models(db_engine)
+
+
+def test_add_linkers_and_data(
+    db_engine,
+    db_clear_models,
+    db_add_dedupe_models_and_data,
+    db_add_link_models_and_data,
+    request,
+):
+    """
+    Test that adding models and generated data for link processes works.
+    """
+    naive_deduper_params = [dedupe_model_test_params[0]]  # Naive deduper
+    deterministic_linker_params = [link_model_test_params[0]]  # Deterministic linker
+
+    db_clear_models(db_engine)
+    db_add_link_models_and_data(
+        db_engine=db_engine,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=naive_deduper_params,
+        link_data=link_data_test_params,
+        link_models=deterministic_linker_params,
+        request=request,
+    )
+
+    with Session(db_engine[1]) as session:
+        model_list = session.query(Models).filter(Models.deduplicates == None).all()  # NoQA E711
+
+        assert len(model_list) == len(link_data_test_params)
+
+    for fx_linker, fx_data in itertools.product(
+        deterministic_linker_params, link_data_test_params
+    ):
+        linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
+
+        with Session(db_engine[1]) as session:
+            model = session.query(Models).filter(Models.name == linker_name).first()
+
+            assert len(model.proposes_links) == fx_data.tgt_prob_n
+            # We assert unique_n rather than tgt_clus_n because tgt_clus_n
+            # checks what the linker found, not what was inserted
+            assert len(model.creates) == fx_data.unique_n
+
+    db_clear_models(db_engine)

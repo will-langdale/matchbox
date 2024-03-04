@@ -2,16 +2,18 @@ import hashlib
 import logging
 import os
 import random
-from test.fixtures.models import dedupe_test_params, deduper_test_params
+from test.fixtures.models import DedupeTestParams, LinkTestParams, ModelTestParams
+from typing import List
 
 import pytest
 import testing.postgresql
+from _pytest.fixtures import FixtureFunction, FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema
 
-from cmf import make_deduper, to_clusters
+from cmf import make_deduper, make_linker, to_clusters
 from cmf.admin import add_dataset
 from cmf.data import (
     Clusters,
@@ -116,7 +118,7 @@ def db_add_data(crn_companies, duns_companies, cdms_companies):
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_add_data(db_engine):
+    def _db_add_data(db_engine: FixtureFunction):
         with db_engine[1].connect() as conn:
             # Insert data
             crn_companies.to_sql(
@@ -177,7 +179,7 @@ def db_add_models():
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_add_models(db_engine):
+    def _db_add_models(db_engine: FixtureFunction) -> None:
         with Session(db_engine[1]) as session:
             # Two Dedupers and two Linkers
             dd_m1 = Models(
@@ -286,7 +288,7 @@ def db_add_models():
 
 
 @pytest.fixture(scope="session")
-def db_add_dedupe_models():
+def db_add_dedupe_models_and_data():
     """
     Returns a function to add Naive-deduplicated model probabilities and
     clusters to the database.
@@ -294,20 +296,27 @@ def db_add_dedupe_models():
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_add_dedupe_models(db_engine, request):
-        for data in dedupe_test_params:
-            for ddupe in deduper_test_params:
-                df = request.getfixturevalue(data.fixture)
+    def _db_add_dedupe_models_and_data(
+        db_engine: FixtureFunction,
+        dedupe_data: List[DedupeTestParams],
+        dedupe_models: List[ModelTestParams],
+        request: FixtureRequest,
+    ) -> None:
+        for fx_data in dedupe_data:
+            for fx_deduper in dedupe_models:
+                df = request.getfixturevalue(fx_data.fixture)
 
-                deduper_name = f"{ddupe.name}_{data.source}"
-                deduper_settings = ddupe.build_settings(data)
+                deduper_name = f"{fx_deduper.name}_{fx_data.source}"
+                deduper_settings = fx_deduper.build_settings(fx_data)
 
                 deduper = make_deduper(
                     dedupe_run_name=deduper_name,
-                    description=f"Dedupe of {data.source} with {ddupe.name} method",
-                    deduper=ddupe.cls,
+                    description=(
+                        f"Dedupe of {fx_data.source} " f"with {fx_deduper.name} method."
+                    ),
+                    deduper=fx_deduper.cls,
                     deduper_settings=deduper_settings,
-                    data_source=data.source,
+                    data_source=fx_data.source,
                     data=df,
                 )
 
@@ -320,7 +329,66 @@ def db_add_dedupe_models():
                 deduped.to_cmf(engine=db_engine[1])
                 clustered.to_cmf(engine=db_engine[1])
 
-    return _db_add_dedupe_models
+    return _db_add_dedupe_models_and_data
+
+
+@pytest.fixture(scope="session")
+def db_add_link_models_and_data():
+    """
+    Returns a function to add Deterministic-linked model probabilities and
+    clusters to the database.
+
+    Can be used to reset and repopulate between tests, when necessary.
+    """
+
+    def _db_add_link_models_and_data(
+        db_engine: FixtureFunction,
+        db_add_dedupe_models_and_data: FixtureFunction,
+        dedupe_data: List[DedupeTestParams],
+        dedupe_models: List[ModelTestParams],
+        link_data: List[LinkTestParams],
+        link_models: List[ModelTestParams],
+        request: FixtureRequest,
+    ) -> None:
+        db_add_dedupe_models_and_data(
+            db_engine=db_engine,
+            dedupe_data=dedupe_data,
+            dedupe_models=dedupe_models,
+            request=request,
+        )
+
+        for fx_data in link_data:
+            for fx_linker in link_models:
+                df_l = request.getfixturevalue(fx_data.fixture_l)
+                df_r = request.getfixturevalue(fx_data.fixture_r)
+
+                linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
+                linker_settings = fx_linker.build_settings(fx_data)
+
+                linker = make_linker(
+                    link_run_name=linker_name,
+                    description=(
+                        f"Testing link of {fx_data.source_l} and {fx_data.source_r} "
+                        f"with {fx_linker.name} method."
+                    ),
+                    linker=fx_linker.cls,
+                    linker_settings=linker_settings,
+                    left_data=df_l,
+                    left_source=fx_data.source_l,
+                    right_data=df_r,
+                    right_source=fx_data.source_r,
+                )
+
+                linked = linker()
+
+                clustered = to_clusters(
+                    df_l, df_r, results=linked, key="cluster_sha1", threshold=0
+                )
+
+                linked.to_cmf(engine=db_engine[1])
+                clustered.to_cmf(engine=db_engine[1])
+
+    return _db_add_link_models_and_data
 
 
 @pytest.fixture(scope="session")

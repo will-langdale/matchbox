@@ -22,8 +22,9 @@ dependencies = [
     "altair",
     "psycopg2-binary",
     "pydantic",
-    "pyyaml",
-    "rustworkx"
+    "rustworkx",
+    "tomli",
+    "matplotlib"
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,7 @@ dev = [
     "ruff",
     "pre-commit",
     "pytest",
+    "pytest-cov",
     "testing.postgresql",
     "ipykernel"
 ]
@@ -71,7 +73,6 @@ exclude = [
 line-length = 88
 indent-width = 4
 target-version = "py39"
-ignore-init-module-imports = true
 
 [tool.ruff.lint]
 select = [
@@ -84,6 +85,7 @@ ignore = []
 fixable = ["ALL"]
 unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+ignore-init-module-imports = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -98,7 +100,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pytest.ini_options]
-addopts = "-s -vv"
+addopts = "-s -vv --cov=cmf test/"
 log_cli = true
 log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
