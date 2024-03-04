@@ -35,7 +35,7 @@ def test_linkers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures
+    # i. Ensure database is clean, collect fixtures, perform any special linker cleaning
 
     db_clear_models(db_engine)
     db_add_dedupe_models_and_data(
@@ -48,13 +48,34 @@ def test_linkers(
     df_l = request.getfixturevalue(fx_data.fixture_l)
     df_r = request.getfixturevalue(fx_data.fixture_r)
 
+    fields_l = list(fx_data.fields_l.keys())
+    fields_r = list(fx_data.fields_r.keys())
+
+    if fx_linker.rename_fields:
+        df_l_renamed = df_l.copy().rename(columns=fx_data.fields_l)
+        df_r_renamed = df_r.copy().rename(columns=fx_data.fields_r)
+        fields_l_renamed = list(fx_data.fields_l.values())
+        fields_r_renamed = list(fx_data.fields_r.values())
+        df_l_renamed = df_l_renamed.filter(["cluster_sha1"] + fields_l_renamed)
+        df_r_renamed = df_r_renamed.filter(["cluster_sha1"] + fields_r_renamed)
+        assert set(df_l_renamed.columns) == set(df_r_renamed.columns)
+        assert df_l_renamed.dtypes.equals(df_r_renamed.dtypes)
+
     # 1. Input data is as expected
 
-    assert isinstance(df_l, DataFrame)
-    assert df_l.shape[0] == fx_data.curr_n_l
+    if fx_linker.rename_fields:
+        assert isinstance(df_l_renamed, DataFrame)
+        assert df_l_renamed.shape[0] == fx_data.curr_n_l
+    else:
+        assert isinstance(df_l, DataFrame)
+        assert df_l.shape[0] == fx_data.curr_n_l
 
-    assert isinstance(df_r, DataFrame)
-    assert df_r.shape[0] == fx_data.curr_n_r
+    if fx_linker.rename_fields:
+        assert isinstance(df_r_renamed, DataFrame)
+        assert df_r_renamed.shape[0] == fx_data.curr_n_r
+    else:
+        assert isinstance(df_r, DataFrame)
+        assert df_r.shape[0] == fx_data.curr_n_r
 
     # 2. Data is linked correctly
 
@@ -69,15 +90,16 @@ def test_linkers(
         ),
         linker=fx_linker.cls,
         linker_settings=linker_settings,
-        left_data=df_l,
+        left_data=df_l_renamed if fx_linker.rename_fields else df_l,
         left_source=fx_data.source_l,
-        right_data=df_r,
+        right_data=df_r_renamed if fx_linker.rename_fields else df_r,
         right_source=fx_data.source_r,
     )
 
     linked = linker()
 
     linked_df = linked.to_df()
+
     linked_df_with_source = linked.inspect_with_source(
         left_data=df_l,
         left_key="cluster_sha1",
@@ -89,7 +111,7 @@ def test_linkers(
     assert linked_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(linked_df_with_source, DataFrame)
-    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
+    for field_l, field_r in zip(fields_l, fields_r):
         assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
     # 3. Linked probabilities are inserted correctly
@@ -118,7 +140,7 @@ def test_linkers(
     assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
-    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
+    for field_l, field_r in zip(fields_l, fields_r):
         # When we enrich the ClusterResults in a deduplication job, every child
         # hash will match something in the source data, because we're only using
         # one dataset. NaNs are therefore impossible.
@@ -164,7 +186,7 @@ def test_linkers(
     assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field_l, field_r in zip(fx_data.fields_l, fx_data.fields_r):
+    for field_l, field_r in zip(fields_l, fields_r):
         # See above for method
         # Only change is that we've now introduced expected NaNs for data
         # that contains different number of entities

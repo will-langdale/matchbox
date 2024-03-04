@@ -29,16 +29,28 @@ def test_dedupers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures
+    # i. Ensure database is clean, collect fixtures, perform any special
+    # deduper cleaning
 
     db_clear_models(db_engine)
 
     df = request.getfixturevalue(fx_data.fixture)
 
+    fields = list(fx_data.fields.keys())
+
+    if fx_deduper.rename_fields:
+        df_renamed = df.copy().rename(columns=fx_data.fields)
+        fields_renamed = list(fx_data.fields.values())
+        df_renamed = df_renamed.filter(["data_sha1"] + fields_renamed)
+
     # 1. Input data is as expected
 
-    assert isinstance(df, DataFrame)
-    assert df.shape[0] == fx_data.curr_n
+    if fx_deduper.rename_fields:
+        assert isinstance(df_renamed, DataFrame)
+        assert df_renamed.shape[0] == fx_data.curr_n
+    else:
+        assert isinstance(df, DataFrame)
+        assert df.shape[0] == fx_data.curr_n
 
     # 2. Data is deduplicated correctly
 
@@ -50,7 +62,7 @@ def test_dedupers(
         description=f"Testing dedupe of {fx_data.source} with {fx_deduper.name} method",
         deduper=fx_deduper.cls,
         deduper_settings=deduper_settings,
-        data=df,
+        data=df_renamed if fx_deduper.rename_fields else df,
         data_source=fx_data.source,
     )
 
@@ -65,7 +77,7 @@ def test_dedupers(
     assert deduped_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(deduped_df_with_source, DataFrame)
-    for field in fx_data.fields:
+    for field in fields:
         assert deduped_df_with_source[field + "_x"].equals(
             deduped_df_with_source[field + "_y"]
         )
@@ -93,7 +105,7 @@ def test_dedupers(
     assert clusters_dupes_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_dupes_df_with_source, DataFrame)
-    for field in fx_data.fields:
+    for field in fields:
         assert clusters_dupes_df_with_source[field + "_x"].equals(
             clusters_dupes_df_with_source[field + "_y"]
         )
@@ -109,7 +121,7 @@ def test_dedupers(
     assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field in fx_data.fields:
+    for field in fields:
         assert clusters_all_df_with_source[field + "_x"].equals(
             clusters_all_df_with_source[field + "_y"]
         )
