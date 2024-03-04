@@ -397,7 +397,9 @@ def db_engine(db_add_data, db_add_models):
     Yield engine to mock in-memory database.
     """
     postgresql = CMF_POSTGRES()
-    engine = create_engine(postgresql.url(), connect_args={"sslmode": "disable"})
+    engine = create_engine(
+        postgresql.url(), connect_args={"sslmode": "disable", "client_encoding": "utf8"}
+    )
 
     with engine.connect() as conn:
         # Install relevant extensions

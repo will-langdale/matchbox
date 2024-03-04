@@ -1,7 +1,7 @@
 from typing import List, Type
 
 import duckdb
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, Field, field_validator
 
 from cmf.helpers import comparison
@@ -129,8 +129,9 @@ class WeightedDeterministicLinker(Linker):
         match_subquery = " union all ".join(match_subquery)
         total_weight = sum(weights)
 
-        res = duckdb.sql(
-            f"""
+        res = (
+            duckdb.sql(
+                f"""
                 select
                     matches.left_id,
                     matches.right_id,
@@ -144,7 +145,10 @@ class WeightedDeterministicLinker(Linker):
                     sum(matches.probability) / 
                         {total_weight} >= {self.settings.threshold};
             """
-        ).df()
+            )
+            .arrow()
+            .to_pandas(types_mapper=ArrowDtype)
+        )
 
         # Convert bytearray back to bytes
         return res.assign(

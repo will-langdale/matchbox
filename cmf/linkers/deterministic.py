@@ -1,7 +1,7 @@
 from typing import Type
 
 import duckdb
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 from pydantic import Field, field_validator
 
 from cmf.helpers import comparison
@@ -59,8 +59,9 @@ class DeterministicLinker(Linker):
         left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
         right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
 
-        res = duckdb.sql(
-            f"""
+        res = (
+            duckdb.sql(
+                f"""
                 select distinct on (list_sort([raw.left_id, raw.right_id]))
                     raw.left_id,
                     raw.right_id,
@@ -75,7 +76,10 @@ class DeterministicLinker(Linker):
                         {self.settings.comparisons}
                 ) raw;
             """
-        ).df()
+            )
+            .arrow()
+            .to_pandas(types_mapper=ArrowDtype)
+        )
 
         # Convert bytearray back to bytes
         return res.assign(

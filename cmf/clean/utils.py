@@ -1,7 +1,7 @@
 from typing import Callable
 
 import duckdb
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 
 STOPWORDS = [
     "limited",
@@ -59,7 +59,7 @@ def cleaning_function(*functions: Callable) -> Callable:
             )
 
         for sql in to_run:
-            df = duckdb.sql(sql).arrow().to_pandas()
+            df = duckdb.sql(sql).arrow().to_pandas(types_mapper=ArrowDtype)
 
         return df
 
@@ -86,7 +86,7 @@ def alias(function: Callable, alias: str) -> Callable:
         """
             )
             .arrow()
-            .to_pandas()
+            .to_pandas(types_mapper=ArrowDtype)
         )
 
         processed = function(aliased, alias)
@@ -119,7 +119,7 @@ def unnest_renest(function: Callable) -> Callable:
         """
             )
             .arrow()
-            .to_pandas()
+            .to_pandas(types_mapper=ArrowDtype)
         )
 
         processed = function(unnest, column)
@@ -146,7 +146,7 @@ def unnest_renest(function: Callable) -> Callable:
         """
             )
             .arrow()
-            .to_pandas()
+            .to_pandas(types_mapper=ArrowDtype)
         )
 
         return renest

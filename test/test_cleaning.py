@@ -3,8 +3,8 @@ from functools import partial
 from pathlib import Path
 
 import duckdb
-import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 from cmf import locations as loc
@@ -49,8 +49,17 @@ See cleaning/ directory for more information on specific tests.
 def load_test_data(path):
     dirty = pd.read_csv(Path(path, "dirty.csv"), converters={"list": ast.literal_eval})
     clean = pd.read_csv(Path(path, "clean.csv"), converters={"list": ast.literal_eval})
+
     dirty.columns = ["col"]
     clean.columns = ["col"]
+
+    dirty = dirty.convert_dtypes(dtype_backend="pyarrow")
+    clean = clean.convert_dtypes(dtype_backend="pyarrow")
+
+    if isinstance(clean["col"][0], list):
+        clean["col"] = clean["col"].astype(pd.ArrowDtype(pa.list_(pa.string())))
+    if isinstance(dirty["col"][0], list):
+        dirty["col"] = dirty["col"].astype(pd.ArrowDtype(pa.list_(pa.string())))
 
     return dirty, clean
 
@@ -88,14 +97,18 @@ def test_basic_functions(test):
 
     dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", test_name))
 
-    cleaned = duckdb.sql(
-        f"""
+    cleaned = (
+        duckdb.sql(
+            f"""
         select
             {test_cleaning_function("col")} as col
         from
             dirty
     """
-    ).df()
+        )
+        .arrow()
+        .to_pandas(types_mapper=pd.ArrowDtype)
+    )
 
     assert cleaned.equals(clean)
 
@@ -131,10 +144,6 @@ def test_function(test):
 
     cleaned = test_cleaning_function(dirty, column="col")
 
-    # Handle Arrow returning arrays but read_csv ingesting lists
-    if isinstance(cleaned["col"][0], np.ndarray):
-        cleaned["col"] = cleaned["col"].apply(list)
-
     assert cleaned.equals(clean)
 
 
@@ -160,9 +169,9 @@ def test_nest_unnest(test):
 
     cleaned = test_cleaning_function_arrayed(dirty, column="col")
 
-    # Handle Arrow returning arrays but read_csv ingesting lists
-    if isinstance(cleaned["col"][0], np.ndarray):
-        cleaned["col"] = cleaned["col"].apply(list)
+    # Handle arrays being unsortable
+    cleaned["col"] = cleaned["col"].astype("string[pyarrow]")
+    clean["col"] = clean["col"].astype("string[pyarrow]")
 
     cleaned = cleaned.sort_values(by="col").reset_index(drop=True)
     clean = clean.sort_values(by="col").reset_index(drop=True)

@@ -1,7 +1,7 @@
 from typing import List, Type
 
 import duckdb
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 from pydantic import Field
 
 from cmf.dedupers.make_deduper import Deduper, DeduperSettings
@@ -44,8 +44,9 @@ class NaiveDeduper(Deduper):
         # rows where all data items are identical in the source
         df["_unique_e4003b"] = range(df.shape[0])
 
-        res = duckdb.sql(
-            f"""
+        res = (
+            duckdb.sql(
+                f"""
                 select distinct on (list_sort([raw.left_id, raw.right_id]))
                     raw.left_id,
                     raw.right_id,
@@ -63,7 +64,10 @@ class NaiveDeduper(Deduper):
                             l._unique_e4003b != r._unique_e4003b
                 ) raw;
             """
-        ).df()
+            )
+            .arrow()
+            .to_pandas(types_mapper=ArrowDtype)
+        )
 
         # Convert bytearray back to bytes
         return res.assign(
