@@ -1,3 +1,5 @@
+from typing import Type
+
 import duckdb
 from pandas import DataFrame
 from pydantic import Field, field_validator
@@ -35,6 +37,9 @@ class DeterministicSettings(LinkerSettings):
 class DeterministicLinker(Linker):
     settings: DeterministicSettings
 
+    _id_dtype_l: Type = None
+    _id_dtype_r: Type = None
+
     @classmethod
     def from_settings(
         cls, left_id: str, right_id: str, comparisons: str
@@ -48,27 +53,32 @@ class DeterministicLinker(Linker):
         pass
 
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+        self._id_dtype_l = type(left[self.settings.left_id][0])
+        self._id_dtype_r = type(right[self.settings.right_id][0])
+
         left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
         right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
 
-        return (
-            duckdb.sql(
-                f"""
-                    select distinct on (list_sort([raw.left_id, raw.right_id]))
-                        raw.left_id,
-                        raw.right_id,
-                        1 as probability
-                    from (
-                        select
-                            l.{self.settings.left_id} as left_id,
-                            r.{self.settings.right_id} as right_id,
-                        from
-                            left_df l
-                        inner join right_df r on
-                            {self.settings.comparisons}
-                    ) raw;
-                """
-            )
-            .arrow()
-            .to_pandas()
-        )  # correctly returns bytes -- .df() returns bytesarray
+        res = duckdb.sql(
+            f"""
+                select distinct on (list_sort([raw.left_id, raw.right_id]))
+                    raw.left_id,
+                    raw.right_id,
+                    1 as probability
+                from (
+                    select
+                        l.{self.settings.left_id} as left_id,
+                        r.{self.settings.right_id} as right_id,
+                    from
+                        left_df l
+                    inner join right_df r on
+                        {self.settings.comparisons}
+                ) raw;
+            """
+        ).df()
+
+        # Convert bytearray back to bytes
+        return res.assign(
+            left_id=lambda df: df.left_id.apply(self._id_dtype_l),
+            right_id=lambda df: df.right_id.apply(self._id_dtype_r),
+        )

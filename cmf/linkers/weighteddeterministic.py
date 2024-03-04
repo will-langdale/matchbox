@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Type
 
 import duckdb
 from pandas import DataFrame
@@ -74,6 +74,9 @@ class WeightedDeterministicSettings(LinkerSettings):
 class WeightedDeterministicLinker(Linker):
     settings: WeightedDeterministicSettings
 
+    _id_dtype_l: Type = None
+    _id_dtype_r: Type = None
+
     @classmethod
     def from_settings(
         cls, left_id: str, right_id: str, weighted_comparisons: List, threshold: float
@@ -94,6 +97,9 @@ class WeightedDeterministicLinker(Linker):
         pass
 
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+        self._id_dtype_l = type(left[self.settings.left_id][0])
+        self._id_dtype_r = type(right[self.settings.right_id][0])
+
         left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
         right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
 
@@ -123,23 +129,25 @@ class WeightedDeterministicLinker(Linker):
         match_subquery = " union all ".join(match_subquery)
         total_weight = sum(weights)
 
-        return (
-            duckdb.sql(
-                f"""
-                    select
-                        matches.left_id,
-                        matches.right_id,
-                        sum(matches.probability) / {total_weight} as probability
-                    from
-                        ({match_subquery}) matches
-                    group by
-                        matches.left_id,
-                        matches.right_id
-                    having
-                        sum(matches.probability) / 
-                            {total_weight} >= {self.settings.threshold};
-                """
-            )
-            .arrow()
-            .to_pandas()
-        )  # correctly returns bytes -- .df() returns bytesarray
+        res = duckdb.sql(
+            f"""
+                select
+                    matches.left_id,
+                    matches.right_id,
+                    sum(matches.probability) / {total_weight} as probability
+                from
+                    ({match_subquery}) matches
+                group by
+                    matches.left_id,
+                    matches.right_id
+                having
+                    sum(matches.probability) / 
+                        {total_weight} >= {self.settings.threshold};
+            """
+        ).df()
+
+        # Convert bytearray back to bytes
+        return res.assign(
+            left_id=lambda df: df.left_id.apply(self._id_dtype_l),
+            right_id=lambda df: df.right_id.apply(self._id_dtype_r),
+        )
