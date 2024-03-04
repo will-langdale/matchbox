@@ -5,6 +5,7 @@ from cmf.clean.lib import (
     extract_cdms_number_to_new,
     extract_company_number_to_new,
     extract_duns_number_to_new,
+    postcode,
     postcode_to_area,
 )
 from cmf.clean.utils import alias, cleaning_function, unnest_renest
@@ -17,6 +18,7 @@ __all__ = (
     "extract_cdms_number_to_new",
     "extract_company_number_to_new",
     "extract_duns_number_to_new",
+    "postcode",
     "postcode_to_area",
     # Utility functions
     "alias",

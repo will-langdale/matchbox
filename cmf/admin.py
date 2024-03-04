@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict
 
 import click
-import yaml
+import tomli
 from sqlalchemy import Engine, String, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -108,8 +108,8 @@ def add_dataset(dataset: Dict[str, str], engine: Engine = ENGINE) -> None:
 
 
 def update_db_with_datasets(engine: Engine = ENGINE) -> None:
-    with open(Path(loc.CMF, "datasets.yaml"), "rb") as f:
-        datasets = yaml.load(f, yaml.Loader)
+    with open(Path(loc.CMF, "datasets.toml"), "rb") as f:
+        datasets = tomli.load(f)["datasets"]
 
     for dataset in datasets.values():
         add_dataset(dataset, engine)
