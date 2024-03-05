@@ -5,7 +5,17 @@ from typing import Any, Dict, List, Optional, Union
 import rustworkx as rx
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import Engine, Table, bindparam
+from sqlalchemy import (
+    Engine,
+    LargeBinary,
+    LinkProbabilities,
+    Table,
+    bindparam,
+    clusters_association,
+    column,
+    delete,
+    values,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -13,7 +23,7 @@ from cmf.data import utils as du
 from cmf.data.clusters import Clusters
 from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
-from cmf.data.dedupe import DDupeContains, Dedupes
+from cmf.data.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from cmf.data.exceptions import CMFDBDataError
 from cmf.data.link import LinkContains, Links
 from cmf.data.models import Models, ModelsFrom
@@ -286,68 +296,55 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         with Session(engine) as session:
             # Add probabilities
-            # Get model, including adding association proxy classes to session
+            # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
 
-            # Insert any new Dedupe nodes, without probabilities
-            ins_dd_stmt = insert(Dedupes)
-            ins_dd_stmt = ins_dd_stmt.on_conflict_do_nothing(
-                index_elements=[Dedupes.sha1]
+            # Clear old model probabilities
+            old_ddupe_probs_subquery = (
+                model.proposes_dedupes.select().with_only_columns(
+                    DDupeProbabilities.model
+                )
             )
-            _ = session.execute(
-                ins_dd_stmt,
-                [
-                    {k: v for k, v in dd.items() if k != "probability"}
-                    for dd in probabilities_to_add
-                ],
+
+            session.execute(
+                delete(DDupeProbabilities).where(
+                    DDupeProbabilities.model.in_(old_ddupe_probs_subquery)
+                )
             )
+
             session.commit()
 
-            # Add probabilities to the appropriate model.proposes_dedupes
-            logic_logger.info(
-                "[TEST] getting relevant dedupe nodes %s", len(probabilities_to_add)
+            # Insert any new dedupe nodes
+            session.execute(
+                insert(Dedupes).on_conflict_do_nothing(index_elements=[Dedupes.sha1]),
+                probabilities_to_add,
             )
-            from sqlalchemy import LargeBinary, column, values
 
-            sha1_dedupe_cte = values(
-                column("sha1", LargeBinary), name="sha_dedupe_cte"
+            # Get all relevant dedupe nodes
+            ddupes_to_add_cte = values(
+                column("sha1", LargeBinary), name="sha1_dedupe_cte"
             ).data([(dd["sha1"],) for dd in probabilities_to_add])
 
-            to_insert = (
-                session.query(Dedupes).join(
-                    sha1_dedupe_cte, sha1_dedupe_cte.c.sha1 == Dedupes.sha1
-                )
-                # .filter(
-                #     Dedupes.sha1.in_(
-                #         bindparam(
-                #             "ins_sha1s",
-                #             [dd["sha1"] for dd in probabilities_to_add],
-                #             expanding=True,
-                #         )
-                #     )
-                # )
-                # .all()
+            ddupes = (
+                session.query(Dedupes)
+                .join(ddupes_to_add_cte, ddupes_to_add_cte.c.sha1 == Dedupes.sha1)
+                .all()
             )
 
-            logic_logger.info("[TEST] got nodes %s", len(to_insert))
+            # Attach probabilities to create dedupe probability nodes
+            ddupe_probs = []
+            for dd, data in zip(ddupes, probabilities_to_add):
+                p = DDupeProbabilities(probability=data["probability"])
+                p.dedupes = dd
+                ddupe_probs.append(p)
 
-            model.proposes_dedupes.clear()
-
-            # proposes_dedupes_dict = dict()
-            for dd, r in zip(to_insert, probabilities_to_add):
-                model.proposes_dedupes[dd] = r["probability"]
-                # proposes_dedupes_dict[dd] = r["probability"]
-
-            # model.proposes_dedupes = proposes_dedupes_dict
-
-            logic_logger.info("[TEST] inserted nodes %s", len(model.proposes_dedupes))
+            # Attach new probabilities
+            model.proposes_dedupes.add_all(ddupe_probs)
 
             session.commit()
-
-            logic_logger.info("[TEST] commited")
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
@@ -363,45 +360,51 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         with Session(engine) as session:
             # Add probabilities
-            # Get model, including adding association proxy classes to session
+            # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
 
-            # Insert any new Link nodes, without probabilities
-            ins_li_stmt = insert(Links)
-            ins_li_stmt = ins_li_stmt.on_conflict_do_nothing(
-                index_elements=[Links.sha1]
+            # Clear old model probabilities
+            old_link_probs_subquery = model.proposes_links.select().with_only_columns(
+                LinkProbabilities.model
             )
-            _ = session.execute(
-                ins_li_stmt,
-                [
-                    {k: v for k, v in li.items() if k != "probability"}
-                    for li in probabilities_to_add
-                ],
+
+            session.execute(
+                delete(LinkProbabilities).where(
+                    LinkProbabilities.model.in_(old_link_probs_subquery)
+                )
             )
+
             session.commit()
 
-            # Add probabilities to the appropriate model.proposes_links
-            to_insert = (
+            # Insert any new dedupe nodes
+            session.execute(
+                insert(Links).on_conflict_do_nothing(index_elements=[Links.sha1]),
+                probabilities_to_add,
+            )
+
+            # Get all relevant dedupe nodes
+            links_to_add_cte = values(
+                column("sha1", LargeBinary), name="sha1_link_cte"
+            ).data([(li["sha1"],) for li in probabilities_to_add])
+
+            links = (
                 session.query(Links)
-                .filter(
-                    Links.sha1.in_(
-                        bindparam(
-                            "ins_sha1s",
-                            [li["sha1"] for li in probabilities_to_add],
-                            expanding=True,
-                        )
-                    )
-                )
+                .join(links_to_add_cte, links_to_add_cte.c.sha1 == Links.sha1)
                 .all()
             )
 
-            model.proposes_links.clear()
+            # Attach probabilities to create dedupe probability nodes
+            link_probs = []
+            for li, data in zip(links, probabilities_to_add):
+                p = LinkProbabilities(probability=data["probability"])
+                p.links = li
+                link_probs.append(p)
 
-            for dd, r in zip(to_insert, probabilities_to_add):
-                model.proposes_links[dd] = r["probability"]
+            # Attach new probabilities
+            model.proposes_links.add_all(link_probs)
 
             session.commit()
 
@@ -479,13 +482,27 @@ class ClusterResults(ResultsBaseDataclass):
         """
         Contains = contains_class
         with Session(engine) as session:
-            # Get model, including adding association proxy classes to session
+            # Add clusters
+            # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
 
-            # Add new cluster nodes
+            # Clear old model endorsements
+            old_cluster_creates_subquery = model.creates.select().with_only_columns(
+                Clusters.sha1
+            )
+
+            session.execute(
+                delete(clusters_association).where(
+                    clusters_association.c.child.in_(old_cluster_creates_subquery)
+                )
+            )
+
+            session.commit()
+
+            # Insert any new cluster nodes
             clusters_to_add = [
                 {"sha1": edge} for edge in self.dataframe.parent.drop_duplicates()
             ]
@@ -494,29 +511,24 @@ class ClusterResults(ResultsBaseDataclass):
             ins_stmt = ins_stmt.on_conflict_do_nothing(index_elements=[Clusters.sha1])
 
             session.execute(ins_stmt, clusters_to_add)
-            session.commit()
 
-            to_insert = (
+            # Get all relevant cluster nodes
+            clusters_to_add_cte = values(
+                column("sha1", LargeBinary), name="sha1_clus_cte"
+            ).data([(clus["sha1"],) for clus in clusters_to_add])
+
+            clusters = (
                 session.query(Clusters)
-                .filter(
-                    Clusters.sha1.in_(
-                        bindparam(
-                            "ins_sha1s",
-                            [cl["sha1"] for cl in clusters_to_add],
-                            expanding=True,
-                        )
-                    )
-                )
+                .join(clusters_to_add_cte, clusters_to_add_cte.c.sha1 == Clusters.sha1)
                 .all()
             )
 
-            # Add model endorsement of clusters
-            model.creates.clear()
-            model.creates = to_insert
+            # Add model endorsement of clusters: creates
+            model.creates.add_all(clusters)
 
             session.commit()
 
-            # Add new contains edges
+            # Add new cluster contains edges
             ins_stmt = insert(Contains)
             ins_stmt = ins_stmt.on_conflict_do_update(
                 index_elements=[Contains.parent, Contains.child],

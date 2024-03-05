@@ -44,7 +44,7 @@ class DDupeProbabilities(CMFBase):
     dedupes: Mapped["Dedupes"] = relationship(
         back_populates="proposers", cascade="save-update, merge"
     )
-    proposed_by: Mapped["Models"] = relationship(back_populates="dedupe_associations")
+    proposed_by: Mapped["Models"] = relationship(back_populates="proposes_dedupes")
 
 
 class DDupeContains(UUIDMixin, CMFBase):
