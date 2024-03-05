@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 from sqlalchemy.orm.collections import attribute_keyed_dict
 
 from cmf.data.clusters import clusters_association
@@ -42,9 +42,12 @@ class Models(SHA1Mixin, CMFBase):
     # /associationproxy.html#proxying-to-dictionary-based-collections
 
     # Dedupe probability associations and proxy
-    dedupe_associations: Mapped[Dict["Dedupes", "DDupeProbabilities"]] = relationship(
+    dedupe_associations: WriteOnlyMapped[
+        Dict["Dedupes", "DDupeProbabilities"]
+    ] = relationship(
         back_populates="proposed_by",
         collection_class=attribute_keyed_dict("dedupes"),
+        passive_deletes=True,
         cascade="all, delete-orphan",
     )
 

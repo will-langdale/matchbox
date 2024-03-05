@@ -307,26 +307,47 @@ class ProbabilityResults(ResultsBaseDataclass):
             session.commit()
 
             # Add probabilities to the appropriate model.proposes_dedupes
-            to_insert = (
-                session.query(Dedupes)
-                .filter(
-                    Dedupes.sha1.in_(
-                        bindparam(
-                            "ins_sha1s",
-                            [dd["sha1"] for dd in probabilities_to_add],
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
+            logic_logger.info(
+                "[TEST] getting relevant dedupe nodes %s", len(probabilities_to_add)
             )
+            from sqlalchemy import LargeBinary, column, values
+
+            sha1_dedupe_cte = values(
+                column("sha1", LargeBinary), name="sha_dedupe_cte"
+            ).data([(dd["sha1"],) for dd in probabilities_to_add])
+
+            to_insert = (
+                session.query(Dedupes).join(
+                    sha1_dedupe_cte, sha1_dedupe_cte.c.sha1 == Dedupes.sha1
+                )
+                # .filter(
+                #     Dedupes.sha1.in_(
+                #         bindparam(
+                #             "ins_sha1s",
+                #             [dd["sha1"] for dd in probabilities_to_add],
+                #             expanding=True,
+                #         )
+                #     )
+                # )
+                # .all()
+            )
+
+            logic_logger.info("[TEST] got nodes %s", len(to_insert))
 
             model.proposes_dedupes.clear()
 
+            # proposes_dedupes_dict = dict()
             for dd, r in zip(to_insert, probabilities_to_add):
                 model.proposes_dedupes[dd] = r["probability"]
+                # proposes_dedupes_dict[dd] = r["probability"]
+
+            # model.proposes_dedupes = proposes_dedupes_dict
+
+            logic_logger.info("[TEST] inserted nodes %s", len(model.proposes_dedupes))
 
             session.commit()
+
+            logic_logger.info("[TEST] commited")
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
