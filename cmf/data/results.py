@@ -5,27 +5,17 @@ from typing import Any, Dict, List, Optional, Union
 import rustworkx as rx
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import (
-    Engine,
-    LargeBinary,
-    LinkProbabilities,
-    Table,
-    bindparam,
-    clusters_association,
-    column,
-    delete,
-    values,
-)
+from sqlalchemy import Engine, LargeBinary, Table, bindparam, column, delete, values
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from cmf.data import utils as du
-from cmf.data.clusters import Clusters
+from cmf.data.clusters import Clusters, clusters_association
 from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
 from cmf.data.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from cmf.data.exceptions import CMFDBDataError
-from cmf.data.link import LinkContains, Links
+from cmf.data.link import LinkContains, LinkProbabilities, Links
 from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
