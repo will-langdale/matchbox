@@ -20,7 +20,9 @@ class Dedupes(SHA1Mixin, CMFBase):
     right: Mapped[bytes] = mapped_column(ForeignKey("cmf__source_data.sha1"))
 
     validation: Mapped[List["DDupeValidation"]] = relationship()
-    proposers: Mapped["DDupeProbabilities"] = relationship(back_populates="dedupes")
+    proposers: Mapped[List["DDupeProbabilities"]] = relationship(
+        back_populates="dedupes"
+    )
 
 
 class DDupeProbabilities(CMFBase):

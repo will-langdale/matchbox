@@ -20,7 +20,7 @@ class Links(SHA1Mixin, CMFBase):
     right: Mapped[bytes] = mapped_column(ForeignKey("cmf__clusters.sha1"))
 
     validation: Mapped[List["LinkValidation"]] = relationship()
-    proposers: Mapped["LinkProbabilities"] = relationship(back_populates="links")
+    proposers: Mapped[List["LinkProbabilities"]] = relationship(back_populates="links")
 
 
 class LinkProbabilities(CMFBase):

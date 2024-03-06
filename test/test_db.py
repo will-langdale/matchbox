@@ -9,7 +9,7 @@ from test.fixtures.models import (
 )
 
 from dotenv import find_dotenv, load_dotenv
-from sqlalchemy import MetaData, Table, insert, inspect
+from sqlalchemy import MetaData, Table, delete, insert, inspect
 from sqlalchemy.orm import Session
 
 from cmf.admin import add_dataset
@@ -153,12 +153,19 @@ def test_model_cluster_association(db_engine, db_clear_models, db_add_models):
         clusters_in_db = session.query(Clusters).count()
         creates_in_db = session.query(clusters_association).count()
 
-        assert len(m.creates) == 6
+        assert session.scalar(m.creates_count()) == 6
         assert clusters_in_db == 6
         assert creates_in_db == 12  # two models in db, l_m1 and l_m2
 
         # Clear the edges for the next test
-        m.creates.clear()
+        old_cluster_creates_subquery = m.creates.select().with_only_columns(
+            Clusters.sha1
+        )
+        session.execute(
+            delete(clusters_association).where(
+                clusters_association.c.child.in_(old_cluster_creates_subquery)
+            )
+        )
         session.commit()
 
     # Model creates no clusters but clusters still exist
@@ -167,7 +174,7 @@ def test_model_cluster_association(db_engine, db_clear_models, db_add_models):
         clusters_in_db = session.query(Clusters).count()
         creates_in_db = session.query(clusters_association).count()
 
-        assert len(m.creates) == 0
+        assert session.scalar(m.creates_count()) == 0
         assert clusters_in_db == 6  # nothing deleted
         assert creates_in_db == 6  # now one model in db, l_m2
 
@@ -190,12 +197,19 @@ def test_model_ddupe_association(db_engine, db_clear_models, db_add_models):
         ddupes_in_db = session.query(Dedupes).count()
         ddupe_probs_in_db = session.query(DDupeProbabilities).count()
 
-        assert len(m.proposes_dedupes) == 36  # 6 * 6 data comparisons
+        assert session.scalar(m.dedupes_count()) == 36  # 6 * 6 data comparisons
         assert ddupes_in_db == 36
         assert ddupe_probs_in_db == 72  # two models in db, dd_m1 and dd_m2
 
         # Clear the edges for the next test
-        m.proposes_dedupes.clear()
+        old_ddupe_probs_subquery = m.proposes_dedupes.select().with_only_columns(
+            DDupeProbabilities.model
+        )
+        session.execute(
+            delete(DDupeProbabilities).where(
+                DDupeProbabilities.model.in_(old_ddupe_probs_subquery)
+            )
+        )
         session.commit()
 
     # Model proposes no deduplications but dedupes still exist
@@ -204,7 +218,7 @@ def test_model_ddupe_association(db_engine, db_clear_models, db_add_models):
         ddupes_in_db = session.query(Dedupes).count()
         ddupe_probs_in_db = session.query(DDupeProbabilities).count()
 
-        assert len(m.proposes_dedupes) == 0
+        assert session.scalar(m.dedupes_count()) == 0
         assert ddupes_in_db == 36  # nothing deleted
         assert ddupe_probs_in_db == 36  # now one model in db, dd_m2
 
@@ -226,12 +240,19 @@ def test_model_link_association(db_engine, db_clear_models, db_add_models):
         links_in_db = session.query(Links).count()
         link_probs_in_db = session.query(LinkProbabilities).count()
 
-        assert len(m.proposes_links) == 36  # 6 * 6 cluster comparisons
+        assert session.scalar(m.links_count()) == 36  # 6 * 6 cluster comparisons
         assert links_in_db == 36
         assert link_probs_in_db == 72  # two models in db, dd_m1 and dd_m2
 
         # Clear the edges for the next test
-        m.proposes_links.clear()
+        old_link_probs_subquery = m.proposes_links.select().with_only_columns(
+            LinkProbabilities.model
+        )
+        session.execute(
+            delete(LinkProbabilities).where(
+                LinkProbabilities.model.in_(old_link_probs_subquery)
+            )
+        )
         session.commit()
 
     # Model proposes no linkings but links still exist
@@ -240,7 +261,7 @@ def test_model_link_association(db_engine, db_clear_models, db_add_models):
         links_in_db = session.query(Links).count()
         link_probs_in_db = session.query(LinkProbabilities).count()
 
-        assert len(m.proposes_dedupes) == 0
+        assert session.scalar(m.links_count()) == 0
         assert links_in_db == 36  # nothing deleted
         assert link_probs_in_db == 36  # now one model in db, dd_m2
 
@@ -302,10 +323,10 @@ def test_add_dedupers_and_data(
 
             test_param = dedupe_test_params_dict[f"{deduplicates[0]}.{deduplicates[1]}"]
 
-            assert len(model.proposes_dedupes) == test_param.tgt_prob_n
+            assert session.scalar(model.dedupes_count()) == test_param.tgt_prob_n
             # We assert unique_n rather than tgt_clus_n because tgt_clus_n
             # checks what the deduper found, not what was inserted
-            assert len(model.creates) == test_param.unique_n
+            assert session.scalar(model.creates_count()) == test_param.unique_n
 
     db_clear_models(db_engine)
 
@@ -347,9 +368,9 @@ def test_add_linkers_and_data(
         with Session(db_engine[1]) as session:
             model = session.query(Models).filter(Models.name == linker_name).first()
 
-            assert len(model.proposes_links) == fx_data.tgt_prob_n
+            assert session.scalar(model.links_count()) == fx_data.tgt_prob_n
             # We assert unique_n rather than tgt_clus_n because tgt_clus_n
             # checks what the linker found, not what was inserted
-            assert len(model.creates) == fx_data.unique_n
+            assert session.scalar(model.creates_count()) == fx_data.unique_n
 
     db_clear_models(db_engine)

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
+from sqlalchemy.sql.selectable import Select
 
 from cmf.data.clusters import clusters_association
 from cmf.data.db import CMFBase
@@ -28,17 +29,17 @@ class Models(SHA1Mixin, CMFBase):
     # ORM Many to Many pattern
     # https://docs.sqlalchemy.org/en/20/orm/
     # basic_relationships.html#many-to-many
-    creates: WriteOnlyMapped["Clusters"] = relationship(
+    creates: WriteOnlyMapped[List["Clusters"]] = relationship(
         secondary=clusters_association, back_populates="created_by"
     )
 
     # Association object pattern
     # https://docs.sqlalchemy.org/en/20/orm
     # /basic_relationships.html#association-object
-    proposes_dedupes: WriteOnlyMapped["DDupeProbabilities"] = relationship(
+    proposes_dedupes: WriteOnlyMapped[List["DDupeProbabilities"]] = relationship(
         back_populates="proposed_by", passive_deletes=True
     )
-    proposes_links: WriteOnlyMapped["LinkProbabilities"] = relationship(
+    proposes_links: WriteOnlyMapped[List["LinkProbabilities"]] = relationship(
         back_populates="proposed_by", passive_deletes=True
     )
 
@@ -58,11 +59,23 @@ class Models(SHA1Mixin, CMFBase):
         passive_deletes=True,
     )
 
-    def parent_neighbours(self):
+    def parent_neighbours(self) -> List["Models"]:
         return [x.parent_model for x in self.child_edges]
 
-    def child_neighbours(self):
+    def child_neighbours(self) -> List["Models"]:
         return [x.child_model for x in self.parent_edges]
+
+    def _count_mapped(self, attr: WriteOnlyMapped) -> Select:
+        return attr.select().with_only_columns(func.count())
+
+    def creates_count(self) -> Select:
+        return self._count_mapped(self.creates)
+
+    def dedupes_count(self) -> Select:
+        return self._count_mapped(self.proposes_dedupes)
+
+    def links_count(self) -> Select:
+        return self._count_mapped(self.proposes_links)
 
 
 # From

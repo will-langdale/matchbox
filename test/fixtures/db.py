@@ -10,6 +10,7 @@ import testing.postgresql
 from _pytest.fixtures import FixtureFunction, FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import MetaData, create_engine, inspect, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema
 
@@ -214,73 +215,72 @@ def db_add_models():
             # Data, Dedupes and DDupeProbabilities
             data = session.query(SourceData).limit(6).all()
 
-            dedupes = []
+            dedupes_records = []
             for d1 in data:
                 for d2 in data:
-                    dedupes.append(
-                        Dedupes(
-                            sha1=hashlib.sha1(d1.sha1 + d2.sha1).digest(),
-                            left=d1.sha1,
-                            right=d2.sha1,
-                        )
+                    dedupes_records.append(
+                        {
+                            "sha1": hashlib.sha1(d1.sha1 + d2.sha1).digest(),
+                            "left": d1.sha1,
+                            "right": d2.sha1,
+                        }
                     )
 
-            ddupe_probs = []
+            dedupes = session.scalars(
+                insert(Dedupes).returning(Dedupes), dedupes_records
+            ).all()
+
+            ddupe_probs_dd_m1 = []
+            ddupe_probs_dd_m2 = []
             for dd in dedupes:
-                ddupe_probs.append(
-                    DDupeProbabilities(
-                        ddupe=dd.sha1,
-                        model=dd_m1.sha1,
-                        probability=round(random.uniform(0, 1), 1),
-                    )
-                )
-                ddupe_probs.append(
-                    DDupeProbabilities(
-                        ddupe=dd.sha1,
-                        model=dd_m2.sha1,
-                        probability=round(random.uniform(0, 1), 1),
-                    )
-                )
-            session.add_all(dedupes)
-            session.add_all(ddupe_probs)
+                p1 = DDupeProbabilities(probability=round(random.uniform(0, 1), 1))
+                p1.dedupes = dd
+                ddupe_probs_dd_m1.append(p1)
+
+                p2 = DDupeProbabilities(probability=round(random.uniform(0, 1), 1))
+                p2.dedupes = dd
+                ddupe_probs_dd_m2.append(p2)
+
+            dd_m1.proposes_dedupes.add_all(ddupe_probs_dd_m1)
+            dd_m2.proposes_dedupes.add_all(ddupe_probs_dd_m2)
 
             # Clusters, Links and LinkProbabilities
-            clusters = [
-                Clusters(sha1=hashlib.sha1(f"c{i}".encode()).digest()) for i in range(6)
+            clusters_records = [
+                {"sha1": hashlib.sha1(f"c{i}".encode()).digest()} for i in range(6)
             ]
-            session.add_all(clusters)
+            clusters = session.scalars(
+                insert(Clusters).returning(Clusters), clusters_records
+            ).all()
 
-            l_m1.creates = clusters
-            l_m2.creates = clusters
+            l_m1.creates.add_all(clusters)
+            l_m2.creates.add_all(clusters)
 
-            links = []
+            link_records = []
             for c1 in clusters:
                 for c2 in clusters:
-                    links.append(
-                        Links(
-                            sha1=hashlib.sha1(c1.sha1 + c2.sha1).digest(),
-                            left=c1.sha1,
-                            right=c2.sha1,
-                        )
+                    link_records.append(
+                        {
+                            "sha1": hashlib.sha1(c1.sha1 + c2.sha1).digest(),
+                            "left": c1.sha1,
+                            "right": c2.sha1,
+                        }
                     )
-            link_probs = []
+
+            links = session.scalars(insert(Links).returning(Links), link_records).all()
+
+            link_probs_l_m1 = []
+            link_probs_l_m2 = []
             for li in links:
-                link_probs.append(
-                    LinkProbabilities(
-                        link=li.sha1,
-                        model=l_m1.sha1,
-                        probability=round(random.uniform(0, 1), 1),
-                    )
-                )
-                link_probs.append(
-                    LinkProbabilities(
-                        link=li.sha1,
-                        model=l_m2.sha1,
-                        probability=round(random.uniform(0, 1), 1),
-                    )
-                )
-            session.add_all(links)
-            session.add_all(link_probs)
+                p1 = LinkProbabilities(probability=round(random.uniform(0, 1), 1))
+                p1.links = li
+                link_probs_l_m1.append(p1)
+
+                p2 = LinkProbabilities(probability=round(random.uniform(0, 1), 1))
+                p2.links = li
+                link_probs_l_m2.append(p2)
+
+            l_m1.proposes_links.add_all(link_probs_l_m1)
+            l_m2.proposes_links.add_all(link_probs_l_m2)
 
             session.commit()
 

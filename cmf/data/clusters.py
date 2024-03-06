@@ -27,7 +27,7 @@ clusters_association = Table(
 class Clusters(SHA1Mixin, CMFBase):
     __tablename__ = "cmf__clusters"
 
-    created_by: Mapped["Models"] = relationship(
+    created_by: Mapped[List["Models"]] = relationship(
         secondary=clusters_association, back_populates="creates"
     )
     clusters_validation: Mapped[List["ClusterValidation"]] = relationship()
