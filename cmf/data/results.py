@@ -1,8 +1,10 @@
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
 import rustworkx as rx
+from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 from sqlalchemy import (
@@ -29,7 +31,10 @@ from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
 
-_BATCH_SIZE = 10
+dotenv_path = find_dotenv(usecwd=True)
+load_dotenv(dotenv_path)
+
+_BATCH_SIZE = int(os.environ["BATCH_SIZE"])
 
 
 class ResultsBaseDataclass(BaseModel, ABC):
@@ -324,8 +329,6 @@ class ProbabilityResults(ResultsBaseDataclass):
                 )
             )
 
-            session.commit()
-
             logic_logger.info(
                 f"[{self.metadata}] Removed old deduplication probabilities"
             )
@@ -361,15 +364,22 @@ class ProbabilityResults(ResultsBaseDataclass):
                     ddupe_probs.append(p)
 
                 model.proposes_dedupes.add_all(ddupe_probs)
-                session.commit()
+                session.flush()
 
                 logic_logger.info(
                     f"[{self.metadata}] Inserted %s of %s deduplication objects",
-                    len(ddupes),
+                    min(end_idx, len(probabilities_to_add)),
                     len(probabilities_to_add),
                 )
 
                 start_idx = end_idx
+
+            session.commit()
+
+            logic_logger.info(
+                f"[{self.metadata}] Inserted all %s deduplication objects",
+                len(probabilities_to_add),
+            )
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
@@ -442,15 +452,22 @@ class ProbabilityResults(ResultsBaseDataclass):
                     link_probs.append(p)
 
                 model.proposes_links.add_all(link_probs)
-                session.commit()
+                session.flush()
 
                 logic_logger.info(
                     f"[{self.metadata}] Inserted %s of %s link objects",
-                    len(links),
+                    min(end_idx, len(probabilities_to_add)),
                     len(probabilities_to_add),
                 )
 
                 start_idx = end_idx
+
+            session.commit()
+
+            logic_logger.info(
+                f"[{self.metadata}] Inserted all %s link objects",
+                len(probabilities_to_add),
+            )
 
 
 class ClusterResults(ResultsBaseDataclass):
@@ -576,16 +593,21 @@ class ClusterResults(ResultsBaseDataclass):
             )
 
             # Iterate and insert
+            start_idx = 0
             for clusters in session.scalars(cluster_query).partitions():
+                end_idx = start_idx + _BATCH_SIZE
+
                 # Add model endorsement of clusters: creates
                 model.creates.add_all(clusters)
-                session.commit()
+                session.flush()
 
                 logic_logger.info(
                     f"[{self.metadata}] Inserted %s of %s cluster objects",
-                    len(clusters),
+                    min(end_idx, len(clusters_to_add)),
                     len(clusters_to_add),
                 )
+
+                start_idx = end_idx
 
             # Add new cluster contains edges
             ins_stmt = insert(Contains)
