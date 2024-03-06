@@ -19,7 +19,9 @@ if TYPE_CHECKING:
 clusters_association = Table(
     "cmf__models_create_clusters",
     CMFBase.metadata,
-    Column("parent", ForeignKey("cmf__models.sha1"), primary_key=True),
+    Column(
+        "parent", ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+    ),
     Column("child", ForeignKey("cmf__clusters.sha1"), primary_key=True),
 )
 

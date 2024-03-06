@@ -30,7 +30,9 @@ class Models(SHA1Mixin, CMFBase):
     # https://docs.sqlalchemy.org/en/20/orm/
     # basic_relationships.html#many-to-many
     creates: WriteOnlyMapped[List["Clusters"]] = relationship(
-        secondary=clusters_association, back_populates="created_by"
+        secondary=clusters_association,
+        back_populates="created_by",
+        passive_deletes=True,
     )
 
     # Association object pattern

@@ -88,9 +88,7 @@ def test_dedupers(
 
     with Session(db_engine[1]) as session:
         model = session.query(Models).filter_by(name=deduper_name).first()
-        proposed_dedupes = model.proposes_dedupes
-
-    assert len(proposed_dedupes) == fx_data.tgt_prob_n
+        assert session.scalar(model.dedupes_count()) == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
@@ -132,9 +130,7 @@ def test_dedupers(
 
     with Session(db_engine[1]) as session:
         model = session.query(Models).filter_by(name=deduper_name).first()
-        created_clusters = model.creates
-
-    assert len(created_clusters) == fx_data.unique_n
+        assert session.scalar(model.creates_count()) == fx_data.unique_n
 
     # i. Clean up after ourselves
 
