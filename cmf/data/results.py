@@ -206,7 +206,9 @@ class ProbabilityResults(ResultsBaseDataclass):
         """Returns the results as a DataFrame."""
         df = self.dataframe.assign(
             left=self.left, right=self.right, model=self.run_name
-        )[["model", "left", "left_id", "right", "right_id", "probability"]]
+        ).convert_dtypes(dtype_backend="pyarrow")[
+            ["model", "left", "left_id", "right", "right_id", "probability"]
+        ]
 
         return df
 
@@ -432,7 +434,7 @@ class ClusterResults(ResultsBaseDataclass):
 
     def to_df(self) -> DataFrame:
         """Returns the results as a DataFrame."""
-        return self.dataframe.copy()
+        return self.dataframe.copy().convert_dtypes(dtype_backend="pyarrow")
 
     def _to_cmf_logic(
         self,
@@ -542,7 +544,7 @@ def get_unclustered(
     }
 
     return ClusterResults(
-        dataframe=DataFrame(no_parent),
+        dataframe=DataFrame(no_parent).convert_dtypes(dtype_backend="pyarrow"),
         run_name=clusters.run_name,
         description=clusters.description,
         left=clusters.left,
@@ -609,7 +611,7 @@ def to_clusters(
         res["parent"] += [parent_hash] * len(component)
 
     matched_results = ClusterResults(
-        dataframe=DataFrame(res),
+        dataframe=DataFrame(res).convert_dtypes(dtype_backend="pyarrow"),
         run_name=results.run_name,
         description=results.description,
         left=results.left,
@@ -629,7 +631,7 @@ def to_clusters(
             dataframe=concat(
                 [matched_results.dataframe]
                 + [cluster_result.dataframe for cluster_result in all_unmatched_results]
-            ),
+            ).convert_dtypes(dtype_backend="pyarrow"),
             run_name=results.run_name,
             description=results.description,
             left=results.left,

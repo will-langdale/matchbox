@@ -239,6 +239,7 @@ class SplinkLinker(Linker):
 
         return (
             res.as_pandas_dataframe()
+            .convert_dtypes(dtype_backend="pyarrow")
             .rename(
                 columns={
                     f"{self.settings.left_id}_l": "left_id",

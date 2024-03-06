@@ -1,7 +1,7 @@
-from typing import List
+from typing import List, Type
 
 import duckdb
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 from pydantic import Field
 
 from cmf.dedupers.make_deduper import Deduper, DeduperSettings
@@ -20,6 +20,8 @@ class NaiveSettings(DeduperSettings):
 class NaiveDeduper(Deduper):
     settings: NaiveSettings
 
+    _id_dtype: Type = None
+
     @classmethod
     def from_settings(cls, id: str, unique_fields: List[str]) -> "NaiveDeduper":
         settings = NaiveSettings(id=id, unique_fields=unique_fields)
@@ -29,6 +31,8 @@ class NaiveDeduper(Deduper):
         pass
 
     def dedupe(self, data: DataFrame) -> DataFrame:
+        self._id_dtype = type(data[self.settings.id][0])
+
         df = data.copy()
 
         join_clause = []
@@ -40,27 +44,33 @@ class NaiveDeduper(Deduper):
         # rows where all data items are identical in the source
         df["_unique_e4003b"] = range(df.shape[0])
 
-        return (
+        res = (
             duckdb.sql(
                 f"""
-                    select distinct on (list_sort([raw.left_id, raw.right_id]))
-                        raw.left_id,
-                        raw.right_id,
-                        1 as probability
-                    from (
-                        select
-                            l.{self.settings.id} as left_id,
-                            r.{self.settings.id} as right_id
-                        from
-                            df l
-                        inner join df r on
-                            (
-                                {join_clause_compiled}
-                            ) and
-                                l._unique_e4003b != r._unique_e4003b
-                    ) raw;
-                """
+                select distinct on (list_sort([raw.left_id, raw.right_id]))
+                    raw.left_id,
+                    raw.right_id,
+                    1 as probability
+                from (
+                    select
+                        l.{self.settings.id} as left_id,
+                        r.{self.settings.id} as right_id
+                    from
+                        df l
+                    inner join df r on
+                        (
+                            {join_clause_compiled}
+                        ) and
+                            l._unique_e4003b != r._unique_e4003b
+                ) raw;
+            """
             )
             .arrow()
-            .to_pandas()
-        )  # correctly returns bytes -- .df() returns bytesarray
+            .to_pandas(types_mapper=ArrowDtype)
+        )
+
+        # Convert bytearray back to bytes
+        return res.assign(
+            left_id=lambda df: df.left_id.apply(self._id_dtype),
+            right_id=lambda df: df.right_id.apply(self._id_dtype),
+        )

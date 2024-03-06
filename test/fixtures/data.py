@@ -28,9 +28,9 @@ def all_companies():
     Raw, correct company data. Uses UUID as ID to replicate Data Workspace.
     1,000 entries.
     """
-    df = pd.read_csv(Path(loc.TEST, "data", "all_companies.csv")).reset_index(
-        names="id"
-    )
+    df = pd.read_csv(
+        Path(loc.TEST, "data", "all_companies.csv"), encoding="utf-8"
+    ).reset_index(names="id")
     df["id"] = df["id"].apply(lambda x: uuid.UUID(int=x))
     return df
 
@@ -58,6 +58,7 @@ def crn_companies(all_companies):
     df_crn["id"] = range(df_crn.shape[0])
     df_crn = df_crn.filter(["id", "company_name", "crn"])
     df_crn["id"] = df_crn["id"].apply(lambda x: uuid.UUID(int=x))
+    df_crn = df_crn.convert_dtypes(dtype_backend="pyarrow")
 
     return df_crn
 
@@ -78,6 +79,7 @@ def duns_companies(all_companies):
         .sample(n=500)
         .reset_index(drop=True)
         .reset_index(names="id")
+        .convert_dtypes(dtype_backend="pyarrow")
     )
     df_duns["id"] = df_duns["id"].apply(lambda x: uuid.UUID(int=x))
 
@@ -103,6 +105,7 @@ def cdms_companies(all_companies):
 
     df_cdms.reset_index(names="id", inplace=True)
     df_cdms["id"] = df_cdms["id"].apply(lambda x: uuid.UUID(int=x))
+    df_cdms = df_cdms.convert_dtypes(dtype_backend="pyarrow")
 
     return df_cdms
 

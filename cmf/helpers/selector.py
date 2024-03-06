@@ -358,7 +358,14 @@ def query(
 
     if return_type == "pandas":
         with Session(engine) as session:
-            res = pd.read_sql(final_stmt, session.bind)
+            res = pd.read_sql(final_stmt, session.bind).convert_dtypes(
+                dtype_backend="pyarrow"
+            )
+            # Convert_dtypes doesn't detect bytes automatically: convert SHA-1s manually
+            if "data_sha1" in res.columns:
+                res.data_sha1 = res.data_sha1.astype("binary[pyarrow]")
+            if "cluster_sha1" in res.columns:
+                res.cluster_sha1 = res.cluster_sha1.astype("binary[pyarrow]")
     elif return_type == "sqlalchemy":
         with Session(engine) as session:
             res = session.execute(final_stmt)

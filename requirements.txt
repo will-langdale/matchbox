@@ -172,9 +172,7 @@ python-dotenv==1.0.1
 pytz==2023.3.post1
     # via pandas
 pyyaml==6.0.1
-    # via
-    #   company-matching-framework (pyproject.toml)
-    #   pre-commit
+    # via pre-commit
 pyzmq==25.1.2
     # via
     #   ipykernel
