@@ -5,7 +5,16 @@ from typing import Any, Dict, List, Optional, Union
 import rustworkx as rx
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
-from sqlalchemy import Engine, LargeBinary, Table, bindparam, column, delete, values
+from sqlalchemy import (
+    Engine,
+    LargeBinary,
+    Table,
+    bindparam,
+    column,
+    delete,
+    select,
+    values,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -19,6 +28,8 @@ from cmf.data.link import LinkContains, LinkProbabilities, Links
 from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
+
+_BATCH_SIZE = 10
 
 
 class ResultsBaseDataclass(BaseModel, ABC):
@@ -332,37 +343,33 @@ class ProbabilityResults(ResultsBaseDataclass):
                 column("sha1", LargeBinary), name="sha1_dedupe_cte"
             ).data([(dd["sha1"],) for dd in probabilities_to_add])
 
-            ddupes = (
-                session.query(Dedupes)
+            ddupes_query = (
+                select(Dedupes)
                 .join(ddupes_to_add_cte, ddupes_to_add_cte.c.sha1 == Dedupes.sha1)
-                .all()
+                .execution_options(yield_per=_BATCH_SIZE)
             )
 
-            logic_logger.info(
-                f"[{self.metadata}] Reconciled model's proposed deduplication nodes"
-            )
+            # Iterate and insert
+            start_idx = 0
+            for ddupes in session.scalars(ddupes_query).partitions():
+                end_idx = start_idx + _BATCH_SIZE
+                # Attach probabilities to create dedupe probability nodes
+                ddupe_probs = []
+                for dd, data in zip(ddupes, probabilities_to_add[start_idx:end_idx]):
+                    p = DDupeProbabilities(probability=data["probability"])
+                    p.dedupes = dd
+                    ddupe_probs.append(p)
 
-            # Attach probabilities to create dedupe probability nodes
-            ddupe_probs = []
-            for dd, data in zip(ddupes, probabilities_to_add):
-                p = DDupeProbabilities(probability=data["probability"])
-                p.dedupes = dd
-                ddupe_probs.append(p)
+                model.proposes_dedupes.add_all(ddupe_probs)
+                session.commit()
 
-            logic_logger.info(
-                f"[{self.metadata}] Created %s deduplication probability objects",
-                len(ddupe_probs),
-            )
+                logic_logger.info(
+                    f"[{self.metadata}] Inserted %s of %s deduplication objects",
+                    len(ddupes),
+                    len(probabilities_to_add),
+                )
 
-            # Attach new probabilities
-            model.proposes_dedupes.add_all(ddupe_probs)
-
-            session.commit()
-
-            logic_logger.info(
-                f"[{self.metadata}] Inserted %s deduplication probability objects",
-                len(ddupe_probs),
-            )
+                start_idx = end_idx
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
@@ -417,37 +424,33 @@ class ProbabilityResults(ResultsBaseDataclass):
                 column("sha1", LargeBinary), name="sha1_link_cte"
             ).data([(li["sha1"],) for li in probabilities_to_add])
 
-            links = (
-                session.query(Links)
+            link_query = (
+                select(Links)
                 .join(links_to_add_cte, links_to_add_cte.c.sha1 == Links.sha1)
-                .all()
+                .execution_options(yield_per=_BATCH_SIZE)
             )
 
-            logic_logger.info(
-                f"[{self.metadata}] Reconciled model's proposed link nodes"
-            )
+            # Iterate and insert
+            start_idx = 0
+            for links in session.scalars(link_query).partitions():
+                end_idx = start_idx + _BATCH_SIZE
+                # Attach probabilities to create dedupe probability nodes
+                link_probs = []
+                for li, data in zip(links, probabilities_to_add[start_idx:end_idx]):
+                    p = LinkProbabilities(probability=data["probability"])
+                    p.links = li
+                    link_probs.append(p)
 
-            # Attach probabilities to create dedupe probability nodes
-            link_probs = []
-            for li, data in zip(links, probabilities_to_add):
-                p = LinkProbabilities(probability=data["probability"])
-                p.links = li
-                link_probs.append(p)
+                model.proposes_links.add_all(link_probs)
+                session.commit()
 
-            logic_logger.info(
-                f"[{self.metadata}] Created %s link probability objects",
-                len(link_probs),
-            )
+                logic_logger.info(
+                    f"[{self.metadata}] Inserted %s of %s link objects",
+                    len(links),
+                    len(probabilities_to_add),
+                )
 
-            # Attach new probabilities
-            model.proposes_links.add_all(link_probs)
-
-            session.commit()
-
-            logic_logger.info(
-                f"[{self.metadata}] Inserted %s link probability objects",
-                len(link_probs),
-            )
+                start_idx = end_idx
 
 
 class ClusterResults(ResultsBaseDataclass):
@@ -566,24 +569,23 @@ class ClusterResults(ResultsBaseDataclass):
                 column("sha1", LargeBinary), name="sha1_clus_cte"
             ).data([(clus["sha1"],) for clus in clusters_to_add])
 
-            clusters = (
-                session.query(Clusters)
+            cluster_query = (
+                select(Clusters)
                 .join(clusters_to_add_cte, clusters_to_add_cte.c.sha1 == Clusters.sha1)
-                .all()
+                .execution_options(yield_per=_BATCH_SIZE)
             )
 
-            logic_logger.info(
-                f"[{self.metadata}] Reconciled model's proposed cluster nodes"
-            )
+            # Iterate and insert
+            for clusters in session.scalars(cluster_query).partitions():
+                # Add model endorsement of clusters: creates
+                model.creates.add_all(clusters)
+                session.commit()
 
-            # Add model endorsement of clusters: creates
-            model.creates.add_all(clusters)
-
-            session.commit()
-
-            logic_logger.info(
-                f"[{self.metadata}] Inserted %s cluster objects", len(clusters)
-            )
+                logic_logger.info(
+                    f"[{self.metadata}] Inserted %s of %s cluster objects",
+                    len(clusters),
+                    len(clusters_to_add),
+                )
 
             # Add new cluster contains edges
             ins_stmt = insert(Contains)
