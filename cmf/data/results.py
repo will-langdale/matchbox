@@ -285,7 +285,7 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         logic_logger.info(
             f"[{self.metadata}] Processed %s deduplication probabilities",
-            probabilities_to_add,
+            len(probabilities_to_add),
         )
 
         # Validate tables exist
@@ -377,7 +377,8 @@ class ProbabilityResults(ResultsBaseDataclass):
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
         logic_logger.info(
-            f"[{self.metadata}] Processed %s link probabilities", probabilities_to_add
+            f"[{self.metadata}] Processed %s link probabilities",
+            len(probabilities_to_add),
         )
 
         with Session(engine) as session:
@@ -548,6 +549,10 @@ class ClusterResults(ResultsBaseDataclass):
             clusters_to_add = [
                 {"sha1": edge} for edge in self.dataframe.parent.drop_duplicates()
             ]
+
+            logic_logger.info(
+                f"[{self.metadata}] Processed %s clusters", len(clusters_to_add)
+            )
 
             ins_stmt = insert(Clusters)
             ins_stmt = ins_stmt.on_conflict_do_nothing(index_elements=[Clusters.sha1])
