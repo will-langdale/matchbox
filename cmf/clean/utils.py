@@ -59,7 +59,11 @@ def cleaning_function(*functions: Callable) -> Callable:
             )
 
         for sql in to_run:
-            df = duckdb.sql(sql).arrow().to_pandas(types_mapper=ArrowDtype)
+            df_arrow = duckdb.sql(sql).arrow()
+            df = df_arrow.to_pandas(
+                split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
+            )
+            del df_arrow
 
         return df
 
@@ -75,19 +79,18 @@ def alias(function: Callable, alias: str) -> Callable:
     """
 
     def cleaning_method(df: DataFrame, column: str) -> DataFrame:
-        aliased = (
-            duckdb.sql(
-                f"""
+        aliased_sql = f"""
             select
                 *,
                 {column} as {alias}
             from
                 df;
         """
-            )
-            .arrow()
-            .to_pandas(types_mapper=ArrowDtype)
+        aliased_arrow = duckdb.sql(aliased_sql).arrow()
+        aliased = aliased_arrow.to_pandas(
+            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
         )
+        del aliased_arrow
 
         processed = function(aliased, alias)
 
@@ -107,20 +110,20 @@ def unnest_renest(function: Callable) -> Callable:
     """
 
     def cleaning_method(df: DataFrame, column: str) -> DataFrame:
-        unnest = (
-            duckdb.sql(
-                f"""
-        select
-            row_number() over () as nest_id,
-            *
-            replace (unnest({column}) as {column})
-        from
-            df;
+        unnest_sql = f"""
+            select
+                row_number() over () as nest_id,
+                *
+                replace (unnest({column}) as {column})
+            from
+                df;
         """
-            )
-            .arrow()
-            .to_pandas(types_mapper=ArrowDtype)
+
+        unnest_arrow = duckdb.sql(unnest_sql).arrow()
+        unnest = unnest_arrow.to_pandas(
+            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
         )
+        del unnest_arrow
 
         processed = function(unnest, column)
 
@@ -134,20 +137,20 @@ def unnest_renest(function: Callable) -> Callable:
         else:
             any_value_select = ""
 
-        renest = (
-            duckdb.sql(
-                f"""
-        select
-            {any_value_select}
-            list({column}) as {column}
-        from
-            processed
-        group by nest_id;
+        renest_sql = f"""
+            select
+                {any_value_select}
+                list({column}) as {column}
+            from
+                processed
+            group by nest_id;
         """
-            )
-            .arrow()
-            .to_pandas(types_mapper=ArrowDtype)
+
+        renest_arrow = duckdb.sql(renest_sql).arrow()
+        renest = renest_arrow.to_pandas(
+            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
         )
+        del renest_arrow
 
         return renest
 

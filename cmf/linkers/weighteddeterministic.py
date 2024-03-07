@@ -129,26 +129,25 @@ class WeightedDeterministicLinker(Linker):
         match_subquery = " union all ".join(match_subquery)
         total_weight = sum(weights)
 
-        res = (
-            duckdb.sql(
-                f"""
-                select
-                    matches.left_id,
-                    matches.right_id,
-                    sum(matches.probability) / {total_weight} as probability
-                from
-                    ({match_subquery}) matches
-                group by
-                    matches.left_id,
-                    matches.right_id
-                having
-                    sum(matches.probability) / 
-                        {total_weight} >= {self.settings.threshold};
-            """
-            )
-            .arrow()
-            .to_pandas(types_mapper=ArrowDtype)
+        sql = f"""
+            select
+                matches.left_id,
+                matches.right_id,
+                sum(matches.probability) / {total_weight} as probability
+            from
+                ({match_subquery}) matches
+            group by
+                matches.left_id,
+                matches.right_id
+            having
+                sum(matches.probability) / 
+                    {total_weight} >= {self.settings.threshold};
+        """
+        df_arrow = duckdb.sql(sql).arrow()
+        res = df_arrow.to_pandas(
+            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
         )
+        del df_arrow
 
         # Convert bytearray back to bytes
         return res.assign(

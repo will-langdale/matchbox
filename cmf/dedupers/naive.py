@@ -44,30 +44,29 @@ class NaiveDeduper(Deduper):
         # rows where all data items are identical in the source
         df["_unique_e4003b"] = range(df.shape[0])
 
-        res = (
-            duckdb.sql(
-                f"""
-                select distinct on (list_sort([raw.left_id, raw.right_id]))
-                    raw.left_id,
-                    raw.right_id,
-                    1 as probability
-                from (
-                    select
-                        l.{self.settings.id} as left_id,
-                        r.{self.settings.id} as right_id
-                    from
-                        df l
-                    inner join df r on
-                        (
-                            {join_clause_compiled}
-                        ) and
-                            l._unique_e4003b != r._unique_e4003b
-                ) raw;
-            """
-            )
-            .arrow()
-            .to_pandas(types_mapper=ArrowDtype)
+        sql = f"""
+            select distinct on (list_sort([raw.left_id, raw.right_id]))
+                raw.left_id,
+                raw.right_id,
+                1 as probability
+            from (
+                select
+                    l.{self.settings.id} as left_id,
+                    r.{self.settings.id} as right_id
+                from
+                    df l
+                inner join df r on
+                    (
+                        {join_clause_compiled}
+                    ) and
+                        l._unique_e4003b != r._unique_e4003b
+            ) raw;
+        """
+        df_arrow = duckdb.sql(sql).arrow()
+        res = df_arrow.to_pandas(
+            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
         )
+        del df_arrow
 
         # Convert bytearray back to bytes
         return res.assign(
