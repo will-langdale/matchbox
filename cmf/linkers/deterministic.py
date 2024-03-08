@@ -59,27 +59,26 @@ class DeterministicLinker(Linker):
         left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
         right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
 
-        res = (
-            duckdb.sql(
-                f"""
-                select distinct on (list_sort([raw.left_id, raw.right_id]))
-                    raw.left_id,
-                    raw.right_id,
-                    1 as probability
-                from (
-                    select
-                        l.{self.settings.left_id} as left_id,
-                        r.{self.settings.right_id} as right_id,
-                    from
-                        left_df l
-                    inner join right_df r on
-                        {self.settings.comparisons}
-                ) raw;
-            """
-            )
-            .arrow()
-            .to_pandas(types_mapper=ArrowDtype)
+        sql = f"""
+            select distinct on (list_sort([raw.left_id, raw.right_id]))
+                raw.left_id,
+                raw.right_id,
+                1 as probability
+            from (
+                select
+                    l.{self.settings.left_id} as left_id,
+                    r.{self.settings.right_id} as right_id,
+                from
+                    left_df l
+                inner join right_df r on
+                    {self.settings.comparisons}
+            ) raw;
+        """
+        df_arrow = duckdb.sql(sql).arrow()
+        res = df_arrow.to_pandas(
+            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
         )
+        del df_arrow
 
         # Convert bytearray back to bytes
         return res.assign(

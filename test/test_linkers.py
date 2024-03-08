@@ -120,9 +120,7 @@ def test_linkers(
 
     with Session(db_engine[1]) as session:
         model = session.query(Models).filter_by(name=linker_name).first()
-        proposed_links = model.proposes_links
-
-    assert len(proposed_links) == fx_data.tgt_prob_n
+        assert session.scalar(model.links_count()) == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
@@ -220,9 +218,7 @@ def test_linkers(
 
     with Session(db_engine[1]) as session:
         model = session.query(Models).filter_by(name=linker_name).first()
-        created_clusters = model.creates
-
-    assert len(created_clusters) == fx_data.unique_n
+        assert session.scalar(model.creates_count()) == fx_data.unique_n
 
     # i. Clean up after ourselves
 

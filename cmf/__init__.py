@@ -15,3 +15,6 @@ load_dotenv(dotenv_path)
 
 if "SCHEMA" not in environ:
     raise KeyError("SCHEMA environment variable not set.")
+
+if "BATCH_SIZE" not in environ:
+    raise KeyError("BATCH_SIZE environment variable not set.")

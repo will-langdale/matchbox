@@ -1,24 +1,40 @@
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
 import rustworkx as rx
+from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame, concat
-from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import Engine, Table, bindparam
+from pydantic import BaseModel, ConfigDict, computed_field, model_validator
+from sqlalchemy import (
+    Engine,
+    LargeBinary,
+    Table,
+    bindparam,
+    column,
+    delete,
+    select,
+    values,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from cmf.data import utils as du
-from cmf.data.clusters import Clusters
+from cmf.data.clusters import Clusters, clusters_association
 from cmf.data.data import SourceData
 from cmf.data.db import ENGINE
-from cmf.data.dedupe import DDupeContains, Dedupes
+from cmf.data.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from cmf.data.exceptions import CMFDBDataError
-from cmf.data.link import LinkContains, Links
+from cmf.data.link import LinkContains, LinkProbabilities, Links
 from cmf.data.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
+
+dotenv_path = find_dotenv(usecwd=True)
+load_dotenv(dotenv_path)
+
+_BATCH_SIZE = int(os.environ["BATCH_SIZE"])
 
 
 class ResultsBaseDataclass(BaseModel, ABC):
@@ -42,6 +58,11 @@ class ResultsBaseDataclass(BaseModel, ABC):
             raise ValueError(f"Expected {expected_fields}. \n" f"Found {table_fields}.")
 
         return self
+
+    @computed_field
+    @property
+    def metadata(self) -> str:
+        return f"{self.run_name}, {self._get_results_type()}"
 
     @abstractmethod
     def inspect_with_source(self) -> DataFrame:
@@ -120,12 +141,10 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
     def to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results to the CMF database."""
-        metadata = f"{self.run_name}, {self._get_results_type()}"
-
         if self.left == self.right:
             # Deduper
             # Write model
-            logic_logger.info(f"[{metadata}] Registering model")
+            logic_logger.info(f"[{self.metadata}] Registering model")
             self._model_to_cmf(
                 deduplicates=du.table_name_to_uuid(self.left, engine=engine),
                 engine=engine,
@@ -133,24 +152,24 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
             # Write data
             if self.dataframe.shape[0] == 0:
-                logic_logger.info(f"[{metadata}] No deduplication data to insert")
+                logic_logger.info(f"[{self.metadata}] No deduplication data to insert")
             else:
-                logic_logger.info(f"[{metadata}] Writing deduplication data")
+                logic_logger.info(f"[{self.metadata}] Writing deduplication data")
                 self._deduper_to_cmf(engine=engine)
         else:
             # Linker
             # Write model
-            logic_logger.info(f"[{metadata}] Registering model")
+            logic_logger.info(f"[{self.metadata}] Registering model")
             self._model_to_cmf(engine=engine)
 
             # Write data
             if self.dataframe.shape[0] == 0:
-                logic_logger.info(f"[{metadata}] No link data to insert")
+                logic_logger.info(f"[{self.metadata}] No link data to insert")
             else:
-                logic_logger.info(f"[{metadata}] Writing link data")
+                logic_logger.info(f"[{self.metadata}] Writing link data")
                 self._linker_to_cmf(engine=engine)
 
-        logic_logger.info(f"[{metadata}] Complete!")
+        logic_logger.info(f"[{self.metadata}] Complete!")
 
 
 class ProbabilityResults(ResultsBaseDataclass):
@@ -280,53 +299,87 @@ class ProbabilityResults(ResultsBaseDataclass):
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
+        logic_logger.info(
+            f"[{self.metadata}] Processed %s deduplication probabilities",
+            len(probabilities_to_add),
+        )
+
         # Validate tables exist
         _ = du.schema_table_to_table(full_name=self.left, validate=True, engine=engine)
         _ = du.schema_table_to_table(full_name=self.right, validate=True, engine=engine)
 
         with Session(engine) as session:
             # Add probabilities
-            # Get model, including adding association proxy classes to session
+            # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
 
-            # Insert any new Dedupe nodes, without probabilities
-            ins_dd_stmt = insert(Dedupes)
-            ins_dd_stmt = ins_dd_stmt.on_conflict_do_nothing(
-                index_elements=[Dedupes.sha1]
-            )
-            _ = session.execute(
-                ins_dd_stmt,
-                [
-                    {k: v for k, v in dd.items() if k != "probability"}
-                    for dd in probabilities_to_add
-                ],
-            )
-            session.commit()
-
-            # Add probabilities to the appropriate model.proposes_dedupes
-            to_insert = (
-                session.query(Dedupes)
-                .filter(
-                    Dedupes.sha1.in_(
-                        bindparam(
-                            "ins_sha1s",
-                            [dd["sha1"] for dd in probabilities_to_add],
-                            expanding=True,
-                        )
-                    )
+            # Clear old model probabilities
+            old_ddupe_probs_subquery = (
+                model.proposes_dedupes.select().with_only_columns(
+                    DDupeProbabilities.model
                 )
-                .all()
             )
 
-            model.proposes_dedupes.clear()
+            session.execute(
+                delete(DDupeProbabilities).where(
+                    DDupeProbabilities.model.in_(old_ddupe_probs_subquery)
+                )
+            )
 
-            for dd, r in zip(to_insert, probabilities_to_add):
-                model.proposes_dedupes[dd] = r["probability"]
+            logic_logger.info(
+                f"[{self.metadata}] Removed old deduplication probabilities"
+            )
+
+            # Insert any new dedupe nodes
+            session.execute(
+                insert(Dedupes).on_conflict_do_nothing(index_elements=[Dedupes.sha1]),
+                probabilities_to_add,
+            )
+
+            logic_logger.info(f"[{self.metadata}] Created new deduplication nodes")
+
+            # Get all relevant dedupe nodes
+            ddupes_to_add_cte = values(
+                column("sha1", LargeBinary), name="sha1_dedupe_cte"
+            ).data([(dd["sha1"],) for dd in probabilities_to_add])
+
+            ddupes_query = (
+                select(Dedupes)
+                .join(ddupes_to_add_cte, ddupes_to_add_cte.c.sha1 == Dedupes.sha1)
+                .execution_options(yield_per=_BATCH_SIZE)
+            )
+
+            # Iterate and insert
+            start_idx = 0
+            for ddupes in session.scalars(ddupes_query).partitions():
+                end_idx = start_idx + _BATCH_SIZE
+                # Attach probabilities to create dedupe probability nodes
+                ddupe_probs = []
+                for dd, data in zip(ddupes, probabilities_to_add[start_idx:end_idx]):
+                    p = DDupeProbabilities(probability=data["probability"])
+                    p.dedupes = dd
+                    ddupe_probs.append(p)
+
+                model.proposes_dedupes.add_all(ddupe_probs)
+                session.flush()
+
+                logic_logger.info(
+                    f"[{self.metadata}] Inserted %s of %s deduplication objects",
+                    min(end_idx, len(probabilities_to_add)),
+                    len(probabilities_to_add),
+                )
+
+                start_idx = end_idx
 
             session.commit()
+
+            logic_logger.info(
+                f"[{self.metadata}] Inserted all %s deduplication objects",
+                len(probabilities_to_add),
+            )
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
@@ -340,49 +393,81 @@ class ProbabilityResults(ResultsBaseDataclass):
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
+        logic_logger.info(
+            f"[{self.metadata}] Processed %s link probabilities",
+            len(probabilities_to_add),
+        )
+
         with Session(engine) as session:
             # Add probabilities
-            # Get model, including adding association proxy classes to session
+            # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
 
-            # Insert any new Link nodes, without probabilities
-            ins_li_stmt = insert(Links)
-            ins_li_stmt = ins_li_stmt.on_conflict_do_nothing(
-                index_elements=[Links.sha1]
+            # Clear old model probabilities
+            old_link_probs_subquery = model.proposes_links.select().with_only_columns(
+                LinkProbabilities.model
             )
-            _ = session.execute(
-                ins_li_stmt,
-                [
-                    {k: v for k, v in li.items() if k != "probability"}
-                    for li in probabilities_to_add
-                ],
-            )
-            session.commit()
 
-            # Add probabilities to the appropriate model.proposes_links
-            to_insert = (
-                session.query(Links)
-                .filter(
-                    Links.sha1.in_(
-                        bindparam(
-                            "ins_sha1s",
-                            [li["sha1"] for li in probabilities_to_add],
-                            expanding=True,
-                        )
-                    )
+            session.execute(
+                delete(LinkProbabilities).where(
+                    LinkProbabilities.model.in_(old_link_probs_subquery)
                 )
-                .all()
             )
 
-            model.proposes_links.clear()
+            session.commit()
 
-            for dd, r in zip(to_insert, probabilities_to_add):
-                model.proposes_links[dd] = r["probability"]
+            logic_logger.info(f"[{self.metadata}] Removed old link probabilities")
+
+            # Insert any new dedupe nodes
+            session.execute(
+                insert(Links).on_conflict_do_nothing(index_elements=[Links.sha1]),
+                probabilities_to_add,
+            )
+
+            logic_logger.info(f"[{self.metadata}] Created new link nodes")
+
+            # Get all relevant dedupe nodes
+            links_to_add_cte = values(
+                column("sha1", LargeBinary), name="sha1_link_cte"
+            ).data([(li["sha1"],) for li in probabilities_to_add])
+
+            link_query = (
+                select(Links)
+                .join(links_to_add_cte, links_to_add_cte.c.sha1 == Links.sha1)
+                .execution_options(yield_per=_BATCH_SIZE)
+            )
+
+            # Iterate and insert
+            start_idx = 0
+            for links in session.scalars(link_query).partitions():
+                end_idx = start_idx + _BATCH_SIZE
+                # Attach probabilities to create dedupe probability nodes
+                link_probs = []
+                for li, data in zip(links, probabilities_to_add[start_idx:end_idx]):
+                    p = LinkProbabilities(probability=data["probability"])
+                    p.links = li
+                    link_probs.append(p)
+
+                model.proposes_links.add_all(link_probs)
+                session.flush()
+
+                logic_logger.info(
+                    f"[{self.metadata}] Inserted %s of %s link objects",
+                    min(end_idx, len(probabilities_to_add)),
+                    len(probabilities_to_add),
+                )
+
+                start_idx = end_idx
 
             session.commit()
+
+            logic_logger.info(
+                f"[{self.metadata}] Inserted all %s link objects",
+                len(probabilities_to_add),
+            )
 
 
 class ClusterResults(ResultsBaseDataclass):
@@ -458,52 +543,90 @@ class ClusterResults(ResultsBaseDataclass):
         """
         Contains = contains_class
         with Session(engine) as session:
-            # Get model, including adding association proxy classes to session
+            # Add clusters
+            # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
 
-            # Add new cluster nodes
+            # Clear old model endorsements
+            old_cluster_creates_subquery = model.creates.select().with_only_columns(
+                Clusters.sha1
+            )
+
+            session.execute(
+                delete(clusters_association).where(
+                    clusters_association.c.child.in_(old_cluster_creates_subquery)
+                )
+            )
+
+            session.commit()
+
+            logic_logger.info(f"[{self.metadata}] Removed old clusters")
+
+            # Insert any new cluster nodes
             clusters_to_add = [
                 {"sha1": edge} for edge in self.dataframe.parent.drop_duplicates()
             ]
+
+            logic_logger.info(
+                f"[{self.metadata}] Processed %s clusters", len(clusters_to_add)
+            )
 
             ins_stmt = insert(Clusters)
             ins_stmt = ins_stmt.on_conflict_do_nothing(index_elements=[Clusters.sha1])
 
             session.execute(ins_stmt, clusters_to_add)
-            session.commit()
 
-            to_insert = (
-                session.query(Clusters)
-                .filter(
-                    Clusters.sha1.in_(
-                        bindparam(
-                            "ins_sha1s",
-                            [cl["sha1"] for cl in clusters_to_add],
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
+            logic_logger.info(f"[{self.metadata}] Created new cluster nodes")
+
+            # Get all relevant cluster nodes
+            clusters_to_add_cte = values(
+                column("sha1", LargeBinary), name="sha1_clus_cte"
+            ).data([(clus["sha1"],) for clus in clusters_to_add])
+
+            cluster_query = (
+                select(Clusters)
+                .join(clusters_to_add_cte, clusters_to_add_cte.c.sha1 == Clusters.sha1)
+                .execution_options(yield_per=_BATCH_SIZE)
             )
 
-            # Add model endorsement of clusters
-            model.creates.clear()
-            model.creates = to_insert
+            # Iterate and insert
+            start_idx = 0
+            for clusters in session.scalars(cluster_query).partitions():
+                end_idx = start_idx + _BATCH_SIZE
 
-            session.commit()
+                # Add model endorsement of clusters: creates
+                model.creates.add_all(clusters)
+                session.flush()
 
-            # Add new contains edges
+                logic_logger.info(
+                    f"[{self.metadata}] Inserted %s of %s cluster objects",
+                    min(end_idx, len(clusters_to_add)),
+                    len(clusters_to_add),
+                )
+
+                start_idx = end_idx
+
+            # Add new cluster contains edges
             ins_stmt = insert(Contains)
             ins_stmt = ins_stmt.on_conflict_do_update(
                 index_elements=[Contains.parent, Contains.child],
                 set_=ins_stmt.excluded,
             )
 
-            session.execute(ins_stmt, self.dataframe.to_dict("records"))
+            logic_logger.info(
+                f"[{self.metadata}] Reconciled model's cluster contains edges"
+            )
+
+            contains = self.dataframe.to_dict("records")
+            session.execute(ins_stmt, contains)
             session.commit()
+
+            logic_logger.info(
+                f"[{self.metadata}] Inserted %s cluster objects", len(contains)
+            )
 
     def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a deduper to the CMF database."""

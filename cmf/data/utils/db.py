@@ -161,6 +161,11 @@ def get_model_subgraph(engine: Engine = ENGINE) -> rx.PyDiGraph:
 
 @contextlib.contextmanager
 def sqa_profiled():
+    """SQLAlchemy profiler.
+
+    Taken directly from their docs:
+    https://docs.sqlalchemy.org/en/20/faq/performance.html#query-profiling
+    """
     pr = cProfile.Profile()
     pr.enable()
     yield

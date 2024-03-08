@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ForeignKey, UniqueConstraint
-from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.orm.collections import attribute_keyed_dict
+from sqlalchemy import ForeignKey, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
+from sqlalchemy.sql.selectable import Select
 
 from cmf.data.clusters import clusters_association
 from cmf.data.db import CMFBase
@@ -14,7 +13,7 @@ from cmf.data.link import LinkProbabilities
 from cmf.data.mixin import SHA1Mixin
 
 if TYPE_CHECKING:
-    from cmf.data import Clusters, Dedupes, Links
+    from cmf.data import Clusters
 
 
 class Models(SHA1Mixin, CMFBase):
@@ -30,41 +29,20 @@ class Models(SHA1Mixin, CMFBase):
     # ORM Many to Many pattern
     # https://docs.sqlalchemy.org/en/20/orm/
     # basic_relationships.html#many-to-many
-    creates: Mapped[List["Clusters"]] = relationship(
-        secondary=clusters_association, back_populates="created_by"
+    creates: WriteOnlyMapped[List["Clusters"]] = relationship(
+        secondary=clusters_association,
+        back_populates="created_by",
+        passive_deletes=True,
     )
 
     # Association object pattern
     # https://docs.sqlalchemy.org/en/20/orm
     # /basic_relationships.html#association-object
-    # Extended to association proxy pattern
-    # https://docs.sqlalchemy.org/en/20/orm/extensions
-    # /associationproxy.html#proxying-to-dictionary-based-collections
-
-    # Dedupe probability associations and proxy
-    dedupe_associations: Mapped[Dict["Dedupes", "DDupeProbabilities"]] = relationship(
-        back_populates="proposed_by",
-        collection_class=attribute_keyed_dict("dedupes"),
-        cascade="all, delete-orphan",
+    proposes_dedupes: WriteOnlyMapped[List["DDupeProbabilities"]] = relationship(
+        back_populates="proposed_by", passive_deletes=True
     )
-
-    proposes_dedupes: AssociationProxy[Dict["Dedupes", float]] = association_proxy(
-        target_collection="dedupe_associations",
-        attr="probability",
-        creator=lambda k, v: DDupeProbabilities(dedupes=k, probability=v),
-    )
-
-    # Link probability associations and proxy
-    links_associations: Mapped[Dict["Links", "LinkProbabilities"]] = relationship(
-        back_populates="proposed_by",
-        collection_class=attribute_keyed_dict("links"),
-        cascade="all, delete-orphan",
-    )
-
-    proposes_links: AssociationProxy[Dict["Links", float]] = association_proxy(
-        target_collection="links_associations",
-        attr="probability",
-        creator=lambda k, v: LinkProbabilities(links=k, probability=v),
+    proposes_links: WriteOnlyMapped[List["LinkProbabilities"]] = relationship(
+        back_populates="proposed_by", passive_deletes=True
     )
 
     # This approach taken from the SQLAlchemy examples
@@ -83,11 +61,23 @@ class Models(SHA1Mixin, CMFBase):
         passive_deletes=True,
     )
 
-    def parent_neighbours(self):
+    def parent_neighbours(self) -> List["Models"]:
         return [x.parent_model for x in self.child_edges]
 
-    def child_neighbours(self):
+    def child_neighbours(self) -> List["Models"]:
         return [x.child_model for x in self.parent_edges]
+
+    def _count_mapped(self, attr: WriteOnlyMapped) -> Select:
+        return attr.select().with_only_columns(func.count())
+
+    def creates_count(self) -> Select:
+        return self._count_mapped(self.creates)
+
+    def dedupes_count(self) -> Select:
+        return self._count_mapped(self.proposes_dedupes)
+
+    def links_count(self) -> Select:
+        return self._count_mapped(self.proposes_links)
 
 
 # From
