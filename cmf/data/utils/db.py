@@ -2,6 +2,8 @@ import contextlib
 import cProfile
 import io
 import pstats
+from itertools import islice
+from typing import Iterable
 
 import rustworkx as rx
 from sqlalchemy import Engine, MetaData, Table
@@ -176,3 +178,16 @@ def sqa_profiled():
     # uncomment this to see who's calling what
     # ps.print_callers()
     print(s.getvalue())
+
+
+# Misc
+
+
+def batched(iterable: Iterable, n: int) -> Iterable:
+    "Batch data into lists of length n. The last batch may be shorter."
+    it = iter(iterable)
+    while True:
+        batch = list(islice(it, n))
+        if not batch:
+            return
+        yield batch

@@ -121,6 +121,10 @@ parso==0.8.3
     # via jedi
 pexpect==4.9.0
     # via ipython
+pg-bulk-ingest==0.0.46
+    # via company-matching-framework (pyproject.toml)
+pg-force-execute==0.0.11
+    # via pg-bulk-ingest
 pg8000==1.30.4
     # via testing-postgresql
 phonetics==1.0.5
@@ -201,7 +205,10 @@ six==1.16.0
 splink==3.9.11
     # via company-matching-framework (pyproject.toml)
 sqlalchemy==2.0.25
-    # via company-matching-framework (pyproject.toml)
+    # via
+    #   company-matching-framework (pyproject.toml)
+    #   pg-bulk-ingest
+    #   pg-force-execute
 sqlglot==18.17.0
     # via splink
 stack-data==0.6.3
@@ -210,6 +217,8 @@ testing-common-database==2.0.3
     # via testing-postgresql
 testing-postgresql==1.3.0
     # via company-matching-framework (pyproject.toml)
+to-file-like-obj==0.0.5
+    # via pg-bulk-ingest
 tomli==2.0.1
     # via
     #   company-matching-framework (pyproject.toml)

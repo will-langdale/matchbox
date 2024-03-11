@@ -24,7 +24,8 @@ dependencies = [
     "pydantic",
     "rustworkx",
     "tomli",
-    "matplotlib"
+    "matplotlib",
+    "pg-bulk-ingest"
 ]
 
 [project.optional-dependencies]
