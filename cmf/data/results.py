@@ -698,19 +698,18 @@ def to_clusters(
         A ClusterResults object
     """
     all_edges = (
-        results.to_df()
-        .query("probability >= @threshold")
+        results.dataframe.query("probability >= @threshold")
         .filter(["left_id", "right_id"])
-        .map(bytes)
-        .stack()
+        .astype("binary[pyarrow]")
+        .itertuples(index=False, name=None)
     )
 
     G = rx.PyGraph()
     added = {}
 
-    for edge in all_edges.groupby(level=0):
+    for edge in all_edges:
         edge_idx = []
-        for i, sha1 in edge[1].items():
+        for sha1 in edge:
             sha1_idx = added.get(sha1)
             if sha1_idx is None:
                 sha1_idx = G.add_node(sha1)
