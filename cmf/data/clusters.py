@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import Column, ForeignKey, Table, UniqueConstraint
+from sqlalchemy import BOOLEAN, VARCHAR, Column, ForeignKey, Table, UniqueConstraint
+from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cmf.data.db import CMFBase
@@ -20,9 +21,12 @@ clusters_association = Table(
     "cmf__models_create_clusters",
     CMFBase.metadata,
     Column(
-        "parent", ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        "parent",
+        BYTEA(20),
+        ForeignKey("cmf__models.sha1", ondelete="CASCADE"),
+        primary_key=True,
     ),
-    Column("child", ForeignKey("cmf__clusters.sha1"), primary_key=True),
+    Column("child", BYTEA(20), ForeignKey("cmf__clusters.sha1"), primary_key=True),
 )
 
 
@@ -39,6 +43,6 @@ class ClusterValidation(UUIDMixin, CMFBase):
     __tablename__ = "cmf__cluster_validation"
     __table_args__ = (UniqueConstraint("cluster", "user"),)
 
-    cluster: Mapped[bytes] = mapped_column(ForeignKey("cmf__clusters.sha1"))
-    user: Mapped[str]
-    valid: Mapped[bool]
+    cluster: Mapped[bytes] = mapped_column(BYTEA(20), ForeignKey("cmf__clusters.sha1"))
+    user: Mapped[str] = mapped_column(VARCHAR(100))
+    valid: Mapped[bool] = mapped_column(BOOLEAN)

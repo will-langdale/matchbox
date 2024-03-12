@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Tuple, Union
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame, concat
-from pg_bulk_ingest import Upsert, ingest
+from pg_bulk_ingest import Delete, Upsert, ingest
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 from sqlalchemy import (
     Engine,
@@ -253,7 +253,9 @@ class ProbabilityResults(ResultsBaseDataclass):
             Source = Clusters
             tgt_col = "cluster_sha1"
 
-        pre_prep_df[cols] = pre_prep_df[cols].astype("binary[pyarrow]")
+        # pre_prep_df[cols] = pre_prep_df[cols].astype("binary[pyarrow]")
+        # Temp while I wait for pg-bulk-ingest==0.0.47
+        pre_prep_df[cols] = pre_prep_df[cols].map(bytes)
 
         for col in cols:
             data_unique = pre_prep_df[col].unique().tolist()
@@ -286,9 +288,17 @@ class ProbabilityResults(ResultsBaseDataclass):
         pre_prep_df["sha1"] = du.columns_to_value_ordered_sha1(
             data=self.dataframe, columns=cols
         )
-        pre_prep_df.sha1 = pre_prep_df.sha1.astype("binary[pyarrow]")
+        # pre_prep_df.sha1 = pre_prep_df.sha1.astype("binary[pyarrow]")
+
         pre_prep_df = pre_prep_df.rename(
             columns={"left_id": "left", "right_id": "right"}
+        )
+
+        # Temp while I wait for pg-bulk-ingest==0.0.47
+        pre_prep_df.sha1 = pre_prep_df.sha1.apply(bytes)
+        bin_cols = ["sha1", "left", "right"]
+        pre_prep_df[bin_cols] = pre_prep_df[bin_cols].map(
+            lambda s: r"\x" + s.hex().upper()
         )
 
         return pre_prep_df[["sha1", "left", "right", "probability"]]
@@ -367,9 +377,11 @@ class ProbabilityResults(ResultsBaseDataclass):
 
             ingest(
                 conn=conn,
-                metadata=Dedupes.metadata,
+                # metadata=Dedupes.metadata,
+                metadata=Dedupes.__table__.metadata,
                 batches=fn_dedupe_batch,
                 upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
             )
 
             # Insert dedupe probabilities
@@ -384,9 +396,11 @@ class ProbabilityResults(ResultsBaseDataclass):
 
             ingest(
                 conn=conn,
-                metadata=DDupeProbabilities.metadata,
+                # metadata=DDupeProbabilities.metadata,
+                metadata=DDupeProbabilities.__table__.metadata,
                 batches=fn_dedupe_probs_batch,
                 upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
             )
 
             logic_logger.info(

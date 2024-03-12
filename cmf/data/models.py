@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional
+from uuid import UUID as uuUUID
 
-from sqlalchemy import ForeignKey, UniqueConstraint, func
+from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 from sqlalchemy.sql.selectable import Select
 
@@ -20,10 +22,10 @@ class Models(SHA1Mixin, CMFBase):
     __tablename__ = "cmf__models"
     __table_args__ = (UniqueConstraint("name"),)
 
-    name: Mapped[str]
-    description: Mapped[str]
-    deduplicates: Mapped[Optional[bytes]] = mapped_column(
-        ForeignKey("cmf__source_dataset.uuid")
+    name: Mapped[str] = mapped_column(VARCHAR(100))
+    description: Mapped[str] = mapped_column(VARCHAR(1000))
+    deduplicates: Mapped[Optional[uuUUID]] = mapped_column(
+        UUID, ForeignKey("cmf__source_dataset.uuid")
     )
 
     # ORM Many to Many pattern
@@ -91,10 +93,10 @@ class ModelsFrom(CMFBase):
     # https://docs.sqlalchemy.org/en/20/orm/
     # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     parent: Mapped[bytes] = mapped_column(
-        ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA(20), ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
     child: Mapped[bytes] = mapped_column(
-        ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA(20), ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
 
     child_model = relationship(

@@ -1,7 +1,7 @@
 from typing import List
-from uuid import UUID
+from uuid import UUID as uuUUID
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import UUID, VARCHAR, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,9 +13,9 @@ class SourceDataset(UUIDMixin, CMFBase):
     __tablename__ = "cmf__source_dataset"
     __table_args__ = (UniqueConstraint("db_schema", "db_table"),)
 
-    db_schema: Mapped[str]
-    db_id: Mapped[str]
-    db_table: Mapped[str]
+    db_schema: Mapped[str] = mapped_column(VARCHAR(100))
+    db_id: Mapped[str] = mapped_column(VARCHAR(100))
+    db_table: Mapped[str] = mapped_column(VARCHAR(100))
 
     data: Mapped[List["SourceData"]] = relationship(back_populates="parent_dataset")
 
@@ -28,6 +28,8 @@ class SourceData(SHA1Mixin, CMFBase):
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
     id: Mapped[List[str]] = mapped_column(ARRAY(String), index=True)
-    dataset: Mapped[UUID] = mapped_column(ForeignKey("cmf__source_dataset.uuid"))
+    dataset: Mapped[uuUUID] = mapped_column(
+        UUID, ForeignKey("cmf__source_dataset.uuid")
+    )
 
     parent_dataset: Mapped["SourceDataset"] = relationship(back_populates="data")
