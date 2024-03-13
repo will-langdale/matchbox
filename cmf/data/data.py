@@ -1,7 +1,7 @@
 from typing import List
 from uuid import UUID as uuUUID
 
-from sqlalchemy import UUID, VARCHAR, ForeignKey, String, UniqueConstraint
+from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,7 +27,7 @@ class SourceData(SHA1Mixin, CMFBase):
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
-    id: Mapped[List[str]] = mapped_column(ARRAY(String), index=True)
+    id: Mapped[List[str]] = mapped_column(ARRAY(VARCHAR(36)), index=True)
     dataset: Mapped[uuUUID] = mapped_column(
         UUID, ForeignKey("cmf__source_dataset.uuid")
     )

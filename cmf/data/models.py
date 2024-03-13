@@ -93,10 +93,10 @@ class ModelsFrom(CMFBase):
     # https://docs.sqlalchemy.org/en/20/orm/
     # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     parent: Mapped[bytes] = mapped_column(
-        BYTEA(20), ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
     child: Mapped[bytes] = mapped_column(
-        BYTEA(20), ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
 
     child_model = relationship(

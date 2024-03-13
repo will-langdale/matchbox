@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import BOOLEAN, DECIMAL, VARCHAR, ForeignKey, UniqueConstraint
+from sqlalchemy import BOOLEAN, NUMERIC, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,8 +17,8 @@ class Links(SHA1Mixin, CMFBase):
     __tablename__ = "cmf__links"
     __table_args__ = (UniqueConstraint("left", "right"),)
 
-    left: Mapped[bytes] = mapped_column(BYTEA(20), ForeignKey("cmf__clusters.sha1"))
-    right: Mapped[bytes] = mapped_column(BYTEA(20), ForeignKey("cmf__clusters.sha1"))
+    left: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
+    right: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
 
     validation: Mapped[List["LinkValidation"]] = relationship()
     proposers: Mapped[List["LinkProbabilities"]] = relationship(back_populates="links")
@@ -40,7 +40,7 @@ class LinkProbabilities(CMFBase):
     model: Mapped[bytes] = mapped_column(
         BYTEA(20), ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
-    probability: Mapped[float] = mapped_column(DECIMAL(6, 5))
+    probability: Mapped[float] = mapped_column(NUMERIC(6, 5))
 
     links: Mapped["Links"] = relationship(
         back_populates="proposers", cascade="save-update, merge"
@@ -52,14 +52,14 @@ class LinkContains(UUIDMixin, CMFBase):
     __tablename__ = "cmf__link_contains"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
-    parent: Mapped[bytes] = mapped_column(BYTEA(20), ForeignKey("cmf__clusters.sha1"))
-    child: Mapped[bytes] = mapped_column(BYTEA(20), ForeignKey("cmf__clusters.sha1"))
+    parent: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
+    child: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
 
 
 class LinkValidation(UUIDMixin, CMFBase):
     __tablename__ = "cmf__link_validation"
     __table_args__ = (UniqueConstraint("link", "user"),)
 
-    link: Mapped[bytes] = mapped_column(BYTEA(20), ForeignKey("cmf__links.sha1"))
+    link: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__links.sha1"))
     user: Mapped[str] = mapped_column(VARCHAR(100))
     valid: Mapped[bool] = mapped_column(BOOLEAN)

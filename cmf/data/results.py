@@ -406,6 +406,29 @@ class ProbabilityResults(ResultsBaseDataclass):
                 f"[{self.metadata}] Inserted all %s deduplication objects",
                 probabilities_to_add.shape[0],
             )
+        with Session(engine) as session:
+            from sqlalchemy import func
+
+            sql = select(func.count()).select_from(Dedupes)
+            n = session.execute(sql).scalar()
+            logic_logger.info(f"CHECK: inserted {n} nodes")
+
+        with Session(engine) as session:
+            from sqlalchemy import func
+
+            sql = select(func.count()).where(
+                DDupeProbabilities.model == bytes.fromhex(model_sha1[2:])
+            )
+            n = session.execute(sql).scalar()
+            logic_logger.info(f"CHECK: {self.metadata} inserted {n} probabilities")
+            logic_logger.info(f"CHECK: df was {probabilities_to_add.shape[0]} long")
+
+        with Session(engine) as session:
+            from sqlalchemy import func
+
+            sql = select(func.count()).select_from(DDupeProbabilities)
+            n = session.execute(sql).scalar()
+            logic_logger.info(f"CHECK: total inserted {n} probabilities")
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
