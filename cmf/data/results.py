@@ -1,7 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
@@ -288,13 +288,13 @@ class ProbabilityResults(ResultsBaseDataclass):
         pre_prep_df["sha1"] = du.columns_to_value_ordered_sha1(
             data=self.dataframe, columns=cols
         )
-        # pre_prep_df.sha1 = pre_prep_df.sha1.astype("binary[pyarrow]")
 
         pre_prep_df = pre_prep_df.rename(
             columns={"left_id": "left", "right_id": "right"}
         )
 
         # Temp while I wait for pg-bulk-ingest==0.0.47
+        # pre_prep_df.sha1 = pre_prep_df.sha1.astype("binary[pyarrow]")
         pre_prep_df.sha1 = pre_prep_df.sha1.apply(bytes)
         bin_cols = ["sha1", "left", "right"]
         pre_prep_df[bin_cols] = pre_prep_df[bin_cols].map(
@@ -302,17 +302,6 @@ class ProbabilityResults(ResultsBaseDataclass):
         )
 
         return pre_prep_df[["sha1", "left", "right", "probability"]]
-
-    def _to_batch(self, dataframe: DataFrame, table: Table) -> Tuple[Any]:
-        """Constructs a batches function for any dataframe and table."""
-
-        def batches(high_watermark):
-            for records in du.batched(
-                dataframe.to_records(index=None), self._batch_size
-            ):
-                yield None, None, ((table, (t)) for t in records)
-
-        return batches
 
     def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a deduper to the CMF database.
@@ -358,11 +347,11 @@ class ProbabilityResults(ResultsBaseDataclass):
                 )
             )
 
+            session.commit()
+
             logic_logger.info(
                 f"[{self.metadata}] Removed old deduplication probabilities"
             )
-
-            session.commit()
 
         with engine.connect() as conn:
             logic_logger.info(
@@ -371,9 +360,10 @@ class ProbabilityResults(ResultsBaseDataclass):
             )
 
             # Upsert dedupe nodes
-            fn_dedupe_batch = self._to_batch(
+            fn_dedupe_batch = du.data_to_batch(
                 dataframe=probabilities_to_add[list(Dedupes.__table__.columns.keys())],
                 table=Dedupes.__table__,
+                batch_size=self._batch_size,
             )
 
             ingest(
@@ -385,13 +375,14 @@ class ProbabilityResults(ResultsBaseDataclass):
             )
 
             # Insert dedupe probabilities
-            fn_dedupe_probs_batch = self._to_batch(
+            fn_dedupe_probs_batch = du.data_to_batch(
                 dataframe=(
                     probabilities_to_add.assign(model=model_sha1).rename(
                         columns={"sha1": "ddupe"}
                     )[list(DDupeProbabilities.__table__.columns.keys())]
                 ),
                 table=DDupeProbabilities.__table__,
+                batch_size=self._batch_size,
             )
 
             ingest(
@@ -406,29 +397,6 @@ class ProbabilityResults(ResultsBaseDataclass):
                 f"[{self.metadata}] Inserted all %s deduplication objects",
                 probabilities_to_add.shape[0],
             )
-        with Session(engine) as session:
-            from sqlalchemy import func
-
-            sql = select(func.count()).select_from(Dedupes)
-            n = session.execute(sql).scalar()
-            logic_logger.info(f"CHECK: inserted {n} nodes")
-
-        with Session(engine) as session:
-            from sqlalchemy import func
-
-            sql = select(func.count()).where(
-                DDupeProbabilities.model == bytes.fromhex(model_sha1[2:])
-            )
-            n = session.execute(sql).scalar()
-            logic_logger.info(f"CHECK: {self.metadata} inserted {n} probabilities")
-            logic_logger.info(f"CHECK: df was {probabilities_to_add.shape[0]} long")
-
-        with Session(engine) as session:
-            from sqlalchemy import func
-
-            sql = select(func.count()).select_from(DDupeProbabilities)
-            n = session.execute(sql).scalar()
-            logic_logger.info(f"CHECK: total inserted {n} probabilities")
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database.
@@ -451,6 +419,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             # Add probabilities
             # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
+            model_sha1 = r"\x" + model.sha1.hex().upper()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
@@ -470,52 +439,49 @@ class ProbabilityResults(ResultsBaseDataclass):
 
             logic_logger.info(f"[{self.metadata}] Removed old link probabilities")
 
-            # Insert any new dedupe nodes
-            session.execute(
-                insert(Links).on_conflict_do_nothing(index_elements=[Links.sha1]),
-                probabilities_to_add,
+        with engine.connect() as conn:
+            logic_logger.info(
+                f"[{self.metadata}] Inserting %s link objects",
+                probabilities_to_add.shape[0],
             )
 
-            logic_logger.info(f"[{self.metadata}] Created new link nodes")
-
-            # Get all relevant dedupe nodes
-            links_to_add_cte = values(
-                column("sha1", LargeBinary), name="sha1_link_cte"
-            ).data([(li["sha1"],) for li in probabilities_to_add])
-
-            link_query = (
-                select(Links)
-                .join(links_to_add_cte, links_to_add_cte.c.sha1 == Links.sha1)
-                .execution_options(yield_per=self._batch_size)
+            # Upsert link nodes
+            fn_link_batch = du.data_to_batch(
+                dataframe=probabilities_to_add[list(Links.__table__.columns.keys())],
+                table=Links.__table__,
+                batch_size=self._batch_size,
             )
 
-            # Iterate and insert
-            start_idx = 0
-            for links in session.scalars(link_query).partitions():
-                end_idx = start_idx + self._batch_size
-                # Attach probabilities to create dedupe probability nodes
-                link_probs = []
-                for li, data in zip(links, probabilities_to_add[start_idx:end_idx]):
-                    p = LinkProbabilities(probability=data["probability"])
-                    p.links = li
-                    link_probs.append(p)
+            ingest(
+                conn=conn,
+                metadata=Links.metadata,
+                batches=fn_link_batch,
+                upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
+            )
 
-                model.proposes_links.add_all(link_probs)
-                session.flush()
+            # Insert link probabilities
+            fn_link_probs_batch = du.data_to_batch(
+                dataframe=(
+                    probabilities_to_add.assign(model=model_sha1).rename(
+                        columns={"sha1": "link"}
+                    )[list(LinkProbabilities.__table__.columns.keys())]
+                ),
+                table=LinkProbabilities.__table__,
+                batch_size=self._batch_size,
+            )
 
-                logic_logger.info(
-                    f"[{self.metadata}] Inserted %s of %s link objects",
-                    min(end_idx, len(probabilities_to_add)),
-                    len(probabilities_to_add),
-                )
-
-                start_idx = end_idx
-
-            session.commit()
+            ingest(
+                conn=conn,
+                metadata=LinkProbabilities.metadata,
+                batches=fn_link_probs_batch,
+                upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
+            )
 
             logic_logger.info(
                 f"[{self.metadata}] Inserted all %s link objects",
-                len(probabilities_to_add),
+                probabilities_to_add.shape[0],
             )
 
 

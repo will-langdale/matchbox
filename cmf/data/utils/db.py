@@ -3,9 +3,10 @@ import cProfile
 import io
 import pstats
 from itertools import islice
-from typing import Iterable
+from typing import Any, Callable, Iterable, Tuple
 
 import rustworkx as rx
+from pandas import DataFrame
 from sqlalchemy import Engine, MetaData, Table
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
@@ -191,3 +192,15 @@ def batched(iterable: Iterable, n: int) -> Iterable:
         if not batch:
             return
         yield batch
+
+
+def data_to_batch(
+    dataframe: DataFrame, table: Table, batch_size: int
+) -> Callable[[str], Tuple[Any]]:
+    """Constructs a batches function for any dataframe and table."""
+
+    def batches(high_watermark):
+        for records in batched(dataframe.to_records(index=None), batch_size):
+            yield None, None, ((table, (t)) for t in records)
+
+    return batches

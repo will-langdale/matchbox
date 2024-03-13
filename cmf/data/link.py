@@ -32,13 +32,13 @@ class LinkProbabilities(CMFBase):
     __tablename__ = "cmf__link_probabilities"
 
     link: Mapped[bytes] = mapped_column(
-        BYTEA(20), ForeignKey("cmf__links.sha1"), primary_key=True
+        BYTEA, ForeignKey("cmf__links.sha1"), primary_key=True
     )
     # Using PostgreSQL delete cascade to handle model deletion correctly
     # https://docs.sqlalchemy.org/en/20/orm/
     # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     model: Mapped[bytes] = mapped_column(
-        BYTEA(20), ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
     )
     probability: Mapped[float] = mapped_column(NUMERIC(6, 5))
 
