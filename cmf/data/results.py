@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 
@@ -10,13 +11,9 @@ from pg_bulk_ingest import Delete, Upsert, ingest
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 from sqlalchemy import (
     Engine,
-    LargeBinary,
     Table,
     bindparam,
-    column,
     delete,
-    select,
-    values,
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -561,6 +558,7 @@ class ClusterResults(ResultsBaseDataclass):
             # Add clusters
             # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
+            model_sha1 = r"\x" + model.sha1.hex().upper()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
@@ -580,67 +578,76 @@ class ClusterResults(ResultsBaseDataclass):
 
             logic_logger.info(f"[{self.metadata}] Removed old clusters")
 
-            # Insert any new cluster nodes
-            clusters_to_add = [
-                {"sha1": edge} for edge in self.dataframe.parent.drop_duplicates()
-            ]
+        with engine.connect() as conn:
+            logic_logger.info(
+                f"[{self.metadata}] Inserting %s cluster objects",
+                self.dataframe.shape[0],
+            )
+
+            clusters_prepped = self.dataframe.map(lambda s: r"\x" + s.hex().upper())
+
+            # Upsert cluster nodes
+            fn_cluster_batch = du.data_to_batch(
+                dataframe=(
+                    clusters_prepped.drop_duplicates(subset="parent").rename(
+                        columns={"parent": "sha1"}
+                    )[list(Clusters.__table__.columns.keys())]
+                ),
+                table=Clusters.__table__,
+                batch_size=self._batch_size,
+            )
+
+            ingest(
+                conn=conn,
+                metadata=Clusters.metadata,
+                batches=fn_cluster_batch,
+                upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
+            )
+
+            # Insert cluster contains
+            fn_cluster_contains_batch = du.data_to_batch(
+                dataframe=(
+                    clusters_prepped.assign(
+                        uuid=[uuid.uuid4() for _ in range(clusters_prepped.shape[0])]
+                    )[list(Contains.__table__.columns.keys())]
+                ),
+                table=Contains.__table__,
+                batch_size=self._batch_size,
+            )
+
+            ingest(
+                conn=conn,
+                metadata=Contains.metadata,
+                batches=fn_cluster_contains_batch,
+                upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
+            )
+
+            # Insert cluster proposed by
+            fn_cluster_proposed_batch = du.data_to_batch(
+                dataframe=(
+                    clusters_prepped.drop("child", axis=1)
+                    .rename(columns={"parent": "child"})
+                    .assign(parent=model_sha1)[
+                        list(clusters_association.columns.keys())
+                    ]
+                ),
+                table=clusters_association,
+                batch_size=self._batch_size,
+            )
+
+            ingest(
+                conn=conn,
+                metadata=clusters_association.metadata,
+                batches=fn_cluster_proposed_batch,
+                upsert=Upsert.IF_PRIMARY_KEY,
+                delete=Delete.OFF,
+            )
 
             logic_logger.info(
-                f"[{self.metadata}] Processed %s clusters", len(clusters_to_add)
-            )
-
-            ins_stmt = insert(Clusters)
-            ins_stmt = ins_stmt.on_conflict_do_nothing(index_elements=[Clusters.sha1])
-
-            session.execute(ins_stmt, clusters_to_add)
-
-            logic_logger.info(f"[{self.metadata}] Created new cluster nodes")
-
-            # Get all relevant cluster nodes
-            clusters_to_add_cte = values(
-                column("sha1", LargeBinary), name="sha1_clus_cte"
-            ).data([(clus["sha1"],) for clus in clusters_to_add])
-
-            cluster_query = (
-                select(Clusters)
-                .join(clusters_to_add_cte, clusters_to_add_cte.c.sha1 == Clusters.sha1)
-                .execution_options(yield_per=self._batch_size)
-            )
-
-            # Iterate and insert
-            start_idx = 0
-            for clusters in session.scalars(cluster_query).partitions():
-                end_idx = start_idx + self._batch_size
-
-                # Add model endorsement of clusters: creates
-                model.creates.add_all(clusters)
-                session.flush()
-
-                logic_logger.info(
-                    f"[{self.metadata}] Inserted %s of %s cluster objects",
-                    min(end_idx, len(clusters_to_add)),
-                    len(clusters_to_add),
-                )
-
-                start_idx = end_idx
-
-            # Add new cluster contains edges
-            ins_stmt = insert(Contains)
-            ins_stmt = ins_stmt.on_conflict_do_update(
-                index_elements=[Contains.parent, Contains.child],
-                set_=ins_stmt.excluded,
-            )
-
-            logic_logger.info(
-                f"[{self.metadata}] Reconciled model's cluster contains edges"
-            )
-
-            contains = self.dataframe.to_dict("records")
-            session.execute(ins_stmt, contains)
-            session.commit()
-
-            logic_logger.info(
-                f"[{self.metadata}] Inserted %s cluster objects", len(contains)
+                f"[{self.metadata}] Inserted all %s cluster objects",
+                self.dataframe.shape[0],
             )
 
     def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
