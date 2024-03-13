@@ -340,6 +340,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             # Add probabilities
             # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
+            model_sha1 = r"\x" + model.sha1.hex().upper()
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
@@ -371,14 +372,13 @@ class ProbabilityResults(ResultsBaseDataclass):
 
             # Upsert dedupe nodes
             fn_dedupe_batch = self._to_batch(
-                dataframe=probabilities_to_add[["sha1", "left", "right"]],
+                dataframe=probabilities_to_add[list(Dedupes.__table__.columns.keys())],
                 table=Dedupes.__table__,
             )
 
             ingest(
                 conn=conn,
-                # metadata=Dedupes.metadata,
-                metadata=Dedupes.__table__.metadata,
+                metadata=Dedupes.metadata,
                 batches=fn_dedupe_batch,
                 upsert=Upsert.IF_PRIMARY_KEY,
                 delete=Delete.OFF,
@@ -387,17 +387,16 @@ class ProbabilityResults(ResultsBaseDataclass):
             # Insert dedupe probabilities
             fn_dedupe_probs_batch = self._to_batch(
                 dataframe=(
-                    probabilities_to_add.assign(model=model.sha1)[
-                        ["sha1", "model", "probability"]
-                    ]
+                    probabilities_to_add.assign(model=model_sha1).rename(
+                        columns={"sha1": "ddupe"}
+                    )[list(DDupeProbabilities.__table__.columns.keys())]
                 ),
                 table=DDupeProbabilities.__table__,
             )
 
             ingest(
                 conn=conn,
-                # metadata=DDupeProbabilities.metadata,
-                metadata=DDupeProbabilities.__table__.metadata,
+                metadata=DDupeProbabilities.metadata,
                 batches=fn_dedupe_probs_batch,
                 upsert=Upsert.IF_PRIMARY_KEY,
                 delete=Delete.OFF,
