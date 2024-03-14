@@ -48,12 +48,16 @@ class LinkProbabilities(CMFBase):
     proposed_by: Mapped["Models"] = relationship(back_populates="proposes_links")
 
 
-class LinkContains(UUIDMixin, CMFBase):
+class LinkContains(CMFBase):
     __tablename__ = "cmf__link_contains"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
-    parent: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
-    child: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
+    parent: Mapped[bytes] = mapped_column(
+        BYTEA, ForeignKey("cmf__clusters.sha1"), primary_key=True
+    )
+    child: Mapped[bytes] = mapped_column(
+        BYTEA, ForeignKey("cmf__clusters.sha1"), primary_key=True
+    )
 
 
 class LinkValidation(UUIDMixin, CMFBase):

@@ -50,12 +50,16 @@ class DDupeProbabilities(CMFBase):
     proposed_by: Mapped["Models"] = relationship(back_populates="proposes_dedupes")
 
 
-class DDupeContains(UUIDMixin, CMFBase):
+class DDupeContains(CMFBase):
     __tablename__ = "cmf__ddupe_contains"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
-    parent: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
-    child: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__source_data.sha1"))
+    parent: Mapped[bytes] = mapped_column(
+        BYTEA, ForeignKey("cmf__clusters.sha1"), primary_key=True
+    )
+    child: Mapped[bytes] = mapped_column(
+        BYTEA, ForeignKey("cmf__source_data.sha1"), primary_key=True
+    )
 
 
 class DDupeValidation(UUIDMixin, CMFBase):

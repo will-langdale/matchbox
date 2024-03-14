@@ -1,6 +1,5 @@
 import logging
 import os
-import uuid
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 
@@ -250,9 +249,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             Source = Clusters
             tgt_col = "cluster_sha1"
 
-        # pre_prep_df[cols] = pre_prep_df[cols].astype("binary[pyarrow]")
-        # Temp while I wait for pg-bulk-ingest==0.0.47
-        pre_prep_df[cols] = pre_prep_df[cols].map(bytes)
+        pre_prep_df[cols] = pre_prep_df[cols].astype("binary[pyarrow]")
 
         for col in cols:
             data_unique = pre_prep_df[col].unique().tolist()
@@ -285,17 +282,9 @@ class ProbabilityResults(ResultsBaseDataclass):
         pre_prep_df["sha1"] = du.columns_to_value_ordered_sha1(
             data=self.dataframe, columns=cols
         )
-
+        pre_prep_df.sha1 = pre_prep_df.sha1.astype("binary[pyarrow]")
         pre_prep_df = pre_prep_df.rename(
             columns={"left_id": "left", "right_id": "right"}
-        )
-
-        # Temp while I wait for pg-bulk-ingest==0.0.47
-        # pre_prep_df.sha1 = pre_prep_df.sha1.astype("binary[pyarrow]")
-        pre_prep_df.sha1 = pre_prep_df.sha1.apply(bytes)
-        bin_cols = ["sha1", "left", "right"]
-        pre_prep_df[bin_cols] = pre_prep_df[bin_cols].map(
-            lambda s: r"\x" + s.hex().upper()
         )
 
         return pre_prep_df[["sha1", "left", "right", "probability"]]
@@ -326,7 +315,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             # Add probabilities
             # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
-            model_sha1 = r"\x" + model.sha1.hex().upper()
+            model_sha1 = model.sha1
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
@@ -416,7 +405,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             # Add probabilities
             # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
-            model_sha1 = r"\x" + model.sha1.hex().upper()
+            model_sha1 = model.sha1
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
@@ -558,7 +547,7 @@ class ClusterResults(ResultsBaseDataclass):
             # Add clusters
             # Get model
             model = session.query(Models).filter_by(name=self.run_name).first()
-            model_sha1 = r"\x" + model.sha1.hex().upper()
+            model_sha1 = model.sha1
 
             if model is None:
                 raise CMFDBDataError(source=Models, data=self.run_name)
@@ -584,7 +573,7 @@ class ClusterResults(ResultsBaseDataclass):
                 self.dataframe.shape[0],
             )
 
-            clusters_prepped = self.dataframe.map(lambda s: r"\x" + s.hex().upper())
+            clusters_prepped = self.dataframe.astype("binary[pyarrow]")
 
             # Upsert cluster nodes
             fn_cluster_batch = du.data_to_batch(
@@ -607,11 +596,7 @@ class ClusterResults(ResultsBaseDataclass):
 
             # Insert cluster contains
             fn_cluster_contains_batch = du.data_to_batch(
-                dataframe=(
-                    clusters_prepped.assign(
-                        uuid=[uuid.uuid4() for _ in range(clusters_prepped.shape[0])]
-                    )[list(Contains.__table__.columns.keys())]
-                ),
+                dataframe=clusters_prepped[list(Contains.__table__.columns.keys())],
                 table=Contains.__table__,
                 batch_size=self._batch_size,
             )
