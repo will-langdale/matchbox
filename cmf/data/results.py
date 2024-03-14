@@ -346,6 +346,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             )
 
             # Upsert dedupe nodes
+            # Create data batching function and pass it to ingest
             fn_dedupe_batch = du.data_to_batch(
                 dataframe=probabilities_to_add[list(Dedupes.__table__.columns.keys())],
                 table=Dedupes.__table__,
@@ -432,6 +433,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             )
 
             # Upsert link nodes
+            # Create data batching function and pass it to ingest
             fn_link_batch = du.data_to_batch(
                 dataframe=probabilities_to_add[list(Links.__table__.columns.keys())],
                 table=Links.__table__,
@@ -576,6 +578,7 @@ class ClusterResults(ResultsBaseDataclass):
             clusters_prepped = self.dataframe.astype("binary[pyarrow]")
 
             # Upsert cluster nodes
+            # Create data batching function and pass it to ingest
             fn_cluster_batch = du.data_to_batch(
                 dataframe=(
                     clusters_prepped.drop_duplicates(subset="parent").rename(
@@ -708,7 +711,7 @@ def to_clusters(
         results.dataframe.query("probability >= @threshold")
         .filter(["left_id", "right_id"])
         .astype("binary[pyarrow]")
-        .itertuples(index=False, name=None)
+        .itertuples(index=False, name=None)  # generator saves on memory
     )
 
     G = rx.PyGraph()
