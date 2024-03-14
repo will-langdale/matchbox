@@ -24,7 +24,8 @@ dependencies = [
     "pydantic",
     "rustworkx",
     "tomli",
-    "matplotlib"
+    "matplotlib",
+    "pg-bulk-ingest"
 ]
 
 [project.optional-dependencies]
@@ -101,7 +102,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pytest.ini_options]
-addopts = "-s -vv --cov=cmf test/"
+addopts = "-s -vv --cov=cmf test/ --log-disable=pg_bulk_ingest"
 log_cli = false
 log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"

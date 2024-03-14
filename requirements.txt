@@ -24,21 +24,21 @@ cfgv==3.4.0
     # via pre-commit
 click==8.1.7
     # via company-matching-framework (pyproject.toml)
-comm==0.2.1
+comm==0.2.2
     # via ipykernel
 contourpy==1.2.0
     # via matplotlib
-coverage[toml]==7.4.1
+coverage[toml]==7.4.3
     # via pytest-cov
 cycler==0.12.1
     # via matplotlib
-debugpy==1.8.0
+debugpy==1.8.1
     # via ipykernel
 decorator==5.1.1
     # via ipython
 distlib==0.3.8
     # via virtualenv
-duckdb==0.9.2
+duckdb==0.10.0
     # via
     #   company-matching-framework (pyproject.toml)
     #   splink
@@ -50,19 +50,21 @@ executing==2.0.1
     # via stack-data
 filelock==3.13.1
     # via virtualenv
-fonttools==4.47.2
+fonttools==4.49.0
     # via matplotlib
 greenlet==3.0.3
     # via sqlalchemy
-identify==2.5.33
+identify==2.5.35
     # via pre-commit
-importlib-metadata==6.11.0
+igraph==0.11.4
+    # via splink
+importlib-metadata==7.0.2
     # via jupyter-client
-importlib-resources==6.1.1
+importlib-resources==6.3.0
     # via matplotlib
 iniconfig==2.0.0
     # via pytest
-ipykernel==6.29.0
+ipykernel==6.29.3
     # via company-matching-framework (pyproject.toml)
 ipython==8.18.1
     # via ipykernel
@@ -78,17 +80,17 @@ jsonschema==4.21.1
     #   splink
 jsonschema-specifications==2023.12.1
     # via jsonschema
-jupyter-client==8.6.0
+jupyter-client==8.6.1
     # via ipykernel
-jupyter-core==5.7.1
+jupyter-core==5.7.2
     # via
     #   ipykernel
     #   jupyter-client
 kiwisolver==1.4.5
     # via matplotlib
-markupsafe==2.1.4
+markupsafe==2.1.5
     # via jinja2
-matplotlib==3.8.2
+matplotlib==3.8.3
     # via company-matching-framework (pyproject.toml)
 matplotlib-inline==0.1.6
     # via
@@ -98,7 +100,7 @@ nest-asyncio==1.6.0
     # via ipykernel
 nodeenv==1.8.0
     # via pre-commit
-numpy==1.26.3
+numpy==1.26.4
     # via
     #   altair
     #   contourpy
@@ -106,13 +108,13 @@ numpy==1.26.3
     #   pandas
     #   pyarrow
     #   rustworkx
-packaging==23.2
+packaging==24.0
     # via
     #   altair
     #   ipykernel
     #   matplotlib
     #   pytest
-pandas==2.2.0
+pandas==2.2.1
     # via
     #   altair
     #   company-matching-framework (pyproject.toml)
@@ -121,7 +123,11 @@ parso==0.8.3
     # via jedi
 pexpect==4.9.0
     # via ipython
-pg8000==1.30.4
+pg-bulk-ingest==0.0.49
+    # via company-matching-framework (pyproject.toml)
+pg-force-execute==0.0.11
+    # via pg-bulk-ingest
+pg8000==1.30.5
     # via testing-postgresql
 phonetics==1.0.5
     # via splink
@@ -133,7 +139,7 @@ platformdirs==3.11.0
     #   virtualenv
 pluggy==1.4.0
     # via pytest
-pre-commit==3.6.0
+pre-commit==3.6.2
     # via company-matching-framework (pyproject.toml)
 prompt-toolkit==3.0.43
     # via ipython
@@ -145,17 +151,17 @@ ptyprocess==0.7.0
     # via pexpect
 pure-eval==0.2.2
     # via stack-data
-pyarrow==15.0.0
+pyarrow==15.0.1
     # via company-matching-framework (pyproject.toml)
-pydantic==2.5.3
+pydantic==2.6.4
     # via company-matching-framework (pyproject.toml)
-pydantic-core==2.14.6
+pydantic-core==2.16.3
     # via pydantic
 pygments==2.17.2
     # via ipython
-pyparsing==3.1.1
+pyparsing==3.1.2
     # via matplotlib
-pytest==8.0.0
+pytest==8.1.1
     # via
     #   company-matching-framework (pyproject.toml)
     #   pytest-cov
@@ -164,7 +170,7 @@ pytest-cov==4.1.0
     # via company-matching-framework (pyproject.toml)
 pytest-env==1.1.3
     # via company-matching-framework (pyproject.toml)
-python-dateutil==2.8.2
+python-dateutil==2.9.0.post0
     # via
     #   jupyter-client
     #   matplotlib
@@ -172,7 +178,7 @@ python-dateutil==2.8.2
     #   pg8000
 python-dotenv==1.0.1
     # via company-matching-framework (pyproject.toml)
-pytz==2023.3.post1
+pytz==2024.1
     # via pandas
 pyyaml==6.0.1
     # via pre-commit
@@ -184,13 +190,13 @@ referencing==0.33.0
     # via
     #   jsonschema
     #   jsonschema-specifications
-rpds-py==0.17.1
+rpds-py==0.18.0
     # via
     #   jsonschema
     #   referencing
-ruff==0.1.14
+ruff==0.3.2
     # via company-matching-framework (pyproject.toml)
-rustworkx==0.14.0
+rustworkx==0.14.2
     # via company-matching-framework (pyproject.toml)
 scramp==1.4.4
     # via pg8000
@@ -198,11 +204,14 @@ six==1.16.0
     # via
     #   asttokens
     #   python-dateutil
-splink==3.9.11
+splink==3.9.13
     # via company-matching-framework (pyproject.toml)
-sqlalchemy==2.0.25
-    # via company-matching-framework (pyproject.toml)
-sqlglot==18.17.0
+sqlalchemy==2.0.28
+    # via
+    #   company-matching-framework (pyproject.toml)
+    #   pg-bulk-ingest
+    #   pg-force-execute
+sqlglot==22.4.0
     # via splink
 stack-data==0.6.3
     # via ipython
@@ -210,6 +219,10 @@ testing-common-database==2.0.3
     # via testing-postgresql
 testing-postgresql==1.3.0
     # via company-matching-framework (pyproject.toml)
+texttable==1.7.0
+    # via igraph
+to-file-like-obj==0.0.5
+    # via pg-bulk-ingest
 tomli==2.0.1
     # via
     #   company-matching-framework (pyproject.toml)

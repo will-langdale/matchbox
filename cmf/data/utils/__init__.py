@@ -1,4 +1,6 @@
 from cmf.data.utils.db import (
+    batched,
+    data_to_batch,
     dataset_to_table,
     get_model_subgraph,
     get_schema_table_names,
@@ -22,6 +24,8 @@ __all__ = (
     "string_to_table",
     "string_to_dataset",
     "sqa_profiled",
+    "batched",
+    "data_to_batch",
     # SHA-1 conversion
     "table_name_to_uuid",
     "model_name_to_sha1",

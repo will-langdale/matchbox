@@ -9,7 +9,7 @@ from test.fixtures.models import (
 )
 
 from dotenv import find_dotenv, load_dotenv
-from sqlalchemy import MetaData, Table, delete, insert, inspect
+from sqlalchemy import MetaData, Table, delete, insert, inspect, text
 from sqlalchemy.orm import Session
 
 from cmf.admin import add_dataset
@@ -58,6 +58,12 @@ def test_database(db_engine):
     }
 
     assert tables == to_check
+
+    with Session(db_engine[1]) as session:
+        server_encoding = session.execute(text("show server_encoding;")).scalar()
+        client_encoding = session.execute(text("show client_encoding;")).scalar()
+
+    assert server_encoding == client_encoding == "UTF8"
 
 
 def test_add_data(db_engine):
