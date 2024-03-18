@@ -323,7 +323,7 @@ def _selector_to_pandas_dtypes(
             .limit(1)
             .set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
         )
-        with Session(ENGINE) as session:
+        with Session(engine) as session:
             res = pd.read_sql(stmt, session.bind).convert_dtypes(
                 dtype_backend="pyarrow"
             )
@@ -402,7 +402,7 @@ def query(
             "data_sha1": "string[pyarrow]",
         }
 
-        with ENGINE.connect() as conn:
+        with engine.connect() as conn:
             # Compile query
             cursor = conn.connection.cursor()
             compiled = final_stmt.compile(
@@ -419,7 +419,9 @@ def query(
             store.seek(0)
 
             # Read to pandas
-            res = pd.read_csv(store, dtype=default_dtypes | selector_dtypes)
+            res = pd.read_csv(
+                store, dtype=default_dtypes | selector_dtypes, engine="pyarrow"
+            ).convert_dtypes(dtype_backend="pyarrow")
 
             # Manually convert SHA-1s to bytes correctly
             if "data_sha1" in res.columns:
