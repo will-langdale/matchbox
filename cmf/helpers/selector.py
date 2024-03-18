@@ -1,3 +1,4 @@
+import io
 from typing import Dict, List, Optional, Tuple, Union
 
 import pandas as pd
@@ -10,6 +11,7 @@ from sqlalchemy import (
     or_,
     select,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
@@ -294,6 +296,42 @@ def _selector_to_data(
     return stmt
 
 
+def _selector_to_pandas_dtypes(
+    selector: Dict[str, List[str]],
+    engine: Engine = ENGINE,
+) -> Dict[str, str]:
+    """
+    Takes a dictionary of tables and fields, usually outputted by selectors,
+    and returns a dictionary of the column names and pandas datatypes.
+
+    Args:
+        selector: a dictionary with keys of table names, and values of a list
+            of data required from that table, likely output by selector() or
+            selectors()
+        engine: the SQLAlchemy engine to use
+
+    Returns:
+        A dictionary of column names and datatypes
+    """
+    types_dict = {}
+
+    for schema_table, fields in selector.items():
+        db_schema, db_table = get_schema_table_names(schema_table)
+        db_table = string_to_table(db_schema, db_table, engine=engine)
+        stmt = (
+            select(db_table.c[tuple(fields)])
+            .limit(1)
+            .set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
+        )
+        with Session(ENGINE) as session:
+            res = pd.read_sql(stmt, session.bind).convert_dtypes(
+                dtype_backend="pyarrow"
+            )
+        types_dict = types_dict | res.dtypes.apply(lambda x: x.name).to_dict()
+
+    return types_dict
+
+
 def query(
     selector: Dict[str, List[str]],
     model: Optional[str] = None,
@@ -357,15 +395,40 @@ def query(
         final_stmt = final_stmt.limit(limit)
 
     if return_type == "pandas":
-        with Session(engine) as session:
-            res = pd.read_sql(final_stmt, session.bind).convert_dtypes(
-                dtype_backend="pyarrow"
+        # Detect datatypes
+        selector_dtypes = _selector_to_pandas_dtypes(selector, engine=engine)
+        default_dtypes = {
+            "cluster_sha1": "string[pyarrow]",
+            "data_sha1": "string[pyarrow]",
+        }
+
+        with ENGINE.connect() as conn:
+            # Compile query
+            cursor = conn.connection.cursor()
+            compiled = final_stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"render_postcompile": True},
             )
-            # Convert_dtypes doesn't detect bytes automatically: convert SHA-1s manually
+            compiled_bound = cursor.mogrify(str(compiled), compiled.params)
+            sql = compiled_bound.decode("utf-8")
+            copy_sql = f"copy ({sql}) to stdout with csv header"
+
+            # Load from Postgres to memory
+            store = io.StringIO()
+            cursor.copy_expert(copy_sql, store)
+            store.seek(0)
+
+            # Read to pandas
+            res = pd.read_csv(store, dtype=default_dtypes | selector_dtypes)
+
+            # Manually convert SHA-1s to bytes correctly
             if "data_sha1" in res.columns:
+                res.data_sha1 = res.data_sha1.str[2:].apply(bytes.fromhex)
                 res.data_sha1 = res.data_sha1.astype("binary[pyarrow]")
             if "cluster_sha1" in res.columns:
+                res.cluster_sha1 = res.cluster_sha1.str[2:].apply(bytes.fromhex)
                 res.cluster_sha1 = res.cluster_sha1.astype("binary[pyarrow]")
+
     elif return_type == "sqlalchemy":
         with Session(engine) as session:
             res = session.execute(final_stmt)
