@@ -18,7 +18,7 @@ NOW:=$(shell date +"%m-%d-%y_%H-%M-%S")
 
 ## Make datasets table
 cmf:
-	$(PYTHON_INTERPRETER) cmf/admin.py
+	uv run $(PYTHON_INTERPRETER) cmf/admin.py
 
 
 ## Delete all compiled Python files
@@ -27,54 +27,19 @@ clean:
 	find . -type d -name "__pycache__" -delete
 
 
-## Set up python interpreter environment
-environment:
-	conda env remove --name $(PROJECT_NAME)
-ifneq ("$(wildcard conda.lock.yml)","")
-	@echo ">>> Creating conda environment from conda lock file"
-	conda env create -f conda.lock.yml
-else
-	@echo ">>> Creating conda environment from scratch"
-	conda create --name $(PROJECT_NAME) python=$(PYTHON_VERSION) pip setuptools wheel pip-tools
-	conda env export --name $(PROJECT_NAME) > conda.lock.yml 
-endif
-	@echo ">>> New conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
-
-
-## Reformat, lint, clear notebook outputs if necessary
-precommit:
-	ruff format .
-	ruff check . --fix
-ifeq (yes,$(SENSITIVE_PROJECT))
-	@echo "Clearing output of all notebooks:"
-	export JUPYTER_CONFIG_DIR=${HOME}/.jupyter_conf; jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/*.ipynb
-endif
-	@echo "Done."
-
-
-## Install Linux dependencies
-linux_requirements:
-	sudo dw-install libpq-dev postgresql
-
-
-## Install Python dependencies
-python_requirements:
-	$(PYTHON_INTERPRETER) -m piptools compile --extra dev --resolver=backtracking --output-file=requirements.txt pyproject.toml
-	$(PYTHON_INTERPRETER) -m piptools sync requirements.txt
-	$(PYTHON_INTERPRETER) -m pip install --editable .
-	$(PYTHON_INTERPRETER) -m ipykernel install --user --name=$(PROJECT_NAME)
-	pre-commit install
-
-
-## Install combined dependencies
-requirements:
-	make linux_requirements
-	make python_requirements
+## Reformat and lint
+format:
+	uv run ruff format .
+	uv run ruff check . --fix
 
 
 ## Run Python tests
 test:
-	pytest
+	@echo ">>> Dropping and recreating the test database"
+	docker-compose exec db psql -U testuser -c "DROP DATABASE IF EXISTS testdb;"
+	docker-compose exec db psql -U testuser -c "CREATE DATABASE testdb;"
+	@echo ">>> Running tests"
+	uv run pytest
 
 
 #################################################################################
