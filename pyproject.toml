@@ -18,7 +18,7 @@ dependencies = [
     "pydantic>=2.9.2",
     "python-dotenv>=1.0.1",
     "rustworkx>=0.15.1",
-    "splink>=4.0.3",
+    "splink<4",
     "sqlalchemy>=2.0.35",
     "tomli>=2.0.1",
 ]
@@ -94,6 +94,8 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["."]
 addopts = "-s -vv --cov=cmf test/ --log-disable=pg_bulk_ingest"
 log_cli = false
 log_cli_level = "INFO"

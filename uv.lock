@@ -241,7 +241,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9.2" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "rustworkx", specifier = ">=0.15.1" },
-    { name = "splink", specifier = ">=4.0.3" },
+    { name = "splink", specifier = "<4" },
     { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "tomli", specifier = ">=2.0.1" },
 ]
@@ -1023,6 +1023,12 @@ wheels = [
 ]
 
 [[package]]
+name = "phonetics"
+version = "1.0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/a5/d1b6dbcbb05477aa5f0c5e73a7d68c6d23ab098af4461072f00999ed573a/phonetics-1.0.5.tar.gz", hash = "sha256:16263948c82fce1e257964b2ab4adc953f995e0fa7e2e60e6ba336d77a7235ba", size = 8848 }
+
+[[package]]
 name = "pillow"
 version = "10.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1596,7 +1602,7 @@ wheels = [
 
 [[package]]
 name = "splink"
-version = "4.0.3"
+version = "3.9.15"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "altair" },
@@ -1604,13 +1610,13 @@ dependencies = [
     { name = "igraph" },
     { name = "jinja2" },
     { name = "jsonschema" },
-    { name = "numpy" },
     { name = "pandas" },
+    { name = "phonetics" },
     { name = "sqlglot" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/31/95e23817eaa146a03ef3b7be790157faec844452be9b282fdd1c7c463eb6/splink-4.0.3.tar.gz", hash = "sha256:ee774fcb9f51f6a2ab10ff6ead57be2c5ee1f8b9d4140ee261786359f87e5d4a", size = 3649837 }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/fe/457c18d9f54e6b34ddd4a908ee90e61b8287006560d36952afec7cae45d9/splink-3.9.15.tar.gz", hash = "sha256:d52a4f2e48567b502621924cbd909f88c6cb88b32442d575deb4c16bbbb2ccad", size = 3655727 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/2b/0ee804bbdccbb47f1a1694d2878a478e6f192b78e47fbbfac2c05787b23b/splink-4.0.3-py3-none-any.whl", hash = "sha256:d990c9552a8601c0d61232d428810730698e005e4ebfef16eaf5ce0d581050d2", size = 3711863 },
+    { url = "https://files.pythonhosted.org/packages/96/8a/99cf732fb1a6aac4535e0c4a641c1159a5f1d2fa9bce6452c52f078c7ba5/splink-3.9.15-py3-none-any.whl", hash = "sha256:1b8f557743e633c785fa6da4030821d0cd1ccf03336d662db59f809956f4ec87", size = 3713845 },
 ]
 
 [[package]]

@@ -35,10 +35,7 @@ format:
 
 ## Run Python tests
 test:
-	@echo ">>> Dropping and recreating the test database"
-	docker-compose exec db psql -U testuser -c "DROP DATABASE IF EXISTS testdb;"
-	docker-compose exec db psql -U testuser -c "CREATE DATABASE testdb;"
-	@echo ">>> Running tests"
+	docker compose up db -d --wait
 	uv run pytest
 
 

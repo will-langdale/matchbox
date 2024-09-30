@@ -2,19 +2,17 @@ import hashlib
 import logging
 import os
 import random
-from test.fixtures.models import DedupeTestParams, LinkTestParams, ModelTestParams
-from typing import Generator, Callable
-from pandas import DataFrame
+from typing import Callable, Generator
 
 import pytest
-import docker
-from _pytest.fixtures import FixtureFunction, FixtureRequest
+from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame
 from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema
-from sqlalchemy.engine import Engine
 
 from cmf import make_deduper, make_linker, to_clusters
 from cmf.admin import add_dataset
@@ -34,28 +32,12 @@ from cmf.data import (
     clusters_association,
 )
 
+from .models import DedupeTestParams, LinkTestParams, ModelTestParams
+
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
-
-
-@pytest.fixture(scope="session")
-def postgresql() -> docker.models.containers.Container:
-    client = docker.from_env()
-    container = client.containers.run(
-        "postgres:latest",
-        environment={
-            "POSTGRES_USER": "test",
-            "POSTGRES_PASSWORD": "test",
-            "POSTGRES_DB": "test_db",
-        },
-        ports={"5432/tcp": 5432},
-        detach=True,
-    )
-    yield container
-    container.stop()
-    container.remove()
 
 
 @pytest.fixture
@@ -68,8 +50,8 @@ def db_clear_all() -> Callable[[Engine], None]:
 
     def _db_clear_all(db_engine: Engine) -> None:
         db_metadata = MetaData(schema=os.getenv("SCHEMA"))
-        db_metadata.reflect(bind=db_engine[1])
-        with Session(db_engine[1]) as session:
+        db_metadata.reflect(bind=db_engine)
+        with Session(db_engine) as session:
             for table in reversed(db_metadata.sorted_tables):
                 LOGGER.info(f"{table}")
                 session.execute(table.delete())
@@ -87,7 +69,7 @@ def db_clear_data() -> Callable[[Engine], None]:
     """
 
     def _db_clear_data(db_engine: Engine) -> None:
-        with Session(db_engine[1]) as session:
+        with Session(db_engine) as session:
             session.query(SourceData).delete()
             session.query(SourceDataset).delete()
             session.commit()
@@ -106,7 +88,7 @@ def db_clear_models() -> Callable[[Engine], None]:
     """
 
     def _db_clear_models(db_engine: Engine) -> None:
-        with Session(db_engine[1]) as session:
+        with Session(db_engine) as session:
             session.query(LinkProbabilities).delete()
             session.query(Links).delete()
             session.query(DDupeProbabilities).delete()
@@ -135,7 +117,7 @@ def db_add_data(
     """
 
     def _db_add_data(db_engine: Engine) -> None:
-        with db_engine[1].connect() as conn:
+        with db_engine.connect() as conn:
             # Insert data
             crn_companies.to_sql(
                 "crn",
@@ -196,7 +178,7 @@ def db_add_models() -> Callable[[Engine], None]:
     """
 
     def _db_add_models(db_engine: Engine) -> None:
-        with Session(db_engine[1]) as session:
+        with Session(db_engine) as session:
             # Two Dedupers and two Linkers
             dd_m1 = Models(
                 sha1=hashlib.sha1("dd_m1".encode()).digest(),
@@ -345,8 +327,8 @@ def db_add_dedupe_models_and_data() -> (
                     df, results=deduped, key="data_sha1", threshold=0
                 )
 
-                deduped.to_cmf(engine=db_engine[1])
-                clustered.to_cmf(engine=db_engine[1])
+                deduped.to_cmf(engine=db_engine)
+                clustered.to_cmf(engine=db_engine)
 
     return _db_add_dedupe_models_and_data
 
@@ -423,33 +405,26 @@ def db_add_link_models_and_data() -> (
                     df_l, df_r, results=linked, key="cluster_sha1", threshold=0
                 )
 
-                linked.to_cmf(engine=db_engine[1])
-                clustered.to_cmf(engine=db_engine[1])
+                linked.to_cmf(engine=db_engine)
+                clustered.to_cmf(engine=db_engine)
 
     return _db_add_link_models_and_data
 
 
 @pytest.fixture(scope="session")
 def db_engine(
-    postgresql: docker.models.containers.Container,
-    db_add_data: Callable[[Engine], None],
-    db_add_models: Callable[[Engine], None],
+    db_add_data: Callable[[Engine], None], db_add_models: Callable[[Engine], None]
 ) -> Generator[Engine, None, None]:
     """
-    Yield engine to mock in-memory database.
+    Yield engine to Docker container database.
     """
     load_dotenv(find_dotenv())
     engine = create_engine(
-        url="postgresql://test:test@localhost:5432/test_db",
+        url="postgresql://testuser:testpassword@localhost:5432/testdb",
         connect_args={"sslmode": "disable", "client_encoding": "utf8"},
     )
 
     with engine.connect() as conn:
-        # Install relevant extensions
-        conn.execute(text('create extension "uuid-ossp";'))
-        conn.execute(text("create extension pgcrypto;"))
-        conn.commit()
-
         # Create CMF schema
         if not inspect(conn).has_schema(os.getenv("SCHEMA")):
             conn.execute(CreateSchema(os.getenv("SCHEMA")))
@@ -472,11 +447,19 @@ def db_engine(
 
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup(postgresql, request):
-    """Cleanup the PostgreSQL database when we're done."""
+def cleanup(db_engine, request):
+    """Cleanup the PostgreSQL database by dropping all tables when we're done."""
 
     def teardown():
-        postgresql.stop()
-        postgresql.remove()
+        with db_engine.connect() as conn:
+            inspector = inspect(conn)
+            for table_name in inspector.get_table_names(schema=os.getenv("SCHEMA")):
+                conn.execute(
+                    text(
+                        f'DROP TABLE IF EXISTS "{os.getenv("SCHEMA")}".'
+                        f'"{table_name}" CASCADE;'
+                    )
+                )
+            conn.commit()
 
     request.addfinalizer(teardown)
