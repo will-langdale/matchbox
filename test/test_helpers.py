@@ -6,9 +6,9 @@ from matplotlib.figure import Figure
 from pandas import DataFrame
 from sqlalchemy.orm import Session
 
-from cmf import process, query
-from cmf.clean import company_name, company_number
-from cmf.data import (
+from matchbox import process, query
+from matchbox.clean import company_name, company_number
+from matchbox.data import (
     Clusters,
     DDupeProbabilities,
     Dedupes,
@@ -17,7 +17,7 @@ from cmf.data import (
     Models,
     clusters_association,
 )
-from cmf.helpers import (
+from matchbox.helpers import (
     cleaner,
     cleaners,
     comparison,

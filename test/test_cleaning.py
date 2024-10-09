@@ -1,4 +1,5 @@
 import ast
+from typing import Callable
 from functools import partial
 from pathlib import Path
 
@@ -7,16 +8,15 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from cmf import locations as loc
-from cmf.clean import drop
-from cmf.clean.steps import (
+from matchbox.clean import drop
+from matchbox.clean.steps import (
     clean_punctuation,
     expand_abbreviations,
     list_join_to_string,
     remove_stopwords,
     tokenise,
 )
-from cmf.clean.utils import alias, cleaning_function, unnest_renest
+from matchbox.clean.utils import alias, cleaning_function, unnest_renest
 
 """
 ----------------------------
@@ -46,7 +46,7 @@ See cleaning/ directory for more information on specific tests.
 """
 
 
-def load_test_data(path):
+def load_test_data(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     dirty = pd.read_csv(Path(path, "dirty.csv"), converters={"list": ast.literal_eval})
     clean = pd.read_csv(Path(path, "clean.csv"), converters={"list": ast.literal_eval})
 
@@ -64,7 +64,7 @@ def load_test_data(path):
     return dirty, clean
 
 
-def passthrough(input_column):
+def passthrough(input_column: str) -> str:
     """
     A passthrough cleaning function that does nothing. Helps test more complex
     building functions.
@@ -87,7 +87,7 @@ cleaning_tests = [
 
 
 @pytest.mark.parametrize("test", cleaning_tests)
-def test_basic_functions(test):
+def test_basic_functions(test: tuple[str, Callable], test_root_dir: Path):
     """
     Tests whether the basic cleaning functions do what they're supposed
     to. More complex functions should follow from here.
@@ -95,7 +95,7 @@ def test_basic_functions(test):
     test_name = test[0]
     test_cleaning_function = test[1]
 
-    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", test_name))
+    dirty, clean = load_test_data(Path(test_root_dir, "cleaning", test_name))
 
     cleaned = (
         duckdb.sql(
@@ -130,7 +130,7 @@ function_tests = [
 
 
 @pytest.mark.parametrize("test", function_tests)
-def test_function(test):
+def test_function(test: tuple[str, Callable], test_root_dir: Path):
     """
     Tests whether the cleaning function is accurately combining basic
     functions.
@@ -139,7 +139,7 @@ def test_function(test):
     test_cleaning_function = cleaning_function(*test[1])
 
     dirty, clean = load_test_data(
-        Path(loc.PROJECT_DIR, "test", "cleaning", "cleaning_function", test_name)
+        Path(test_root_dir, "cleaning", "cleaning_function", test_name)
     )
 
     cleaned = test_cleaning_function(dirty, column="col")
@@ -154,7 +154,7 @@ nest_unnest_tests = [
 
 
 @pytest.mark.parametrize("test", nest_unnest_tests)
-def test_nest_unnest(test):
+def test_nest_unnest(test: tuple[str, Callable], test_root_dir: Path):
     """
     Tests whether the nest_unnest function is working.
     """
@@ -162,7 +162,7 @@ def test_nest_unnest(test):
     test_cleaning_function = cleaning_function(test[1])
 
     dirty, clean = load_test_data(
-        Path(loc.PROJECT_DIR, "test", "cleaning", "unnest_renest", test_name)
+        Path(test_root_dir, "cleaning", "unnest_renest", test_name)
     )
 
     test_cleaning_function_arrayed = unnest_renest(test_cleaning_function)
@@ -179,13 +179,13 @@ def test_nest_unnest(test):
     assert cleaned.equals(clean)
 
 
-def test_alias():
+def test_alias(test_root_dir: Path):
     """
     Tests whether the alias function is working.
     """
     test_cleaning_function = cleaning_function(passthrough)
 
-    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", "alias"))
+    dirty, clean = load_test_data(Path(test_root_dir, "cleaning", "alias"))
 
     alias_function = alias(test_cleaning_function, "foo")
 
@@ -194,11 +194,11 @@ def test_alias():
     assert "foo" in cleaned.columns
 
 
-def test_drop():
+def test_drop(test_root_dir: Path):
     """
     Tests whether the drop function is working.
     """
-    dirty, clean = load_test_data(Path(loc.PROJECT_DIR, "test", "cleaning", "alias"))
+    dirty, clean = load_test_data(Path(test_root_dir, "cleaning", "alias"))
 
     cleaned = drop(dirty, column="col")
 

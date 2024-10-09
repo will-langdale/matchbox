@@ -14,9 +14,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema
 
-from cmf import make_deduper, make_linker, to_clusters
-from cmf.admin import add_dataset
-from cmf.data import (
+from matchbox import make_deduper, make_linker, to_clusters
+from matchbox.admin import add_dataset
+from matchbox.data import (
     Clusters,
     CMFBase,
     DDupeContains,

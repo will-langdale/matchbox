@@ -6,8 +6,8 @@ from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import MetaData, Table, delete, insert, inspect, text
 from sqlalchemy.orm import Session
 
-from cmf.admin import add_dataset
-from cmf.data import (
+from matchbox.admin import add_dataset
+from matchbox.data import (
     Clusters,
     DDupeProbabilities,
     Dedupes,

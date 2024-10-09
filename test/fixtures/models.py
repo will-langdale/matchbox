@@ -6,10 +6,14 @@ from pydantic import BaseModel, Field
 from splink.duckdb import blocking_rule_library as brl
 from splink.duckdb.linker import DuckDBLinker
 
-from cmf.dedupers import NaiveDeduper
-from cmf.dedupers.make_deduper import Deduper
-from cmf.linkers import DeterministicLinker, SplinkLinker, WeightedDeterministicLinker
-from cmf.linkers.make_linker import Linker
+from matchbox.dedupers import NaiveDeduper
+from matchbox.dedupers.make_deduper import Deduper
+from matchbox.linkers import (
+    DeterministicLinker,
+    SplinkLinker,
+    WeightedDeterministicLinker,
+)
+from matchbox.linkers.make_linker import Linker
 
 
 class DedupeTestParams(BaseModel):

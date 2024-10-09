@@ -9,10 +9,10 @@ A match orchestration framework to allow the comparison, validation, and orchest
 A quick overview of where we're aiming:
 
 ```python
-import cmf
+import matchbox
 
-from cmf import clean
-from cmf.helpers import (
+from matchbox import clean
+from matchbox.helpers import (
     selector, 
     selectors, 
     cleaner, 
@@ -21,8 +21,8 @@ from cmf.helpers import (
     comparisons
 )
 
-from cmf.dedupers import Naive
-from cmf.linkers import CMS
+from matchbox.dedupers import Naive
+from matchbox.linkers import CMS
 
 # Select and query the data
 
@@ -213,7 +213,7 @@ pip install company-matching-framework
 Lots of functions in the Framework will require a dictionary be passed to a `select` argument. We provide `selector` and `selectors` to aid with this creation.
 
 ```python
-import cmf
+import matchbox
 
 ch_selector = cmf.selector(
     table="companieshouse.companies",
@@ -268,7 +268,7 @@ from
 ```
 
 ```python
-import cmf
+import matchbox
 
 cmf.query(
     select={
@@ -299,7 +299,7 @@ from
 ```
 
 ```python
-import cmf
+import matchbox
 
 cmf.query(
     select=ch_dh_selector,
@@ -335,7 +335,7 @@ group by
 ```
 
 ```python
-import cmf
+import matchbox
 
 exp_selector = cmf.selector(
     table="hmrc.trade__exporters",
@@ -373,7 +373,7 @@ from
 ```
 
 ```python
-import cmf
+import matchbox
 
 cmf.query(
     select={
@@ -396,7 +396,7 @@ We want to clean the company name in `data.data_hub_statistics` so we can left j
 We offer several cleaning functions for fields found in lots of datasets.
 
 ```python
-from cmf import clean
+from matchbox import clean
 
 clean.company_name(df, input_column="company_name")
 clean.postcode(df, input_column="postcode")
@@ -411,7 +411,7 @@ clean.postcode("data.data_hub_statistics", input_column="postcode", return_type=
 Our cleaning functions are all amagamations of steps of small, basic cleaning SQL. Step functions all apply to a single column and need to be wrapped in `cleaning_function` which allows them to be used locally or on the DBMS.
 
 ```python
-from cmf import clean
+from matchbox import clean
 
 nopunc_lower = clean.cleaning_function(
     clean.steps.clean_punctuation,
@@ -424,7 +424,7 @@ nopunc_lower(df, input_column="company_name", return_type="pandas")
 Sometimes you don't need to clean a company name -- you need to clean a list of them. `cleaning_function` can handle it.
 
 ```python
-from cmf import clean
+from matchbox import clean
 
 nopunc_lower_array = clean.cleaning_function(
     clean.steps.clean_punctuation,
@@ -457,7 +457,7 @@ To make this decision we need an **array strategy**. The options are:
     * For Splink, this would mean something like `array_intersect_level()` in the Comparison Template Library
  
 ```python
-from cmf import clean
+from matchbox import clean
 
 nopunc_lower_most_common = clean.cleaning_function(
     clean.steps.clean_punctuation,
@@ -490,8 +490,8 @@ We've seen how to make cleaning functions. Let's see how to make a pipeline of t
 To do this we offer `cleaner` and `cleaners`. Similar to `selector(s)`, they are just ways of making dictionaries that linkers can undersand to run a pipeline of data cleaning.
 
 ```python
-import cmf
-from cmf import clean
+import matchbox
+from matchbox import clean
 
 cleaner_dh_id = cmf.cleaner(
     function=clean.data_hub_id,
@@ -515,7 +515,7 @@ If any of your clears use a cleaning fuction whose array strategy was `array`, t
 One common task is building comparisons. Just like `selector` and `selectors`, `comparison` and `comparisons` can help us build a comparison object for some linkers and dedupers. Write SQL conditions using `l_column` and `r_column`.
 
 ```python
-import cmf
+import matchbox
 
 company_name_comparison = cmf.comparison(
     output_column="company_name",
@@ -569,7 +569,7 @@ Because deduplication just links a dataset to itself, `dedupe_settings` can use 
 Every deduper needs a `dedupe_run_name` name and an optional `description`. The `dedupe_run_name` is used to record the probabilities a deduper generates, and means you can either overwrite a previous run with your ever-refined methodology, or start a new one.
 
 ```python
-import cmf
+import matchbox
 
 data_hub_statistics_deduper = cmf.deduper(
     type="naive",
@@ -648,7 +648,7 @@ Just like the deduper, every linker needs a `link_run_name` name and an optional
 Two important optional arguments here are `dedupe_threshold` and `link_threshold`. These are the values above which we consider a probability to have become truth. If you've used a deduper, the linker cannot run without a `dedupe_threshold` -- see [Evaluation -- dedupers](#dedupers) for how to choose one. `link_threshold` is only really needed to run your final pipeline. See [Entity resolution](#entity-resolution) for more details.
 
 ```python
-import cmf
+import matchbox
 
 data_hub_statistics_linker = cmf.linker(
     type="cms",
@@ -731,7 +731,7 @@ To help with all the above we might want:
 How do we know that our data is appropriate for linking, or whether we need to do some deduping? `cmf.report` can help.
 
 ```python
-import cmf.report
+import matchbox.report
 report.data(
     df, # or data.data_hub_statistics
     select=cmf.selector(
@@ -759,7 +759,7 @@ How do we know what linkers have worked well in the past? What fields can we joi
 Let's start with the fields that exist.
 
 ```python
-import cmf.report
+import matchbox.report
 report.fields()
 ```
 
@@ -786,7 +786,7 @@ Accuracy has yet to be determined methodologically, but some canidate ideas are:
 What about linkers that have worked well for fields we want to join onto? We can use the `selector` we built earlier.
 
 ```python
-import cmf.report
+import matchbox.report
 report.linkers(select=ch_dh_selector)
 ```
 
@@ -806,7 +806,7 @@ dit.data_hub__companies    data_hub_id    n3_li_splink          86%         0.97
 And how was a specific field cleaned in a specific linker or deduper?
 
 ```python
-import cmf.report
+import matchbox.report
 report.cleaners(link_run="n3_cms_dun_and_bradstreet", field="data_hub_id")
 report.cleaners(dedupe_run="n4_naive_hmrc_importers", field="data_hub_id")
 ```
@@ -815,7 +815,7 @@ report.cleaners(dedupe_run="n4_naive_hmrc_importers", field="data_hub_id")
 foo@bar:~$
 In n3_cms_dun_and_bradstreet, data_hub_id was cleaned with the following functions:
 
-from cmf import clean
+from matchbox import clean
 
 {
     "data_hub_id": {
@@ -836,7 +836,7 @@ Use cmf.clean to help.
 We can even get guidelines for using a speficic linker. This can be helpful for tricky `linker_settings`.
 
 ```python
-import cmf.report
+import matchbox.report
 report.linkers(linker="cms")
 ```
 
@@ -857,7 +857,7 @@ dataset_cleaner: A cleaner to clean the dataset. Use cmf.cleaner(s) to help
 Let's look at a more complex one too.
 
 ```python
-import cmf.report
+import matchbox.report
 report.linkers(linker="splink")
 ```
 
@@ -1010,7 +1010,7 @@ from
 ```
 
 ```python
-import cmf
+import matchbox
 
 cmf.query(
     select={

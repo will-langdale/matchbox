@@ -10,8 +10,8 @@ Record matching is a chore. We aim to:
 
 This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/).
 
-Task running is done with [make](https://www.gnu.org/software/make/). To see all available commands:
+Task running is done with [just](https://just.systems/man/en/). To see all available commands:
 
 ```console
-make
+just -l
 ```
