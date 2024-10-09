@@ -2,15 +2,15 @@ import hashlib
 import logging
 import os
 import random
-from test.fixtures.models import DedupeTestParams, LinkTestParams, ModelTestParams
-from typing import List
+from typing import Callable, Generator
 
 import pytest
-import testing.postgresql
-from _pytest.fixtures import FixtureFunction, FixtureRequest
+from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame
 from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema
 
@@ -32,26 +32,26 @@ from cmf.data import (
     clusters_association,
 )
 
+from .models import DedupeTestParams, LinkTestParams, ModelTestParams
+
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
 
-CMF_POSTGRES = testing.postgresql.PostgresqlFactory(cache_initialized_db=True)
-
 
 @pytest.fixture
-def db_clear_all():
+def db_clear_all() -> Callable[[Engine], None]:
     """
     Returns a function to clear the database.
 
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_clear_all(db_engine):
+    def _db_clear_all(db_engine: Engine) -> None:
         db_metadata = MetaData(schema=os.getenv("SCHEMA"))
-        db_metadata.reflect(bind=db_engine[1])
-        with Session(db_engine[1]) as session:
+        db_metadata.reflect(bind=db_engine)
+        with Session(db_engine) as session:
             for table in reversed(db_metadata.sorted_tables):
                 LOGGER.info(f"{table}")
                 session.execute(table.delete())
@@ -61,15 +61,15 @@ def db_clear_all():
 
 
 @pytest.fixture
-def db_clear_data():
+def db_clear_data() -> Callable[[Engine], None]:
     """
     Returns a function to clear the SourceDatasets and SourceData tables.
 
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_clear_data(db_engine):
-        with Session(db_engine[1]) as session:
+    def _db_clear_data(db_engine: Engine) -> None:
+        with Session(db_engine) as session:
             session.query(SourceData).delete()
             session.query(SourceDataset).delete()
             session.commit()
@@ -78,7 +78,7 @@ def db_clear_data():
 
 
 @pytest.fixture
-def db_clear_models():
+def db_clear_models() -> Callable[[Engine], None]:
     """
     Returns a function to clear the Models, ModelsFrom, Dedupes,
     DDupeProbabilities, DDupeContains, Links, LinkProbabilities,
@@ -87,8 +87,8 @@ def db_clear_models():
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_clear_models(db_engine):
-        with Session(db_engine[1]) as session:
+    def _db_clear_models(db_engine: Engine) -> None:
+        with Session(db_engine) as session:
             session.query(LinkProbabilities).delete()
             session.query(Links).delete()
             session.query(DDupeProbabilities).delete()
@@ -107,15 +107,17 @@ def db_clear_models():
 
 
 @pytest.fixture(scope="session")
-def db_add_data(crn_companies, duns_companies, cdms_companies):
+def db_add_data(
+    crn_companies: DataFrame, duns_companies: DataFrame, cdms_companies: DataFrame
+) -> Callable[[Engine], None]:
     """
     Returns a function to add source data to the database.
 
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_add_data(db_engine: FixtureFunction):
-        with db_engine[1].connect() as conn:
+    def _db_add_data(db_engine: Engine) -> None:
+        with db_engine.connect() as conn:
             # Insert data
             crn_companies.to_sql(
                 "crn",
@@ -167,7 +169,7 @@ def db_add_data(crn_companies, duns_companies, cdms_companies):
 
 
 @pytest.fixture(scope="session")
-def db_add_models():
+def db_add_models() -> Callable[[Engine], None]:
     """
     Returns a function to add models, clusters and probabilities data to the
     database.
@@ -175,8 +177,8 @@ def db_add_models():
     Can be used to reset and repopulate between tests, when necessary.
     """
 
-    def _db_add_models(db_engine: FixtureFunction) -> None:
-        with Session(db_engine[1]) as session:
+    def _db_add_models(db_engine: Engine) -> None:
+        with Session(db_engine) as session:
             # Two Dedupers and two Linkers
             dd_m1 = Models(
                 sha1=hashlib.sha1("dd_m1".encode()).digest(),
@@ -283,7 +285,11 @@ def db_add_models():
 
 
 @pytest.fixture(scope="session")
-def db_add_dedupe_models_and_data():
+def db_add_dedupe_models_and_data() -> (
+    Callable[
+        [Engine, list[DedupeTestParams], list[ModelTestParams], FixtureRequest], None
+    ]
+):
     """
     Returns a function to add Naive-deduplicated model probabilities and
     clusters to the database.
@@ -292,9 +298,9 @@ def db_add_dedupe_models_and_data():
     """
 
     def _db_add_dedupe_models_and_data(
-        db_engine: FixtureFunction,
-        dedupe_data: List[DedupeTestParams],
-        dedupe_models: List[ModelTestParams],
+        db_engine: Engine,
+        dedupe_data: list[DedupeTestParams],
+        dedupe_models: list[ModelTestParams],
         request: FixtureRequest,
     ) -> None:
         for fx_data in dedupe_data:
@@ -321,14 +327,30 @@ def db_add_dedupe_models_and_data():
                     df, results=deduped, key="data_sha1", threshold=0
                 )
 
-                deduped.to_cmf(engine=db_engine[1])
-                clustered.to_cmf(engine=db_engine[1])
+                deduped.to_cmf(engine=db_engine)
+                clustered.to_cmf(engine=db_engine)
 
     return _db_add_dedupe_models_and_data
 
 
 @pytest.fixture(scope="session")
-def db_add_link_models_and_data():
+def db_add_link_models_and_data() -> (
+    Callable[
+        [
+            Engine,
+            Callable[
+                [Engine, list[DedupeTestParams], list[ModelTestParams], FixtureRequest],
+                None,
+            ],
+            list[DedupeTestParams],
+            list[ModelTestParams],
+            list[LinkTestParams],
+            list[ModelTestParams],
+            FixtureRequest,
+        ],
+        None,
+    ]
+):
     """
     Returns a function to add Deterministic-linked model probabilities and
     clusters to the database.
@@ -337,12 +359,15 @@ def db_add_link_models_and_data():
     """
 
     def _db_add_link_models_and_data(
-        db_engine: FixtureFunction,
-        db_add_dedupe_models_and_data: FixtureFunction,
-        dedupe_data: List[DedupeTestParams],
-        dedupe_models: List[ModelTestParams],
-        link_data: List[LinkTestParams],
-        link_models: List[ModelTestParams],
+        db_engine: Engine,
+        db_add_dedupe_models_and_data: Callable[
+            [Engine, list[DedupeTestParams], list[ModelTestParams], FixtureRequest],
+            None,
+        ],
+        dedupe_data: list[DedupeTestParams],
+        dedupe_models: list[ModelTestParams],
+        link_data: list[LinkTestParams],
+        link_models: list[ModelTestParams],
         request: FixtureRequest,
     ) -> None:
         db_add_dedupe_models_and_data(
@@ -380,28 +405,26 @@ def db_add_link_models_and_data():
                     df_l, df_r, results=linked, key="cluster_sha1", threshold=0
                 )
 
-                linked.to_cmf(engine=db_engine[1])
-                clustered.to_cmf(engine=db_engine[1])
+                linked.to_cmf(engine=db_engine)
+                clustered.to_cmf(engine=db_engine)
 
     return _db_add_link_models_and_data
 
 
 @pytest.fixture(scope="session")
-def db_engine(db_add_data, db_add_models):
+def db_engine(
+    db_add_data: Callable[[Engine], None], db_add_models: Callable[[Engine], None]
+) -> Generator[Engine, None, None]:
     """
-    Yield engine to mock in-memory database.
+    Yield engine to Docker container database.
     """
-    postgresql = CMF_POSTGRES()
+    load_dotenv(find_dotenv())
     engine = create_engine(
-        postgresql.url(), connect_args={"sslmode": "disable", "client_encoding": "utf8"}
+        url="postgresql://testuser:testpassword@localhost:5432/testdb",
+        connect_args={"sslmode": "disable", "client_encoding": "utf8"},
     )
 
     with engine.connect() as conn:
-        # Install relevant extensions
-        conn.execute(text('create extension "uuid-ossp";'))
-        conn.execute(text("create extension pgcrypto;"))
-        conn.commit()
-
         # Create CMF schema
         if not inspect(conn).has_schema(os.getenv("SCHEMA")):
             conn.execute(CreateSchema(os.getenv("SCHEMA")))
@@ -414,19 +437,29 @@ def db_engine(db_add_data, db_add_models):
         LOGGER.info("Created in-memory CMF database")
 
         # Insert data
-        db_add_data((postgresql, engine))
+        db_add_data(engine)
 
         # Insert models
-        db_add_models((postgresql, engine))
+        db_add_models(engine)
 
-    return postgresql, engine
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup(request):
-    """Cleanup the PostgreSQL database when we're done."""
+def cleanup(db_engine, request):
+    """Cleanup the PostgreSQL database by dropping all tables when we're done."""
 
     def teardown():
-        CMF_POSTGRES.clear_cache()
+        with db_engine.connect() as conn:
+            inspector = inspect(conn)
+            for table_name in inspector.get_table_names(schema=os.getenv("SCHEMA")):
+                conn.execute(
+                    text(
+                        f'DROP TABLE IF EXISTS "{os.getenv("SCHEMA")}".'
+                        f'"{table_name}" CASCADE;'
+                    )
+                )
+            conn.commit()
 
     request.addfinalizer(teardown)

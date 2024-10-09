@@ -1,16 +1,16 @@
-from test.fixtures.models import (
-    dedupe_data_test_params,
-    dedupe_model_test_params,
-    link_data_test_params,
-    link_model_test_params,
-)
-
 import pytest
 from pandas import DataFrame
 from sqlalchemy.orm import Session
 
 from cmf import make_linker, to_clusters
 from cmf.data import Models
+
+from .fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 
 @pytest.mark.parametrize("fx_data", link_data_test_params)
@@ -116,9 +116,9 @@ def test_linkers(
 
     # 3. Linked probabilities are inserted correctly
 
-    linked.to_cmf(engine=db_engine[1])
+    linked.to_cmf(engine=db_engine)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model = session.query(Models).filter_by(name=linker_name).first()
         assert session.scalar(model.links_count()) == fx_data.tgt_prob_n
 
@@ -214,9 +214,9 @@ def test_linkers(
 
     # 5. Resolved clusters are inserted correctly
 
-    clusters_all.to_cmf(engine=db_engine[1])
+    clusters_all.to_cmf(engine=db_engine)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model = session.query(Models).filter_by(name=linker_name).first()
         assert session.scalar(model.creates_count()) == fx_data.unique_n
 

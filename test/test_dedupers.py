@@ -1,11 +1,11 @@
-from test.fixtures.models import dedupe_data_test_params, dedupe_model_test_params
-
 import pytest
 from pandas import DataFrame
 from sqlalchemy.orm import Session
 
 from cmf import make_deduper, to_clusters
 from cmf.data import Models
+
+from .fixtures.models import dedupe_data_test_params, dedupe_model_test_params
 
 
 @pytest.mark.parametrize("fx_data", dedupe_data_test_params)
@@ -84,9 +84,9 @@ def test_dedupers(
 
     # 3. Deduplicated probabilities are inserted correctly
 
-    deduped.to_cmf(engine=db_engine[1])
+    deduped.to_cmf(engine=db_engine)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model = session.query(Models).filter_by(name=deduper_name).first()
         assert session.scalar(model.dedupes_count()) == fx_data.tgt_prob_n
 
@@ -126,9 +126,9 @@ def test_dedupers(
 
     # 5. Resolved clusters are inserted correctly
 
-    clusters_all.to_cmf(engine=db_engine[1])
+    clusters_all.to_cmf(engine=db_engine)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model = session.query(Models).filter_by(name=deduper_name).first()
         assert session.scalar(model.creates_count()) == fx_data.unique_n
 

@@ -1,11 +1,5 @@
 import logging
 import os
-from test.fixtures.models import (
-    dedupe_data_test_params,
-    dedupe_model_test_params,
-    link_data_test_params,
-    link_model_test_params,
-)
 
 from dotenv import find_dotenv, load_dotenv
 from matplotlib.figure import Figure
@@ -33,6 +27,13 @@ from cmf.helpers import (
     selectors,
 )
 
+from .fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
+
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
@@ -41,10 +42,10 @@ LOGGER = logging.getLogger(__name__)
 
 def test_selectors(db_engine):
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
     )
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine
     )
     select_crn_duns = selectors(select_crn, select_duns)
 
@@ -54,14 +55,14 @@ def test_selectors(db_engine):
 def test_single_table_no_model_query(db_engine):
     """Tests query() on a single table. No point of truth to derive clusters"""
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
     )
 
     df_crn_sample = query(
         selector=select_crn,
         model=None,
         return_type="pandas",
-        engine=db_engine[1],
+        engine=db_engine,
         limit=10,
     )
 
@@ -69,7 +70,7 @@ def test_single_table_no_model_query(db_engine):
     assert df_crn_sample.shape[0] == 10
 
     df_crn_full = query(
-        selector=select_crn, model=None, return_type="pandas", engine=db_engine[1]
+        selector=select_crn, model=None, return_type="pandas", engine=db_engine
     )
 
     assert df_crn_full.shape[0] == 3000
@@ -83,15 +84,15 @@ def test_single_table_no_model_query(db_engine):
 def test_multi_table_no_model_query(db_engine):
     """Tests query() on multiple tables. No point of truth to derive clusters"""
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
     )
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine
     )
     select_crn_duns = selectors(select_crn, select_duns)
 
     df_crn_duns_full = query(
-        selector=select_crn_duns, model=None, return_type="pandas", engine=db_engine[1]
+        selector=select_crn_duns, model=None, return_type="pandas", engine=db_engine
     )
 
     assert df_crn_duns_full.shape[0] == 3500
@@ -136,14 +137,14 @@ def test_single_table_with_model_query(
     select_crn = selector(
         table=f"{os.getenv('SCHEMA')}.crn",
         fields=["crn", "company_name"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     crn = query(
         selector=select_crn,
         model=f"naive_{os.getenv('SCHEMA')}.crn",
         return_type="pandas",
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     assert isinstance(crn, DataFrame)
@@ -188,10 +189,10 @@ def test_multi_table_with_model_query(
     )
 
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["crn"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.crn", fields=["crn"], engine=db_engine
     )
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns", fields=["duns"], engine=db_engine[1]
+        table=f"{os.getenv('SCHEMA')}.duns", fields=["duns"], engine=db_engine
     )
     select_crn_duns = selectors(select_crn, select_duns)
 
@@ -199,7 +200,7 @@ def test_multi_table_with_model_query(
         selector=select_crn_duns,
         model=linker_name,
         return_type="pandas",
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     assert isinstance(crn_duns, DataFrame)
@@ -228,11 +229,11 @@ def test_process(db_engine):
     select_name = selector(
         table=f"{os.getenv('SCHEMA')}.crn",
         fields=["crn", "company_name"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     df_name = query(
-        selector=select_name, model=None, return_type="pandas", engine=db_engine[1]
+        selector=select_name, model=None, return_type="pandas", engine=db_engine
     )
 
     cleaner_name = cleaner(
@@ -261,7 +262,7 @@ def test_comparisons():
 
 
 def test_draw_model_tree(db_engine):
-    plt = draw_model_tree(db_engine[1])
+    plt = draw_model_tree(db_engine)
     assert isinstance(plt, Figure)
 
 
@@ -298,7 +299,7 @@ def test_model_deletion(
     deduper_to_delete = f"naive_{os.getenv('SCHEMA')}.crn"
     total_models = len(dedupe_data_test_params) + len(link_data_test_params)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model_list_pre_delete = session.query(Models).all()
         assert len(model_list_pre_delete) == total_models
 
@@ -317,9 +318,9 @@ def test_model_deletion(
         assert link_prob_count_pre_delete > 0
 
     # Perform deletion
-    delete_model(deduper_to_delete, engine=db_engine[1], certain=True)
+    delete_model(deduper_to_delete, engine=db_engine, certain=True)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model_list_post_delete = session.query(Models).all()
         # Deletes deduper and parent linkers: 3 models gone
         assert len(model_list_post_delete) == len(model_list_pre_delete) - 3

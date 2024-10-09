@@ -6,8 +6,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-import testing.postgresql
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame
+from sqlalchemy.engine import Engine
 
 import cmf.locations as loc
 from cmf import process, query
@@ -19,11 +20,9 @@ load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
 
-CMF_POSTGRES = testing.postgresql.PostgresqlFactory(cache_initialized_db=True)
-
 
 @pytest.fixture(scope="session")
-def all_companies():
+def all_companies() -> DataFrame:
     """
     Raw, correct company data. Uses UUID as ID to replicate Data Workspace.
     1,000 entries.
@@ -36,7 +35,7 @@ def all_companies():
 
 
 @pytest.fixture(scope="session")
-def crn_companies(all_companies):
+def crn_companies(all_companies: DataFrame) -> DataFrame:
     """
     Company data split into CRN version.
 
@@ -64,7 +63,7 @@ def crn_companies(all_companies):
 
 
 @pytest.fixture(scope="session")
-def duns_companies(all_companies):
+def duns_companies(all_companies: DataFrame) -> DataFrame:
     """
     Company data split into DUNS version.
 
@@ -87,7 +86,7 @@ def duns_companies(all_companies):
 
 
 @pytest.fixture(scope="session")
-def cdms_companies(all_companies):
+def cdms_companies(all_companies: DataFrame) -> DataFrame:
     """
     Company data split into CDMS version.
 
@@ -111,17 +110,15 @@ def cdms_companies(all_companies):
 
 
 @pytest.fixture(scope="function")
-def query_clean_crn(db_engine):
+def query_clean_crn(db_engine: Engine) -> DataFrame:
     # Select
     select_crn = selector(
         table=f"{os.getenv('SCHEMA')}.crn",
         fields=["crn", "company_name"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
-    crn = query(
-        selector=select_crn, model=None, return_type="pandas", engine=db_engine[1]
-    )
+    crn = query(selector=select_crn, model=None, return_type="pandas", engine=db_engine)
 
     # Clean
     col_prefix = f"{os.getenv('SCHEMA')}_crn_"
@@ -136,16 +133,16 @@ def query_clean_crn(db_engine):
 
 
 @pytest.fixture(scope="function")
-def query_clean_duns(db_engine):
+def query_clean_duns(db_engine: Engine) -> DataFrame:
     # Select
     select_duns = selector(
         table=f"{os.getenv('SCHEMA')}.duns",
         fields=["duns", "company_name"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     duns = query(
-        selector=select_duns, model=None, return_type="pandas", engine=db_engine[1]
+        selector=select_duns, model=None, return_type="pandas", engine=db_engine
     )
 
     # Clean
@@ -161,16 +158,16 @@ def query_clean_duns(db_engine):
 
 
 @pytest.fixture(scope="function")
-def query_clean_cdms(db_engine):
+def query_clean_cdms(db_engine: Engine) -> DataFrame:
     # Select
     select_cdms = selector(
         table=f"{os.getenv('SCHEMA')}.cdms",
         fields=["crn", "cdms"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     cdms = query(
-        selector=select_cdms, model=None, return_type="pandas", engine=db_engine[1]
+        selector=select_cdms, model=None, return_type="pandas", engine=db_engine
     )
 
     # No cleaning needed, see original data
@@ -178,19 +175,19 @@ def query_clean_cdms(db_engine):
 
 
 @pytest.fixture(scope="function")
-def query_clean_crn_deduped(db_engine):
+def query_clean_crn_deduped(db_engine: Engine) -> DataFrame:
     # Select
     select_crn = selector(
         table=f"{os.getenv('SCHEMA')}.crn",
         fields=["crn", "company_name"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     crn = query(
         selector=select_crn,
         model=f"naive_{os.getenv('SCHEMA')}.crn",
         return_type="pandas",
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     # Clean
@@ -206,19 +203,19 @@ def query_clean_crn_deduped(db_engine):
 
 
 @pytest.fixture(scope="function")
-def query_clean_duns_deduped(db_engine):
+def query_clean_duns_deduped(db_engine: Engine) -> DataFrame:
     # Select
     select_duns = selector(
         table=f"{os.getenv('SCHEMA')}.duns",
         fields=["duns", "company_name"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     duns = query(
         selector=select_duns,
         model=f"naive_{os.getenv('SCHEMA')}.duns",
         return_type="pandas",
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     # Clean
@@ -234,19 +231,19 @@ def query_clean_duns_deduped(db_engine):
 
 
 @pytest.fixture(scope="function")
-def query_clean_cdms_deduped(db_engine):
+def query_clean_cdms_deduped(db_engine: Engine) -> DataFrame:
     # Select
     select_cdms = selector(
         table=f"{os.getenv('SCHEMA')}.cdms",
         fields=["crn", "cdms"],
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     cdms = query(
         selector=select_cdms,
         model=f"naive_{os.getenv('SCHEMA')}.cdms",
         return_type="pandas",
-        engine=db_engine[1],
+        engine=db_engine,
     )
 
     # No cleaning needed, see original data

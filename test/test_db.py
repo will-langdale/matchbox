@@ -1,12 +1,6 @@
 import itertools
 import logging
 import os
-from test.fixtures.models import (
-    dedupe_data_test_params,
-    dedupe_model_test_params,
-    link_data_test_params,
-    link_model_test_params,
-)
 
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import MetaData, Table, delete, insert, inspect, text
@@ -25,6 +19,13 @@ from cmf.data import (
     clusters_association,
 )
 
+from .fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
+
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
@@ -35,7 +36,7 @@ def test_database(db_engine):
     """
     Test the database contains all the tables we expect.
     """
-    tables = set(inspect(db_engine[1]).get_table_names(schema=os.getenv("SCHEMA")))
+    tables = set(inspect(db_engine).get_table_names(schema=os.getenv("SCHEMA")))
     to_check = {
         "crn",
         "duns",
@@ -59,7 +60,7 @@ def test_database(db_engine):
 
     assert tables == to_check
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         server_encoding = session.execute(text("show server_encoding;")).scalar()
         client_encoding = session.execute(text("show client_encoding;")).scalar()
 
@@ -70,7 +71,7 @@ def test_add_data(db_engine):
     """
     Test all datasets were inserted.
     """
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         inserted_tables = session.query(SourceDataset.db_table).all()
         inserted_tables = {t[0] for t in inserted_tables}
         expected_tables = {"crn", "duns", "cdms"}
@@ -83,7 +84,7 @@ def test_inserted_data(db_engine, crn_companies, duns_companies, cdms_companies)
     Test all data was inserted.
     Note we drop duplicates because they're rolled up to arrays.
     """
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         inserted_rows = session.query(SourceData).count()
         raw_rows = (
             crn_companies.drop(columns=["id"]).drop_duplicates().shape[0]
@@ -111,7 +112,7 @@ def test_insert_data(db_engine, crn_companies, duns_companies, cdms_companies):
         {"id": 3004, "company_name": "Eidel", "crn": "01HJ0TY5CRET0YPB0WF2R0DFEB"},
         {"id": 3005, "company_name": "Zoozzy", "crn": "01HJ0TY5CRHDX0NX5RSBJWSSKF"},
     ]
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         # Reflect the table and insert the data
         db_metadata = MetaData(schema=os.getenv("SCHEMA"))
         crn_table = Table(
@@ -130,7 +131,7 @@ def test_insert_data(db_engine, crn_companies, duns_companies, cdms_companies):
                 "table": "crn",
                 "id": "id",
             },
-            db_engine[1],
+            db_engine,
         )
 
         # Test SourceData now contains 5 more rows
@@ -154,7 +155,7 @@ def test_model_cluster_association(db_engine, db_clear_models, db_add_models):
     db_add_models(db_engine)
 
     # Model has six clusters
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         m = session.query(Models).filter_by(name="l_m1").first()
         clusters_in_db = session.query(Clusters).count()
         creates_in_db = session.query(clusters_association).count()
@@ -175,7 +176,7 @@ def test_model_cluster_association(db_engine, db_clear_models, db_add_models):
         session.commit()
 
     # Model creates no clusters but clusters still exist
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         m = session.query(Models).filter_by(name="l_m1").first()
         clusters_in_db = session.query(Clusters).count()
         creates_in_db = session.query(clusters_association).count()
@@ -198,7 +199,7 @@ def test_model_ddupe_association(db_engine, db_clear_models, db_add_models):
     db_add_models(db_engine)
 
     # Model proposes deduplications across six data nodes, 6**2
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         m = session.query(Models).filter_by(name="dd_m1").first()
         ddupes_in_db = session.query(Dedupes).count()
         ddupe_probs_in_db = session.query(DDupeProbabilities).count()
@@ -219,7 +220,7 @@ def test_model_ddupe_association(db_engine, db_clear_models, db_add_models):
         session.commit()
 
     # Model proposes no deduplications but dedupes still exist
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         m = session.query(Models).filter_by(name="dd_m1").first()
         ddupes_in_db = session.query(Dedupes).count()
         ddupe_probs_in_db = session.query(DDupeProbabilities).count()
@@ -241,7 +242,7 @@ def test_model_link_association(db_engine, db_clear_models, db_add_models):
     db_add_models(db_engine)
 
     # Model proposes links across six cluster nodes, 6**2
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         m = session.query(Models).filter_by(name="l_m1").first()
         links_in_db = session.query(Links).count()
         link_probs_in_db = session.query(LinkProbabilities).count()
@@ -262,7 +263,7 @@ def test_model_link_association(db_engine, db_clear_models, db_add_models):
         session.commit()
 
     # Model proposes no linkings but links still exist
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         m = session.query(Models).filter_by(name="l_m1").first()
         links_in_db = session.query(Links).count()
         link_probs_in_db = session.query(LinkProbabilities).count()
@@ -278,14 +279,14 @@ def test_db_delete(
     """
     Test that the clearing test functions works.
     """
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         data_before = session.query(SourceData).count()
         models_before = session.query(Models).count()
 
     db_clear_models(db_engine)
     db_clear_data(db_engine)
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         data_after = session.query(SourceData).count()
         models_after = session.query(Models).count()
 
@@ -315,7 +316,7 @@ def test_add_dedupers_and_data(
         test_param.source: test_param for test_param in dedupe_data_test_params
     }
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model_list = session.query(Models).all()
 
         assert len(model_list) == len(dedupe_data_test_params)
@@ -361,7 +362,7 @@ def test_add_linkers_and_data(
         request=request,
     )
 
-    with Session(db_engine[1]) as session:
+    with Session(db_engine) as session:
         model_list = session.query(Models).filter(Models.deduplicates == None).all()  # NoQA E711
 
         assert len(model_list) == len(link_data_test_params)
@@ -371,7 +372,7 @@ def test_add_linkers_and_data(
     ):
         linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
 
-        with Session(db_engine[1]) as session:
+        with Session(db_engine) as session:
             model = session.query(Models).filter(Models.name == linker_name).first()
 
             assert session.scalar(model.links_count()) == fx_data.tgt_prob_n

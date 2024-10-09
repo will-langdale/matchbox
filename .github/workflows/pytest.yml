@@ -1,0 +1,23 @@
+name: Unit tests
+
+jobs:
+  uv-example:
+    name: python
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Set up Python
+        run: uv python install
+      
+      - name: Set up PostgreSQL
+        run: |
+          docker compose up db -d --wait
+
+      - name: Run pytest
+        run: |
+          uv python -m pytest
