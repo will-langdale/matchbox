@@ -1,6 +1,5 @@
-from pandas import Series, concat
-
 from matchbox.data import utils as du
+from pandas import Series, concat
 
 
 def test_sha1_conversion(all_companies):

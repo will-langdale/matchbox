@@ -7,13 +7,6 @@ from typing import Callable, Generator
 import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
-from pandas import DataFrame
-from sqlalchemy import MetaData, create_engine, inspect, text
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema
-
 from matchbox import make_deduper, make_linker, to_clusters
 from matchbox.admin import add_dataset
 from matchbox.data import (
@@ -31,6 +24,12 @@ from matchbox.data import (
     SourceDataset,
     clusters_association,
 )
+from pandas import DataFrame
+from sqlalchemy import MetaData, create_engine, inspect, text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+from sqlalchemy.schema import CreateSchema
 
 from .models import DedupeTestParams, LinkTestParams, ModelTestParams
 

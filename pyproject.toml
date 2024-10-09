@@ -36,39 +36,13 @@ dev-dependencies = [
 package = true
 
 [tool.ruff]
-# Ruff defaults mostly taken from https://docs.astral.sh/ruff/configuration/
 exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".git-rewrite",
-    ".hg",
-    ".ipynb_checkpoints",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pyenv",
-    ".pytest_cache",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    ".vscode",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "site-packages",
-    "venv",
     "*.ipynb"
 ]
 line-length = 88
 indent-width = 4
-target-version = "py39"
+target-version = "py311"
+src = ["."]
 
 [tool.ruff.lint]
 select = [

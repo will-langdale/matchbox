@@ -3,9 +3,6 @@ import logging
 import os
 
 from dotenv import find_dotenv, load_dotenv
-from sqlalchemy import MetaData, Table, delete, insert, inspect, text
-from sqlalchemy.orm import Session
-
 from matchbox.admin import add_dataset
 from matchbox.data import (
     Clusters,
@@ -18,6 +15,8 @@ from matchbox.data import (
     SourceDataset,
     clusters_association,
 )
+from sqlalchemy import MetaData, Table, delete, insert, inspect, text
+from sqlalchemy.orm import Session
 
 from .fixtures.models import (
     dedupe_data_test_params,

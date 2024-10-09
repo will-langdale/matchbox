@@ -1,9 +1,8 @@
 import pytest
-from pandas import DataFrame
-from sqlalchemy.orm import Session
-
 from matchbox import make_linker, to_clusters
 from matchbox.data import Models
+from pandas import DataFrame
+from sqlalchemy.orm import Session
 
 from .fixtures.models import (
     dedupe_data_test_params,

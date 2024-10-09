@@ -2,10 +2,6 @@ import os
 from typing import Any, Callable, Dict, Type, Union
 
 import splink.duckdb.comparison_library as cl
-from pydantic import BaseModel, Field
-from splink.duckdb import blocking_rule_library as brl
-from splink.duckdb.linker import DuckDBLinker
-
 from matchbox.dedupers import NaiveDeduper
 from matchbox.dedupers.make_deduper import Deduper
 from matchbox.linkers import (
@@ -14,6 +10,9 @@ from matchbox.linkers import (
     WeightedDeterministicLinker,
 )
 from matchbox.linkers.make_linker import Linker
+from pydantic import BaseModel, Field
+from splink.duckdb import blocking_rule_library as brl
+from splink.duckdb.linker import DuckDBLinker
 
 
 class DedupeTestParams(BaseModel):

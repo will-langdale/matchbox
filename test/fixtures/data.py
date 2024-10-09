@@ -7,12 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from pandas import DataFrame
-from sqlalchemy.engine import Engine
-
 from matchbox import process, query
 from matchbox.clean import company_name
 from matchbox.helpers import cleaner, cleaners, selector
+from pandas import DataFrame
+from sqlalchemy.engine import Engine
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)

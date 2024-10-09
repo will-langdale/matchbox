@@ -1,13 +1,12 @@
 import ast
-from typing import Callable
 from functools import partial
 from pathlib import Path
+from typing import Callable
 
 import duckdb
 import pandas as pd
 import pyarrow as pa
 import pytest
-
 from matchbox.clean import drop
 from matchbox.clean.steps import (
     clean_punctuation,
