@@ -1,22 +1,14 @@
 import hashlib
 import logging
-import os
 import random
 from typing import Callable, Generator
 
 import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
-from pandas import DataFrame
-from sqlalchemy import MetaData, create_engine, inspect, text
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema
-
-from cmf import make_deduper, make_linker, to_clusters
-from cmf.admin import add_dataset
-from cmf.data import (
+from matchbox import make_deduper, make_linker, to_clusters
+from matchbox.admin import add_dataset
+from matchbox.data import (
     Clusters,
     CMFBase,
     DDupeContains,
@@ -31,6 +23,12 @@ from cmf.data import (
     SourceDataset,
     clusters_association,
 )
+from pandas import DataFrame
+from sqlalchemy import MetaData, create_engine, inspect, text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+from sqlalchemy.schema import CreateSchema
 
 from .models import DedupeTestParams, LinkTestParams, ModelTestParams
 
@@ -49,7 +47,7 @@ def db_clear_all() -> Callable[[Engine], None]:
     """
 
     def _db_clear_all(db_engine: Engine) -> None:
-        db_metadata = MetaData(schema=os.getenv("SCHEMA"))
+        db_metadata = MetaData(schema="test")
         db_metadata.reflect(bind=db_engine)
         with Session(db_engine) as session:
             for table in reversed(db_metadata.sorted_tables):
@@ -122,21 +120,21 @@ def db_add_data(
             crn_companies.to_sql(
                 "crn",
                 con=conn,
-                schema=os.getenv("SCHEMA"),
+                schema="test",
                 if_exists="replace",
                 index=False,
             )
             duns_companies.to_sql(
                 "duns",
                 con=conn,
-                schema=os.getenv("SCHEMA"),
+                schema="test",
                 if_exists="replace",
                 index=False,
             )
             cdms_companies.to_sql(
                 "cdms",
                 con=conn,
-                schema=os.getenv("SCHEMA"),
+                schema="test",
                 if_exists="replace",
                 index=False,
             )
@@ -145,17 +143,17 @@ def db_add_data(
 
             datasets = {
                 "crn_table": {
-                    "schema": os.getenv("SCHEMA"),
+                    "schema": "test",
                     "table": "crn",
                     "id": "id",
                 },
                 "duns_table": {
-                    "schema": os.getenv("SCHEMA"),
+                    "schema": "test",
                     "table": "duns",
                     "id": "id",
                 },
                 "cdms_table": {
-                    "schema": os.getenv("SCHEMA"),
+                    "schema": "test",
                     "table": "cdms",
                     "id": "id",
                 },
@@ -425,9 +423,14 @@ def db_engine(
     )
 
     with engine.connect() as conn:
+        # Install relevant extensions
+        conn.execute(text('create extension if not exists "uuid-ossp";'))
+        conn.execute(text("create extension if not exists pgcrypto;"))
+        conn.commit()
+
         # Create CMF schema
-        if not inspect(conn).has_schema(os.getenv("SCHEMA")):
-            conn.execute(CreateSchema(os.getenv("SCHEMA")))
+        if not inspect(conn).has_schema("test"):
+            conn.execute(CreateSchema("test"))
             conn.commit()
 
         # Create CMF tables
@@ -453,12 +456,9 @@ def cleanup(db_engine, request):
     def teardown():
         with db_engine.connect() as conn:
             inspector = inspect(conn)
-            for table_name in inspector.get_table_names(schema=os.getenv("SCHEMA")):
+            for table_name in inspector.get_table_names(schema="test"):
                 conn.execute(
-                    text(
-                        f'DROP TABLE IF EXISTS "{os.getenv("SCHEMA")}".'
-                        f'"{table_name}" CASCADE;'
-                    )
+                    text(f'DROP TABLE IF EXISTS "{"test"}".' f'"{table_name}" CASCADE;')
                 )
             conn.commit()
 

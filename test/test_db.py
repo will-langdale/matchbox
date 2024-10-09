@@ -1,13 +1,9 @@
 import itertools
 import logging
-import os
 
 from dotenv import find_dotenv, load_dotenv
-from sqlalchemy import MetaData, Table, delete, insert, inspect, text
-from sqlalchemy.orm import Session
-
-from cmf.admin import add_dataset
-from cmf.data import (
+from matchbox.admin import add_dataset
+from matchbox.data import (
     Clusters,
     DDupeProbabilities,
     Dedupes,
@@ -18,6 +14,8 @@ from cmf.data import (
     SourceDataset,
     clusters_association,
 )
+from sqlalchemy import MetaData, Table, delete, insert, inspect, text
+from sqlalchemy.orm import Session
 
 from .fixtures.models import (
     dedupe_data_test_params,
@@ -36,7 +34,7 @@ def test_database(db_engine):
     """
     Test the database contains all the tables we expect.
     """
-    tables = set(inspect(db_engine).get_table_names(schema=os.getenv("SCHEMA")))
+    tables = set(inspect(db_engine).get_table_names(schema="test"))
     to_check = {
         "crn",
         "duns",
@@ -114,11 +112,11 @@ def test_insert_data(db_engine, crn_companies, duns_companies, cdms_companies):
     ]
     with Session(db_engine) as session:
         # Reflect the table and insert the data
-        db_metadata = MetaData(schema=os.getenv("SCHEMA"))
+        db_metadata = MetaData(schema="test")
         crn_table = Table(
             "crn",
             db_metadata,
-            schema=os.getenv("SCHEMA"),
+            schema="test",
             autoload_with=session.get_bind(),
         )
         session.execute(insert(crn_table), new_data)
@@ -127,7 +125,7 @@ def test_insert_data(db_engine, crn_companies, duns_companies, cdms_companies):
         # Add the dataset again
         add_dataset(
             {
-                "schema": os.getenv("SCHEMA"),
+                "schema": "test",
                 "table": "crn",
                 "id": "id",
             },

@@ -1,6 +1,5 @@
+from matchbox.data import utils as du
 from pandas import Series, concat
-
-from cmf.data import utils as du
 
 
 def test_sha1_conversion(all_companies):

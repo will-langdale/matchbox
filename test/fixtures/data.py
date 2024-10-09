@@ -7,28 +7,32 @@ import numpy as np
 import pandas as pd
 import pytest
 from dotenv import find_dotenv, load_dotenv
+from matchbox import process, query
+from matchbox.clean import company_name
+from matchbox.helpers import cleaner, cleaners, selector
 from pandas import DataFrame
 from sqlalchemy.engine import Engine
-
-import cmf.locations as loc
-from cmf import process, query
-from cmf.clean import company_name
-from cmf.helpers import cleaner, cleaners, selector
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
+TEST_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="session")
-def all_companies() -> DataFrame:
+def test_root_dir() -> Path:
+    return TEST_ROOT
+
+
+@pytest.fixture(scope="session")
+def all_companies(test_root_dir: Path) -> DataFrame:
     """
     Raw, correct company data. Uses UUID as ID to replicate Data Workspace.
     1,000 entries.
     """
     df = pd.read_csv(
-        Path(loc.TEST, "data", "all_companies.csv"), encoding="utf-8"
+        Path(test_root_dir, "data", "all_companies.csv"), encoding="utf-8"
     ).reset_index(names="id")
     df["id"] = df["id"].apply(lambda x: uuid.UUID(int=x))
     return df

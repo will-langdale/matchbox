@@ -1,5 +1,10 @@
 name: Unit tests
 
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
 jobs:
   uv-example:
     name: python
@@ -13,6 +18,9 @@ jobs:
 
       - name: Set up Python
         run: uv python install
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
       
       - name: Set up PostgreSQL
         run: |
@@ -20,4 +28,8 @@ jobs:
 
       - name: Run pytest
         run: |
-          uv python -m pytest
+          uv run pytest
+
+      - name: Dump docker logs
+        if: failure()
+        uses: jwalton/gh-docker-logs@v2

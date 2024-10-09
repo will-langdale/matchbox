@@ -1,5 +1,5 @@
 [project]
-name = "company-matching-framework"
+name = "matchbox"
 version = "0.1.0"
 description = "A framework for orchestrating and comparing various company matching methodologies."
 authors = [{ name = "DDaTDataScienceTeam" }]
@@ -33,41 +33,16 @@ dev-dependencies = [
     "ruff>=0.6.8",
     "docker>=7.1.0",
 ]
+package = true
 
 [tool.ruff]
-# Ruff defaults mostly taken from https://docs.astral.sh/ruff/configuration/
 exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".git-rewrite",
-    ".hg",
-    ".ipynb_checkpoints",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pyenv",
-    ".pytest_cache",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    ".vscode",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "site-packages",
-    "venv",
     "*.ipynb"
 ]
 line-length = 88
 indent-width = 4
-target-version = "py39"
+target-version = "py311"
+src = ["."]
 
 [tool.ruff.lint]
 select = [
@@ -96,7 +71,7 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
-addopts = "-s -vv --cov=cmf test/ --log-disable=pg_bulk_ingest"
+addopts = "-s -vv --cov=matchbox test/ --log-disable=pg_bulk_ingest"
 log_cli = false
 log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
