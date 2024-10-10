@@ -6,14 +6,14 @@ from sqlalchemy import BOOLEAN, NUMERIC, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from matchbox.data.db import CMFBase
-from matchbox.data.mixin import SHA1Mixin, UUIDMixin
+from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from matchbox.data.models import Models
+    from matchbox.server.postgresql.models import Models
 
 
-class Dedupes(SHA1Mixin, CMFBase):
+class Dedupes(SHA1Mixin, CountMixin, MatchboxBase):
     __tablename__ = "cmf__ddupes"
     __table_args__ = (UniqueConstraint("left", "right"),)
 
@@ -26,7 +26,7 @@ class Dedupes(SHA1Mixin, CMFBase):
     )
 
 
-class DDupeProbabilities(CMFBase):
+class DDupeProbabilities(CountMixin, MatchboxBase):
     """
     The associationn object betweenn Models and Dedupes
     """
@@ -50,7 +50,7 @@ class DDupeProbabilities(CMFBase):
     proposed_by: Mapped["Models"] = relationship(back_populates="proposes_dedupes")
 
 
-class DDupeContains(CMFBase):
+class DDupeContains(MatchboxBase):
     __tablename__ = "cmf__ddupe_contains"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
@@ -62,7 +62,7 @@ class DDupeContains(CMFBase):
     )
 
 
-class DDupeValidation(UUIDMixin, CMFBase):
+class DDupeValidation(UUIDMixin, MatchboxBase):
     __tablename__ = "cmf__ddupe_validation"
     __table_args__ = (UniqueConstraint("ddupe", "user"),)
 

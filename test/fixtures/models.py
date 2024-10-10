@@ -92,11 +92,11 @@ class ModelTestParams(BaseModel):
 
 dedupe_data_test_params = [
     DedupeTestParams(
-        source=f"{os.getenv('SCHEMA')}.crn",
+        source=f"{os.getenv('MB_SCHEMA')}.crn",
         fixture="query_clean_crn",
         fields={
-            f"{os.getenv('SCHEMA')}_crn_company_name": "company_name",
-            f"{os.getenv('SCHEMA')}_crn_crn": "crn",
+            f"{os.getenv('MB_SCHEMA')}_crn_company_name": "company_name",
+            f"{os.getenv('MB_SCHEMA')}_crn_crn": "crn",
         },
         # 1000 unique items repeated three times
         unique_n=1000,
@@ -106,11 +106,11 @@ dedupe_data_test_params = [
         tgt_clus_n=1000,
     ),
     DedupeTestParams(
-        source=f"{os.getenv('SCHEMA')}.duns",
+        source=f"{os.getenv('MB_SCHEMA')}.duns",
         fixture="query_clean_duns",
         fields={
-            f"{os.getenv('SCHEMA')}_duns_company_name": "company_name",
-            f"{os.getenv('SCHEMA')}_duns_duns": "duns",
+            f"{os.getenv('MB_SCHEMA')}_duns_company_name": "company_name",
+            f"{os.getenv('MB_SCHEMA')}_duns_duns": "duns",
         },
         # 500 unique items with no duplication
         unique_n=500,
@@ -120,11 +120,11 @@ dedupe_data_test_params = [
         tgt_clus_n=0,
     ),
     DedupeTestParams(
-        source=f"{os.getenv('SCHEMA')}.cdms",
+        source=f"{os.getenv('MB_SCHEMA')}.cdms",
         fixture="query_clean_cdms",
         fields={
-            f"{os.getenv('SCHEMA')}_cdms_crn": "crn",
-            f"{os.getenv('SCHEMA')}_cdms_cdms": "cdms",
+            f"{os.getenv('MB_SCHEMA')}_cdms_crn": "crn",
+            f"{os.getenv('MB_SCHEMA')}_cdms_cdms": "cdms",
         },
         # 1000 unique items repeated two times
         unique_n=1000,
@@ -139,14 +139,14 @@ dedupe_data_test_params = [
 link_data_test_params = [
     LinkTestParams(
         # Left
-        source_l=f"naive_{os.getenv('SCHEMA')}.crn",
+        source_l=f"naive_{os.getenv('MB_SCHEMA')}.crn",
         fixture_l="query_clean_crn_deduped",
-        fields_l={f"{os.getenv('SCHEMA')}_crn_company_name": "company_name"},
+        fields_l={f"{os.getenv('MB_SCHEMA')}_crn_company_name": "company_name"},
         curr_n_l=3000,
         # Right
-        source_r=f"naive_{os.getenv('SCHEMA')}.duns",
+        source_r=f"naive_{os.getenv('MB_SCHEMA')}.duns",
         fixture_r="query_clean_duns_deduped",
-        fields_r={f"{os.getenv('SCHEMA')}_duns_company_name": "company_name"},
+        fields_r={f"{os.getenv('MB_SCHEMA')}_duns_company_name": "company_name"},
         curr_n_r=500,
         # Check
         unique_n=1000,
@@ -156,16 +156,16 @@ link_data_test_params = [
     ),
     LinkTestParams(
         # Left
-        source_l=f"naive_{os.getenv('SCHEMA')}.cdms",
+        source_l=f"naive_{os.getenv('MB_SCHEMA')}.cdms",
         fixture_l="query_clean_cdms_deduped",
         fields_l={
-            f"{os.getenv('SCHEMA')}_cdms_crn": "crn",
+            f"{os.getenv('MB_SCHEMA')}_cdms_crn": "crn",
         },
         curr_n_l=2000,
         # Right
-        source_r=f"naive_{os.getenv('SCHEMA')}.crn",
+        source_r=f"naive_{os.getenv('MB_SCHEMA')}.crn",
         fixture_r="query_clean_crn_deduped",
-        fields_r={f"{os.getenv('SCHEMA')}_crn_crn": "crn"},
+        fields_r={f"{os.getenv('MB_SCHEMA')}_crn_crn": "crn"},
         curr_n_r=3000,
         # Check
         unique_n=1000,

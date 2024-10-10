@@ -5,11 +5,11 @@ from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from matchbox.data.db import CMFBase
-from matchbox.data.mixin import SHA1Mixin, UUIDMixin
+from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin, UUIDMixin
 
 
-class SourceDataset(UUIDMixin, CMFBase):
+class SourceDataset(UUIDMixin, CountMixin, MatchboxBase):
     __tablename__ = "cmf__source_dataset"
     __table_args__ = (UniqueConstraint("db_schema", "db_table"),)
 
@@ -19,8 +19,13 @@ class SourceDataset(UUIDMixin, CMFBase):
 
     data: Mapped[List["SourceData"]] = relationship(back_populates="parent_dataset")
 
+    @classmethod
+    def list(cls) -> list[tuple[str, str]]:
+        with cls.get_session() as session:
+            return session.query(cls.db_schema, cls.db_table).scalars()
 
-class SourceData(SHA1Mixin, CMFBase):
+
+class SourceData(SHA1Mixin, CountMixin, MatchboxBase):
     __tablename__ = "cmf__source_data"
     __table_args__ = (UniqueConstraint("sha1", "dataset"),)  # id array can change
 

@@ -13,8 +13,8 @@ __all__ = ("make_deduper", "make_linker", "to_clusters", "process", "query")
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
-if "SCHEMA" not in environ:
-    raise KeyError("SCHEMA environment variable not set.")
+if "MB_SCHEMA" not in environ:
+    raise KeyError("MB_SCHEMA environment variable not set.")
 
-if "BATCH_SIZE" not in environ:
-    raise KeyError("BATCH_SIZE environment variable not set.")
+if "MB_BATCH_SIZE" not in environ:
+    raise KeyError("MB_BATCH_SIZE environment variable not set.")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Iterable, List, Optional
 from uuid import UUID as uuUUID
 
 from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint, func
@@ -8,17 +8,27 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 from sqlalchemy.sql.selectable import Select
 
-from matchbox.data.clusters import clusters_association
-from matchbox.data.db import CMFBase
-from matchbox.data.dedupe import DDupeProbabilities
-from matchbox.data.link import LinkProbabilities
-from matchbox.data.mixin import SHA1Mixin
+from matchbox.server.base import Cluster, Probability
+from matchbox.server.postgresql.clusters import clusters_association
+from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.dedupe import DDupeProbabilities
+from matchbox.server.postgresql.link import LinkProbabilities
+from matchbox.server.postgresql.mixin import SHA1Mixin
 
 if TYPE_CHECKING:
-    from matchbox.data import Clusters
+    from matchbox.server.postgresql import Clusters
 
 
-class Models(SHA1Mixin, CMFBase):
+class CombinedProbabilities:
+    def __init__(self, dedupes, links):
+        self._dedupes = dedupes
+        self._links = links
+
+    def count(self):
+        return self._dedupes.count() + self._links.count()
+
+
+class Models(SHA1Mixin, MatchboxBase):
     __tablename__ = "cmf__models"
     __table_args__ = (UniqueConstraint("name"),)
 
@@ -63,6 +73,14 @@ class Models(SHA1Mixin, CMFBase):
         passive_deletes=True,
     )
 
+    @property
+    def clusters(self) -> Clusters:
+        return self.creates
+
+    @property
+    def probabilities(self) -> CombinedProbabilities:
+        return CombinedProbabilities(self.proposes_dedupes, self.proposes_links)
+
     def parent_neighbours(self) -> List["Models"]:
         return [x.parent_model for x in self.child_edges]
 
@@ -81,11 +99,24 @@ class Models(SHA1Mixin, CMFBase):
     def links_count(self) -> Select:
         return self._count_mapped(self.proposes_links)
 
+    def insert_probabilities(self, probabilities: Iterable[Probability]) -> None:
+        for prob in probabilities:
+            if isinstance(prob, DDupeProbabilities):
+                self.proposes_dedupes.add(prob)
+            elif isinstance(prob, LinkProbabilities):
+                self.proposes_links.add(prob)
+        self.session.flush()
+
+    def insert_clusters(self, clusters: Iterable[Cluster]) -> None:
+        for cluster in clusters:
+            self.creates.add(cluster)
+        self.session.flush()
+
 
 # From
 
 
-class ModelsFrom(CMFBase):
+class ModelsFrom(MatchboxBase):
     __tablename__ = "cmf__models_from"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 

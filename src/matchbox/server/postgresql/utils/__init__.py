@@ -1,4 +1,4 @@
-from matchbox.data.utils.db import (
+from matchbox.server.postgresql.utils.db import (
     batched,
     data_to_batch,
     dataset_to_table,
@@ -9,7 +9,7 @@ from matchbox.data.utils.db import (
     string_to_dataset,
     string_to_table,
 )
-from matchbox.data.utils.sha1 import (
+from matchbox.server.postgresql.utils.sha1 import (
     columns_to_value_ordered_sha1,
     list_to_value_ordered_sha1,
     model_name_to_sha1,

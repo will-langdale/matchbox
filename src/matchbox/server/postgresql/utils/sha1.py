@@ -6,10 +6,10 @@ from pandas import DataFrame, Series
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from matchbox.data import ENGINE, SourceDataset
-from matchbox.data.exceptions import CMFDBDataError
-from matchbox.data.models import Models
-from matchbox.data.utils.db import get_schema_table_names
+from matchbox.server.exceptions import MatchboxDBDataError
+from matchbox.server.postgresql import ENGINE, SourceDataset
+from matchbox.server.postgresql.models import Models
+from matchbox.server.postgresql.utils.db import get_schema_table_names
 
 T = TypeVar("T")
 
@@ -36,7 +36,7 @@ def table_name_to_uuid(schema_table: str, engine: Engine = ENGINE) -> bytes:
         dataset_uuid = session.execute(stmt).scalar()
 
     if dataset_uuid is None:
-        raise CMFDBDataError(source=SourceDataset, data=schema_table)
+        raise MatchboxDBDataError(source=SourceDataset, data=schema_table)
 
     return dataset_uuid
 
@@ -59,7 +59,7 @@ def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
         model_sha1 = session.execute(stmt).scalar()
 
     if model_sha1 is None:
-        raise CMFDBDataError(source=Models, data=run_name)
+        raise MatchboxDBDataError(source=Models, data=run_name)
 
     return model_sha1
 

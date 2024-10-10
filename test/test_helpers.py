@@ -41,10 +41,10 @@ LOGGER = logging.getLogger(__name__)
 
 def test_selectors(db_engine):
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
     )
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine
     )
     select_crn_duns = selectors(select_crn, select_duns)
 
@@ -54,7 +54,7 @@ def test_selectors(db_engine):
 def test_single_table_no_model_query(db_engine):
     """Tests query() on a single table. No point of truth to derive clusters"""
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
     )
 
     df_crn_sample = query(
@@ -75,18 +75,18 @@ def test_single_table_no_model_query(db_engine):
     assert df_crn_full.shape[0] == 3000
     assert set(df_crn_full.columns) == {
         "data_sha1",
-        f"{os.getenv('SCHEMA')}_crn_id",
-        f"{os.getenv('SCHEMA')}_crn_crn",
+        f"{os.getenv('MB_SCHEMA')}_crn_id",
+        f"{os.getenv('MB_SCHEMA')}_crn_crn",
     }
 
 
 def test_multi_table_no_model_query(db_engine):
     """Tests query() on multiple tables. No point of truth to derive clusters"""
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.crn", fields=["id", "crn"], engine=db_engine
     )
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.duns", fields=["id", "duns"], engine=db_engine
     )
     select_crn_duns = selectors(select_crn, select_duns)
 
@@ -97,23 +97,23 @@ def test_multi_table_no_model_query(db_engine):
     assert df_crn_duns_full.shape[0] == 3500
     assert (
         df_crn_duns_full[
-            df_crn_duns_full[f"{os.getenv('SCHEMA')}_duns_id"].notnull()
+            df_crn_duns_full[f"{os.getenv('MB_SCHEMA')}_duns_id"].notnull()
         ].shape[0]
         == 500
     )
     assert (
         df_crn_duns_full[
-            df_crn_duns_full[f"{os.getenv('SCHEMA')}_crn_id"].notnull()
+            df_crn_duns_full[f"{os.getenv('MB_SCHEMA')}_crn_id"].notnull()
         ].shape[0]
         == 3000
     )
 
     assert set(df_crn_duns_full.columns) == {
         "data_sha1",
-        f"{os.getenv('SCHEMA')}_crn_id",
-        f"{os.getenv('SCHEMA')}_crn_crn",
-        f"{os.getenv('SCHEMA')}_duns_id",
-        f"{os.getenv('SCHEMA')}_duns_duns",
+        f"{os.getenv('MB_SCHEMA')}_crn_id",
+        f"{os.getenv('MB_SCHEMA')}_crn_crn",
+        f"{os.getenv('MB_SCHEMA')}_duns_id",
+        f"{os.getenv('MB_SCHEMA')}_duns_duns",
     }
 
 
@@ -134,14 +134,14 @@ def test_single_table_with_model_query(
     # Query
 
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
+        table=f"{os.getenv('MB_SCHEMA')}.crn",
         fields=["crn", "company_name"],
         engine=db_engine,
     )
 
     crn = query(
         selector=select_crn,
-        model=f"naive_{os.getenv('SCHEMA')}.crn",
+        model=f"naive_{os.getenv('MB_SCHEMA')}.crn",
         return_type="pandas",
         engine=db_engine,
     )
@@ -151,8 +151,8 @@ def test_single_table_with_model_query(
     assert set(crn.columns) == {
         "cluster_sha1",
         "data_sha1",
-        f"{os.getenv('SCHEMA')}_crn_crn",
-        f"{os.getenv('SCHEMA')}_crn_company_name",
+        f"{os.getenv('MB_SCHEMA')}_crn_crn",
+        f"{os.getenv('MB_SCHEMA')}_crn_company_name",
     }
     assert crn.data_sha1.nunique() == 3000
     assert crn.cluster_sha1.nunique() == 1000
@@ -183,15 +183,15 @@ def test_multi_table_with_model_query(
 
     linker_name = (
         f"deterministic_"
-        f"naive_{os.getenv('SCHEMA')}.crn_"
-        f"naive_{os.getenv('SCHEMA')}.duns"
+        f"naive_{os.getenv('MB_SCHEMA')}.crn_"
+        f"naive_{os.getenv('MB_SCHEMA')}.duns"
     )
 
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn", fields=["crn"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.crn", fields=["crn"], engine=db_engine
     )
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns", fields=["duns"], engine=db_engine
+        table=f"{os.getenv('MB_SCHEMA')}.duns", fields=["duns"], engine=db_engine
     )
     select_crn_duns = selectors(select_crn, select_duns)
 
@@ -207,8 +207,8 @@ def test_multi_table_with_model_query(
     assert set(crn_duns.columns) == {
         "cluster_sha1",
         "data_sha1",
-        f"{os.getenv('SCHEMA')}_crn_crn",
-        f"{os.getenv('SCHEMA')}_duns_duns",
+        f"{os.getenv('MB_SCHEMA')}_crn_crn",
+        f"{os.getenv('MB_SCHEMA')}_duns_duns",
     }
     assert crn_duns.data_sha1.nunique() == 3500
     assert crn_duns.cluster_sha1.nunique() == 1000
@@ -226,7 +226,7 @@ def test_cleaners():
 
 def test_process(db_engine):
     select_name = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
+        table=f"{os.getenv('MB_SCHEMA')}.crn",
         fields=["crn", "company_name"],
         engine=db_engine,
     )
@@ -237,10 +237,11 @@ def test_process(db_engine):
 
     cleaner_name = cleaner(
         function=company_name,
-        arguments={"column": f"{os.getenv('SCHEMA')}_crn_company_name"},
+        arguments={"column": f"{os.getenv('MB_SCHEMA')}_crn_company_name"},
     )
     cleaner_number = cleaner(
-        function=company_number, arguments={"column": f"{os.getenv('SCHEMA')}_crn_crn"}
+        function=company_number,
+        arguments={"column": f"{os.getenv('MB_SCHEMA')}_crn_crn"},
     )
     cleaner_name_number = cleaners(cleaner_name, cleaner_number)
 
@@ -295,7 +296,7 @@ def test_model_deletion(
 
     # Expect it to delete itself, its probabilities,
     # its parents, and their probabilities
-    deduper_to_delete = f"naive_{os.getenv('SCHEMA')}.crn"
+    deduper_to_delete = f"naive_{os.getenv('MB_SCHEMA')}.crn"
     total_models = len(dedupe_data_test_params) + len(link_data_test_params)
 
     with Session(db_engine) as session:

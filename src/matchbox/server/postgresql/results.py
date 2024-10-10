@@ -17,14 +17,14 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from matchbox.data import utils as du
-from matchbox.data.clusters import Clusters, clusters_association
-from matchbox.data.data import SourceData
-from matchbox.data.db import ENGINE
-from matchbox.data.dedupe import DDupeContains, DDupeProbabilities, Dedupes
-from matchbox.data.exceptions import CMFDBDataError
-from matchbox.data.link import LinkContains, LinkProbabilities, Links
-from matchbox.data.models import Models, ModelsFrom
+from matchbox.server.exceptions import MatchboxDBDataError
+from matchbox.server.postgresql import utils as du
+from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.data import SourceData
+from matchbox.server.postgresql.db import ENGINE
+from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
+from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
+from matchbox.server.postgresql.models import Models, ModelsFrom
 
 logic_logger = logging.getLogger("cmf_logic")
 
@@ -42,7 +42,7 @@ class ResultsBaseDataclass(BaseModel, ABC):
     right: str
 
     _expected_fields: List[str]
-    _batch_size: int = int(os.environ["BATCH_SIZE"])
+    _batch_size: int = int(os.environ["MB_BATCH_SIZE"])
 
     @model_validator(mode="after")
     def _check_dataframe(self) -> Table:
@@ -90,7 +90,7 @@ class ResultsBaseDataclass(BaseModel, ABC):
         """Writes the model to the CMF.
 
         Raises
-            CMFDBDataError if, for a linker, the source models weren't found in
+            MatchboxDBDataError if, for a linker, the source models weren't found in
                 the database
         """
         with Session(engine) as session:
@@ -273,7 +273,7 @@ class ProbabilityResults(ResultsBaseDataclass):
                 )
 
             if len(data_inner_join) != len(data_unique):
-                raise CMFDBDataError(
+                raise MatchboxDBDataError(
                     message=(
                         f"Some items in {col} don't exist the target table. "
                         f"Did you use {tgt_col} as your ID when deduplicating?"
@@ -300,8 +300,8 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Attaches these objects to the model
 
         Raises:
-            CMFSourceTableError is source tables aren't in the wider database
-            CMFDBDataError if current model wasn't inserted correctly
+            MatchboxSourceTableError is source tables aren't in the wider database
+            MatchboxDBDataError if current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
@@ -321,7 +321,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             model_sha1 = model.sha1
 
             if model is None:
-                raise CMFDBDataError(source=Models, data=self.run_name)
+                raise MatchboxDBDataError(source=Models, data=self.run_name)
 
             # Clear old model probabilities
             old_ddupe_probs_subquery = (
@@ -396,7 +396,7 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Attaches these objects to the model
 
         Raises:
-            CMFDBDataError if current model wasn't inserted correctly
+            MatchboxDBDataError if current model wasn't inserted correctly
         """
         probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
 
@@ -412,7 +412,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             model_sha1 = model.sha1
 
             if model is None:
-                raise CMFDBDataError(source=Models, data=self.run_name)
+                raise MatchboxDBDataError(source=Models, data=self.run_name)
 
             # Clear old model probabilities
             old_link_probs_subquery = model.proposes_links.select().with_only_columns(
@@ -545,7 +545,7 @@ class ClusterResults(ResultsBaseDataclass):
             engine: a SQLAlchemy Engine object for the database
 
         Raises:
-            CMFDBDataError if model wasn't inserted correctly
+            MatchboxDBDataError if model wasn't inserted correctly
         """
         Contains = contains_class
         with Session(engine) as session:
@@ -555,7 +555,7 @@ class ClusterResults(ResultsBaseDataclass):
             model_sha1 = model.sha1
 
             if model is None:
-                raise CMFDBDataError(source=Models, data=self.run_name)
+                raise MatchboxDBDataError(source=Models, data=self.run_name)
 
             # Clear old model endorsements
             old_cluster_creates_subquery = model.creates.select().with_only_columns(

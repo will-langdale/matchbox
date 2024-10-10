@@ -1,19 +1,19 @@
 from typing import Any, Optional
 
-from matchbox.data.models import CMFBase
+from matchbox.server.postgresql.db import Base
 
 
-class CMFDBDataError(Exception):
-    """Data doesn't exist in the source Company Matching Framework table."""
+class MatchboxDBDataError(Exception):
+    """Data doesn't exist in the Matchbox source table."""
 
     def __init__(
         self,
         message: str = None,
-        source: CMFBase = None,
+        source: Base = None,
         data: Optional[Any] = None,
     ):
         if message is None:
-            message = "Data doesn't exist in Company Matching Framework."
+            message = "Data doesn't exist in Matchbox."
             if source is not None:
                 message += f"\nTable: {source.__tablename__}"
             if data is not None:
@@ -24,7 +24,7 @@ class CMFDBDataError(Exception):
         self.data = data
 
 
-class CMFSourceTableError(Exception):
+class MatchboxSourceTableError(Exception):
     """Tables not found in wider database, outside of the framework."""
 
     def __init__(

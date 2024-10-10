@@ -117,7 +117,7 @@ def cdms_companies(all_companies: DataFrame) -> DataFrame:
 def query_clean_crn(db_engine: Engine) -> DataFrame:
     # Select
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
+        table=f"{os.getenv('MB_SCHEMA')}.crn",
         fields=["crn", "company_name"],
         engine=db_engine,
     )
@@ -125,7 +125,7 @@ def query_clean_crn(db_engine: Engine) -> DataFrame:
     crn = query(selector=select_crn, model=None, return_type="pandas", engine=db_engine)
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    col_prefix = f"{os.getenv('MB_SCHEMA')}_crn_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -140,7 +140,7 @@ def query_clean_crn(db_engine: Engine) -> DataFrame:
 def query_clean_duns(db_engine: Engine) -> DataFrame:
     # Select
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns",
+        table=f"{os.getenv('MB_SCHEMA')}.duns",
         fields=["duns", "company_name"],
         engine=db_engine,
     )
@@ -150,7 +150,7 @@ def query_clean_duns(db_engine: Engine) -> DataFrame:
     )
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    col_prefix = f"{os.getenv('MB_SCHEMA')}_duns_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -165,7 +165,7 @@ def query_clean_duns(db_engine: Engine) -> DataFrame:
 def query_clean_cdms(db_engine: Engine) -> DataFrame:
     # Select
     select_cdms = selector(
-        table=f"{os.getenv('SCHEMA')}.cdms",
+        table=f"{os.getenv('MB_SCHEMA')}.cdms",
         fields=["crn", "cdms"],
         engine=db_engine,
     )
@@ -182,20 +182,20 @@ def query_clean_cdms(db_engine: Engine) -> DataFrame:
 def query_clean_crn_deduped(db_engine: Engine) -> DataFrame:
     # Select
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
+        table=f"{os.getenv('MB_SCHEMA')}.crn",
         fields=["crn", "company_name"],
         engine=db_engine,
     )
 
     crn = query(
         selector=select_crn,
-        model=f"naive_{os.getenv('SCHEMA')}.crn",
+        model=f"naive_{os.getenv('MB_SCHEMA')}.crn",
         return_type="pandas",
         engine=db_engine,
     )
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    col_prefix = f"{os.getenv('MB_SCHEMA')}_crn_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -210,20 +210,20 @@ def query_clean_crn_deduped(db_engine: Engine) -> DataFrame:
 def query_clean_duns_deduped(db_engine: Engine) -> DataFrame:
     # Select
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns",
+        table=f"{os.getenv('MB_SCHEMA')}.duns",
         fields=["duns", "company_name"],
         engine=db_engine,
     )
 
     duns = query(
         selector=select_duns,
-        model=f"naive_{os.getenv('SCHEMA')}.duns",
+        model=f"naive_{os.getenv('MB_SCHEMA')}.duns",
         return_type="pandas",
         engine=db_engine,
     )
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    col_prefix = f"{os.getenv('MB_SCHEMA')}_duns_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -238,14 +238,14 @@ def query_clean_duns_deduped(db_engine: Engine) -> DataFrame:
 def query_clean_cdms_deduped(db_engine: Engine) -> DataFrame:
     # Select
     select_cdms = selector(
-        table=f"{os.getenv('SCHEMA')}.cdms",
+        table=f"{os.getenv('MB_SCHEMA')}.cdms",
         fields=["crn", "cdms"],
         engine=db_engine,
     )
 
     cdms = query(
         selector=select_cdms,
-        model=f"naive_{os.getenv('SCHEMA')}.cdms",
+        model=f"naive_{os.getenv('MB_SCHEMA')}.cdms",
         return_type="pandas",
         engine=db_engine,
     )
