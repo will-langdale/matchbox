@@ -1,5 +1,4 @@
 import logging
-import os
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 
@@ -7,24 +6,22 @@ import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame, concat
 from pg_bulk_ingest import Delete, Upsert, ingest
-from pydantic import BaseModel, ConfigDict, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import (
     Engine,
     Table,
-    bindparam,
     delete,
 )
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from matchbox.server.base import Cluster, MatchboxDBAdapter, Probability
 from matchbox.server.exceptions import MatchboxDBDataError
 from matchbox.server.postgresql import utils as du
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
-from matchbox.server.postgresql.data import SourceData
 from matchbox.server.postgresql.db import ENGINE
-from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
-from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
-from matchbox.server.postgresql.models import Models, ModelsFrom
+from matchbox.server.postgresql.dedupe import DDupeContains
+from matchbox.server.postgresql.link import LinkContains
+from matchbox.server.postgresql.models import Models
 
 logic_logger = logging.getLogger("mb_logic")
 
@@ -42,7 +39,6 @@ class ResultsBaseDataclass(BaseModel, ABC):
     right: str
 
     _expected_fields: List[str]
-    _batch_size: int = int(os.environ["MB__BATCH_SIZE"])
 
     @model_validator(mode="after")
     def _check_dataframe(self) -> Table:
@@ -55,11 +51,6 @@ class ResultsBaseDataclass(BaseModel, ABC):
 
         return self
 
-    @computed_field
-    @property
-    def metadata(self) -> str:
-        return f"{self.run_name}, {self._get_results_type()}"
-
     @abstractmethod
     def inspect_with_source(self) -> DataFrame:
         """Enriches the results with the source data."""
@@ -71,107 +62,43 @@ class ResultsBaseDataclass(BaseModel, ABC):
         return
 
     @abstractmethod
-    def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
-        """Writes the results of a deduper to the CMF database."""
+    def to_records(self) -> list[Probability | Cluster]:
+        """Returns the results as a list of records suitable for insertion."""
         return
 
-    @abstractmethod
-    def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
-        """Writes the results of a linker to the CMF database."""
-        return
-
-    @classmethod
-    def _get_results_type(cls):
-        return cls.__name__
-
-    def _model_to_cmf(
-        self, deduplicates: bytes = None, engine: Engine = ENGINE
-    ) -> None:
-        """Writes the model to the CMF.
-
-        Raises
-            MatchboxDBDataError if, for a linker, the source models weren't found in
-                the database
-        """
-        with Session(engine) as session:
-            if deduplicates is None:
-                # Linker
-                # Construct model SHA1 from parent model SHA1s
-                left_sha1 = du.model_name_to_sha1(self.left, engine=engine)
-                right_sha1 = du.model_name_to_sha1(self.right, engine=engine)
-
-                model_sha1 = du.list_to_value_ordered_sha1(
-                    [bytes(self.run_name, encoding="utf-8"), left_sha1, right_sha1]
-                )
-            else:
-                # Deduper
-                model_sha1 = du.list_to_value_ordered_sha1([self.run_name, self.left])
-
-            model = Models(
-                sha1=model_sha1,
-                name=self.run_name,
-                description=self.description,
-                deduplicates=deduplicates,
-            )
-
-            session.merge(model)
-            session.commit()
-
-            if deduplicates is None:
-                # Linker
-                # Insert reference to parent models
-                models_from_to_insert = [
-                    {"parent": model_sha1, "child": left_sha1},
-                    {"parent": model_sha1, "child": right_sha1},
-                ]
-
-                ins_stmt = insert(ModelsFrom)
-                ins_stmt = ins_stmt.on_conflict_do_nothing(
-                    index_elements=[
-                        ModelsFrom.parent,
-                        ModelsFrom.child,
-                    ]
-                )
-                session.execute(ins_stmt, models_from_to_insert)
-                session.commit()
-
-    def to_cmf(self, engine: Engine = ENGINE) -> None:
+    def to_cmf(self, backend: MatchboxDBAdapter) -> None:
         """Writes the results to the CMF database."""
         if self.left == self.right:
             # Deduper
-            # Write model
-            logic_logger.info(f"[{self.metadata}] Registering model")
-            self._model_to_cmf(
-                deduplicates=du.table_name_to_uuid(self.left, engine=engine),
-                engine=engine,
+            backend.insert_model(
+                model=self.run_name,
+                left=self.left,
+                description=self.description,
             )
 
-            # Write data
-            if self.dataframe.shape[0] == 0:
-                logic_logger.info(f"[{self.metadata}] No deduplication data to insert")
-            else:
-                logic_logger.info(
-                    f"[{self.metadata}] Writing deduplication data "
-                    f"with batch size {self._batch_size}"
-                )
-                self._deduper_to_cmf(engine=engine)
+            model = backend.get_model(model=self.run_name)
+
+            model.insert_probabilities(
+                probabilites=self.to_records(),
+                probability_type="deduplications",
+                batch_size=backend.settings.batch_size,
+            )
         else:
             # Linker
-            # Write model
-            logic_logger.info(f"[{self.metadata}] Registering model")
-            self._model_to_cmf(engine=engine)
+            backend.insert_model(
+                model=self.run_name,
+                left=self.left,
+                right=self.right,
+                description=self.description,
+            )
 
-            # Write data
-            if self.dataframe.shape[0] == 0:
-                logic_logger.info(f"[{self.metadata}] No link data to insert")
-            else:
-                logic_logger.info(
-                    f"[{self.metadata}] Writing link data "
-                    f"with batch size {self._batch_size}"
-                )
-                self._linker_to_cmf(engine=engine)
+            model = backend.get_model(model=self.run_name)
 
-        logic_logger.info(f"[{self.metadata}] Complete!")
+            model.insert_probabilities(
+                probabilites=self.to_records(),
+                probability_type="links",
+                batch_size=backend.settings.batch_size,
+            )
 
 
 class ProbabilityResults(ResultsBaseDataclass):
@@ -236,52 +163,31 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         return df
 
-    def _prep_to_cmf(self, df: DataFrame, engine: Engine = ENGINE) -> DataFrame:
-        """Transform and validate data, calculate SHA-1 hash."""
-        pre_prep_df = df
+    def to_records(self, backend: MatchboxDBAdapter | None) -> list[Probability]:
+        """Returns the results as a list of records suitable for insertion.
+
+        If given a backend, will validate the records against the database.
+        """
+        # Optional validation
+        if backend:
+            if self.left == self.right:
+                hash_type = "data"  # Deduper
+            else:
+                hash_type = "cluster"  # Linker
+
+            backend.validate_hashes(
+                hashes=self.dataframe.left_id.unique().tolist(),
+                hash_type=hash_type,
+            )
+            backend.validate_hashes(
+                hashes=self.dataframe.right_id.unique().tolist(),
+                hash_type=hash_type,
+            )
+
+        # Prep and return
+        pre_prep_df = self.dataframe.copy()
         cols = ["left_id", "right_id"]
-
-        # Verify data is in the CMF
-        # Check SourceData for dedupers and Clusters for linkers
-        if self.left == self.right:
-            # Deduper
-            Source = SourceData
-            tgt_col = "data_sha1"
-        else:
-            # Linker
-            Source = Clusters
-            tgt_col = "cluster_sha1"
-
         pre_prep_df[cols] = pre_prep_df[cols].astype("binary[pyarrow]")
-
-        for col in cols:
-            data_unique = pre_prep_df[col].unique().tolist()
-
-            with Session(engine) as session:
-                data_inner_join = (
-                    session.query(Source)
-                    .filter(
-                        Source.sha1.in_(
-                            bindparam(
-                                "ins_sha1s",
-                                data_unique,
-                                expanding=True,
-                            )
-                        )
-                    )
-                    .all()
-                )
-
-            if len(data_inner_join) != len(data_unique):
-                raise MatchboxDBDataError(
-                    message=(
-                        f"Some items in {col} don't exist the target table. "
-                        f"Did you use {tgt_col} as your ID when deduplicating?"
-                    ),
-                    source=Source,
-                )
-
-        # Transform for insert
         pre_prep_df["sha1"] = du.columns_to_value_ordered_sha1(
             data=self.dataframe, columns=cols
         )
@@ -290,190 +196,19 @@ class ProbabilityResults(ResultsBaseDataclass):
             columns={"left_id": "left", "right_id": "right"}
         )
 
-        return pre_prep_df[["sha1", "left", "right", "probability"]]
+        pre_prep_df = pre_prep_df[["sha1", "left", "right", "probability"]]
 
-    def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
-        """Writes the results of a deduper to the CMF database.
-
-        * Turns data into a left, right, sha1, probability dataframe
-        * Upserts data then queries it back as SQLAlchemy objects
-        * Attaches these objects to the model
-
-        Raises:
-            MatchboxSourceTableError is source tables aren't in the wider database
-            MatchboxDBDataError if current model wasn't inserted correctly
-        """
-        probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
-
-        logic_logger.info(
-            f"[{self.metadata}] Processed %s link probabilities",
-            len(probabilities_to_add),
-        )
-
-        # Validate tables exist
-        _ = du.schema_table_to_table(full_name=self.left, validate=True, engine=engine)
-        _ = du.schema_table_to_table(full_name=self.right, validate=True, engine=engine)
-
-        with Session(engine) as session:
-            # Add probabilities
-            # Get model
-            model = session.query(Models).filter_by(name=self.run_name).first()
-            model_sha1 = model.sha1
-
-            if model is None:
-                raise MatchboxDBDataError(source=Models, data=self.run_name)
-
-            # Clear old model probabilities
-            old_ddupe_probs_subquery = (
-                model.proposes_dedupes.select().with_only_columns(
-                    DDupeProbabilities.model
-                )
+        return [
+            Probability(
+                sha1=sha1,
+                left=left,
+                right=right,
+                probability=probability,
             )
-
-            session.execute(
-                delete(DDupeProbabilities).where(
-                    DDupeProbabilities.model.in_(old_ddupe_probs_subquery)
-                )
+            for sha1, left, right, probability in self.dataframe.itertuples(
+                index=False, name=None
             )
-
-            session.commit()
-
-            logic_logger.info(
-                f"[{self.metadata}] Removed old deduplication probabilities"
-            )
-
-        with engine.connect() as conn:
-            logic_logger.info(
-                f"[{self.metadata}] Inserting %s deduplication objects",
-                probabilities_to_add.shape[0],
-            )
-
-            # Upsert dedupe nodes
-            # Create data batching function and pass it to ingest
-            fn_dedupe_batch = du.data_to_batch(
-                dataframe=probabilities_to_add[list(Dedupes.__table__.columns.keys())],
-                table=Dedupes.__table__,
-                batch_size=self._batch_size,
-            )
-
-            ingest(
-                conn=conn,
-                metadata=Dedupes.metadata,
-                batches=fn_dedupe_batch,
-                upsert=Upsert.IF_PRIMARY_KEY,
-                delete=Delete.OFF,
-            )
-
-            # Insert dedupe probabilities
-            fn_dedupe_probs_batch = du.data_to_batch(
-                dataframe=(
-                    probabilities_to_add.assign(model=model_sha1).rename(
-                        columns={"sha1": "ddupe"}
-                    )[list(DDupeProbabilities.__table__.columns.keys())]
-                ),
-                table=DDupeProbabilities.__table__,
-                batch_size=self._batch_size,
-            )
-
-            ingest(
-                conn=conn,
-                metadata=DDupeProbabilities.metadata,
-                batches=fn_dedupe_probs_batch,
-                upsert=Upsert.IF_PRIMARY_KEY,
-                delete=Delete.OFF,
-            )
-
-            logic_logger.info(
-                f"[{self.metadata}] Inserted all %s deduplication objects",
-                probabilities_to_add.shape[0],
-            )
-
-    def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
-        """Writes the results of a linker to the CMF database.
-
-        * Turns data into a left, right, sha1, probability dataframe
-        * Upserts data then queries it back as SQLAlchemy objects
-        * Attaches these objects to the model
-
-        Raises:
-            MatchboxDBDataError if current model wasn't inserted correctly
-        """
-        probabilities_to_add = self._prep_to_cmf(self.dataframe, engine=engine)
-
-        logic_logger.info(
-            f"[{self.metadata}] Processed %s link probabilities",
-            len(probabilities_to_add),
-        )
-
-        with Session(engine) as session:
-            # Add probabilities
-            # Get model
-            model = session.query(Models).filter_by(name=self.run_name).first()
-            model_sha1 = model.sha1
-
-            if model is None:
-                raise MatchboxDBDataError(source=Models, data=self.run_name)
-
-            # Clear old model probabilities
-            old_link_probs_subquery = model.proposes_links.select().with_only_columns(
-                LinkProbabilities.model
-            )
-
-            session.execute(
-                delete(LinkProbabilities).where(
-                    LinkProbabilities.model.in_(old_link_probs_subquery)
-                )
-            )
-
-            session.commit()
-
-            logic_logger.info(f"[{self.metadata}] Removed old link probabilities")
-
-        with engine.connect() as conn:
-            logic_logger.info(
-                f"[{self.metadata}] Inserting %s link objects",
-                probabilities_to_add.shape[0],
-            )
-
-            # Upsert link nodes
-            # Create data batching function and pass it to ingest
-            fn_link_batch = du.data_to_batch(
-                dataframe=probabilities_to_add[list(Links.__table__.columns.keys())],
-                table=Links.__table__,
-                batch_size=self._batch_size,
-            )
-
-            ingest(
-                conn=conn,
-                metadata=Links.metadata,
-                batches=fn_link_batch,
-                upsert=Upsert.IF_PRIMARY_KEY,
-                delete=Delete.OFF,
-            )
-
-            # Insert link probabilities
-            fn_link_probs_batch = du.data_to_batch(
-                dataframe=(
-                    probabilities_to_add.assign(model=model_sha1).rename(
-                        columns={"sha1": "link"}
-                    )[list(LinkProbabilities.__table__.columns.keys())]
-                ),
-                table=LinkProbabilities.__table__,
-                batch_size=self._batch_size,
-            )
-
-            ingest(
-                conn=conn,
-                metadata=LinkProbabilities.metadata,
-                batches=fn_link_probs_batch,
-                upsert=Upsert.IF_PRIMARY_KEY,
-                delete=Delete.OFF,
-            )
-
-            logic_logger.info(
-                f"[{self.metadata}] Inserted all %s link objects",
-                probabilities_to_add.shape[0],
-            )
+        ]
 
 
 class ClusterResults(ResultsBaseDataclass):

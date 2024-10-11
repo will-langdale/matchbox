@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import Iterable, Literal, Protocol
+from typing import Literal, Protocol
 
 import pandas as pd
 from pydantic import AnyUrl, BaseModel, Field
@@ -110,14 +110,21 @@ class MatchboxModelAdapter(ABC):
     probabilities: Countable
 
     @abstractmethod
-    def insert_probabilities(self, probabilities: Iterable[Probability]) -> None: ...
+    def insert_probabilities(
+        self,
+        probabilities: list[Probability],
+        probability_type: Literal["deduplications", "links"],
+        batch_size: int,
+    ) -> None: ...
 
     @abstractmethod
-    def insert_clusters(self, clusters: Iterable[Cluster]) -> None: ...
+    def insert_clusters(self, clusters: list[Cluster], batch_size: int) -> None: ...
 
 
 class MatchboxDBAdapter(ABC):
     """An abstract base class for Matchbox database adapters."""
+
+    settings: "MatchboxSettings"
 
     datasets: ListableAndCountable
     models: Countable
@@ -140,6 +147,11 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def index(self, dataset: IndexableDataset) -> None: ...
+
+    @abstractmethod
+    def validate_hashes(
+        self, hashes: list[bytes], hash_type: Literal["data", "cluster"]
+    ) -> bool: ...
 
     @abstractmethod
     def get_model_subgraph(self) -> dict: ...

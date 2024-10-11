@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, List, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 from uuid import UUID as uuUUID
 
-from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint, func
+from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
-from sqlalchemy.sql.selectable import Select
 
-from matchbox.server.base import Cluster, Probability
+from matchbox.server.base import Cluster, MatchboxModelAdapter, Probability
 from matchbox.server.postgresql.clusters import clusters_association
 from matchbox.server.postgresql.db import MatchboxBase
 from matchbox.server.postgresql.dedupe import DDupeProbabilities
 from matchbox.server.postgresql.link import LinkProbabilities
 from matchbox.server.postgresql.mixin import SHA1Mixin
+from matchbox.server.postgresql.utils.insert import (
+    insert_deduplication_probabilities,
+    insert_link_probabilities,
+)
 
 if TYPE_CHECKING:
     from matchbox.server.postgresql import Clusters
@@ -28,7 +31,7 @@ class CombinedProbabilities:
         return self._dedupes.count() + self._links.count()
 
 
-class Models(SHA1Mixin, MatchboxBase):
+class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
     __tablename__ = "mb__models"
     __table_args__ = (UniqueConstraint("name"),)
 
@@ -41,7 +44,7 @@ class Models(SHA1Mixin, MatchboxBase):
     # ORM Many to Many pattern
     # https://docs.sqlalchemy.org/en/20/orm/
     # basic_relationships.html#many-to-many
-    creates: WriteOnlyMapped[List["Clusters"]] = relationship(
+    creates: WriteOnlyMapped[list["Clusters"]] = relationship(
         secondary=clusters_association,
         back_populates="created_by",
         passive_deletes=True,
@@ -50,23 +53,23 @@ class Models(SHA1Mixin, MatchboxBase):
     # Association object pattern
     # https://docs.sqlalchemy.org/en/20/orm
     # /basic_relationships.html#association-object
-    proposes_dedupes: WriteOnlyMapped[List["DDupeProbabilities"]] = relationship(
+    proposes_dedupes: WriteOnlyMapped[list["DDupeProbabilities"]] = relationship(
         back_populates="proposed_by", passive_deletes=True
     )
-    proposes_links: WriteOnlyMapped[List["LinkProbabilities"]] = relationship(
+    proposes_links: WriteOnlyMapped[list["LinkProbabilities"]] = relationship(
         back_populates="proposed_by", passive_deletes=True
     )
 
     # This approach taken from the SQLAlchemy examples
     # https://github.com/sqlalchemy/sqlalchemy/
     # blob/main/examples/graphs/directed_graph.py
-    child_edges: Mapped[List["ModelsFrom"]] = relationship(
+    child_edges: Mapped[list["ModelsFrom"]] = relationship(
         back_populates="child_model",
         primaryjoin="Models.sha1 == ModelsFrom.child",
         cascade="all, delete",
         passive_deletes=True,
     )
-    parent_edges: Mapped[List["ModelsFrom"]] = relationship(
+    parent_edges: Mapped[list["ModelsFrom"]] = relationship(
         back_populates="parent_model",
         primaryjoin="Models.sha1 == ModelsFrom.parent",
         cascade="all, delete",
@@ -81,33 +84,34 @@ class Models(SHA1Mixin, MatchboxBase):
     def probabilities(self) -> CombinedProbabilities:
         return CombinedProbabilities(self.proposes_dedupes, self.proposes_links)
 
-    def parent_neighbours(self) -> List["Models"]:
+    def parent_neighbours(self) -> list["Models"]:
         return [x.parent_model for x in self.child_edges]
 
-    def child_neighbours(self) -> List["Models"]:
+    def child_neighbours(self) -> list["Models"]:
         return [x.child_model for x in self.parent_edges]
 
-    def _count_mapped(self, attr: WriteOnlyMapped) -> Select:
-        return attr.select().with_only_columns(func.count())
+    def insert_probabilities(
+        self,
+        probabilities: list[Probability],
+        probability_type: Literal["deduplications", "links"],
+        batch_size: int,
+    ) -> None:
+        if probability_type == "deduplications":
+            insert_deduplication_probabilities(
+                model=self.name,
+                engine=self.get_session().get_bind(),
+                probabilities=probabilities,
+                batch_size=batch_size,
+            )
+        elif probability_type == "links":
+            insert_link_probabilities(
+                model=self.name,
+                engine=self.get_session().get_bind(),
+                probabilities=probabilities,
+                batch_size=batch_size,
+            )
 
-    def creates_count(self) -> Select:
-        return self._count_mapped(self.creates)
-
-    def dedupes_count(self) -> Select:
-        return self._count_mapped(self.proposes_dedupes)
-
-    def links_count(self) -> Select:
-        return self._count_mapped(self.proposes_links)
-
-    def insert_probabilities(self, probabilities: Iterable[Probability]) -> None:
-        for prob in probabilities:
-            if isinstance(prob, DDupeProbabilities):
-                self.proposes_dedupes.add(prob)
-            elif isinstance(prob, LinkProbabilities):
-                self.proposes_links.add(prob)
-        self.session.flush()
-
-    def insert_clusters(self, clusters: Iterable[Cluster]) -> None:
+    def insert_clusters(self, clusters: list[Cluster]) -> None:
         for cluster in clusters:
             self.creates.add(cluster)
         self.session.flush()
