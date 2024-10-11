@@ -5,6 +5,7 @@ from dotenv import find_dotenv, load_dotenv
 from pydantic import BaseSettings, Field
 from sqlalchemy import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
+from sqlalchemy.orm import Session
 
 from matchbox.server.base import (
     IndexableDataset,
@@ -25,8 +26,9 @@ from matchbox.server.postgresql import (
 )
 from matchbox.server.postgresql.db import connect_to_db
 from matchbox.server.postgresql.utils.db import get_model_subgraph
-from matchbox.server.postgresql.utils.deletion import delete_model
+from matchbox.server.postgresql.utils.delete import delete_model
 from matchbox.server.postgresql.utils.index import index_dataset
+from matchbox.server.postgresql.utils.insert import insert_deduper, insert_linker
 from matchbox.server.postgresql.utils.selector import query
 
 dotenv_path = find_dotenv(usecwd=True)
@@ -122,8 +124,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
         return get_model_subgraph(engine=self.engine)
 
     def get_model(self, model: str) -> MatchboxModelAdapter:
-        # logic moved from a million different places in unit tests and results
-        pass
+        """Get a model from the database.
+
+        Args:
+            model: The model to get.
+        """
+        with Session(self.engine) as session:
+            return session.query(Models).filter_by(name=model).first()
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -134,6 +141,34 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         delete_model(model=model, certain=certain)
 
-    def insert_model(self, model: str) -> None:
-        # logic moved from cmf.data.results.ResultsBaseDataclass._model_to_cmf()
-        pass
+    def insert_model(
+        self, model: str, left: str, description: str, right: str | None = None
+    ) -> None:
+        """Writes a model to Matchbox.
+
+        Args:
+            model: The name of the model
+            left: The name of the model on the left side of this model's join
+            right: The name of the model on the right side of this model's join
+                When deduplicating, this is None
+            description: A description of the model
+
+        Raises
+            MatchboxDBDataError if, for a linker, the source models weren't found in
+                the database
+        """
+        if right:
+            # Linker
+            insert_linker(
+                model=model,
+                left=left,
+                right=right,
+                description=description,
+            )
+        else:
+            # Deduper
+            insert_deduper(
+                model=model,
+                deduplicates=left,
+                description=description,
+            )
