@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict
 from pandas import DataFrame
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
-from matchbox.helpers.results import ProbabilityResults
+from matchbox.common.results import ProbabilityResults
 
 
 class LinkerSettings(BaseModel):

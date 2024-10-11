@@ -12,7 +12,7 @@ from sqlalchemy.engine.base import Connection
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
-from matchbox.server.exceptions import MatchboxSourceTableError
+from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.server.postgresql import Models, ModelsFrom, SourceDataset
 
 # Data conversion

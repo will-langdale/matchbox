@@ -7,8 +7,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from matchbox.common.exceptions import MatchboxDBDataError
 from matchbox.server.base import Cluster, Probability
-from matchbox.server.exceptions import MatchboxDBDataError
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
 from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links

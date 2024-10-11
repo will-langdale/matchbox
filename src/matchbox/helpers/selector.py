@@ -10,8 +10,8 @@ from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
+from matchbox.common.exceptions import MatchboxSourceTableError, MatchboxValidatonError
 from matchbox.server import MatchboxDBAdapter
-from matchbox.server.exceptions import MatchboxSourceTableError, MatchboxValidatonError
 
 
 def get_schema_table_names(full_name: str, validate: bool = False) -> tuple[str, str]:

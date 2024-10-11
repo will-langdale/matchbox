@@ -1,11 +1,11 @@
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from matchbox.data import ENGINE, Models
 from matchbox.helpers.selector import get_all_parents
+from matchbox.server.postgresql.models import Models
 
 
-def delete_model(model: str, engine: Engine = ENGINE, certain: bool = False) -> None:
+def delete_model(model: str, engine: Engine, certain: bool = False) -> None:
     """
     Deletes:
 

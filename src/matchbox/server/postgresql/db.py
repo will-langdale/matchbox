@@ -2,7 +2,7 @@ from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, declared_attr, sessionmaker
 
-from matchbox.server.exceptions import MatchboxConnectionError
+from matchbox.common.exceptions import MatchboxConnectionError
 from matchbox.server.postgresql.db import MatchboxPostgresSettings
 
 dotenv_path = find_dotenv(usecwd=True)

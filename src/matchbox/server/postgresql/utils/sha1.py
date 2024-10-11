@@ -1,20 +1,21 @@
 import hashlib
 import uuid
-from typing import List, TypeVar, Union
+from typing import TypeVar
 
 from pandas import DataFrame, Series
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from matchbox.server.exceptions import MatchboxDBDataError
-from matchbox.server.postgresql import ENGINE, SourceDataset
+from matchbox.common.exceptions import MatchboxDBDataError
+from matchbox.server.postgresql import SourceDataset
 from matchbox.server.postgresql.models import Models
 from matchbox.server.postgresql.utils.db import get_schema_table_names
 
 T = TypeVar("T")
+HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 
 
-def table_name_to_uuid(schema_table: str, engine: Engine = ENGINE) -> bytes:
+def table_name_to_uuid(schema_table: str, engine: Engine) -> bytes:
     """Takes a table's full schema.table name and returns its UUID.
 
     Args:
@@ -41,7 +42,7 @@ def table_name_to_uuid(schema_table: str, engine: Engine = ENGINE) -> bytes:
     return dataset_uuid
 
 
-def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
+def model_name_to_sha1(run_name: str, engine: Engine) -> bytes:
     """Takes a model's name and returns its SHA-1 hash.
 
     Args:
@@ -64,7 +65,7 @@ def model_name_to_sha1(run_name: str, engine: Engine = ENGINE) -> bytes:
     return model_sha1
 
 
-def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes:
+def prep_for_hash(item: HashableItem) -> bytes:
     """Encodes strings so they can be hashed, otherwises, passes through."""
     if isinstance(item, bytes):
         return item
@@ -76,7 +77,7 @@ def prep_for_hash(item: Union[bytes, bool, str, int, float, bytearray]) -> bytes
         return bytes(item)
 
 
-def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
+def list_to_value_ordered_sha1(list_: list[T]) -> bytes:
     """Returns a single SHA1 hash of a list ordered by its values.
 
     List must be sorted as the different orders of value must produce the same hash.
@@ -95,7 +96,7 @@ def list_to_value_ordered_sha1(list_: List[T]) -> bytes:
     return hashed_vals.digest()
 
 
-def columns_to_value_ordered_sha1(data: DataFrame, columns: List[str]) -> Series:
+def columns_to_value_ordered_sha1(data: DataFrame, columns: list[str]) -> Series:
     """Returns the rowwise SHA1 hash ordered by the row's values, ignoring column order.
 
     This function is used to add a column to a dataframe that represents the SHA1

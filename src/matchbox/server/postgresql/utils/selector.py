@@ -1,5 +1,5 @@
 import io
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Literal
 
 import pandas as pd
 from sqlalchemy import (
@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.server.postgresql import (
-    ENGINE,
     Clusters,
     DDupeContains,
     LinkContains,
@@ -32,7 +31,7 @@ from matchbox.server.postgresql.utils import (
 )
 
 
-def get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
+def get_all_parents(model: Models | list[Models]) -> list[Models]:
     """
     Takes a Models object and returns all items in its parent tree.
 
@@ -62,7 +61,7 @@ def get_all_parents(model: Union[Models, List[Models]]) -> List[Models]:
             return result
 
 
-def get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
+def get_all_children(model: Models | list[Models]) -> list[Models]:
     """
     Takes a Models object and returns all items in its child tree.
 
@@ -92,9 +91,7 @@ def get_all_children(model: Union[Models, List[Models]]) -> List[Models]:
             return result
 
 
-def _parent_to_tree(
-    model_name: str, engine: Engine = ENGINE
-) -> Tuple[bytes, List[bytes]]:
+def _parent_to_tree(model_name: str, engine: Engine) -> tuple[bytes, list[bytes]]:
     """
     Takes the string name of a model and returns a tuple of its SHA-1,
     and the SHA-1 list of its children.
@@ -118,7 +115,7 @@ def _parent_to_tree(
     return model.sha1, [m.sha1 for m in model_children]
 
 
-def _tree_to_reachable_stmt(model_tree: List[bytes]) -> Select:
+def _tree_to_reachable_stmt(model_tree: list[bytes]) -> Select:
     """
     Takes a list of models and returns a query to select their reachable
     edges.
@@ -195,8 +192,8 @@ def _reachable_to_parent_data_stmt(
 
 
 def _selector_to_data(
-    selector: Dict[str, List[str]],
-    engine: Engine = ENGINE,
+    selector: dict[str, list[str]],
+    engine: Engine,
 ) -> Select:
     """
     Takes a dictionary of tables and fields, usually outputted by selectors,
@@ -255,9 +252,9 @@ def _selector_to_data(
 
 
 def _selector_to_pandas_dtypes(
-    selector: Dict[str, List[str]],
-    engine: Engine = ENGINE,
-) -> Dict[str, str]:
+    selector: dict[str, list[str]],
+    engine: Engine,
+) -> dict[str, str]:
     """
     Takes a dictionary of tables and fields, usually outputted by selectors,
     and returns a dictionary of the column names and pandas datatypes.
@@ -291,12 +288,12 @@ def _selector_to_pandas_dtypes(
 
 
 def query(
-    selector: Dict[str, List[str]],
-    model: Optional[str] = None,
-    return_type: str = "pandas",
-    engine: Engine = ENGINE,
+    selector: dict[str, list[str]],
+    engine: Engine,
+    return_type: Literal["pandas", "sqlalchemy"] = "pandas",
+    model: str | None = None,
     limit: int = None,
-) -> Union[pd.DataFrame, ChunkedIteratorResult]:
+) -> pd.DataFrame | ChunkedIteratorResult:
     """
     Takes the dictionaries of tables and fields outputted by selectors and
     queries database for them. If a model "point of truth" is supplied, will

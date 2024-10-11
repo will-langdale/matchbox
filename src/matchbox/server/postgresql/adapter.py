@@ -11,26 +11,19 @@ from sqlalchemy import (
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session
 
+from matchbox.common.exceptions import MatchboxDBDataError
 from matchbox.server.base import (
     IndexableDataset,
     MatchboxDBAdapter,
     MatchboxModelAdapter,
     MatchboxSettings,
 )
-from matchbox.server.exceptions import MatchboxDBDataError
-from matchbox.server.postgresql import (
-    Clusters,
-    DDupeProbabilities,
-    Dedupes,
-    LinkProbabilities,
-    Links,
-    Models,
-    ModelsFrom,
-    SourceData,
-    SourceDataset,
-    clusters_association,
-)
+from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.data import SourceData, SourceDataset
 from matchbox.server.postgresql.db import connect_to_db
+from matchbox.server.postgresql.dedupe import DDupeProbabilities, Dedupes
+from matchbox.server.postgresql.link import LinkProbabilities, Links
+from matchbox.server.postgresql.models import Models, ModelsFrom
 from matchbox.server.postgresql.utils.db import get_model_subgraph
 from matchbox.server.postgresql.utils.delete import delete_model
 from matchbox.server.postgresql.utils.index import index_dataset
