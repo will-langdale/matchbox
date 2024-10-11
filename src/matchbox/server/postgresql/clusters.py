@@ -18,20 +18,20 @@ if TYPE_CHECKING:
 # basic_relationships.html#many-to-many
 
 clusters_association = Table(
-    "cmf__models_create_clusters",
+    "mb__models_create_clusters",
     MatchboxBase.metadata,
     Column(
         "parent",
         BYTEA,
-        ForeignKey("cmf__models.sha1", ondelete="CASCADE"),
+        ForeignKey("mb__models.sha1", ondelete="CASCADE"),
         primary_key=True,
     ),
-    Column("child", BYTEA, ForeignKey("cmf__clusters.sha1"), primary_key=True),
+    Column("child", BYTEA, ForeignKey("mb__clusters.sha1"), primary_key=True),
 )
 
 
 class Clusters(SHA1Mixin, CountMixin, MatchboxBase):
-    __tablename__ = "cmf__clusters"
+    __tablename__ = "mb__clusters"
 
     created_by: Mapped[List["Models"]] = relationship(
         secondary=clusters_association, back_populates="creates"
@@ -40,9 +40,9 @@ class Clusters(SHA1Mixin, CountMixin, MatchboxBase):
 
 
 class ClusterValidation(UUIDMixin, MatchboxBase):
-    __tablename__ = "cmf__cluster_validation"
+    __tablename__ = "mb__cluster_validation"
     __table_args__ = (UniqueConstraint("cluster", "user"),)
 
-    cluster: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("cmf__clusters.sha1"))
+    cluster: Mapped[bytes] = mapped_column(BYTEA, ForeignKey("mb__clusters.sha1"))
     user: Mapped[str] = mapped_column(VARCHAR(100))
     valid: Mapped[bool] = mapped_column(BOOLEAN)

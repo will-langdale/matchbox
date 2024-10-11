@@ -10,7 +10,7 @@ from splink.linker import Linker as SplinkLibLinkerClass
 
 from matchbox.linkers.make_linker import Linker, LinkerSettings
 
-logic_logger = logging.getLogger("cmf_logic")
+logic_logger = logging.getLogger("mb_logic")
 
 
 class SplinkLinkerFunction(BaseModel):

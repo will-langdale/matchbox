@@ -3,6 +3,10 @@ from typing import Any, Optional
 from matchbox.server.postgresql.db import Base
 
 
+class MatchboxConnectionError(Exception):
+    """Connection to Matchbox's backend database failed."""
+
+
 class MatchboxDBDataError(Exception):
     """Data doesn't exist in the Matchbox source table."""
 

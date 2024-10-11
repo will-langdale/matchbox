@@ -1,14 +1,12 @@
-import os
-
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, declared_attr, sessionmaker
 
+from matchbox.server.exceptions import MatchboxConnectionError
+from matchbox.server.postgresql.db import MatchboxPostgresSettings
+
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
-
-if "MB_SCHEMA" not in os.environ:
-    raise KeyError("MB_SCHEMA environment variable not set.")
 
 
 class Base(DeclarativeBase):
@@ -21,21 +19,34 @@ class Base(DeclarativeBase):
         return Session()
 
 
-def connect_to_db(schema: str | None) -> tuple[Base, Engine]:
-    if not schema:
-        schema = os.environ["MB_SCHEMA"]
+def connect_to_db(settings: MatchboxPostgresSettings) -> tuple[Base, Engine]:
+    """Connect to Matchbox's Postgres backend database.
 
-    cmf_meta = MetaData(schema=schema)
+    Args:
+        settings: The settings for Matchbox's PostgreSQL backend.
+
+    Raises:
+        MatchboxConnectionError: If the connection to the database fails.
+    """
+    schema = settings.schema
+
+    mb_meta = MetaData(schema=schema)
 
     class MatchboxBase(Base):
-        metadata = cmf_meta
+        metadata = mb_meta
 
-    engine = create_engine("postgresql://", logging_name="mb_db")
+    engine = create_engine(
+        f"postgresql://{settings.user}:{settings.password}@{settings.host}:{settings.port}/{settings.database}",
+        logging_name="mb_pg_db",
+    )
 
     global Session
     Session = sessionmaker(bind=engine)
 
+    try:
+        with engine.connect() as connection:
+            connection.execute("SELECT 1")
+    except Exception:
+        raise MatchboxConnectionError
+
     return MatchboxBase, engine
-
-
-MatchboxBase, ENGINE = connect_to_db(schema=os.environ["MB_SCHEMA"])

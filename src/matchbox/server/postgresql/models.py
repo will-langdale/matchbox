@@ -29,13 +29,13 @@ class CombinedProbabilities:
 
 
 class Models(SHA1Mixin, MatchboxBase):
-    __tablename__ = "cmf__models"
+    __tablename__ = "mb__models"
     __table_args__ = (UniqueConstraint("name"),)
 
     name: Mapped[str] = mapped_column(VARCHAR(100))
     description: Mapped[str] = mapped_column(VARCHAR(1000))
     deduplicates: Mapped[Optional[uuUUID]] = mapped_column(
-        UUID, ForeignKey("cmf__source_dataset.uuid")
+        UUID, ForeignKey("mb__source_dataset.uuid")
     )
 
     # ORM Many to Many pattern
@@ -117,17 +117,17 @@ class Models(SHA1Mixin, MatchboxBase):
 
 
 class ModelsFrom(MatchboxBase):
-    __tablename__ = "cmf__models_from"
+    __tablename__ = "mb__models_from"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
     # Using PostgreSQL delete cascade to handle model deletion correctly
     # https://docs.sqlalchemy.org/en/20/orm/
     # cascades.html#using-foreign-key-on-delete-cascade-with-orm-relationships
     parent: Mapped[bytes] = mapped_column(
-        BYTEA, ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("mb__models.sha1", ondelete="CASCADE"), primary_key=True
     )
     child: Mapped[bytes] = mapped_column(
-        BYTEA, ForeignKey("cmf__models.sha1", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("mb__models.sha1", ondelete="CASCADE"), primary_key=True
     )
 
     child_model = relationship(

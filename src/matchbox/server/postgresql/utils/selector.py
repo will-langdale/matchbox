@@ -220,7 +220,7 @@ def _selector_to_data(
     for schema_table, fields in selector.items():
         db_schema, db_table = get_schema_table_names(schema_table)
 
-        cmf_dataset = string_to_dataset(db_schema, db_table, engine=engine)
+        mb_dataset = string_to_dataset(db_schema, db_table, engine=engine)
         db_table = string_to_table(db_schema, db_table, engine=engine)
 
         # To handle array column
@@ -234,12 +234,12 @@ def _selector_to_data(
                 "target": db_table,
                 "onclause": and_(
                     source_data_unested.c.id
-                    == db_table.c[cmf_dataset.db_id].cast(String),
-                    source_data_unested.c.dataset == cmf_dataset.uuid,
+                    == db_table.c[mb_dataset.db_id].cast(String),
+                    source_data_unested.c.dataset == mb_dataset.uuid,
                 ),
             }
         )
-        where_stmts.append(db_table.c[cmf_dataset.db_id] != None)  # NoQA E711
+        where_stmts.append(db_table.c[mb_dataset.db_id] != None)  # NoQA E711
 
     stmt = select(
         source_data_unested.c.sha1.label("data_sha1"), *select_stmt

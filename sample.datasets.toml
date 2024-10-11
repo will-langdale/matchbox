@@ -1,0 +1,31 @@
+[warehouses.pg_warehouse]
+db_type = "postgresql"
+username = "your_username"
+password = "your_password"
+host = "localhost"
+port = 5432
+database = "companies_db"
+
+[datasets.companies_house]
+database = "pg_warehouse"
+db_schema = "companieshouse"
+db_table = "companies"
+db_pk = "id"
+
+[datasets.data_hub_companies]
+database = "pg_warehouse"
+db_schema = "dbt"
+db_table = "data_hub__companies"
+db_pk = "id"
+
+[datasets.hmrc_exporters]
+database = "pg_warehouse"
+db_schema = "hmrc"
+db_table = "trade__exporters"
+db_pk = "id"
+
+[datasets.export_wins]
+database = "pg_warehouse"
+db_schema = "dbt"
+db_table = "export_wins__wins_dataset"
+db_pk = "id"

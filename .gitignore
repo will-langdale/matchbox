@@ -2,7 +2,7 @@
 # Project .gitignore #
 ######################
 
-
+datasets.toml
 scratch/
 *.ipynb_checkpoints
 

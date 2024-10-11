@@ -1,17 +1,17 @@
-import io
 from typing import Literal
 
 import pandas as pd
-from sqlalchemy import (
-    select,
-)
-from sqlalchemy.dialects import postgresql
+from dotenv import find_dotenv, load_dotenv
+from pydantic import BaseSettings, Field
+from sqlalchemy import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
-from sqlalchemy.orm import Session
 
-from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
+from matchbox.server.base import (
+    IndexableDataset,
+    MatchboxDBAdapter,
+    MatchboxModelAdapter,
+)
 from matchbox.server.postgresql import (
-    ENGINE,
     Clusters,
     DDupeProbabilities,
     Dedupes,
@@ -23,15 +23,14 @@ from matchbox.server.postgresql import (
     SourceDataset,
     clusters_association,
 )
+from matchbox.server.postgresql.db import connect_to_db
 from matchbox.server.postgresql.utils.db import get_model_subgraph
-from matchbox.server.postgresql.utils.selector import (
-    _parent_to_tree,
-    _reachable_to_parent_data_stmt,
-    _selector_to_data,
-    _selector_to_pandas_dtypes,
-    _tree_to_reachable_stmt,
-    get_all_parents,
-)
+from matchbox.server.postgresql.utils.deletion import delete_model
+from matchbox.server.postgresql.utils.index import index_dataset
+from matchbox.server.postgresql.utils.selector import query
+
+dotenv_path = find_dotenv(usecwd=True)
+load_dotenv(dotenv_path)
 
 
 class MergesUnion:
@@ -48,10 +47,22 @@ class ProposesUnion:
         return DDupeProbabilities.count() + LinkProbabilities.count()
 
 
+class MatchboxPostgresSettings(BaseSettings):
+    """Settings for Matchbox's PostgreSQL backend."""
+
+    host: str = Field(..., env="MB__POSTGRES_HOST")
+    port: int = Field(..., env="MB__POSTGRES_PORT")
+    user: str = Field(..., env="MB__POSTGRES_USER")
+    password: str = Field(..., env="MB__POSTGRES_PASSWORD")
+    database: str = Field(..., env="MB__POSTGRES_DATABASE")
+
+    class Config:
+        env_prefix = "MB__POSTGRES_"
+        allow_population_by_field_name = True
+
+
 class MatchboxPostgres(MatchboxDBAdapter):
     """A PostgreSQL adapter for Matchbox."""
-
-    engine = ENGINE
 
     def __init__(self):
         self.datasets = SourceDataset
@@ -63,6 +74,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self.merges = MergesUnion()
         self.proposes = ProposesUnion()
 
+        MatchboxBase, engine = connect_to_db(settings=MatchboxPostgresSettings())
+
+        self.base = MatchboxBase
+        self.engine = engine
+
+        self.base.metadata.create_all(self.engine)
+
     def query(
         self,
         selector: dict[str, list[str]],
@@ -70,109 +88,34 @@ class MatchboxPostgres(MatchboxDBAdapter):
         return_type: Literal["pandas", "sqlalchemy"] | None = None,
         limit: int = None,
     ) -> pd.DataFrame | ChunkedIteratorResult:
-        """
-        Takes the dictionaries of tables and fields outputted by selectors and
-        queries database for them. If a model "point of truth" is supplied, will
-        attach the clusters this data belongs to.
-
-        To resolve a model point of truth's clusters with the data that belongs to
-        them we:
-
-            * Find all the model's decendent models: the "model tree"
-            * Filter all clusters in the system that models in this tree create:
-            the "reachable clusters"
-            * Union the LinkContains and DDupeContains tables and filter to rows
-            that connect reachable clustes: the "reachable edges"
-            * Recurse on reachable edges to create a lookup of the point of
-            truth's cluster SHA-1 to the ultimate decendent SHA-1 in the chain:
-            the SHA-1 key of the SourceData
+        """Queries the database from an optional model of truth.
 
         Args:
-            selector: a dictionary with keys of table names, and values of a list
-                of data required from that table, likely output by selector() or
-                selectors()
-            model (str): Optional. A model considered the point of truth to decide which
-                clusters data belongs to
-            return_type (str): the form to return data in, one of "pandas" or
-                "sqlalchemy"
-            engine: the SQLAlchemy engine to use
-            limit (int): the number to use in a limit clause. Useful for testing
-
-        Returns:
-            A table containing the requested data from each table, unioned together,
-            with the SHA-1 key of each row in the Company Matching Framework, in the
-            requested return type. If a model was given, also contains the SHA-1
-            cluster of each data -- the company entity the data belongs to according
-            to the model.
+            selector: A dictionary of the validated table name and fields.
+            model (optional): The model of truth to query from.
+            return_type (optional): The type of return data.
+            limit (optional): The number of rows to return.
         """
-        if model is None:
-            # We want raw data with no clusters
-            final_stmt = _selector_to_data(selector, engine=self.engine)
-        else:
-            # We want raw data with clusters attached
-            parent, child = _parent_to_tree(model, engine=self.engine)
-            if len(parent) == 0:
-                raise ValueError(f"Model {model} not found")
-            tree = [parent] + child
-            reachable_stmt = _tree_to_reachable_stmt(tree)
-            lookup_stmt = _reachable_to_parent_data_stmt(reachable_stmt, parent)
-            data_stmt = _selector_to_data(selector, engine=self.engine).cte()
+        return query(
+            selector=selector,
+            engine=self.engine,
+            return_type=return_type,
+            model=model,
+            limit=limit,
+        )
 
-            final_stmt = select(
-                lookup_stmt.c.parent.label("cluster_sha1"), data_stmt
-            ).join(lookup_stmt, lookup_stmt.c.child == data_stmt.c.data_sha1)
+    def index(self, dataset: IndexableDataset, engine: Engine) -> None:
+        """Indexes a data from your data warehouse within Matchbox.
 
-        if limit is not None:
-            final_stmt = final_stmt.limit(limit)
-
-        if return_type == "pandas":
-            # Detect datatypes
-            selector_dtypes = _selector_to_pandas_dtypes(selector, engine=self.engine)
-            default_dtypes = {
-                "cluster_sha1": "string[pyarrow]",
-                "data_sha1": "string[pyarrow]",
-            }
-
-            with self.engine.connect() as conn:
-                # Compile query
-                cursor = conn.connection.cursor()
-                compiled = final_stmt.compile(
-                    dialect=postgresql.dialect(),
-                    compile_kwargs={"render_postcompile": True},
-                )
-                compiled_bound = cursor.mogrify(str(compiled), compiled.params)
-                sql = compiled_bound.decode("utf-8")
-                copy_sql = f"copy ({sql}) to stdout with csv header"
-
-                # Load from Postgres to memory
-                store = io.StringIO()
-                cursor.copy_expert(copy_sql, store)
-                store.seek(0)
-
-                # Read to pandas
-                res = pd.read_csv(
-                    store, dtype=default_dtypes | selector_dtypes, engine="pyarrow"
-                ).convert_dtypes(dtype_backend="pyarrow")
-
-                # Manually convert SHA-1s to bytes correctly
-                if "data_sha1" in res.columns:
-                    res.data_sha1 = res.data_sha1.str[2:].apply(bytes.fromhex)
-                    res.data_sha1 = res.data_sha1.astype("binary[pyarrow]")
-                if "cluster_sha1" in res.columns:
-                    res.cluster_sha1 = res.cluster_sha1.str[2:].apply(bytes.fromhex)
-                    res.cluster_sha1 = res.cluster_sha1.astype("binary[pyarrow]")
-
-        elif return_type == "sqlalchemy":
-            with Session(self.engine) as session:
-                res = session.execute(final_stmt)
-        else:
-            ValueError(f"return_type of {return_type} not valid")
-
-        return res
-
-    def index(self, db_schema: str, db_table: str) -> None:
-        # logic moved from cmf.admin.add_dataset()
-        pass
+        Args:
+            dataset: The dataset to index.
+            engine: The SQLAlchemy engine of your data warehouse.
+        """
+        index_dataset(
+            dataset=dataset,
+            engine=self.engine,
+            warehouse_engine=engine,
+        )
 
     def get_model_subgraph(self) -> dict:
         """Get the full subgraph of a model."""
@@ -183,38 +126,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
         pass
 
     def delete_model(self, model: str, certain: bool = False) -> None:
-        """
-        Deletes:
+        """Delete a model from the database.
 
-        * The model from the model table
-        * The model's edges to its child models from the models_from table
-        * The creates edges the model made from the clusters_association table
-        * Any probability values associated with the model from the ddupe_probabilities
-            and link_probabilities tables
-        * All of the above for all parent models. As every model is defined by
-            its children, deleting a model means cascading deletion to all ancestors
-
-        It DOESN'T delete the raw clusters or probability nodes from the ddupes and
-            links tables, which retain any validation attached to them.
+        Args:
+            model: The model to delete.
+            certain: Whether to delete the model without confirmation.
         """
-        with Session(self.engine) as session:
-            target_model = session.query(Models).filter_by(name=model).first()
-            all_parents = get_all_parents(target_model)
-            if certain:
-                for m in all_parents:
-                    session.delete(m)
-                session.commit()
-            else:
-                raise ValueError(
-                    "This operation will delete the models "
-                    f"{', '.join([m.name for m in all_parents])}, as well as all "
-                    "references to clusters and probabilities they have created."
-                    "\n\n"
-                    "It will not delete validation associated with these "
-                    "clusters or probabilities."
-                    "\n\n"
-                    "If you're sure you want to continue, rerun with certain=True"
-                )
+        delete_model(model=model, certain=certain)
 
     def insert_model(self, model: str) -> None:
         # logic moved from cmf.data.results.ResultsBaseDataclass._model_to_cmf()

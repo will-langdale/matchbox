@@ -26,7 +26,7 @@ from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities,
 from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
 from matchbox.server.postgresql.models import Models, ModelsFrom
 
-logic_logger = logging.getLogger("cmf_logic")
+logic_logger = logging.getLogger("mb_logic")
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -42,7 +42,7 @@ class ResultsBaseDataclass(BaseModel, ABC):
     right: str
 
     _expected_fields: List[str]
-    _batch_size: int = int(os.environ["MB_BATCH_SIZE"])
+    _batch_size: int = int(os.environ["MB__BATCH_SIZE"])
 
     @model_validator(mode="after")
     def _check_dataframe(self) -> Table:
@@ -527,7 +527,7 @@ class ClusterResults(ResultsBaseDataclass):
         """Returns the results as a DataFrame."""
         return self.dataframe.copy().convert_dtypes(dtype_backend="pyarrow")
 
-    def _to_cmf_logic(
+    def _to_mb_logic(
         self,
         contains_class: Union[DDupeContains, LinkContains],
         engine: Engine = ENGINE,
@@ -643,11 +643,11 @@ class ClusterResults(ResultsBaseDataclass):
 
     def _deduper_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a deduper to the CMF database."""
-        self._to_cmf_logic(contains_class=DDupeContains, engine=engine)
+        self._to_mb_logic(contains_class=DDupeContains, engine=engine)
 
     def _linker_to_cmf(self, engine: Engine = ENGINE) -> None:
         """Writes the results of a linker to the CMF database."""
-        self._to_cmf_logic(contains_class=LinkContains, engine=engine)
+        self._to_mb_logic(contains_class=LinkContains, engine=engine)
 
 
 def get_unclustered(
