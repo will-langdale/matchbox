@@ -1,6 +1,5 @@
 import logging
 
-from pg_bulk_ingest import Delete, Upsert, ingest
 from sqlalchemy import (
     Engine,
     delete,
@@ -8,12 +7,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from matchbox.server.base import Probability
+from matchbox.server.base import Cluster, Probability
 from matchbox.server.exceptions import MatchboxDBDataError
-from matchbox.server.postgresql.dedupe import DDupeProbabilities, Dedupes
-from matchbox.server.postgresql.link import LinkProbabilities, Links
+from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
+from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
 from matchbox.server.postgresql.models import Models, ModelsFrom
-from matchbox.server.postgresql.utils import data_to_batch
+from matchbox.server.postgresql.utils.db import batch_ingest
 from matchbox.server.postgresql.utils.sha1 import (
     list_to_value_ordered_sha1,
     model_name_to_sha1,
@@ -91,213 +91,207 @@ def insert_linker(
         session.commit()
 
 
-def insert_deduplication_probabilities(
+def insert_probabilities(
     model: str,
     engine: Engine,
     probabilities: list[Probability],
     batch_size: int,
+    is_deduper: bool,
 ) -> None:
-    """Writes deduplication probabilities to Matchbox."""
-    metadata = f"{model} [Deduplication]"
+    """Writes probabilities to Matchbox."""
+    probability_type = "Deduplication" if is_deduper else "Linking"
+    metadata = f"{model} [{probability_type}]"
 
-    if not len(probabilities):
-        logic_logger.info(f"{metadata} No deduplication data to insert")
+    if not probabilities:
+        logic_logger.info(f"{metadata} No {probability_type.lower()} data to insert")
         return
     else:
         logic_logger.info(
-            f"{metadata} Writing deduplication data with batch size {batch_size}"
+            f"{metadata} Writing {probability_type.lower()} data "
+            f"with batch size {batch_size}"
         )
 
-    def probability_to_ddupe(probability: Probability) -> dict:
-        """Prepares a Probability for the Dedupes table."""
-        return {
-            "sha1": probability.sha1,
-            "left": probability.left,
-            "right": probability.right,
-        }
-
-    def probability_to_ddupeprobability(
-        probability: Probability, model_sha1: bytes
-    ) -> dict:
-        """Prepares a Probability for the DDupeProbabilities table."""
-        return {
-            "ddupe": probability.sha1,
-            "model": model_sha1,
-            "probability": probability.probability,
-        }
+    if is_deduper:
+        ProbabilitiesTable = DDupeProbabilities
+        NodesTable = Dedupes
+    else:
+        ProbabilitiesTable = LinkProbabilities
+        NodesTable = Links
 
     with Session(engine) as session:
-        # Add probabilities
         # Get model
         db_model = session.query(Models).filter_by(name=model).first()
-        model_sha1 = model.sha1
+        model_sha1 = db_model.sha1
 
         if db_model is None:
             raise MatchboxDBDataError(source=Models, data=model)
 
         # Clear old model probabilities
-        old_ddupe_probs_subquery = db_model.proposes_dedupes.select().with_only_columns(
-            DDupeProbabilities.model
+        old_probs_subquery = (
+            (db_model.proposes_dedupes if is_deduper else db_model.proposes_links)
+            .select()
+            .with_only_columns(ProbabilitiesTable.model)
         )
 
         session.execute(
-            delete(DDupeProbabilities).where(
-                DDupeProbabilities.model.in_(old_ddupe_probs_subquery)
+            delete(ProbabilitiesTable).where(
+                ProbabilitiesTable.model.in_(old_probs_subquery)
             )
         )
 
         session.commit()
 
-        logic_logger.info(f"{metadata} Removed old deduplication probabilities")
+        logic_logger.info(
+            f"{metadata} Removed old {probability_type.lower()} probabilities"
+        )
 
     with engine.connect() as conn:
         logic_logger.info(
-            f"{metadata} Inserting %s deduplication objects",
+            f"{metadata} Inserting %s {probability_type.lower()} objects",
             len(probabilities),
         )
 
-        # Upsert dedupe nodes
-        # Create data batching function and pass it to ingest
-        fn_dedupe_batch = data_to_batch(
-            records=[probability_to_ddupe(prob) for prob in probabilities],
-            table=Dedupes.__table__,
+        # Upsert nodes
+        def probability_to_node(probability: Probability) -> dict:
+            return {
+                "sha1": probability.sha1,
+                "left": probability.left,
+                "right": probability.right,
+            }
+
+        batch_ingest(
+            records=[probability_to_node(prob) for prob in probabilities],
+            table=NodesTable,
+            conn=conn,
             batch_size=batch_size,
         )
 
-        ingest(
-            conn=conn,
-            metadata=Dedupes.metadata,
-            batches=fn_dedupe_batch,
-            upsert=Upsert.IF_PRIMARY_KEY,
-            delete=Delete.OFF,
-        )
+        # Insert probabilities
+        def probability_to_probability(
+            probability: Probability, model_sha1: bytes
+        ) -> dict:
+            return {
+                "ddupe" if is_deduper else "link": probability.sha1,
+                "model": model_sha1,
+                "probability": probability.probability,
+            }
 
-        # Insert dedupe probabilities
-        fn_dedupe_probs_batch = data_to_batch(
+        batch_ingest(
             records=[
-                probability_to_ddupeprobability(prob, model_sha1)
-                for prob in probabilities
+                probability_to_probability(prob, model_sha1) for prob in probabilities
             ],
-            table=DDupeProbabilities.__table__,
-            batch_size=batch_size,
-        )
-
-        ingest(
+            table=ProbabilitiesTable,
             conn=conn,
-            metadata=DDupeProbabilities.metadata,
-            batches=fn_dedupe_probs_batch,
-            upsert=Upsert.IF_PRIMARY_KEY,
-            delete=Delete.OFF,
+            batch_size=batch_size,
         )
 
         logic_logger.info(
-            f"{metadata} Inserted all %s deduplication objects",
+            f"{metadata} Inserted all %s {probability_type.lower()} objects",
             len(probabilities),
         )
 
     logic_logger.info(f"{metadata} Complete!")
 
 
-def insert_link_probabilities(
+def insert_clusters(
     model: str,
     engine: Engine,
-    probabilities: list[Probability],
+    clusters: list[Cluster],
     batch_size: int,
+    is_deduper: bool,
 ) -> None:
-    """Writes link probabilities to Matchbox."""
-    metadata = f"{model} [Linking]"
+    """Writes clusters to Matchbox."""
+    metadata = f"{model} [{'Deduplication' if is_deduper else 'Linking'}]"
 
-    if not len(probabilities):
-        logic_logger.info(f"{metadata} No link data to insert")
+    if not clusters:
+        logic_logger.info(f"{metadata} No cluster data to insert")
         return
     else:
-        logic_logger.info(f"{metadata} Writing link data with batch size {batch_size}")
+        logic_logger.info(
+            f"{metadata} Writing cluster data with batch size {batch_size}"
+        )
 
-    def probability_to_link(probability: Probability) -> dict:
-        """Prepares a Probability for the Links table."""
-        return {
-            "sha1": probability.sha1,
-            "left": probability.left,
-            "right": probability.right,
-        }
-
-    def probability_to_linkprobability(
-        probability: Probability, model_sha1: bytes
-    ) -> dict:
-        """Prepares a Probability for the LinkProbabilities table."""
-        return {
-            "link": probability.sha1,
-            "model": model_sha1,
-            "probability": probability.probability,
-        }
+    Contains = DDupeContains if is_deduper else LinkContains
 
     with Session(engine) as session:
-        # Add probabilities
         # Get model
-        model = session.query(Models).filter_by(name=model).first()
-        model_sha1 = model.sha1
+        db_model = session.query(Models).filter_by(name=model).first()
+        model_sha1 = db_model.sha1
 
-        if model is None:
+        if db_model is None:
             raise MatchboxDBDataError(source=Models, data=model)
 
-        # Clear old model probabilities
-        old_link_probs_subquery = model.proposes_links.select().with_only_columns(
-            LinkProbabilities.model
+        # Clear old model endorsements
+        old_cluster_creates_subquery = db_model.creates.select().with_only_columns(
+            Clusters.sha1
         )
 
         session.execute(
-            delete(LinkProbabilities).where(
-                LinkProbabilities.model.in_(old_link_probs_subquery)
+            delete(clusters_association).where(
+                clusters_association.c.child.in_(old_cluster_creates_subquery)
             )
         )
 
         session.commit()
 
-        logic_logger.info(f"{metadata} Removed old link probabilities")
+        logic_logger.info(f"{metadata} Removed old clusters")
 
     with engine.connect() as conn:
         logic_logger.info(
-            f"{metadata} Inserting %s link objects",
-            len(probabilities),
+            f"{metadata} Inserting %s cluster objects",
+            len(clusters),
         )
 
-        # Upsert link nodes
-        # Create data batching function and pass it to ingest
-        fn_link_batch = data_to_batch(
-            records=[probability_to_link(prob) for prob in probabilities],
-            table=Links.__table__,
+        # Upsert cluster nodes
+        def cluster_to_cluster(cluster: Cluster) -> dict:
+            """Prepares a Cluster for the Clusters table."""
+            return {
+                "sha1": cluster.parent,
+            }
+
+        batch_ingest(
+            records=list({cluster_to_cluster(cluster) for cluster in clusters}),
+            table=Clusters,
+            conn=conn,
             batch_size=batch_size,
         )
 
-        ingest(
+        # Insert cluster contains
+        def cluster_to_cluster_contains(cluster: Cluster) -> dict:
+            """Prepares a Cluster for the Contains tables."""
+            return {
+                "parent": cluster.parent,
+                "child": cluster.child,
+            }
+
+        batch_ingest(
+            records=[cluster_to_cluster_contains(cluster) for cluster in clusters],
+            table=Contains,
             conn=conn,
-            metadata=Links.metadata,
-            batches=fn_link_batch,
-            upsert=Upsert.IF_PRIMARY_KEY,
-            delete=Delete.OFF,
+            batch_size=batch_size,
         )
 
-        # Insert link probabilities
-        fn_link_probs_batch = data_to_batch(
+        # Insert cluster proposed by
+        def cluster_to_cluster_association(cluster: Cluster, model_sha1: bytes) -> dict:
+            """Prepares a Cluster for the cluster association table."""
+            return {
+                "parent": model_sha1,
+                "child": cluster.parent,
+            }
+
+        batch_ingest(
             records=[
-                probability_to_linkprobability(prob, model_sha1)
-                for prob in probabilities
+                cluster_to_cluster_association(cluster, model_sha1)
+                for cluster in clusters
             ],
-            table=LinkProbabilities.__table__,
-            batch_size=batch_size,
-        )
-
-        ingest(
+            table=clusters_association,
             conn=conn,
-            metadata=LinkProbabilities.metadata,
-            batches=fn_link_probs_batch,
-            upsert=Upsert.IF_PRIMARY_KEY,
-            delete=Delete.OFF,
+            batch_size=batch_size,
         )
 
         logic_logger.info(
-            f"{metadata} Inserted all %s link objects",
-            len(probabilities),
+            f"{metadata} Inserted all %s cluster objects",
+            len(clusters),
         )
 
     logic_logger.info(f"{metadata} Complete!")

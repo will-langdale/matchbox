@@ -110,7 +110,7 @@ def test_linkers(
     assert linked_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(linked_df_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r):
+    for field_l, field_r in zip(fields_l, fields_r, strict=False):
         assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
     # 3. Linked probabilities are inserted correctly
@@ -137,7 +137,7 @@ def test_linkers(
     assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r):
+    for field_l, field_r in zip(fields_l, fields_r, strict=False):
         # When we enrich the ClusterResults in a deduplication job, every child
         # hash will match something in the source data, because we're only using
         # one dataset. NaNs are therefore impossible.
@@ -183,7 +183,7 @@ def test_linkers(
     assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r):
+    for field_l, field_r in zip(fields_l, fields_r, strict=False):
         # See above for method
         # Only change is that we've now introduced expected NaNs for data
         # that contains different number of entities

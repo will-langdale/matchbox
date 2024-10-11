@@ -3,6 +3,7 @@ from typing import Literal
 import pandas as pd
 from dotenv import find_dotenv, load_dotenv
 from pydantic import BaseSettings, Field
+from rustworkx import PyDiGraph
 from sqlalchemy import (
     Engine,
     bindparam,
@@ -170,7 +171,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 source=Source,
             )
 
-    def get_model_subgraph(self) -> dict:
+    def get_model_subgraph(self) -> PyDiGraph:
         """Get the full subgraph of a model."""
         return get_model_subgraph(engine=self.engine)
 

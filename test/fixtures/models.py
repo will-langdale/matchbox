@@ -197,7 +197,9 @@ dedupe_model_test_params = [
 def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     comparisons = []
 
-    for field_l, field_r in zip(data.fields_l.keys(), data.fields_r.keys()):
+    for field_l, field_r in zip(
+        data.fields_l.keys(), data.fields_r.keys(), strict=False
+    ):
         comparisons.append(f"l.{field_l} = r.{field_r}")
 
     return {
@@ -261,7 +263,7 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
 def make_weighted_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     weighted_comparisons = []
 
-    for field_l, field_r in zip(data.fields_l, data.fields_r):
+    for field_l, field_r in zip(data.fields_l, data.fields_r, strict=False):
         weighted_comparisons.append((f"l.{field_l} = r.{field_r}", 1))
 
     return {

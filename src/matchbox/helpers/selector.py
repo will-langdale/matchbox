@@ -11,7 +11,7 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from matchbox.server import MatchboxDBAdapter
-from matchbox.server.exceptions import MatchboxSourceTableError
+from matchbox.server.exceptions import MatchboxSourceTableError, MatchboxValidatonError
 
 
 def get_schema_table_names(full_name: str, validate: bool = False) -> tuple[str, str]:
@@ -28,7 +28,7 @@ def get_schema_table_names(full_name: str, validate: bool = False) -> tuple[str,
     Raises:
         ValueError: When the function can't detect either a
         schema.table or table format in the input
-        ValidationError: If both schema and table can't be detected
+        MatchboxValidatonError: If both schema and table can't be detected
         when the validate argument is True
 
     Returns:
@@ -52,7 +52,9 @@ def get_schema_table_names(full_name: str, validate: bool = False) -> tuple[str,
         )
 
     if validate and schema is None:
-        raise ("Schema could not be detected and validation required.")
+        raise MatchboxValidatonError(
+            "Schema could not be detected and validation required."
+        )
 
     return (schema, table)
 

@@ -1,17 +1,15 @@
 import rustworkx as rx
 from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
-from sqlalchemy import Engine
 
-from matchbox.data import ENGINE
-from matchbox.data.utils import get_model_subgraph
+from matchbox.server.base import MatchboxDBAdapter
 
 
-def draw_model_tree(engine: Engine = ENGINE) -> Figure:
+def draw_model_tree(backend: MatchboxDBAdapter) -> Figure:
     """
     Draws the model subgraph.
     """
-    G = get_model_subgraph(engine=engine)
+    G = backend.get_model_subgraph()
 
     node_indices = G.node_indices()
     datasets = {

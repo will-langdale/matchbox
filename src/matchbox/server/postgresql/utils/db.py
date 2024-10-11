@@ -6,7 +6,9 @@ from itertools import islice
 from typing import Any, Callable, Iterable, Tuple
 
 import rustworkx as rx
+from pg_bulk_ingest import Delete, Upsert, ingest
 from sqlalchemy import Engine, MetaData, Table
+from sqlalchemy.engine.base import Connection
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
@@ -128,3 +130,26 @@ def data_to_batch(
             yield None, None, ((table, t) for t in batch)
 
     return _batches
+
+
+def batch_ingest(
+    records: list[dict],
+    table: Table,
+    conn: Connection,
+    batch_size: int,
+) -> None:
+    """Batch ingest records into a database table."""
+
+    fn_batch = data_to_batch(
+        records=records,
+        table=table,
+        batch_size=batch_size,
+    )
+
+    ingest(
+        conn=conn,
+        metadata=table.metadata,
+        batches=fn_batch,
+        upsert=Upsert.IF_PRIMARY_KEY,
+        delete=Delete.OFF,
+    )

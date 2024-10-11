@@ -7,6 +7,10 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
+class MatchboxValidatonError(Exception):
+    """Validation of data failed."""
+
+
 class MatchboxDBDataError(Exception):
     """Data doesn't exist in the Matchbox source table."""
 

@@ -14,8 +14,8 @@ from matchbox.server.postgresql.dedupe import DDupeProbabilities
 from matchbox.server.postgresql.link import LinkProbabilities
 from matchbox.server.postgresql.mixin import SHA1Mixin
 from matchbox.server.postgresql.utils.insert import (
-    insert_deduplication_probabilities,
-    insert_link_probabilities,
+    insert_clusters,
+    insert_probabilities,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +32,8 @@ class CombinedProbabilities:
 
 
 class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
+    """The Matchbox PostgreSQL model class, and ModelAdaper for PostgreSQL."""
+
     __tablename__ = "mb__models"
     __table_args__ = (UniqueConstraint("name"),)
 
@@ -78,16 +80,20 @@ class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
 
     @property
     def clusters(self) -> Clusters:
+        """Returns all clusters the model endorses."""
         return self.creates
 
     @property
     def probabilities(self) -> CombinedProbabilities:
+        """Returns all probabilities the model proposes."""
         return CombinedProbabilities(self.proposes_dedupes, self.proposes_links)
 
     def parent_neighbours(self) -> list["Models"]:
+        """Returns the parent neighbours of the model."""
         return [x.parent_model for x in self.child_edges]
 
     def child_neighbours(self) -> list["Models"]:
+        """Returns the child neighbours of the model."""
         return [x.child_model for x in self.parent_edges]
 
     def insert_probabilities(
@@ -96,25 +102,29 @@ class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
         probability_type: Literal["deduplications", "links"],
         batch_size: int,
     ) -> None:
-        if probability_type == "deduplications":
-            insert_deduplication_probabilities(
-                model=self.name,
-                engine=self.get_session().get_bind(),
-                probabilities=probabilities,
-                batch_size=batch_size,
-            )
-        elif probability_type == "links":
-            insert_link_probabilities(
-                model=self.name,
-                engine=self.get_session().get_bind(),
-                probabilities=probabilities,
-                batch_size=batch_size,
-            )
+        """Inserts probabilities into the database."""
+        insert_probabilities(
+            model=self.name,
+            engine=self.get_session().get_bind(),
+            probabilities=probabilities,
+            batch_size=batch_size,
+            is_deduper=True if probability_type == "deduplications" else False,
+        )
 
-    def insert_clusters(self, clusters: list[Cluster]) -> None:
-        for cluster in clusters:
-            self.creates.add(cluster)
-        self.session.flush()
+    def insert_clusters(
+        self,
+        clusters: list[Cluster],
+        cluster_type: Literal["deduplications", "links"],
+        batch_size: int,
+    ) -> None:
+        """Inserts clusters into the database."""
+        insert_clusters(
+            model=self.name,
+            engine=self.get_session().get_bind(),
+            clusters=clusters,
+            batch_size=batch_size,
+            is_deduper=True if cluster_type == "deduplications" else False,
+        )
 
 
 # From

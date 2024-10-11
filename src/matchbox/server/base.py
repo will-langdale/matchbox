@@ -4,6 +4,7 @@ from typing import Literal, Protocol
 
 import pandas as pd
 from pydantic import AnyUrl, BaseModel, Field
+from rustworkx import PyDiGraph
 from sqlalchemy import create_engine
 from sqlalchemy import text as sqltext
 from sqlalchemy.engine import Engine
@@ -154,7 +155,7 @@ class MatchboxDBAdapter(ABC):
     ) -> bool: ...
 
     @abstractmethod
-    def get_model_subgraph(self) -> dict: ...
+    def get_model_subgraph(self) -> PyDiGraph: ...
 
     @abstractmethod
     def get_model(self, model: str) -> MatchboxModelAdapter: ...

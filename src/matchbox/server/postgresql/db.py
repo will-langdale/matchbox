@@ -46,7 +46,7 @@ def connect_to_db(settings: MatchboxPostgresSettings) -> tuple[Base, Engine]:
     try:
         with engine.connect() as connection:
             connection.execute("SELECT 1")
-    except Exception:
-        raise MatchboxConnectionError
+    except Exception as e:
+        raise MatchboxConnectionError from e
 
     return MatchboxBase, engine
