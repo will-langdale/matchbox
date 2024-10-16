@@ -16,19 +16,13 @@ from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
 
-from matchbox.server.postgresql import (
-    Clusters,
-    DDupeContains,
-    LinkContains,
-    Models,
-    SourceData,
-    clusters_association,
-)
-from matchbox.server.postgresql.utils import (
-    get_schema_table_names,
-    string_to_dataset,
-    string_to_table,
-)
+from matchbox.helpers.selector import get_schema_table_names, string_to_table
+from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.data import SourceData
+from matchbox.server.postgresql.dedupe import DDupeContains
+from matchbox.server.postgresql.link import LinkContains
+from matchbox.server.postgresql.models import Models
+from matchbox.server.postgresql.utils.db import string_to_dataset
 
 
 def get_all_parents(model: Models | list[Models]) -> list[Models]:

@@ -6,15 +6,15 @@ from sqlalchemy import UUID, func
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column
 
-from matchbox.server.postgresql.db import Base
+from matchbox.server.postgresql.db import MBDB
 
-T = TypeVar("T", bound="Base")
+T = TypeVar("T")
 
 
 class CountMixin:
     @classmethod
     def count(cls: type[T]) -> int:
-        with cls.get_session() as session:
+        with MBDB.get_session() as session:
             return session.query(func.count()).select_from(cls).scalar()
 
 

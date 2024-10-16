@@ -6,14 +6,14 @@ from sqlalchemy import BOOLEAN, NUMERIC, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin, UUIDMixin
 
 if TYPE_CHECKING:
     from matchbox.server.postgresql.models import Models
 
 
-class Links(SHA1Mixin, CountMixin, MatchboxBase):
+class Links(SHA1Mixin, CountMixin, MBDB.MatchboxBase):
     __tablename__ = "mb__links"
     __table_args__ = (UniqueConstraint("left", "right"),)
 
@@ -24,7 +24,7 @@ class Links(SHA1Mixin, CountMixin, MatchboxBase):
     proposers: Mapped[List["LinkProbabilities"]] = relationship(back_populates="links")
 
 
-class LinkProbabilities(CountMixin, MatchboxBase):
+class LinkProbabilities(CountMixin, MBDB.MatchboxBase):
     """
     The associationn object betweenn Models and Links
     """
@@ -48,7 +48,7 @@ class LinkProbabilities(CountMixin, MatchboxBase):
     proposed_by: Mapped["Models"] = relationship(back_populates="proposes_links")
 
 
-class LinkContains(MatchboxBase):
+class LinkContains(MBDB.MatchboxBase):
     __tablename__ = "mb__link_contains"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
@@ -60,7 +60,7 @@ class LinkContains(MatchboxBase):
     )
 
 
-class LinkValidation(UUIDMixin, MatchboxBase):
+class LinkValidation(UUIDMixin, MBDB.MatchboxBase):
     __tablename__ = "mb__link_validation"
     __table_args__ = (UniqueConstraint("link", "user"),)
 

@@ -1,8 +1,8 @@
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from matchbox.helpers.selector import get_all_parents
 from matchbox.server.postgresql.models import Models
+from matchbox.server.postgresql.utils.selector import get_all_parents
 
 
 def delete_model(model: str, engine: Engine, certain: bool = False) -> None:

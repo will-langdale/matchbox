@@ -1,37 +1,23 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID as uuUUID
 
 from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
-from matchbox.server.base import Cluster, MatchboxModelAdapter, Probability
 from matchbox.server.postgresql.clusters import clusters_association
-from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.dedupe import DDupeProbabilities
 from matchbox.server.postgresql.link import LinkProbabilities
 from matchbox.server.postgresql.mixin import SHA1Mixin
-from matchbox.server.postgresql.utils.insert import (
-    insert_clusters,
-    insert_probabilities,
-)
 
 if TYPE_CHECKING:
-    from matchbox.server.postgresql import Clusters
+    from matchbox.server.postgresql.clusters import Clusters
 
 
-class CombinedProbabilities:
-    def __init__(self, dedupes, links):
-        self._dedupes = dedupes
-        self._links = links
-
-    def count(self):
-        return self._dedupes.count() + self._links.count()
-
-
-class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
+class Models(SHA1Mixin, MBDB.MatchboxBase):
     """The Matchbox PostgreSQL model class, and ModelAdaper for PostgreSQL."""
 
     __tablename__ = "mb__models"
@@ -78,16 +64,6 @@ class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
         passive_deletes=True,
     )
 
-    @property
-    def clusters(self) -> Clusters:
-        """Returns all clusters the model endorses."""
-        return self.creates
-
-    @property
-    def probabilities(self) -> CombinedProbabilities:
-        """Returns all probabilities the model proposes."""
-        return CombinedProbabilities(self.proposes_dedupes, self.proposes_links)
-
     def parent_neighbours(self) -> list["Models"]:
         """Returns the parent neighbours of the model."""
         return [x.parent_model for x in self.child_edges]
@@ -96,41 +72,11 @@ class Models(SHA1Mixin, MatchboxModelAdapter, MatchboxBase):
         """Returns the child neighbours of the model."""
         return [x.child_model for x in self.parent_edges]
 
-    def insert_probabilities(
-        self,
-        probabilities: list[Probability],
-        probability_type: Literal["deduplications", "links"],
-        batch_size: int,
-    ) -> None:
-        """Inserts probabilities into the database."""
-        insert_probabilities(
-            model=self.name,
-            engine=self.get_session().get_bind(),
-            probabilities=probabilities,
-            batch_size=batch_size,
-            is_deduper=True if probability_type == "deduplications" else False,
-        )
-
-    def insert_clusters(
-        self,
-        clusters: list[Cluster],
-        cluster_type: Literal["deduplications", "links"],
-        batch_size: int,
-    ) -> None:
-        """Inserts clusters into the database."""
-        insert_clusters(
-            model=self.name,
-            engine=self.get_session().get_bind(),
-            clusters=clusters,
-            batch_size=batch_size,
-            is_deduper=True if cluster_type == "deduplications" else False,
-        )
-
 
 # From
 
 
-class ModelsFrom(MatchboxBase):
+class ModelsFrom(MBDB.MatchboxBase):
     __tablename__ = "mb__models_from"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 

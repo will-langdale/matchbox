@@ -4,11 +4,11 @@ from typing import List, Optional
 
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
-from matchbox.server.base import Cluster, MatchboxDBAdapter, Probability
-from matchbox.server.postgresql.utils.sha1 import (
+from matchbox.common.sha1 import (
     columns_to_value_ordered_sha1,
     list_to_value_ordered_sha1,
 )
+from matchbox.server.base import Cluster, MatchboxDBAdapter, Probability
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import Table

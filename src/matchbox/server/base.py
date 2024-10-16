@@ -1,17 +1,17 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from pathlib import Path
 from typing import Literal, Protocol
 
 import pandas as pd
 from pydantic import AnyUrl, BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import create_engine
 from sqlalchemy import text as sqltext
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.exc import SQLAlchemyError
-
-from matchbox.server.postgresql.adapter import MatchboxPostgres
 
 
 class Countable(Protocol):
@@ -60,7 +60,7 @@ class SourceWarehouse(BaseModel):
     _engine: Engine | None = None
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
         extra = "forbid"
         arbitrary_types_allowed = True
 
@@ -96,7 +96,7 @@ class IndexableDataset(BaseModel):
     db_table: str
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
     def __str__(self) -> str:
         return f"{self.db_schema}.{self.db_table}"
@@ -120,6 +120,28 @@ class MatchboxModelAdapter(ABC):
 
     @abstractmethod
     def insert_clusters(self, clusters: list[Cluster], batch_size: int) -> None: ...
+
+
+class MatchboxBackends(StrEnum):
+    """The available backends for Matchbox."""
+
+    POSTGRES = "postgres"
+
+
+class MatchboxSettings(BaseSettings):
+    """Settings for the Matchbox application."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MB__",
+        env_nested_delimiter="__",
+        use_enum_values=True,
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    datasets_config: Path
+    batch_size: int = Field(default=250_000)
+    backend_type: MatchboxBackends
 
 
 class MatchboxDBAdapter(ABC):
@@ -165,30 +187,3 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def insert_model(self, model: str) -> None: ...
-
-
-class MatchboxBackends(StrEnum):
-    """The available backends for Matchbox."""
-
-    POSTGRES = "postgres"
-
-
-class MatchboxSettings(BaseModel):
-    """Settings for the Matchbox application."""
-
-    batch_size: int = Field(default=250_000, alias="MB__BATCH_SIZE")
-    backend_type: MatchboxBackends = Field(
-        default=MatchboxBackends.POSTGRES, alias="MB__BACKEND_TYPE"
-    )
-
-    class Config:
-        env_prefix = "MB__"
-        use_enum_values = True
-        allow_population_by_field_name = True
-
-    @property
-    def backend(self) -> MatchboxDBAdapter:
-        if self.backend_type == MatchboxBackends.POSTGRES:
-            return MatchboxPostgres(settings=self)
-        else:
-            raise ValueError(f"Unsupported backend type: {self.backend_type}")

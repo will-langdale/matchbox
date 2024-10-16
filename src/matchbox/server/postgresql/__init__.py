@@ -1,3 +1,6 @@
-from matchbox.server.postgresql.adapter import MatchboxPostgres
+from matchbox.server.postgresql.adapter import (
+    MatchboxPostgres,
+    MatchboxPostgresSettings,
+)
 
-__all__ = ["MatchboxPostgres"]
+__all__ = ["MatchboxPostgres", "MatchboxPostgresSettings"]

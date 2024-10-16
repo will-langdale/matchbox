@@ -1,4 +1,3 @@
-from matchbox.server.base import MatchboxDBAdapter
-from matchbox.server.postgresql.adapter import MatchboxPostgres
+from matchbox.server.base import MatchboxDBAdapter, MatchboxSettings
 
-__all__ = ["MatchboxDBAdapter", "MatchboxPostgres"]
+__all__ = ["MatchboxDBAdapter", "MatchboxSettings"]

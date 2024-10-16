@@ -1,5 +1,4 @@
-import os
-from typing import Any, Callable, Dict, Type, Union
+from typing import Any, Callable
 
 import splink.duckdb.comparison_library as cl
 from matchbox.dedupers import NaiveDeduper
@@ -18,9 +17,9 @@ from splink.duckdb.linker import DuckDBLinker
 class DedupeTestParams(BaseModel):
     """Data class for raw dataset testing parameters and attributes."""
 
-    source: str = Field(description="SQL reference for the source table")
+    source: str = Field(description="Reference for the source table")
     fixture: str = Field(description="pytest fixture of the clean data")
-    fields: Dict[str, str] = Field(
+    fields: dict[str, str] = Field(
         description=(
             "Data fields to select and work with. The key is the name of the "
             "field as it comes out of the database, the value is what it should be "
@@ -37,9 +36,9 @@ class DedupeTestParams(BaseModel):
 class LinkTestParams(BaseModel):
     """Data class for deduped dataset testing parameters and attributes."""
 
-    source_l: str = Field(description="SQL reference for the left source table")
+    source_l: str = Field(description="Reference for the left source model")
     fixture_l: str = Field(description="pytest fixture of the clean left data")
-    fields_l: Dict[str, str] = Field(
+    fields_l: dict[str, str] = Field(
         description=(
             "Left data fields to select and work with. The key is the name of the "
             "field as it comes out of the database, the value is what it should be "
@@ -49,9 +48,9 @@ class LinkTestParams(BaseModel):
     )
     curr_n_l: int = Field(description="Current row count of the left data")
 
-    source_r: str = Field(description="SQL reference for the right source table")
+    source_r: str = Field(description="Reference for the right source model")
     fixture_r: str = Field(description="pytest fixture of the clean right data")
-    fields_r: Dict[str, str] = Field(
+    fields_r: dict[str, str] = Field(
         description=(
             "Right data fields to select and work with. The key is the name of the "
             "field as it comes out of the database, the value is what it should be "
@@ -66,8 +65,8 @@ class LinkTestParams(BaseModel):
     tgt_clus_n: int = Field(description="Expected count of resolved clusters")
 
 
-Model = Type[Union[Deduper, Linker]]
-DataSettings = Callable[[Union[DedupeTestParams, LinkTestParams]], Dict[str, Any]]
+Model = type[Deduper | Linker]
+DataSettings = Callable[[DedupeTestParams | LinkTestParams], dict[str, Any]]
 
 
 class ModelTestParams(BaseModel):
@@ -92,11 +91,11 @@ class ModelTestParams(BaseModel):
 
 dedupe_data_test_params = [
     DedupeTestParams(
-        source=f"{os.getenv('MB__POSTGRES__SCHEMA')}.crn",
+        source="test.crn",
         fixture="query_clean_crn",
         fields={
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_company_name": "company_name",
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_crn": "crn",
+            "test_crn_company_name": "company_name",
+            "test_crn_crn": "crn",
         },
         # 1000 unique items repeated three times
         unique_n=1000,
@@ -106,11 +105,11 @@ dedupe_data_test_params = [
         tgt_clus_n=1000,
     ),
     DedupeTestParams(
-        source=f"{os.getenv('MB__POSTGRES__SCHEMA')}.duns",
+        source="test.duns",
         fixture="query_clean_duns",
         fields={
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_duns_company_name": "company_name",
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_duns_duns": "duns",
+            "test_duns_company_name": "company_name",
+            "test_duns_duns": "duns",
         },
         # 500 unique items with no duplication
         unique_n=500,
@@ -120,11 +119,11 @@ dedupe_data_test_params = [
         tgt_clus_n=0,
     ),
     DedupeTestParams(
-        source=f"{os.getenv('MB__POSTGRES__SCHEMA')}.cdms",
+        source="test.cdms",
         fixture="query_clean_cdms",
         fields={
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_cdms_crn": "crn",
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_cdms_cdms": "cdms",
+            "test_cdms_crn": "crn",
+            "test_cdms_cdms": "cdms",
         },
         # 1000 unique items repeated two times
         unique_n=1000,
@@ -139,18 +138,14 @@ dedupe_data_test_params = [
 link_data_test_params = [
     LinkTestParams(
         # Left
-        source_l=f"naive_{os.getenv('MB__POSTGRES__SCHEMA')}.crn",
+        source_l="naive_test.crn",
         fixture_l="query_clean_crn_deduped",
-        fields_l={
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_company_name": "company_name"
-        },
+        fields_l={"test_crn_company_name": "company_name"},
         curr_n_l=3000,
         # Right
-        source_r=f"naive_{os.getenv('MB__POSTGRES__SCHEMA')}.duns",
+        source_r="naive_test.duns",
         fixture_r="query_clean_duns_deduped",
-        fields_r={
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_duns_company_name": "company_name"
-        },
+        fields_r={"test_duns_company_name": "company_name"},
         curr_n_r=500,
         # Check
         unique_n=1000,
@@ -160,16 +155,16 @@ link_data_test_params = [
     ),
     LinkTestParams(
         # Left
-        source_l=f"naive_{os.getenv('MB__POSTGRES__SCHEMA')}.cdms",
+        source_l="naive_test.cdms",
         fixture_l="query_clean_cdms_deduped",
         fields_l={
-            f"{os.getenv('MB__POSTGRES__SCHEMA')}_cdms_crn": "crn",
+            "test_cdms_crn": "crn",
         },
         curr_n_l=2000,
         # Right
-        source_r=f"naive_{os.getenv('MB__POSTGRES__SCHEMA')}.crn",
+        source_r="naive_test.crn",
         fixture_r="query_clean_crn_deduped",
-        fields_r={f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_crn": "crn"},
+        fields_r={"test_crn_crn": "crn"},
         curr_n_r=3000,
         # Check
         unique_n=1000,
@@ -180,7 +175,7 @@ link_data_test_params = [
 ]
 
 
-def make_naive_dd_settings(data: DedupeTestParams) -> Dict[str, Any]:
+def make_naive_dd_settings(data: DedupeTestParams) -> dict[str, Any]:
     return {"id": "data_sha1", "unique_fields": list(data.fields.keys())}
 
 
@@ -194,7 +189,7 @@ dedupe_model_test_params = [
 ]
 
 
-def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+def make_deterministic_li_settings(data: LinkTestParams) -> dict[str, Any]:
     comparisons = []
 
     for field_l, field_r in zip(
@@ -209,7 +204,7 @@ def make_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     }
 
 
-def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+def make_splink_li_settings(data: LinkTestParams) -> dict[str, Any]:
     fields_l = data.fields_l.values()
     fields_r = data.fields_r.values()
     if set(fields_l) != set(fields_r):
@@ -260,7 +255,7 @@ def make_splink_li_settings(data: LinkTestParams) -> Dict[str, Any]:
     }
 
 
-def make_weighted_deterministic_li_settings(data: LinkTestParams) -> Dict[str, Any]:
+def make_weighted_deterministic_li_settings(data: LinkTestParams) -> dict[str, Any]:
     weighted_comparisons = []
 
     for field_l, field_r in zip(data.fields_l, data.fields_r, strict=False):

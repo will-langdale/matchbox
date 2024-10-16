@@ -6,11 +6,11 @@ from sqlalchemy import BOOLEAN, VARCHAR, Column, ForeignKey, Table, UniqueConstr
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from matchbox.server.postgresql import Models
+    from matchbox.server.postgresql.models import Models
 
 
 # ORM Many to Many pattern -- models/clusters association table
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 clusters_association = Table(
     "mb__models_create_clusters",
-    MatchboxBase.metadata,
+    MBDB.MatchboxBase.metadata,
     Column(
         "parent",
         BYTEA,
@@ -30,7 +30,7 @@ clusters_association = Table(
 )
 
 
-class Clusters(SHA1Mixin, CountMixin, MatchboxBase):
+class Clusters(SHA1Mixin, CountMixin, MBDB.MatchboxBase):
     __tablename__ = "mb__clusters"
 
     created_by: Mapped[List["Models"]] = relationship(
@@ -39,7 +39,7 @@ class Clusters(SHA1Mixin, CountMixin, MatchboxBase):
     clusters_validation: Mapped[List["ClusterValidation"]] = relationship()
 
 
-class ClusterValidation(UUIDMixin, MatchboxBase):
+class ClusterValidation(UUIDMixin, MBDB.MatchboxBase):
     __tablename__ = "mb__cluster_validation"
     __table_args__ = (UniqueConstraint("cluster", "user"),)
 

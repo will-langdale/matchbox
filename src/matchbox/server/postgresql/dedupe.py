@@ -6,14 +6,14 @@ from sqlalchemy import BOOLEAN, NUMERIC, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from matchbox.server.postgresql.db import MatchboxBase
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin, UUIDMixin
 
 if TYPE_CHECKING:
     from matchbox.server.postgresql.models import Models
 
 
-class Dedupes(SHA1Mixin, CountMixin, MatchboxBase):
+class Dedupes(SHA1Mixin, CountMixin, MBDB.MatchboxBase):
     __tablename__ = "mb__ddupes"
     __table_args__ = (UniqueConstraint("left", "right"),)
 
@@ -26,7 +26,7 @@ class Dedupes(SHA1Mixin, CountMixin, MatchboxBase):
     )
 
 
-class DDupeProbabilities(CountMixin, MatchboxBase):
+class DDupeProbabilities(CountMixin, MBDB.MatchboxBase):
     """
     The associationn object betweenn Models and Dedupes
     """
@@ -50,7 +50,7 @@ class DDupeProbabilities(CountMixin, MatchboxBase):
     proposed_by: Mapped["Models"] = relationship(back_populates="proposes_dedupes")
 
 
-class DDupeContains(MatchboxBase):
+class DDupeContains(MBDB.MatchboxBase):
     __tablename__ = "mb__ddupe_contains"
     __table_args__ = (UniqueConstraint("parent", "child"),)
 
@@ -62,7 +62,7 @@ class DDupeContains(MatchboxBase):
     )
 
 
-class DDupeValidation(UUIDMixin, MatchboxBase):
+class DDupeValidation(UUIDMixin, MBDB.MatchboxBase):
     __tablename__ = "mb__ddupe_validation"
     __table_args__ = (UniqueConstraint("ddupe", "user"),)
 

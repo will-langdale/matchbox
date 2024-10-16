@@ -1,52 +1,83 @@
 from dotenv import find_dotenv, load_dotenv
-from sqlalchemy import Engine, MetaData, create_engine
-from sqlalchemy.orm import DeclarativeBase, declared_attr, sessionmaker
+from pydantic import BaseModel, Field
+from sqlalchemy import (
+    Engine,
+    create_engine,
+    text,
+)
+from sqlalchemy.orm import (
+    declarative_base,
+    sessionmaker,
+)
 
-from matchbox.common.exceptions import MatchboxConnectionError
-from matchbox.server.postgresql.db import MatchboxPostgresSettings
+from matchbox.server.base import MatchboxBackends, MatchboxSettings
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
-class Base(DeclarativeBase):
-    @declared_attr
-    def __tablename__(cls):
-        return cls.__name__.lower()
+class MatchboxPostgresCoreSettings(BaseModel):
+    """Settings for Matchbox's PostgreSQL backend."""
 
-    @classmethod
-    def get_session(cls):
-        return Session()
+    host: str
+    port: int
+    user: str
+    password: str
+    db_schema: str
 
 
-def connect_to_db(settings: MatchboxPostgresSettings) -> tuple[Base, Engine]:
-    """Connect to Matchbox's Postgres backend database.
+class MatchboxPostgresSettings(MatchboxSettings):
+    """Settings for the Matchbox PostgreSQL backend."""
 
-    Args:
-        settings: The settings for Matchbox's PostgreSQL backend.
+    backend_type: MatchboxBackends = MatchboxBackends.POSTGRES
 
-    Raises:
-        MatchboxConnectionError: If the connection to the database fails.
-    """
-    schema = settings.schema
-
-    mb_meta = MetaData(schema=schema)
-
-    class MatchboxBase(Base):
-        metadata = mb_meta
-
-    engine = create_engine(
-        f"postgresql://{settings.user}:{settings.password}@{settings.host}:{settings.port}/{settings.database}",
-        logging_name="mb_pg_db",
+    postgres: MatchboxPostgresCoreSettings = Field(
+        default_factory=MatchboxPostgresCoreSettings
     )
 
-    global Session
-    Session = sessionmaker(bind=engine)
 
-    try:
-        with engine.connect() as connection:
-            connection.execute("SELECT 1")
-    except Exception as e:
-        raise MatchboxConnectionError from e
+class MatchboxDatabase:
+    def __init__(self, settings: MatchboxPostgresSettings):
+        self.settings = settings
+        self.engine: Engine | None = None
+        self.SessionLocal: sessionmaker | None = None
+        self.MatchboxBase = declarative_base()
 
-    return MatchboxBase, engine
+    def connect(self):
+        if not self.engine:
+            connection_string = (
+                f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
+                f"@{self.settings.postgres.host}:{self.settings.postgres.port}"
+            )
+            self.engine = create_engine(connection_string, logging_name="mb_pg_db")
+            self.SessionLocal = sessionmaker(
+                autocommit=False, autoflush=False, bind=self.engine
+            )
+            self.MatchboxBase.metadata.schema = self.settings.postgres.db_schema
+
+    def get_engine(self) -> Engine:
+        if not self.engine:
+            self.connect()
+        return self.engine
+
+    def get_session(self):
+        if not self.SessionLocal:
+            self.connect()
+        return self.SessionLocal()
+
+    def create_database(self):
+        self.connect()
+        with self.engine.connect() as conn:
+            conn.execute(
+                text(f"CREATE SCHEMA IF NOT EXISTS {self.settings.postgres.db_schema};")
+            )
+            conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
+            conn.commit()
+
+        self.MatchboxBase.metadata.create_all(self.engine)
+
+
+# Global database instance -- everything should use this
+
+MBDB = MatchboxDatabase(MatchboxPostgresSettings())

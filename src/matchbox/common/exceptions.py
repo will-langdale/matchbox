@@ -1,7 +1,5 @@
 from typing import Any, Optional
 
-from matchbox.server.postgresql.db import Base
-
 
 class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
@@ -17,18 +15,18 @@ class MatchboxDBDataError(Exception):
     def __init__(
         self,
         message: str = None,
-        source: Base = None,
+        table: str = None,
         data: Optional[Any] = None,
     ):
         if message is None:
             message = "Data doesn't exist in Matchbox."
-            if source is not None:
-                message += f"\nTable: {source.__tablename__}"
+            if table is not None:
+                message += f"\nTable: {table}"
             if data is not None:
                 message += f"\nData: {str(data)}"
 
         super().__init__(message)
-        self.source = source
+        self.table = table
         self.data = data
 
 

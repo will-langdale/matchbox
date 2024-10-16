@@ -1,38 +1,40 @@
 from typing import Literal
 
 import pandas as pd
-from dotenv import find_dotenv, load_dotenv
-from pydantic import BaseSettings, Field
 from rustworkx import PyDiGraph
 from sqlalchemy import (
-    Engine,
     bindparam,
 )
 from sqlalchemy.engine.result import ChunkedIteratorResult
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import (
+    Session,
+)
 
 from matchbox.common.exceptions import MatchboxDBDataError
 from matchbox.server.base import (
+    Cluster,
     IndexableDataset,
     MatchboxDBAdapter,
     MatchboxModelAdapter,
-    MatchboxSettings,
+    Probability,
 )
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
 from matchbox.server.postgresql.data import SourceData, SourceDataset
-from matchbox.server.postgresql.db import connect_to_db
+from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.dedupe import DDupeProbabilities, Dedupes
 from matchbox.server.postgresql.link import LinkProbabilities, Links
 from matchbox.server.postgresql.models import Models, ModelsFrom
 from matchbox.server.postgresql.utils.db import get_model_subgraph
 from matchbox.server.postgresql.utils.delete import delete_model
 from matchbox.server.postgresql.utils.index import index_dataset
-from matchbox.server.postgresql.utils.insert import insert_deduper, insert_linker
+from matchbox.server.postgresql.utils.insert import (
+    insert_clusters,
+    insert_deduper,
+    insert_linker,
+    insert_probabilities,
+)
 from matchbox.server.postgresql.utils.selector import query
 from matchbox.server.postgresql.utils.sha1 import table_name_to_uuid
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 class MergesUnion:
@@ -49,25 +51,83 @@ class ProposesUnion:
         return DDupeProbabilities.count() + LinkProbabilities.count()
 
 
-class MatchboxPostgresSettings(BaseSettings):
-    """Settings for Matchbox's PostgreSQL backend."""
+class CombinedProbabilities:
+    def __init__(self, dedupes, links):
+        self._dedupes = dedupes
+        self._links = links
 
-    host: str = Field(..., env="MB__POSTGRES_HOST")
-    port: int = Field(..., env="MB__POSTGRES_PORT")
-    user: str = Field(..., env="MB__POSTGRES_USER")
-    password: str = Field(..., env="MB__POSTGRES_PASSWORD")
-    database: str = Field(..., env="MB__POSTGRES_DATABASE")
+    def count(self):
+        return self._dedupes.count() + self._links.count()
 
-    class Config:
-        env_prefix = "MB__POSTGRES_"
-        allow_population_by_field_name = True
+
+class MatchboxPostgresModel(MatchboxModelAdapter):
+    """An adapter for Matchbox models in PostgreSQL."""
+
+    def __init__(self, model: Models):
+        self.model = model
+
+    @property
+    def sha1(self) -> bytes:
+        return self.model.sha1
+
+    @property
+    def name(self) -> str:
+        return self.model.name
+
+    @property
+    def clusters(self):
+        return self.model.creates
+
+    @property
+    def probabilities(self) -> CombinedProbabilities:
+        return CombinedProbabilities(
+            self.model.proposes_dedupes, self.model.proposes_links
+        )
+
+    def insert_probabilities(
+        self,
+        probabilities: list[Probability],
+        probability_type: Literal["deduplications", "links"],
+        batch_size: int,
+    ) -> None:
+        insert_probabilities(
+            model=self.name,
+            engine=MBDB.get_engine(),
+            probabilities=probabilities,
+            batch_size=batch_size,
+            is_deduper=probability_type == "deduplications",
+        )
+
+    def insert_clusters(
+        self,
+        clusters: list[Cluster],
+        cluster_type: Literal["deduplications", "links"],
+        batch_size: int,
+    ) -> None:
+        insert_clusters(
+            model=self.name,
+            engine=MBDB.get_engine(),
+            clusters=clusters,
+            batch_size=batch_size,
+            is_deduper=cluster_type == "deduplications",
+        )
+
+    @classmethod
+    def get_model(cls, model_name: str) -> "MatchboxPostgresModel":
+        with Session(MBDB.get_engine()) as session:
+            model = session.query(Models).filter_by(name=model_name).first()
+            if model:
+                return cls(model)
+            return None
 
 
 class MatchboxPostgres(MatchboxDBAdapter):
     """A PostgreSQL adapter for Matchbox."""
 
-    def __init__(self, settings: MatchboxSettings):
+    def __init__(self, settings: MatchboxPostgresSettings):
         self.settings = settings
+        MBDB.settings = settings
+        MBDB.create_database()
 
         self.datasets = SourceDataset
         self.models = Models
@@ -77,13 +137,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self.creates = clusters_association
         self.merges = MergesUnion()
         self.proposes = ProposesUnion()
-
-        MatchboxBase, engine = connect_to_db(settings=MatchboxPostgresSettings())
-
-        self.base = MatchboxBase
-        self.engine = engine
-
-        self.base.metadata.create_all(self.engine)
 
     def query(
         self,
@@ -102,13 +155,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         return query(
             selector=selector,
-            engine=self.engine,
+            engine=MBDB.get_engine(),
             return_type=return_type,
             model=model,
             limit=limit,
         )
 
-    def index(self, dataset: IndexableDataset, engine: Engine) -> None:
+    def index(self, dataset: IndexableDataset) -> None:
         """Indexes a data from your data warehouse within Matchbox.
 
         Args:
@@ -117,8 +170,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         index_dataset(
             dataset=dataset,
-            engine=self.engine,
-            warehouse_engine=engine,
+            engine=MBDB.get_engine(),
+            warehouse_engine=dataset.database.engine(),
         )
 
     def validate_hashes(
@@ -140,7 +193,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             Source = Clusters
             tgt_col = "cluster_sha1"
 
-        with Session(self.engine) as session:
+        with Session(MBDB.get_engine()) as session:
             data_inner_join = (
                 session.query(Source)
                 .filter(
@@ -161,21 +214,22 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     f"Some items don't exist the target table. "
                     f"Did you use {tgt_col} as your ID when deduplicating?"
                 ),
-                source=Source,
+                table=Source.__tablename__,
             )
 
     def get_model_subgraph(self) -> PyDiGraph:
         """Get the full subgraph of a model."""
-        return get_model_subgraph(engine=self.engine)
+        return get_model_subgraph(engine=MBDB.get_engine())
 
-    def get_model(self, model: str) -> MatchboxModelAdapter:
+    def get_model(self, model: str) -> MatchboxPostgresModel:
         """Get a model from the database.
 
         Args:
             model: The model to get.
         """
-        with Session(self.engine) as session:
-            return session.query(Models).filter_by(name=model).first()
+        with Session(MBDB.get_engine()) as session:
+            model = session.query(Models).filter_by(name=model).first()
+            return MatchboxPostgresModel(model)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -210,12 +264,16 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 left=left,
                 right=right,
                 description=description,
+                engine=MBDB.get_engine(),
             )
         else:
             # Deduper
-            deduplicates = table_name_to_uuid(schema_table=left, engine=self.engine)
+            deduplicates = table_name_to_uuid(
+                schema_table=left, engine=MBDB.get_engine()
+            )
             insert_deduper(
                 model=model,
                 deduplicates=deduplicates,
                 description=description,
+                engine=MBDB.get_engine(),
             )
