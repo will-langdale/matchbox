@@ -19,7 +19,7 @@ class LinkerSettings(BaseModel):
     @field_validator("left_id", "right_id")
     @classmethod
     def _id_for_cmf(cls, v: str, info: ValidationInfo) -> str:
-        enforce = "cluster_sha1"
+        enforce = "cluster_hash"
         if v != enforce:
             warnings.warn(
                 f"For offline deduplication, {info.field_name} can be any field. \n\n"

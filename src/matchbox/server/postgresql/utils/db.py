@@ -7,47 +7,12 @@ from typing import Any, Callable, Iterable, Tuple
 
 import rustworkx as rx
 from pg_bulk_ingest import Delete, Upsert, ingest
-from sqlalchemy import Engine, MetaData, Table
+from sqlalchemy import Engine, Table
 from sqlalchemy.engine.base import Connection
-from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
-from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.server.postgresql.data import SourceDataset
 from matchbox.server.postgresql.models import Models, ModelsFrom
-
-# Data conversion
-
-
-def dataset_to_table(dataset: SourceDataset, engine: Engine) -> Table:
-    """Takes a CMF SourceDataset object and returns a SQLAlchemy Table."""
-    with Session(engine) as session:
-        source_schema = MetaData(schema=dataset.db_schema)
-        try:
-            source_table = Table(
-                dataset.db_table,
-                source_schema,
-                schema=dataset.db_schema,
-                autoload_with=session.get_bind(),
-            )
-        except NoSuchTableError as e:
-            raise MatchboxSourceTableError(
-                table_name=f"{dataset.db_schema}.{dataset.db_table}"
-            ) from e
-
-    return source_table
-
-
-def string_to_dataset(db_schema: str, db_table: str, engine: Engine) -> SourceDataset:
-    """Takes strings and returns a CMF SourceDataset"""
-    with Session(engine) as session:
-        dataset = (
-            session.query(SourceDataset)
-            .filter_by(db_schema=db_schema, db_table=db_table)
-            .first()
-        )
-    return dataset
-
 
 # Retrieval
 

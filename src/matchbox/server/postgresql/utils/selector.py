@@ -18,11 +18,10 @@ from sqlalchemy.sql.selectable import Select
 
 from matchbox.helpers.selector import get_schema_table_names, string_to_table
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
-from matchbox.server.postgresql.data import SourceData
+from matchbox.server.postgresql.data import SourceData, SourceDataset
 from matchbox.server.postgresql.dedupe import DDupeContains
 from matchbox.server.postgresql.link import LinkContains
 from matchbox.server.postgresql.models import Models
-from matchbox.server.postgresql.utils.db import string_to_dataset
 
 
 def get_all_parents(model: Models | list[Models]) -> list[Models]:
@@ -147,7 +146,7 @@ def _tree_to_reachable_stmt(model_tree: list[bytes]) -> Select:
 
 
 def _reachable_to_parent_data_stmt(
-    reachable_stmt: Select, parent_sha1: bytes
+    reachable_stmt: Select, parent_hash: bytes
 ) -> Select:
     """
     Takes a select statement representing the reachable edges of a parent
@@ -159,7 +158,7 @@ def _reachable_to_parent_data_stmt(
     Args:
         reachable_stmt: a SQLAlchemy Select object that defines the reachable
             edges of the combined LinkContains and DDupeContains tables
-        parent_sha1: the SHA-1 to use as the ultimate parent model, the point
+        parent_hash: the SHA-1 to use as the ultimate parent model, the point
             of truth
 
     Returns:
@@ -172,7 +171,7 @@ def _reachable_to_parent_data_stmt(
         .join(Clusters, Clusters.sha1 == allowed.c.parent)
         .join(clusters_association, clusters_association.c.child == Clusters.sha1)
         .join(Models, clusters_association.c.parent == Models.sha1)
-        .where(Models.sha1 == parent_sha1)
+        .where(Models.sha1 == parent_hash)
         .cte("root")
     )
 
@@ -211,7 +210,13 @@ def _selector_to_data(
     for schema_table, fields in selector.items():
         db_schema, db_table = get_schema_table_names(schema_table)
 
-        mb_dataset = string_to_dataset(db_schema, db_table, engine=engine)
+        with Session(engine) as session:
+            mb_dataset = (
+                session.query(SourceDataset)
+                .filter_by(db_schema=db_schema, db_table=db_table)
+                .first()
+            )
+
         db_table = string_to_table(db_schema, db_table, engine=engine)
 
         # To handle array column
@@ -233,7 +238,7 @@ def _selector_to_data(
         where_stmts.append(db_table.c[mb_dataset.db_id] != None)  # NoQA E711
 
     stmt = select(
-        source_data_unested.c.sha1.label("data_sha1"), *select_stmt
+        source_data_unested.c.sha1.label("data_hash"), *select_stmt
     ).select_from(source_data_unested)
 
     for join_stmt in join_stmts:
@@ -336,8 +341,8 @@ def query(
         lookup_stmt = _reachable_to_parent_data_stmt(reachable_stmt, parent)
         data_stmt = _selector_to_data(selector, engine=engine).cte()
 
-        final_stmt = select(lookup_stmt.c.parent.label("cluster_sha1"), data_stmt).join(
-            lookup_stmt, lookup_stmt.c.child == data_stmt.c.data_sha1
+        final_stmt = select(lookup_stmt.c.parent.label("cluster_hash"), data_stmt).join(
+            lookup_stmt, lookup_stmt.c.child == data_stmt.c.data_hash
         )
 
     if limit is not None:
@@ -347,8 +352,8 @@ def query(
         # Detect datatypes
         selector_dtypes = _selector_to_pandas_dtypes(selector, engine=engine)
         default_dtypes = {
-            "cluster_sha1": "string[pyarrow]",
-            "data_sha1": "string[pyarrow]",
+            "cluster_hash": "string[pyarrow]",
+            "data_hash": "string[pyarrow]",
         }
 
         with engine.connect() as conn:
@@ -373,12 +378,12 @@ def query(
             ).convert_dtypes(dtype_backend="pyarrow")
 
             # Manually convert SHA-1s to bytes correctly
-            if "data_sha1" in res.columns:
-                res.data_sha1 = res.data_sha1.str[2:].apply(bytes.fromhex)
-                res.data_sha1 = res.data_sha1.astype("binary[pyarrow]")
-            if "cluster_sha1" in res.columns:
-                res.cluster_sha1 = res.cluster_sha1.str[2:].apply(bytes.fromhex)
-                res.cluster_sha1 = res.cluster_sha1.astype("binary[pyarrow]")
+            if "data_hash" in res.columns:
+                res.data_hash = res.data_hash.str[2:].apply(bytes.fromhex)
+                res.data_hash = res.data_hash.astype("binary[pyarrow]")
+            if "cluster_hash" in res.columns:
+                res.cluster_hash = res.cluster_hash.str[2:].apply(bytes.fromhex)
+                res.cluster_hash = res.cluster_hash.astype("binary[pyarrow]")
 
     elif return_type == "sqlalchemy":
         with Session(engine) as session:

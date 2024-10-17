@@ -18,7 +18,7 @@ class DeduperSettings(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_for_cmf(cls, v: str, info: ValidationInfo) -> str:
-        enforce = "data_sha1"
+        enforce = "data_hash"
         if v != enforce:
             warnings.warn(
                 f"For offline deduplication, {info.field_name} can be any field. \n\n"

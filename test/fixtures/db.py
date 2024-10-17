@@ -7,7 +7,7 @@ from matchbox import make_deduper, make_linker, to_clusters
 from matchbox.server.base import IndexableDataset, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 from pandas import DataFrame
-from sqlalchemy import text
+from sqlalchemy import text as sqltext
 
 from .models import DedupeTestParams, LinkTestParams, ModelTestParams
 
@@ -81,7 +81,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                 deduped = deduper()
 
                 clustered = to_clusters(
-                    df, results=deduped, key="data_sha1", threshold=0
+                    df, results=deduped, key="data_hash", threshold=0
                 )
 
                 deduped.to_matchbox(backend=matchbox_postgres)
@@ -155,7 +155,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                 linked = linker()
 
                 clustered = to_clusters(
-                    df_l, df_r, results=linked, key="cluster_sha1", threshold=0
+                    df_l, df_r, results=linked, key="cluster_hash", threshold=0
                 )
 
                 linked.to_matchbox(backend=matchbox_postgres)
@@ -192,28 +192,43 @@ def warehouse_data(
 ) -> Generator[list[IndexableDataset], None, None]:
     """Inserts data into the warehouse database for testing."""
     with warehouse.engine.connect() as conn:
-        conn.execute(text("drop schema if exists test cascade;"))
-        conn.execute(text("create schema test;"))
+        conn.execute(sqltext("drop schema if exists test cascade;"))
+        conn.execute(sqltext("create schema test;"))
         crn_companies.to_sql(
-            "crn",
+            name="crn",
             con=conn,
             schema="test",
             if_exists="replace",
             index=False,
         )
         duns_companies.to_sql(
-            "duns",
+            name="duns",
             con=conn,
             schema="test",
             if_exists="replace",
             index=False,
         )
         cdms_companies.to_sql(
-            "cdms",
+            name="cdms",
             con=conn,
             schema="test",
             if_exists="replace",
             index=False,
+        )
+        conn.commit()
+
+    with warehouse.engine.connect() as conn:
+        assert (
+            conn.execute(sqltext("select count(*) from test.crn;")).scalar()
+            == crn_companies.shape[0]
+        )
+        assert (
+            conn.execute(sqltext("select count(*) from test.duns;")).scalar()
+            == duns_companies.shape[0]
+        )
+        assert (
+            conn.execute(sqltext("select count(*) from test.cdms;")).scalar()
+            == cdms_companies.shape[0]
         )
 
     yield [
@@ -230,9 +245,9 @@ def warehouse_data(
 
     # Clean up the warehouse data
     with warehouse.engine.connect() as conn:
-        conn.execute(text("drop table if exists test.crn;"))
-        conn.execute(text("drop table if exists test.duns;"))
-        conn.execute(text("drop table if exists test.cdms;"))
+        conn.execute(sqltext("drop table if exists test.crn;"))
+        conn.execute(sqltext("drop table if exists test.duns;"))
+        conn.execute(sqltext("drop table if exists test.cdms;"))
         conn.commit()
 
 
@@ -250,7 +265,7 @@ def matchbox_settings() -> MatchboxPostgresSettings:
             "user": "matchbox_user",
             "password": "matchbox_password",
             "database": "matchbox",
-            "db_schema": "matchbox",
+            "db_schema": "mb",
         },
     )
 
@@ -262,6 +277,9 @@ def matchbox_postgres(
     """The Matchbox PostgreSQL database."""
 
     adapter = MatchboxPostgres(settings=matchbox_settings)
+
+    # Clean up the Matchbox database before each test, just in case
+    adapter.clear(certain=True)
 
     yield adapter
 

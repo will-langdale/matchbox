@@ -26,6 +26,7 @@ from matchbox.server.postgresql.link import LinkProbabilities, Links
 from matchbox.server.postgresql.models import Models, ModelsFrom
 from matchbox.server.postgresql.utils.db import get_model_subgraph
 from matchbox.server.postgresql.utils.delete import delete_model
+from matchbox.server.postgresql.utils.hash import table_name_to_uuid
 from matchbox.server.postgresql.utils.index import index_dataset
 from matchbox.server.postgresql.utils.insert import (
     insert_clusters,
@@ -34,7 +35,6 @@ from matchbox.server.postgresql.utils.insert import (
     insert_probabilities,
 )
 from matchbox.server.postgresql.utils.selector import query
-from matchbox.server.postgresql.utils.sha1 import table_name_to_uuid
 
 
 class MergesUnion:
@@ -171,7 +171,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
         index_dataset(
             dataset=dataset,
             engine=MBDB.get_engine(),
-            warehouse_engine=dataset.database.engine(),
         )
 
     def validate_hashes(
@@ -188,10 +187,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         if hash_type == "data":
             Source = SourceData
-            tgt_col = "data_sha1"
+            tgt_col = "data_hash"
         elif hash_type == "cluster":
             Source = Clusters
-            tgt_col = "cluster_sha1"
+            tgt_col = "cluster_hash"
 
         with Session(MBDB.get_engine()) as session:
             data_inner_join = (
@@ -199,7 +198,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .filter(
                     Source.sha1.in_(
                         bindparam(
-                            "ins_sha1s",
+                            "ins_hashs",
                             hashes,
                             expanding=True,
                         )

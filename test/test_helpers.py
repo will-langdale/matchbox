@@ -69,7 +69,7 @@ def test_single_table_no_model_query(db_engine):
 
     assert df_crn_full.shape[0] == 3000
     assert set(df_crn_full.columns) == {
-        "data_sha1",
+        "data_hash",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_id",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_crn",
     }
@@ -108,7 +108,7 @@ def test_multi_table_no_model_query(db_engine):
     )
 
     assert set(df_crn_duns_full.columns) == {
-        "data_sha1",
+        "data_hash",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_id",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_crn",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_duns_id",
@@ -148,13 +148,13 @@ def test_single_table_with_model_query(
     assert isinstance(crn, DataFrame)
     assert crn.shape[0] == 3000
     assert set(crn.columns) == {
-        "cluster_sha1",
-        "data_sha1",
+        "cluster_hash",
+        "data_hash",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_crn",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_company_name",
     }
-    assert crn.data_sha1.nunique() == 3000
-    assert crn.cluster_sha1.nunique() == 1000
+    assert crn.data_hash.nunique() == 3000
+    assert crn.cluster_hash.nunique() == 1000
 
 
 def test_multi_table_with_model_query(
@@ -208,13 +208,13 @@ def test_multi_table_with_model_query(
     assert isinstance(crn_duns, DataFrame)
     assert crn_duns.shape[0] == 3500
     assert set(crn_duns.columns) == {
-        "cluster_sha1",
-        "data_sha1",
+        "cluster_hash",
+        "data_hash",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_crn_crn",
         f"{os.getenv('MB__POSTGRES__SCHEMA')}_duns_duns",
     }
-    assert crn_duns.data_sha1.nunique() == 3500
-    assert crn_duns.cluster_sha1.nunique() == 1000
+    assert crn_duns.data_hash.nunique() == 3500
+    assert crn_duns.cluster_hash.nunique() == 1000
 
 
 def test_cleaners():

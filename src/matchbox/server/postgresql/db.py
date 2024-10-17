@@ -1,14 +1,7 @@
 from dotenv import find_dotenv, load_dotenv
 from pydantic import BaseModel, Field
-from sqlalchemy import (
-    Engine,
-    create_engine,
-    text,
-)
-from sqlalchemy.orm import (
-    declarative_base,
-    sessionmaker,
-)
+from sqlalchemy import Engine, MetaData, create_engine, text
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 from matchbox.server.base import MatchboxBackends, MatchboxSettings
 
@@ -47,7 +40,9 @@ class MatchboxDatabase:
         self.settings = settings
         self.engine: Engine | None = None
         self.SessionLocal: sessionmaker | None = None
-        self.MatchboxBase = declarative_base()
+        self.MatchboxBase = declarative_base(
+            metadata=MetaData(schema=settings.postgres.db_schema)
+        )
 
     def connect(self):
         """Connect to the database."""
@@ -62,7 +57,6 @@ class MatchboxDatabase:
             self.SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=self.engine
             )
-            self.MatchboxBase.metadata.schema = self.settings.postgres.db_schema
 
     def get_engine(self) -> Engine:
         """Get the database engine."""

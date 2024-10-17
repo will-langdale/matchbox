@@ -38,7 +38,7 @@ def test_dedupers(
     if fx_deduper.rename_fields:
         df_renamed = df.copy().rename(columns=fx_data.fields)
         fields_renamed = list(fx_data.fields.values())
-        df_renamed = df_renamed.filter(["data_sha1"] + fields_renamed)
+        df_renamed = df_renamed.filter(["data_hash"] + fields_renamed)
 
     # 1. Input data is as expected
 
@@ -67,7 +67,7 @@ def test_dedupers(
 
     deduped_df = deduped.to_df()
     deduped_df_with_source = deduped.inspect_with_source(
-        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
     )
 
     assert isinstance(deduped_df, DataFrame)
@@ -89,11 +89,11 @@ def test_dedupers(
 
     # 4. Correct number of clusters are resolved
 
-    clusters_dupes = to_clusters(results=deduped, key="data_sha1", threshold=0)
+    clusters_dupes = to_clusters(results=deduped, key="data_hash", threshold=0)
 
     clusters_dupes_df = clusters_dupes.to_df()
     clusters_dupes_df_with_source = clusters_dupes.inspect_with_source(
-        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
     )
 
     assert isinstance(clusters_dupes_df, DataFrame)
@@ -105,11 +105,11 @@ def test_dedupers(
             clusters_dupes_df_with_source[field + "_y"]
         )
 
-    clusters_all = to_clusters(df, results=deduped, key="data_sha1", threshold=0)
+    clusters_all = to_clusters(df, results=deduped, key="data_hash", threshold=0)
 
     clusters_all_df = clusters_all.to_df()
     clusters_all_df_with_source = clusters_all.inspect_with_source(
-        left_data=df, left_key="data_sha1", right_data=df, right_key="data_sha1"
+        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
     )
 
     assert isinstance(clusters_all_df, DataFrame)

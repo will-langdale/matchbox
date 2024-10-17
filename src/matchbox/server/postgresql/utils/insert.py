@@ -8,15 +8,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import MatchboxDBDataError
-from matchbox.common.sha1 import list_to_value_ordered_sha1
+from matchbox.common.hash import list_to_value_ordered_hash
 from matchbox.server.base import Cluster, Probability
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
 from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
 from matchbox.server.postgresql.models import Models, ModelsFrom
 from matchbox.server.postgresql.utils.db import batch_ingest
-from matchbox.server.postgresql.utils.sha1 import (
-    model_name_to_sha1,
+from matchbox.server.postgresql.utils.hash import (
+    model_name_to_hash,
 )
 
 logic_logger = logging.getLogger("mb_logic")
@@ -30,12 +30,12 @@ def insert_deduper(
     logic_logger.info(f"{metadata} Registering model")
 
     with Session(engine) as session:
-        # Construct model SHA1 from name and what it deduplicates
-        model_sha1 = list_to_value_ordered_sha1([model, deduplicates])
+        # Construct model hash from name and what it deduplicates
+        model_hash = list_to_value_ordered_hash([model, deduplicates])
 
         # Insert model
         model = Models(
-            sha1=model_sha1,
+            sha1=model_hash,
             name=model,
             description=description,
             deduplicates=deduplicates,
@@ -55,17 +55,17 @@ def insert_linker(
     logic_logger.info(f"{metadata} Registering model")
 
     with Session(engine) as session:
-        # Construct model SHA1 from parent model SHA1s
-        left_sha1 = model_name_to_sha1(left, engine=engine)
-        right_sha1 = model_name_to_sha1(right, engine=engine)
+        # Construct model hash from parent model hashes
+        left_hash = model_name_to_hash(left, engine=engine)
+        right_hash = model_name_to_hash(right, engine=engine)
 
-        model_sha1 = list_to_value_ordered_sha1(
-            [bytes(model, encoding="utf-8"), left_sha1, right_sha1]
+        model_hash = list_to_value_ordered_hash(
+            [bytes(model, encoding="utf-8"), left_hash, right_hash]
         )
 
         # Insert model
         model = Models(
-            sha1=model_sha1,
+            sha1=model_hash,
             name=model,
             description=description,
             deduplicates=None,
@@ -76,8 +76,8 @@ def insert_linker(
 
         # Insert reference to parent models
         models_from_to_insert = [
-            {"parent": model_sha1, "child": left_sha1},
-            {"parent": model_sha1, "child": right_sha1},
+            {"parent": model_hash, "child": left_hash},
+            {"parent": model_hash, "child": right_hash},
         ]
 
         ins_stmt = insert(ModelsFrom)
@@ -121,7 +121,7 @@ def insert_probabilities(
     with Session(engine) as session:
         # Get model
         db_model = session.query(Models).filter_by(name=model).first()
-        model_sha1 = db_model.sha1
+        model_hash = db_model.sha1
 
         if db_model is None:
             raise MatchboxDBDataError(source=Models, data=model)
@@ -168,17 +168,17 @@ def insert_probabilities(
 
         # Insert probabilities
         def probability_to_probability(
-            probability: Probability, model_sha1: bytes
+            probability: Probability, model_hash: bytes
         ) -> dict:
             return {
                 "ddupe" if is_deduper else "link": probability.sha1,
-                "model": model_sha1,
+                "model": model_hash,
                 "probability": probability.probability,
             }
 
         batch_ingest(
             records=[
-                probability_to_probability(prob, model_sha1) for prob in probabilities
+                probability_to_probability(prob, model_hash) for prob in probabilities
             ],
             table=ProbabilitiesTable,
             conn=conn,
@@ -216,7 +216,7 @@ def insert_clusters(
     with Session(engine) as session:
         # Get model
         db_model = session.query(Models).filter_by(name=model).first()
-        model_sha1 = db_model.sha1
+        model_hash = db_model.sha1
 
         if db_model is None:
             raise MatchboxDBDataError(source=Models, data=model)
@@ -272,16 +272,16 @@ def insert_clusters(
         )
 
         # Insert cluster proposed by
-        def cluster_to_cluster_association(cluster: Cluster, model_sha1: bytes) -> dict:
+        def cluster_to_cluster_association(cluster: Cluster, model_hash: bytes) -> dict:
             """Prepares a Cluster for the cluster association table."""
             return {
-                "parent": model_sha1,
+                "parent": model_hash,
                 "child": cluster.parent,
             }
 
         batch_ingest(
             records=[
-                cluster_to_cluster_association(cluster, model_sha1)
+                cluster_to_cluster_association(cluster, model_hash)
                 for cluster in clusters
             ],
             table=clusters_association,

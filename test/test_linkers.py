@@ -53,8 +53,8 @@ def test_linkers(
         df_r_renamed = df_r.copy().rename(columns=fx_data.fields_r)
         fields_l_renamed = list(fx_data.fields_l.values())
         fields_r_renamed = list(fx_data.fields_r.values())
-        df_l_renamed = df_l_renamed.filter(["cluster_sha1"] + fields_l_renamed)
-        df_r_renamed = df_r_renamed.filter(["cluster_sha1"] + fields_r_renamed)
+        df_l_renamed = df_l_renamed.filter(["cluster_hash"] + fields_l_renamed)
+        df_r_renamed = df_r_renamed.filter(["cluster_hash"] + fields_r_renamed)
         assert set(df_l_renamed.columns) == set(df_r_renamed.columns)
         assert df_l_renamed.dtypes.equals(df_r_renamed.dtypes)
 
@@ -99,9 +99,9 @@ def test_linkers(
 
     linked_df_with_source = linked.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_sha1",
+        left_key="cluster_hash",
         right_data=df_r,
-        right_key="cluster_sha1",
+        right_key="cluster_hash",
     )
 
     assert isinstance(linked_df, DataFrame)
@@ -121,14 +121,14 @@ def test_linkers(
 
     # 4. Correct number of clusters are resolved
 
-    clusters_links = to_clusters(results=linked, key="cluster_sha1", threshold=0)
+    clusters_links = to_clusters(results=linked, key="cluster_hash", threshold=0)
 
     clusters_links_df = clusters_links.to_df()
     clusters_links_df_with_source = clusters_links.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_sha1",
+        left_key="cluster_hash",
         right_data=df_r,
-        right_key="cluster_sha1",
+        right_key="cluster_hash",
     )
 
     assert isinstance(clusters_links_df, DataFrame)
@@ -166,15 +166,15 @@ def test_linkers(
         assert cluster_vals.shape[0] == fx_data.tgt_clus_n
 
     clusters_all = to_clusters(
-        df_l, df_r, results=linked, key="cluster_sha1", threshold=0
+        df_l, df_r, results=linked, key="cluster_hash", threshold=0
     )
 
     clusters_all_df = clusters_all.to_df()
     clusters_all_df_with_source = clusters_all.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_sha1",
+        left_key="cluster_hash",
         right_data=df_r,
-        right_key="cluster_sha1",
+        right_key="cluster_hash",
     )
 
     assert isinstance(clusters_all_df, DataFrame)

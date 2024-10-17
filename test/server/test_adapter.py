@@ -1,6 +1,7 @@
 from dotenv import find_dotenv, load_dotenv
 from matchbox.server.base import IndexableDataset
 from matchbox.server.postgresql import MatchboxPostgres
+from pandas import DataFrame
 
 from ..fixtures.db import AddIndexedDataCallable
 
@@ -12,9 +13,25 @@ def test_index(
     matchbox_postgres: MatchboxPostgres,
     db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[IndexableDataset],
+    crn_companies: DataFrame,
+    duns_companies: DataFrame,
+    cdms_companies: DataFrame,
 ):
-    # Test indexing a dataset
-    pass
+    """Test that indexing data works."""
+    assert matchbox_postgres.data.count() == 0
+
+    db_add_indexed_data(
+        matchbox_postgres=matchbox_postgres, warehouse_data=warehouse_data
+    )
+
+    def count_deduplicates(df: DataFrame) -> int:
+        return df.drop(columns=["id"]).drop_duplicates().shape[0]
+
+    unique = sum(
+        count_deduplicates(df) for df in [crn_companies, duns_companies, cdms_companies]
+    )
+
+    assert matchbox_postgres.data.count() == unique
 
 
 def test_query(matchbox_postgres, db_add_link_models_and_data):

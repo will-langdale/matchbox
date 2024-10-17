@@ -7,7 +7,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, Table, create_engine
 from sqlalchemy import text as sqltext
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
@@ -101,6 +101,12 @@ class IndexableDataset(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.db_schema}.{self.db_table}"
+
+    def to_table(self) -> Table:
+        """Returns the dataset as a SQLAlchemy Table object."""
+        metadata = MetaData(schema=self.db_schema)
+        table = Table(self.db_table, metadata, autoload_with=self.database.engine)
+        return table
 
 
 class MatchboxModelAdapter(ABC):

@@ -1,10 +1,10 @@
-from matchbox.common.sha1 import columns_to_value_ordered_sha1
+from matchbox.common.hash import columns_to_value_ordered_hash
 from pandas import Series, concat
 
 
-def test_sha1_conversion(all_companies):
+def test_hash_conversion(all_companies):
     """Tests SHA1 conversion works as expected."""
-    sha1_series_1 = columns_to_value_ordered_sha1(
+    sha1_series_1 = columns_to_value_ordered_hash(
         data=all_companies,
         columns=["id", "company_name", "address", "crn", "duns", "cdms"],
     )
@@ -29,7 +29,7 @@ def test_sha1_conversion(all_companies):
         [all_companies_reordered_top, all_companies.tail(500)]
     )
 
-    sha1_series_2 = columns_to_value_ordered_sha1(
+    sha1_series_2 = columns_to_value_ordered_hash(
         data=all_companies_reodered,
         columns=["id", "company_name", "address", "crn", "duns", "cdms"],
     )

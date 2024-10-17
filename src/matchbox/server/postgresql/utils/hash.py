@@ -34,8 +34,8 @@ def table_name_to_uuid(schema_table: str, engine: Engine) -> bytes:
     return dataset_uuid
 
 
-def model_name_to_sha1(run_name: str, engine: Engine) -> bytes:
-    """Takes a model's name and returns its SHA-1 hash.
+def model_name_to_hash(run_name: str, engine: Engine) -> bytes:
+    """Takes a model's name and returns its hash.
 
     Args:
         run_name (str): The string name of the model in the database
@@ -45,13 +45,13 @@ def model_name_to_sha1(run_name: str, engine: Engine) -> bytes:
         CMFSourceError if model not found in database
 
     Returns:
-        The SHA-1 hash of the model
+        The hash of the model
     """
     with Session(engine) as session:
         stmt = select(Models.sha1).where(Models.name == run_name)
-        model_sha1 = session.execute(stmt).scalar()
+        model_hash = session.execute(stmt).scalar()
 
-    if model_sha1 is None:
+    if model_hash is None:
         raise MatchboxDBDataError(table=Models.__tablename__, data=run_name)
 
-    return model_sha1
+    return model_hash
