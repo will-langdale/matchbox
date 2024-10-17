@@ -17,17 +17,21 @@ load_dotenv(dotenv_path)
 
 
 class MatchboxPostgresCoreSettings(BaseModel):
-    """Settings for Matchbox's PostgreSQL backend."""
+    """PostgreSQL-specific settings for Matchbox."""
 
     host: str
     port: int
     user: str
     password: str
+    database: str
     db_schema: str
 
 
 class MatchboxPostgresSettings(MatchboxSettings):
-    """Settings for the Matchbox PostgreSQL backend."""
+    """Settings for the Matchbox PostgreSQL backend.
+
+    Inherits the core settings and adds the PostgreSQL-specific settings.
+    """
 
     backend_type: MatchboxBackends = MatchboxBackends.POSTGRES
 
@@ -37,6 +41,8 @@ class MatchboxPostgresSettings(MatchboxSettings):
 
 
 class MatchboxDatabase:
+    """Matchbox PostgreSQL database connection."""
+
     def __init__(self, settings: MatchboxPostgresSettings):
         self.settings = settings
         self.engine: Engine | None = None
@@ -44,10 +50,13 @@ class MatchboxDatabase:
         self.MatchboxBase = declarative_base()
 
     def connect(self):
+        """Connect to the database."""
+
         if not self.engine:
             connection_string = (
                 f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
-                f"@{self.settings.postgres.host}:{self.settings.postgres.port}"
+                f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
+                f"{self.settings.postgres.database}"
             )
             self.engine = create_engine(connection_string, logging_name="mb_pg_db")
             self.SessionLocal = sessionmaker(
@@ -56,16 +65,22 @@ class MatchboxDatabase:
             self.MatchboxBase.metadata.schema = self.settings.postgres.db_schema
 
     def get_engine(self) -> Engine:
+        """Get the database engine."""
+
         if not self.engine:
             self.connect()
         return self.engine
 
     def get_session(self):
+        """Get a new session."""
+
         if not self.SessionLocal:
             self.connect()
         return self.SessionLocal()
 
     def create_database(self):
+        """Create the database."""
+
         self.connect()
         with self.engine.connect() as conn:
             conn.execute(
@@ -76,6 +91,20 @@ class MatchboxDatabase:
             conn.commit()
 
         self.MatchboxBase.metadata.create_all(self.engine)
+
+    def clear_database(self):
+        """Clear the database."""
+
+        self.connect()
+        with self.engine.connect() as conn:
+            conn.execute(
+                text(
+                    f"DROP SCHEMA IF EXISTS {self.settings.postgres.db_schema} CASCADE;"
+                )
+            )
+            conn.commit()
+
+        self.create_database()
 
 
 # Global database instance -- everything should use this

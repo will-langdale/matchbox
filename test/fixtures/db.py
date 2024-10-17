@@ -168,17 +168,18 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
 
 
 @pytest.fixture(scope="session")
-def warehouse_engine() -> SourceWarehouse:
+def warehouse() -> SourceWarehouse:
     """Create a connection to the test warehouse database."""
     warehouse = SourceWarehouse(
         alias="test_warehouse",
         db_type="postgresql",
-        username="test_user",
-        password="test_password",
+        user="warehouse_user",
+        password="warehouse_password",
         host="localhost",
-        port=5432,
+        database="warehouse",
+        port=7654,
     )
-    _ = warehouse.engine()
+    assert warehouse.engine
     return warehouse
 
 
@@ -190,7 +191,9 @@ def warehouse_data(
     cdms_companies: DataFrame,
 ) -> Generator[list[IndexableDataset], None, None]:
     """Inserts data into the warehouse database for testing."""
-    with warehouse.engine().connect() as conn:
+    with warehouse.engine.connect() as conn:
+        conn.execute(text("drop schema if exists test cascade;"))
+        conn.execute(text("create schema test;"))
         crn_companies.to_sql(
             "crn",
             con=conn,
@@ -226,7 +229,7 @@ def warehouse_data(
     ]
 
     # Clean up the warehouse data
-    with warehouse.engine().connect() as conn:
+    with warehouse.engine.connect() as conn:
         conn.execute(text("drop table if exists test.crn;"))
         conn.execute(text("drop table if exists test.duns;"))
         conn.execute(text("drop table if exists test.cdms;"))
@@ -241,11 +244,14 @@ def matchbox_settings() -> MatchboxPostgresSettings:
     """Settings for the Matchbox database."""
     return MatchboxPostgresSettings(
         batch_size=250_000,
-        host="localhost",
-        port=5432,
-        user="test_user",
-        password="test_password",
-        schema="test_matchbox",
+        postgres={
+            "host": "localhost",
+            "port": 5432,
+            "user": "matchbox_user",
+            "password": "matchbox_password",
+            "database": "matchbox",
+            "db_schema": "matchbox",
+        },
     )
 
 
@@ -260,7 +266,4 @@ def matchbox_postgres(
     yield adapter
 
     # Clean up the Matchbox database after each test
-    with adapter.engine.connect() as conn:
-        conn.execute(text(f"drop schema if exists {matchbox_settings.schema} cascade;"))
-        conn.execute(text(f"create schema {matchbox_settings.schema};"))
-        conn.commit()
+    adapter.clear(certain=True)

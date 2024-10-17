@@ -277,3 +277,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 description=description,
                 engine=MBDB.get_engine(),
             )
+
+    def clear(self, certain: bool = False) -> None:
+        """Clears all data from the database.
+
+        Args:
+            certain: Whether to clear the database without confirmation.
+        """
+        MBDB.clear_database()

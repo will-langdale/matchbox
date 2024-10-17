@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 import pandas as pd
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import create_engine
@@ -53,10 +53,11 @@ class SourceWarehouse(BaseModel):
 
     alias: str
     db_type: str
-    username: str
+    user: str
     password: str = Field(repr=False)
-    host: AnyUrl
+    host: str
     port: int
+    database: str
     _engine: Engine | None = None
 
     class Config:
@@ -67,7 +68,7 @@ class SourceWarehouse(BaseModel):
     @property
     def engine(self) -> Engine:
         if self._engine is None:
-            connection_string = f"{self.db_type}://{self.username}:{self.password}@{self.host}:{self.port}"
+            connection_string = f"{self.db_type}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
             self._engine = create_engine(connection_string)
             self.test_connection()
         return self._engine
@@ -83,7 +84,7 @@ class SourceWarehouse(BaseModel):
     def __str__(self):
         return (
             f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
-            f"host={self.host}, port={self.port})"
+            f"host={self.host}, port={self.port}, database={self.database})"
         )
 
 
@@ -183,7 +184,10 @@ class MatchboxDBAdapter(ABC):
     def get_model(self, model: str) -> MatchboxModelAdapter: ...
 
     @abstractmethod
-    def delete_model(self, model: str) -> None: ...
+    def delete_model(self, model: str, certain: bool) -> None: ...
 
     @abstractmethod
     def insert_model(self, model: str) -> None: ...
+
+    @abstractmethod
+    def clear(self, certain: bool) -> None: ...

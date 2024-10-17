@@ -1,15 +1,27 @@
 services:
-  db:
+  warehouse:
     image: postgres:14
     restart: always
     environment:
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-      POSTGRES_DB: testdb
+      POSTGRES_USER: warehouse_user
+      POSTGRES_PASSWORD: warehouse_password
+      POSTGRES_DB: warehouse
+    ports:
+      - "7654:5432"
+    volumes:
+      - warehouse_data:/var/lib/postgresql/data
+  matchbox-postgres:
+    image: postgres:14
+    restart: always
+    environment:
+      POSTGRES_USER: matchbox_user
+      POSTGRES_PASSWORD: matchbox_password
+      POSTGRES_DB: matchbox
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - matchbox_data:/var/lib/postgresql/data
 
 volumes:
-  pgdata:
+  warehouse_data:
+  matchbox_data:
