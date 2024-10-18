@@ -2,7 +2,7 @@ from typing import TypeVar
 
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     MetaData,
@@ -39,6 +39,12 @@ class Cluster(BaseModel):
 class SourceWarehouse(BaseModel):
     """A warehouse where source data for datasets in Matchbox can be found."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+    )
+
     alias: str
     db_type: str
     user: str
@@ -47,11 +53,6 @@ class SourceWarehouse(BaseModel):
     port: int
     database: str
     _engine: Engine | None = None
-
-    class Config:
-        populate_by_name = True
-        extra = "forbid"
-        arbitrary_types_allowed = True
 
     @property
     def engine(self) -> Engine:
@@ -97,13 +98,14 @@ class SourceWarehouse(BaseModel):
 class Source(BaseModel):
     """A dataset that can be indexed in the Matchbox database."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
     database: SourceWarehouse | None = None
     db_pk: str
     db_schema: str
     db_table: str
-
-    class Config:
-        populate_by_name = True
 
     def __str__(self) -> str:
         return f"{self.db_schema}.{self.db_table}"

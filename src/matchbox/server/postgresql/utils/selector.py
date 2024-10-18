@@ -291,6 +291,10 @@ def query(
     """
     tables: list[pa.Table] = []
 
+    if limit:
+        limit_base = limit // len(selector)
+        limit_remainder = limit % len(selector)
+
     for source, fields in selector.items():
         if model is None:
             # We want raw data with no clusters
@@ -300,7 +304,11 @@ def query(
             hash_query = _model_to_hashes(source, model, engine=engine)
 
         if limit:
-            hash_query = hash_query.limit(limit / len(selector))
+            remain = 0
+            if limit_remainder:
+                remain = 1
+                limit_remainder -= 1
+            hash_query = hash_query.limit(limit_base + remain)
 
         mb_hashes = sql_to_df(hash_query, engine, return_type="arrow")
 
