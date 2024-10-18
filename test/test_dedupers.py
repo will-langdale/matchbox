@@ -1,16 +1,23 @@
 import pytest
 from matchbox import make_deduper, to_clusters
+from matchbox.server.models import Source
+from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
-from .fixtures.models import dedupe_data_test_params, dedupe_model_test_params
+from .fixtures.db import AddIndexedDataCallable
+from .fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+)
 
 
 @pytest.mark.parametrize("fx_data", dedupe_data_test_params)
 @pytest.mark.parametrize("fx_deduper", dedupe_model_test_params)
 def test_dedupers(
     # Fixtures
-    db_engine,
-    db_clear_models,
+    matchbox_postgres: MatchboxPostgres,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
     # Parameterised data classes
     fx_data,
     fx_deduper,
@@ -26,10 +33,10 @@ def test_dedupers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures, perform any special
+    # i. Ensure database is ready, collect fixtures, perform any special
     # deduper cleaning
 
-    db_clear_models(db_engine)
+    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
     df = request.getfixturevalue(fx_data.fixture)
 
@@ -81,11 +88,10 @@ def test_dedupers(
 
     # 3. Deduplicated probabilities are inserted correctly
 
-    deduped.to_cmf(engine=db_engine)
+    deduped.to_matchbox(backend=matchbox_postgres)
 
-    # with Session(db_engine) as session:
-    #     model = session.query(Models).filter_by(name=deduper_name).first()
-    #     assert session.scalar(model.dedupes_count()) == fx_data.tgt_prob_n
+    model = matchbox_postgres.get_model(name=deduper_name)
+    assert model.probabilities.count() == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
@@ -123,12 +129,7 @@ def test_dedupers(
 
     # 5. Resolved clusters are inserted correctly
 
-    clusters_all.to_cmf(engine=db_engine)
+    clusters_all.to_matchbox(backend=matchbox_postgres)
 
-    # with Session(db_engine) as session:
-    #     model = session.query(Models).filter_by(name=deduper_name).first()
-    #     assert session.scalar(model.creates_count()) == fx_data.unique_n
-
-    # i. Clean up after ourselves
-
-    db_clear_models(db_engine)
+    model = matchbox_postgres.get_model(name=deduper_name)
+    assert model.clusters.count() == fx_data.unique_n

@@ -1,7 +1,10 @@
 import pytest
 from matchbox import make_linker, to_clusters
+from matchbox.server.models import Source
+from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
+from .fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable
 from .fixtures.models import (
     dedupe_data_test_params,
     dedupe_model_test_params,
@@ -14,9 +17,10 @@ from .fixtures.models import (
 @pytest.mark.parametrize("fx_linker", link_model_test_params)
 def test_linkers(
     # Fixtures
-    db_engine,
-    db_clear_models,
-    db_add_dedupe_models_and_data,
+    matchbox_postgres: MatchboxPostgres,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
     # Parameterised data classes
     fx_data,
     fx_linker,
@@ -32,13 +36,14 @@ def test_linkers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures, perform any special linker cleaning
+    # i. Ensure database is ready, collect fixtures, perform any special linker cleaning
 
-    db_clear_models(db_engine)
     db_add_dedupe_models_and_data(
-        db_engine=db_engine,
+        db_add_indexed_data=db_add_indexed_data,
+        backend=matchbox_postgres,
+        warehouse_data=warehouse_data,
         dedupe_data=dedupe_data_test_params,
-        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
         request=request,
     )
 
@@ -113,11 +118,10 @@ def test_linkers(
 
     # 3. Linked probabilities are inserted correctly
 
-    linked.to_cmf(engine=db_engine)
+    linked.to_matchbox(backend=matchbox_postgres)
 
-    # with Session(db_engine) as session:
-    #     model = session.query(Models).filter_by(name=linker_name).first()
-    #     assert session.scalar(model.links_count()) == fx_data.tgt_prob_n
+    model = matchbox_postgres.get_model(name=linker_name)
+    assert model.probabilities.count() == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
@@ -211,12 +215,7 @@ def test_linkers(
 
     # 5. Resolved clusters are inserted correctly
 
-    clusters_all.to_cmf(engine=db_engine)
+    clusters_all.to_matchbox(backend=matchbox_postgres)
 
-    # with Session(db_engine) as session:
-    #     model = session.query(Models).filter_by(name=linker_name).first()
-    #     assert session.scalar(model.creates_count()) == fx_data.unique_n
-
-    # i. Clean up after ourselves
-
-    db_clear_models(db_engine)
+    model = matchbox_postgres.get_model(name=linker_name)
+    assert model.clusters.count() == fx_data.unique_n

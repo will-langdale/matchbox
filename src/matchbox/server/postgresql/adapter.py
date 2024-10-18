@@ -284,7 +284,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
             insert_deduper(
                 model=model,
-                deduplicates=deduplicates,
+                deduplicates=str(deduplicates),
                 description=description,
                 engine=MBDB.get_engine(),
             )

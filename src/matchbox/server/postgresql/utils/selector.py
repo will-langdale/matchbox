@@ -312,7 +312,9 @@ def query(
 
         mb_hashes = sql_to_df(hash_query, engine, return_type="arrow")
 
-        raw_data = source.to_arrow(fields=fields, pks=mb_hashes["id"].to_pylist())
+        raw_data = source.to_arrow(
+            fields=set([source.db_pk] + fields), pks=mb_hashes["id"].to_pylist()
+        )
 
         # Tablename plus column SQLAlchemy label style
         right_key = f"{source.db_schema}_{source.db_table}_{source.db_pk}"

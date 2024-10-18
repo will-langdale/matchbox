@@ -1,10 +1,15 @@
 from dotenv import find_dotenv, load_dotenv
-from matchbox.helpers.selector import query, selector
+from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server.models import Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
+from pytest import FixtureRequest
 
-from ..fixtures.db import AddIndexedDataCallable
+from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable
+from ..fixtures.models import (
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -21,9 +26,7 @@ def test_index(
     """Test that indexing data works."""
     assert matchbox_postgres.data.count() == 0
 
-    db_add_indexed_data(
-        matchbox_postgres=matchbox_postgres, warehouse_data=warehouse_data
-    )
+    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
     def count_deduplicates(df: DataFrame) -> int:
         return df.drop(columns=["id"]).drop_duplicates().shape[0]
@@ -42,16 +45,15 @@ def test_query_single_table(
 ):
     """Test querying data from the database."""
     # Setup
-    db_add_indexed_data(
-        matchbox_postgres=matchbox_postgres, warehouse_data=warehouse_data
-    )
+    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
-    dataset = warehouse_data[0]  # test.crn
+    # Test
+    crn = warehouse_data[0]
 
     select_crn = selector(
-        table=str(dataset),
+        table=str(crn),
         fields=["id", "crn"],
-        engine=dataset.database.engine,
+        engine=crn.database.engine,
     )
 
     df_crn_sample = query(
@@ -80,28 +82,99 @@ def test_query_single_table(
     }
 
 
-def test_query_with_dedupe_model():
+def test_query_multi_table(
+    matchbox_postgres: MatchboxPostgres,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+):
+    """Test querying data from multiple tables from the database."""
+    # Setup
+    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+
+    # Test
+    crn = warehouse_data[0]
+    duns = warehouse_data[1]
+
+    select_crn = selector(
+        table=str(crn),
+        fields=["id", "crn"],
+        engine=crn.database.engine,
+    )
+    select_duns = selector(
+        table=str(duns),
+        fields=["id", "duns"],
+        engine=duns.database.engine,
+    )
+    select_crn_duns = selectors(select_crn, select_duns)
+
+    df_crn_duns_full = query(
+        selector=select_crn_duns,
+        backend=matchbox_postgres,
+        model=None,
+        return_type="pandas",
+    )
+
+    assert df_crn_duns_full.shape[0] == 3500
+    assert df_crn_duns_full[df_crn_duns_full["test_duns_id"].notnull()].shape[0] == 500
+    assert df_crn_duns_full[df_crn_duns_full["test_crn_id"].notnull()].shape[0] == 3000
+
+    assert set(df_crn_duns_full.columns) == {
+        "data_hash",
+        "test_crn_id",
+        "test_crn_crn",
+        "test_duns_id",
+        "test_duns_duns",
+    }
+
+
+def test_query_with_dedupe_model(
+    matchbox_postgres: MatchboxPostgres,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: FixtureRequest,
+):
     """Test querying data from a deduplication point of truth."""
-    pass
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=matchbox_postgres,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
+    # Test
+    crn = warehouse_data[0]
+
+    select_crn = selector(
+        table=str(crn),
+        fields=["id", "crn"],
+        engine=crn.database.engine,
+    )
+
+    df_crn = query(
+        selector=select_crn,
+        backend=matchbox_postgres,
+        model="naive_test.crn",
+        return_type="pandas",
+    )
+
+    assert isinstance(df_crn, DataFrame)
+    assert df_crn.shape[0] == 3000
+    assert set(df_crn.columns) == {
+        "cluster_sha1",
+        "data_sha1",
+        "test_crn_crn",
+        "test_crn_company_name",
+    }
+    assert df_crn.data_sha1.nunique() == 3000
+    assert df_crn.cluster_sha1.nunique() == 1000
 
 
 def test_query_with_link_model():
     """Test querying data from a link point of truth."""
-    pass
-
-
-def test_query_with_limit():
-    """Test querying data with a limit."""
-    pass
-
-
-def test_query_return_pandas():
-    """Test querying data and returning a pandas DataFrame."""
-    pass
-
-
-def test_query_return_sqlalchemy():
-    """Test querying data and returning a SQLAlchemy object."""
     pass
 
 

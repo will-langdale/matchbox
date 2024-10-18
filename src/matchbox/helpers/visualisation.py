@@ -2,9 +2,10 @@ import rustworkx as rx
 from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 
-from matchbox.server.base import MatchboxDBAdapter
+from matchbox.server.base import MatchboxDBAdapter, inject_backend
 
 
+@inject_backend
 def draw_model_tree(backend: MatchboxDBAdapter) -> Figure:
     """
     Draws the model subgraph.

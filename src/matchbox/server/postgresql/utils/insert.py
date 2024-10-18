@@ -152,33 +152,17 @@ def insert_probabilities(
         )
 
         # Upsert nodes
-        def probability_to_node(probability: Probability) -> dict:
-            return {
-                "sha1": probability.sha1,
-                "left": probability.left,
-                "right": probability.right,
-            }
-
         batch_ingest(
-            records=[probability_to_node(prob) for prob in probabilities],
+            records=[(prob.left, prob.right, prob.sha1) for prob in probabilities],
             table=NodesTable,
             conn=conn,
             batch_size=batch_size,
         )
 
         # Insert probabilities
-        def probability_to_probability(
-            probability: Probability, model_hash: bytes
-        ) -> dict:
-            return {
-                "ddupe" if is_deduper else "link": probability.sha1,
-                "model": model_hash,
-                "probability": probability.probability,
-            }
-
         batch_ingest(
             records=[
-                probability_to_probability(prob, model_hash) for prob in probabilities
+                (prob.sha1, model_hash, prob.probability) for prob in probabilities
             ],
             table=ProbabilitiesTable,
             conn=conn,
@@ -243,47 +227,24 @@ def insert_clusters(
         )
 
         # Upsert cluster nodes
-        def cluster_to_cluster(cluster: Cluster) -> dict:
-            """Prepares a Cluster for the Clusters table."""
-            return {
-                "sha1": cluster.parent,
-            }
-
         batch_ingest(
-            records=list({cluster_to_cluster(cluster) for cluster in clusters}),
+            records=list({(cluster.parent,) for cluster in clusters}),
             table=Clusters,
             conn=conn,
             batch_size=batch_size,
         )
 
         # Insert cluster contains
-        def cluster_to_cluster_contains(cluster: Cluster) -> dict:
-            """Prepares a Cluster for the Contains tables."""
-            return {
-                "parent": cluster.parent,
-                "child": cluster.child,
-            }
-
         batch_ingest(
-            records=[cluster_to_cluster_contains(cluster) for cluster in clusters],
+            records=[(cluster.parent, cluster.child) for cluster in clusters],
             table=Contains,
             conn=conn,
             batch_size=batch_size,
         )
 
-        # Insert cluster proposed by
-        def cluster_to_cluster_association(cluster: Cluster, model_hash: bytes) -> dict:
-            """Prepares a Cluster for the cluster association table."""
-            return {
-                "parent": model_hash,
-                "child": cluster.parent,
-            }
-
+        # Insert cluster proposed by model
         batch_ingest(
-            records=[
-                cluster_to_cluster_association(cluster, model_hash)
-                for cluster in clusters
-            ],
+            records=[(model_hash, cluster.parent) for cluster in clusters],
             table=clusters_association,
             conn=conn,
             batch_size=batch_size,

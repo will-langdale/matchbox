@@ -8,7 +8,7 @@ from matchbox.common.hash import (
     columns_to_value_ordered_hash,
     list_to_value_ordered_hash,
 )
-from matchbox.server.base import MatchboxDBAdapter
+from matchbox.server.base import MatchboxDBAdapter, inject_backend
 from matchbox.server.models import Cluster, Probability
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -125,6 +125,7 @@ class ProbabilityResults(ResultsBaseDataclass):
 
         return df
 
+    @inject_backend
     def to_records(self, backend: MatchboxDBAdapter | None) -> list[Probability]:
         """Returns the results as a list of records suitable for insertion.
 
@@ -163,6 +164,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             ].to_numpy()
         ]
 
+    @inject_backend
     def to_matchbox(self, backend: MatchboxDBAdapter) -> None:
         """Writes the results to the Matchbox database."""
         backend.insert_model(
@@ -175,7 +177,7 @@ class ProbabilityResults(ResultsBaseDataclass):
         model = backend.get_model(model=self.run_name)
 
         model.insert_probabilities(
-            probabilites=self.to_records(),
+            probabilities=self.to_records(backend=backend),
             probability_type="links" if self.left != self.right else "deduplications",
             batch_size=backend.settings.batch_size,
         )
@@ -237,12 +239,14 @@ class ClusterResults(ResultsBaseDataclass):
         parent_child_pairs = self.dataframe[["parent", "child"]].values
         return [Cluster(parent=row[0], child=row[1]) for row in parent_child_pairs]
 
+    @inject_backend
     def to_matchbox(self, backend: MatchboxDBAdapter) -> None:
         """Writes the results to the Matchbox database."""
         model = backend.get_model(model=self.run_name)
         model.insert_clusters(
             clusters=self.to_records(),
             batch_size=backend.settings.batch_size,
+            cluster_type="links" if self.left != self.right else "deduplications",
         )
 
 

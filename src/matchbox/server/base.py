@@ -1,3 +1,4 @@
+import inspect
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from functools import wraps
@@ -196,6 +197,8 @@ def inject_backend(func: Callable) -> Callable:
     Used to allow user-facing functions to access the backend without needing to
     pass it in. The backend is defined by the MB__BACKEND_TYPE environment variable.
 
+    Can be used for both functions and methods.
+
     If the user specifies a backend, it will be used instead of the injection.
     """
 
@@ -203,6 +206,13 @@ def inject_backend(func: Callable) -> Callable:
     def _inject_backend(*args, backend: "MatchboxDBAdapter | None" = None, **kwargs):
         if backend is None:
             backend = BackendManager.get_backend()
-        return func(backend, *args, **kwargs)
+
+        sig = inspect.signature(func)
+        params = list(sig.parameters.values())
+
+        if params and params[0].name in ("self", "cls"):
+            return func(args[0], backend, *args[1:], **kwargs)
+        else:
+            return func(backend, *args, **kwargs)
 
     return _inject_backend

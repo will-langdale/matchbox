@@ -9,7 +9,7 @@ import rustworkx as rx
 from pg_bulk_ingest import Delete, Upsert, ingest
 from sqlalchemy import Engine, Table
 from sqlalchemy.engine.base import Connection
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import DeclarativeMeta, Session
 
 from matchbox.server.postgresql.data import SourceDataset
 from matchbox.server.postgresql.models import Models, ModelsFrom
@@ -87,11 +87,13 @@ def batched(iterable: Iterable, n: int) -> Iterable:
 
 
 def data_to_batch(
-    records: list[dict], table: Table, batch_size: int
+    records: list[tuple], table: Table, batch_size: int
 ) -> Callable[[str], Tuple[Any]]:
     """Constructs a batches function for any dataframe and table."""
 
-    def _batches() -> Iterable[Tuple[None, None, Iterable[Tuple[Table, dict]]]]:
+    def _batches(
+        high_watermark,  # noqa ARG001 required for pg_bulk_ingest
+    ) -> Iterable[Tuple[None, None, Iterable[Tuple[Table, tuple]]]]:
         for batch in batched(records, batch_size):
             yield None, None, ((table, t) for t in batch)
 
@@ -99,12 +101,15 @@ def data_to_batch(
 
 
 def batch_ingest(
-    records: list[dict],
-    table: Table,
+    records: list[tuple],
+    table: Table | DeclarativeMeta,
     conn: Connection,
     batch_size: int,
 ) -> None:
     """Batch ingest records into a database table."""
+
+    if isinstance(table, DeclarativeMeta):
+        table = table.__table__
 
     fn_batch = data_to_batch(
         records=records,

@@ -4,6 +4,7 @@ import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from matchbox import make_deduper, make_linker, to_clusters
+from matchbox.server.base import MatchboxDBAdapter
 from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 from pandas import DataFrame
@@ -22,12 +23,12 @@ def db_add_indexed_data() -> AddIndexedDataCallable:
     """Factory to create the indexing stage of matching."""
 
     def _db_add_indexed_data(
-        matchbox_postgres: MatchboxPostgres,
+        backend: MatchboxDBAdapter,
         warehouse_data: list[Source],
     ):
         """Indexes data from the warehouse."""
         for dataset in warehouse_data:
-            matchbox_postgres.index(dataset=dataset)
+            backend.index(dataset=dataset)
 
     return _db_add_indexed_data
 
@@ -51,14 +52,14 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
 
     def _db_add_dedupe_models_and_data(
         db_add_indexed_data: AddIndexedDataCallable,
-        matchbox_postgres: MatchboxPostgres,
+        backend: MatchboxDBAdapter,
         warehouse_data: list[Source],
         dedupe_data: list[DedupeTestParams],
         dedupe_models: list[ModelTestParams],
         request: FixtureRequest,
     ) -> None:
         """Deduplicates data from the warehouse and logs in Matchbox."""
-        db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+        db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
 
         for fx_data in dedupe_data:
             for fx_deduper in dedupe_models:
@@ -84,8 +85,8 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                     df, results=deduped, key="data_hash", threshold=0
                 )
 
-                deduped.to_matchbox(backend=matchbox_postgres)
-                clustered.to_matchbox(backend=matchbox_postgres)
+                deduped.to_matchbox(backend=backend)
+                clustered.to_matchbox(backend=backend)
 
     return _db_add_dedupe_models_and_data
 
@@ -113,7 +114,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
     def _db_add_link_models_and_data(
         db_add_indexed_data: AddIndexedDataCallable,
         db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
-        matchbox_postgres: MatchboxPostgres,
+        backend: MatchboxDBAdapter,
         warehouse_data: list[Source],
         dedupe_data: list[DedupeTestParams],
         dedupe_models: list[ModelTestParams],
@@ -123,7 +124,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
     ) -> None:
         """Links data from the warehouse and logs in Matchbox."""
         db_add_dedupe_models_and_data(
-            backend=matchbox_postgres,
+            backend=backend,
             warehouse_data=warehouse_data,
             dedupe_data=dedupe_data,
             dedupe_models=dedupe_models,
@@ -158,8 +159,8 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                     df_l, df_r, results=linked, key="cluster_hash", threshold=0
                 )
 
-                linked.to_matchbox(backend=matchbox_postgres)
-                clustered.to_matchbox(backend=matchbox_postgres)
+                linked.to_matchbox(backend=backend)
+                clustered.to_matchbox(backend=backend)
 
     return _db_add_link_models_and_data
 
