@@ -6,16 +6,16 @@ import tomli
 from dotenv import find_dotenv, load_dotenv
 
 from matchbox.server.base import (
-    IndexableDataset,
     MatchboxSettings,
-    SourceWarehouse,
+    Source,
 )
+from matchbox.server.models import SourceWarehouse
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
-def load_datasets_from_config(datasets: Path) -> dict[str, IndexableDataset]:
+def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
     """Loads datasets for indexing from the datasets settings TOML file."""
     config = tomli.load(datasets)
 
@@ -23,11 +23,11 @@ def load_datasets_from_config(datasets: Path) -> dict[str, IndexableDataset]:
     for alias, warehouse_config in config["warehouses"].items():
         warehouses[alias] = SourceWarehouse(alias=alias, **warehouse_config)
 
-    datasets: dict[str, IndexableDataset] = {}
+    datasets: dict[str, Source] = {}
     for dataset_name, dataset_config in config["datasets"].items():
         warehouse_alias = dataset_config.get("database")
         dataset_config["database"] = warehouses[warehouse_alias]
-        datasets[dataset_name] = IndexableDataset(**dataset_config)
+        datasets[dataset_name] = Source(**dataset_config)
 
     return datasets
 

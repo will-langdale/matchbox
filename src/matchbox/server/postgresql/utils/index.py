@@ -5,11 +5,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from matchbox.common.hash import dataset_to_hashlist
-from matchbox.server.base import IndexableDataset
+from matchbox.server.models import Source
 from matchbox.server.postgresql.data import SourceData, SourceDataset
 
 
-def index_dataset(dataset: IndexableDataset, engine: Engine) -> None:
+def index_dataset(dataset: Source, engine: Engine) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
 
     logic_logger = logging.getLogger("mb_logic")

@@ -2,22 +2,13 @@ from typing import Literal
 
 import pandas as pd
 from rustworkx import PyDiGraph
-from sqlalchemy import (
-    bindparam,
-)
+from sqlalchemy import Engine, bindparam
 from sqlalchemy.engine.result import ChunkedIteratorResult
-from sqlalchemy.orm import (
-    Session,
-)
+from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import MatchboxDBDataError
-from matchbox.server.base import (
-    Cluster,
-    IndexableDataset,
-    MatchboxDBAdapter,
-    MatchboxModelAdapter,
-    Probability,
-)
+from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
+from matchbox.server.models import Cluster, Probability, Source, SourceWarehouse
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
 from matchbox.server.postgresql.data import SourceData, SourceDataset
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
@@ -161,7 +152,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             limit=limit,
         )
 
-    def index(self, dataset: IndexableDataset) -> None:
+    def index(self, dataset: Source) -> None:
         """Indexes a data from your data warehouse within Matchbox.
 
         Args:
@@ -214,6 +205,27 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     f"Did you use {tgt_col} as your ID when deduplicating?"
                 ),
                 table=Source.__tablename__,
+            )
+
+    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
+        """Get a source dataset from the database.
+
+        Args:
+            db_schema: The schema of the dataset.
+            db_table: The table of the dataset.
+            engine: The engine to use to connect to your data warehouse.
+        """
+        with Session(MBDB.get_engine()) as session:
+            dataset = (
+                session.query(SourceDataset)
+                .filter_by(db_schema=db_schema, db_table=db_table)
+                .first()
+            )
+            return Source(
+                db_schema=dataset.db_schema,
+                db_table=dataset.db_table,
+                db_pk=dataset.db_id,
+                database=SourceWarehouse.from_engine(engine),
             )
 
     def get_model_subgraph(self) -> PyDiGraph:

@@ -1,5 +1,6 @@
 from dotenv import find_dotenv, load_dotenv
-from matchbox.server.base import IndexableDataset
+from matchbox.helpers.selector import query, selector
+from matchbox.server.models import Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
@@ -12,7 +13,7 @@ load_dotenv(dotenv_path)
 def test_index(
     matchbox_postgres: MatchboxPostgres,
     db_add_indexed_data: AddIndexedDataCallable,
-    warehouse_data: list[IndexableDataset],
+    warehouse_data: list[Source],
     crn_companies: DataFrame,
     duns_companies: DataFrame,
     cdms_companies: DataFrame,
@@ -34,22 +35,74 @@ def test_index(
     assert matchbox_postgres.data.count() == unique
 
 
-def test_query(matchbox_postgres, db_add_link_models_and_data):
-    # Test with different combinations of parameters
-    def test_basic_query():
-        pass
+def test_query_single_table(
+    matchbox_postgres: MatchboxPostgres,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+):
+    """Test querying data from the database."""
+    # Setup
+    db_add_indexed_data(
+        matchbox_postgres=matchbox_postgres, warehouse_data=warehouse_data
+    )
 
-    def test_query_with_model():
-        pass
+    dataset = warehouse_data[0]  # test.crn
 
-    def test_query_with_limit():
-        pass
+    select_crn = selector(
+        table=str(dataset),
+        fields=["id", "crn"],
+        engine=dataset.database.engine,
+    )
 
-    def test_query_return_pandas():
-        pass
+    df_crn_sample = query(
+        selector=select_crn,
+        backend=matchbox_postgres,
+        model=None,
+        return_type="pandas",
+        limit=10,
+    )
 
-    def test_query_return_sqlalchemy():
-        pass
+    assert isinstance(df_crn_sample, DataFrame)
+    assert df_crn_sample.shape[0] == 10
+
+    df_crn_full = query(
+        selector=select_crn,
+        backend=matchbox_postgres,
+        model=None,
+        return_type="pandas",
+    )
+
+    assert df_crn_full.shape[0] == 3000
+    assert set(df_crn_full.columns) == {
+        "data_hash",
+        "test_crn_id",
+        "test_crn_crn",
+    }
+
+
+def test_query_with_dedupe_model():
+    """Test querying data from a deduplication point of truth."""
+    pass
+
+
+def test_query_with_link_model():
+    """Test querying data from a link point of truth."""
+    pass
+
+
+def test_query_with_limit():
+    """Test querying data with a limit."""
+    pass
+
+
+def test_query_return_pandas():
+    """Test querying data and returning a pandas DataFrame."""
+    pass
+
+
+def test_query_return_sqlalchemy():
+    """Test querying data and returning a SQLAlchemy object."""
+    pass
 
 
 def test_validate_hashes(matchbox_postgres):
@@ -61,6 +114,11 @@ def test_validate_hashes(matchbox_postgres):
 
     def test_validate_nonexistent_hashes():
         pass
+
+
+def test_get_dataset(matchbox_postgres):
+    # Test getting an existing model
+    pass
 
 
 def test_get_model_subgraph(matchbox_postgres):

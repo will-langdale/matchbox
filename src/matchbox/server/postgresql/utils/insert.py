@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import MatchboxDBDataError
 from matchbox.common.hash import list_to_value_ordered_hash
-from matchbox.server.base import Cluster, Probability
+from matchbox.server.models import Cluster, Probability
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
 from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links

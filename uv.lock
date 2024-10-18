@@ -197,6 +197,21 @@ wheels = [
 ]
 
 [[package]]
+name = "connectorx"
+version = "0.3.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/8e/63f1c59682a225d2fe8716be44deae1ee3592933fbe191177c74ec33a6f5/connectorx-0.3.3-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:d1d0cbb1b97643337fb7f3e30fa2b44f63d8629eadff55afffcdf10b2afeaf9c", size = 55471403 },
+    { url = "https://files.pythonhosted.org/packages/80/f3/1ea88070047caa3998727caccba9a6721083d568222786133af677c987c0/connectorx-0.3.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:4010b466cafd728ec80adf387e53cc10668e2bc1a8c52c42a0604bea5149c412", size = 54473785 },
+    { url = "https://files.pythonhosted.org/packages/60/18/a9b0ff95e71a4dec33993cd8e2d821caae4ae25e55eaf3ac0a0d30aa8b48/connectorx-0.3.3-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:f430c359e7977818f90ac8cce3bb7ba340469dcabee13e4ac7926f80e34e8c4d", size = 60512358 },
+    { url = "https://files.pythonhosted.org/packages/19/b1/cb84b8a747b27431fdc2099c819dadc0afe519f824dd7b64dfe53edb07e3/connectorx-0.3.3-cp311-none-win_amd64.whl", hash = "sha256:6e6495cab5f23e638456622a880c774c4bcfc17ee9ed7009d4217756a7e9e2c8", size = 53814833 },
+    { url = "https://files.pythonhosted.org/packages/a5/d8/6077247b842824df2c512430c150be71402345ec5ab386e2afc6ab9af6e4/connectorx-0.3.3-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:dfefa3c55601b1a229dd27359a61c18977921455eae0c5068ec15d79900a096c", size = 55474648 },
+    { url = "https://files.pythonhosted.org/packages/6f/da/de01abb84c48996d472b9331efe0ae4c9302235d45286b7bd82864d8ddfc/connectorx-0.3.3-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:1b62f6cac84a7c41c4f61746262da059dd8af06d10de64ebde2d59c73e28c22b", size = 54468476 },
+    { url = "https://files.pythonhosted.org/packages/3a/70/6f8799f1f5b39a1be90782f7b0ba904daf63aae75340e9d2f4089d8c77a9/connectorx-0.3.3-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:2eaca398a5dae6da595c8c521d2a27050100a94e4d5778776b914b919e54ab1e", size = 60507349 },
+    { url = "https://files.pythonhosted.org/packages/cb/0a/4b33ba99394d900def8bd0a008d9f22eb2a0a93d58053621bbf052613cf0/connectorx-0.3.3-cp312-none-win_amd64.whl", hash = "sha256:a37762f26ced286e9c06528f0179877148ea83f24263ac53b906c33c430af323", size = 53816655 },
+]
+
+[[package]]
 name = "contourpy"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -744,6 +759,7 @@ source = { editable = "." }
 dependencies = [
     { name = "altair" },
     { name = "click" },
+    { name = "connectorx" },
     { name = "duckdb" },
     { name = "matplotlib" },
     { name = "pandas" },
@@ -774,6 +790,7 @@ dev = [
 requires-dist = [
     { name = "altair", specifier = ">=5.4.1" },
     { name = "click", specifier = ">=8.1.7" },
+    { name = "connectorx", specifier = ">=0.3.3" },
     { name = "duckdb", specifier = ">=1.1.1" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "pandas", specifier = ">=2.2.3" },

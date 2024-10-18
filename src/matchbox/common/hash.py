@@ -1,11 +1,15 @@
 import hashlib
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
-from matchbox.server.base import IndexableDataset
 from pandas import DataFrame, Series
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from matchbox.server.models import Source
+else:
+    Source = Any
 
 T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
@@ -13,7 +17,7 @@ HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 HASH_FUNC = hashlib.sha1
 
 
-def dataset_to_hashlist(dataset: IndexableDataset, uuid: UUID) -> list[dict[str, Any]]:
+def dataset_to_hashlist(dataset: Source, uuid: UUID) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
     with Session(dataset.database.engine) as warehouse_session:
         source_table = dataset.to_table()

@@ -8,7 +8,8 @@ from matchbox.common.hash import (
     columns_to_value_ordered_hash,
     list_to_value_ordered_hash,
 )
-from matchbox.server.base import Cluster, MatchboxDBAdapter, Probability
+from matchbox.server.base import MatchboxDBAdapter
+from matchbox.server.models import Cluster, Probability
 from pandas import DataFrame, concat
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import Table

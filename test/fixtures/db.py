@@ -4,7 +4,7 @@ import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from matchbox import make_deduper, make_linker, to_clusters
-from matchbox.server.base import IndexableDataset, SourceWarehouse
+from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 from pandas import DataFrame
 from sqlalchemy import text as sqltext
@@ -14,7 +14,7 @@ from .models import DedupeTestParams, LinkTestParams, ModelTestParams
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
-AddIndexedDataCallable = Callable[[MatchboxPostgres, list[IndexableDataset]], None]
+AddIndexedDataCallable = Callable[[MatchboxPostgres, list[Source]], None]
 
 
 @pytest.fixture(scope="session")
@@ -23,7 +23,7 @@ def db_add_indexed_data() -> AddIndexedDataCallable:
 
     def _db_add_indexed_data(
         matchbox_postgres: MatchboxPostgres,
-        warehouse_data: list[IndexableDataset],
+        warehouse_data: list[Source],
     ):
         """Indexes data from the warehouse."""
         for dataset in warehouse_data:
@@ -36,7 +36,7 @@ AddDedupeModelsAndDataCallable = Callable[
     [
         AddIndexedDataCallable,
         MatchboxPostgres,
-        list[IndexableDataset],
+        list[Source],
         list[DedupeTestParams],
         list[ModelTestParams],
         FixtureRequest,
@@ -52,7 +52,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
     def _db_add_dedupe_models_and_data(
         db_add_indexed_data: AddIndexedDataCallable,
         matchbox_postgres: MatchboxPostgres,
-        warehouse_data: list[IndexableDataset],
+        warehouse_data: list[Source],
         dedupe_data: list[DedupeTestParams],
         dedupe_models: list[ModelTestParams],
         request: FixtureRequest,
@@ -95,7 +95,7 @@ AddLinkModelsAndDataCallable = Callable[
         AddIndexedDataCallable,
         AddDedupeModelsAndDataCallable,
         MatchboxPostgres,
-        list[IndexableDataset],
+        list[Source],
         list[DedupeTestParams],
         list[ModelTestParams],
         list[LinkTestParams],
@@ -114,7 +114,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
         db_add_indexed_data: AddIndexedDataCallable,
         db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
         matchbox_postgres: MatchboxPostgres,
-        warehouse_data: list[IndexableDataset],
+        warehouse_data: list[Source],
         dedupe_data: list[DedupeTestParams],
         dedupe_models: list[ModelTestParams],
         link_data: list[LinkTestParams],
@@ -189,7 +189,7 @@ def warehouse_data(
     crn_companies: DataFrame,
     duns_companies: DataFrame,
     cdms_companies: DataFrame,
-) -> Generator[list[IndexableDataset], None, None]:
+) -> Generator[list[Source], None, None]:
     """Inserts data into the warehouse database for testing."""
     with warehouse.engine.connect() as conn:
         conn.execute(sqltext("drop schema if exists test cascade;"))
@@ -232,15 +232,9 @@ def warehouse_data(
         )
 
     yield [
-        IndexableDataset(
-            database=warehouse, db_pk="id", db_schema="test", db_table="crn"
-        ),
-        IndexableDataset(
-            database=warehouse, db_pk="id", db_schema="test", db_table="duns"
-        ),
-        IndexableDataset(
-            database=warehouse, db_pk="id", db_schema="test", db_table="cdms"
-        ),
+        Source(database=warehouse, db_pk="id", db_schema="test", db_table="crn"),
+        Source(database=warehouse, db_pk="id", db_schema="test", db_table="duns"),
+        Source(database=warehouse, db_pk="id", db_schema="test", db_table="cdms"),
     ]
 
     # Clean up the warehouse data

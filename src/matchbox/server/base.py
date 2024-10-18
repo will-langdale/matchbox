@@ -1,17 +1,17 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from functools import wraps
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Callable, Literal, Protocol
 
-import pandas as pd
-from pydantic import BaseModel, Field
+from pandas import DataFrame
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
-from sqlalchemy import MetaData, Table, create_engine
-from sqlalchemy import text as sqltext
-from sqlalchemy.engine import Engine
+from sqlalchemy import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
-from sqlalchemy.exc import SQLAlchemyError
+
+from matchbox.server.models import Cluster, Probability, Source
 
 
 class Countable(Protocol):
@@ -30,83 +30,6 @@ class ListableAndCountable(Countable, Listable):
     """A protocol for objects that can be counted and listed."""
 
     pass
-
-
-class Probability(BaseModel):
-    """A probability of a match in the Matchbox database."""
-
-    sha1: bytes
-    left: bytes
-    right: bytes
-    probability: float = Field(default=None, ge=0, le=1)
-
-
-class Cluster(BaseModel):
-    """A cluster of data in the Matchbox database."""
-
-    parent: bytes
-    child: bytes
-
-
-class SourceWarehouse(BaseModel):
-    """A warehouse where source data for datasets in Matchbox can be found."""
-
-    alias: str
-    db_type: str
-    user: str
-    password: str = Field(repr=False)
-    host: str
-    port: int
-    database: str
-    _engine: Engine | None = None
-
-    class Config:
-        populate_by_name = True
-        extra = "forbid"
-        arbitrary_types_allowed = True
-
-    @property
-    def engine(self) -> Engine:
-        if self._engine is None:
-            connection_string = f"{self.db_type}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
-            self._engine = create_engine(connection_string)
-            self.test_connection()
-        return self._engine
-
-    def test_connection(self):
-        try:
-            with self.engine.connect() as connection:
-                connection.execute(sqltext("SELECT 1"))
-        except SQLAlchemyError:
-            self._engine = None
-            raise
-
-    def __str__(self):
-        return (
-            f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
-            f"host={self.host}, port={self.port}, database={self.database})"
-        )
-
-
-class IndexableDataset(BaseModel):
-    """A dataset that can be indexed in the Matchbox database."""
-
-    database: SourceWarehouse
-    db_pk: str
-    db_schema: str
-    db_table: str
-
-    class Config:
-        populate_by_name = True
-
-    def __str__(self) -> str:
-        return f"{self.db_schema}.{self.db_table}"
-
-    def to_table(self) -> Table:
-        """Returns the dataset as a SQLAlchemy Table object."""
-        metadata = MetaData(schema=self.db_schema)
-        table = Table(self.db_table, metadata, autoload_with=self.database.engine)
-        return table
 
 
 class MatchboxModelAdapter(ABC):
@@ -144,6 +67,7 @@ class MatchboxSettings(BaseSettings):
         use_enum_values=True,
         env_file=".env",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     datasets_config: Path
@@ -173,15 +97,18 @@ class MatchboxDBAdapter(ABC):
         model: str | None = None,
         return_type: Literal["pandas", "sqlalchemy"] | None = None,
         limit: int = None,
-    ) -> pd.DataFrame | ChunkedIteratorResult: ...
+    ) -> DataFrame | ChunkedIteratorResult: ...
 
     @abstractmethod
-    def index(self, dataset: IndexableDataset) -> None: ...
+    def index(self, dataset: Source) -> None: ...
 
     @abstractmethod
     def validate_hashes(
         self, hashes: list[bytes], hash_type: Literal["data", "cluster"]
     ) -> bool: ...
+
+    @abstractmethod
+    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source: ...
 
     @abstractmethod
     def get_model_subgraph(self) -> PyDiGraph: ...
@@ -197,3 +124,85 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def clear(self, certain: bool) -> None: ...
+
+
+class BackendManager:
+    """Manages the Matchbox backend instance and settings."""
+
+    _instance = None
+    _settings = None
+
+    @classmethod
+    def initialise(cls, settings: "MatchboxSettings"):
+        cls._settings = settings
+
+    @classmethod
+    def get_backend(cls) -> "MatchboxDBAdapter":
+        if cls._settings is None:
+            raise ValueError("BackendManager must be initialized with settings first")
+
+        if cls._instance is None:
+            BackendClass = get_backend_class(cls._settings.backend_type)
+            cls._instance = BackendClass(cls._settings)
+        return cls._instance
+
+    @classmethod
+    def get_settings(cls) -> "MatchboxSettings":
+        if cls._settings is None:
+            raise ValueError("BackendManager must be initialized with settings first")
+        return cls._settings
+
+
+def get_backend_settings(backend_type: MatchboxBackends) -> type[MatchboxSettings]:
+    """Get the appropriate settings class based on the backend type."""
+    if backend_type == MatchboxBackends.POSTGRES:
+        from matchbox.server.postgresql import MatchboxPostgresSettings
+
+        return MatchboxPostgresSettings
+    # Add more backend types here as needed
+    else:
+        raise ValueError(f"Unsupported backend type: {backend_type}")
+
+
+def get_backend_class(backend_type: MatchboxBackends) -> type[MatchboxDBAdapter]:
+    """Get the appropriate backend class based on the backend type."""
+    if backend_type == MatchboxBackends.POSTGRES:
+        from matchbox.server.postgresql import MatchboxPostgres
+
+        return MatchboxPostgres
+    # Add more backend types here as needed
+    else:
+        raise ValueError(f"Unsupported backend type: {backend_type}")
+
+
+def initialise_backend(settings: MatchboxSettings) -> None:
+    """Utility function to initialise the Matchbox backend based on settings."""
+    BackendManager.initialise(settings)
+
+
+def initialise_matchbox() -> None:
+    """Initialise the Matchbox backend based on environment variables."""
+    base_settings = MatchboxSettings()
+
+    SettingsClass = get_backend_settings(base_settings.backend_type)
+    settings = SettingsClass()
+
+    initialise_backend(settings)
+
+
+def inject_backend(func: Callable) -> Callable:
+    """Decorator to inject the Matchbox backend into functions.
+
+    Used to allow user-facing functions to access the backend without needing to
+    pass it in. The backend is defined by the MB__BACKEND_TYPE environment variable.
+
+    If the user specifies a backend, it will be used instead of the injection.
+    """
+
+    @wraps(func)
+    def _inject_backend(*args, backend: "MatchboxDBAdapter | None" = None, **kwargs):
+        if backend is None:
+            backend = BackendManager.get_backend()
+        return func(backend, *args, **kwargs)
+
+    return _inject_backend

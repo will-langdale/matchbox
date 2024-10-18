@@ -8,7 +8,7 @@ See [🔗Company matching v2.1 architecture ideas](https://uktrade.atlassian.net
 
 * `src/data/` contains classes for read/writing from our key tables
     * STAR (dim/fact lookup)
-    * Dataset (dim/fact combos)
+    * Source (dim/fact combos)
     * Probabilities (probability table)
     * Clusters (cluster table)
     * Validation (user validation table)
@@ -42,7 +42,7 @@ What does ANY linker neeed?
 * The left data: cluster data, pivoted wide, with fields to join
     * Call cluster data method from Clusters
 * The right data: dim table data
-    * Call dim retrieval method from Dataset
+    * Call dim retrieval method from Source
 * A prepare method. An optional bit for subclasses to fill in
     * Should require dict parameterisation
     * Preprocessing handled here, even if called from new methods
