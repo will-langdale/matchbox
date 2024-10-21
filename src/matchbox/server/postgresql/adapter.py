@@ -246,8 +246,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
             model: The model to get.
         """
         with Session(MBDB.get_engine()) as session:
-            model = session.query(Models).filter_by(name=model).first()
-            return MatchboxPostgresModel(model)
+            if model := session.query(Models).filter_by(name=model).first():
+                return MatchboxPostgresModel(model)
+            else:
+                raise MatchboxModelError(model_name=model)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.

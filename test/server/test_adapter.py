@@ -1,10 +1,15 @@
 import pytest
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
-from matchbox.common.exceptions import MatchboxDataError, MatchboxDatasetError
+from matchbox.common.exceptions import (
+    MatchboxDataError,
+    MatchboxDatasetError,
+    MatchboxModelError,
+)
 from matchbox.common.hash import HASH_FUNC
 from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server import MatchboxDBAdapter
+from matchbox.server.base import MatchboxModelAdapter
 from matchbox.server.models import Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
@@ -381,9 +386,34 @@ def test_get_model_subgraph(
     assert subgraph.num_edges() > 0
 
 
-def test_get_model(matchbox_postgres: MatchboxPostgres):
-    # Test getting an existing model
-    pass
+@pytest.mark.parametrize("backend", backends)
+def test_get_model(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
+    """Test getting a model from the database."""
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
+    # Test getting a real model
+    model = backend.get_model(model="naive_test.crn")
+    assert isinstance(model, MatchboxModelAdapter)
+
+    # Test getting a model that doesn't exist
+    with pytest.raises(MatchboxModelError):
+        backend.get_model(model="nonexistant")
 
 
 def test_delete_leaf_model(matchbox_postgres: MatchboxPostgres):
