@@ -1,4 +1,5 @@
 import pytest
+import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from matchbox.common.exceptions import MatchboxDataError, MatchboxDatasetError
 from matchbox.common.hash import HASH_FUNC
@@ -346,9 +347,38 @@ def test_get_dataset(
         )
 
 
-def test_get_model_subgraph(matchbox_postgres: MatchboxPostgres):
-    # Test getting the model subgraph
-    pass
+@pytest.mark.parametrize("backend", backends)
+def test_get_model_subgraph(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    db_add_link_models_and_data: AddLinkModelsAndDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
+    """Test getting model from the model subgraph."""
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_link_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
+
+    # Test
+    subgraph = backend.get_model_subgraph()
+
+    assert isinstance(subgraph, rx.PyDiGraph)
+
+    assert subgraph.num_nodes() > 0
+    assert subgraph.num_edges() > 0
 
 
 def test_get_model(matchbox_postgres: MatchboxPostgres):
