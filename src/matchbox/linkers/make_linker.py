@@ -62,7 +62,7 @@ def make_linker(
     left_source: str,
     right_data: DataFrame,
     right_source: str,
-) -> Callable[[DataFrame], ProbabilityResults]:
+) -> Callable[[DataFrame, DataFrame], ProbabilityResults]:
     linker_instance = linker.from_settings(**linker_settings)
     linker_instance.prepare(left=left_data, right=right_data)
 

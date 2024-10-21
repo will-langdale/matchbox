@@ -23,7 +23,7 @@ T = TypeVar("T")
 class Probability(BaseModel):
     """A probability of a match in the Matchbox database."""
 
-    sha1: bytes
+    hash: bytes
     left: bytes
     right: bytes
     probability: float = Field(default=None, ge=0, le=1)

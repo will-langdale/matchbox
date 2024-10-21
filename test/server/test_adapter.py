@@ -1,3 +1,5 @@
+import random
+
 import pytest
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
@@ -10,7 +12,7 @@ from matchbox.common.hash import HASH_FUNC
 from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.base import MatchboxModelAdapter
-from matchbox.server.models import Source
+from matchbox.server.models import Probability, Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
@@ -488,19 +490,143 @@ def test_delete_model(
     assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
 
 
-def test_insert_deduper_model():
-    """Test that deduper models can be inserted."""
-    pass
+@pytest.mark.parametrize("backend", backends)
+def test_insert_model(
+    backend: MatchboxDBAdapter,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
+    """Test that models can be inserted."""
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
+    crn = warehouse_data[0]
+    duns = warehouse_data[1]
+
+    # Test deduper insertion
+    model_count = backend.models.count()
+
+    backend.insert_model("dedupe_1", left=str(crn), description="Test deduper 1")
+    backend.insert_model("dedupe_2", left=str(duns), description="Test deduper 1")
+
+    assert backend.models.count() == model_count + 2
+
+    # Test linker insertion
+    backend.insert_model(
+        "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
+    )
+
+    assert backend.models.count() == model_count + 3
 
 
-def test_insert_linker_model():
-    """Test that linker models can be inserted."""
-    pass
-
-
-def test_model_insert_probabilities(matchbox_postgres: MatchboxPostgres):
+@pytest.mark.parametrize("backend", backends)
+def test_model_insert_probabilities(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
     """Test that model insert probabilities are correct."""
-    pass
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
+    crn = warehouse_data[0]
+    select_crn = selector(
+        table=str(crn),
+        fields=["crn"],
+        engine=crn.database.engine,
+    )
+    df_crn = query(
+        selector=select_crn,
+        backend=backend,
+        model=None,
+        return_type="pandas",
+    )
+
+    duns = warehouse_data[1]
+    select_duns = selector(
+        table=str(duns),
+        fields=["id", "duns"],
+        engine=duns.database.engine,
+    )
+    df_crn_deduped = query(
+        selector=select_crn,
+        backend=backend,
+        model="naive_test.crn",
+        return_type="pandas",
+    )
+    df_duns_deduped = query(
+        selector=select_duns,
+        backend=backend,
+        model="naive_test.duns",
+        return_type="pandas",
+    )
+
+    backend.insert_model("dedupe_1", left=str(crn), description="Test deduper 1")
+    backend.insert_model("dedupe_2", left=str(duns), description="Test deduper 1")
+    backend.insert_model(
+        "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
+    )
+
+    # Test dedupe probabilities
+    dedupe_probabilities = [
+        Probability(
+            hash=HASH_FUNC(random.randbytes(32)).digest(),
+            left=prob,
+            right=prob,
+            probability=1.0,
+        )
+        for prob in df_crn["data_hash"].to_list()[:10]
+    ]
+    dedupe_1 = backend.get_model(model="dedupe_1")
+
+    assert dedupe_1.probabilities.count() == 0
+
+    dedupe_1.insert_probabilities(
+        probabilities=dedupe_probabilities,
+        probability_type="deduplications",
+        batch_size=10,
+    )
+
+    assert dedupe_1.probabilities.count() == 10
+
+    # Test link probabilities
+    link_probabilities = [
+        Probability(
+            hash=HASH_FUNC(random.randbytes(32)).digest(),
+            left=crn_prob,
+            right=duns_prob,
+            probability=1.0,
+        )
+        for crn_prob, duns_prob in zip(
+            df_crn_deduped["cluster_hash"].to_list()[:10],
+            df_duns_deduped["cluster_hash"].to_list()[:10],
+            strict=True,
+        )
+    ]
+    link_1 = backend.get_model(model="link_1")
+
+    assert link_1.probabilities.count() == 0
+
+    link_1.insert_probabilities(
+        probabilities=link_probabilities,
+        probability_type="links",
+        batch_size=10,
+    )
+
+    assert link_1.probabilities.count() == 10
 
 
 def test_model_insert_clusters(matchbox_postgres: MatchboxPostgres):

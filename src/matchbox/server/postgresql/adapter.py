@@ -2,7 +2,7 @@ from typing import Literal
 
 import pandas as pd
 from rustworkx import PyDiGraph
-from sqlalchemy import Engine, bindparam
+from sqlalchemy import Engine, bindparam, func, select
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session
 
@@ -47,12 +47,22 @@ class ProposesUnion:
 
 
 class CombinedProbabilities:
-    def __init__(self, dedupes, links):
-        self._dedupes = dedupes
-        self._links = links
+    def __init__(self, model: Models):
+        self._model = model
 
     def count(self):
-        return self._dedupes.count() + self._links.count()
+        with Session(MBDB.get_engine()) as session:
+            dedupe_count = session.scalar(
+                select(func.count())
+                .select_from(DDupeProbabilities)
+                .where(DDupeProbabilities.proposed_by == self._model)
+            )
+            link_count = session.scalar(
+                select(func.count())
+                .select_from(LinkProbabilities)
+                .where(LinkProbabilities.proposed_by == self._model)
+            )
+        return dedupe_count + link_count
 
 
 class MatchboxPostgresModel(MatchboxModelAdapter):
@@ -75,9 +85,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def probabilities(self) -> CombinedProbabilities:
-        return CombinedProbabilities(
-            self.model.proposes_dedupes, self.model.proposes_links
-        )
+        return CombinedProbabilities(self.model)
 
     def insert_probabilities(
         self,

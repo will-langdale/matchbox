@@ -158,7 +158,7 @@ class ProbabilityResults(ResultsBaseDataclass):
         pre_prep_df["sha1"] = pre_prep_df["sha1"].astype("binary[pyarrow]")
 
         return [
-            Probability(sha1=row[0], left=row[1], right=row[2], probability=row[3])
+            Probability(hash=row[0], left=row[1], right=row[2], probability=row[3])
             for row in pre_prep_df[
                 ["sha1", "left_id", "right_id", "probability"]
             ].to_numpy()
@@ -325,12 +325,12 @@ def to_clusters(
 
     for edge in all_edges:
         edge_idx = []
-        for sha1 in edge:
-            sha1_idx = added.get(sha1)
-            if sha1_idx is None:
-                sha1_idx = G.add_node(sha1)
-                added[sha1] = sha1_idx
-            edge_idx.append(sha1_idx)
+        for hash in edge:
+            hash_idx = added.get(hash)
+            if hash_idx is None:
+                hash_idx = G.add_node(hash)
+                added[hash] = hash_idx
+            edge_idx.append(hash_idx)
         edge_idx.append(None)
         _ = G.add_edge(*edge_idx)
 

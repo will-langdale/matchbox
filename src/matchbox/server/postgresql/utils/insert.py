@@ -153,7 +153,7 @@ def insert_probabilities(
 
         # Upsert nodes
         batch_ingest(
-            records=[(prob.left, prob.right, prob.sha1) for prob in probabilities],
+            records=[(prob.left, prob.right, prob.hash) for prob in probabilities],
             table=NodesTable,
             conn=conn,
             batch_size=batch_size,
@@ -162,7 +162,7 @@ def insert_probabilities(
         # Insert probabilities
         batch_ingest(
             records=[
-                (prob.sha1, model_hash, prob.probability) for prob in probabilities
+                (prob.hash, model_hash, prob.probability) for prob in probabilities
             ],
             table=ProbabilitiesTable,
             conn=conn,
