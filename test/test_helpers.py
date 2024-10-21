@@ -32,7 +32,7 @@ def test_selectors(warehouse_data: list[Source]):
         engine=crn_wh.database.engine,
     )
 
-    duns_wh = warehouse_data[0]
+    duns_wh = warehouse_data[1]
     select_duns = selector(
         table=str(duns_wh),
         fields=["id", "duns"],

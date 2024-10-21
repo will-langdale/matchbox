@@ -188,6 +188,7 @@ def test_query_with_link_model(
     request: FixtureRequest,
 ):
     """Test querying data from a link point of truth."""
+    # Setup
     db_add_link_models_and_data(
         db_add_indexed_data=db_add_indexed_data,
         db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
@@ -199,6 +200,43 @@ def test_query_with_link_model(
         link_models=[link_model_test_params[0]],  # Deterministic linker,
         request=request,
     )
+
+    # Test
+    linker_name = "deterministic_naive_test.crn_naive_test.duns"
+
+    crn_wh = warehouse_data[0]
+    select_crn = selector(
+        table=str(crn_wh),
+        fields=["crn"],
+        engine=crn_wh.database.engine,
+    )
+
+    duns_wh = warehouse_data[1]
+    select_duns = selector(
+        table=str(duns_wh),
+        fields=["duns"],
+        engine=duns_wh.database.engine,
+    )
+
+    select_crn_duns = selectors(select_crn, select_duns)
+
+    crn_duns = query(
+        selector=select_crn_duns,
+        backend=matchbox_postgres,
+        model=linker_name,
+        return_type="pandas",
+    )
+
+    assert isinstance(crn_duns, DataFrame)
+    assert crn_duns.shape[0] == 3500
+    assert set(crn_duns.columns) == {
+        "cluster_hash",
+        "data_hash",
+        "test_crn_crn",
+        "test_duns_duns",
+    }
+    assert crn_duns.data_hash.nunique() == 3500
+    assert crn_duns.cluster_hash.nunique() == 1000
 
 
 def test_validate_hashes(matchbox_postgres):
