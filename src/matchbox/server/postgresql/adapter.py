@@ -6,7 +6,11 @@ from sqlalchemy import Engine, bindparam
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session
 
-from matchbox.common.exceptions import MatchboxDBDataError, MatchboxModelError
+from matchbox.common.exceptions import (
+    MatchboxDataError,
+    MatchboxDatasetError,
+    MatchboxModelError,
+)
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.models import Cluster, Probability, Source, SourceWarehouse
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
@@ -174,7 +178,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             hash_type: The type of hash to validate.
 
         Raises:
-            MatchboxDBDataError: If some items don't exist in the target table.
+            MatchboxDataError: If some items don't exist in the target table.
         """
         if hash_type == "data":
             Source = SourceData
@@ -199,7 +203,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
         if len(data_inner_join) != len(hashes):
-            raise MatchboxDBDataError(
+            raise MatchboxDataError(
                 message=(
                     f"Some items don't exist the target table. "
                     f"Did you use {tgt_col} as your ID when deduplicating?"
@@ -221,12 +225,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .filter_by(db_schema=db_schema, db_table=db_table)
                 .first()
             )
-            return Source(
-                db_schema=dataset.db_schema,
-                db_table=dataset.db_table,
-                db_pk=dataset.db_id,
-                database=SourceWarehouse.from_engine(engine),
-            )
+            if dataset:
+                return Source(
+                    db_schema=dataset.db_schema,
+                    db_table=dataset.db_table,
+                    db_pk=dataset.db_id,
+                    database=SourceWarehouse.from_engine(engine),
+                )
+            else:
+                raise MatchboxDatasetError(db_schema=db_schema, db_table=db_table)
 
     def get_model_subgraph(self) -> PyDiGraph:
         """Get the full subgraph of a model."""
@@ -265,7 +272,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             description: A description of the model
 
         Raises
-            MatchboxDBDataError if, for a linker, the source models weren't found in
+            MatchboxDataError if, for a linker, the source models weren't found in
                 the database
         """
         if right:

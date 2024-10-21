@@ -1,8 +1,9 @@
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from matchbox.common.exceptions import MatchboxDBDataError
+from matchbox.common.exceptions import MatchboxDataError, MatchboxDatasetError
 from matchbox.common.hash import HASH_FUNC
 from matchbox.helpers.selector import query, selector, selectors
+from matchbox.server import MatchboxDBAdapter
 from matchbox.server.models import Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
@@ -23,18 +24,33 @@ dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
 
+backends = [
+    pytest.param("matchbox_postgres", id="postgres"),
+]
+
+
+@pytest.fixture(params=backends)
+def matchbox_backend(request: pytest.FixtureRequest) -> MatchboxDBAdapter:
+    """Fixture to provide different backend implementations."""
+    return request.param()
+
+
+@pytest.mark.parametrize("backend", backends)
 def test_index(
-    matchbox_postgres: MatchboxPostgres,
+    backend: MatchboxDBAdapter,
     db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[Source],
     crn_companies: DataFrame,
     duns_companies: DataFrame,
     cdms_companies: DataFrame,
+    request: pytest.FixtureRequest,
 ):
     """Test that indexing data works."""
-    assert matchbox_postgres.data.count() == 0
+    backend = request.getfixturevalue(backend)
 
-    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+    assert backend.data.count() == 0
+
+    db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
 
     def count_deduplicates(df: DataFrame) -> int:
         return df.drop(columns=["id"]).drop_duplicates().shape[0]
@@ -43,17 +59,21 @@ def test_index(
         count_deduplicates(df) for df in [crn_companies, duns_companies, cdms_companies]
     )
 
-    assert matchbox_postgres.data.count() == unique
+    assert backend.data.count() == unique
 
 
+@pytest.mark.parametrize("backend", backends)
 def test_query_single_table(
-    matchbox_postgres: MatchboxPostgres,
+    backend: MatchboxDBAdapter,
     db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
 ):
     """Test querying data from the database."""
+    backend = request.getfixturevalue(backend)
+
     # Setup
-    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+    db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
 
     # Test
     crn = warehouse_data[0]
@@ -66,7 +86,7 @@ def test_query_single_table(
 
     df_crn_sample = query(
         selector=select_crn,
-        backend=matchbox_postgres,
+        backend=backend,
         model=None,
         return_type="pandas",
         limit=10,
@@ -77,7 +97,7 @@ def test_query_single_table(
 
     df_crn_full = query(
         selector=select_crn,
-        backend=matchbox_postgres,
+        backend=backend,
         model=None,
         return_type="pandas",
     )
@@ -90,14 +110,18 @@ def test_query_single_table(
     }
 
 
+@pytest.mark.parametrize("backend", backends)
 def test_query_multi_table(
-    matchbox_postgres: MatchboxPostgres,
+    backend: MatchboxDBAdapter,
     db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
 ):
     """Test querying data from multiple tables from the database."""
+    backend = request.getfixturevalue(backend)
+
     # Setup
-    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+    db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
 
     # Test
     crn = warehouse_data[0]
@@ -117,7 +141,7 @@ def test_query_multi_table(
 
     df_crn_duns_full = query(
         selector=select_crn_duns,
-        backend=matchbox_postgres,
+        backend=backend,
         model=None,
         return_type="pandas",
     )
@@ -135,18 +159,21 @@ def test_query_multi_table(
     }
 
 
+@pytest.mark.parametrize("backend", backends)
 def test_query_with_dedupe_model(
-    matchbox_postgres: MatchboxPostgres,
+    backend: MatchboxDBAdapter,
     db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
     db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[Source],
     request: pytest.FixtureRequest,
 ):
     """Test querying data from a deduplication point of truth."""
+    backend = request.getfixturevalue(backend)
+
     # Setup
     db_add_dedupe_models_and_data(
         db_add_indexed_data=db_add_indexed_data,
-        backend=matchbox_postgres,
+        backend=backend,
         warehouse_data=warehouse_data,
         dedupe_data=dedupe_data_test_params,
         dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
@@ -164,7 +191,7 @@ def test_query_with_dedupe_model(
 
     df_crn = query(
         selector=select_crn,
-        backend=matchbox_postgres,
+        backend=backend,
         model="naive_test.crn",
         return_type="pandas",
     )
@@ -181,8 +208,9 @@ def test_query_with_dedupe_model(
     assert df_crn.cluster_hash.nunique() == 1000
 
 
+@pytest.mark.parametrize("backend", backends)
 def test_query_with_link_model(
-    matchbox_postgres: MatchboxPostgres,
+    backend: MatchboxDBAdapter,
     db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
     db_add_indexed_data: AddIndexedDataCallable,
     db_add_link_models_and_data: AddLinkModelsAndDataCallable,
@@ -190,11 +218,13 @@ def test_query_with_link_model(
     request: pytest.FixtureRequest,
 ):
     """Test querying data from a link point of truth."""
+    backend = request.getfixturevalue(backend)
+
     # Setup
     db_add_link_models_and_data(
         db_add_indexed_data=db_add_indexed_data,
         db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
-        backend=matchbox_postgres,
+        backend=backend,
         warehouse_data=warehouse_data,
         dedupe_data=dedupe_data_test_params,
         dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
@@ -224,7 +254,7 @@ def test_query_with_link_model(
 
     crn_duns = query(
         selector=select_crn_duns,
-        backend=matchbox_postgres,
+        backend=backend,
         model=linker_name,
         return_type="pandas",
     )
@@ -241,18 +271,21 @@ def test_query_with_link_model(
     assert crn_duns.cluster_hash.nunique() == 1000
 
 
+@pytest.mark.parametrize("backend", backends)
 def test_validate_hashes(
-    matchbox_postgres: MatchboxPostgres,
+    backend: MatchboxDBAdapter,
     db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
     db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[Source],
     request: pytest.FixtureRequest,
 ):
     """Test validating data hashes."""
+    backend = request.getfixturevalue(backend)
+
     # Setup
     db_add_dedupe_models_and_data(
         db_add_indexed_data=db_add_indexed_data,
-        backend=matchbox_postgres,
+        backend=backend,
         warehouse_data=warehouse_data,
         dedupe_data=dedupe_data_test_params,
         dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
@@ -267,31 +300,50 @@ def test_validate_hashes(
     )
     df_crn = query(
         selector=select_crn,
-        backend=matchbox_postgres,
+        backend=backend,
         model="naive_test.crn",
         return_type="pandas",
     )
 
     # Test validating data hashes
-    matchbox_postgres.validate_hashes(
-        hashes=df_crn.data_hash.to_list(), hash_type="data"
-    )
+    backend.validate_hashes(hashes=df_crn.data_hash.to_list(), hash_type="data")
 
     # Test validating cluster hashes
-    matchbox_postgres.validate_hashes(
+    backend.validate_hashes(
         hashes=df_crn.cluster_hash.drop_duplicates().to_list(), hash_type="cluster"
     )
 
     # Test validating nonexistant hashes errors
-    with pytest.raises(MatchboxDBDataError):
-        matchbox_postgres.validate_hashes(
+    with pytest.raises(MatchboxDataError):
+        backend.validate_hashes(
             hashes=[HASH_FUNC(b"nonexistant").digest()], hash_type="data"
         )
 
 
-def test_get_dataset(matchbox_postgres: MatchboxPostgres):
-    # Test getting an existing model
-    pass
+@pytest.mark.parametrize("backend", backends)
+def test_get_dataset(
+    backend: MatchboxDBAdapter,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
+    """Test querying data from the database."""
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
+    crn = warehouse_data[0]
+
+    # Test get a real dataset
+    backend.get_dataset(
+        db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
+    )
+
+    # Test getting a dataset that doesn't exist in Matchbox
+    with pytest.raises(MatchboxDatasetError):
+        backend.get_dataset(
+            db_schema="nonexistant", db_table="nonexistant", engine=crn.database.engine
+        )
 
 
 def test_get_model_subgraph(matchbox_postgres: MatchboxPostgres):

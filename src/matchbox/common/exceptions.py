@@ -22,7 +22,26 @@ class MatchboxModelError(Exception):
         self.model_name = model_name
 
 
-class MatchboxDBDataError(Exception):
+class MatchboxDatasetError(Exception):
+    """Model not found."""
+
+    def __init__(
+        self,
+        message: str = None,
+        db_schema: str | None = None,
+        db_table: str | None = None,
+    ):
+        if message is None:
+            message = "Dataset not found."
+            if db_table is not None:
+                message = f"Dataset {db_schema or ''}.{db_table} not found."
+
+        super().__init__(message)
+        self.db_schema = db_schema
+        self.db_table = db_table
+
+
+class MatchboxDataError(Exception):
     """Data doesn't exist in the Matchbox source table."""
 
     def __init__(

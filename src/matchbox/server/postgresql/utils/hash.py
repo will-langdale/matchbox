@@ -1,7 +1,7 @@
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from matchbox.common.exceptions import MatchboxDBDataError
+from matchbox.common.exceptions import MatchboxDataError
 from matchbox.helpers.selector import get_schema_table_names
 from matchbox.server.postgresql.data import SourceDataset
 from matchbox.server.postgresql.models import Models
@@ -29,7 +29,7 @@ def table_name_to_uuid(schema_table: str, engine: Engine) -> bytes:
         dataset_uuid = session.execute(stmt).scalar()
 
     if dataset_uuid is None:
-        raise MatchboxDBDataError(table=SourceDataset.__tablename__, data=schema_table)
+        raise MatchboxDataError(table=SourceDataset.__tablename__, data=schema_table)
 
     return dataset_uuid
 
@@ -52,6 +52,6 @@ def model_name_to_hash(run_name: str, engine: Engine) -> bytes:
         model_hash = session.execute(stmt).scalar()
 
     if model_hash is None:
-        raise MatchboxDBDataError(table=Models.__tablename__, data=run_name)
+        raise MatchboxDataError(table=Models.__tablename__, data=run_name)
 
     return model_hash

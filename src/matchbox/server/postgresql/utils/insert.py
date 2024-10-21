@@ -7,7 +7,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from matchbox.common.exceptions import MatchboxDBDataError
+from matchbox.common.exceptions import MatchboxDataError
 from matchbox.common.hash import list_to_value_ordered_hash
 from matchbox.server.models import Cluster, Probability
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
@@ -124,7 +124,7 @@ def insert_probabilities(
         model_hash = db_model.sha1
 
         if db_model is None:
-            raise MatchboxDBDataError(source=Models, data=model)
+            raise MatchboxDataError(source=Models, data=model)
 
         # Clear old model probabilities
         old_probs_subquery = (
@@ -203,7 +203,7 @@ def insert_clusters(
         model_hash = db_model.sha1
 
         if db_model is None:
-            raise MatchboxDBDataError(source=Models, data=model)
+            raise MatchboxDataError(source=Models, data=model)
 
         # Clear old model endorsements
         old_cluster_creates_subquery = db_model.creates.select().with_only_columns(
