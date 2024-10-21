@@ -3,7 +3,7 @@ from uuid import UUID as uuUUID
 
 from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin, UUIDMixin
@@ -20,9 +20,9 @@ class SourceDataset(UUIDMixin, CountMixin, MBDB.MatchboxBase):
     data: Mapped[List["SourceData"]] = relationship(back_populates="parent_dataset")
 
     @classmethod
-    def list(cls) -> list[tuple[str, str]]:
-        with cls.get_session() as session:
-            return session.query(cls.db_schema, cls.db_table).scalars()
+    def list(cls) -> list["SourceDataset"]:
+        with Session(MBDB.get_engine()) as session:
+            return session.query(cls).all()
 
 
 class SourceData(SHA1Mixin, CountMixin, MBDB.MatchboxBase):

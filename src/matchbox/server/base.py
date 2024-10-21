@@ -83,7 +83,6 @@ class MatchboxDBAdapter(ABC):
 
     datasets: ListableAndCountable
     models: Countable
-    models_from: Countable
     data: Countable
     clusters: Countable
     creates: Countable

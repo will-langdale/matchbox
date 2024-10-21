@@ -735,27 +735,84 @@ def test_model_insert_clusters(
     assert link_1.clusters.count() == 10
 
 
-def test_model_properties(matchbox_postgres: MatchboxPostgres):
+@pytest.mark.parametrize("backend", backends)
+def test_model_properties(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
     """Test that model properties obey their protocol restrictions."""
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
+    naive_crn = backend.get_model(model="naive_test.crn")
+
     # Test hash exists
+    assert naive_crn.hash
+
     # Test name exists
+    assert naive_crn.name
+
     # Test probabilities is countable
+    assert isinstance(naive_crn.probabilities.count(), int)
+
     # Test clusters is countable
-    pass
+    assert isinstance(naive_crn.clusters.count(), int)
 
 
-def test_properties(matchbox_postgres: MatchboxPostgres):
+@pytest.mark.parametrize("backend", backends)
+def test_properties(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
     """Test that properties obey their protocol restrictions."""
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
     # Test dataset is listable and countable
+    assert isinstance(backend.datasets.list(), list)
+    assert isinstance(backend.datasets.count(), int)
+
     # Test models is countable
-    # Test models_from is countable
+    assert isinstance(backend.models.count(), int)
+
     # Test data is countable
+    assert isinstance(backend.data.count(), int)
+
     # Test clusters is countable
+    assert isinstance(backend.clusters.count(), int)
+
     # Test creates is countable
-    # Test dedupes is countable
-    # Test links is countable
+    assert isinstance(backend.creates.count(), int)
+
+    # Test merges is countable
+    assert isinstance(backend.merges.count(), int)
+
     # Test proposes is countable
-    pass
+    assert isinstance(backend.proposes.count(), int)
 
 
 def test_clear(matchbox_postgres: MatchboxPostgres):

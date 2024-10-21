@@ -18,7 +18,7 @@ from matchbox.server.postgresql.data import SourceData, SourceDataset
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.dedupe import DDupeProbabilities, Dedupes
 from matchbox.server.postgresql.link import LinkProbabilities, Links
-from matchbox.server.postgresql.models import Models, ModelsFrom
+from matchbox.server.postgresql.models import Models
 from matchbox.server.postgresql.utils.db import get_model_subgraph
 from matchbox.server.postgresql.utils.delete import delete_model
 from matchbox.server.postgresql.utils.hash import table_name_to_uuid
@@ -157,7 +157,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         self.datasets = SourceDataset
         self.models = Models
-        self.models_from = ModelsFrom
         self.data = SourceData
         self.clusters = Clusters
         self.creates = Creates
