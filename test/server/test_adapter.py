@@ -13,7 +13,6 @@ from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.base import MatchboxModelAdapter
 from matchbox.server.models import Cluster, Probability, Source
-from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
 from ..fixtures.db import (
@@ -815,6 +814,43 @@ def test_properties(
     assert isinstance(backend.proposes.count(), int)
 
 
-def test_clear(matchbox_postgres: MatchboxPostgres):
+@pytest.mark.parametrize("backend", backends)
+def test_clear(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
     """Test clearing the database."""
-    pass
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
+    # Test
+
+    assert backend.datasets.count() > 0
+    assert backend.data.count() > 0
+    assert backend.models.count() > 0
+    assert backend.clusters.count() > 0
+    assert backend.creates.count() > 0
+    assert backend.merges.count() > 0
+    assert backend.proposes.count() > 0
+
+    backend.clear(certain=True)
+
+    assert backend.datasets.count() == 0
+    assert backend.data.count() == 0
+    assert backend.models.count() == 0
+    assert backend.clusters.count() == 0
+    assert backend.creates.count() == 0
+    assert backend.merges.count() == 0
+    assert backend.proposes.count() == 0
