@@ -12,7 +12,7 @@ from matchbox.common.hash import HASH_FUNC
 from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.base import MatchboxModelAdapter
-from matchbox.server.models import Probability, Source
+from matchbox.server.models import Cluster, Probability, Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
@@ -584,11 +584,15 @@ def test_model_insert_probabilities(
     dedupe_probabilities = [
         Probability(
             hash=HASH_FUNC(random.randbytes(32)).digest(),
-            left=prob,
-            right=prob,
+            left=crn_prob_1,
+            right=crn_prob_2,
             probability=1.0,
         )
-        for prob in df_crn["data_hash"].to_list()[:10]
+        for crn_prob_1, crn_prob_2 in zip(
+            df_crn["data_hash"].to_list()[:10],
+            reversed(df_crn["data_hash"].to_list()[:10]),
+            strict=True,
+        )
     ]
     dedupe_1 = backend.get_model(model="dedupe_1")
 
@@ -629,9 +633,106 @@ def test_model_insert_probabilities(
     assert link_1.probabilities.count() == 10
 
 
-def test_model_insert_clusters(matchbox_postgres: MatchboxPostgres):
+@pytest.mark.parametrize("backend", backends)
+def test_model_insert_clusters(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
     """Test that model insert clusters are correct."""
-    pass
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_dedupe_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        request=request,
+    )
+
+    crn = warehouse_data[0]
+    select_crn = selector(
+        table=str(crn),
+        fields=["crn"],
+        engine=crn.database.engine,
+    )
+    df_crn = query(
+        selector=select_crn,
+        backend=backend,
+        model=None,
+        return_type="pandas",
+    )
+
+    duns = warehouse_data[1]
+    select_duns = selector(
+        table=str(duns),
+        fields=["id", "duns"],
+        engine=duns.database.engine,
+    )
+    df_crn_deduped = query(
+        selector=select_crn,
+        backend=backend,
+        model="naive_test.crn",
+        return_type="pandas",
+    )
+    df_duns_deduped = query(
+        selector=select_duns,
+        backend=backend,
+        model="naive_test.duns",
+        return_type="pandas",
+    )
+
+    backend.insert_model("dedupe_1", left=str(crn), description="Test deduper 1")
+    backend.insert_model("dedupe_2", left=str(duns), description="Test deduper 1")
+    backend.insert_model(
+        "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
+    )
+
+    # Test dedupe clusters
+    dedupe_clusters = [
+        Cluster(parent=crn_prob_1, child=crn_prob_2)
+        for crn_prob_1, crn_prob_2 in zip(
+            df_crn["data_hash"].to_list()[:10],
+            reversed(df_crn["data_hash"].to_list()[:10]),
+            strict=True,
+        )
+    ]
+    dedupe_1 = backend.get_model(model="dedupe_1")
+
+    assert dedupe_1.clusters.count() == 0
+
+    dedupe_1.insert_clusters(
+        clusters=dedupe_clusters,
+        cluster_type="deduplications",
+        batch_size=10,
+    )
+
+    assert dedupe_1.clusters.count() == 10
+
+    # Test link clusters
+    link_clusters = [
+        Cluster(parent=crn_prob, child=duns_prob)
+        for crn_prob, duns_prob in zip(
+            df_crn_deduped["cluster_hash"].to_list()[:10],
+            df_duns_deduped["cluster_hash"].to_list()[:10],
+            strict=True,
+        )
+    ]
+    link_1 = backend.get_model(model="link_1")
+
+    assert link_1.clusters.count() == 0
+
+    link_1.insert_clusters(
+        clusters=link_clusters,
+        cluster_type="links",
+        batch_size=10,
+    )
+
+    assert link_1.clusters.count() == 10
 
 
 def test_model_properties(matchbox_postgres: MatchboxPostgres):

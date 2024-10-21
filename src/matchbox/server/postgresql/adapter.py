@@ -46,7 +46,24 @@ class ProposesUnion:
         return DDupeProbabilities.count() + LinkProbabilities.count()
 
 
-class CombinedProbabilities:
+class ModelClusters:
+    """A thin wrapper around Clusters for one model to .count() them."""
+
+    def __init__(self, model: Models):
+        self._model = model
+
+    def count(self):
+        with Session(MBDB.get_engine()) as session:
+            return session.scalar(
+                select(func.count())
+                .select_from(Creates)
+                .where(Creates.model == self._model)
+            )
+
+
+class ModelProbabilities:
+    """A thin wrapper around probability classes for one model to .count() them."""
+
     def __init__(self, model: Models):
         self._model = model
 
@@ -69,7 +86,9 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     """An adapter for Matchbox models in PostgreSQL."""
 
     def __init__(self, model: Models):
-        self.model = model
+        self.model: Models = model
+        self._probabilities: ModelProbabilities = None
+        self._clusters: ModelClusters = None
 
     @property
     def hash(self) -> bytes:
@@ -81,11 +100,15 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def clusters(self):
-        return self.model.creates
+        if self._clusters is None:
+            self._clusters = ModelClusters(self.model)
+        return self._clusters
 
     @property
-    def probabilities(self) -> CombinedProbabilities:
-        return CombinedProbabilities(self.model)
+    def probabilities(self) -> ModelProbabilities:
+        if self._probabilities is None:
+            self._probabilities = ModelProbabilities(self.model)
+        return self._probabilities
 
     def insert_probabilities(
         self,
