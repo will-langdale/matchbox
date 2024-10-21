@@ -5,10 +5,16 @@ from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 from pytest import FixtureRequest
 
-from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable
+from ..fixtures.db import (
+    AddDedupeModelsAndDataCallable,
+    AddIndexedDataCallable,
+    AddLinkModelsAndDataCallable,
+)
 from ..fixtures.models import (
     dedupe_data_test_params,
     dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
 )
 
 dotenv_path = find_dotenv()
@@ -173,9 +179,26 @@ def test_query_with_dedupe_model(
     assert df_crn.cluster_hash.nunique() == 1000
 
 
-def test_query_with_link_model():
+def test_query_with_link_model(
+    matchbox_postgres: MatchboxPostgres,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    db_add_link_models_and_data: AddLinkModelsAndDataCallable,
+    warehouse_data: list[Source],
+    request: FixtureRequest,
+):
     """Test querying data from a link point of truth."""
-    pass
+    db_add_link_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        backend=matchbox_postgres,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
 
 
 def test_validate_hashes(matchbox_postgres):

@@ -9,6 +9,19 @@ class MatchboxValidatonError(Exception):
     """Validation of data failed."""
 
 
+class MatchboxModelError(Exception):
+    """Model not found."""
+
+    def __init__(self, message: str = None, model_name: str = None):
+        if message is None:
+            message = "Model not found."
+            if model_name is not None:
+                message = f"Model {model_name} not found."
+
+        super().__init__(message)
+        self.model_name = model_name
+
+
 class MatchboxDBDataError(Exception):
     """Data doesn't exist in the Matchbox source table."""
 

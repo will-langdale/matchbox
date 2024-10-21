@@ -6,7 +6,7 @@ from sqlalchemy import Engine, bindparam
 from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session
 
-from matchbox.common.exceptions import MatchboxDBDataError
+from matchbox.common.exceptions import MatchboxDBDataError, MatchboxModelError
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.models import Cluster, Probability, Source, SourceWarehouse
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
@@ -106,10 +106,10 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     @classmethod
     def get_model(cls, model_name: str) -> "MatchboxPostgresModel":
         with Session(MBDB.get_engine()) as session:
-            model = session.query(Models).filter_by(name=model_name).first()
-            if model:
+            if model := session.query(Models).filter_by(name=model_name).first():
                 return cls(model)
-            return None
+            else:
+                raise MatchboxModelError(model_name=model_name)
 
 
 class MatchboxPostgres(MatchboxDBAdapter):

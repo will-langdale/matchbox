@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
+from matchbox.common.exceptions import MatchboxModelError
 from matchbox.server.models import Source
 from matchbox.server.postgresql.clusters import Clusters, clusters_association
 from matchbox.server.postgresql.data import SourceData, SourceDataset
@@ -105,9 +106,11 @@ def _parent_to_tree(model_name: str, engine: Engine) -> tuple[bytes, list[bytes]
     """
 
     with Session(engine) as session:
-        model = session.query(Models).filter_by(name=model_name).first()
-        model_children = get_all_children(model)
-        model_children.pop(0)  # includes original model
+        if model := session.query(Models).filter_by(name=model_name).first():
+            model_children = get_all_children(model)
+            model_children.pop(0)  # includes original model
+        else:
+            raise MatchboxModelError(model_name=model_name)
 
     return model.sha1, [m.sha1 for m in model_children]
 

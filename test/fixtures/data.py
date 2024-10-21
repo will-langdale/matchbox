@@ -209,7 +209,7 @@ def query_clean_crn_deduped(
     crn = query(
         selector=select_crn,
         backend=matchbox_postgres,
-        model="naive_mb.crn",
+        model="naive_test.crn",
         return_type="pandas",
     )
 
@@ -239,7 +239,7 @@ def query_clean_duns_deduped(
     duns = query(
         selector=select_duns,
         backend=matchbox_postgres,
-        model="naive_mb.duns",
+        model="naive_test.duns",
         return_type="pandas",
     )
 
@@ -269,7 +269,7 @@ def query_clean_cdms_deduped(
     cdms = query(
         selector=select_cdms,
         backend=matchbox_postgres,
-        model="naive_mb.cdms",
+        model="naive_test.cdms",
         return_type="pandas",
     )
 

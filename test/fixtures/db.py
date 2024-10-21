@@ -124,6 +124,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
     ) -> None:
         """Links data from the warehouse and logs in Matchbox."""
         db_add_dedupe_models_and_data(
+            db_add_indexed_data=db_add_indexed_data,
             backend=backend,
             warehouse_data=warehouse_data,
             dedupe_data=dedupe_data,
