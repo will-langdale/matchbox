@@ -36,7 +36,7 @@ class ListableAndCountable(Countable, Listable):
 class MatchboxModelAdapter(ABC):
     """An abstract base class for Matchbox model adapters."""
 
-    sha1: bytes
+    hash: bytes
     name: str
     clusters: Countable
     probabilities: Countable
@@ -87,8 +87,7 @@ class MatchboxDBAdapter(ABC):
     data: Countable
     clusters: Countable
     creates: Countable
-    dedupes: Countable
-    links: Countable
+    merges: Countable
     proposes: Countable
 
     @abstractmethod

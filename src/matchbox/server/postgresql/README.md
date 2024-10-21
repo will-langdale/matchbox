@@ -64,7 +64,7 @@ erDiagram
     Clusters {
         bytes sha1 PK
     }
-    clusters_association {
+    Creates {
         bytes child PK,FK
         bytes parent PK,FK
     }
@@ -99,14 +99,14 @@ erDiagram
     Links ||--o{ LinkProbabilities : ""
     Links ||--o{ LinkValidation : ""
     %% Clusters
-    Clusters ||--o{ clusters_association : ""
+    Clusters ||--o{ Creates : ""
     Clusters ||--o{ ClusterValidation : ""
     Clusters ||--o{ Links : "left, right"
     Clusters ||--o{ LinkContains : "child, parent"
     %% Models
     Models ||--o{ DDupeProbabilities : ""
     Models ||--o{ LinkProbabilities : ""
-    Models ||--o{ clusters_association : ""
+    Models ||--o{ Creates : ""
     Models ||--o{ ModelsFrom: "child, parent"
 ```
 

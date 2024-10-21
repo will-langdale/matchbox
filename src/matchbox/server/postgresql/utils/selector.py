@@ -10,7 +10,7 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import MatchboxModelError
 from matchbox.server.models import Source
-from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.clusters import Clusters, Creates
 from matchbox.server.postgresql.data import SourceData, SourceDataset
 from matchbox.server.postgresql.dedupe import DDupeContains
 from matchbox.server.postgresql.link import LinkContains
@@ -138,8 +138,8 @@ def _tree_to_reachable_stmt(model_tree: list[bytes]) -> Select:
     dd_stmt = (
         select(DDupeContains.parent, DDupeContains.child)
         .join(c1, DDupeContains.parent == c1.sha1)
-        .join(clusters_association, clusters_association.c.child == c1.sha1)
-        .join(Models, clusters_association.c.parent == Models.sha1)
+        .join(Creates, Creates.child == c1.sha1)
+        .join(Models, Creates.parent == Models.sha1)
         .where(Models.sha1.in_(select(subquery.c.hash)))
     )
 
@@ -147,8 +147,8 @@ def _tree_to_reachable_stmt(model_tree: list[bytes]) -> Select:
         select(LinkContains.parent, LinkContains.child)
         .join(c1, LinkContains.parent == c1.sha1)
         .join(c2, LinkContains.child == c2.sha1)
-        .join(clusters_association, clusters_association.c.child == c1.sha1)
-        .join(Models, clusters_association.c.parent == Models.sha1)
+        .join(Creates, Creates.child == c1.sha1)
+        .join(Models, Creates.parent == Models.sha1)
         .where(Models.sha1.in_(select(subquery.c.hash)))
     )
 
@@ -179,8 +179,8 @@ def _reachable_to_parent_data_stmt(
     root = (
         select(allowed.c.parent, allowed.c.child)
         .join(Clusters, Clusters.sha1 == allowed.c.parent)
-        .join(clusters_association, clusters_association.c.child == Clusters.sha1)
-        .join(Models, clusters_association.c.parent == Models.sha1)
+        .join(Creates, Creates.child == Clusters.sha1)
+        .join(Models, Creates.parent == Models.sha1)
         .where(Models.sha1 == hash_to_hex_decode(parent_hash))
         .cte("root")
     )

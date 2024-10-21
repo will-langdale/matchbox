@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from matchbox.common.exceptions import MatchboxDataError
 from matchbox.common.hash import list_to_value_ordered_hash
 from matchbox.server.models import Cluster, Probability
-from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.clusters import Clusters, Creates
 from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
 from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
 from matchbox.server.postgresql.models import Models, ModelsFrom
@@ -211,9 +211,7 @@ def insert_clusters(
         )
 
         session.execute(
-            delete(clusters_association).where(
-                clusters_association.c.child.in_(old_cluster_creates_subquery)
-            )
+            delete(Creates).where(Creates.child.in_(old_cluster_creates_subquery))
         )
 
         session.commit()
@@ -245,7 +243,7 @@ def insert_clusters(
         # Insert cluster proposed by model
         batch_ingest(
             records=[(model_hash, cluster.parent) for cluster in clusters],
-            table=clusters_association,
+            table=Creates,
             conn=conn,
             batch_size=batch_size,
         )

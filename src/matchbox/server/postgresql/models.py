@@ -7,17 +7,17 @@ from sqlalchemy import UUID, VARCHAR, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
-from matchbox.server.postgresql.clusters import clusters_association
+from matchbox.server.postgresql.clusters import Creates
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.dedupe import DDupeProbabilities
 from matchbox.server.postgresql.link import LinkProbabilities
-from matchbox.server.postgresql.mixin import SHA1Mixin
+from matchbox.server.postgresql.mixin import CountMixin, SHA1Mixin
 
 if TYPE_CHECKING:
-    from matchbox.server.postgresql.clusters import Clusters
+    pass
 
 
-class Models(SHA1Mixin, MBDB.MatchboxBase):
+class Models(SHA1Mixin, CountMixin, MBDB.MatchboxBase):
     """The Matchbox PostgreSQL model class, and ModelAdaper for PostgreSQL."""
 
     __tablename__ = "mb__models"
@@ -29,12 +29,11 @@ class Models(SHA1Mixin, MBDB.MatchboxBase):
         UUID, ForeignKey("mb__source_dataset.uuid")
     )
 
-    # ORM Many to Many pattern
-    # https://docs.sqlalchemy.org/en/20/orm/
-    # basic_relationships.html#many-to-many
-    creates: WriteOnlyMapped[list["Clusters"]] = relationship(
-        secondary=clusters_association,
-        back_populates="created_by",
+    # Association object pattern
+    # https://docs.sqlalchemy.org/en/20/orm
+    # /basic_relationships.html#association-object
+    creates: WriteOnlyMapped[list["Creates"]] = relationship(
+        back_populates="model",
         passive_deletes=True,
     )
 

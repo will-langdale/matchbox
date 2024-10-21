@@ -13,7 +13,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.models import Cluster, Probability, Source, SourceWarehouse
-from matchbox.server.postgresql.clusters import Clusters, clusters_association
+from matchbox.server.postgresql.clusters import Clusters, Creates
 from matchbox.server.postgresql.data import SourceData, SourceDataset
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.dedupe import DDupeProbabilities, Dedupes
@@ -62,7 +62,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         self.model = model
 
     @property
-    def sha1(self) -> bytes:
+    def hash(self) -> bytes:
         return self.model.sha1
 
     @property
@@ -129,7 +129,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self.models_from = ModelsFrom
         self.data = SourceData
         self.clusters = Clusters
-        self.creates = clusters_association
+        self.creates = Creates
         self.merges = MergesUnion()
         self.proposes = ProposesUnion()
 
@@ -258,7 +258,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             model: The model to delete.
             certain: Whether to delete the model without confirmation.
         """
-        delete_model(model=model, certain=certain)
+        delete_model(model=model, certain=certain, engine=MBDB.get_engine())
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None

@@ -11,7 +11,7 @@ def delete_model(model: str, engine: Engine, certain: bool = False) -> None:
 
     * The model from the model table
     * The model's edges to its child models from the models_from table
-    * The creates edges the model made from the clusters_association table
+    * The creates edges the model made from the Creates table
     * Any probability values associated with the model from the ddupe_probabilities and
         link_probabilities tables
     * All of the above for all parent models. As every model is defined by

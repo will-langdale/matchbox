@@ -416,57 +416,121 @@ def test_get_model(
         backend.get_model(model="nonexistant")
 
 
-def test_delete_leaf_model(matchbox_postgres: MatchboxPostgres):
-    """Test deletion of a model with no dependencies."""
+@pytest.mark.parametrize("backend", backends)
+def test_delete_model(
+    backend: MatchboxDBAdapter,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    db_add_link_models_and_data: AddLinkModelsAndDataCallable,
+    warehouse_data: list[Source],
+    request: pytest.FixtureRequest,
+):
+    """
+    Tests the deletion of:
+
+    * The model from the model table
+    * The creates edges the model made
+    * Any models that depended on this model, and their creates edges
+    * Any probability values associated with the model
+    * All of the above for all parent models. As every model is defined by
+        its children, deleting a model means cascading deletion to all ancestors
+    """
+    backend = request.getfixturevalue(backend)
+
+    # Setup
+    db_add_link_models_and_data(
+        db_add_indexed_data=db_add_indexed_data,
+        db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+        backend=backend,
+        warehouse_data=warehouse_data,
+        dedupe_data=dedupe_data_test_params,
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
+        link_data=link_data_test_params,
+        link_models=[link_model_test_params[0]],  # Deterministic linker,
+        request=request,
+    )
+
+    # Expect it to delete itself, its probabilities,
+    # its parents, and their probabilities
+    deduper_to_delete = "naive_test.crn"
+    total_models = len(dedupe_data_test_params) + len(link_data_test_params)
+
+    model_list_pre_delete = backend.models.count()
+    cluster_count_pre_delete = backend.clusters.count()
+    cluster_assoc_count_pre_delete = backend.creates.count()
+    proposed_merge_probs_pre_delete = backend.proposes.count()
+    actual_merges_pre_delete = backend.merges.count()
+
+    assert model_list_pre_delete == total_models
+    assert cluster_count_pre_delete > 0
+    assert cluster_assoc_count_pre_delete > 0
+    assert proposed_merge_probs_pre_delete > 0
+    assert actual_merges_pre_delete > 0
+
+    # Perform deletion
+    backend.delete_model(deduper_to_delete, certain=True)
+
+    model_list_post_delete = backend.models.count()
+    cluster_count_post_delete = backend.clusters.count()
+    cluster_assoc_count_post_delete = backend.creates.count()
+    proposed_merge_probs_post_delete = backend.proposes.count()
+    actual_merges_post_delete = backend.merges.count()
+
+    # Deletes deduper and parent linkers: 3 models gone
+    assert model_list_post_delete == model_list_pre_delete - 3
+
+    # Cluster, dedupe and link count unaffected
+    assert cluster_count_post_delete == cluster_count_pre_delete
+    assert actual_merges_post_delete == actual_merges_pre_delete
+
+    # But count of propose and create edges has dropped
+    assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
+    assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
+
+
+def test_insert_deduper_model():
+    """Test that deduper models can be inserted."""
     pass
 
 
-def test_delete_node_model(matchbox_postgres: MatchboxPostgres):
-    """Test deletion of a model with downstream dependencies."""
+def test_insert_linker_model():
+    """Test that linker models can be inserted."""
     pass
 
 
-def test_insert_model(matchbox_postgres: MatchboxPostgres):
-    def test_insert_deduper_model():
-        pass
-
-    def test_insert_linker_model():
-        pass
-
-    def test_insert_duplicate_model():
-        pass
-
-
-# Additional tests for other properties and methods
-
-
-def test_datasets_property(matchbox_postgres: MatchboxPostgres):
+def test_model_insert_probabilities(matchbox_postgres: MatchboxPostgres):
+    """Test that model insert probabilities are correct."""
     pass
 
 
-def test_models_property(matchbox_postgres: MatchboxPostgres):
+def test_model_insert_clusters(matchbox_postgres: MatchboxPostgres):
+    """Test that model insert clusters are correct."""
     pass
 
 
-def test_models_from_property(matchbox_postgres: MatchboxPostgres):
+def test_model_properties(matchbox_postgres: MatchboxPostgres):
+    """Test that model properties obey their protocol restrictions."""
+    # Test hash exists
+    # Test name exists
+    # Test probabilities is countable
+    # Test clusters is countable
     pass
 
 
-def test_data_property(matchbox_postgres: MatchboxPostgres):
+def test_properties(matchbox_postgres: MatchboxPostgres):
+    """Test that properties obey their protocol restrictions."""
+    # Test dataset is listable and countable
+    # Test models is countable
+    # Test models_from is countable
+    # Test data is countable
+    # Test clusters is countable
+    # Test creates is countable
+    # Test dedupes is countable
+    # Test links is countable
+    # Test proposes is countable
     pass
 
 
-def test_clusters_property(matchbox_postgres: MatchboxPostgres):
-    pass
-
-
-def test_creates_property(matchbox_postgres: MatchboxPostgres):
-    pass
-
-
-def test_merges_property(matchbox_postgres: MatchboxPostgres):
-    pass
-
-
-def test_proposes_property(matchbox_postgres: MatchboxPostgres):
+def test_clear(matchbox_postgres: MatchboxPostgres):
+    """Test clearing the database."""
     pass
