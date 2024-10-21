@@ -150,7 +150,7 @@ def test_query_with_dedupe_model(
 
     select_crn = selector(
         table=str(crn),
-        fields=["id", "crn"],
+        fields=["company_name", "crn"],
         engine=crn.database.engine,
     )
 
@@ -164,13 +164,13 @@ def test_query_with_dedupe_model(
     assert isinstance(df_crn, DataFrame)
     assert df_crn.shape[0] == 3000
     assert set(df_crn.columns) == {
-        "cluster_sha1",
-        "data_sha1",
+        "cluster_hash",
+        "data_hash",
         "test_crn_crn",
         "test_crn_company_name",
     }
-    assert df_crn.data_sha1.nunique() == 3000
-    assert df_crn.cluster_sha1.nunique() == 1000
+    assert df_crn.data_hash.nunique() == 3000
+    assert df_crn.cluster_hash.nunique() == 1000
 
 
 def test_query_with_link_model():
