@@ -1,4 +1,4 @@
-from typing import Callable, Generator
+from typing import Callable, Generator, Literal
 
 import pytest
 from _pytest.fixtures import FixtureRequest
@@ -10,7 +10,15 @@ from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSetting
 from pandas import DataFrame
 from sqlalchemy import text as sqltext
 
-from .models import DedupeTestParams, LinkTestParams, ModelTestParams
+from .models import (
+    DedupeTestParams,
+    LinkTestParams,
+    ModelTestParams,
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -164,6 +172,52 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                 clustered.to_matchbox(backend=backend)
 
     return _db_add_link_models_and_data
+
+
+@pytest.fixture(scope="function")
+def setup_database(request: pytest.FixtureRequest):
+    def _setup_database(
+        backend: MatchboxDBAdapter,
+        warehouse_data: list[Source],
+        setup_level: Literal["index", "dedupe", "link"],
+    ):
+        db_add_indexed_data = request.getfixturevalue("db_add_indexed_data")
+        db_add_dedupe_models_and_data = request.getfixturevalue(
+            "db_add_dedupe_models_and_data"
+        )
+        db_add_link_models_and_data = request.getfixturevalue(
+            "db_add_link_models_and_data"
+        )
+
+        backend.clear(certain=True)
+
+        if setup_level == "index":
+            db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
+        elif setup_level == "dedupe":
+            db_add_dedupe_models_and_data(
+                db_add_indexed_data=db_add_indexed_data,
+                backend=backend,
+                warehouse_data=warehouse_data,
+                dedupe_data=dedupe_data_test_params,
+                dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+                request=request,
+            )
+        elif setup_level == "link":
+            db_add_link_models_and_data(
+                db_add_indexed_data=db_add_indexed_data,
+                db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+                backend=backend,
+                warehouse_data=warehouse_data,
+                dedupe_data=dedupe_data_test_params,
+                dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+                link_data=link_data_test_params,
+                link_models=[link_model_test_params[0]],  # Deterministic linker
+                request=request,
+            )
+        else:
+            raise ValueError(f"Invalid setup level: {setup_level}")
+
+    return _setup_database
 
 
 # Warehouse database fixtures

@@ -4,8 +4,8 @@ from matchbox.server.models import Source
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
-from .fixtures.db import AddIndexedDataCallable
-from .fixtures.models import (
+from ..fixtures.db import AddIndexedDataCallable
+from ..fixtures.models import (
     dedupe_data_test_params,
     dedupe_model_test_params,
 )

@@ -16,7 +16,7 @@ from matchbox.server.postgresql import MatchboxPostgres
 from matplotlib.figure import Figure
 from pandas import DataFrame
 
-from .fixtures.db import AddIndexedDataCallable
+from ..fixtures.db import AddIndexedDataCallable
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)

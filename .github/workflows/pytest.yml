@@ -19,8 +19,8 @@ env:
 
 
 jobs:
-  uv-example:
-    name: python
+  run-unit-tests:
+    name: tests
     runs-on: ubuntu-latest
 
     steps:
