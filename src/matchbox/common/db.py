@@ -1,19 +1,32 @@
 from typing import Literal, Union, overload
 
 import connectorx as cx
+import pyarrow as pa
 from matchbox.common.exceptions import MatchboxValidatonError
 from pandas import DataFrame
-from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine, Select
 from sqlalchemy.engine.url import URL
 
 ReturnTypeStr = Literal["arrow", "pandas"]
 
 
+def convert_large_binary_to_binary(table: pa.Table) -> pa.Table:
+    """Converts Arrow large_binary fields to binary type."""
+    new_fields = []
+    for field in table.schema:
+        if pa.types.is_large_binary(field.type):
+            new_fields.append(field.with_type(pa.binary()))
+        else:
+            new_fields.append(field)
+
+    new_schema = pa.schema(new_fields)
+    return table.cast(new_schema)
+
+
 @overload
 def sql_to_df(
     stmt: Select, engine: Engine, return_type: Literal["arrow"]
-) -> ArrowTable: ...
+) -> pa.Table: ...
 
 
 @overload
@@ -24,7 +37,7 @@ def sql_to_df(
 
 def sql_to_df(
     stmt: Select, engine: Engine, return_type: ReturnTypeStr = "pandas"
-) -> ArrowTable | DataFrame:
+) -> pa.Table | DataFrame:
     """
     Executes the given SQLAlchemy statement using connectorx.
 
@@ -51,7 +64,12 @@ def sql_to_df(
     if not isinstance(url, str):
         raise ValueError("Unable to obtain a valid connection string from the engine.")
 
-    return cx.read_sql(conn=url, query=sql_query, return_type=return_type)
+    result = cx.read_sql(conn=url, query=sql_query, return_type=return_type)
+
+    if return_type == "arrow":
+        return convert_large_binary_to_binary(table=result)
+
+    return result
 
 
 def get_schema_table_names(full_name: str, validate: bool = False) -> tuple[str, str]:

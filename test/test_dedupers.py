@@ -90,7 +90,7 @@ def test_dedupers(
 
     deduped.to_matchbox(backend=matchbox_postgres)
 
-    model = matchbox_postgres.get_model(name=deduper_name)
+    model = matchbox_postgres.get_model(model=deduper_name)
     assert model.probabilities.count() == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
@@ -131,5 +131,5 @@ def test_dedupers(
 
     clusters_all.to_matchbox(backend=matchbox_postgres)
 
-    model = matchbox_postgres.get_model(name=deduper_name)
+    model = matchbox_postgres.get_model(model=deduper_name)
     assert model.clusters.count() == fx_data.unique_n

@@ -1,7 +1,7 @@
 from typing import Literal, TypeVar
 
 import pyarrow as pa
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.orm import Session, aliased
@@ -353,6 +353,11 @@ def query(
     if return_type == "arrow":
         return result
     elif return_type == "pandas":
-        return result.to_pandas(use_threads=True, split_blocks=True, self_destruct=True)
+        return result.to_pandas(
+            use_threads=True,
+            split_blocks=True,
+            self_destruct=True,
+            types_mapper=ArrowDtype,
+        )
     else:
         ValueError(f"return_type of {return_type} not valid")

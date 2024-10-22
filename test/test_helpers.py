@@ -24,7 +24,14 @@ load_dotenv(dotenv_path)
 LOGGER = logging.getLogger(__name__)
 
 
-def test_selectors(warehouse_data: list[Source]):
+def test_selectors(
+    matchbox_postgres: MatchboxPostgres,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
+):
+    # Setup
+    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+
     crn_wh = warehouse_data[0]
     select_crn = selector(
         table=str(crn_wh),
