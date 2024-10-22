@@ -1,9 +1,21 @@
+from typing import TypeVar
 from uuid import UUID as uuUUID
 from uuid import uuid4
 
 from sqlalchemy import UUID, func
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Mapped, mapped_column
+
+from matchbox.server.postgresql.db import MBDB
+
+T = TypeVar("T")
+
+
+class CountMixin:
+    @classmethod
+    def count(cls: type[T]) -> int:
+        with MBDB.get_session() as session:
+            return session.query(func.count()).select_from(cls).scalar()
 
 
 class SHA1Mixin:

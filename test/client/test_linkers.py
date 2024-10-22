@@ -1,10 +1,11 @@
 import pytest
 from matchbox import make_linker, to_clusters
-from matchbox.data import Models
+from matchbox.server.models import Source
+from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
-from sqlalchemy.orm import Session
 
-from .fixtures.models import (
+from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable
+from ..fixtures.models import (
     dedupe_data_test_params,
     dedupe_model_test_params,
     link_data_test_params,
@@ -16,9 +17,10 @@ from .fixtures.models import (
 @pytest.mark.parametrize("fx_linker", link_model_test_params)
 def test_linkers(
     # Fixtures
-    db_engine,
-    db_clear_models,
-    db_add_dedupe_models_and_data,
+    matchbox_postgres: MatchboxPostgres,
+    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+    db_add_indexed_data: AddIndexedDataCallable,
+    warehouse_data: list[Source],
     # Parameterised data classes
     fx_data,
     fx_linker,
@@ -34,13 +36,14 @@ def test_linkers(
         4. That the correct number of clusters are resolved
         5. That the resolved clusters are inserted correctly
     """
-    # i. Ensure database is clean, collect fixtures, perform any special linker cleaning
+    # i. Ensure database is ready, collect fixtures, perform any special linker cleaning
 
-    db_clear_models(db_engine)
     db_add_dedupe_models_and_data(
-        db_engine=db_engine,
+        db_add_indexed_data=db_add_indexed_data,
+        backend=matchbox_postgres,
+        warehouse_data=warehouse_data,
         dedupe_data=dedupe_data_test_params,
-        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
         request=request,
     )
 
@@ -55,8 +58,8 @@ def test_linkers(
         df_r_renamed = df_r.copy().rename(columns=fx_data.fields_r)
         fields_l_renamed = list(fx_data.fields_l.values())
         fields_r_renamed = list(fx_data.fields_r.values())
-        df_l_renamed = df_l_renamed.filter(["cluster_sha1"] + fields_l_renamed)
-        df_r_renamed = df_r_renamed.filter(["cluster_sha1"] + fields_r_renamed)
+        df_l_renamed = df_l_renamed.filter(["cluster_hash"] + fields_l_renamed)
+        df_r_renamed = df_r_renamed.filter(["cluster_hash"] + fields_r_renamed)
         assert set(df_l_renamed.columns) == set(df_r_renamed.columns)
         assert df_l_renamed.dtypes.equals(df_r_renamed.dtypes)
 
@@ -101,43 +104,42 @@ def test_linkers(
 
     linked_df_with_source = linked.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_sha1",
+        left_key="cluster_hash",
         right_data=df_r,
-        right_key="cluster_sha1",
+        right_key="cluster_hash",
     )
 
     assert isinstance(linked_df, DataFrame)
     assert linked_df.shape[0] == fx_data.tgt_prob_n
 
     assert isinstance(linked_df_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r):
+    for field_l, field_r in zip(fields_l, fields_r, strict=True):
         assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
     # 3. Linked probabilities are inserted correctly
 
-    linked.to_cmf(engine=db_engine)
+    linked.to_matchbox(backend=matchbox_postgres)
 
-    with Session(db_engine) as session:
-        model = session.query(Models).filter_by(name=linker_name).first()
-        assert session.scalar(model.links_count()) == fx_data.tgt_prob_n
+    model = matchbox_postgres.get_model(model=linker_name)
+    assert model.probabilities.count() == fx_data.tgt_prob_n
 
     # 4. Correct number of clusters are resolved
 
-    clusters_links = to_clusters(results=linked, key="cluster_sha1", threshold=0)
+    clusters_links = to_clusters(results=linked, key="cluster_hash", threshold=0)
 
     clusters_links_df = clusters_links.to_df()
     clusters_links_df_with_source = clusters_links.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_sha1",
+        left_key="cluster_hash",
         right_data=df_r,
-        right_key="cluster_sha1",
+        right_key="cluster_hash",
     )
 
     assert isinstance(clusters_links_df, DataFrame)
     assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
 
     assert isinstance(clusters_links_df_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r):
+    for field_l, field_r in zip(fields_l, fields_r, strict=True):
         # When we enrich the ClusterResults in a deduplication job, every child
         # hash will match something in the source data, because we're only using
         # one dataset. NaNs are therefore impossible.
@@ -168,22 +170,22 @@ def test_linkers(
         assert cluster_vals.shape[0] == fx_data.tgt_clus_n
 
     clusters_all = to_clusters(
-        df_l, df_r, results=linked, key="cluster_sha1", threshold=0
+        df_l, df_r, results=linked, key="cluster_hash", threshold=0
     )
 
     clusters_all_df = clusters_all.to_df()
     clusters_all_df_with_source = clusters_all.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_sha1",
+        left_key="cluster_hash",
         right_data=df_r,
-        right_key="cluster_sha1",
+        right_key="cluster_hash",
     )
 
     assert isinstance(clusters_all_df, DataFrame)
     assert clusters_all_df.parent.nunique() == fx_data.unique_n
 
     assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r):
+    for field_l, field_r in zip(fields_l, fields_r, strict=True):
         # See above for method
         # Only change is that we've now introduced expected NaNs for data
         # that contains different number of entities
@@ -213,12 +215,7 @@ def test_linkers(
 
     # 5. Resolved clusters are inserted correctly
 
-    clusters_all.to_cmf(engine=db_engine)
+    clusters_all.to_matchbox(backend=matchbox_postgres)
 
-    with Session(db_engine) as session:
-        model = session.query(Models).filter_by(name=linker_name).first()
-        assert session.scalar(model.creates_count()) == fx_data.unique_n
-
-    # i. Clean up after ourselves
-
-    db_clear_models(db_engine)
+    model = matchbox_postgres.get_model(model=linker_name)
+    assert model.clusters.count() == fx_data.unique_n

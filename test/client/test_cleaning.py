@@ -94,7 +94,7 @@ def test_basic_functions(test: tuple[str, Callable], test_root_dir: Path):
     test_name = test[0]
     test_cleaning_function = test[1]
 
-    dirty, clean = load_test_data(Path(test_root_dir, "cleaning", test_name))
+    dirty, clean = load_test_data(Path(test_root_dir, "client", "cleaning", test_name))
 
     cleaned = (
         duckdb.sql(
@@ -138,7 +138,7 @@ def test_function(test: tuple[str, Callable], test_root_dir: Path):
     test_cleaning_function = cleaning_function(*test[1])
 
     dirty, clean = load_test_data(
-        Path(test_root_dir, "cleaning", "cleaning_function", test_name)
+        Path(test_root_dir, "client", "cleaning", "cleaning_function", test_name)
     )
 
     cleaned = test_cleaning_function(dirty, column="col")
@@ -161,7 +161,7 @@ def test_nest_unnest(test: tuple[str, Callable], test_root_dir: Path):
     test_cleaning_function = cleaning_function(test[1])
 
     dirty, clean = load_test_data(
-        Path(test_root_dir, "cleaning", "unnest_renest", test_name)
+        Path(test_root_dir, "client", "cleaning", "unnest_renest", test_name)
     )
 
     test_cleaning_function_arrayed = unnest_renest(test_cleaning_function)
@@ -184,7 +184,7 @@ def test_alias(test_root_dir: Path):
     """
     test_cleaning_function = cleaning_function(passthrough)
 
-    dirty, clean = load_test_data(Path(test_root_dir, "cleaning", "alias"))
+    dirty, clean = load_test_data(Path(test_root_dir, "client", "cleaning", "alias"))
 
     alias_function = alias(test_cleaning_function, "foo")
 
@@ -197,7 +197,7 @@ def test_drop(test_root_dir: Path):
     """
     Tests whether the drop function is working.
     """
-    dirty, clean = load_test_data(Path(test_root_dir, "cleaning", "alias"))
+    dirty, clean = load_test_data(Path(test_root_dir, "client", "cleaning", "alias"))
 
     cleaned = drop(dirty, column="col")
 

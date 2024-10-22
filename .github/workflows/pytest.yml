@@ -5,9 +5,22 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  MB__BATCH_SIZE: 10_000
+  MB__BACKEND_TYPE: postgres
+  MB__DATASETS_CONFIG: datasets.toml
+  # PostgreSQL backend settings
+  MB__POSTGRES__HOST: localhost
+  MB__POSTGRES__PORT: 5432
+  MB__POSTGRES__USER: matchbox_user
+  MB__POSTGRES__PASSWORD: matchbox_password
+  MB__POSTGRES__DATABASE: matchbox
+  MB__POSTGRES__DB_SCHEMA: mb
+
+
 jobs:
-  uv-example:
-    name: python
+  run-unit-tests:
+    name: tests
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +37,7 @@ jobs:
       
       - name: Set up PostgreSQL
         run: |
-          docker compose up db -d --wait
+          docker compose up -d --wait
 
       - name: Run pytest
         run: |

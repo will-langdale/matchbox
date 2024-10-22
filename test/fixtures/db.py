@@ -1,306 +1,74 @@
-import hashlib
-import logging
-import random
-from typing import Callable, Generator
+from typing import Callable, Generator, Literal
 
 import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from matchbox import make_deduper, make_linker, to_clusters
-from matchbox.admin import add_dataset
-from matchbox.data import (
-    Clusters,
-    CMFBase,
-    DDupeContains,
-    DDupeProbabilities,
-    Dedupes,
-    LinkContains,
-    LinkProbabilities,
-    Links,
-    Models,
-    ModelsFrom,
-    SourceData,
-    SourceDataset,
-    clusters_association,
-)
+from matchbox.server.base import MatchboxDBAdapter
+from matchbox.server.models import Source, SourceWarehouse
+from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 from pandas import DataFrame
-from sqlalchemy import MetaData, create_engine, inspect, text
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema
+from sqlalchemy import text as sqltext
 
-from .models import DedupeTestParams, LinkTestParams, ModelTestParams
+from .models import (
+    DedupeTestParams,
+    LinkTestParams,
+    ModelTestParams,
+    dedupe_data_test_params,
+    dedupe_model_test_params,
+    link_data_test_params,
+    link_model_test_params,
+)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
-LOGGER = logging.getLogger(__name__)
-
-
-@pytest.fixture
-def db_clear_all() -> Callable[[Engine], None]:
-    """
-    Returns a function to clear the database.
-
-    Can be used to reset and repopulate between tests, when necessary.
-    """
-
-    def _db_clear_all(db_engine: Engine) -> None:
-        db_metadata = MetaData(schema="test")
-        db_metadata.reflect(bind=db_engine)
-        with Session(db_engine) as session:
-            for table in reversed(db_metadata.sorted_tables):
-                LOGGER.info(f"{table}")
-                session.execute(table.delete())
-            session.commit()
-
-    return _db_clear_all
-
-
-@pytest.fixture
-def db_clear_data() -> Callable[[Engine], None]:
-    """
-    Returns a function to clear the SourceDatasets and SourceData tables.
-
-    Can be used to reset and repopulate between tests, when necessary.
-    """
-
-    def _db_clear_data(db_engine: Engine) -> None:
-        with Session(db_engine) as session:
-            session.query(SourceData).delete()
-            session.query(SourceDataset).delete()
-            session.commit()
-
-    return _db_clear_data
-
-
-@pytest.fixture
-def db_clear_models() -> Callable[[Engine], None]:
-    """
-    Returns a function to clear the Models, ModelsFrom, Dedupes,
-    DDupeProbabilities, DDupeContains, Links, LinkProbabilities,
-    LinkContains and Clusterstables.
-
-    Can be used to reset and repopulate between tests, when necessary.
-    """
-
-    def _db_clear_models(db_engine: Engine) -> None:
-        with Session(db_engine) as session:
-            session.query(LinkProbabilities).delete()
-            session.query(Links).delete()
-            session.query(DDupeProbabilities).delete()
-            session.query(Dedupes).delete()
-            session.query(DDupeContains).delete()
-            session.query(LinkContains).delete()
-            session.query(clusters_association).delete()
-            session.query(Clusters).delete()
-            session.commit()
-
-            session.query(ModelsFrom).delete()
-            session.query(Models).delete()
-            session.commit()
-
-    return _db_clear_models
+AddIndexedDataCallable = Callable[[MatchboxPostgres, list[Source]], None]
 
 
 @pytest.fixture(scope="session")
-def db_add_data(
-    crn_companies: DataFrame, duns_companies: DataFrame, cdms_companies: DataFrame
-) -> Callable[[Engine], None]:
-    """
-    Returns a function to add source data to the database.
+def db_add_indexed_data() -> AddIndexedDataCallable:
+    """Factory to create the indexing stage of matching."""
 
-    Can be used to reset and repopulate between tests, when necessary.
-    """
+    def _db_add_indexed_data(
+        backend: MatchboxDBAdapter,
+        warehouse_data: list[Source],
+    ):
+        """Indexes data from the warehouse."""
+        for dataset in warehouse_data:
+            backend.index(dataset=dataset)
 
-    def _db_add_data(db_engine: Engine) -> None:
-        with db_engine.connect() as conn:
-            # Insert data
-            crn_companies.to_sql(
-                "crn",
-                con=conn,
-                schema="test",
-                if_exists="replace",
-                index=False,
-            )
-            duns_companies.to_sql(
-                "duns",
-                con=conn,
-                schema="test",
-                if_exists="replace",
-                index=False,
-            )
-            cdms_companies.to_sql(
-                "cdms",
-                con=conn,
-                schema="test",
-                if_exists="replace",
-                index=False,
-            )
+    return _db_add_indexed_data
 
-            LOGGER.info("Inserted raw data to database")
 
-            datasets = {
-                "crn_table": {
-                    "schema": "test",
-                    "table": "crn",
-                    "id": "id",
-                },
-                "duns_table": {
-                    "schema": "test",
-                    "table": "duns",
-                    "id": "id",
-                },
-                "cdms_table": {
-                    "schema": "test",
-                    "table": "cdms",
-                    "id": "id",
-                },
-            }
-            for dataset in datasets.values():
-                add_dataset(dataset, conn)
-
-            LOGGER.info("Raw data referenced in CMF")
-
-    return _db_add_data
+AddDedupeModelsAndDataCallable = Callable[
+    [
+        AddIndexedDataCallable,
+        MatchboxPostgres,
+        list[Source],
+        list[DedupeTestParams],
+        list[ModelTestParams],
+        FixtureRequest,
+    ],
+    None,
+]
 
 
 @pytest.fixture(scope="session")
-def db_add_models() -> Callable[[Engine], None]:
-    """
-    Returns a function to add models, clusters and probabilities data to the
-    database.
-
-    Can be used to reset and repopulate between tests, when necessary.
-    """
-
-    def _db_add_models(db_engine: Engine) -> None:
-        with Session(db_engine) as session:
-            # Two Dedupers and two Linkers
-            dd_m1 = Models(
-                sha1=hashlib.sha1("dd_m1".encode()).digest(),
-                name="dd_m1",
-                description="",
-            )
-            dd_m2 = Models(
-                sha1=hashlib.sha1("dd_m2".encode()).digest(),
-                name="dd_m2",
-                description="",
-            )
-            session.add_all([dd_m1, dd_m2])
-
-            l_m1 = Models(
-                sha1=hashlib.sha1("l_m1".encode()).digest(), name="l_m1", description=""
-            )
-            l_m2 = Models(
-                sha1=hashlib.sha1("l_m2".encode()).digest(), name="l_m2", description=""
-            )
-            session.add_all([l_m1, l_m2])
-
-            session.add_all(
-                [
-                    ModelsFrom(l_m1, dd_m1),
-                    ModelsFrom(l_m1, dd_m2),
-                    ModelsFrom(l_m2, dd_m1),
-                    ModelsFrom(l_m2, dd_m2),
-                ]
-            )
-
-            # Data, Dedupes and DDupeProbabilities
-            data = session.query(SourceData).limit(6).all()
-
-            dedupes_records = []
-            for d1 in data:
-                for d2 in data:
-                    dedupes_records.append(
-                        {
-                            "sha1": hashlib.sha1(d1.sha1 + d2.sha1).digest(),
-                            "left": d1.sha1,
-                            "right": d2.sha1,
-                        }
-                    )
-
-            dedupes = session.scalars(
-                insert(Dedupes).returning(Dedupes), dedupes_records
-            ).all()
-
-            ddupe_probs_dd_m1 = []
-            ddupe_probs_dd_m2 = []
-            for dd in dedupes:
-                p1 = DDupeProbabilities(probability=round(random.uniform(0, 1), 1))
-                p1.dedupes = dd
-                ddupe_probs_dd_m1.append(p1)
-
-                p2 = DDupeProbabilities(probability=round(random.uniform(0, 1), 1))
-                p2.dedupes = dd
-                ddupe_probs_dd_m2.append(p2)
-
-            dd_m1.proposes_dedupes.add_all(ddupe_probs_dd_m1)
-            dd_m2.proposes_dedupes.add_all(ddupe_probs_dd_m2)
-
-            # Clusters, Links and LinkProbabilities
-            clusters_records = [
-                {"sha1": hashlib.sha1(f"c{i}".encode()).digest()} for i in range(6)
-            ]
-            clusters = session.scalars(
-                insert(Clusters).returning(Clusters), clusters_records
-            ).all()
-
-            l_m1.creates.add_all(clusters)
-            l_m2.creates.add_all(clusters)
-
-            link_records = []
-            for c1 in clusters:
-                for c2 in clusters:
-                    link_records.append(
-                        {
-                            "sha1": hashlib.sha1(c1.sha1 + c2.sha1).digest(),
-                            "left": c1.sha1,
-                            "right": c2.sha1,
-                        }
-                    )
-
-            links = session.scalars(insert(Links).returning(Links), link_records).all()
-
-            link_probs_l_m1 = []
-            link_probs_l_m2 = []
-            for li in links:
-                p1 = LinkProbabilities(probability=round(random.uniform(0, 1), 1))
-                p1.links = li
-                link_probs_l_m1.append(p1)
-
-                p2 = LinkProbabilities(probability=round(random.uniform(0, 1), 1))
-                p2.links = li
-                link_probs_l_m2.append(p2)
-
-            l_m1.proposes_links.add_all(link_probs_l_m1)
-            l_m2.proposes_links.add_all(link_probs_l_m2)
-
-            session.commit()
-
-    return _db_add_models
-
-
-@pytest.fixture(scope="session")
-def db_add_dedupe_models_and_data() -> (
-    Callable[
-        [Engine, list[DedupeTestParams], list[ModelTestParams], FixtureRequest], None
-    ]
-):
-    """
-    Returns a function to add Naive-deduplicated model probabilities and
-    clusters to the database.
-
-    Can be used to reset and repopulate between tests, when necessary.
-    """
+def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
+    """Factory to create the deduplication stage of matching."""
 
     def _db_add_dedupe_models_and_data(
-        db_engine: Engine,
+        db_add_indexed_data: AddIndexedDataCallable,
+        backend: MatchboxDBAdapter,
+        warehouse_data: list[Source],
         dedupe_data: list[DedupeTestParams],
         dedupe_models: list[ModelTestParams],
         request: FixtureRequest,
     ) -> None:
+        """Deduplicates data from the warehouse and logs in Matchbox."""
+        db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
+
         for fx_data in dedupe_data:
             for fx_deduper in dedupe_models:
                 df = request.getfixturevalue(fx_data.fixture)
@@ -322,54 +90,51 @@ def db_add_dedupe_models_and_data() -> (
                 deduped = deduper()
 
                 clustered = to_clusters(
-                    df, results=deduped, key="data_sha1", threshold=0
+                    df, results=deduped, key="data_hash", threshold=0
                 )
 
-                deduped.to_cmf(engine=db_engine)
-                clustered.to_cmf(engine=db_engine)
+                deduped.to_matchbox(backend=backend)
+                clustered.to_matchbox(backend=backend)
 
     return _db_add_dedupe_models_and_data
 
 
-@pytest.fixture(scope="session")
-def db_add_link_models_and_data() -> (
-    Callable[
-        [
-            Engine,
-            Callable[
-                [Engine, list[DedupeTestParams], list[ModelTestParams], FixtureRequest],
-                None,
-            ],
-            list[DedupeTestParams],
-            list[ModelTestParams],
-            list[LinkTestParams],
-            list[ModelTestParams],
-            FixtureRequest,
-        ],
-        None,
-    ]
-):
-    """
-    Returns a function to add Deterministic-linked model probabilities and
-    clusters to the database.
+AddLinkModelsAndDataCallable = Callable[
+    [
+        AddIndexedDataCallable,
+        AddDedupeModelsAndDataCallable,
+        MatchboxPostgres,
+        list[Source],
+        list[DedupeTestParams],
+        list[ModelTestParams],
+        list[LinkTestParams],
+        list[ModelTestParams],
+        FixtureRequest,
+    ],
+    None,
+]
 
-    Can be used to reset and repopulate between tests, when necessary.
-    """
+
+@pytest.fixture(scope="session")
+def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
+    """Factory to create the link stage of matching."""
 
     def _db_add_link_models_and_data(
-        db_engine: Engine,
-        db_add_dedupe_models_and_data: Callable[
-            [Engine, list[DedupeTestParams], list[ModelTestParams], FixtureRequest],
-            None,
-        ],
+        db_add_indexed_data: AddIndexedDataCallable,
+        db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
+        backend: MatchboxDBAdapter,
+        warehouse_data: list[Source],
         dedupe_data: list[DedupeTestParams],
         dedupe_models: list[ModelTestParams],
         link_data: list[LinkTestParams],
         link_models: list[ModelTestParams],
         request: FixtureRequest,
     ) -> None:
+        """Links data from the warehouse and logs in Matchbox."""
         db_add_dedupe_models_and_data(
-            db_engine=db_engine,
+            db_add_indexed_data=db_add_indexed_data,
+            backend=backend,
+            warehouse_data=warehouse_data,
             dedupe_data=dedupe_data,
             dedupe_models=dedupe_models,
             request=request,
@@ -400,66 +165,173 @@ def db_add_link_models_and_data() -> (
                 linked = linker()
 
                 clustered = to_clusters(
-                    df_l, df_r, results=linked, key="cluster_sha1", threshold=0
+                    df_l, df_r, results=linked, key="cluster_hash", threshold=0
                 )
 
-                linked.to_cmf(engine=db_engine)
-                clustered.to_cmf(engine=db_engine)
+                linked.to_matchbox(backend=backend)
+                clustered.to_matchbox(backend=backend)
 
     return _db_add_link_models_and_data
 
 
+@pytest.fixture(scope="function")
+def setup_database(request: pytest.FixtureRequest):
+    def _setup_database(
+        backend: MatchboxDBAdapter,
+        warehouse_data: list[Source],
+        setup_level: Literal["index", "dedupe", "link"],
+    ):
+        db_add_indexed_data = request.getfixturevalue("db_add_indexed_data")
+        db_add_dedupe_models_and_data = request.getfixturevalue(
+            "db_add_dedupe_models_and_data"
+        )
+        db_add_link_models_and_data = request.getfixturevalue(
+            "db_add_link_models_and_data"
+        )
+
+        backend.clear(certain=True)
+
+        if setup_level == "index":
+            db_add_indexed_data(backend=backend, warehouse_data=warehouse_data)
+        elif setup_level == "dedupe":
+            db_add_dedupe_models_and_data(
+                db_add_indexed_data=db_add_indexed_data,
+                backend=backend,
+                warehouse_data=warehouse_data,
+                dedupe_data=dedupe_data_test_params,
+                dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+                request=request,
+            )
+        elif setup_level == "link":
+            db_add_link_models_and_data(
+                db_add_indexed_data=db_add_indexed_data,
+                db_add_dedupe_models_and_data=db_add_dedupe_models_and_data,
+                backend=backend,
+                warehouse_data=warehouse_data,
+                dedupe_data=dedupe_data_test_params,
+                dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper
+                link_data=link_data_test_params,
+                link_models=[link_model_test_params[0]],  # Deterministic linker
+                request=request,
+            )
+        else:
+            raise ValueError(f"Invalid setup level: {setup_level}")
+
+    return _setup_database
+
+
+# Warehouse database fixtures
+
+
 @pytest.fixture(scope="session")
-def db_engine(
-    db_add_data: Callable[[Engine], None], db_add_models: Callable[[Engine], None]
-) -> Generator[Engine, None, None]:
-    """
-    Yield engine to Docker container database.
-    """
-    load_dotenv(find_dotenv())
-    engine = create_engine(
-        url="postgresql://testuser:testpassword@localhost:5432/testdb",
-        connect_args={"sslmode": "disable", "client_encoding": "utf8"},
+def warehouse() -> SourceWarehouse:
+    """Create a connection to the test warehouse database."""
+    warehouse = SourceWarehouse(
+        alias="test_warehouse",
+        db_type="postgresql",
+        user="warehouse_user",
+        password="warehouse_password",
+        host="localhost",
+        database="warehouse",
+        port=7654,
+    )
+    assert warehouse.engine
+    return warehouse
+
+
+@pytest.fixture(scope="session")
+def warehouse_data(
+    warehouse: SourceWarehouse,
+    crn_companies: DataFrame,
+    duns_companies: DataFrame,
+    cdms_companies: DataFrame,
+) -> Generator[list[Source], None, None]:
+    """Inserts data into the warehouse database for testing."""
+    with warehouse.engine.connect() as conn:
+        conn.execute(sqltext("drop schema if exists test cascade;"))
+        conn.execute(sqltext("create schema test;"))
+        crn_companies.to_sql(
+            name="crn",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+        duns_companies.to_sql(
+            name="duns",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+        cdms_companies.to_sql(
+            name="cdms",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+        conn.commit()
+
+    with warehouse.engine.connect() as conn:
+        assert (
+            conn.execute(sqltext("select count(*) from test.crn;")).scalar()
+            == crn_companies.shape[0]
+        )
+        assert (
+            conn.execute(sqltext("select count(*) from test.duns;")).scalar()
+            == duns_companies.shape[0]
+        )
+        assert (
+            conn.execute(sqltext("select count(*) from test.cdms;")).scalar()
+            == cdms_companies.shape[0]
+        )
+
+    yield [
+        Source(database=warehouse, db_pk="id", db_schema="test", db_table="crn"),
+        Source(database=warehouse, db_pk="id", db_schema="test", db_table="duns"),
+        Source(database=warehouse, db_pk="id", db_schema="test", db_table="cdms"),
+    ]
+
+    # Clean up the warehouse data
+    with warehouse.engine.connect() as conn:
+        conn.execute(sqltext("drop table if exists test.crn;"))
+        conn.execute(sqltext("drop table if exists test.duns;"))
+        conn.execute(sqltext("drop table if exists test.cdms;"))
+        conn.commit()
+
+
+# Matchbox database fixtures
+
+
+@pytest.fixture(scope="session")
+def matchbox_settings() -> MatchboxPostgresSettings:
+    """Settings for the Matchbox database."""
+    return MatchboxPostgresSettings(
+        batch_size=250_000,
+        postgres={
+            "host": "localhost",
+            "port": 5432,
+            "user": "matchbox_user",
+            "password": "matchbox_password",
+            "database": "matchbox",
+            "db_schema": "mb",
+        },
     )
 
-    with engine.connect() as conn:
-        # Install relevant extensions
-        conn.execute(text('create extension if not exists "uuid-ossp";'))
-        conn.execute(text("create extension if not exists pgcrypto;"))
-        conn.commit()
 
-        # Create CMF schema
-        if not inspect(conn).has_schema("test"):
-            conn.execute(CreateSchema("test"))
-            conn.commit()
+@pytest.fixture(scope="function")
+def matchbox_postgres(
+    matchbox_settings: MatchboxPostgresSettings,
+) -> Generator[MatchboxPostgres, None, None]:
+    """The Matchbox PostgreSQL database."""
 
-        # Create CMF tables
-        CMFBase.metadata.create_all(conn)
-        conn.commit()
+    adapter = MatchboxPostgres(settings=matchbox_settings)
 
-        LOGGER.info("Created in-memory CMF database")
+    # Clean up the Matchbox database before each test, just in case
+    adapter.clear(certain=True)
 
-        # Insert data
-        db_add_data(engine)
+    yield adapter
 
-        # Insert models
-        db_add_models(engine)
-
-    yield engine
-    engine.dispose()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup(db_engine, request):
-    """Cleanup the PostgreSQL database by dropping all tables when we're done."""
-
-    def teardown():
-        with db_engine.connect() as conn:
-            inspector = inspect(conn)
-            for table_name in inspector.get_table_names(schema="test"):
-                conn.execute(
-                    text(f'DROP TABLE IF EXISTS "{"test"}".' f'"{table_name}" CASCADE;')
-                )
-            conn.commit()
-
-    request.addfinalizer(teardown)
+    # Clean up the Matchbox database after each test
+    adapter.clear(certain=True)

@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 from pathlib import Path
 
@@ -10,8 +9,9 @@ from dotenv import find_dotenv, load_dotenv
 from matchbox import process, query
 from matchbox.clean import company_name
 from matchbox.helpers import cleaner, cleaners, selector
+from matchbox.server.models import Source
+from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
-from sqlalchemy.engine import Engine
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -114,18 +114,25 @@ def cdms_companies(all_companies: DataFrame) -> DataFrame:
 
 
 @pytest.fixture(scope="function")
-def query_clean_crn(db_engine: Engine) -> DataFrame:
+def query_clean_crn(
+    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
+) -> DataFrame:
     # Select
+    crn_wh = warehouse_data[0]
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
+        table=str(crn_wh),
         fields=["crn", "company_name"],
-        engine=db_engine,
+        engine=crn_wh.database.engine,
+    )
+    crn = query(
+        selector=select_crn,
+        backend=matchbox_postgres,
+        model=None,
+        return_type="pandas",
     )
 
-    crn = query(selector=select_crn, model=None, return_type="pandas", engine=db_engine)
-
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    col_prefix = "test_crn_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -137,20 +144,25 @@ def query_clean_crn(db_engine: Engine) -> DataFrame:
 
 
 @pytest.fixture(scope="function")
-def query_clean_duns(db_engine: Engine) -> DataFrame:
+def query_clean_duns(
+    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
+) -> DataFrame:
     # Select
+    duns_wh = warehouse_data[1]
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns",
+        table=str(duns_wh),
         fields=["duns", "company_name"],
-        engine=db_engine,
+        engine=duns_wh.database.engine,
     )
-
     duns = query(
-        selector=select_duns, model=None, return_type="pandas", engine=db_engine
+        selector=select_duns,
+        backend=matchbox_postgres,
+        model=None,
+        return_type="pandas",
     )
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    col_prefix = "test_duns_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -162,16 +174,21 @@ def query_clean_duns(db_engine: Engine) -> DataFrame:
 
 
 @pytest.fixture(scope="function")
-def query_clean_cdms(db_engine: Engine) -> DataFrame:
+def query_clean_cdms(
+    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
+) -> DataFrame:
     # Select
+    cdms_wh = warehouse_data[2]
     select_cdms = selector(
-        table=f"{os.getenv('SCHEMA')}.cdms",
+        table=str(cdms_wh),
         fields=["crn", "cdms"],
-        engine=db_engine,
+        engine=cdms_wh.database.engine,
     )
-
     cdms = query(
-        selector=select_cdms, model=None, return_type="pandas", engine=db_engine
+        selector=select_cdms,
+        backend=matchbox_postgres,
+        model=None,
+        return_type="pandas",
     )
 
     # No cleaning needed, see original data
@@ -179,23 +196,25 @@ def query_clean_cdms(db_engine: Engine) -> DataFrame:
 
 
 @pytest.fixture(scope="function")
-def query_clean_crn_deduped(db_engine: Engine) -> DataFrame:
+def query_clean_crn_deduped(
+    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
+) -> DataFrame:
     # Select
+    crn_wh = warehouse_data[0]
     select_crn = selector(
-        table=f"{os.getenv('SCHEMA')}.crn",
+        table=str(crn_wh),
         fields=["crn", "company_name"],
-        engine=db_engine,
+        engine=crn_wh.database.engine,
     )
-
     crn = query(
         selector=select_crn,
-        model=f"naive_{os.getenv('SCHEMA')}.crn",
+        backend=matchbox_postgres,
+        model="naive_test.crn",
         return_type="pandas",
-        engine=db_engine,
     )
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_crn_"
+    col_prefix = "test_crn_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -207,23 +226,25 @@ def query_clean_crn_deduped(db_engine: Engine) -> DataFrame:
 
 
 @pytest.fixture(scope="function")
-def query_clean_duns_deduped(db_engine: Engine) -> DataFrame:
+def query_clean_duns_deduped(
+    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
+) -> DataFrame:
     # Select
+    duns_wh = warehouse_data[1]
     select_duns = selector(
-        table=f"{os.getenv('SCHEMA')}.duns",
+        table=str(duns_wh),
         fields=["duns", "company_name"],
-        engine=db_engine,
+        engine=duns_wh.database.engine,
     )
-
     duns = query(
         selector=select_duns,
-        model=f"naive_{os.getenv('SCHEMA')}.duns",
+        backend=matchbox_postgres,
+        model="naive_test.duns",
         return_type="pandas",
-        engine=db_engine,
     )
 
     # Clean
-    col_prefix = f"{os.getenv('SCHEMA')}_duns_"
+    col_prefix = "test_duns_"
     cleaner_name = cleaner(
         function=company_name, arguments={"column": f"{col_prefix}company_name"}
     )
@@ -235,19 +256,21 @@ def query_clean_duns_deduped(db_engine: Engine) -> DataFrame:
 
 
 @pytest.fixture(scope="function")
-def query_clean_cdms_deduped(db_engine: Engine) -> DataFrame:
+def query_clean_cdms_deduped(
+    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
+) -> DataFrame:
     # Select
+    cdms_wh = warehouse_data[2]
     select_cdms = selector(
-        table=f"{os.getenv('SCHEMA')}.cdms",
+        table=str(cdms_wh),
         fields=["crn", "cdms"],
-        engine=db_engine,
+        engine=cdms_wh.database.engine,
     )
-
     cdms = query(
         selector=select_cdms,
-        model=f"naive_{os.getenv('SCHEMA')}.cdms",
+        backend=matchbox_postgres,
+        model="naive_test.cdms",
         return_type="pandas",
-        engine=db_engine,
     )
 
     # No cleaning needed, see original data

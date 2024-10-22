@@ -1,17 +1,17 @@
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from matchbox.data import ENGINE, Models
-from matchbox.helpers.selector import get_all_parents
+from matchbox.server.postgresql.models import Models
+from matchbox.server.postgresql.utils.selector import get_all_parents
 
 
-def delete_model(model: str, engine: Engine = ENGINE, certain: bool = False) -> None:
+def delete_model(model: str, engine: Engine, certain: bool = False) -> None:
     """
     Deletes:
 
     * The model from the model table
     * The model's edges to its child models from the models_from table
-    * The creates edges the model made from the clusters_association table
+    * The creates edges the model made from the Creates table
     * Any probability values associated with the model from the ddupe_probabilities and
         link_probabilities tables
     * All of the above for all parent models. As every model is defined by
