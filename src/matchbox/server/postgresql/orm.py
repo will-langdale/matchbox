@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import Enum as SQLAEnum
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
-from sqlalchemy.orm import column_property, relationship
+from sqlalchemy.orm import Session, column_property, relationship
 
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
@@ -57,7 +57,7 @@ class Models(CountMixin, MBDB.MatchboxBase):
     name = Column(VARCHAR, nullable=False)
     description = Column(VARCHAR)
     truth = Column(FLOAT)
-    ancestors = Column(JSONB, nullable=False, server_default="{}")
+    ancestors_cache = Column(JSONB, nullable=False, server_default="{}")
 
     # Relationships
     source = relationship("Sources", back_populates="model", uselist=False)
@@ -127,13 +127,9 @@ class Models(CountMixin, MBDB.MatchboxBase):
     def all_ancestors(self) -> list["Models"]:
         """Get all ancestors as Model objects"""
         with MBDB.get_session() as session:
-            if self.ancestors_array is None:
+            if self.ancestors is None:
                 return []
-            return (
-                session.query(Models)
-                .filter(Models.hash.in_(self.ancestors_array))
-                .all()
-            )
+            return session.query(Models).filter(Models.hash.in_(self.ancestors)).all()
 
     # Constraints
     __table_args__ = (
@@ -153,16 +149,16 @@ class Models(CountMixin, MBDB.MatchboxBase):
             name="model_type_constraints",
         ),
         CheckConstraint(
-            "ancestors::jsonb ?& ARRAY"
-            "(SELECT hash::text FROM models WHERE hash = ANY(ancestors::jsonb))",
+            "ancestors_cache::jsonb ?& ARRAY"
+            "(SELECT hash::text FROM models WHERE hash = ANY(ancestors_cache::jsonb))",
             name="ancestors_valid_hashes",
         ),
         CheckConstraint(
-            "NOT (ancestors ?| ARRAY[hash::text])", name="no_self_ancestor"
+            "NOT (ancestors_cache ?| ARRAY[hash::text])", name="no_self_ancestor"
         ),
         CheckConstraint(
-            "CASE WHEN ancestors <> '{}'::jsonb THEN \
-             ALL(SELECT jsonb_object_values(ancestors)::float BETWEEN 0 AND 1) \
+            "CASE WHEN ancestors_cache <> '{}'::jsonb THEN \
+             ALL(SELECT jsonb_object_values(ancestors_cache)::float BETWEEN 0 AND 1) \
              ELSE true END",
             name="ancestor_weights_valid",
         ),
@@ -185,6 +181,11 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     # Relationships
     model_rel = relationship("Models", back_populates="source")
     clusters = relationship("Clusters", back_populates="source")
+
+    @classmethod
+    def list(cls) -> list["Sources"]:
+        with Session(MBDB.get_engine()) as session:
+            return session.query(cls).all()
 
 
 class Clusters(CountMixin, MBDB.MatchboxBase):

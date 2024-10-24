@@ -40,7 +40,7 @@ erDiagram
         string name
         string description
         float truth
-        jsonb ancestors
+        jsonb ancestors_cache
     }
     ModelsFrom {
         bytes parent PK,FK

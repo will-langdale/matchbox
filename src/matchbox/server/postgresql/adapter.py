@@ -81,9 +81,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         return self.model.name
 
     def insert_probabilities(
-        self,
-        probabilities: list[Probability],
-        batch_size: int,
+        self, probabilities: list[Probability], batch_size: int
     ) -> None:
         """Inserts probabilities for this model."""
         insert_probabilities(
@@ -110,7 +108,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         when to update it, caching the ancestor's values in the model itself.
         """
         with Session(MBDB.get_engine()) as session:
-            stored_ancestors = self.model.ancestors or {}
+            stored_ancestors = self.model.ancestors_cache or {}
             ancestor_models = (
                 session.query(Models.hash, Models.name)
                 .filter(
@@ -141,12 +139,12 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
             }
 
             # Update only the values in the existing JSON structure
-            current = self.model.ancestors or {}
+            current = self.model.ancestors_cache or {}
             for name, threshold in new_values.items():
                 if hash_str := name_to_hash.get(name):
                     current[hash_str] = threshold
 
-            self.model.ancestors = current
+            self.model.ancestors_cache = current
             session.add(self.model)
             session.commit()
 
@@ -155,21 +153,24 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         """
         Gets the current truth values of all ancestors.
         Returns a dict mapping model names to their current truth thresholds.
+
+        Unlike ancestors_cache which returns cached values, this property returns
+        the current truth values of all ancestor models.
         """
         with Session(MBDB.get_engine()) as session:
+            if not self.model.ancestors:
+                return {}
+
             ancestor_models = (
                 session.query(Models)
-                .filter(
-                    Models.hash.in_(
-                        [bytes.fromhex(h) for h in (self.model.ancestors or {}).keys()]
-                    )
-                )
+                .filter(Models.hash.in_(self.model.ancestors))
                 .all()
             )
 
             return {
-                model.name: float(model.truth) if model.truth is not None else 0.0
+                model.name: float(model.truth)
                 for model in ancestor_models
+                if model.truth is not None
             }
 
     @classmethod
@@ -201,22 +202,35 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self,
         selector: dict[str, list[str]],
         model: str | None = None,
+        threshold: float | dict[str, float] | None = None,
         return_type: Literal["pandas", "sqlalchemy"] | None = None,
         limit: int = None,
     ) -> pd.DataFrame | ChunkedIteratorResult:
         """Queries the database from an optional model of truth.
 
         Args:
-            selector: A dictionary of the validated table name and fields.
-            model (optional): The model of truth to query from.
-            return_type (optional): The type of return data.
-            limit (optional): The number of rows to return.
+            selector: the tables and fields to query
+            return_type: the form to return data in, one of "pandas" or "arrow"
+                Defaults to pandas for ease of use
+            model (optional): the model to use for filtering results
+            threshold (optional): the threshold to use for creating clusters
+                If None, uses the models' default threshold
+                If a float, uses that threshold for the specified model, and the
+                model's cached thresholds for its ancestors
+                If a dictionary, expects a shape similar to model.ancestors, keyed
+                by model name and valued by the threshold to use for that model. Will
+                use these threshold values instead of the cached thresholds
+            limit (optional): the number to use in a limit clause. Useful for testing
+
+        Returns:
+            Data in the requested return type
         """
         return query(
             selector=selector,
             engine=MBDB.get_engine(),
             return_type=return_type,
             model=model,
+            threshold=threshold,
             limit=limit,
         )
 

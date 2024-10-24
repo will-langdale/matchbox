@@ -42,7 +42,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         "hash": model_hash,
         "type": ModelType.DATASET,
         "name": f"{dataset.db_schema}.{dataset.db_table}",
-        "ancestors": {},
+        "ancestors_cache": {},
     }
 
     source_data = {
@@ -64,7 +64,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
             set_={
                 "name": models_stmt.excluded.name,
                 "type": models_stmt.excluded.type,
-                "ancestors": models_stmt.excluded.ancestors,
+                "ancestors_cache": models_stmt.excluded.ancestors_cache,
             },
         )
         conn.execute(models_stmt)
@@ -127,10 +127,10 @@ def insert_model(
 
         # Calculate ancestors dictionary
         ancestors = {}
-        if left_model.ancestors:
-            ancestors.update(json.loads(left_model.ancestors))
-        if right_model.ancestors:
-            ancestors.update(json.loads(right_model.ancestors))
+        if left_model.ancestors_cache:
+            ancestors.update(json.loads(left_model.ancestors_cache))
+        if right_model.ancestors_cache:
+            ancestors.update(json.loads(right_model.ancestors_cache))
 
         ancestors[left_model.hash.hex()] = left_model.truth
         ancestors[right_model.hash.hex()] = right_model.truth
@@ -142,7 +142,7 @@ def insert_model(
             name=model,
             description=description,
             truth=1.0,
-            ancestors=json.dumps(ancestors),
+            ancestors_cache=json.dumps(ancestors),
         )
         session.add(new_model)
 

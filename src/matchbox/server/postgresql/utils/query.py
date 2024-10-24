@@ -3,7 +3,7 @@ from typing import Literal, TypeVar
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
-from sqlalchemy import Engine, Float, and_, cast, func, select, union
+from sqlalchemy import Engine, and_, func, select, union
 from sqlalchemy import text as sqltext
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import literal
@@ -35,20 +35,64 @@ def key_to_sqlalchemy_label(key: str, source: Source) -> str:
     return f"{source.db_schema}_{source.db_table}_{key}"
 
 
-def _build_probability_filter(model_hash: bytes, engine: Engine) -> Select:
+def _get_threshold_for_model(
+    model: Models,
+    model_hash: bytes,
+    threshold: float | dict[str, float] | None = None,
+    ancestor_model: Models | None = None,
+) -> float:
+    """Helper function to determine the appropriate threshold for a model.
+
+    * If no threshold is specified, we use the model's truth value
+    * If threshold is a float, use it for the main model, annd ancestors_cache for
+        all ancestor models
+    # If threshold is a dict, look up the threshold by model name
+
+    Args:
+        model: The main model object we're building thresholds for
+        model_hash: Hash of the current model being processed
+        threshold: The threshold parameter passed to the main function
+        ancestor_model: If processing an ancestor, this is the ancestor model object
+
+    Returns:
+        float: The threshold value to use for this model
+    """
+    if threshold is None:
+        return (
+            model.truth
+            if model_hash == model.hash
+            else model.ancestors_cache.get(ancestor_model.hash.hex())
+        )
+
+    if isinstance(threshold, float):
+        return (
+            threshold
+            if model_hash == model.hash
+            else model.ancestors_cache.get(ancestor_model.hash.hex())
+        )
+
+    if isinstance(threshold, dict):
+        target_model = ancestor_model or model
+        return threshold.get(target_model.name, target_model.truth)
+
+    raise ValueError(f"Invalid threshold type: {type(threshold)}")
+
+
+def _build_probability_filter(
+    model_hash: bytes,
+    engine: Engine,
+    threshold: float | dict[str, float] | None = None,
+) -> Select:
     """Builds a filter subquery for probability thresholds based on model ancestors.
+
+    * Compares the ancestor truth values with those in the ancestor cache
+    * Builds conditions for each ancestor model based on the threshold value
 
     Args:
         model_hash: Hash of the model to build filter for
+        engine: SQLAlchemy engine to use
+        threshold: Threshold value to use for the model and its ancestors
     """
-    # Get the model and its ancestors info
-    model_info = (
-        select(Models.ancestors, Models.truth, Models.hash).where(
-            Models.hash == model_hash
-        )
-    ).subquery()
-
-    # Compare ancestor truth values with those in JSON
     with Session(engine) as session:
         model = session.query(Models).filter(Models.hash == model_hash).first()
 
@@ -57,65 +101,91 @@ def _build_probability_filter(model_hash: bytes, engine: Engine) -> Select:
 
         ancestors = model.all_ancestors()
 
+        # Compare w/ cache
         for ancestor in ancestors:
             ancestor_hash_hex = ancestor.hash.hex()
-            json_threshold = model.ancestors.get(ancestor_hash_hex)
+            json_threshold = model.ancestors_cache.get(ancestor_hash_hex)
             if json_threshold is not None and ancestor.truth is not None:
                 if abs(json_threshold - ancestor.truth) > 1e-6:  # Float comparison
                     logic_logger.warning(
                         f"Ancestor {ancestor.name} has truth value "
                         f"{ancestor.truth:f} but is specified as {json_threshold:f} in "
-                        f"model {model.name}'s ancestors field. Using specified value "
-                        f"{json_threshold:f}. \n\n"
-                        "Use model.refresh_thresholds() to update the ancestors field."
+                        f"model {model.name}'s ancestors_cache field. "
+                        f"Using specified value {json_threshold:f}. \n\n"
+                        "Use model.refresh_thresholds() to update the "
+                        "ancestors_cache field."
                     )
 
-    # Handle ancestors - compare against their specified threshold in ancestors JSONB
-    ancestors_condition = (
-        select(Probabilities.cluster)
-        .join(Models, Probabilities.model == Models.hash)
-        .where(
+        def build_ancestor_condition(ancestor: Models) -> Select:
+            """Handles the ancestor model and a dynamic threshold value."""
+            threshold_value = _get_threshold_for_model(
+                model=model,
+                model_hash=model_hash,
+                threshold=threshold,
+                ancestor=ancestor,
+            )
+            if threshold_value is None:
+                raise ValueError(
+                    "No cached or specified threshold value found for {ancestor.name}"
+                )
+
+            return select(Probabilities.cluster).where(
+                and_(
+                    Probabilities.model == ancestor.hash,
+                    Probabilities.probability >= threshold_value,
+                )
+            )
+
+        # Combine all ancestor conditions
+        ancestors_conditions = [
+            build_ancestor_condition(ancestor) for ancestor in ancestors
+        ]
+        ancestors_condition = (
+            union(*ancestors_conditions)
+            if ancestors_conditions
+            else select(literal(False))
+        )
+
+        # Handle the model itself with its threshold
+        model_threshold = _get_threshold_for_model(model, model_hash, threshold)
+        model_condition = select(Probabilities.cluster).where(
             and_(
-                literal(True)
-                == Models.hash.cast(sqltext("text")).in_(
-                    select(func.jsonb_object_keys(model_info.c.ancestors))
-                ),
-                Probabilities.probability
-                >= cast(
-                    func.jsonb_extract_path_text(
-                        model_info.c.ancestors, Models.hash.cast(sqltext("text"))
-                    ),
-                    Float,
-                ),
+                Probabilities.model == model_hash,
+                Probabilities.probability >= model_threshold
+                if model_threshold is not None
+                else literal(False),
             )
         )
-    )
 
-    # Handle the model itself - compare against its truth value
-    model_condition = select(Probabilities.cluster).where(
-        and_(
-            Probabilities.model == model_hash,
-            Probabilities.probability >= model_info.c.truth,
-        )
-    )
+        # Combine into a single subquery of valid clusters
+        valid_clusters = union(ancestors_condition, model_condition).scalar_subquery()
 
-    # Combine into a single subquery of valid clusters
-    valid_clusters = union(ancestors_condition, model_condition).scalar_subquery()
-
-    return valid_clusters
+        return valid_clusters
 
 
-def _model_to_hashes(dataset_hash: bytes, model_hash: bytes, engine: Engine) -> Select:
+def _model_to_hashes(
+    dataset_hash: bytes,
+    model_hash: bytes,
+    engine: Engine,
+    threshold: float | dict[str, float] | None = None,
+) -> Select:
     """Takes a dataset model hash and model hash and returns all valid leaf clusters.
+
+    * Uses the probability filter to get valid clusters
+    * Recursively traverses the Contains graph to get all leaf clusters
 
     Args:
         dataset_hash: The hash of the dataset model
         model_hash: The hash of the model to check
+        engine: SQLAlchemy engine to use
+        threshold: Threshold value to use for the model and its ancestors
     """
-    # Get valid clusters based on probability thresholds
-    valid_clusters = _build_probability_filter(model_hash=model_hash, engine=engine)
+    # Get valid clusters over threshold
+    valid_clusters = _build_probability_filter(
+        model_hash=model_hash, engine=engine, threshold=threshold
+    )
 
-    # Create recursive CTE to traverse the Contains graph
+    # Recursive Contains CTE
     recursive_clusters = (
         # Base case: start with valid clusters
         select([Contains.parent.label("start"), Contains.child.label("current")])
@@ -157,6 +227,7 @@ def query(
     engine: Engine,
     return_type: Literal["pandas", "arrow"] = "pandas",
     model: str | None = None,
+    threshold: float | dict[str, float] | None = None,
     limit: int = None,
 ) -> DataFrame | pa.Table:
     """
@@ -174,16 +245,6 @@ def query(
         * Retrieves its raw data from its Source's warehouse
         * Joins the two together
     * Unions the results, one row per item of data in the warehouses
-
-    Args:
-        selector: a dictionary with keys of table names, and values of a list
-            of data required from that table, likely output by selector() or
-            selectors()
-        model (str): Optional. A model considered the point of truth to decide which
-            clusters data belongs to
-        return_type (str): the form to return data in, one of "pandas" or "arrow"
-        engine: the SQLAlchemy engine to use
-        limit (int): the number to use in a limit clause. Useful for testing
 
     Returns:
         A table containing the requested data from each table, unioned together,
@@ -225,7 +286,10 @@ def query(
                 model = dataset
 
             hash_query = _model_to_hashes(
-                dataset_hash=dataset.hash, model_hash=model.hash, engine=engine
+                dataset_hash=dataset.hash,
+                model_hash=model.hash,
+                threshold=threshold,
+                engine=engine,
             )
 
         if limit:

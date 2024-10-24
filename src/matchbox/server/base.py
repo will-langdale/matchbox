@@ -43,9 +43,7 @@ class MatchboxModelAdapter(ABC):
 
     @abstractmethod
     def insert_probabilities(
-        self,
-        probabilities: list[Probability],
-        batch_size: int,
+        self, probabilities: list[Probability], batch_size: int
     ) -> None: ...
 
     @abstractmethod
@@ -101,6 +99,7 @@ class MatchboxDBAdapter(ABC):
         self,
         selector: dict[str, list[str]],
         model: str | None = None,
+        threshold: float | dict[str, float] | None = None,
         return_type: Literal["pandas", "sqlalchemy"] | None = None,
         limit: int = None,
     ) -> DataFrame | ChunkedIteratorResult: ...
