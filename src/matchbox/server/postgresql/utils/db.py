@@ -11,8 +11,7 @@ from sqlalchemy import Engine, Table
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
-from matchbox.server.postgresql.data import SourceDataset
-from matchbox.server.postgresql.models import Models, ModelsFrom
+from matchbox.server.postgresql.orm import Models, ModelsFrom, ModelType, Sources
 
 # Retrieval
 
@@ -24,23 +23,23 @@ def get_model_subgraph(engine: Engine) -> rx.PyDiGraph:
     datasets = {}
 
     with Session(engine) as session:
-        for dataset in session.query(SourceDataset).all():
+        for dataset in session.query(Sources).all():
             dataset_idx = G.add_node(
                 {
-                    "id": str(dataset.uuid),
-                    "name": f"{dataset.db_schema}.{dataset.db_table}",
+                    "id": str(dataset.model),
+                    "name": f"{dataset.schema}.{dataset.table}",
                     "type": "dataset",
                 }
             )
-            datasets[dataset.uuid] = dataset_idx
+            datasets[dataset.model] = dataset_idx
 
         for model in session.query(Models).all():
             model_idx = G.add_node(
-                {"id": str(model.sha1), "name": model.name, "type": "model"}
+                {"id": str(model.hash), "name": model.name, "type": "model"}
             )
-            models[model.sha1] = model_idx
-            if model.deduplicates is not None:
-                dataset_idx = datasets.get(model.deduplicates)
+            models[model.hash] = model_idx
+            if model.type == ModelType.DATASET:
+                dataset_idx = datasets.get(model.hash)
                 _ = G.add_edge(model_idx, dataset_idx, {"type": "deduplicates"})
 
         for edge in session.query(ModelsFrom).all():

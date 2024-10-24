@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
+from matchbox.common.hash import HASH_FUNC
 
 T = TypeVar("T")
 
@@ -142,6 +143,14 @@ class Source(BaseModel):
             stmt = stmt.limit(limit)
 
         return stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
+
+    def to_hash(self) -> bytes:
+        """Generate a unique hash based on the table's columns and datatypes."""
+        table = self.to_table()
+        schema_representation = ",".join(
+            f"{col.name}:{str(col.type)}" for col in table.columns
+        )
+        return HASH_FUNC(schema_representation.encode("utf-8"))
 
     def to_arrow(
         self,

@@ -23,7 +23,7 @@ class MatchboxModelError(Exception):
 
 
 class MatchboxDatasetError(Exception):
-    """Model not found."""
+    """Dataset not found."""
 
     def __init__(
         self,

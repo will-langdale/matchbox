@@ -12,7 +12,7 @@ from rustworkx import PyDiGraph
 from sqlalchemy import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
 
-from matchbox.server.models import Cluster, Probability, Source
+from matchbox.server.models import Probability, Source
 
 
 class Countable(Protocol):
@@ -45,12 +45,19 @@ class MatchboxModelAdapter(ABC):
     def insert_probabilities(
         self,
         probabilities: list[Probability],
-        probability_type: Literal["deduplications", "links"],
         batch_size: int,
     ) -> None: ...
 
     @abstractmethod
-    def insert_clusters(self, clusters: list[Cluster], batch_size: int) -> None: ...
+    def set_truth_threshold(self, probability: float) -> None: ...
+
+    @abstractmethod
+    @property
+    def ancestors(self) -> dict[str, float]: ...
+
+    @abstractmethod
+    @property
+    def ancestors_cache(self) -> dict[str, float]: ...
 
 
 class MatchboxBackends(StrEnum):

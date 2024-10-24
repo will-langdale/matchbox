@@ -1,3 +1,4 @@
+import json
 import logging
 
 from sqlalchemy import (
@@ -5,90 +6,157 @@ from sqlalchemy import (
     delete,
 )
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from matchbox.common.exceptions import MatchboxDataError
-from matchbox.common.hash import list_to_value_ordered_hash
-from matchbox.server.models import Cluster, Probability
-from matchbox.server.postgresql.clusters import Clusters, Creates
-from matchbox.server.postgresql.dedupe import DDupeContains, DDupeProbabilities, Dedupes
-from matchbox.server.postgresql.link import LinkContains, LinkProbabilities, Links
-from matchbox.server.postgresql.models import Models, ModelsFrom
-from matchbox.server.postgresql.utils.db import batch_ingest
-from matchbox.server.postgresql.utils.hash import (
-    model_name_to_hash,
+from matchbox.common.exceptions import MatchboxModelError
+from matchbox.common.hash import dataset_to_hashlist, list_to_value_ordered_hash
+from matchbox.server.models import Probability, Source
+from matchbox.server.postgresql.orm import (
+    Clusters,
+    Contains,
+    Models,
+    ModelsFrom,
+    ModelType,
+    Probabilities,
+    Sources,
 )
+from matchbox.server.postgresql.utils.db import batch_ingest
 
 logic_logger = logging.getLogger("mb_logic")
 
 
-def insert_deduper(
-    model: str, deduplicates: bytes, description: str, engine: Engine
+def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
+    """Indexes a dataset from your data warehouse within Matchbox."""
+
+    db_logger = logging.getLogger("sqlalchemy.engine")
+    db_logger.setLevel(logging.WARNING)
+
+    ##################
+    # Insert dataset #
+    ##################
+
+    model_hash = Source.to_hash()
+
+    model_data = {
+        "hash": model_hash,
+        "type": ModelType.DATASET,
+        "name": f"{dataset.db_schema}.{dataset.db_table}",
+        "ancestors": {},
+    }
+
+    source_data = {
+        "model": model_hash,
+        "schema": dataset.db_schema,
+        "table": dataset.db_table,
+        "id": dataset.db_pk,
+    }
+
+    clusters = dataset_to_hashlist(dataset)
+
+    with engine.connect() as conn:
+        logic_logger.info(f"Adding {dataset}")
+
+        # Upsert into Models table
+        models_stmt = insert(Models).values([model_data])
+        models_stmt = models_stmt.on_conflict_do_update(
+            index_elements=["hash"],
+            set_={
+                "name": models_stmt.excluded.name,
+                "type": models_stmt.excluded.type,
+                "ancestors": models_stmt.excluded.ancestors,
+            },
+        )
+        conn.execute(models_stmt)
+
+        logic_logger.info(f"{dataset} added to Models table")
+
+        # Upsert into Sources table
+        sources_stmt = insert(Sources).values([source_data])
+        sources_stmt = sources_stmt.on_conflict_do_update(
+            index_elements=["model"],
+            set_={
+                "schema": sources_stmt.excluded.schema,
+                "table": sources_stmt.excluded.table,
+                "id": sources_stmt.excluded.id,
+            },
+        )
+        conn.execute(sources_stmt)
+
+        conn.commit()
+
+        logic_logger.info(f"{dataset} added to Sources table")
+
+        # Upsert into Clusters table
+        batch_ingest(
+            records=[(clus["hash"], clus["dataset"], clus["id"]) for clus in clusters],
+            table=Clusters,
+            conn=conn,
+            batch_size=batch_size,
+        )
+
+        conn.commit()
+
+        logic_logger.info(f"{dataset} added {len(clusters)} objects to Clusters table")
+
+    logic_logger.info(f"Finished {dataset}")
+
+
+def insert_model(
+    model: str, left: str, description: str, engine: Engine, right: str | None = None
 ) -> None:
-    """Writes a deduper model to Matchbox."""
-    metadata = f"{model} [Deduplication]"
-    logic_logger.info(f"{metadata} Registering model")
+    """Writes a model to Matchbox with a default truth value of 1.0.
 
+    Raises:
+        MatchboxModelError if the specified model doesn't exist.
+    """
+    logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
-        # Construct model hash from name and what it deduplicates
-        model_hash = list_to_value_ordered_hash([model, deduplicates])
+        left_model = session.query(Models).filter(Models.name == left).first()
+        if not left_model:
+            raise MatchboxModelError(model_name=left)
 
-        # Insert model
-        model = Models(
-            sha1=model_hash,
+        # Overwritten with actual right model if in a link job
+        right_model = left_model
+        if right:
+            right_model = session.query(Models).filter(Models.name == right).first()
+            if not right_model:
+                raise MatchboxModelError(model_name=right)
+
+        model_hash = list_to_value_ordered_hash([left_model.hash, right_model.hash])
+
+        # Calculate ancestors dictionary
+        ancestors = {}
+        if left_model.ancestors:
+            ancestors.update(json.loads(left_model.ancestors))
+        if right_model.ancestors:
+            ancestors.update(json.loads(right_model.ancestors))
+
+        ancestors[left_model.hash.hex()] = left_model.truth
+        ancestors[right_model.hash.hex()] = right_model.truth
+
+        # Create new model
+        new_model = Models(
+            hash=model_hash,
+            type=ModelType.MODEL,
             name=model,
             description=description,
-            deduplicates=deduplicates,
+            truth=1.0,
+            ancestors=json.dumps(ancestors),
         )
+        session.add(new_model)
 
-        session.merge(model)
+        # Create model lineage entries
+        parent_link = ModelsFrom(parent=left_model.hash, child=model_hash)
+        session.add(parent_link)
+
+        if right_model != left_model:
+            right_link = ModelsFrom(parent=right_model.hash, child=model_hash)
+            session.add(right_link)
+
         session.commit()
 
-        # Insert reference to parent models
-
-
-def insert_linker(
-    model: str, left: str, right: str, description: str, engine: Engine
-) -> None:
-    """Writes a linker model to Matchbox."""
-    metadata = f"{model} [Linking]"
-    logic_logger.info(f"{metadata} Registering model")
-
-    with Session(engine) as session:
-        # Construct model hash from parent model hashes
-        left_hash = model_name_to_hash(left, engine=engine)
-        right_hash = model_name_to_hash(right, engine=engine)
-
-        model_hash = list_to_value_ordered_hash(
-            [bytes(model, encoding="utf-8"), left_hash, right_hash]
-        )
-
-        # Insert model
-        model = Models(
-            sha1=model_hash,
-            name=model,
-            description=description,
-            deduplicates=None,
-        )
-
-        session.merge(model)
-        session.commit()
-
-        # Insert reference to parent models
-        models_from_to_insert = [
-            {"parent": model_hash, "child": left_hash},
-            {"parent": model_hash, "child": right_hash},
-        ]
-
-        ins_stmt = insert(ModelsFrom)
-        ins_stmt = ins_stmt.on_conflict_do_nothing(
-            index_elements=[
-                ModelsFrom.parent,
-                ModelsFrom.child,
-            ]
-        )
-        session.execute(ins_stmt, models_from_to_insert)
-        session.commit()
+    logic_logger.info(f"[{model}] Done!")
 
 
 def insert_probabilities(
@@ -96,161 +164,90 @@ def insert_probabilities(
     engine: Engine,
     probabilities: list[Probability],
     batch_size: int,
-    is_deduper: bool,
 ) -> None:
-    """Writes probabilities to Matchbox."""
-    probability_type = "Deduplication" if is_deduper else "Linking"
-    metadata = f"{model} [{probability_type}]"
+    """
+    Writes probabilities and their associated clusters to Matchbox.
 
-    if not probabilities:
-        logic_logger.info(f"{metadata} No {probability_type.lower()} data to insert")
-        return
-    else:
-        logic_logger.info(
-            f"{metadata} Writing {probability_type.lower()} data "
-            f"with batch size {batch_size}"
-        )
+    Args:
+        model: Name of the model to associate probabilities with
+        engine: SQLAlchemy engine instance
+        probabilities: List of Probability objects to insert
+        batch_size: Number of records to insert in each batch
 
-    if is_deduper:
-        ProbabilitiesTable = DDupeProbabilities
-        NodesTable = Dedupes
-    else:
-        ProbabilitiesTable = LinkProbabilities
-        NodesTable = Links
+    Raises:
+        MatchboxModelError if the specified model doesn't exist.
+    """
+    logic_logger.info(f"{model} Writing probability data with batch size {batch_size}")
 
     with Session(engine) as session:
-        # Get model
         db_model = session.query(Models).filter_by(name=model).first()
-        model_hash = db_model.sha1
-
         if db_model is None:
-            raise MatchboxDataError(source=Models, data=model)
+            raise MatchboxModelError(model_name=model)
 
-        # Clear old model probabilities
-        old_probs_subquery = (
-            (db_model.proposes_dedupes if is_deduper else db_model.proposes_links)
-            .select()
-            .with_only_columns(ProbabilitiesTable.model)
-        )
+        model_hash = db_model.hash
 
-        session.execute(
-            delete(ProbabilitiesTable).where(
-                ProbabilitiesTable.model.in_(old_probs_subquery)
+        try:
+            # Clear existing probabilities for this model
+            session.execute(
+                delete(Probabilities).where(Probabilities.model == model_hash)
             )
-        )
 
-        session.commit()
+            session.commit()
+            logic_logger.info(f"{model} Removed old probabilities")
 
-        logic_logger.info(
-            f"{metadata} Removed old {probability_type.lower()} probabilities"
-        )
-
-    with engine.connect() as conn:
-        logic_logger.info(
-            f"{metadata} Inserting %s {probability_type.lower()} objects",
-            len(probabilities),
-        )
-
-        # Upsert nodes
-        batch_ingest(
-            records=[(prob.left, prob.right, prob.hash) for prob in probabilities],
-            table=NodesTable,
-            conn=conn,
-            batch_size=batch_size,
-        )
-
-        # Insert probabilities
-        batch_ingest(
-            records=[
-                (prob.hash, model_hash, prob.probability) for prob in probabilities
-            ],
-            table=ProbabilitiesTable,
-            conn=conn,
-            batch_size=batch_size,
-        )
-
-        logic_logger.info(
-            f"{metadata} Inserted all %s {probability_type.lower()} objects",
-            len(probabilities),
-        )
-
-    logic_logger.info(f"{metadata} Complete!")
-
-
-def insert_clusters(
-    model: str,
-    engine: Engine,
-    clusters: list[Cluster],
-    batch_size: int,
-    is_deduper: bool,
-) -> None:
-    """Writes clusters to Matchbox."""
-    metadata = f"{model} [{'Deduplication' if is_deduper else 'Linking'}]"
-
-    if not clusters:
-        logic_logger.info(f"{metadata} No cluster data to insert")
-        return
-    else:
-        logic_logger.info(
-            f"{metadata} Writing cluster data with batch size {batch_size}"
-        )
-
-    Contains = DDupeContains if is_deduper else LinkContains
-
-    with Session(engine) as session:
-        # Get model
-        db_model = session.query(Models).filter_by(name=model).first()
-        model_hash = db_model.sha1
-
-        if db_model is None:
-            raise MatchboxDataError(source=Models, data=model)
-
-        # Clear old model endorsements
-        old_cluster_creates_subquery = db_model.creates.select().with_only_columns(
-            Clusters.sha1
-        )
-
-        session.execute(
-            delete(Creates).where(Creates.child.in_(old_cluster_creates_subquery))
-        )
-
-        session.commit()
-
-        logic_logger.info(f"{metadata} Removed old clusters")
+        except SQLAlchemyError as e:
+            session.rollback()
+            logic_logger.error(f"{model} Failed to clear old probabilities: {str(e)}")
+            raise
 
     with engine.connect() as conn:
-        logic_logger.info(
-            f"{metadata} Inserting %s cluster objects",
-            len(clusters),
-        )
+        try:
+            total_records = len(probabilities)
+            logic_logger.info(f"{model} Inserting {total_records} probability objects")
 
-        # Upsert cluster nodes
-        batch_ingest(
-            records=list({(cluster.parent,) for cluster in clusters}),
-            table=Clusters,
-            conn=conn,
-            batch_size=batch_size,
-        )
+            cluster_records = [(prob.hash,) for prob in probabilities]
 
-        # Insert cluster contains
-        batch_ingest(
-            records=[(cluster.parent, cluster.child) for cluster in clusters],
-            table=Contains,
-            conn=conn,
-            batch_size=batch_size,
-        )
+            batch_ingest(
+                records=cluster_records,
+                table=Clusters,
+                conn=conn,
+                batch_size=batch_size,
+            )
 
-        # Insert cluster proposed by model
-        batch_ingest(
-            records=[(model_hash, cluster.parent) for cluster in clusters],
-            table=Creates,
-            conn=conn,
-            batch_size=batch_size,
-        )
+            contains_records = []
+            for prob in probabilities:
+                contains_records.extend(
+                    [
+                        (prob.hash, prob.left),
+                        (prob.hash, prob.right),
+                    ]
+                )
 
-        logic_logger.info(
-            f"{metadata} Inserted all %s cluster objects",
-            len(clusters),
-        )
+            batch_ingest(
+                records=contains_records,
+                table=Contains,
+                conn=conn,
+                batch_size=batch_size,
+            )
 
-    logic_logger.info(f"{metadata} Complete!")
+            probability_records = [
+                (model_hash, prob.hash, prob.probability) for prob in probabilities
+            ]
+
+            batch_ingest(
+                records=probability_records,
+                table=Probabilities,
+                conn=conn,
+                batch_size=batch_size,
+            )
+
+            logic_logger.info(
+                f"{model} Successfully inserted {total_records} "
+                "probability objects and their associated clusters"
+            )
+
+        except SQLAlchemyError as e:
+            logic_logger.error(f"{model} Failed to insert data: {str(e)}")
+            raise
+
+    logic_logger.info(f"{model} Insert operation complete!")
