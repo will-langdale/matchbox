@@ -36,11 +36,11 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     # Insert dataset #
     ##################
 
-    model_hash = Source.to_hash()
+    model_hash = dataset.to_hash()
 
     model_data = {
         "hash": model_hash,
-        "type": ModelType.DATASET,
+        "type": ModelType.DATASET.value,
         "name": f"{dataset.db_schema}.{dataset.db_table}",
         "ancestors_cache": {},
     }
@@ -52,7 +52,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         "id": dataset.db_pk,
     }
 
-    clusters = dataset_to_hashlist(dataset)
+    clusters = dataset_to_hashlist(dataset=dataset, model_hash=model_hash)
 
     with engine.connect() as conn:
         logic_logger.info(f"Adding {dataset}")
@@ -138,7 +138,7 @@ def insert_model(
         # Create new model
         new_model = Models(
             hash=model_hash,
-            type=ModelType.MODEL,
+            type=ModelType.MODEL.value,
             name=model,
             description=description,
             truth=1.0,

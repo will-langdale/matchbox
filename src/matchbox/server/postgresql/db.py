@@ -96,6 +96,7 @@ class MatchboxDatabase:
                     f"DROP SCHEMA IF EXISTS {self.settings.postgres.db_schema} CASCADE;"
                 )
             )
+            conn.execute(text("DROP TYPE IF EXISTS modeltype CASCADE;"))
             conn.commit()
 
         self.create_database()

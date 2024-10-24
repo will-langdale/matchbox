@@ -10,7 +10,6 @@ from sqlalchemy import (
     select,
     union,
 )
-from sqlalchemy import Enum as SQLAEnum
 from sqlalchemy import (
     text as sqltext,
 )
@@ -55,20 +54,20 @@ class Models(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     hash = Column(BYTEA, primary_key=True)
-    type = Column(SQLAEnum(ModelType), nullable=False)
+    type = Column(VARCHAR, nullable=False)
     name = Column(VARCHAR, nullable=False)
     description = Column(VARCHAR)
     truth = Column(FLOAT)
     ancestors_cache = Column(JSONB, nullable=False, server_default="{}")
 
     # Relationships
-    source = relationship("Sources", back_populates="model", uselist=False)
+    source = relationship("Sources", back_populates="dataset_model", uselist=False)
     probabilities = relationship(
-        "Probabilities", back_populates="model", cascade="all, delete-orphan"
+        "Probabilities", back_populates="proposed_by", cascade="all, delete-orphan"
     )
     children = relationship(
         "Models",
-        secondary="models_from",
+        secondary=ModelsFrom.__table__,
         primaryjoin="Models.hash == ModelsFrom.parent",
         secondaryjoin="Models.hash == ModelsFrom.child",
         backref="parents",
@@ -144,33 +143,11 @@ class Models(CountMixin, MBDB.MatchboxBase):
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            """
-            CASE
-                WHEN type = 'model' THEN 
-                    NOT EXISTS(SELECT 1 FROM sources WHERE model = hash) AND
-                    EXISTS(SELECT 1 FROM models_from WHERE child = hash)
-                WHEN type = 'dataset' THEN 
-                    EXISTS(SELECT 1 FROM sources WHERE model = hash)
-                WHEN type = 'human' THEN 
-                    NOT EXISTS(SELECT 1 FROM sources WHERE model = hash) AND
-                    NOT EXISTS(SELECT 1 FROM models_from WHERE child = hash)
-            END
-            """,
+            "type IN ('model', 'dataset', 'human')",
             name="model_type_constraints",
         ),
         CheckConstraint(
-            "ancestors_cache::jsonb ?& ARRAY"
-            "(SELECT hash::text FROM models WHERE hash = ANY(ancestors_cache::jsonb))",
-            name="ancestors_valid_hashes",
-        ),
-        CheckConstraint(
             "NOT (ancestors_cache ?| ARRAY[hash::text])", name="no_self_ancestor"
-        ),
-        CheckConstraint(
-            "CASE WHEN ancestors_cache <> '{}'::jsonb THEN \
-             ALL(SELECT jsonb_object_values(ancestors_cache)::float BETWEEN 0 AND 1) \
-             ELSE true END",
-            name="ancestor_weights_valid",
         ),
     )
 
@@ -189,40 +166,13 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     id = Column(VARCHAR, nullable=False)
 
     # Relationships
-    model_rel = relationship("Models", back_populates="source")
+    dataset_model = relationship("Models", back_populates="source")
     clusters = relationship("Clusters", back_populates="source")
 
     @classmethod
     def list(cls) -> list["Sources"]:
         with Session(MBDB.get_engine()) as session:
             return session.query(cls).all()
-
-
-class Clusters(CountMixin, MBDB.MatchboxBase):
-    """Table of indexed data and clusters that match it."""
-
-    __tablename__ = "clusters"
-
-    # Columns
-    hash = Column(BYTEA, primary_key=True)
-    dataset = Column(BYTEA, ForeignKey("sources.model"), nullable=False)
-    # Uses array as source data may have identical rows. We can't control this
-    # Must be indexed or PostgreSQL incorrectly tries to use nested joins
-    # when retrieving small datasets in query() -- extremely slow
-    id = Column(ARRAY(VARCHAR(36)), index=True)
-
-    # Relationships
-    source = relationship("Sources", back_populates="clusters")
-    probabilities = relationship(
-        "Probabilities", back_populates="cluster", cascade="all, delete-orphan"
-    )
-    children = relationship(
-        "Clusters",
-        secondary="contains",
-        primaryjoin="Clusters.hash == Contains.parent",
-        secondaryjoin="Clusters.hash == Contains.child",
-        backref="parents",
-    )
 
 
 class Contains(CountMixin, MBDB.MatchboxBase):
@@ -242,6 +192,33 @@ class Contains(CountMixin, MBDB.MatchboxBase):
     __table_args__ = (CheckConstraint("parent != child", name="no_self_containment"),)
 
 
+class Clusters(CountMixin, MBDB.MatchboxBase):
+    """Table of indexed data and clusters that match it."""
+
+    __tablename__ = "clusters"
+
+    # Columns
+    hash = Column(BYTEA, primary_key=True)
+    dataset = Column(BYTEA, ForeignKey("sources.model"), nullable=False)
+    # Uses array as source data may have identical rows. We can't control this
+    # Must be indexed or PostgreSQL incorrectly tries to use nested joins
+    # when retrieving small datasets in query() -- extremely slow
+    id = Column(ARRAY(VARCHAR(36)), index=True)
+
+    # Relationships
+    source = relationship("Sources", back_populates="clusters")
+    probabilities = relationship(
+        "Probabilities", back_populates="proposes", cascade="all, delete-orphan"
+    )
+    children = relationship(
+        "Clusters",
+        secondary=Contains.__table__,
+        primaryjoin="Clusters.hash == Contains.parent",
+        secondaryjoin="Clusters.hash == Contains.child",
+        backref="parents",
+    )
+
+
 class Probabilities(CountMixin, MBDB.MatchboxBase):
     """Table of probabilities that a cluster merge is correct, according to a model."""
 
@@ -257,8 +234,8 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     probability = Column(FLOAT, nullable=False)
 
     # Relationships
-    model_rel = relationship("Models", back_populates="probabilities")
-    cluster_rel = relationship("Clusters", back_populates="probabilities")
+    proposed_by = relationship("Models", back_populates="probabilities")
+    proposes = relationship("Clusters", back_populates="probabilities")
 
     # Constraints
     __table_args__ = (

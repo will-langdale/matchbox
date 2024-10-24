@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable, Tuple
 
 import rustworkx as rx
 from pg_bulk_ingest import Delete, Upsert, ingest
-from sqlalchemy import Engine, Table
+from sqlalchemy import Engine, MetaData, Table
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
@@ -110,15 +110,23 @@ def batch_ingest(
     if isinstance(table, DeclarativeMeta):
         table = table.__table__
 
+    isolated_metadata = MetaData(schema=table.schema)
+    isolated_table = Table(
+        table.name,
+        isolated_metadata,
+        *[c.copy() for c in table.columns],
+        schema=table.schema,
+    )
+
     fn_batch = data_to_batch(
         records=records,
-        table=table,
+        table=isolated_table,
         batch_size=batch_size,
     )
 
     ingest(
         conn=conn,
-        metadata=table.metadata,
+        metadata=isolated_metadata,
         batches=fn_batch,
         upsert=Upsert.IF_PRIMARY_KEY,
         delete=Delete.OFF,

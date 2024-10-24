@@ -150,7 +150,7 @@ class Source(BaseModel):
         schema_representation = ",".join(
             f"{col.name}:{str(col.type)}" for col in table.columns
         )
-        return HASH_FUNC(schema_representation.encode("utf-8"))
+        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
     def to_arrow(
         self,

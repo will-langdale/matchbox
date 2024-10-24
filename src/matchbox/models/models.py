@@ -151,7 +151,7 @@ def make_model(
     metadata = ModelMetadata(
         name=model_name,
         description=description,
-        type=model_type,
+        type=model_type.value,
         left_source=data_source,
         right_source=right_source,
     )
