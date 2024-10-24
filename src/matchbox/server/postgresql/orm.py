@@ -8,10 +8,12 @@ from sqlalchemy import (
     ForeignKey,
     func,
     select,
-    text,
     union,
 )
 from sqlalchemy import Enum as SQLAEnum
+from sqlalchemy import (
+    text as sqltext,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
 from sqlalchemy.orm import Session, column_property, relationship
 
@@ -75,20 +77,24 @@ class Models(CountMixin, MBDB.MatchboxBase):
     # Ancestry
     # Recursive CTE for descendants
     descendants = column_property(
-        select([func.array_agg(text("descendant"))])
+        select(func.array_agg(sqltext("descendant")))
         .select_from(
-            select([text("child as descendant")]).select_from(
+            select(sqltext("child as descendant"))
+            .select_from(
                 union(
-                    select([ModelsFrom.child, ModelsFrom.child]).where(
+                    select(ModelsFrom.child, ModelsFrom.child).where(
                         ModelsFrom.parent == hash
                     ),
-                    select([ModelsFrom.child, ModelsFrom.parent]).where(
+                    select(ModelsFrom.child, ModelsFrom.parent).where(
                         ModelsFrom.parent.in_(
-                            select([ModelsFrom.child]).where(ModelsFrom.parent == hash)
+                            select(ModelsFrom.child)
+                            .where(ModelsFrom.parent == hash)
+                            .scalar_subquery()
                         )
                     ),
                 ).cte(recursive=True)
             )
+            .subquery()
         )
         .scalar_subquery(),
         deferred=True,
@@ -96,20 +102,24 @@ class Models(CountMixin, MBDB.MatchboxBase):
 
     # Recursive CTE for ancestors
     ancestors = column_property(
-        select([func.array_agg(text("ancestor"))])
+        select(func.array_agg(sqltext("ancestor")))
         .select_from(
-            select([text("parent as ancestor")]).select_from(
+            select(sqltext("parent as ancestor"))
+            .select_from(
                 union(
-                    select([ModelsFrom.parent, ModelsFrom.parent]).where(
+                    select(ModelsFrom.parent, ModelsFrom.parent).where(
                         ModelsFrom.child == hash
                     ),
-                    select([ModelsFrom.parent, ModelsFrom.child]).where(
+                    select(ModelsFrom.parent, ModelsFrom.child).where(
                         ModelsFrom.child.in_(
-                            select([ModelsFrom.parent]).where(ModelsFrom.child == hash)
+                            select(ModelsFrom.parent)
+                            .where(ModelsFrom.child == hash)
+                            .scalar_subquery()
                         )
                     ),
                 ).cte(recursive=True)
             )
+            .subquery()
         )
         .scalar_subquery(),
         deferred=True,

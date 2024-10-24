@@ -1,7 +1,7 @@
 from typing import Literal
 
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine, and_, bindparam, func
 from sqlalchemy.engine.result import ChunkedIteratorResult
@@ -43,6 +43,8 @@ class FilteredClusters(BaseModel):
 
 class FilteredProbabilities(BaseModel):
     """Wrapper class for filtered probability queries"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     over_truth: bool = False
     mb_model: Models | None = None

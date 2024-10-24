@@ -1,15 +1,20 @@
 import logging
+from typing import TYPE_CHECKING, Any
 
 from dotenv import find_dotenv, load_dotenv
 from matchbox.common.hash import (
     columns_to_value_ordered_hash,
 )
-from matchbox.models.models import Model
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
 from matchbox.server.models import Probability
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import Table
+
+if TYPE_CHECKING:
+    from matchbox.models.models import Model
+else:
+    Model = Any
 
 logic_logger = logging.getLogger("mb_logic")
 

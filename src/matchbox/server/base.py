@@ -52,12 +52,12 @@ class MatchboxModelAdapter(ABC):
     @abstractmethod
     def set_truth_threshold(self, probability: float) -> None: ...
 
-    @abstractmethod
     @property
+    @abstractmethod
     def ancestors(self) -> dict[str, float]: ...
 
-    @abstractmethod
     @property
+    @abstractmethod
     def ancestors_cache(self) -> dict[str, float]: ...
 
 

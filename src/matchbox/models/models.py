@@ -23,9 +23,9 @@ class ModelType(StrEnum):
 class ModelMetadata(BaseModel):
     """Metadata for a model."""
 
-    model_name: str
+    name: str
     description: str
-    model_type: ModelType
+    type: ModelType
     left_source: str
     right_source: str | None = None  # Only used for linker models
 
@@ -54,7 +54,7 @@ class Model:
             raise MatchboxModelError("No backend configured for this model")
 
         try:
-            self.model = self._backend.get_model(self.metadata.model_name)
+            self.model = self._backend.get_model(self.metadata.name)
         except Exception as e:
             raise MatchboxModelError from e
 
@@ -64,7 +64,7 @@ class Model:
             raise MatchboxModelError("No backend configured for this model")
 
         try:
-            self._backend.insert_model(self.metadata.model_name)
+            self._backend.insert_model(self.metadata.name)
             self._connect()
         except Exception as e:
             raise MatchboxModelError from e
@@ -88,7 +88,7 @@ class Model:
 
     def run(self) -> ProbabilityResults:
         """Execute the model and return results."""
-        if self.metadata.model_type == ModelType.LINKER:
+        if self.metadata.type == ModelType.LINKER:
             if self.right_data is None:
                 raise MatchboxModelError("Right dataset required for linking")
 
@@ -149,9 +149,9 @@ def make_model(
         model_instance.prepare(data=data)
 
     metadata = ModelMetadata(
-        model_name=model_name,
+        name=model_name,
         description=description,
-        model_type=model_type,
+        type=model_type,
         left_source=data_source,
         right_source=right_source,
     )
