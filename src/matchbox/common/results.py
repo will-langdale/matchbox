@@ -4,6 +4,7 @@ from dotenv import find_dotenv, load_dotenv
 from matchbox.common.hash import (
     columns_to_value_ordered_hash,
 )
+from matchbox.models.models import Model
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
 from matchbox.server.models import Probability
 from pandas import DataFrame
@@ -25,7 +26,7 @@ class ProbabilityResults(BaseModel):
 
     Args:
         dataframe (DataFrame): the DataFrame holding the results
-        run_name (str): the name of the run or experiment
+        model_name (str): the name of the model generating the results
         description (str): a description of the model generating the results
         left (str): the source dataset or source model for the left side of
             the comparison
@@ -36,10 +37,7 @@ class ProbabilityResults(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     dataframe: DataFrame
-    run_name: str
-    description: str
-    left: str
-    right: str
+    model: Model
 
     _expected_fields: list[str] = [
         "left_id",
@@ -90,7 +88,9 @@ class ProbabilityResults(BaseModel):
     def to_df(self) -> DataFrame:
         """Returns the results as a DataFrame."""
         df = self.dataframe.assign(
-            left=self.left, right=self.right, model=self.run_name
+            left=self.model.metadata.left_source,
+            right=self.model.metadata.right_source,
+            model=self.model.metadata.model_name,
         ).convert_dtypes(dtype_backend="pyarrow")[
             ["model", "left", "left_id", "right", "right_id", "probability"]
         ]
@@ -105,18 +105,11 @@ class ProbabilityResults(BaseModel):
         """
         # Optional validation
         if backend:
-            if self.left == self.right:
-                hash_type = "data"  # Deduper
-            else:
-                hash_type = "cluster"  # Linker
-
             backend.validate_hashes(
                 hashes=self.dataframe.left_id.unique().tolist(),
-                hash_type=hash_type,
             )
             backend.validate_hashes(
                 hashes=self.dataframe.right_id.unique().tolist(),
-                hash_type=hash_type,
             )
 
         # Preprocess the dataframe
@@ -139,16 +132,8 @@ class ProbabilityResults(BaseModel):
     @inject_backend
     def to_matchbox(self, backend: MatchboxDBAdapter) -> None:
         """Writes the results to the Matchbox database."""
-        backend.insert_model(
-            model=self.run_name,
-            left=self.left,
-            right=self.right if self.left != self.right else None,
-            description=self.description,
-        )
-
-        model = backend.get_model(model=self.run_name)
-
-        model.insert_probabilities(
+        self.model.insert_model()
+        self.model.insert_probabilities(
             probabilities=self.to_records(backend=backend),
             batch_size=backend.settings.batch_size,
         )

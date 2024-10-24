@@ -47,13 +47,14 @@ The parts of matchbox intended for users and services to call a matchbox server,
 Pipelines using this part of matchbox will:
 
 1. Use `matchbox.query()` to retrive source data from a particular model's perspective
-2. Use `matchbox.make_model()` with `matchbox.dedupers` and `matchbox.linkers` to generate probabilities for a new model
-3. Upload the probabilites to matchbox with `results.to_matchbox()`
-4. Label data, or use existing data, to decide the probability threshold that you're willing to consider "truth" for your new model
-5. Use `model.roc_curve()` and other tools to make your decision
-6. Use `model.set_truth_threshold()` to codify it
+2. Use `matchbox.process()` to clean the data with standardised processes
+3. Use `matchbox.make_model()` with `matchbox.dedupers` and `matchbox.linkers` to generate probabilities for a new model
+4. Upload the probabilites to matchbox with `results.to_matchbox()`
+5. Label data, or use existing data, to decide the probability threshold that you're willing to consider "truth" for your new model
+6. Use `model.roc_curve()` and other tools to make your decision
+7. Use `model.set_truth_threshold()` to codify it
 
-With the truth threshold set to `1.0` by default, deterministic methodologies are ready for others to use from step 3!
+With the truth threshold set to `1.0` by default, deterministic methodologies are ready for others to use from step four!
 
 ## Development
 

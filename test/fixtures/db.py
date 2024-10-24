@@ -3,7 +3,7 @@ from typing import Callable, Generator, Literal
 import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
-from matchbox import make_deduper, make_linker, to_clusters
+from matchbox import make_model
 from matchbox.server.base import MatchboxDBAdapter
 from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
@@ -76,25 +76,20 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                 deduper_name = f"{fx_deduper.name}_{fx_data.source}"
                 deduper_settings = fx_deduper.build_settings(fx_data)
 
-                deduper = make_deduper(
-                    dedupe_run_name=deduper_name,
+                model = make_model(
+                    model_name=deduper_name,
                     description=(
                         f"Dedupe of {fx_data.source} " f"with {fx_deduper.name} method."
                     ),
-                    deduper=fx_deduper.cls,
-                    deduper_settings=deduper_settings,
+                    model_class=fx_deduper.cls,
+                    model_settings=deduper_settings,
                     data_source=fx_data.source,
                     data=df,
                 )
 
-                deduped = deduper()
-
-                clustered = to_clusters(
-                    df, results=deduped, key="data_hash", threshold=0
-                )
-
-                deduped.to_matchbox(backend=backend)
-                clustered.to_matchbox(backend=backend)
+                probabilities = model.run()
+                probabilities.to_matchbox(backend=backend)
+                model.set_truth_threshold(probability=0.0)
 
     return _db_add_dedupe_models_and_data
 
@@ -148,28 +143,23 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                 linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
                 linker_settings = fx_linker.build_settings(fx_data)
 
-                linker = make_linker(
-                    link_run_name=linker_name,
+                model = make_model(
+                    model_name=linker_name,
                     description=(
                         f"Testing link of {fx_data.source_l} and {fx_data.source_r} "
                         f"with {fx_linker.name} method."
                     ),
-                    linker=fx_linker.cls,
-                    linker_settings=linker_settings,
+                    model_class=fx_linker.cls,
+                    model_settings=linker_settings,
                     left_data=df_l,
                     left_source=fx_data.source_l,
                     right_data=df_r,
                     right_source=fx_data.source_r,
                 )
 
-                linked = linker()
-
-                clustered = to_clusters(
-                    df_l, df_r, results=linked, key="cluster_hash", threshold=0
-                )
-
-                linked.to_matchbox(backend=backend)
-                clustered.to_matchbox(backend=backend)
+                probabilities = model.run()
+                probabilities.to_matchbox(backend=backend)
+                model.set_truth_threshold(probability=0.0)
 
     return _db_add_link_models_and_data
 

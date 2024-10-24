@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 from splink.duckdb.linker import DuckDBLinker
 from splink.linker import Linker as SplinkLibLinkerClass
 
-from matchbox.linkers.make_linker import Linker, LinkerSettings
+from matchbox.models.linkers.base import Linker, LinkerSettings
 
 logic_logger = logging.getLogger("mb_logic")
 

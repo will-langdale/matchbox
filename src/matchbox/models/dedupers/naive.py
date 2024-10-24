@@ -4,7 +4,7 @@ import duckdb
 from pandas import ArrowDtype, DataFrame
 from pydantic import Field
 
-from matchbox.dedupers.make_deduper import Deduper, DeduperSettings
+from matchbox.models.dedupers.base import Deduper, DeduperSettings
 
 
 class NaiveSettings(DeduperSettings):

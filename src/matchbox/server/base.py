@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from functools import wraps
 from pathlib import Path
-from typing import Callable, Literal, Protocol
+from typing import Callable, Literal, ParamSpec, Protocol, TypeVar, cast
 
 from pandas import DataFrame
 from pydantic import Field
@@ -13,6 +13,9 @@ from sqlalchemy import Engine
 from sqlalchemy.engine.result import ChunkedIteratorResult
 
 from matchbox.server.models import Probability, Source
+
+R = TypeVar("R")
+P = ParamSpec("P")
 
 
 class Countable(Protocol):
@@ -108,9 +111,7 @@ class MatchboxDBAdapter(ABC):
     def index(self, dataset: Source) -> None: ...
 
     @abstractmethod
-    def validate_hashes(
-        self, hashes: list[bytes], hash_type: Literal["data", "cluster"]
-    ) -> bool: ...
+    def validate_hashes(self, hashes: list[bytes]) -> bool: ...
 
     @abstractmethod
     def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source: ...
@@ -195,7 +196,7 @@ def initialise_matchbox() -> None:
     initialise_backend(settings)
 
 
-def inject_backend(func: Callable) -> Callable:
+def inject_backend(func: Callable[..., R]) -> Callable[..., R]:
     """Decorator to inject the Matchbox backend into functions.
 
     Used to allow user-facing functions to access the backend without needing to
@@ -207,7 +208,9 @@ def inject_backend(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    def _inject_backend(*args, backend: "MatchboxDBAdapter | None" = None, **kwargs):
+    def _inject_backend(
+        *args: P.args, backend: "MatchboxDBAdapter | None" = None, **kwargs: P.kwargs
+    ) -> R:
         if backend is None:
             backend = BackendManager.get_backend()
 
@@ -215,8 +218,8 @@ def inject_backend(func: Callable) -> Callable:
         params = list(sig.parameters.values())
 
         if params and params[0].name in ("self", "cls"):
-            return func(args[0], backend, *args[1:], **kwargs)
+            return cast(R, func(args[0], backend, *args[1:], **kwargs))
         else:
-            return func(backend, *args, **kwargs)
+            return cast(R, func(backend, *args, **kwargs))
 
-    return _inject_backend
+    return cast(Callable[..., R], _inject_backend)

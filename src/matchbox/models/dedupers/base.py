@@ -1,11 +1,8 @@
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable
 
 from pandas import DataFrame
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
-
-from matchbox.common.results import ProbabilityResults
 
 
 class DeduperSettings(BaseModel):
@@ -50,26 +47,3 @@ class Deduper(BaseModel, ABC):
     @abstractmethod
     def dedupe(self, data: DataFrame) -> DataFrame:
         return
-
-
-def make_deduper(
-    dedupe_run_name: str,
-    description: str,
-    deduper: Deduper,
-    deduper_settings: dict[str, Any],
-    data: DataFrame,
-    data_source: str,
-) -> Callable[[DataFrame], ProbabilityResults]:
-    deduper_instance = deduper.from_settings(**deduper_settings)
-    deduper_instance.prepare(data)
-
-    def deduper(data: DataFrame = data) -> ProbabilityResults:
-        return ProbabilityResults(
-            dataframe=deduper_instance.dedupe(data=data),
-            run_name=dedupe_run_name,
-            description=description,
-            left=data_source,
-            right=data_source,
-        )
-
-    return deduper

@@ -5,7 +5,7 @@ from pandas import ArrowDtype, DataFrame
 from pydantic import Field, field_validator
 
 from matchbox.helpers import comparison
-from matchbox.linkers.make_linker import Linker, LinkerSettings
+from matchbox.models.linkers.base import Linker, LinkerSettings
 
 
 class DeterministicSettings(LinkerSettings):
