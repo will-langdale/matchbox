@@ -62,8 +62,8 @@ def test_linkers(
         df_r_renamed = df_r.copy().rename(columns=fx_data.fields_r)
         fields_l_renamed = list(fx_data.fields_l.values())
         fields_r_renamed = list(fx_data.fields_r.values())
-        df_l_renamed = df_l_renamed.filter(["cluster_hash"] + fields_l_renamed)
-        df_r_renamed = df_r_renamed.filter(["cluster_hash"] + fields_r_renamed)
+        df_l_renamed = df_l_renamed.filter(["hash"] + fields_l_renamed)
+        df_r_renamed = df_r_renamed.filter(["hash"] + fields_r_renamed)
         assert set(df_l_renamed.columns) == set(df_r_renamed.columns)
         assert df_l_renamed.dtypes.equals(df_r_renamed.dtypes)
 
@@ -108,9 +108,9 @@ def test_linkers(
 
     linked_df_with_source = linked.inspect_with_source(
         left_data=df_l,
-        left_key="cluster_hash",
+        left_key="hash",
         right_data=df_r,
-        right_key="cluster_hash",
+        right_key="hash",
     )
 
     assert isinstance(linked_df, DataFrame)

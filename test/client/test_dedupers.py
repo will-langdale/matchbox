@@ -48,7 +48,7 @@ def test_dedupers(
     if fx_deduper.rename_fields:
         df_renamed = df.copy().rename(columns=fx_data.fields)
         fields_renamed = list(fx_data.fields.values())
-        df_renamed = df_renamed.filter(["data_hash"] + fields_renamed)
+        df_renamed = df_renamed.filter(["hash"] + fields_renamed)
 
     # 1. Input data is as expected
 
@@ -77,7 +77,7 @@ def test_dedupers(
 
     deduped_df = deduped.to_df()
     deduped_df_with_source = deduped.inspect_with_source(
-        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
+        left_data=df, left_key="hash", right_data=df, right_key="hash"
     )
 
     assert isinstance(deduped_df, DataFrame)

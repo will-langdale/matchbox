@@ -3,16 +3,33 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from functools import wraps
 from pathlib import Path
-from typing import Callable, Literal, ParamSpec, Protocol, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Literal,
+    ParamSpec,
+    Protocol,
+    TypeVar,
+    cast,
+)
 
-from pandas import DataFrame
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine
-from sqlalchemy.engine.result import ChunkedIteratorResult
 
 from matchbox.server.models import Probability, Source
+
+if TYPE_CHECKING:
+    from pandas import DataFrame as PandasDataFrame
+    from polars import DataFrame as PolarsDataFrame
+    from pyarrow import Table as ArrowTable
+else:
+    PandasDataFrame = Any
+    PolarsDataFrame = Any
+    ArrowTable = Any
+
 
 R = TypeVar("R")
 P = ParamSpec("P")
@@ -103,9 +120,9 @@ class MatchboxDBAdapter(ABC):
         selector: dict[str, list[str]],
         model: str | None = None,
         threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "sqlalchemy"] | None = None,
+        return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
-    ) -> DataFrame | ChunkedIteratorResult: ...
+    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
 
     @abstractmethod
     def index(self, dataset: Source) -> None: ...

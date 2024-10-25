@@ -1,10 +1,8 @@
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import pandas as pd
 from pydantic import BaseModel, ConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine, and_, bindparam, func
-from sqlalchemy.engine.result import ChunkedIteratorResult
 from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import (
@@ -23,6 +21,15 @@ from matchbox.server.postgresql.utils.insert import (
     insert_probabilities,
 )
 from matchbox.server.postgresql.utils.query import query
+
+if TYPE_CHECKING:
+    from pandas import DataFrame as PandasDataFrame
+    from polars import DataFrame as PolarsDataFrame
+    from pyarrow import Table as ArrowTable
+else:
+    PandasDataFrame = Any
+    PolarsDataFrame = Any
+    ArrowTable = Any
 
 
 class FilteredClusters(BaseModel):
@@ -205,9 +212,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
         selector: dict[str, list[str]],
         model: str | None = None,
         threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "sqlalchemy"] | None = None,
+        return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
-    ) -> pd.DataFrame | ChunkedIteratorResult:
+    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
         """Queries the database from an optional model of truth.
 
         Args:
@@ -230,7 +237,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         return query(
             selector=selector,
             engine=MBDB.get_engine(),
-            return_type=return_type,
+            return_type=return_type if return_type else "pandas",
             model=model,
             threshold=threshold,
             limit=limit,

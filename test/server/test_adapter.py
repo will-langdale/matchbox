@@ -91,16 +91,9 @@ class TestMatchboxBackend:
             return_type="pandas",
         )
 
-        self.backend.validate_hashes(
-            hashes=df_crn.data_hash.to_list(), hash_type="data"
-        )
-        self.backend.validate_hashes(
-            hashes=df_crn.cluster_hash.drop_duplicates().to_list(), hash_type="cluster"
-        )
+        self.backend.validate_hashes(hashes=df_crn.hash.to_list())
         with pytest.raises(MatchboxDataError):
-            self.backend.validate_hashes(
-                hashes=[HASH_FUNC(b"nonexistant").digest()], hash_type="data"
-            )
+            self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistant").digest()])
 
     def test_get_dataset(self):
         """Test querying data from the database."""
@@ -269,8 +262,8 @@ class TestMatchboxBackend:
                 probability=1.0,
             )
             for crn_prob_1, crn_prob_2 in zip(
-                df_crn["data_hash"].to_list()[:10],
-                reversed(df_crn["data_hash"].to_list()[:10]),
+                df_crn["hash"].to_list()[:10],
+                reversed(df_crn["hash"].to_list()[:10]),
                 strict=True,
             )
         ]
@@ -295,8 +288,8 @@ class TestMatchboxBackend:
                 probability=1.0,
             )
             for crn_prob, duns_prob in zip(
-                df_crn_deduped["cluster_hash"].to_list()[:10],
-                df_duns_deduped["cluster_hash"].to_list()[:10],
+                df_crn_deduped["hash"].to_list()[:10],
+                df_duns_deduped["hash"].to_list()[:10],
                 strict=True,
             )
         ]
@@ -362,8 +355,8 @@ class TestMatchboxBackend:
         dedupe_clusters = [
             Cluster(parent=crn_prob_1, child=crn_prob_2)
             for crn_prob_1, crn_prob_2 in zip(
-                df_crn["data_hash"].to_list()[:10],
-                reversed(df_crn["data_hash"].to_list()[:10]),
+                df_crn["hash"].to_list()[:10],
+                reversed(df_crn["hash"].to_list()[:10]),
                 strict=True,
             )
         ]
@@ -383,8 +376,8 @@ class TestMatchboxBackend:
         link_clusters = [
             Cluster(parent=crn_prob, child=duns_prob)
             for crn_prob, duns_prob in zip(
-                df_crn_deduped["cluster_hash"].to_list()[:10],
-                df_duns_deduped["cluster_hash"].to_list()[:10],
+                df_crn_deduped["hash"].to_list()[:10],
+                df_duns_deduped["hash"].to_list()[:10],
                 strict=True,
             )
         ]
@@ -451,7 +444,7 @@ class TestMatchboxBackend:
 
         assert df_crn_full.shape[0] == 3000
         assert set(df_crn_full.columns) == {
-            "data_hash",
+            "hash",
             "test_crn_id",
             "test_crn_crn",
         }
@@ -491,7 +484,7 @@ class TestMatchboxBackend:
         )
 
         assert set(df_crn_duns_full.columns) == {
-            "data_hash",
+            "hash",
             "test_crn_id",
             "test_crn_crn",
             "test_duns_id",
@@ -520,13 +513,11 @@ class TestMatchboxBackend:
         assert isinstance(df_crn, DataFrame)
         assert df_crn.shape[0] == 3000
         assert set(df_crn.columns) == {
-            "cluster_hash",
-            "data_hash",
+            "hash",
             "test_crn_crn",
             "test_crn_company_name",
         }
-        assert df_crn.data_hash.nunique() == 3000
-        assert df_crn.cluster_hash.nunique() == 1000
+        assert df_crn.hash.nunique() == 1000
 
     def test_query_with_link_model(self):
         """Test querying data from a link point of truth."""
@@ -560,13 +551,11 @@ class TestMatchboxBackend:
         assert isinstance(crn_duns, DataFrame)
         assert crn_duns.shape[0] == 3500
         assert set(crn_duns.columns) == {
-            "cluster_hash",
-            "data_hash",
+            "hash",
             "test_crn_crn",
             "test_duns_duns",
         }
-        assert crn_duns.data_hash.nunique() == 3500
-        assert crn_duns.cluster_hash.nunique() == 1000
+        assert crn_duns.hash.nunique() == 1000
 
     def test_clear(self):
         """Test clearing the database."""

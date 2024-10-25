@@ -45,8 +45,8 @@ class WeightedDeterministicSettings(LinkerSettings):
     Example:
 
         >>> {
-        ...     left_id: "cluster_hash",
-        ...     right_id: "cluster_hash",
+        ...     left_id: "hash",
+        ...     right_id: "hash",
         ...     weighted_comparisons: [
         ...         ("l.company_name = r.company_name", .7),
         ...         ("l.postcode = r.postcode", .7),

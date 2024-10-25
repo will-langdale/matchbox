@@ -176,7 +176,7 @@ link_data_test_params = [
 
 
 def make_naive_dd_settings(data: DedupeTestParams) -> dict[str, Any]:
-    return {"id": "data_hash", "unique_fields": list(data.fields.keys())}
+    return {"id": "hash", "unique_fields": list(data.fields.keys())}
 
 
 dedupe_model_test_params = [
@@ -198,8 +198,8 @@ def make_deterministic_li_settings(data: LinkTestParams) -> dict[str, Any]:
         comparisons.append(f"l.{field_l} = r.{field_r}")
 
     return {
-        "left_id": "cluster_hash",
-        "right_id": "cluster_hash",
+        "left_id": "hash",
+        "right_id": "hash",
         "comparisons": " and ".join(comparisons),
     }
 
@@ -246,8 +246,8 @@ def make_splink_li_settings(data: LinkTestParams) -> dict[str, Any]:
     }
 
     return {
-        "left_id": "cluster_hash",
-        "right_id": "cluster_hash",
+        "left_id": "hash",
+        "right_id": "hash",
         "linker_class": DuckDBLinker,
         "linker_training_functions": linker_training_functions,
         "linker_settings": linker_settings,
@@ -262,8 +262,8 @@ def make_weighted_deterministic_li_settings(data: LinkTestParams) -> dict[str, A
         weighted_comparisons.append((f"l.{field_l} = r.{field_r}", 1))
 
     return {
-        "left_id": "cluster_hash",
-        "right_id": "cluster_hash",
+        "left_id": "hash",
+        "right_id": "hash",
         "weighted_comparisons": weighted_comparisons,
         "threshold": 1,
     }

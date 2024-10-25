@@ -199,11 +199,11 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     hash = Column(BYTEA, primary_key=True)
-    dataset = Column(BYTEA, ForeignKey("sources.model"), nullable=False)
+    dataset = Column(BYTEA, ForeignKey("sources.model"), nullable=True)
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
-    id = Column(ARRAY(VARCHAR(36)), index=True)
+    id = Column(ARRAY(VARCHAR(36)), index=True, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="clusters")

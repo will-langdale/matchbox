@@ -25,6 +25,11 @@ dependencies = [
     "tomli>=2.0.1",
 ]
 
+[project.optional-dependencies]
+typing = [
+    "polars>=1.11.0",
+]
+
 [tool.uv]
 dev-dependencies = [
     "ipykernel>=6.29.5",

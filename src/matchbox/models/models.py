@@ -54,7 +54,7 @@ class Model:
             raise MatchboxModelError("No backend configured for this model")
 
         try:
-            self.model = self._backend.get_model(self.metadata.name)
+            self._model = self._backend.get_model(self.metadata.name)
         except Exception as e:
             raise MatchboxModelError from e
 
@@ -64,7 +64,12 @@ class Model:
             raise MatchboxModelError("No backend configured for this model")
 
         try:
-            self._backend.insert_model(self.metadata.name)
+            self._backend.insert_model(
+                model=self.metadata.name,
+                left=self.metadata.left_source,
+                right=self.metadata.right_source,
+                description=self.metadata.description,
+            )
             self._connect()
         except Exception as e:
             raise MatchboxModelError from e

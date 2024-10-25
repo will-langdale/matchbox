@@ -138,7 +138,4 @@ class ProbabilityResults(BaseModel):
     def to_matchbox(self, backend: MatchboxDBAdapter) -> None:
         """Writes the results to the Matchbox database."""
         self.model.insert_model()
-        self.model.insert_probabilities(
-            probabilities=self.to_records(backend=backend),
-            batch_size=backend.settings.batch_size,
-        )
+        self.model.insert_probabilities(probabilities=self.to_records(backend=backend))

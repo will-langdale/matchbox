@@ -1,10 +1,9 @@
 import logging
-from typing import Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
-from sqlalchemy import Engine, and_, func, select, union
-from sqlalchemy import text as sqltext
+from sqlalchemy import Engine, and_, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import literal
 from sqlalchemy.sql.selectable import Select
@@ -16,9 +15,15 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
     Models,
+    ModelType,
     Probabilities,
     Sources,
 )
+
+if TYPE_CHECKING:
+    from polars import DataFrame as PolarsDataFrame
+else:
+    PolarsDataFrame = Any
 
 T = TypeVar("T")
 
@@ -94,15 +99,21 @@ def _build_probability_filter(
         threshold: Threshold value to use for the model and its ancestors
     """
     with Session(engine) as session:
-        model = session.query(Models).filter(Models.hash == model_hash).first()
+        model = (
+            session.query(Models)
+            .filter(Models.hash == hash_to_hex_decode(model_hash))
+            .first()
+        )
 
         if not model:
             raise MatchboxModelError()
 
-        ancestors = model.all_ancestors()
+        # For dataset models, return a query that selects all clusters
+        if model.type == ModelType.DATASET.value:
+            return select(Clusters.hash)
 
         # Compare w/ cache
-        for ancestor in ancestors:
+        for ancestor in model.all_ancestors:
             ancestor_hash_hex = ancestor.hash.hex()
             json_threshold = model.ancestors_cache.get(ancestor_hash_hex)
             if json_threshold is not None and ancestor.truth is not None:
@@ -118,11 +129,16 @@ def _build_probability_filter(
 
         def build_ancestor_condition(ancestor: Models) -> Select:
             """Handles the ancestor model and a dynamic threshold value."""
+            if ancestor.type == ModelType.DATASET.value:
+                return select(Clusters.hash).where(
+                    Clusters.dataset == hash_to_hex_decode(ancestor.hash)
+                )
+
             threshold_value = _get_threshold_for_model(
                 model=model,
                 model_hash=model_hash,
                 threshold=threshold,
-                ancestor=ancestor,
+                ancestor_model=ancestor,
             )
             if threshold_value is None:
                 raise ValueError(
@@ -131,34 +147,38 @@ def _build_probability_filter(
 
             return select(Probabilities.cluster).where(
                 and_(
-                    Probabilities.model == ancestor.hash,
+                    Probabilities.model == hash_to_hex_decode(ancestor.hash),
                     Probabilities.probability >= threshold_value,
                 )
             )
 
         # Combine all ancestor conditions
-        ancestors_conditions = [
-            build_ancestor_condition(ancestor) for ancestor in ancestors
-        ]
-        ancestors_condition = (
-            union(*ancestors_conditions)
-            if ancestors_conditions
-            else select(literal(False))
-        )
+        if not model.all_ancestors:
+            ancestors_condition = select(Probabilities.cluster).where(literal(False))
+        else:
+            ancestors_conditions = [
+                build_ancestor_condition(ancestor) for ancestor in model.all_ancestors
+            ]
+            ancestors_condition = select(ancestors_conditions[0].scalar_subquery())
+            for condition in ancestors_conditions[1:]:
+                ancestors_condition = ancestors_condition.union(
+                    select(condition.scalar_subquery())
+                )
 
         # Handle the model itself with its threshold
         model_threshold = _get_threshold_for_model(model, model_hash, threshold)
-        model_condition = select(Probabilities.cluster).where(
-            and_(
-                Probabilities.model == model_hash,
-                Probabilities.probability >= model_threshold
-                if model_threshold is not None
-                else literal(False),
+        if model_threshold is None:
+            model_condition = select(Probabilities.cluster).where(literal(False))
+        else:
+            model_condition = select(Probabilities.cluster).where(
+                and_(
+                    Probabilities.model == hash_to_hex_decode(model_hash),
+                    Probabilities.probability >= model_threshold,
+                )
             )
-        )
 
-        # Combine into a single subquery of valid clusters
-        valid_clusters = union(ancestors_condition, model_condition).scalar_subquery()
+        # Combine into a single subquery of valid clusters using select().union()
+        valid_clusters = ancestors_condition.union(model_condition).scalar_subquery()
 
         return valid_clusters
 
@@ -171,8 +191,10 @@ def _model_to_hashes(
 ) -> Select:
     """Takes a dataset model hash and model hash and returns all valid leaf clusters.
 
-    * Uses the probability filter to get valid clusters
-    * Recursively traverses the Contains graph to get all leaf clusters
+    * For dataset models, returns all clusters directly
+    * For other models
+        * Uses the probability filter to get valid clusters
+        * Recursively traverses the Contains graph to get all leaf clusters
 
     Args:
         dataset_hash: The hash of the dataset model
@@ -180,40 +202,61 @@ def _model_to_hashes(
         engine: SQLAlchemy engine to use
         threshold: Threshold value to use for the model and its ancestors
     """
+    # Handle dataset models
+    with Session(engine) as session:
+        model = (
+            session.query(Models)
+            .filter(Models.hash == hash_to_hex_decode(model_hash))
+            .first()
+        )
+
+        if not model:
+            raise MatchboxModelError()
+
+        if model.type == ModelType.DATASET.value:
+            return (
+                select(Clusters.hash, func.unnest(Clusters.id).label("id"))
+                .distinct()
+                .where(Clusters.dataset == hash_to_hex_decode(dataset_hash))
+            )
+
     # Get valid clusters over threshold
     valid_clusters = _build_probability_filter(
         model_hash=model_hash, engine=engine, threshold=threshold
     )
 
-    # Recursive Contains CTE
-    recursive_clusters = (
+    recursive = (
         # Base case: start with valid clusters
-        select([Contains.parent.label("start"), Contains.child.label("current")])
-        .where(Contains.parent.in_(valid_clusters))
-        .union(
-            # Recursive case: follow children
-            select([sqltext("start"), Contains.child]).select_from(
-                sqltext("recursive_clusters").join(
-                    Contains, sqltext("current") == Contains.parent
-                )
-            )
+        select(
+            Contains.parent.label("start"),
+            Contains.child.label("current"),
         )
-    ).cte(recursive=True, name="recursive_clusters")
+        .where(Contains.parent.in_(valid_clusters))
+        .cte(recursive=True, name="recursive")
+    )
+
+    # Add the recursive part
+    recursive = recursive.union(
+        select(
+            recursive.c.start,
+            Contains.child,
+        ).join(Contains, Contains.parent == recursive.c.current)
+    )
 
     # Final query to get leaf clusters
     query = (
         select(Clusters.hash, func.unnest(Clusters.id).label("id"))
         .distinct()
-        .join(recursive_clusters, recursive_clusters.c.current == Clusters.hash)
-        .where(Clusters.dataset == dataset_hash)
+        .join(recursive, recursive.c.current == Clusters.hash)
+        .where(Clusters.dataset == hash_to_hex_decode(dataset_hash))
         .union(
             # Also include direct predictions on leaf clusters that meet threshold
-            select(Clusters.hash, Clusters.id)
+            select(Clusters.hash, func.unnest(Clusters.id).label("id"))
             .join(Probabilities, Clusters.hash == Probabilities.cluster)
             .where(
                 and_(
                     Clusters.hash.in_(valid_clusters),
-                    Clusters.dataset == dataset_hash,
+                    Clusters.dataset == hash_to_hex_decode(dataset_hash),
                 )
             )
         )
@@ -225,11 +268,11 @@ def _model_to_hashes(
 def query(
     selector: dict[Source, list[str]],
     engine: Engine,
-    return_type: Literal["pandas", "arrow"] = "pandas",
+    return_type: Literal["pandas", "arrow", "polars"] = "pandas",
     model: str | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
-) -> DataFrame | pa.Table:
+) -> DataFrame | pa.Table | PolarsDataFrame:
     """
     Queries Matchbox and the Source warehouse to retrieve linked data.
 

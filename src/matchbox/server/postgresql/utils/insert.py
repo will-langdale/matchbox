@@ -205,7 +205,7 @@ def insert_probabilities(
             total_records = len(probabilities)
             logic_logger.info(f"{model} Inserting {total_records} probability objects")
 
-            cluster_records = [(prob.hash,) for prob in probabilities]
+            cluster_records = [(prob.hash, None, None) for prob in probabilities]
 
             batch_ingest(
                 records=cluster_records,

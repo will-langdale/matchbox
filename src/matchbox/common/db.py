@@ -1,4 +1,4 @@
-from typing import Literal, Union, overload
+from typing import TYPE_CHECKING, Any, Literal, Union, overload
 
 import connectorx as cx
 import pyarrow as pa
@@ -7,7 +7,12 @@ from pandas import DataFrame
 from sqlalchemy import Engine, Select
 from sqlalchemy.engine.url import URL
 
-ReturnTypeStr = Literal["arrow", "pandas"]
+if TYPE_CHECKING:
+    from polars import DataFrame as PolarsDataFrame
+else:
+    PolarsDataFrame = Any
+
+ReturnTypeStr = Literal["arrow", "pandas", "polars"]
 
 
 def convert_large_binary_to_binary(table: pa.Table) -> pa.Table:
@@ -35,9 +40,15 @@ def sql_to_df(
 ) -> DataFrame: ...
 
 
+@overload
+def sql_to_df(
+    stmt: Select, engine: Engine, return_type: Literal["polars"]
+) -> PolarsDataFrame: ...
+
+
 def sql_to_df(
     stmt: Select, engine: Engine, return_type: ReturnTypeStr = "pandas"
-) -> pa.Table | DataFrame:
+) -> pa.Table | DataFrame | PolarsDataFrame:
     """
     Executes the given SQLAlchemy statement using connectorx.
 

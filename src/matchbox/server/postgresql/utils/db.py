@@ -101,21 +101,22 @@ def data_to_batch(
 
 def batch_ingest(
     records: list[tuple],
-    table: Table | DeclarativeMeta,
+    table: DeclarativeMeta,
     conn: Connection,
     batch_size: int,
 ) -> None:
-    """Batch ingest records into a database table."""
+    """Batch ingest records into a database table.
 
-    if isinstance(table, DeclarativeMeta):
-        table = table.__table__
+    We isolate the table and metadata as pg_bulk_ingest will try and drop unrelated
+    tables if they're in the same schema.
+    """
 
-    isolated_metadata = MetaData(schema=table.schema)
+    isolated_metadata = MetaData(schema=table.__table__.schema)
     isolated_table = Table(
-        table.name,
+        table.__table__.name,
         isolated_metadata,
-        *[c.copy() for c in table.columns],
-        schema=table.schema,
+        *[c.copy() for c in table.__table__.columns],
+        schema=table.__table__.schema,
     )
 
     fn_batch = data_to_batch(
