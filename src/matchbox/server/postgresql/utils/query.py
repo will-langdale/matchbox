@@ -1,9 +1,10 @@
+import json
 import logging
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
-from sqlalchemy import Engine, and_, func, select
+from sqlalchemy import Engine, and_, func, select, union, union_all
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import literal
 from sqlalchemy.sql.selectable import Select
@@ -113,9 +114,10 @@ def _build_probability_filter(
             return select(Clusters.hash)
 
         # Compare w/ cache
+        ancestors_cache = json.loads(model.ancestors_cache) or {}
         for ancestor in model.all_ancestors:
             ancestor_hash_hex = ancestor.hash.hex()
-            json_threshold = model.ancestors_cache.get(ancestor_hash_hex)
+            json_threshold = ancestors_cache.get(ancestor_hash_hex)
             if json_threshold is not None and ancestor.truth is not None:
                 if abs(json_threshold - ancestor.truth) > 1e-6:  # Float comparison
                     logic_logger.warning(
@@ -130,7 +132,7 @@ def _build_probability_filter(
         def build_ancestor_condition(ancestor: Models) -> Select:
             """Handles the ancestor model and a dynamic threshold value."""
             if ancestor.type == ModelType.DATASET.value:
-                return select(Clusters.hash).where(
+                return select(Clusters.hash.label("cluster")).where(
                     Clusters.dataset == hash_to_hex_decode(ancestor.hash)
                 )
 
@@ -142,10 +144,10 @@ def _build_probability_filter(
             )
             if threshold_value is None:
                 raise ValueError(
-                    "No cached or specified threshold value found for {ancestor.name}"
+                    f"No cached or specified threshold value found for {ancestor.name}"
                 )
 
-            return select(Probabilities.cluster).where(
+            return select(Probabilities.cluster.label("cluster")).where(
                 and_(
                     Probabilities.model == hash_to_hex_decode(ancestor.hash),
                     Probabilities.probability >= threshold_value,
@@ -154,33 +156,35 @@ def _build_probability_filter(
 
         # Combine all ancestor conditions
         if not model.all_ancestors:
-            ancestors_condition = select(Probabilities.cluster).where(literal(False))
+            ancestors_condition = select(
+                literal(None, type_=Probabilities.cluster.type).label("cluster")
+            ).where(literal(False))
         else:
-            ancestors_conditions = [
-                build_ancestor_condition(ancestor) for ancestor in model.all_ancestors
-            ]
-            ancestors_condition = select(ancestors_conditions[0].scalar_subquery())
-            for condition in ancestors_conditions[1:]:
-                ancestors_condition = ancestors_condition.union(
-                    select(condition.scalar_subquery())
-                )
+            ancestors_condition = union(
+                *[
+                    build_ancestor_condition(ancestor)
+                    for ancestor in model.all_ancestors
+                ]
+            )
 
         # Handle the model itself with its threshold
         model_threshold = _get_threshold_for_model(model, model_hash, threshold)
         if model_threshold is None:
-            model_condition = select(Probabilities.cluster).where(literal(False))
+            model_condition = select(
+                literal(None, type_=Probabilities.cluster.type).label("cluster")
+            ).where(literal(False))
         else:
-            model_condition = select(Probabilities.cluster).where(
+            model_condition = select(Probabilities.cluster.label("cluster")).where(
                 and_(
                     Probabilities.model == hash_to_hex_decode(model_hash),
                     Probabilities.probability >= model_threshold,
                 )
             )
 
-        # Combine into a single subquery of valid clusters using select().union()
-        valid_clusters = ancestors_condition.union(model_condition).scalar_subquery()
+        # Combine into a single subquery of valid clusters
+        all_clusters = union_all(ancestors_condition, model_condition).subquery()
 
-        return valid_clusters
+        return select(all_clusters.c.cluster).distinct().scalar_subquery()
 
 
 def _model_to_hashes(

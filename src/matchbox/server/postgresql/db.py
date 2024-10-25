@@ -53,7 +53,7 @@ class MatchboxDatabase:
                 f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
                 f"{self.settings.postgres.database}"
             )
-            self.engine = create_engine(connection_string, logging_name="mb_pg_db")
+            self.engine = create_engine(url=connection_string, logging_name="mb_pg_db")
             self.SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=self.engine
             )
