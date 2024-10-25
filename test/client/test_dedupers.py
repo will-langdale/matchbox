@@ -69,8 +69,8 @@ def test_dedupers(
         description=f"Testing dedupe of {fx_data.source} with {fx_deduper.name} method",
         model_class=fx_deduper.cls,
         model_settings=deduper_settings,
-        data=df_renamed if fx_deduper.rename_fields else df,
-        data_source=fx_data.source,
+        left_data=df_renamed if fx_deduper.rename_fields else df,
+        left_source=fx_data.source,
     )
 
     deduped = model.run()

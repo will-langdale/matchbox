@@ -91,7 +91,10 @@ class TestMatchboxBackend:
             return_type="pandas",
         )
 
-        self.backend.validate_hashes(hashes=df_crn.hash.to_list())
+        hashes = df_crn.hash.to_list()
+        assert len(hashes) > 0
+        self.backend.validate_hashes(hashes=hashes)
+
         with pytest.raises(MatchboxDataError):
             self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistant").digest()])
 

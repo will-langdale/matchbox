@@ -83,8 +83,8 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                     ),
                     model_class=fx_deduper.cls,
                     model_settings=deduper_settings,
-                    data_source=fx_data.source,
-                    data=df,
+                    left_data=df,
+                    left_source=fx_data.source,
                 )
 
                 probabilities = model.run()

@@ -37,13 +37,13 @@ class Model:
         self,
         metadata: ModelMetadata,
         model_instance: Linker | Deduper,
-        data: DataFrame,
+        left_data: DataFrame,
         right_data: DataFrame | None = None,
         backend: MatchboxDBAdapter | None = None,
     ):
         self.metadata = metadata
         self.model_instance = model_instance
-        self.data = data
+        self.left_data = left_data
         self.right_data = right_data
         self._backend = backend
         self._model: MatchboxModelAdapter | None = None
@@ -97,9 +97,11 @@ class Model:
             if self.right_data is None:
                 raise MatchboxModelError("Right dataset required for linking")
 
-            results = self.model_instance.link(left=self.data, right=self.right_data)
+            results = self.model_instance.link(
+                left=self.left_data, right=self.right_data
+            )
         else:
-            results = self.model_instance.dedupe(data=self.data)
+            results = self.model_instance.dedupe(data=self.left_data)
 
         return ProbabilityResults(
             dataframe=results,
@@ -117,8 +119,8 @@ def make_model(
     description: str,
     model_class: type[Linker] | type[Deduper],
     model_settings: dict[str, Any],
-    data: DataFrame,
-    data_source: str,
+    left_data: DataFrame,
+    left_source: str,
     right_data: DataFrame | None = None,
     right_source: str | None = None,
 ) -> Model:
@@ -149,22 +151,22 @@ def make_model(
     model_instance = model_class.from_settings(**model_settings)
 
     if model_type == ModelType.LINKER:
-        model_instance.prepare(left=data, right=right_data)
+        model_instance.prepare(left=left_data, right=right_data)
     else:
-        model_instance.prepare(data=data)
+        model_instance.prepare(data=left_data)
 
     metadata = ModelMetadata(
         name=model_name,
         description=description,
         type=model_type.value,
-        left_source=data_source,
+        left_source=left_source,
         right_source=right_source,
     )
 
     return Model(
         metadata=metadata,
         model_instance=model_instance,
-        data=data,
+        left_data=left_data,
         right_data=right_data,
         backend=backend,
     )
