@@ -340,7 +340,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     session.delete(model)
                     session.commit()
                 else:
-                    childen = model.all_descendants()
+                    childen = model.descendants
                     children_names = ", ".join([m.name for m in childen])
                     raise ValueError(
                         f"This operation will delete the models {children_names}, "

@@ -6,15 +6,11 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     ForeignKey,
-    func,
+    literal_column,
     select,
-    union,
-)
-from sqlalchemy import (
-    text as sqltext,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
-from sqlalchemy.orm import Session, column_property, relationship
+from sqlalchemy.orm import Session, relationship
 
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
@@ -55,7 +51,7 @@ class Models(CountMixin, MBDB.MatchboxBase):
     # Columns
     hash = Column(BYTEA, primary_key=True)
     type = Column(VARCHAR, nullable=False)
-    name = Column(VARCHAR, nullable=False)
+    name = Column(VARCHAR, nullable=False, unique=True)
     description = Column(VARCHAR)
     truth = Column(FLOAT)
     ancestors_cache = Column(JSONB, nullable=False, server_default="{}")
@@ -73,72 +69,85 @@ class Models(CountMixin, MBDB.MatchboxBase):
         backref="parents",
     )
 
-    # Ancestry
-    # Recursive CTE for descendants
-    descendants = column_property(
-        select(func.array_agg(sqltext("descendant")))
-        .select_from(
-            select(sqltext("child as descendant"))
-            .select_from(
-                union(
-                    select(ModelsFrom.child, ModelsFrom.child).where(
-                        ModelsFrom.parent == hash
-                    ),
-                    select(ModelsFrom.child, ModelsFrom.parent).where(
-                        ModelsFrom.parent.in_(
-                            select(ModelsFrom.child)
-                            .where(ModelsFrom.parent == hash)
-                            .scalar_subquery()
-                        )
-                    ),
-                ).cte(recursive=True)
+    @property
+    def ancestors(self) -> set["Models"]:
+        """
+        Returns all ancestors (parents, grandparents, etc.) of this model.
+        Uses recursive CTE to efficiently query the ancestry chain.
+        """
+        with Session(MBDB.get_engine()) as session:
+            # Create recursive CTE to find all ancestors
+            base_query = (
+                select(
+                    ModelsFrom.parent.label("ancestor"),
+                    ModelsFrom.child.label("descendant"),
+                    literal_column("1").label("depth"),
+                )
+                .select_from(ModelsFrom)
+                .where(ModelsFrom.child == self.hash)
             )
-            .subquery()
-        )
-        .scalar_subquery(),
-        deferred=True,
-    )
 
-    # Recursive CTE for ancestors
-    ancestors = column_property(
-        select(func.array_agg(sqltext("ancestor")))
-        .select_from(
-            select(sqltext("parent as ancestor"))
-            .select_from(
-                union(
-                    select(ModelsFrom.parent, ModelsFrom.parent).where(
-                        ModelsFrom.child == hash
-                    ),
-                    select(ModelsFrom.parent, ModelsFrom.child).where(
-                        ModelsFrom.child.in_(
-                            select(ModelsFrom.parent)
-                            .where(ModelsFrom.child == hash)
-                            .scalar_subquery()
-                        )
-                    ),
-                ).cte(recursive=True)
+            cte = base_query.cte(recursive=True)
+
+            # Add recursive term
+            parent_alias = ModelsFrom.__table__.alias()
+            recursive_term = (
+                select(parent_alias.c.parent, cte.c.descendant, cte.c.depth + 1)
+                .select_from(parent_alias)
+                .join(cte, parent_alias.c.child == cte.c.ancestor)
             )
-            .subquery()
-        )
-        .scalar_subquery(),
-        deferred=True,
-    )
+
+            # Combine base and recursive terms
+            cte = cte.union_all(recursive_term)
+
+            # Query all ancestor hashes
+            ancestor_query = (
+                select(Models)
+                .select_from(Models)
+                .where(Models.hash.in_(select(cte.c.ancestor).distinct()))
+            )
+
+            return set(session.execute(ancestor_query).scalars().all())
 
     @property
-    def all_descendants(self) -> list["Models"]:
-        """Get all descendants as Model objects"""
-        with MBDB.get_session() as session:
-            if self.descendants is None:
-                return []
-            return session.query(Models).filter(Models.hash.in_(self.descendants)).all()
+    def descendants(self) -> set["Models"]:
+        """
+        Returns all descendants (children, grandchildren, etc.) of this model.
+        Uses recursive CTE to efficiently query the descendant chain.
+        """
+        with Session(MBDB.get_engine()) as session:
+            # Create recursive CTE to find all descendants
+            base_query = (
+                select(
+                    ModelsFrom.parent.label("ancestor"),
+                    ModelsFrom.child.label("descendant"),
+                    literal_column("1").label("depth"),
+                )
+                .select_from(ModelsFrom)
+                .where(ModelsFrom.parent == self.hash)
+            )
 
-    @property
-    def all_ancestors(self) -> list["Models"]:
-        """Get all ancestors as Model objects"""
-        with MBDB.get_session() as session:
-            if self.ancestors is None:
-                return []
-            return session.query(Models).filter(Models.hash.in_(self.ancestors)).all()
+            cte = base_query.cte(recursive=True)
+
+            # Add recursive term
+            child_alias = ModelsFrom.__table__.alias()
+            recursive_term = (
+                select(cte.c.ancestor, child_alias.c.child, cte.c.depth + 1)
+                .select_from(child_alias)
+                .join(cte, child_alias.c.parent == cte.c.descendant)
+            )
+
+            # Combine base and recursive terms
+            cte = cte.union_all(recursive_term)
+
+            # Query all descendant hashes
+            descendant_query = (
+                select(Models)
+                .select_from(Models)
+                .where(Models.hash.in_(select(cte.c.descendant).distinct()))
+            )
+
+            return set(session.execute(descendant_query).scalars().all())
 
     # Constraints
     __table_args__ = (

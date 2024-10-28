@@ -11,5 +11,6 @@
             "source.fixAll": "explicit"
           }
     },
-    "python.testing.pytestPath": "${workspaceFolder}/.venv/bin/pytest"
+    "python.testing.pytestPath": "${workspaceFolder}/.venv/bin/pytest",
+    "python.analysis.typeCheckingMode": "off"
 }
