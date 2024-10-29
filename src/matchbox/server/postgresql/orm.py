@@ -2,14 +2,14 @@ from enum import Enum
 
 from sqlalchemy import (
     FLOAT,
+    INTEGER,
     VARCHAR,
     CheckConstraint,
     Column,
     ForeignKey,
-    literal_column,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.server.postgresql.db import MBDB
@@ -23,7 +23,7 @@ class ModelType(Enum):
 
 
 class ModelsFrom(CountMixin, MBDB.MatchboxBase):
-    """Model lineage table."""
+    """Model lineage closure table with cached truth values."""
 
     __tablename__ = "models_from"
 
@@ -34,9 +34,14 @@ class ModelsFrom(CountMixin, MBDB.MatchboxBase):
     child = Column(
         BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
     )
+    level = Column(INTEGER, nullable=False)
+    truth_cache = Column(FLOAT, nullable=True)
 
     # Constraints
-    __table_args__ = (CheckConstraint("parent != child", name="no_self_reference"),)
+    __table_args__ = (
+        CheckConstraint("parent != child", name="no_self_reference"),
+        CheckConstraint("level > 0", name="positive_level"),
+    )
 
 
 class Models(CountMixin, MBDB.MatchboxBase):
@@ -54,7 +59,6 @@ class Models(CountMixin, MBDB.MatchboxBase):
     name = Column(VARCHAR, nullable=False, unique=True)
     description = Column(VARCHAR)
     truth = Column(FLOAT)
-    ancestors_cache = Column(JSONB, nullable=False, server_default="{}")
 
     # Relationships
     source = relationship("Sources", back_populates="dataset_model", uselist=False)
@@ -69,96 +73,61 @@ class Models(CountMixin, MBDB.MatchboxBase):
         backref="parents",
     )
 
-    @property
-    def ancestors(self) -> set["Models"]:
-        """
-        Returns all ancestors (parents, grandparents, etc.) of this model.
-        Uses recursive CTE to efficiently query the ancestry chain.
-        """
-        with Session(MBDB.get_engine()) as session:
-            # Create recursive CTE to find all ancestors
-            base_query = (
-                select(
-                    ModelsFrom.parent.label("ancestor"),
-                    ModelsFrom.child.label("descendant"),
-                    literal_column("1").label("depth"),
-                )
-                .select_from(ModelsFrom)
-                .where(ModelsFrom.child == self.hash)
-            )
-
-            cte = base_query.cte(recursive=True)
-
-            # Add recursive term
-            parent_alias = ModelsFrom.__table__.alias()
-            recursive_term = (
-                select(parent_alias.c.parent, cte.c.descendant, cte.c.depth + 1)
-                .select_from(parent_alias)
-                .join(cte, parent_alias.c.child == cte.c.ancestor)
-            )
-
-            # Combine base and recursive terms
-            cte = cte.union_all(recursive_term)
-
-            # Query all ancestor hashes
-            ancestor_query = (
-                select(Models)
-                .select_from(Models)
-                .where(Models.hash.in_(select(cte.c.ancestor).distinct()))
-            )
-
-            return set(session.execute(ancestor_query).scalars().all())
-
-    @property
-    def descendants(self) -> set["Models"]:
-        """
-        Returns all descendants (children, grandchildren, etc.) of this model.
-        Uses recursive CTE to efficiently query the descendant chain.
-        """
-        with Session(MBDB.get_engine()) as session:
-            # Create recursive CTE to find all descendants
-            base_query = (
-                select(
-                    ModelsFrom.parent.label("ancestor"),
-                    ModelsFrom.child.label("descendant"),
-                    literal_column("1").label("depth"),
-                )
-                .select_from(ModelsFrom)
-                .where(ModelsFrom.parent == self.hash)
-            )
-
-            cte = base_query.cte(recursive=True)
-
-            # Add recursive term
-            child_alias = ModelsFrom.__table__.alias()
-            recursive_term = (
-                select(cte.c.ancestor, child_alias.c.child, cte.c.depth + 1)
-                .select_from(child_alias)
-                .join(cte, child_alias.c.parent == cte.c.descendant)
-            )
-
-            # Combine base and recursive terms
-            cte = cte.union_all(recursive_term)
-
-            # Query all descendant hashes
-            descendant_query = (
-                select(Models)
-                .select_from(Models)
-                .where(Models.hash.in_(select(cte.c.descendant).distinct()))
-            )
-
-            return set(session.execute(descendant_query).scalars().all())
-
     # Constraints
     __table_args__ = (
         CheckConstraint(
             "type IN ('model', 'dataset', 'human')",
             name="model_type_constraints",
         ),
-        CheckConstraint(
-            "NOT (ancestors_cache ?| ARRAY[hash::text])", name="no_self_ancestor"
-        ),
     )
+
+    @property
+    def ancestors(self) -> set["Models"]:
+        """Returns all ancestors (parents, grandparents, etc.) of this model."""
+        with Session(MBDB.get_engine()) as session:
+            ancestor_query = (
+                select(Models)
+                .select_from(Models)
+                .join(ModelsFrom, Models.hash == ModelsFrom.parent)
+                .where(ModelsFrom.child == self.hash)
+            )
+            return set(session.execute(ancestor_query).scalars().all())
+
+    @property
+    def descendants(self) -> set["Models"]:
+        """Returns all descendants (children, grandchildren, etc.) of this model."""
+        with Session(MBDB.get_engine()) as session:
+            descendant_query = (
+                select(Models)
+                .select_from(Models)
+                .join(ModelsFrom, Models.hash == ModelsFrom.child)
+                .where(ModelsFrom.parent == self.hash)
+            )
+            return set(session.execute(descendant_query).scalars().all())
+
+    def get_lineage_to_dataset(self, model: "Models") -> dict[bytes, float]:
+        """Returns a dictionary of models and caches truths to a dataset model."""
+        if model.type != ModelType.DATASET.value:
+            raise ValueError(
+                f"Target model must be of type 'dataset', got {model.type}"
+            )
+
+        with Session(MBDB.get_engine()) as session:
+            path_query = (
+                select(ModelsFrom.parent, ModelsFrom.truth_cache, Models.type)
+                .join(Models, Models.hash == ModelsFrom.parent)
+                .where(ModelsFrom.child == self.hash)
+                .where(ModelsFrom.parent == model.hash)
+            )
+
+            results = session.execute(path_query).all()
+
+            if not results:
+                raise ValueError(
+                    f"No path exists between model {self.name} and dataset {model.name}"
+                )
+
+            return {parent: truth for parent, truth, _ in results}
 
 
 class Sources(CountMixin, MBDB.MatchboxBase):

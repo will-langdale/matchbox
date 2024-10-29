@@ -36,15 +36,16 @@ erDiagram
     }
     Models {
         bytes hash PK,FK
-        type enum
+        enum type
         string name
         string description
         float truth
-        jsonb ancestors_cache
     }
     ModelsFrom {
         bytes parent PK,FK
         bytes child PK,FK
+        int level
+        float truth_cache
     }
 
     Sources |o--|| Models : ""

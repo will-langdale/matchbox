@@ -4,12 +4,15 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
 from sqlalchemy import Engine, and_, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.exceptions import MatchboxDatasetError, MatchboxModelError
-from matchbox.server.models import Source
+from matchbox.common.exceptions import (
+    MatchboxDatasetError,
+    MatchboxModelError,
+)
+from matchbox.server.models import Probability, Source
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
@@ -320,3 +323,97 @@ def query(
         )
     else:
         ValueError(f"return_type of {return_type} not valid")
+
+
+def get_model_probabilities(engine: Engine, model_hash: bytes) -> set[Probability]:
+    """
+    Get all original probabilities proposed by a model.
+
+    These are identified by:
+
+    * Exactly two children
+    * Both children are leaf nodes (not parents in Contains table)
+
+    Orders children consistently based on their origin (dataset or proposing model).
+
+    Args:
+        model_hash: Hash of the model to query
+
+    Returns:
+        Set of Probability objects
+    """
+    with Session(engine) as session:
+        Child = aliased(Clusters)
+        ChildProb = aliased(Probabilities)
+
+        # Subquery to find clusters that are parents in Contains
+        parent_clusters = (select(Contains.parent).distinct()).scalar_subquery()
+
+        # Main query
+        query = (
+            select(
+                Clusters.hash,
+                Child.hash.label("child_hash"),
+                Child.dataset.label("source_dataset"),
+                ChildProb.model.label("source_model"),
+                Probabilities.probability,
+            )
+            .join(
+                Probabilities,
+                and_(
+                    Probabilities.cluster == Clusters.hash,
+                    Probabilities.model == model_hash,
+                ),
+            )
+            # Join to get children
+            .join(Contains, Contains.parent == Clusters.hash)
+            .join(Child, Child.hash == Contains.child)
+            # Left join to get potential source model
+            .outerjoin(
+                ChildProb,
+                and_(ChildProb.cluster == Child.hash),
+            )
+            # Ensure children are leaf nodes
+            .where(~Child.hash.in_(parent_clusters))
+            # Only get clusters with exactly two children
+            .having(func.count(Contains.child) == 2)
+            .group_by(
+                Clusters.hash,
+                Child.hash,
+                Child.dataset,
+                ChildProb.model,
+                Probabilities.probability,
+            )
+        )
+
+        rows = session.execute(query).all()
+        probabilities: set[Probability] = set()
+
+        # Group by parent hash to pair children
+        grouped = {}
+        for row in rows:
+            if row.hash not in grouped:
+                grouped[row.hash] = []
+            source_hash = (
+                row.source_dataset
+                if row.source_dataset is not None
+                else row.source_model
+            )
+            grouped[row.hash].append((row.child_hash, source_hash))
+
+        for parent_hash, children in grouped.items():
+            if len(children) == 2:
+                raise ValueError("Expected exactly two children")
+
+            (left, _), (right, _) = sorted(children, key=lambda x: x[1])
+
+            probabilities.add(
+                Probability(
+                    hash=parent_hash,
+                    left=left,
+                    right=right,
+                    probability=rows[0].probability,  # Same for both rows
+                )
+            )
+
+        return probabilities

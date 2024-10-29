@@ -22,7 +22,10 @@ T = TypeVar("T")
 
 
 class Probability(BaseModel):
-    """A probability of a match in the Matchbox database."""
+    """A probability of a match in the Matchbox database.
+
+    A probability describes the likelihood of a match between two clusters.
+    """
 
     hash: bytes
     left: bytes
@@ -31,10 +34,15 @@ class Probability(BaseModel):
 
 
 class Cluster(BaseModel):
-    """A cluster of data in the Matchbox database."""
+    """A cluster of data in the Matchbox database.
+
+    A cluster describes a single entity resolved at the specified probability
+    threshold or higher.
+    """
 
     parent: bytes
-    child: bytes
+    children: set[bytes]
+    threshold: float = Field(default=None, ge=0, le=1)
 
 
 class SourceWarehouse(BaseModel):

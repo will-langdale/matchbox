@@ -1,16 +1,25 @@
 from enum import StrEnum
-from typing import Any
+from functools import wraps
+from typing import Any, Callable, ParamSpec, TypeVar
 
-from pandas import DataFrame
+import numpy as np
+from pandas import DataFrame, Series
 from pydantic import BaseModel
 
 from matchbox.common.exceptions import MatchboxModelError
-from matchbox.common.results import ProbabilityResults
+from matchbox.common.results import (
+    ClusterResults,
+    ProbabilityResults,
+    Results,
+    to_clusters,
+)
 from matchbox.models.dedupers.base import Deduper
 from matchbox.models.linkers.base import Linker
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import MatchboxModelAdapter
-from matchbox.server.models import Probability
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class ModelType(StrEnum):
@@ -28,6 +37,18 @@ class ModelMetadata(BaseModel):
     type: ModelType
     left_source: str
     right_source: str | None = None  # Only used for linker models
+
+
+def ensure_connection(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to ensure model connection before method execution."""
+
+    @wraps(func)
+    def wrapper(self: "Model", *args: P.args, **kwargs: P.kwargs) -> R:
+        if not self._model:
+            self._connect()
+        return func(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Model:
@@ -74,25 +95,98 @@ class Model:
         except Exception as e:
             raise MatchboxModelError from e
 
-    def insert_probabilities(self, probabilities: list[Probability]) -> None:
-        """Insert probabilities assocaited with the model into the backend database."""
-        if not self._model:
-            self._connect()
+    @property
+    @ensure_connection
+    def probabilities(self) -> ProbabilityResults:
+        """Retrieve probabilities associated with the model from the database."""
+        n = len(self._model.probabilities)
 
-        self._model.insert_probabilities(
-            probabilities=probabilities,
-            batch_size=self._backend.settings.batch_size,
+        left_arr = np.empty(n, dtype="object")
+        right_arr = np.empty(n, dtype="object")
+        prob_arr = np.empty(n, dtype="float64")
+
+        for i, prob in enumerate(self._model.probabilities):
+            left_arr[i] = prob.left
+            right_arr[i] = prob.right
+            prob_arr[i] = prob.probability
+
+        df = DataFrame(
+            {
+                "left_id": Series(left_arr, dtype="binary[pyarrow]"),
+                "right_id": Series(right_arr, dtype="binary[pyarrow]"),
+                "probability": Series(prob_arr, dtype="float64[pyarrow]"),
+            }
         )
+        return ProbabilityResults(dataframe=df, model=self)
 
-    def set_truth_threshold(self, probability: float) -> None:
+    @property
+    @ensure_connection
+    def clusters(self) -> ClusterResults:
+        """Retrieve clusters associated with the model from the database."""
+        total_rows = sum(len(cluster.children) for cluster in self._model.clusters)
+
+        parent_arr = np.empty(total_rows, dtype="object")
+        child_arr = np.empty(total_rows, dtype="object")
+        threshold_arr = np.empty(total_rows, dtype="float64")
+
+        idx = 0
+        for cluster in self._model.clusters:
+            n_children = len(cluster.children)
+            # Set parent, repeated for each child
+            parent_arr[idx : idx + n_children] = cluster.parent
+            # Set children
+            child_arr[idx : idx + n_children] = cluster.children
+            # Set threshold, repeated for each child)
+            threshold_arr[idx : idx + n_children] = cluster.threshold
+            idx += n_children
+
+        df = DataFrame(
+            {
+                "parent": Series(parent_arr, dtype="binary[pyarrow]"),
+                "child": Series(child_arr, dtype="binary[pyarrow]"),
+                "threshold": Series(threshold_arr, dtype="float64[pyarrow]"),
+            }
+        )
+        return ClusterResults(dataframe=df, model=self)
+
+    @clusters.setter
+    @ensure_connection
+    def clusters(self, clusters: ClusterResults) -> None:
+        """Insert clusters associated with the model into the backend database."""
+        self._model.clusters = clusters.to_records(backend=self._backend)
+
+    @property
+    @ensure_connection
+    def truth(self) -> float:
+        """Retrieve the truth threshold for the model."""
+        return self._model.truth
+
+    @truth.setter
+    @ensure_connection
+    def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        if not self._model:
-            self._connect()
+        self._model.truth = truth
 
-        self._model.set_truth_threshold(probability=probability)
+    @property
+    @ensure_connection
+    def ancestors(self) -> dict[str, float]:
+        """Retrieve the ancestors of the model."""
+        return self._model.ancestors
 
-    def run(self) -> ProbabilityResults:
-        """Execute the model and return results."""
+    @property
+    @ensure_connection
+    def ancestors_cache(self) -> dict[str, float]:
+        """Retrieve the ancestors cache of the model."""
+        return self._model.ancestors_cache
+
+    @ancestors_cache.setter
+    @ensure_connection
+    def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None:
+        """Set the ancestors cache of the model."""
+        self._model.ancestors_cache = ancestors_cache
+
+    def calculate_probabilities(self) -> ProbabilityResults:
+        """Calculate probabilities for the model."""
         if self.metadata.type == ModelType.LINKER:
             if self.right_data is None:
                 raise MatchboxModelError("Right dataset required for linking")
@@ -110,6 +204,17 @@ class Model:
             left=self.metadata.left_source,
             right=self.metadata.right_source or self.metadata.left_source,
         )
+
+    def calculate_clusters(self, probabilities: ProbabilityResults) -> ClusterResults:
+        """Calculate clusters for the model based on probabilities."""
+        return to_clusters(results=probabilities)
+
+    def run(self) -> Results:
+        """Execute the model pipeline and return results."""
+        probabilities = self.calculate_probabilities()
+        clusters = self.calculate_clusters(probabilities)
+
+        return Results(model=self, probabilities=probabilities, clusters=clusters)
 
 
 @inject_backend

@@ -1,4 +1,3 @@
-import json
 import logging
 
 from sqlalchemy import (
@@ -107,6 +106,16 @@ def insert_model(
 ) -> None:
     """Writes a model to Matchbox with a default truth value of 1.0.
 
+    Args:
+        model: Name of the new model
+        left: Name of the left parent model
+        description: Model description
+        engine: SQLAlchemy engine instance
+        right: Optional name of the right parent model
+
+    Raises:
+        MatchboxModelError if the specified parent models don't exist.
+
     Raises:
         MatchboxModelError if the specified model doesn't exist.
     """
@@ -125,16 +134,6 @@ def insert_model(
 
         model_hash = list_to_value_ordered_hash([left_model.hash, right_model.hash])
 
-        # Calculate ancestors dictionary
-        ancestors = {}
-        if left_model.ancestors_cache:
-            ancestors.update(json.loads(left_model.ancestors_cache))
-        if right_model.ancestors_cache:
-            ancestors.update(json.loads(right_model.ancestors_cache))
-
-        ancestors[left_model.hash.hex()] = left_model.truth
-        ancestors[right_model.hash.hex()] = right_model.truth
-
         # Create new model
         new_model = Models(
             hash=model_hash,
@@ -142,17 +141,42 @@ def insert_model(
             name=model,
             description=description,
             truth=1.0,
-            ancestors_cache=json.dumps(ancestors),
         )
         session.add(new_model)
+        session.flush()
+
+        def create_closure_entries(parent_model: Models) -> None:
+            """Create closure entries for the new model."""
+            session.add(
+                ModelsFrom(
+                    parent=parent_model.hash,
+                    child=model_hash,
+                    level=1,
+                    truth_cache=parent_model.truth,
+                )
+            )
+
+            ancestor_entries = (
+                session.query(ModelsFrom)
+                .filter(ModelsFrom.child == parent_model.hash)
+                .all()
+            )
+
+            for entry in ancestor_entries:
+                session.add(
+                    ModelsFrom(
+                        parent=entry.parent,
+                        child=model_hash,
+                        level=entry.level + 1,
+                        truth_cache=entry.truth_cache,
+                    )
+                )
 
         # Create model lineage entries
-        parent_link = ModelsFrom(parent=left_model.hash, child=model_hash)
-        session.add(parent_link)
+        create_closure_entries(left_model)
 
         if right_model != left_model:
-            right_link = ModelsFrom(parent=right_model.hash, child=model_hash)
-            session.add(right_link)
+            create_closure_entries(right_model)
 
         session.commit()
 

@@ -19,7 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine
 
-from matchbox.server.models import Probability, Source
+from matchbox.server.models import Cluster, Probability, Source
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
@@ -33,49 +33,6 @@ else:
 
 R = TypeVar("R")
 P = ParamSpec("P")
-
-
-class Countable(Protocol):
-    """A protocol for objects that can be counted."""
-
-    def count(self) -> int: ...
-
-
-class Listable(Protocol):
-    """A protocol for objects that can be listed."""
-
-    def list(self) -> list[str]: ...
-
-
-class ListableAndCountable(Countable, Listable):
-    """A protocol for objects that can be counted and listed."""
-
-    pass
-
-
-class MatchboxModelAdapter(ABC):
-    """An abstract base class for Matchbox model adapters."""
-
-    hash: bytes
-    name: str
-    clusters: Countable
-    probabilities: Countable
-
-    @abstractmethod
-    def insert_probabilities(
-        self, probabilities: list[Probability], batch_size: int
-    ) -> None: ...
-
-    @abstractmethod
-    def set_truth_threshold(self, probability: float) -> None: ...
-
-    @property
-    @abstractmethod
-    def ancestors(self) -> dict[str, float]: ...
-
-    @property
-    @abstractmethod
-    def ancestors_cache(self) -> dict[str, float]: ...
 
 
 class MatchboxBackends(StrEnum):
@@ -99,54 +56,6 @@ class MatchboxSettings(BaseSettings):
     datasets_config: Path
     batch_size: int = Field(default=250_000)
     backend_type: MatchboxBackends
-
-
-class MatchboxDBAdapter(ABC):
-    """An abstract base class for Matchbox database adapters."""
-
-    settings: "MatchboxSettings"
-
-    datasets: ListableAndCountable
-    models: Countable
-    data: Countable
-    clusters: Countable
-    creates: Countable
-    merges: Countable
-    proposes: Countable
-
-    @abstractmethod
-    def query(
-        self,
-        selector: dict[str, list[str]],
-        model: str | None = None,
-        threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "arrow", "polars"] | None = None,
-        limit: int = None,
-    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
-
-    @abstractmethod
-    def index(self, dataset: Source) -> None: ...
-
-    @abstractmethod
-    def validate_hashes(self, hashes: list[bytes]) -> bool: ...
-
-    @abstractmethod
-    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source: ...
-
-    @abstractmethod
-    def get_model_subgraph(self) -> PyDiGraph: ...
-
-    @abstractmethod
-    def get_model(self, model: str) -> MatchboxModelAdapter: ...
-
-    @abstractmethod
-    def delete_model(self, model: str, certain: bool) -> None: ...
-
-    @abstractmethod
-    def insert_model(self, model: str) -> None: ...
-
-    @abstractmethod
-    def clear(self, certain: bool) -> None: ...
 
 
 class BackendManager:
@@ -187,7 +96,7 @@ def get_backend_settings(backend_type: MatchboxBackends) -> type[MatchboxSetting
         raise ValueError(f"Unsupported backend type: {backend_type}")
 
 
-def get_backend_class(backend_type: MatchboxBackends) -> type[MatchboxDBAdapter]:
+def get_backend_class(backend_type: MatchboxBackends) -> type["MatchboxDBAdapter"]:
     """Get the appropriate backend class based on the backend type."""
     if backend_type == MatchboxBackends.POSTGRES:
         from matchbox.server.postgresql import MatchboxPostgres
@@ -240,3 +149,108 @@ def inject_backend(func: Callable[..., R]) -> Callable[..., R]:
             return cast(R, func(backend, *args, **kwargs))
 
     return cast(Callable[..., R], _inject_backend)
+
+
+class Countable(Protocol):
+    """A protocol for objects that can be counted."""
+
+    def count(self) -> int: ...
+
+
+class Listable(Protocol):
+    """A protocol for objects that can be listed."""
+
+    def list(self) -> list[str]: ...
+
+
+class ListableAndCountable(Countable, Listable):
+    """A protocol for objects that can be counted and listed."""
+
+    pass
+
+
+class MatchboxModelAdapter(ABC):
+    """An abstract base class for Matchbox model adapters."""
+
+    hash: bytes
+    name: str
+
+    @property
+    @abstractmethod
+    def probabilities(self) -> set[Probability]: ...
+
+    @property
+    @abstractmethod
+    def clusters(self) -> set[Cluster]: ...
+
+    @clusters.setter
+    @abstractmethod
+    def clusters(self, clusters: set[Cluster]) -> None: ...
+
+    @property
+    @abstractmethod
+    def truth(self) -> float: ...
+
+    @truth.setter
+    @abstractmethod
+    def truth(self, truth: float) -> None: ...
+
+    @property
+    @abstractmethod
+    def ancestors(self) -> dict[str, float]: ...
+
+    @property
+    @abstractmethod
+    def ancestors_cache(self) -> dict[str, float]: ...
+
+    @ancestors_cache.setter
+    @abstractmethod
+    def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None: ...
+
+
+class MatchboxDBAdapter(ABC):
+    """An abstract base class for Matchbox database adapters."""
+
+    settings: "MatchboxSettings"
+
+    datasets: ListableAndCountable
+    models: Countable
+    data: Countable
+    clusters: Countable
+    creates: Countable
+    merges: Countable
+    proposes: Countable
+
+    @abstractmethod
+    def query(
+        self,
+        selector: dict[str, list[str]],
+        model: str | None = None,
+        threshold: float | dict[str, float] | None = None,
+        return_type: Literal["pandas", "arrow", "polars"] | None = None,
+        limit: int = None,
+    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
+
+    @abstractmethod
+    def index(self, dataset: Source) -> None: ...
+
+    @abstractmethod
+    def validate_hashes(self, hashes: list[bytes]) -> bool: ...
+
+    @abstractmethod
+    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source: ...
+
+    @abstractmethod
+    def get_model_subgraph(self) -> PyDiGraph: ...
+
+    @abstractmethod
+    def get_model(self, model: str) -> MatchboxModelAdapter: ...
+
+    @abstractmethod
+    def delete_model(self, model: str, certain: bool) -> None: ...
+
+    @abstractmethod
+    def insert_model(self, model: str) -> None: ...
+
+    @abstractmethod
+    def clear(self, certain: bool) -> None: ...

@@ -11,16 +11,20 @@ from matchbox.common.exceptions import (
     MatchboxModelError,
 )
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
-from matchbox.server.models import Probability, Source, SourceWarehouse
+from matchbox.server.models import Cluster, Probability, Source, SourceWarehouse
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
-from matchbox.server.postgresql.orm import Clusters, Models, Probabilities, Sources
+from matchbox.server.postgresql.orm import (
+    Clusters,
+    Models,
+    Probabilities,
+    Sources,
+)
 from matchbox.server.postgresql.utils.db import get_model_subgraph
 from matchbox.server.postgresql.utils.insert import (
     insert_dataset,
     insert_model,
-    insert_probabilities,
 )
-from matchbox.server.postgresql.utils.query import query
+from matchbox.server.postgresql.utils.query import get_model_probabilities, query
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
@@ -30,6 +34,24 @@ else:
     PandasDataFrame = Any
     PolarsDataFrame = Any
     ArrowTable = Any
+
+
+# TODO: Implement cluster getter/setter
+# As part of this need to implement insert_clusters
+
+# TODO: Filtered classes will no longer work, rethink 'em
+
+# TODO: Redo ancestor cache attribute -- now works different in the ORM
+# Double check I updated this in insert_model, pretty sure I did
+
+# TODO: At last, can rewrite the query function to use the new structures
+#   1. For each dataset in the selector
+#       a. Get the model tree (now very easy)
+#       b. Resolve any threshold discrepancies
+#       c. Filter Clusters and Contains by the model tree and thresholds
+#       d. Recurse down the Clusters and Contains to get the ultimate hash per record
+#       e. Join this to the actual dataset
+#   2. Stack 'em and return
 
 
 class FilteredClusters(BaseModel):
@@ -76,10 +98,9 @@ class FilteredProbabilities(BaseModel):
 class MatchboxPostgresModel(MatchboxModelAdapter):
     """An adapter for Matchbox models in PostgreSQL."""
 
-    def __init__(self, model: Models):
+    def __init__(self, model: Models, backend: "MatchboxPostgres"):
         self.model: Models = model
-        self.clusters = FilteredProbabilities(over_truth=True, mb_model=model)
-        self.probabilities = FilteredProbabilities(mb_model=model)
+        self.backend: "MatchboxPostgres" = backend
 
     @property
     def hash(self) -> bytes:
@@ -89,23 +110,58 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     def name(self) -> str:
         return self.model.name
 
-    def insert_probabilities(
-        self, probabilities: list[Probability], batch_size: int
-    ) -> None:
-        """Inserts probabilities for this model."""
-        insert_probabilities(
-            model=self.name,
-            engine=MBDB.get_engine(),
-            probabilities=probabilities,
-            batch_size=batch_size,
-        )
+    @property
+    def probabilities(self) -> set[Probability]:
+        """Retrieve probabilities for this model."""
+        return get_model_probabilities(engine=MBDB.get_engine(), model=self.model.hash)
 
-    def set_truth_threshold(self, probability: float) -> None:
-        """Sets the truth threshold for this model, creating clusters."""
+    @property
+    def clusters(self) -> set[Cluster]:
+        """Retrieve clusters for this model."""
+        pass
+
+    @clusters.setter
+    def clusters(self, clusters: set[Cluster]) -> None:
+        """Insert clusters for this model, which will also insert probabilities."""
+        pass
+
+    @property
+    def truth(self) -> float:
+        """Gets the current truth threshold for this model."""
+        return self.model.truth
+
+    @truth.setter
+    def truth(self, truth: float) -> None:
+        """Sets the truth threshold for this model, changing the default clusters."""
         with Session(MBDB.get_engine()) as session:
-            self.model.truth = probability
+            self.model.truth = truth
             session.add(self.model)
             session.commit()
+
+    @property
+    def ancestors(self) -> dict[str, float]:
+        """
+        Gets the current truth values of all ancestors.
+        Returns a dict mapping model names to their current truth thresholds.
+
+        Unlike ancestors_cache which returns cached values, this property returns
+        the current truth values of all ancestor models.
+        """
+        with Session(MBDB.get_engine()) as session:
+            if not self.model.ancestors:
+                return {}
+
+            ancestor_models = (
+                session.query(Models)
+                .filter(Models.hash.in_(self.model.ancestors))
+                .all()
+            )
+
+            return {
+                model.name: float(model.truth)
+                for model in ancestor_models
+                if model.truth is not None
+            }
 
     @property
     def ancestors_cache(self) -> dict[str, float]:
@@ -156,31 +212,6 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
             self.model.ancestors_cache = current
             session.add(self.model)
             session.commit()
-
-    @property
-    def ancestors(self) -> dict[str, float]:
-        """
-        Gets the current truth values of all ancestors.
-        Returns a dict mapping model names to their current truth thresholds.
-
-        Unlike ancestors_cache which returns cached values, this property returns
-        the current truth values of all ancestor models.
-        """
-        with Session(MBDB.get_engine()) as session:
-            if not self.model.ancestors:
-                return {}
-
-            ancestor_models = (
-                session.query(Models)
-                .filter(Models.hash.in_(self.model.ancestors))
-                .all()
-            )
-
-            return {
-                model.name: float(model.truth)
-                for model in ancestor_models
-                if model.truth is not None
-            }
 
     @classmethod
     def get_model(cls, model_name: str) -> "MatchboxPostgresModel":

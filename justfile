@@ -14,5 +14,5 @@ format:
 
 # Run Python tests
 test:
-    docker compose up db -d --wait
+    docker compose up -d --wait
     uv run pytest
