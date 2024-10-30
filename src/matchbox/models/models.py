@@ -1,14 +1,13 @@
-from enum import StrEnum
 from functools import wraps
 from typing import Any, Callable, ParamSpec, TypeVar
 
-import numpy as np
-from pandas import DataFrame, Series
-from pydantic import BaseModel
+from pandas import DataFrame
 
 from matchbox.common.exceptions import MatchboxModelError
 from matchbox.common.results import (
     ClusterResults,
+    ModelMetadata,
+    ModelType,
     ProbabilityResults,
     Results,
     to_clusters,
@@ -20,23 +19,6 @@ from matchbox.server.base import MatchboxModelAdapter
 
 P = ParamSpec("P")
 R = TypeVar("R")
-
-
-class ModelType(StrEnum):
-    """Enumeration of supported model types."""
-
-    LINKER = "linker"
-    DEDUPER = "deduper"
-
-
-class ModelMetadata(BaseModel):
-    """Metadata for a model."""
-
-    name: str
-    description: str
-    type: ModelType
-    left_source: str
-    right_source: str | None = None  # Only used for linker models
 
 
 def ensure_connection(func: Callable[P, R]) -> Callable[P, R]:
@@ -99,61 +81,25 @@ class Model:
     @ensure_connection
     def probabilities(self) -> ProbabilityResults:
         """Retrieve probabilities associated with the model from the database."""
-        n = len(self._model.probabilities)
-
-        left_arr = np.empty(n, dtype="object")
-        right_arr = np.empty(n, dtype="object")
-        prob_arr = np.empty(n, dtype="float64")
-
-        for i, prob in enumerate(self._model.probabilities):
-            left_arr[i] = prob.left
-            right_arr[i] = prob.right
-            prob_arr[i] = prob.probability
-
-        df = DataFrame(
-            {
-                "left_id": Series(left_arr, dtype="binary[pyarrow]"),
-                "right_id": Series(right_arr, dtype="binary[pyarrow]"),
-                "probability": Series(prob_arr, dtype="float64[pyarrow]"),
-            }
-        )
-        return ProbabilityResults(dataframe=df, model=self)
+        return self._model.probabilities
 
     @property
     @ensure_connection
     def clusters(self) -> ClusterResults:
         """Retrieve clusters associated with the model from the database."""
-        total_rows = sum(len(cluster.children) for cluster in self._model.clusters)
+        return self._model.clusters
 
-        parent_arr = np.empty(total_rows, dtype="object")
-        child_arr = np.empty(total_rows, dtype="object")
-        threshold_arr = np.empty(total_rows, dtype="float64")
-
-        idx = 0
-        for cluster in self._model.clusters:
-            n_children = len(cluster.children)
-            # Set parent, repeated for each child
-            parent_arr[idx : idx + n_children] = cluster.parent
-            # Set children
-            child_arr[idx : idx + n_children] = cluster.children
-            # Set threshold, repeated for each child)
-            threshold_arr[idx : idx + n_children] = cluster.threshold
-            idx += n_children
-
-        df = DataFrame(
-            {
-                "parent": Series(parent_arr, dtype="binary[pyarrow]"),
-                "child": Series(child_arr, dtype="binary[pyarrow]"),
-                "threshold": Series(threshold_arr, dtype="float64[pyarrow]"),
-            }
-        )
-        return ClusterResults(dataframe=df, model=self)
-
-    @clusters.setter
+    @property
     @ensure_connection
-    def clusters(self, clusters: ClusterResults) -> None:
-        """Insert clusters associated with the model into the backend database."""
-        self._model.clusters = clusters.to_records(backend=self._backend)
+    def results(self) -> Results:
+        """Retrieve results associated with the model from the database."""
+        return self._model.results
+
+    @results.setter
+    @ensure_connection
+    def results(self, results: Results) -> None:
+        """Write results associated with the model to the database."""
+        self._model.results = results
 
     @property
     @ensure_connection
@@ -200,9 +146,7 @@ class Model:
         return ProbabilityResults(
             dataframe=results,
             model=self,
-            description=self.metadata.description,
-            left=self.metadata.left_source,
-            right=self.metadata.right_source or self.metadata.left_source,
+            metadata=self.metadata,
         )
 
     def calculate_clusters(self, probabilities: ProbabilityResults) -> ClusterResults:

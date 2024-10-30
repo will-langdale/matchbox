@@ -100,7 +100,7 @@ def data_to_batch(
 
 
 def batch_ingest(
-    records: list[tuple],
+    records: list[tuple[Any]],
     table: DeclarativeMeta,
     conn: Connection,
     batch_size: int,

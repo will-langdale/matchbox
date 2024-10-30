@@ -19,7 +19,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine
 
-from matchbox.server.models import Cluster, Probability, Source
+from matchbox.common.results import ClusterResults, ProbabilityResults, Results
+from matchbox.server.models import Source
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
@@ -170,22 +171,33 @@ class ListableAndCountable(Countable, Listable):
 
 
 class MatchboxModelAdapter(ABC):
-    """An abstract base class for Matchbox model adapters."""
+    """An abstract base class for Matchbox model adapters.
+
+    Must be able to recover probabilities and clusters from the database,
+    but ultimately doesn't care how they're stored.
+
+    Creates these with the pairwise probabilities and the connected components
+    of those pairs calculated at every threshold.
+    """
 
     hash: bytes
     name: str
 
     @property
     @abstractmethod
-    def probabilities(self) -> set[Probability]: ...
+    def probabilities(self) -> ProbabilityResults: ...
 
     @property
     @abstractmethod
-    def clusters(self) -> set[Cluster]: ...
+    def clusters(self) -> ClusterResults: ...
 
-    @clusters.setter
+    @property
     @abstractmethod
-    def clusters(self, clusters: set[Cluster]) -> None: ...
+    def results(self) -> Results: ...
+
+    @results.setter
+    @abstractmethod
+    def results(self, results: Results) -> None: ...
 
     @property
     @abstractmethod
