@@ -19,17 +19,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine
 
-from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.models import Source
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
     from polars import DataFrame as PolarsDataFrame
     from pyarrow import Table as ArrowTable
+
+    from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 else:
     PandasDataFrame = Any
     PolarsDataFrame = Any
     ArrowTable = Any
+    ClusterResults = Any
+    ProbabilityResults = Any
+    Results = Any
 
 
 R = TypeVar("R")

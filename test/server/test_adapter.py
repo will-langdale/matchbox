@@ -74,9 +74,9 @@ class TestMatchboxBackend:
         assert naive_crn.probabilities
         assert naive_crn.clusters
         assert naive_crn.results
-        assert naive_crn.truth
+        assert isinstance(naive_crn.truth, float)  # otherwise assert 0.0
         assert naive_crn.ancestors
-        assert naive_crn.ancestors_cache
+        assert isinstance(naive_crn.ancestors_cache, dict)  # otherwise assert {}
 
     def test_validate_hashes(self):
         """Test validating data hashes."""

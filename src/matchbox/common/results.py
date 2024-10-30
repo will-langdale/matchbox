@@ -53,7 +53,7 @@ class ResultsBaseDataclass(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     dataframe: DataFrame
-    model: Model | None
+    model: Model | None = None
     metadata: ModelMetadata
 
     _expected_fields: list[str]

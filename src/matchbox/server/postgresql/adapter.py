@@ -114,7 +114,12 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     @results.setter
     def results(self, results: Results) -> None:
         """Inserts results for this model."""
-        insert_results(results=results, model=self.model)
+        insert_results(
+            results=results,
+            model=self.model,
+            engine=MBDB.get_engine(),
+            batch_size=self.backend.settings.batch_size,
+        )
 
     @property
     def truth(self) -> float:
@@ -194,10 +199,12 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
             session.commit()
 
     @classmethod
-    def get_model(cls, model_name: str) -> "MatchboxPostgresModel":
+    def get_model(
+        cls, model_name: str, backend: "MatchboxPostgres"
+    ) -> "MatchboxPostgresModel":
         with Session(MBDB.get_engine()) as session:
             if model := session.query(Models).filter_by(name=model_name).first():
-                return cls(model)
+                return cls(model, backend=backend)
             else:
                 raise MatchboxModelError(model_name=model_name)
 
@@ -334,7 +341,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         with Session(MBDB.get_engine()) as session:
             if model := session.query(Models).filter_by(name=model).first():
-                return MatchboxPostgresModel(model)
+                return MatchboxPostgresModel(model=model, backend=self)
             else:
                 raise MatchboxModelError(model_name=model)
 

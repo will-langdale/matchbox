@@ -129,7 +129,7 @@ def test_linkers(
 
     # 4. Correct number of clusters are resolved and inserted correctly
 
-    model.set_truth_threshold(probability=0.0)
+    model.truth = 0.0
 
     l_r_selector = selectors(
         selector(

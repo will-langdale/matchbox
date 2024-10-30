@@ -41,7 +41,6 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         "hash": model_hash,
         "type": ModelType.DATASET.value,
         "name": f"{dataset.db_schema}.{dataset.db_table}",
-        "ancestors_cache": {},
     }
 
     source_data = {
@@ -63,7 +62,6 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
             set_={
                 "name": models_stmt.excluded.name,
                 "type": models_stmt.excluded.type,
-                "ancestors_cache": models_stmt.excluded.ancestors_cache,
             },
         )
         conn.execute(models_stmt)

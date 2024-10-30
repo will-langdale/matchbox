@@ -87,9 +87,9 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                     left_source=fx_data.source,
                 )
 
-                probabilities = model.run()
-                probabilities.to_matchbox(backend=backend)
-                model.set_truth_threshold(probability=0.0)
+                results = model.run()
+                results.to_matchbox(backend=backend)
+                model.truth = 0.0
 
     return _db_add_dedupe_models_and_data
 
@@ -157,9 +157,9 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                     right_source=fx_data.source_r,
                 )
 
-                probabilities = model.run()
-                probabilities.to_matchbox(backend=backend)
-                model.set_truth_threshold(probability=0.0)
+                results = model.run()
+                results.to_matchbox(backend=backend)
+                model.truth = 0.0
 
     return _db_add_link_models_and_data
 

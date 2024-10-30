@@ -2,8 +2,8 @@ from typing import NamedTuple
 
 import pandas as pd
 import pyarrow as pa
-from sqlalchemy import Engine, and_, exists, func, select
-from sqlalchemy import text as sqltext
+from sqlalchemy import Engine, and_, exists, func, literal, select
+from sqlalchemy.orm import Session
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.results import (
@@ -19,23 +19,24 @@ from matchbox.server.postgresql.orm import (
     ModelsFrom,
     Probabilities,
 )
+from matchbox.server.postgresql.utils.query import hash_to_hex_decode
 
 
 class SourceInfo(NamedTuple):
     """Information about a model's sources."""
 
-    left: Models
-    right: Models | None
+    left: bytes
+    right: bytes | None
     left_ancestors: set[bytes]
     right_ancestors: set[bytes] | None
 
 
-def _get_model_parents(engine: Engine, model: Models) -> tuple[Models, Models | None]:
+def _get_model_parents(engine: Engine, model_hash: bytes) -> tuple[bytes, bytes | None]:
     """Get the model's immediate parent models."""
     parent_query = (
-        select(Models)
+        select(Models.hash, Models.type)
         .join(ModelsFrom, Models.hash == ModelsFrom.parent)
-        .where(ModelsFrom.child == model.hash)
+        .where(ModelsFrom.child == model_hash)
         .where(ModelsFrom.level == 1)
     )
 
@@ -43,46 +44,52 @@ def _get_model_parents(engine: Engine, model: Models) -> tuple[Models, Models | 
         parents = conn.execute(parent_query).fetchall()
 
     if len(parents) == 1:
-        return parents[0], None
+        return parents[0][0], None
     elif len(parents) == 2:
         p1, p2 = parents
+        p1_hash, p1_type = p1
+        p2_hash, p2_type = p2
         # Put dataset first if it exists
-        if p1.type == "dataset":
-            return p1, p2
-        elif p2.type == "dataset":
-            return p2, p1
+        if p1_type == "dataset":
+            return p1_hash, p2_hash
+        elif p2_type == "dataset":
+            return p2_hash, p1_hash
         # Both models, maintain original order
-        return p1, p2
+        return p1_hash, p2_hash
     else:
-        raise ValueError(
-            f"Model {model.name} has unexpected number of parents: {len(parents)}"
-        )
+        raise ValueError(f"Model has unexpected number of parents: {len(parents)}")
 
 
-def _get_source_info(engine: Engine, model: Models) -> SourceInfo:
+def _get_source_info(engine: Engine, model_hash: bytes) -> SourceInfo:
     """Get source models and their ancestry information."""
-    left_source, right_source = _get_model_parents(engine, model)
+    left_hash, right_hash = _get_model_parents(engine=engine, model_hash=model_hash)
 
-    # Get ancestor sets including the sources themselves
-    left_ancestors = {m.hash for m in left_source.ancestors}
-    left_ancestors.add(left_source.hash)
+    with Session(engine) as session:
+        left = session.get(Models, left_hash)
+        right = session.get(Models, right_hash) if right_hash else None
 
-    right_ancestors = None
-    if right_source:
-        right_ancestors = {m.hash for m in right_source.ancestors}
-        right_ancestors.add(right_source.hash)
+        left_ancestors = {left_hash} | {hash for hash in left.ancestors}
+        if right:
+            right_ancestors = {right_hash} | {hash for hash in right.ancestors}
+        else:
+            right_ancestors = None
 
-    return SourceInfo(left_source, right_source, left_ancestors, right_ancestors)
+    return SourceInfo(
+        left=left_hash,
+        right=right_hash,
+        left_ancestors=left_ancestors,
+        right_ancestors=right_ancestors,
+    )
 
 
-def _get_leaf_pair_clusters(engine: Engine, model: Models) -> list[tuple]:
+def _get_leaf_pair_clusters(engine: Engine, model_hash: bytes) -> list[tuple]:
     """Get all clusters with exactly two leaf children."""
     # Subquery to identify leaf nodes
-    leaf_nodes = ~exists().where(Contains.parent == Clusters.hash)
+    leaf_nodes = ~exists().where(Contains.parent == Clusters.hash).correlate(Clusters)
 
     query = (
         select(
-            Clusters.hash.label("parent_hash"),
+            Contains.parent.label("parent_hash"),
             Probabilities.probability,
             func.array_agg(Clusters.hash).label("child_hashes"),
             func.array_agg(Clusters.dataset).label("child_datasets"),
@@ -91,14 +98,13 @@ def _get_leaf_pair_clusters(engine: Engine, model: Models) -> list[tuple]:
         .join(
             Probabilities,
             and_(
-                Probabilities.cluster == Clusters.hash,
-                Probabilities.model == model.hash,
+                Probabilities.cluster == Contains.parent,
+                Probabilities.model == model_hash,
             ),
         )
-        .join(Contains, Contains.parent == Clusters.hash)
-        .join(Clusters.children)
+        .join(Clusters, Clusters.hash == Contains.child)
         .where(leaf_nodes)
-        .group_by(Clusters.hash, Probabilities.probability)
+        .group_by(Contains.parent, Probabilities.probability)
         .having(func.count() == 2)
     )
 
@@ -148,17 +154,21 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
     Returns:
         A ProbabilityResults object containing pairwise probabilities and model metadata
     """
-    source_info: SourceInfo = _get_source_info(engine=engine, model=model)
+    source_info: SourceInfo = _get_source_info(engine=engine, model_hash=model.hash)
 
-    metadata = ModelMetadata(
-        name=model.name,
-        description=model.description or "",
-        type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
-        left_source=source_info.left.name,
-        right_source=source_info.right.name if source_info.right else None,
-    )
+    with Session(engine) as session:
+        left = session.get(Models, source_info.left)
+        right = session.get(Models, source_info.right) if source_info.right else None
 
-    results = _get_leaf_pair_clusters(engine=engine, model=model)
+        metadata = ModelMetadata(
+            name=model.name,
+            description=model.description or "",
+            type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
+            left_source=left.name,
+            right_source=right.name if source_info.right else None,
+        )
+
+    results = _get_leaf_pair_clusters(engine=engine, model_hash=model.hash)
 
     # Process results into pairs
     rows: dict[str, list] = {
@@ -218,15 +228,19 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
     Returns:
         A ClusterResults object containing connected components and model metadata
     """
-    # Get model metadata
-    source_info = _get_source_info(engine=engine, model=model)
-    metadata = ModelMetadata(
-        name=model.name,
-        description=model.description or "",
-        type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
-        left_source=source_info.left.name,
-        right_source=source_info.right.name if source_info.right else None,
-    )
+    source_info = _get_source_info(engine=engine, model_hash=model.hash)
+
+    with Session(engine) as session:
+        left = session.get(Models, source_info.left)
+        right = session.get(Models, source_info.right) if source_info.right else None
+
+        metadata = ModelMetadata(
+            name=model.name,
+            description=model.description or "",
+            type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
+            left_source=left.name,
+            right_source=right.name if source_info.right else None,
+        )
 
     # Subquery to identify leaf nodes (clusters with no children)
     leaf_nodes = ~exists().where(Contains.parent == Clusters.hash)
@@ -235,7 +249,7 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
     descendants = select(
         Contains.parent.label("component"),
         Contains.child.label("descendant"),
-        sqltext("1").label("depth"),
+        literal(1).label("depth"),
     ).cte(recursive=True)
 
     descendants_recursive = descendants.union_all(
@@ -257,11 +271,10 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
             Probabilities,
             and_(
                 Probabilities.cluster == Clusters.hash,
-                Probabilities.model == model.hash,
+                Probabilities.model == hash_to_hex_decode(model.hash),
             ),
         )
         .join(descendants_recursive, descendants_recursive.c.component == Clusters.hash)
-        .join(Clusters.children)
         .where(leaf_nodes)
         .order_by(Probabilities.probability.desc())
         .distinct()

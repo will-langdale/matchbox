@@ -98,7 +98,7 @@ def test_dedupers(
 
     # 4. Correct number of clusters are resolved and inserted correctly
 
-    model.set_truth_threshold(probability=0.0)
+    model.truth = 0.0
 
     clusters = query(
         selector=selector(
