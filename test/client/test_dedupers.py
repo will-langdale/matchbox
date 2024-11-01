@@ -73,10 +73,10 @@ def test_dedupers(
         left_source=fx_data.source,
     )
 
-    deduped = model.run()
+    results = model.run()
 
-    deduped_df = deduped.to_df()
-    deduped_df_with_source = deduped.inspect_with_source(
+    deduped_df = results.probabilities.to_df()
+    deduped_df_with_source = results.probabilities.inspect_with_source(
         left_data=df, left_key="hash", right_data=df, right_key="hash"
     )
 
@@ -89,14 +89,28 @@ def test_dedupers(
             deduped_df_with_source[field + "_y"]
         )
 
-    # 3. Deduplicated probabilities are inserted correctly
+    # 3. Correct number of clusters are resolved
 
-    deduped.to_matchbox(backend=matchbox_postgres)
+    clusters_dupes_df = results.clusters.to_df()
+    clusters_dupes_df_with_source = results.clusters.inspect_with_source(
+        left_data=df, left_key="hash", right_data=df, right_key="hash"
+    )
+
+    assert isinstance(clusters_dupes_df, DataFrame)
+    assert clusters_dupes_df.parent.nunique() == fx_data.tgt_clus_n
+
+    assert isinstance(clusters_dupes_df_with_source, DataFrame)
+    for field in fields:
+        assert clusters_dupes_df_with_source[field + "_x"].equals(
+            clusters_dupes_df_with_source[field + "_y"]
+        )
+
+    # 4. Probabilities and clusters are inserted correctly
+
+    results.to_matchbox(backend=matchbox_postgres)
 
     model = matchbox_postgres.get_model(model=deduper_name)
-    assert model.probabilities.count() == fx_data.tgt_prob_n
-
-    # 4. Correct number of clusters are resolved and inserted correctly
+    assert model.probabilities.dataframe.shape[0] == fx_data.tgt_prob_n
 
     model.truth = 0.0
 
@@ -112,7 +126,4 @@ def test_dedupers(
     )
 
     assert isinstance(clusters, DataFrame)
-    assert clusters.hash.nunique() == fx_data.tgt_clus_n
-
-    model = matchbox_postgres.get_model(model=deduper_name)
-    assert model.clusters.count() == fx_data.unique_n
+    assert clusters.hash.nunique() == fx_data.unique_n

@@ -153,7 +153,7 @@ class ProbabilityResults(ResultsBaseDataclass):
         df = self.dataframe.assign(
             left=self.model.metadata.left_source,
             right=self.model.metadata.right_source,
-            model=self.model.metadata.model_name,
+            model=self.metadata.name,
         ).convert_dtypes(dtype_backend="pyarrow")[
             ["model", "left", "left_id", "right", "right_id", "probability"]
         ]

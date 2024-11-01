@@ -97,7 +97,7 @@ dedupe_data_test_params = [
             "test_crn_company_name": "company_name",
             "test_crn_crn": "crn",
         },
-        # 1000 unique items repeated three times
+        # 1000 unique items repeated three times with minor perturbations
         unique_n=1000,
         curr_n=3000,
         # Unordered pairs of sets of three, so (3 choose 2) = 3, * 1000 = 3000
@@ -125,12 +125,14 @@ dedupe_data_test_params = [
             "test_cdms_crn": "crn",
             "test_cdms_cdms": "cdms",
         },
-        # 1000 unique items repeated two times
+        # 1000 unique items repeated two times, completely identical
         unique_n=1000,
         curr_n=2000,
-        # Unordered pairs of sets of two, so (2 choose 2) = 1, * 1000 = 1000
-        tgt_prob_n=1000,
-        tgt_clus_n=1000,
+        # Because the repeated items are identical, they generate the same hash
+        # This means they're actually unordered pairs of sets of one
+        # So (1 choose 2) = 0, * 1000 = 0
+        tgt_prob_n=0,
+        tgt_clus_n=0,
     ),
 ]
 
