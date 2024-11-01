@@ -137,6 +137,16 @@ def _determine_hash_order(
     return (0, 1) if has_left_prob else (1, 0)
 
 
+def _get_immediate_children(graph: rx.PyDiGraph, node_id: int) -> set[int]:
+    """Get immediate child node IDs of a given node in the graph."""
+    return {edge[1] for edge in graph.out_edges(node_id)}
+
+
+def _is_leaf(graph: rx.PyDiGraph, node_id: int) -> bool:
+    """Check if a node is a leaf (has no children)."""
+    return len(graph.out_edges(node_id)) == 0
+
+
 def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults:
     """
     Recover the model's ProbabilityResults.
@@ -167,48 +177,91 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
             right_source=right.name if source_info.right else None,
         )
 
-    results = _get_leaf_pair_clusters(engine=engine, model_hash=model.hash)
-
-    # Process results into pairs
-    rows: dict[str, list] = {
-        "hash": [],
-        "left_id": [],
-        "right_id": [],
-        "probability": [],
-    }
-    for parent_hash, prob, child_hashes, child_datasets, child_ids in results:
-        if metadata.type == ModelType.LINKER:
-            left_idx, right_idx = _determine_hash_order(
-                engine=engine,
-                hashes=child_hashes,
-                datasets=child_datasets,
-                left_source=source_info.left,
-                left_ancestors=source_info.left_ancestors,
+        # Get all clusters and their relationships for this model
+        hierarchy_query = (
+            select(Contains.parent, Contains.child, Probabilities.probability)
+            .join(
+                Probabilities,
+                and_(
+                    Probabilities.cluster == Contains.parent,
+                    Probabilities.model == model.hash,
+                ),
             )
-        else:
-            # For dedupers, order doesn't matter
-            left_idx, right_idx = 0, 1
+            .order_by(Probabilities.probability.desc())
+        )
 
-        rows["hash"].append(parent_hash)
-        rows["left_id"].append(child_ids[left_idx][0])
-        rows["right_id"].append(child_ids[right_idx][0])
-        rows["probability"].append(prob)
+        hierarchy = session.execute(hierarchy_query).fetchall()
 
-    return ProbabilityResults(
-        dataframe=pd.DataFrame(
-            {
-                "hash": pd.Series(rows["hash"], dtype=pd.ArrowDtype(pa.binary())),
-                "left_id": pd.Series(rows["left_id"], dtype=pd.ArrowDtype(pa.binary())),
-                "right_id": pd.Series(
-                    rows["right_id"], dtype=pd.ArrowDtype(pa.binary())
-                ),
-                "probability": pd.Series(
-                    rows["probability"], dtype=pd.ArrowDtype(pa.float32())
-                ),
-            }
-        ),
-        metadata=metadata,
+        # Get all leaf nodes
+        leaf_query = select(Clusters.hash).where(
+            ~Clusters.hash.in_(select(Contains.parent).distinct())
+        )
+        leaf_nodes = {row.hash for row in session.execute(leaf_query)}
+
+        # Get component probabilities
+        prob_query = (
+            select(Probabilities.cluster, Probabilities.probability)
+            .where(Probabilities.model == model.hash)
+            .order_by(Probabilities.probability.desc())
+        )
+        probabilities = dict(session.execute(prob_query).all())
+
+    # Build directed graph of the hierarchy
+    graph = rx.PyDiGraph()
+    nodes: dict[bytes, int] = {}  # node_hash -> node_id
+    reverse_nodes: dict[int, bytes] = {}  # node_id -> node_hash
+
+    def get_node_id(hash: bytes) -> int:
+        if hash not in nodes:
+            node_id = graph.add_node(hash)
+            nodes[hash] = node_id
+            reverse_nodes[node_id] = hash
+        return nodes[hash]
+
+    # Add all edges to graph
+    for parent, child, _ in hierarchy:
+        parent_id = get_node_id(parent)
+        child_id = get_node_id(child)
+        graph.add_edge(parent_id, child_id, None)
+
+    # Find original pairs
+    pairs: list[dict] = []
+    seen_pairs = set()  # To avoid duplicates
+
+    for node_id in range(len(nodes)):
+        children = _get_immediate_children(graph, node_id)
+
+        # Check if this node has exactly two leaf children
+        if len(children) == 2 and all(_is_leaf(graph, child) for child in children):
+            parent_hash = reverse_nodes[node_id]
+            child_hashes = [reverse_nodes[child] for child in children]
+
+            # Only process if both children are in leaf_nodes
+            if child_hashes[0] in leaf_nodes and child_hashes[1] in leaf_nodes:
+                child_hashes.sort()
+
+                pair_key = (parent_hash, child_hashes[0], child_hashes[1])
+                if pair_key not in seen_pairs:
+                    pairs.append(
+                        {
+                            "hash": parent_hash,
+                            "left_id": child_hashes[0],
+                            "right_id": child_hashes[1],
+                            "probability": probabilities[parent_hash],
+                        }
+                    )
+                    seen_pairs.add(pair_key)
+
+    df = pd.DataFrame(pairs).astype(
+        {
+            "hash": pd.ArrowDtype(pa.binary()),
+            "left_id": pd.ArrowDtype(pa.binary()),
+            "right_id": pd.ArrowDtype(pa.binary()),
+            "probability": pd.ArrowDtype(pa.float32()),
+        }
     )
+
+    return ProbabilityResults(dataframe=df, metadata=metadata)
 
 
 def _get_all_leaf_descendants(graph: rx.PyDiGraph, node_id: int) -> set[int]:
@@ -300,7 +353,6 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
             nodes[hash] = graph.add_node(hash)
         return nodes[hash]
 
-    # Add all edges to graph
     for parent, child, prob in hierarchy:
         parent_id = get_node_id(parent)
         child_id = get_node_id(child)

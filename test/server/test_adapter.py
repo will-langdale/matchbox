@@ -9,7 +9,12 @@ from matchbox.common.exceptions import (
     MatchboxModelError,
 )
 from matchbox.common.hash import HASH_FUNC
-from matchbox.common.results import ClusterResults, ProbabilityResults, Results
+from matchbox.common.results import (
+    ClusterResults,
+    ProbabilityResults,
+    Results,
+    to_clusters,
+)
 from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.models import Source
@@ -223,6 +228,16 @@ class TestMatchboxBackend:
         assert len(naive_crn.probabilities.dataframe) > 0
         assert naive_crn.probabilities.metadata.name == "naive_test.crn"
 
+        self.backend.validate_hashes(
+            hashes=naive_crn.probabilities.dataframe["hash"].to_list()
+        )
+        self.backend.validate_hashes(
+            hashes=naive_crn.probabilities.dataframe["left_id"].to_list()
+        )
+        self.backend.validate_hashes(
+            hashes=naive_crn.probabilities.dataframe["right_id"].to_list()
+        )
+
     def test_model_get_clusters(self):
         """Test that a model's ClusterResults can be retrieved."""
         self.setup_database("dedupe")
@@ -230,6 +245,13 @@ class TestMatchboxBackend:
         assert isinstance(naive_crn.clusters, ClusterResults)
         assert len(naive_crn.clusters.dataframe) > 0
         assert naive_crn.clusters.metadata.name == "naive_test.crn"
+
+        self.backend.validate_hashes(
+            hashes=naive_crn.clusters.dataframe["parent"].to_list()
+        )
+        self.backend.validate_hashes(
+            hashes=naive_crn.clusters.dataframe["child"].to_list()
+        )
 
     def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""
@@ -280,31 +302,38 @@ class TestMatchboxBackend:
         assert pre_results.clusters.metadata.name == "naive_test.crn"
 
         # Set
-        hash_to_remove = pre_results.probabilities.dataframe["hash"].iloc[0]
+        target_row = pre_results.probabilities.dataframe.iloc[0]
+        target_hash = target_row["hash"]
+        target_left_id = target_row["left_id"]
+        target_right_id = target_row["right_id"]
+
+        matches_hash_mask = pre_results.probabilities.dataframe["hash"] != target_hash
+        matches_left_mask = (
+            pre_results.probabilities.dataframe["left_id"] != target_left_id
+        )
+        matches_right_mask = (
+            pre_results.probabilities.dataframe["right_id"] != target_right_id
+        )
+
         df_probabilities_truncated = pre_results.probabilities.dataframe[
-            pre_results.probabilities.dataframe["hash"] != hash_to_remove
-        ]
-        df_clusters_truncated = pre_results.clusters.dataframe[
-            pre_results.clusters.dataframe["parent"] != hash_to_remove
-        ]
+            matches_hash_mask & matches_left_mask & matches_right_mask
+        ].copy()
+
+        probabilities_truncated = ProbabilityResults(
+            dataframe=df_probabilities_truncated,
+            model=pre_results.probabilities.model,
+            metadata=pre_results.probabilities.metadata,
+        )
 
         results = Results(
-            probabilities=ProbabilityResults(
-                dataframe=df_probabilities_truncated,
-                model=pre_results.probabilities.model,
-                metadata=pre_results.probabilities.metadata,
-            ),
-            clusters=ClusterResults(
-                dataframe=df_clusters_truncated,
-                model=pre_results.clusters.model,
-                metadata=pre_results.clusters.metadata,
-            ),
+            probabilities=probabilities_truncated,
+            clusters=to_clusters(results=probabilities_truncated),
         )
 
         naive_crn.results = results
 
         # Retrieve again
-        post_results = naive_crn.clusters
+        post_results = naive_crn.results
 
         # Check difference
         assert len(pre_results.probabilities.dataframe) != len(

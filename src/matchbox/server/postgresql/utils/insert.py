@@ -315,7 +315,7 @@ def insert_results(
         try:
             total_records = results.clusters.dataframe.shape[0]
             logic_logger.info(
-                f"[{model.name}] Inserting {total_records} probability objects"
+                f"[{model.name}] Inserting {total_records} results objects"
             )
 
             cluster_records: list[tuple[bytes, None, None]] = []
