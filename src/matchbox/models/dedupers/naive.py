@@ -44,6 +44,8 @@ class NaiveDeduper(Deduper):
         # rows where all data items are identical in the source
         df["_unique_e4003b"] = range(df.shape[0])
 
+        # We also need to suppress raw.left_id = raw.right_id in cases where
+        # we're deduplicating an unnested array of primary keys
         sql = f"""
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
@@ -60,7 +62,8 @@ class NaiveDeduper(Deduper):
                         {join_clause_compiled}
                     ) and
                         l._unique_e4003b != r._unique_e4003b
-            ) raw;
+            ) raw
+                where raw.left_id != raw.right_id;
         """
         df_arrow = duckdb.sql(sql).arrow()
         res = df_arrow.to_pandas(

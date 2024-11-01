@@ -105,12 +105,17 @@ class Models(CountMixin, MBDB.MatchboxBase):
             )
             return set(session.execute(descendant_query).scalars().all())
 
-    def get_lineage_to_dataset(self, model: "Models") -> dict[bytes, float]:
-        """Returns a dictionary of models and caches truths to a dataset model."""
+    def get_lineage_to_dataset(
+        self, model: "Models"
+    ) -> tuple[bytes, dict[bytes, float]]:
+        """Returns the model lineage and cached truth values to a dataset."""
         if model.type != ModelType.DATASET.value:
             raise ValueError(
                 f"Target model must be of type 'dataset', got {model.type}"
             )
+
+        if self.hash == model.hash:
+            return {}
 
         with Session(MBDB.get_engine()) as session:
             path_query = (
@@ -127,7 +132,13 @@ class Models(CountMixin, MBDB.MatchboxBase):
                     f"No path exists between model {self.name} and dataset {model.name}"
                 )
 
-            return {parent: truth for parent, truth, _ in results}
+            lineage = {
+                parent: truth for parent, truth, type in results if type != "dataset"
+            }
+
+            lineage[self.hash] = self.truth
+
+            return lineage
 
 
 class Sources(CountMixin, MBDB.MatchboxBase):

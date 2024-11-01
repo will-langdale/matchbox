@@ -1,5 +1,6 @@
 import logging
 
+import rustworkx as rx
 from sqlalchemy import (
     Engine,
     delete,
@@ -9,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from matchbox.common.hash import dataset_to_hashlist, list_to_value_ordered_hash
-from matchbox.common.results import ClusterResults, Results
+from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.models import Source
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -106,7 +107,8 @@ def insert_model(
     description: str,
     engine: Engine,
 ) -> None:
-    """Writes a model to Matchbox with a default truth value of 1.0.
+    """
+    Writes a model to Matchbox with a default truth value of 1.0.
 
     Args:
         model: Name of the new model
@@ -174,76 +176,92 @@ def insert_model(
     logic_logger.info(f"[{model}] Done!")
 
 
+def _find_ultimate_parents(subgraph: rx.PyDiGraph, child_nodes: set[int]) -> set[int]:
+    """Find ultimate parents of the child nodes in the subgraph."""
+    all_ancestors = set().union(
+        *(rx.ancestors(subgraph, child) for child in child_nodes)
+    )
+
+    return {node for node in all_ancestors if len(subgraph.in_edges(node)) == 0}
+
+
 def _cluster_results_to_hierarchical(
+    probabilities: ProbabilityResults,
     clusters: ClusterResults,
 ) -> list[tuple[bytes, bytes, float]]:
     """
-    Converts a Results object to a more efficient hierarchical structure for PostgreSQL.
-
-    * Two-item components are given a threshold of their original pairwise probability
-    * Larger components are stored in a hierarchical structure, where if their children
-        are a known component at a higher threshold, they reference that component
-
-    This allows all results to be recovered from the database, albeit inefficiently,
-    but allows simple and efficient querying of clusters at any threshold.
-
-    This function requires that:
-
-    * ClusterResults are sorted by threshold descending
-    * Two-item components thresholds are the original pairwise probabilities
+    Converts results to a hierarchical structure by building up from base components.
 
     Args:
-        components_df: DataFrame with parent, child, threshold from to_components()
-        original_df: Original DataFrame with left_id, right_id, probability
+        probabilities: Original pairwise probabilities containing base components
+        clusters: Connected components at each threshold
 
     Returns:
-        A tuple of (parent, child, threshold) ready for insertion
+        List of (parent, child, threshold) tuples representing the hierarchy
     """
-    parents = []
-    children = []
-    thresholds = []
+    # Create initial graph of base components
+    graph = rx.PyDiGraph()
+    nodes: dict[bytes, int] = {}  # node_name -> node_id
+    hierarchy: list[tuple[bytes, bytes, float]] = []
 
-    # hash -> (threshold, is_component)
-    component_info: dict[bytes, tuple[float, bool]] = {}
+    def get_node_id(name: bytes) -> int:
+        if name not in nodes:
+            nodes[name] = graph.add_node(name)
+        return nodes[name]
 
-    # Process components in descending threshold order
-    for threshold, group in clusters.dataframe.groupby("threshold", sort=True):
-        current_components = set()
+    # 1. Build base component graph from ProbabilityResults
+    prob_df = probabilities.dataframe
+    for _, row in prob_df.iterrows():
+        parent = row["hash"]
+        left_id = row["left_id"]
+        right_id = row["right_id"]
+        prob = float(row["probability"])
 
-        # Process all parents at this threshold at once
-        for parent, parent_children in group.groupby("parent")["child"]:
-            child_hashes = frozenset(parent_children)
+        parent_id = get_node_id(parent)
+        left_node = get_node_id(left_id)
+        right_node = get_node_id(right_id)
+        graph.add_edge(parent_id, left_node, prob)
+        graph.add_edge(parent_id, right_node, prob)
 
-            # Partition children into original and subcomponents
-            original = []
-            subcomponents = []
+        hierarchy.extend([(parent, left_id, prob), (parent, right_id, prob)])
 
-            for child in child_hashes:
-                if child in component_info:
-                    prev_threshold, is_comp = component_info[child]
-                    if prev_threshold >= threshold and is_comp:
-                        subcomponents.append(child)
-                        continue
-                original.append(child)
+    # 2. Process ClusterResults by threshold descending
+    thresholds = sorted(clusters.dataframe["threshold"].unique(), reverse=True)
 
-            parents.extend([parent] * len(original))
-            children.extend(original)
-            thresholds.extend([threshold] * len(original))
+    for threshold in thresholds:
+        group = clusters.dataframe[clusters.dataframe["threshold"] == threshold]
+        threshold = float(threshold)
 
-            parents.extend([parent] * len(subcomponents))
-            children.extend(subcomponents)
-            thresholds.extend([threshold] * len(subcomponents))
+        # Create subgraph of relevant nodes and edges at this threshold
+        graph_edge_indices = graph.edge_indices()
+        subgraph_edges = [
+            graph.get_edge_endpoints_by_index(graph_edge_indices[e])
+            for e in graph.filter_edges(lambda w, t=threshold: w >= t)
+        ]
+        subgraph = graph.edge_subgraph(subgraph_edges)
 
-            # Mark this parent as a component
-            component_info[parent] = (threshold, True)
-            current_components.add(parent)
+        # Process each component at this threshold
+        for parent, comp_group in group.groupby("parent"):
+            members = set(comp_group["child"])
+            if len(members) <= 2:
+                continue
 
-            # Mark original children as non-components at this threshold
-            for child in original:
-                if child not in component_info:
-                    component_info[child] = (threshold, False)
+            # Find ultimate parents of children using threshold
+            child_node_ids = {nodes[child] for child in members}
+            ultimate_parent_ids = _find_ultimate_parents(
+                subgraph=subgraph, child_nodes=child_node_ids
+            )
 
-    return list(zip(parents, children, thresholds, strict=True))
+            # Add component to graph
+            parent_id = get_node_id(parent)
+
+            # Add edges to ultimate parents
+            for up_id in ultimate_parent_ids:
+                up_name = graph.get_node_data(up_id)
+                graph.add_edge(parent_id, up_id, threshold)
+                hierarchy.append((parent, up_name, threshold))
+
+    return sorted(hierarchy, key=lambda x: (x[2], x[0], x[1]), reverse=True)
 
 
 def insert_results(
@@ -305,7 +323,7 @@ def insert_results(
             probability_records: list[tuple[bytes, bytes, float]] = []
 
             for parent, child, threshold in _cluster_results_to_hierarchical(
-                clusters=results.clusters
+                probabilities=results.probabilities, clusters=results.clusters
             ):
                 cluster_records.append((parent, None, None))
                 contains_records.append((parent, child))

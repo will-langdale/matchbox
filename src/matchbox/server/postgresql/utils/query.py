@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
-from sqlalchemy import Engine, and_, func, select
+from sqlalchemy import Engine, and_, cast, func, literal, null, select
+from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
@@ -17,7 +18,6 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
     Models,
-    ModelType,
     Probabilities,
     Sources,
 )
@@ -42,69 +42,118 @@ def key_to_sqlalchemy_label(key: str, source: Source) -> str:
     return f"{source.db_schema}_{source.db_table}_{key}"
 
 
-# TODO: At last, can rewrite the query function to use the new structures
-#   1. For each dataset in the selector
-#       a. Get the model tree (now very easy)
-#       b. Resolve any threshold discrepancies
-#       c. Filter Clusters and Contains by the model tree and thresholds
-#       d. Recurse down the Clusters and Contains to get the ultimate hash per record
-#       e. Join this to the actual dataset
-#   2. Stack 'em and return
-
-
-def _get_threshold_for_model(
+def _resolve_thresholds(
+    lineage_truths: dict[str, float],
     model: Models,
-    model_hash: bytes,
-    threshold: float | dict[str, float] | None = None,
-    ancestor_model: Models | None = None,
-) -> float:
-    """Helper function to determine the appropriate threshold for a model.
-
-    * If no threshold is specified, we use the model's truth value
-    * If threshold is a float, use it for the main model, annd ancestors_cache for
-        all ancestor models
-    # If threshold is a dict, look up the threshold by model name
+    threshold: float | dict[str, float] | None,
+    session: Session,
+) -> dict[bytes, float]:
+    """
+    Resolves final thresholds for each model in the lineage based on user input.
 
     Args:
-        model: The main model object we're building thresholds for
-        model_hash: Hash of the current model being processed
-        threshold: The threshold parameter passed to the main function
-        ancestor_model: If processing an ancestor, this is the ancestor model object
+        lineage_truths: Dict from get_lineage_to_dataset with model hash -> cached truth
+        model: The target model being used for clustering
+        threshold: User-supplied threshold value or dict
+        session: SQLAlchemy session
 
     Returns:
-        float: The threshold value to use for this model
+        Dict mapping model hash to their final threshold values
     """
-    if threshold is None:
-        return (
-            model.truth
-            if model_hash == model.hash
-            else model.ancestors_cache.get(ancestor_model.hash.hex())
+    resolved_thresholds = {}
+
+    for model_hash, default_truth in lineage_truths.items():
+        if threshold is None:
+            resolved_thresholds[model_hash] = default_truth
+        elif isinstance(threshold, float):
+            resolved_thresholds[model_hash] = (
+                threshold if model_hash == model.hash.hex() else default_truth
+            )
+        elif isinstance(threshold, dict):
+            model_obj = (
+                session.query(Models)
+                .filter(Models.hash == bytes.fromhex(model_hash))
+                .first()
+            )
+            resolved_thresholds[model_hash] = threshold.get(
+                model_obj.name, default_truth
+            )
+        else:
+            raise ValueError(f"Invalid threshold type: {type(threshold)}")
+
+    return resolved_thresholds
+
+
+def _get_valid_clusters_for_model(model_hash: bytes, threshold: float) -> Select:
+    """Get clusters that meet the threshold for a specific model."""
+    return select(Probabilities.cluster.label("cluster")).where(
+        and_(
+            Probabilities.model == hash_to_hex_decode(model_hash),
+            Probabilities.probability >= threshold,
         )
-
-    if isinstance(threshold, float):
-        return (
-            threshold
-            if model_hash == model.hash
-            else model.ancestors_cache.get(ancestor_model.hash.hex())
-        )
-
-    if isinstance(threshold, dict):
-        target_model = ancestor_model or model
-        return threshold.get(target_model.name, target_model.truth)
-
-    raise ValueError(f"Invalid threshold type: {type(threshold)}")
+    )
 
 
-def _get_lineage_clusters(
-    model_lineage: list[bytes],
+def _intersect_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
+    """Creates a CTE of clusters that are valid across all models in the lineage.
+
+    Each model may have a different threshold.
+    """
+    valid_clusters = None
+
+    for model_hash, threshold in lineage_thresholds.items():
+        model_valid = _get_valid_clusters_for_model(model_hash, threshold)
+
+        if valid_clusters is None:
+            valid_clusters = model_valid
+        else:
+            valid_clusters = valid_clusters.intersect(model_valid)
+
+    if valid_clusters is None:
+        # Handle empty lineage case
+        return select(cast(null(), BYTEA).label("cluster")).where(False)
+
+    return valid_clusters.cte("valid_clusters")
+
+
+def _resolve_cluster_hierarchy(
     dataset_hash: bytes,
+    model: Models,
     engine: Engine,
     threshold: float | dict[str, float] | None = None,
 ) -> Select:
-    """Get the final cluster hash for each leaf node after traversing the lineage."""
+    """
+    Resolves the final cluster assignments for all records in a dataset.
+
+    Args:
+        dataset_hash: Hash of the dataset to query
+        model: Model object representing the point of truth
+        engine: Engine for database connection
+        threshold: Optional threshold value or dict of model_name -> threshold
+
+    Returns:
+        SQLAlchemy Select statement that will resolve to (hash, id) pairs, where
+        hash is the ultimate parent cluster hash and id is the original record ID
+    """
     with Session(engine) as session:
-        # Start with base mapping of IDs to their original clusters
-        mapping = (
+        dataset_model = session.get(Models, dataset_hash)
+        try:
+            lineage_truths = model.get_lineage_to_dataset(model=dataset_model)
+        except ValueError as e:
+            raise MatchboxModelError(f"Invalid model lineage: {str(e)}") from e
+
+        thresholds = _resolve_thresholds(
+            lineage_truths=lineage_truths,
+            model=model,
+            threshold=threshold,
+            session=session,
+        )
+
+        # Get clusters valid across all models in lineage
+        valid_clusters = _intersect_valid_clusters(thresholds)
+
+        # Get base mapping of IDs to clusters
+        mapping_0 = (
             select(
                 Clusters.hash.label("cluster_hash"),
                 func.unnest(Clusters.id).label("id"),
@@ -118,111 +167,67 @@ def _get_lineage_clusters(
             .cte("mapping_0")
         )
 
-        # Process from oldest to newest
-        for i, model_hash in enumerate(model_lineage, 1):
-            model = (
-                session.query(Models)
-                .filter(Models.hash == hash_to_hex_decode(model_hash))
-                .first()
+        # Build recursive hierarchy CTE
+        hierarchy = (
+            # Base case: direct parents
+            select(
+                mapping_0.c.cluster_hash.label("original_cluster"),
+                mapping_0.c.cluster_hash.label("child"),
+                Contains.parent.label("parent"),
+                literal(1).label("level"),
             )
-
-            if model.type == ModelType.DATASET.value:
-                continue
-
-            threshold_value = _get_threshold_for_model(
-                model=model,
-                model_hash=model_hash,
-                threshold=threshold,
-            )
-
-            # Get valid merges for this model
-            valid_merges = (
-                select(
-                    Contains.child.label("old_hash"),
-                    Probabilities.cluster.label("new_hash"),
-                )
-                .join(
-                    Contains,
-                    and_(
-                        Contains.parent == Probabilities.cluster,
-                        Probabilities.model == hash_to_hex_decode(model_hash),
-                        Probabilities.probability >= threshold_value,
-                    ),
-                )
-                .cte(f"valid_merges_{i}")
-            )
-
-            # Update mapping with valid merges
-            mapping = (
-                select(
-                    func.coalesce(
-                        valid_merges.c.new_hash, mapping.c.cluster_hash
-                    ).label("cluster_hash"),
-                    mapping.c.id,
-                )
-                .select_from(mapping)
-                .join(
-                    valid_merges,
-                    valid_merges.c.old_hash == mapping.c.cluster_hash,
-                    isouter=True,
-                )
-                .cte(f"mapping_{i}")
-            )
-
-        # Final select of the mapping
-        return select(mapping.c.cluster_hash.label("hash"), mapping.c.id)
-
-
-def _model_to_hashes(
-    dataset_hash: bytes,
-    model_hash: bytes,
-    engine: Engine,
-    threshold: float | dict[str, float] | None = None,
-) -> Select:
-    """Takes a dataset model hash and model hash and returns all valid leaf clusters.
-
-    * For dataset models, returns all clusters directly
-    * For other models
-        * Uses the probability filter to get valid clusters
-        * Recursively traverses the Contains graph to get all leaf clusters
-
-    Args:
-        dataset_hash: The hash of the dataset model
-        model_hash: The hash of the model to check
-        engine: SQLAlchemy engine to use
-        threshold: Threshold value to use for the model and its ancestors
-    """
-    with Session(engine) as session:
-        model = (
-            session.query(Models)
-            .filter(Models.hash == hash_to_hex_decode(model_hash))
-            .first()
+            .select_from(mapping_0)
+            .join(Contains, Contains.child == mapping_0.c.cluster_hash)
+            .where(Contains.parent.in_(select(valid_clusters.c.cluster)))
+            .cte("hierarchy", recursive=True)
         )
-        if not model:
-            raise MatchboxModelError()
 
-        if model.type == ModelType.DATASET.value:
-            return (
-                select(
-                    Clusters.hash.label("hash"),
-                    func.unnest(Clusters.id).label("id"),
-                )
-                .distinct()
-                .where(
-                    and_(
-                        Clusters.dataset == hash_to_hex_decode(dataset_hash),
-                        Clusters.dataset.isnot(None),
-                        Clusters.id.isnot(None),
-                    )
-                )
+        # Recursive case
+        recursive = (
+            select(
+                hierarchy.c.original_cluster,
+                hierarchy.c.parent.label("child"),
+                Contains.parent.label("parent"),
+                (hierarchy.c.level + 1).label("level"),
             )
+            .select_from(hierarchy)
+            .join(Contains, Contains.child == hierarchy.c.parent)
+            .where(Contains.parent.in_(select(valid_clusters.c.cluster)))
+        )
 
-    return _get_lineage_clusters(
-        model_lineage=[ancestor.hash for ancestor in model.ancestors] + [model.hash],
-        dataset_hash=dataset_hash,
-        engine=engine,
-        threshold=threshold,
-    )
+        hierarchy = hierarchy.union_all(recursive)
+
+        # Get highest parents
+        highest_parents = (
+            select(
+                hierarchy.c.original_cluster,
+                hierarchy.c.parent.label("highest_parent"),
+                hierarchy.c.level,
+            )
+            .distinct(hierarchy.c.original_cluster)
+            .order_by(hierarchy.c.original_cluster, hierarchy.c.level.desc())
+            .cte("highest_parents")
+        )
+
+        # Final mapping with coalesced results
+        final_mapping = (
+            select(
+                mapping_0.c.id,
+                func.coalesce(
+                    highest_parents.c.highest_parent, mapping_0.c.cluster_hash
+                ).label("final_parent"),
+            )
+            .select_from(mapping_0)
+            .join(
+                highest_parents,
+                highest_parents.c.original_cluster == mapping_0.c.cluster_hash,
+                isouter=True,
+            )
+            .cte("final_mapping")
+        )
+
+        # Final select statement
+        return select(final_mapping.c.final_parent.label("hash"), final_mapping.c.id)
 
 
 def query(
@@ -251,9 +256,7 @@ def query(
 
     Returns:
         A table containing the requested data from each table, unioned together,
-        with the hash key of each row in Matchbox, in the requested return type.
-        If a model was given, also contains the hash cluster of each data --
-        the entity the data belongs to according to the model.
+        with the hash key of each row in Matchbox, in the requested return type
     """
     tables: list[pa.Table] = []
 
@@ -261,67 +264,72 @@ def query(
         limit_base = limit // len(selector)
         limit_remainder = limit % len(selector)
 
-    for source, fields in selector.items():
-        with Session(engine) as session:
-            # Get dataset
-            get_dataset_model_stmt = (
-                select(Models)
+    with Session(engine) as session:
+        # If a model was specified, validate and retrieve it
+        truth_model = None
+        if model is not None:
+            truth_model = session.query(Models).filter(Models.name == model).first()
+            if truth_model is None:
+                raise MatchboxModelError(f"Model {model} not found")
+
+        # Process each source dataset
+        for source, fields in selector.items():
+            # Get the dataset model
+            dataset = (
+                session.query(Models)
                 .join(Sources, Sources.model == Models.hash)
-                .where(
+                .filter(
                     Sources.schema == source.db_schema,
                     Sources.table == source.db_table,
                     Sources.id == source.db_pk,
                 )
+                .first()
             )
-            dataset = session.execute(get_dataset_model_stmt).scalar_one_or_none()
+
             if dataset is None:
                 raise MatchboxDatasetError(
                     db_schema=source.db_schema, db_table=source.db_table
                 )
 
-            if model is not None:
-                model_hash = (
-                    session.query(Models.hash).filter(Models.name == model).scalar()
-                )
-                if model_hash is None:
-                    raise MatchboxModelError(model_name=model)
-            else:
-                model_hash = dataset.hash
-
-            hash_query = _model_to_hashes(
+            hash_query = _resolve_cluster_hierarchy(
                 dataset_hash=dataset.hash,
-                model_hash=model_hash,
+                model=truth_model if truth_model else dataset,
                 threshold=threshold,
                 engine=engine,
             )
 
-        if limit:
-            remain = 0
-            if limit_remainder:
-                remain = 1
-                limit_remainder -= 1
-            hash_query = hash_query.limit(limit_base + remain)
+            # Apply limit if specified
+            if limit:
+                remain = 1 if limit_remainder > 0 else 0
+                if remain:
+                    limit_remainder -= 1
+                hash_query = hash_query.limit(limit_base + remain)
 
-        mb_hashes = sql_to_df(hash_query, engine, return_type="arrow")
+            # Get cluster assignments
+            mb_hashes = sql_to_df(hash_query, engine, return_type="arrow")
 
-        raw_data = source.to_arrow(
-            fields=set([source.db_pk] + fields), pks=mb_hashes["id"].to_pylist()
-        )
+            # Get source data
+            raw_data = source.to_arrow(
+                fields=set([source.db_pk] + fields), pks=mb_hashes["id"].to_pylist()
+            )
 
-        joined_table = raw_data.join(
-            right_table=mb_hashes,
-            keys=key_to_sqlalchemy_label(key=source.db_pk, source=source),
-            right_keys="id",
-            join_type="inner",
-        )
+            # Join and select columns
+            joined_table = raw_data.join(
+                right_table=mb_hashes,
+                keys=key_to_sqlalchemy_label(source.db_pk, source),
+                right_keys="id",
+                join_type="inner",
+            )
 
-        keep_cols = ["hash"] + [key_to_sqlalchemy_label(f, source) for f in fields]
-        match_cols = [col for col in joined_table.column_names if col in keep_cols]
+            keep_cols = ["hash"] + [key_to_sqlalchemy_label(f, source) for f in fields]
+            match_cols = [col for col in joined_table.column_names if col in keep_cols]
 
-        tables.append(joined_table.select(match_cols))
+            tables.append(joined_table.select(match_cols))
 
+    # Combine results
     result = pa.concat_tables(tables, promote_options="default")
 
+    # Return in requested format
     if return_type == "arrow":
         return result
     elif return_type == "pandas":
@@ -332,4 +340,4 @@ def query(
             types_mapper=ArrowDtype,
         )
     else:
-        ValueError(f"return_type of {return_type} not valid")
+        raise ValueError(f"return_type of {return_type} not valid")

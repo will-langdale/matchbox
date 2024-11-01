@@ -115,7 +115,7 @@ def batch_ingest(
     isolated_table = Table(
         table.__table__.name,
         isolated_metadata,
-        *[c.copy() for c in table.__table__.columns],
+        *[c._copy() for c in table.__table__.columns],
         schema=table.__table__.schema,
     )
 

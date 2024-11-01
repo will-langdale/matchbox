@@ -274,27 +274,34 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
     added: dict[bytes, int] = {}
     components: dict[str, list] = {"parent": [], "child": [], "threshold": []}
 
-    # Sort probabilities descending and process in order of decreasing probability
-    edges = (
+    # Sort probabilities descending and group by probability
+    edges_df = (
         results.dataframe.sort_values("probability", ascending=False)
         .filter(["left_id", "right_id", "probability"])
         .astype({"left_id": "binary[pyarrow]", "right_id": "binary[pyarrow]"})
-        .itertuples(index=False, name=None)
     )
 
-    for left, right, prob in edges:
-        # Add nodes if not seen before
-        for hash_val in (left, right):
-            if hash_val not in added:
-                idx = G.add_node(hash_val)
-                added[hash_val] = idx
-
-        # Get state, add edge, get new state, add anything new to results
+    # Process edges grouped by probability threshold
+    for prob, group in edges_df.groupby("probability"):
+        # Get state before adding this batch of edges
         old_components = {frozenset(comp) for comp in rx.connected_components(G)}
-        G.add_edge(added[left], added[right], None)
-        new_components = {frozenset(comp) for comp in rx.connected_components(G)}
 
-        for comp in new_components - old_components:
+        # Add all nodes and edges at this probability threshold
+        for left, right in group[["left_id", "right_id"]].itertuples(
+            index=False, name=None
+        ):
+            for hash_val in (left, right):
+                if hash_val not in added:
+                    idx = G.add_node(hash_val)
+                    added[hash_val] = idx
+
+            G.add_edge(added[left], added[right], None)
+
+        new_components = {frozenset(comp) for comp in rx.connected_components(G)}
+        changed_components = new_components - old_components
+
+        # For each changed component, add ALL members at current threshold
+        for comp in changed_components:
             children = sorted([G.get_node_data(n) for n in comp])
             parent = list_to_value_ordered_hash(children)
 
