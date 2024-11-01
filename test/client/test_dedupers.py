@@ -1,6 +1,5 @@
 import pytest
 from matchbox import make_model, query
-from matchbox.helpers import selector
 from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
@@ -41,7 +40,10 @@ def test_dedupers(
 
     db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
-    df: DataFrame = request.getfixturevalue(fx_data.fixture)
+    select: dict[Source, list[str]]
+    df: DataFrame
+
+    select, df = request.getfixturevalue(fx_data.fixture)
 
     fields = list(fx_data.fields.keys())
 
@@ -115,11 +117,7 @@ def test_dedupers(
     model.truth = 0.0
 
     clusters = query(
-        selector=selector(
-            table=fx_data.source,
-            fields=list(fx_data.fields.values()),
-            engine=warehouse.engine,
-        ),
+        selector=select,
         backend=matchbox_postgres,
         return_type="pandas",
         model=deduper_name,

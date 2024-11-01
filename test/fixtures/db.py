@@ -71,7 +71,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
 
         for fx_data in dedupe_data:
             for fx_deduper in dedupe_models:
-                df = request.getfixturevalue(fx_data.fixture)
+                _, df = request.getfixturevalue(fx_data.fixture)
 
                 deduper_name = f"{fx_deduper.name}_{fx_data.source}"
                 deduper_settings = fx_deduper.build_settings(fx_data)
@@ -137,8 +137,8 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
 
         for fx_data in link_data:
             for fx_linker in link_models:
-                df_l = request.getfixturevalue(fx_data.fixture_l)
-                df_r = request.getfixturevalue(fx_data.fixture_r)
+                _, df_l = request.getfixturevalue(fx_data.fixture_l)
+                _, df_r = request.getfixturevalue(fx_data.fixture_r)
 
                 linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
                 linker_settings = fx_linker.build_settings(fx_data)

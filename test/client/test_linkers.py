@@ -1,6 +1,6 @@
 import pytest
 from matchbox import make_model, query
-from matchbox.helpers import selector, selectors
+from matchbox.helpers import selectors
 from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
@@ -51,8 +51,13 @@ def test_linkers(
         request=request,
     )
 
-    df_l: DataFrame = request.getfixturevalue(fx_data.fixture_l)
-    df_r: DataFrame = request.getfixturevalue(fx_data.fixture_r)
+    select_l: dict[Source, list[str]]
+    select_r: dict[Source, list[str]]
+    df_l: DataFrame
+    df_r: DataFrame
+
+    select_l, df_l = request.getfixturevalue(fx_data.fixture_l)
+    select_r, df_r = request.getfixturevalue(fx_data.fixture_r)
 
     fields_l = list(fx_data.fields_l.keys())
     fields_r = list(fx_data.fields_r.keys())
@@ -102,11 +107,10 @@ def test_linkers(
         right_source=fx_data.source_r,
     )
 
-    linked = model.run()
+    results = model.run()
 
-    linked_df = linked.to_df()
-
-    linked_df_with_source = linked.inspect_with_source(
+    linked_df = results.probabilities.to_df()
+    linked_df_with_source = results.probabilities.inspect_with_source(
         left_data=df_l,
         left_key="hash",
         right_data=df_r,
@@ -120,29 +124,60 @@ def test_linkers(
     for field_l, field_r in zip(fields_l, fields_r, strict=True):
         assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
 
-    # 3. Linked probabilities are inserted correctly
+    # 3. Correct number of clusters are resolved
 
-    linked.to_matchbox(backend=matchbox_postgres)
+    clusters_links_df = results.clusters.to_df()
+    clusters_links_df_with_source = results.clusters.inspect_with_source(
+        left_data=df_l,
+        left_key="hash",
+        right_data=df_r,
+        right_key="hash",
+    )
+
+    assert isinstance(clusters_links_df, DataFrame)
+    assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
+
+    assert isinstance(clusters_links_df_with_source, DataFrame)
+    for field_l, field_r in zip(fields_l, fields_r, strict=True):
+        # When we enrich the ClusterResults in a deduplication job, every child
+        # hash will match something in the source data, because we're only using
+        # one dataset. NaNs are therefore impossible.
+        # When we enrich the ClusterResults in a link job, some child hashes
+        # will match something in the left data, and others in the right data.
+        # NaNs are therefore guaranteed.
+        # We therefore coalesce by parent to unique joined values, which
+        # we can expect to equal the target cluster number, and have matching
+        # rows of data
+        def unique_non_null(s):
+            return s.dropna().unique()
+
+        cluster_vals = (
+            clusters_links_df_with_source.filter(["parent", field_l, field_r])
+            .groupby("parent")
+            .agg(
+                {
+                    field_l: unique_non_null,
+                    field_r: unique_non_null,
+                }
+            )
+            .explode(column=[field_l, field_r])
+            .reset_index()
+        )
+
+        assert cluster_vals[field_l].equals(cluster_vals[field_r])
+        assert cluster_vals.parent.nunique() == fx_data.tgt_clus_n
+        assert cluster_vals.shape[0] == fx_data.tgt_clus_n
+
+    # 4. Probabilities and clusters are inserted correctly
+
+    results.to_matchbox(backend=matchbox_postgres)
 
     model = matchbox_postgres.get_model(model=linker_name)
-    assert model.probabilities.count() == fx_data.tgt_prob_n
-
-    # 4. Correct number of clusters are resolved and inserted correctly
+    assert model.probabilities.dataframe.shape[0] == fx_data.tgt_prob_n
 
     model.truth = 0.0
 
-    l_r_selector = selectors(
-        selector(
-            table=fx_data.source_l,
-            fields=list(fx_data.fields_l.values()),
-            engine=warehouse.engine,
-        ),
-        selector(
-            table=fx_data.source_r,
-            fields=list(fx_data.fields_r.values()),
-            engine=warehouse.engine,
-        ),
-    )
+    l_r_selector = selectors(select_l, select_r)
 
     clusters = query(
         selector=l_r_selector,
@@ -152,8 +187,4 @@ def test_linkers(
     )
 
     assert isinstance(clusters, DataFrame)
-    assert clusters.hash.nunique() == fx_data.tgt_clus_n
-
-    model = matchbox_postgres.get_model(model=linker_name)
-
-    assert model.clusters.count() == fx_data.unique_n
+    assert clusters.hash.nunique() == fx_data.unique_n

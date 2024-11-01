@@ -19,6 +19,7 @@ from matchbox.server.postgresql.orm import (
     ModelsFrom,
     Probabilities,
 )
+from matchbox.server.postgresql.utils.query import hash_to_hex_decode
 
 
 class SourceInfo(NamedTuple):
@@ -67,9 +68,9 @@ def _get_source_info(engine: Engine, model_hash: bytes) -> SourceInfo:
         left = session.get(Models, left_hash)
         right = session.get(Models, right_hash) if right_hash else None
 
-        left_ancestors = {left_hash} | {hash for hash in left.ancestors}
+        left_ancestors = {left_hash} | {m.hash for m in left.ancestors}
         if right:
-            right_ancestors = {right_hash} | {hash for hash in right.ancestors}
+            right_ancestors = {right_hash} | {m.hash for m in right.ancestors}
         else:
             right_ancestors = None
 
@@ -180,7 +181,7 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
         # First get all clusters this model assigned probabilities to
         model_clusters = (
             select(Probabilities.cluster)
-            .where(Probabilities.model == model.hash)
+            .where(Probabilities.model == hash_to_hex_decode(model.hash))
             .cte("model_clusters")
         )
 
@@ -199,7 +200,7 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
                 Probabilities,
                 and_(
                     Probabilities.cluster == Contains.parent,
-                    Probabilities.model == model.hash,
+                    Probabilities.model == hash_to_hex_decode(model.hash),
                 ),
             )
             .where(~Contains.child.in_(select(model_parents)))
@@ -235,7 +236,7 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
                 Probabilities,
                 and_(
                     Probabilities.cluster == Contains.parent,
-                    Probabilities.model == model.hash,
+                    Probabilities.model == hash_to_hex_decode(model.hash),
                 ),
             )
             .group_by(Contains.parent)

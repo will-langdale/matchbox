@@ -116,7 +116,8 @@ def cdms_companies(all_companies: DataFrame) -> DataFrame:
 @pytest.fixture(scope="function")
 def query_clean_crn(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> DataFrame:
+) -> tuple[dict[Source, list[str]], DataFrame]:
+    """Fixture for CRN data, and the selector used to get it."""
     # Select
     crn_wh = warehouse_data[0]
     select_crn = selector(
@@ -140,13 +141,14 @@ def query_clean_crn(
 
     crn_cleaned = process(data=crn, pipeline=cleaner_crn)
 
-    return crn_cleaned
+    return select_crn, crn_cleaned
 
 
 @pytest.fixture(scope="function")
 def query_clean_duns(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> DataFrame:
+) -> tuple[dict[Source, list[str]], DataFrame]:
+    """Fixture for DUNS data, and the selector used to get it."""
     # Select
     duns_wh = warehouse_data[1]
     select_duns = selector(
@@ -170,13 +172,14 @@ def query_clean_duns(
 
     duns_cleaned = process(data=duns, pipeline=cleaner_duns)
 
-    return duns_cleaned
+    return select_duns, duns_cleaned
 
 
 @pytest.fixture(scope="function")
 def query_clean_cdms(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> DataFrame:
+) -> tuple[dict[Source, list[str]], DataFrame]:
+    """Fixture for CDMS data, and the selector used to get it."""
     # Select
     cdms_wh = warehouse_data[2]
     select_cdms = selector(
@@ -192,13 +195,14 @@ def query_clean_cdms(
     )
 
     # No cleaning needed, see original data
-    return cdms
+    return select_cdms, cdms
 
 
 @pytest.fixture(scope="function")
 def query_clean_crn_deduped(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> DataFrame:
+) -> tuple[dict[Source, list[str]], DataFrame]:
+    """Fixture for cleaned, deduped CRN data, and the selector used to get it."""
     # Select
     crn_wh = warehouse_data[0]
     select_crn = selector(
@@ -222,13 +226,14 @@ def query_clean_crn_deduped(
 
     crn_cleaned = process(data=crn, pipeline=cleaner_crn)
 
-    return crn_cleaned
+    return select_crn, crn_cleaned
 
 
 @pytest.fixture(scope="function")
 def query_clean_duns_deduped(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> DataFrame:
+) -> tuple[dict[Source, list[str]], DataFrame]:
+    """Fixture for cleaned, deduped DUNS data, and the selector used to get it."""
     # Select
     duns_wh = warehouse_data[1]
     select_duns = selector(
@@ -252,13 +257,14 @@ def query_clean_duns_deduped(
 
     duns_cleaned = process(data=duns, pipeline=cleaner_duns)
 
-    return duns_cleaned
+    return select_duns, duns_cleaned
 
 
 @pytest.fixture(scope="function")
 def query_clean_cdms_deduped(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> DataFrame:
+) -> tuple[dict[Source, list[str]], DataFrame]:
+    """Fixture for cleaned, deduped CDMS data, and the selector used to get it."""
     # Select
     cdms_wh = warehouse_data[2]
     select_cdms = selector(
@@ -274,4 +280,4 @@ def query_clean_cdms_deduped(
     )
 
     # No cleaning needed, see original data
-    return cdms
+    return select_cdms, cdms
