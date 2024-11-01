@@ -1,8 +1,8 @@
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from rustworkx import PyDiGraph
-from sqlalchemy import Engine, and_, bindparam, func, select
+from sqlalchemy import Engine, and_, bindparam, func, or_, select
 from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import (
@@ -63,8 +63,6 @@ class FilteredClusters(BaseModel):
 class FilteredProbabilities(BaseModel):
     """Wrapper class for filtered probability queries"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     over_truth: bool = False
 
     def count(self) -> int:
@@ -81,6 +79,31 @@ class FilteredProbabilities(BaseModel):
             return query.scalar()
 
 
+class FilteredModels(BaseModel):
+    """Wrapper class for filtered model queries"""
+
+    datasets: bool = False
+    humans: bool = False
+    models: bool = False
+
+    def count(self) -> int:
+        with MBDB.get_session() as session:
+            query = session.query(func.count()).select_from(Models)
+
+            filter_list = []
+            if self.datasets:
+                filter_list.append(Models.type == "dataset")
+            if self.humans:
+                filter_list.append(Models.type == "human")
+            if self.models:
+                filter_list.append(Models.type == "model")
+
+            if filter_list:
+                query = query.filter(or_(*filter_list))
+
+            return query.scalar()
+
+
 class MatchboxPostgresModel(MatchboxModelAdapter):
     """An adapter for Matchbox models in PostgreSQL."""
 
@@ -90,11 +113,15 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def hash(self) -> bytes:
-        return self.model.hash
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return self.model.hash
 
     @property
     def name(self) -> str:
-        return self.model.name
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return self.model.name
 
     @property
     def probabilities(self) -> ProbabilityResults:
@@ -124,7 +151,9 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     @property
     def truth(self) -> float:
         """Gets the current truth threshold for this model."""
-        return self.model.truth
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return self.model.truth
 
     @truth.setter
     def truth(self, truth: float) -> None:
@@ -143,7 +172,9 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         Unlike ancestors_cache which returns cached values, this property returns
         the current truth values of all ancestor models.
         """
-        return {model.name: model.truth for model in self.model.ancestors}
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return {model.name: model.truth for model in self.model.ancestors}
 
     @property
     def ancestors_cache(self) -> dict[str, float]:
@@ -218,7 +249,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         MBDB.create_database()
 
         self.datasets = Sources
-        self.models = Models
+        self.models = FilteredModels(datasets=False, humans=False, models=True)
         self.data = FilteredClusters(has_dataset=True)
         self.clusters = FilteredClusters(has_dataset=False)
         self.merges = Contains
@@ -279,7 +310,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         Args:
             hashes: A list of hashes to validate.
-            hash_type: The type of hash to validate.
 
         Raises:
             MatchboxDataError: If some items don't exist in the target table.
@@ -299,10 +329,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .all()
             )
 
-        if len(data_inner_join) != len(hashes):
+        existing_hashes = {item.hash for item in data_inner_join}
+        missing_hashes = set(hashes) - existing_hashes
+
+        if missing_hashes:
             raise MatchboxDataError(
-                message=("Some items don't exist in Clusters table"),
+                message="Some items don't exist in Clusters table.",
                 table=Clusters.__tablename__,
+                data=missing_hashes,
             )
 
     def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
@@ -367,7 +401,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                         "probabilities. \n\n"
                         "If you're sure you want to continue, rerun with certain=True"
                     )
-            raise MatchboxModelError(model_name=model)
+            else:
+                raise MatchboxModelError(model_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None

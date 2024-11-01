@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 
 class MatchboxConnectionError(Exception):
@@ -48,7 +48,7 @@ class MatchboxDataError(Exception):
         self,
         message: str = None,
         table: str = None,
-        data: Optional[Any] = None,
+        data: Any | None = None,
     ):
         if message is None:
             message = "Data doesn't exist in Matchbox."

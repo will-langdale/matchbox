@@ -11,10 +11,11 @@ from matchbox.common.exceptions import (
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.helpers.selector import query, selector, selectors
-from matchbox.server.base import MatchboxModelAdapter
+from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.models import Source
 from pandas import DataFrame
 
+from ..fixtures.db import SetupDatabaseCallable
 from ..fixtures.models import (
     dedupe_data_test_params,
     link_data_test_params,
@@ -47,11 +48,11 @@ class TestMatchboxBackend:
         setup_database: Callable,
         warehouse_data: list[Source],
     ):
-        self.backend = backend_instance
-        self.setup_database = lambda level: setup_database(
+        self.backend: MatchboxDBAdapter = backend_instance
+        self.setup_database: SetupDatabaseCallable = lambda level: setup_database(
             self.backend, warehouse_data, level
         )
-        self.warehouse_data = warehouse_data
+        self.warehouse_data: list[Source] = warehouse_data
 
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""
@@ -74,9 +75,9 @@ class TestMatchboxBackend:
         assert naive_crn.probabilities
         assert naive_crn.clusters
         assert naive_crn.results
-        assert isinstance(naive_crn.truth, float)  # otherwise assert 0.0
+        assert isinstance(naive_crn.truth, float)  # otherwise we assert 0.0
         assert naive_crn.ancestors
-        assert isinstance(naive_crn.ancestors_cache, dict)  # otherwise assert {}
+        assert isinstance(naive_crn.ancestors_cache, dict)  # otherwise we assert {}
 
     def test_validate_hashes(self):
         """Test validating data hashes."""

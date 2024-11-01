@@ -164,13 +164,20 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
     return _db_add_link_models_and_data
 
 
+SetupDatabaseCallable = Callable[
+    [MatchboxDBAdapter, list[Source], Literal["index", "dedupe", "link"]], None
+]
+
+
 @pytest.fixture(scope="function")
-def setup_database(request: pytest.FixtureRequest):
+def setup_database(
+    request: pytest.FixtureRequest,
+) -> SetupDatabaseCallable:
     def _setup_database(
         backend: MatchboxDBAdapter,
         warehouse_data: list[Source],
         setup_level: Literal["index", "dedupe", "link"],
-    ):
+    ) -> None:
         db_add_indexed_data = request.getfixturevalue("db_add_indexed_data")
         db_add_dedupe_models_and_data = request.getfixturevalue(
             "db_add_dedupe_models_and_data"
