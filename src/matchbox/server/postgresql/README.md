@@ -6,11 +6,10 @@ Currently implements the following architecture. See Confluence for [further det
 
 `Models.type` is one of "model", "dataset" or "human".
 
-We employ the following check constraints in Models:
+There are two graph-like trees in place here.
 
-* When type is "model", hash MUST NOT appear in Sources and MUST appear in ModelsFrom
-* When type is "dataset", hash MUST appear in Sources and MUST appear in ModelsFrom
-* When type is "human", hash MUST NOT appear in Sources and MUST NOT appear in ModelsFrom
+* In the models subgraph the tree is implemented as closure table, enabling quick querying of root to leaf paths at the cost of redundancy
+* In the data subgraph the tree is implemented as a hierarchy, which means recursive queries are required to resolve it, but less data is stored
 
 ```mermaid
 erDiagram
