@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
-from sqlalchemy import Engine, and_, cast, func, literal, null, select
+from sqlalchemy import Engine, and_, cast, func, literal, null, select, union
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
@@ -94,8 +94,8 @@ def _get_valid_clusters_for_model(model_hash: bytes, threshold: float) -> Select
     )
 
 
-def _intersect_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
-    """Creates a CTE of clusters that are valid across all models in the lineage.
+def _union_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
+    """Creates a CTE of clusters that are valid for any model in the lineage.
 
     Each model may have a different threshold.
     """
@@ -107,7 +107,7 @@ def _intersect_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
         if valid_clusters is None:
             valid_clusters = model_valid
         else:
-            valid_clusters = valid_clusters.intersect(model_valid)
+            valid_clusters = union(valid_clusters, model_valid)
 
     if valid_clusters is None:
         # Handle empty lineage case
@@ -150,7 +150,7 @@ def _resolve_cluster_hierarchy(
         )
 
         # Get clusters valid across all models in lineage
-        valid_clusters = _intersect_valid_clusters(thresholds)
+        valid_clusters = _union_valid_clusters(thresholds)
 
         # Get base mapping of IDs to clusters
         mapping_0 = (
