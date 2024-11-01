@@ -1,9 +1,8 @@
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import pandas as pd
+from pydantic import BaseModel
 from rustworkx import PyDiGraph
-from sqlalchemy import Engine, bindparam, func, select
-from sqlalchemy.engine.result import ChunkedIteratorResult
+from sqlalchemy import Engine, and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import (
@@ -11,138 +10,232 @@ from matchbox.common.exceptions import (
     MatchboxDatasetError,
     MatchboxModelError,
 )
+from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
-from matchbox.server.models import Cluster, Probability, Source, SourceWarehouse
-from matchbox.server.postgresql.clusters import Clusters, Creates
-from matchbox.server.postgresql.data import SourceData, SourceDataset
+from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
-from matchbox.server.postgresql.dedupe import DDupeProbabilities, Dedupes
-from matchbox.server.postgresql.link import LinkProbabilities, Links
-from matchbox.server.postgresql.models import Models
-from matchbox.server.postgresql.utils.db import get_model_subgraph
-from matchbox.server.postgresql.utils.delete import delete_model
-from matchbox.server.postgresql.utils.hash import table_name_to_uuid
-from matchbox.server.postgresql.utils.index import index_dataset
-from matchbox.server.postgresql.utils.insert import (
-    insert_clusters,
-    insert_deduper,
-    insert_linker,
-    insert_probabilities,
+from matchbox.server.postgresql.orm import (
+    Clusters,
+    Contains,
+    Models,
+    ModelsFrom,
+    Probabilities,
+    Sources,
 )
-from matchbox.server.postgresql.utils.selector import query
+from matchbox.server.postgresql.utils.db import get_model_subgraph
+from matchbox.server.postgresql.utils.insert import (
+    insert_dataset,
+    insert_model,
+    insert_results,
+)
+from matchbox.server.postgresql.utils.query import query
+from matchbox.server.postgresql.utils.results import (
+    get_model_clusters,
+    get_model_probabilities,
+)
+
+if TYPE_CHECKING:
+    from pandas import DataFrame as PandasDataFrame
+    from polars import DataFrame as PolarsDataFrame
+    from pyarrow import Table as ArrowTable
+else:
+    PandasDataFrame = Any
+    PolarsDataFrame = Any
+    ArrowTable = Any
 
 
-class MergesUnion:
-    """A thin wrapper around Dedupes and Links to provide a count method."""
+class FilteredClusters(BaseModel):
+    """Wrapper class for filtered cluster queries"""
+
+    has_dataset: bool | None = None
 
     def count(self) -> int:
-        return Dedupes.count() + Links.count()
+        with MBDB.get_session() as session:
+            query = session.query(func.count()).select_from(Clusters)
+            if self.has_dataset is not None:
+                if self.has_dataset:
+                    query = query.filter(Clusters.dataset.isnot(None))
+                else:
+                    query = query.filter(Clusters.dataset.is_(None))
+            return query.scalar()
 
 
-class ProposesUnion:
-    """A thin wrapper around probability classes to provide a count method."""
+class FilteredProbabilities(BaseModel):
+    """Wrapper class for filtered probability queries"""
+
+    over_truth: bool = False
 
     def count(self) -> int:
-        return DDupeProbabilities.count() + LinkProbabilities.count()
+        with MBDB.get_session() as session:
+            query = session.query(func.count()).select_from(Probabilities)
+
+            if self.over_truth:
+                query = query.join(Models, Probabilities.model == Models.hash).filter(
+                    and_(
+                        Models.truth.isnot(None),
+                        Probabilities.probability > Models.truth,
+                    )
+                )
+            return query.scalar()
 
 
-class ModelClusters:
-    """A thin wrapper around Clusters for one model to .count() them."""
+class FilteredModels(BaseModel):
+    """Wrapper class for filtered model queries"""
 
-    def __init__(self, model: Models):
-        self._model = model
+    datasets: bool = False
+    humans: bool = False
+    models: bool = False
 
-    def count(self):
-        with Session(MBDB.get_engine()) as session:
-            return session.scalar(
-                select(func.count())
-                .select_from(Creates)
-                .where(Creates.model == self._model)
-            )
+    def count(self) -> int:
+        with MBDB.get_session() as session:
+            query = session.query(func.count()).select_from(Models)
 
+            filter_list = []
+            if self.datasets:
+                filter_list.append(Models.type == "dataset")
+            if self.humans:
+                filter_list.append(Models.type == "human")
+            if self.models:
+                filter_list.append(Models.type == "model")
 
-class ModelProbabilities:
-    """A thin wrapper around probability classes for one model to .count() them."""
+            if filter_list:
+                query = query.filter(or_(*filter_list))
 
-    def __init__(self, model: Models):
-        self._model = model
-
-    def count(self):
-        with Session(MBDB.get_engine()) as session:
-            dedupe_count = session.scalar(
-                select(func.count())
-                .select_from(DDupeProbabilities)
-                .where(DDupeProbabilities.proposed_by == self._model)
-            )
-            link_count = session.scalar(
-                select(func.count())
-                .select_from(LinkProbabilities)
-                .where(LinkProbabilities.proposed_by == self._model)
-            )
-        return dedupe_count + link_count
+            return query.scalar()
 
 
 class MatchboxPostgresModel(MatchboxModelAdapter):
     """An adapter for Matchbox models in PostgreSQL."""
 
-    def __init__(self, model: Models):
+    def __init__(self, model: Models, backend: "MatchboxPostgres"):
         self.model: Models = model
-        self._probabilities: ModelProbabilities = None
-        self._clusters: ModelClusters = None
+        self.backend: "MatchboxPostgres" = backend
 
     @property
     def hash(self) -> bytes:
-        return self.model.sha1
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return self.model.hash
 
     @property
     def name(self) -> str:
-        return self.model.name
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return self.model.name
 
     @property
-    def clusters(self):
-        if self._clusters is None:
-            self._clusters = ModelClusters(self.model)
-        return self._clusters
+    def probabilities(self) -> ProbabilityResults:
+        """Retrieve probabilities for this model."""
+        return get_model_probabilities(engine=MBDB.get_engine(), model=self.model)
 
     @property
-    def probabilities(self) -> ModelProbabilities:
-        if self._probabilities is None:
-            self._probabilities = ModelProbabilities(self.model)
-        return self._probabilities
+    def clusters(self) -> ClusterResults:
+        """Retrieve clusters for this model."""
+        return get_model_clusters(engine=MBDB.get_engine(), model=self.model)
 
-    def insert_probabilities(
-        self,
-        probabilities: list[Probability],
-        probability_type: Literal["deduplications", "links"],
-        batch_size: int,
-    ) -> None:
-        insert_probabilities(
-            model=self.name,
+    @property
+    def results(self) -> Results:
+        """Retrieve results for this model."""
+        return Results(probabilities=self.probabilities, clusters=self.clusters)
+
+    @results.setter
+    def results(self, results: Results) -> None:
+        """Inserts results for this model."""
+        insert_results(
+            results=results,
+            model=self.model,
             engine=MBDB.get_engine(),
-            probabilities=probabilities,
-            batch_size=batch_size,
-            is_deduper=probability_type == "deduplications",
+            batch_size=self.backend.settings.batch_size,
         )
 
-    def insert_clusters(
-        self,
-        clusters: list[Cluster],
-        cluster_type: Literal["deduplications", "links"],
-        batch_size: int,
-    ) -> None:
-        insert_clusters(
-            model=self.name,
-            engine=MBDB.get_engine(),
-            clusters=clusters,
-            batch_size=batch_size,
-            is_deduper=cluster_type == "deduplications",
-        )
+    @property
+    def truth(self) -> float:
+        """Gets the current truth threshold for this model."""
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return self.model.truth
+
+    @truth.setter
+    def truth(self, truth: float) -> None:
+        """Sets the truth threshold for this model, changing the default clusters."""
+        with Session(MBDB.get_engine()) as session:
+            self.model.truth = truth
+            session.add(self.model)
+            session.commit()
+
+    @property
+    def ancestors(self) -> dict[str, float | None]:
+        """
+        Gets the current truth values of all ancestors.
+        Returns a dict mapping model names to their current truth thresholds.
+
+        Unlike ancestors_cache which returns cached values, this property returns
+        the current truth values of all ancestor models.
+        """
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.model)
+            return {model.name: model.truth for model in self.model.ancestors}
+
+    @property
+    def ancestors_cache(self) -> dict[str, float]:
+        """
+        Gets the cached ancestor thresholds, converting hashes to model names.
+
+        Returns a dictionary mapping model names to their truth thresholds.
+
+        This is required because each point of truth needs to be stable, so we choose
+        when to update it, caching the ancestor's values in the model itself.
+        """
+        with Session(MBDB.get_engine()) as session:
+            query = (
+                select(Models.name, ModelsFrom.truth_cache)
+                .join(Models, Models.hash == ModelsFrom.parent)
+                .where(ModelsFrom.child == self.model.hash)
+                .where(ModelsFrom.truth_cache.isnot(None))
+            )
+
+            return {
+                name: truth_cache for name, truth_cache in session.execute(query).all()
+            }
+
+    @ancestors_cache.setter
+    def ancestors_cache(self, new_values: dict[str, float]) -> None:
+        """
+        Updates the cached ancestor thresholds.
+
+        Args:
+            new_values: Dictionary mapping model names to their truth thresholds
+        """
+
+        with Session(MBDB.get_engine()) as session:
+            model_names = list(new_values.keys())
+            name_to_hash = dict(
+                session.query(Models.name, Models.hash)
+                .filter(Models.name.in_(model_names))
+                .all()
+            )
+
+            for model_name, truth_value in new_values.items():
+                parent_hash = name_to_hash.get(model_name)
+                if parent_hash is None:
+                    raise ValueError(f"Model '{model_name}' not found in database")
+
+                session.execute(
+                    ModelsFrom.__table__.update()
+                    .where(ModelsFrom.parent == parent_hash)
+                    .where(ModelsFrom.child == self.model.hash)
+                    .values(truth_cache=truth_value)
+                )
+
+            session.commit()
 
     @classmethod
-    def get_model(cls, model_name: str) -> "MatchboxPostgresModel":
+    def get_model(
+        cls, model_name: str, backend: "MatchboxPostgres"
+    ) -> "MatchboxPostgresModel":
         with Session(MBDB.get_engine()) as session:
             if model := session.query(Models).filter_by(name=model_name).first():
-                return cls(model)
+                return cls(model, backend=backend)
             else:
                 raise MatchboxModelError(model_name=model_name)
 
@@ -155,34 +248,47 @@ class MatchboxPostgres(MatchboxDBAdapter):
         MBDB.settings = settings
         MBDB.create_database()
 
-        self.datasets = SourceDataset
-        self.models = Models
-        self.data = SourceData
-        self.clusters = Clusters
-        self.creates = Creates
-        self.merges = MergesUnion()
-        self.proposes = ProposesUnion()
+        self.datasets = Sources
+        self.models = FilteredModels(datasets=False, humans=False, models=True)
+        self.data = FilteredClusters(has_dataset=True)
+        self.clusters = FilteredClusters(has_dataset=False)
+        self.merges = Contains
+        self.creates = FilteredProbabilities(over_truth=True)
+        self.proposes = FilteredProbabilities()
 
     def query(
         self,
         selector: dict[str, list[str]],
         model: str | None = None,
-        return_type: Literal["pandas", "sqlalchemy"] | None = None,
+        threshold: float | dict[str, float] | None = None,
+        return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
-    ) -> pd.DataFrame | ChunkedIteratorResult:
+    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
         """Queries the database from an optional model of truth.
 
         Args:
-            selector: A dictionary of the validated table name and fields.
-            model (optional): The model of truth to query from.
-            return_type (optional): The type of return data.
-            limit (optional): The number of rows to return.
+            selector: the tables and fields to query
+            return_type: the form to return data in, one of "pandas" or "arrow"
+                Defaults to pandas for ease of use
+            model (optional): the model to use for filtering results
+            threshold (optional): the threshold to use for creating clusters
+                If None, uses the models' default threshold
+                If a float, uses that threshold for the specified model, and the
+                model's cached thresholds for its ancestors
+                If a dictionary, expects a shape similar to model.ancestors, keyed
+                by model name and valued by the threshold to use for that model. Will
+                use these threshold values instead of the cached thresholds
+            limit (optional): the number to use in a limit clause. Useful for testing
+
+        Returns:
+            Data in the requested return type
         """
         return query(
             selector=selector,
             engine=MBDB.get_engine(),
-            return_type=return_type,
+            return_type=return_type if return_type else "pandas",
             model=model,
+            threshold=threshold,
             limit=limit,
         )
 
@@ -193,35 +299,26 @@ class MatchboxPostgres(MatchboxDBAdapter):
             dataset: The dataset to index.
             engine: The SQLAlchemy engine of your data warehouse.
         """
-        index_dataset(
+        insert_dataset(
             dataset=dataset,
             engine=MBDB.get_engine(),
+            batch_size=self.settings.batch_size,
         )
 
-    def validate_hashes(
-        self, hashes: list[bytes], hash_type: Literal["data", "cluster"]
-    ) -> None:
+    def validate_hashes(self, hashes: list[bytes]) -> None:
         """Validates a list of hashes exist in the database.
 
         Args:
             hashes: A list of hashes to validate.
-            hash_type: The type of hash to validate.
 
         Raises:
             MatchboxDataError: If some items don't exist in the target table.
         """
-        if hash_type == "data":
-            Source = SourceData
-            tgt_col = "data_hash"
-        elif hash_type == "cluster":
-            Source = Clusters
-            tgt_col = "cluster_hash"
-
         with Session(MBDB.get_engine()) as session:
             data_inner_join = (
-                session.query(Source)
+                session.query(Clusters)
                 .filter(
-                    Source.sha1.in_(
+                    Clusters.hash.in_(
                         bindparam(
                             "ins_hashs",
                             hashes,
@@ -232,13 +329,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .all()
             )
 
-        if len(data_inner_join) != len(hashes):
+        existing_hashes = {item.hash for item in data_inner_join}
+        missing_hashes = set(hashes) - existing_hashes
+
+        if missing_hashes:
             raise MatchboxDataError(
-                message=(
-                    f"Some items don't exist the target table. "
-                    f"Did you use {tgt_col} as your ID when deduplicating?"
-                ),
-                table=Source.__tablename__,
+                message="Some items don't exist in Clusters table.",
+                table=Clusters.__tablename__,
+                data=missing_hashes,
             )
 
     def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
@@ -251,15 +349,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         with Session(MBDB.get_engine()) as session:
             dataset = (
-                session.query(SourceDataset)
-                .filter_by(db_schema=db_schema, db_table=db_table)
+                session.query(Sources)
+                .filter_by(schema=db_schema, table=db_table)
                 .first()
             )
             if dataset:
                 return Source(
-                    db_schema=dataset.db_schema,
-                    db_table=dataset.db_table,
-                    db_pk=dataset.db_id,
+                    db_schema=dataset.schema,
+                    db_table=dataset.table,
+                    db_pk=dataset.id,
                     database=SourceWarehouse.from_engine(engine),
                 )
             else:
@@ -277,7 +375,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         with Session(MBDB.get_engine()) as session:
             if model := session.query(Models).filter_by(name=model).first():
-                return MatchboxPostgresModel(model)
+                return MatchboxPostgresModel(model=model, backend=self)
             else:
                 raise MatchboxModelError(model_name=model)
 
@@ -288,7 +386,29 @@ class MatchboxPostgres(MatchboxDBAdapter):
             model: The model to delete.
             certain: Whether to delete the model without confirmation.
         """
-        delete_model(model=model, certain=certain, engine=MBDB.get_engine())
+        with Session(MBDB.get_engine()) as session:
+            if model := session.query(Models).filter(Models.name == model).first():
+                if certain:
+                    delete_stmt = delete(Models).where(
+                        Models.hash.in_(
+                            [model.hash, *(d.hash for d in model.descendants)]
+                        )
+                    )
+                    session.execute(delete_stmt)
+                    session.delete(model)
+                    session.commit()
+                else:
+                    childen = model.descendants
+                    children_names = ", ".join([m.name for m in childen])
+                    raise ValueError(
+                        f"This operation will delete the models {children_names}, "
+                        "as well as all probabilities they have created. \n\n"
+                        "It won't delete validation associated with these "
+                        "probabilities. \n\n"
+                        "If you're sure you want to continue, rerun with certain=True"
+                    )
+            else:
+                raise MatchboxModelError(model_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -307,26 +427,25 @@ class MatchboxPostgres(MatchboxDBAdapter):
             MatchboxDataError if, for a linker, the source models weren't found in
                 the database
         """
-        if right:
-            # Linker
-            insert_linker(
-                model=model,
-                left=left,
-                right=right,
-                description=description,
-                engine=MBDB.get_engine(),
-            )
-        else:
-            # Deduper
-            deduplicates = table_name_to_uuid(
-                schema_table=left, engine=MBDB.get_engine()
-            )
-            insert_deduper(
-                model=model,
-                deduplicates=str(deduplicates),
-                description=description,
-                engine=MBDB.get_engine(),
-            )
+        with Session(MBDB.get_engine()) as session:
+            left_model = session.query(Models).filter(Models.name == left).first()
+            if not left_model:
+                raise MatchboxModelError(model_name=left)
+
+            # Overwritten with actual right model if in a link job
+            right_model = left_model
+            if right:
+                right_model = session.query(Models).filter(Models.name == right).first()
+                if not right_model:
+                    raise MatchboxModelError(model_name=right)
+
+        insert_model(
+            model=model,
+            left=left_model,
+            right=right_model,
+            description=description,
+            engine=MBDB.get_engine(),
+        )
 
     def clear(self, certain: bool = False) -> None:
         """Clears all data from the database.
@@ -334,4 +453,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
         Args:
             certain: Whether to clear the database without confirmation.
         """
-        MBDB.clear_database()
+        if certain:
+            MBDB.clear_database()
+        else:
+            raise ValueError(
+                "This operation will drop the entire database. "
+                "It's principally used for testing. \n\n"
+                "If you're sure you want to continue, rerun with certain=True"
+            )

@@ -1,14 +1,14 @@
 from typing import Any, Callable
 
 import splink.duckdb.comparison_library as cl
-from matchbox.dedupers import NaiveDeduper
-from matchbox.dedupers.make_deduper import Deduper
-from matchbox.linkers import (
+from matchbox.models.dedupers import NaiveDeduper
+from matchbox.models.dedupers.base import Deduper
+from matchbox.models.linkers import (
     DeterministicLinker,
     SplinkLinker,
     WeightedDeterministicLinker,
 )
-from matchbox.linkers.make_linker import Linker
+from matchbox.models.linkers.base import Linker
 from pydantic import BaseModel, Field
 from splink.duckdb import blocking_rule_library as brl
 from splink.duckdb.linker import DuckDBLinker
@@ -97,7 +97,7 @@ dedupe_data_test_params = [
             "test_crn_company_name": "company_name",
             "test_crn_crn": "crn",
         },
-        # 1000 unique items repeated three times
+        # 1000 unique items repeated three times with minor perturbations
         unique_n=1000,
         curr_n=3000,
         # Unordered pairs of sets of three, so (3 choose 2) = 3, * 1000 = 3000
@@ -125,12 +125,14 @@ dedupe_data_test_params = [
             "test_cdms_crn": "crn",
             "test_cdms_cdms": "cdms",
         },
-        # 1000 unique items repeated two times
+        # 1000 unique items repeated two times, completely identical
         unique_n=1000,
         curr_n=2000,
-        # Unordered pairs of sets of two, so (2 choose 2) = 1, * 1000 = 1000
-        tgt_prob_n=1000,
-        tgt_clus_n=1000,
+        # Because the repeated items are identical, they generate the same hash
+        # This means they're actually unordered pairs of sets of one
+        # So (1 choose 2) = 0, * 1000 = 0
+        tgt_prob_n=0,
+        tgt_clus_n=0,
     ),
 ]
 
@@ -176,7 +178,7 @@ link_data_test_params = [
 
 
 def make_naive_dd_settings(data: DedupeTestParams) -> dict[str, Any]:
-    return {"id": "data_hash", "unique_fields": list(data.fields.keys())}
+    return {"id": "hash", "unique_fields": list(data.fields.keys())}
 
 
 dedupe_model_test_params = [
@@ -198,8 +200,8 @@ def make_deterministic_li_settings(data: LinkTestParams) -> dict[str, Any]:
         comparisons.append(f"l.{field_l} = r.{field_r}")
 
     return {
-        "left_id": "cluster_hash",
-        "right_id": "cluster_hash",
+        "left_id": "hash",
+        "right_id": "hash",
         "comparisons": " and ".join(comparisons),
     }
 
@@ -246,8 +248,8 @@ def make_splink_li_settings(data: LinkTestParams) -> dict[str, Any]:
     }
 
     return {
-        "left_id": "cluster_hash",
-        "right_id": "cluster_hash",
+        "left_id": "hash",
+        "right_id": "hash",
         "linker_class": DuckDBLinker,
         "linker_training_functions": linker_training_functions,
         "linker_settings": linker_settings,
@@ -262,8 +264,8 @@ def make_weighted_deterministic_li_settings(data: LinkTestParams) -> dict[str, A
         weighted_comparisons.append((f"l.{field_l} = r.{field_r}", 1))
 
     return {
-        "left_id": "cluster_hash",
-        "right_id": "cluster_hash",
+        "left_id": "hash",
+        "right_id": "hash",
         "weighted_comparisons": weighted_comparisons,
         "threshold": 1,
     }

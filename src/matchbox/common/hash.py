@@ -17,7 +17,7 @@ HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 HASH_FUNC = hashlib.sha1
 
 
-def dataset_to_hashlist(dataset: Source, uuid: UUID) -> list[dict[str, Any]]:
+def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
     with Session(dataset.database.engine) as warehouse_session:
         source_table = dataset.to_table()
@@ -36,9 +36,9 @@ def dataset_to_hashlist(dataset: Source, uuid: UUID) -> list[dict[str, Any]]:
 
         to_insert = [
             {
-                "sha1": hash_data(data.raw),
+                "hash": hash_data(data.raw),
+                "dataset": model_hash,
                 "id": data.id,
-                "dataset": uuid,
             }
             for data in raw_result.all()
         ]

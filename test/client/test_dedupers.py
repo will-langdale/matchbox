@@ -1,11 +1,13 @@
 import pytest
-from matchbox import make_deduper, to_clusters
-from matchbox.server.models import Source
+from matchbox import make_model, query
+from matchbox.server.models import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
 from ..fixtures.db import AddIndexedDataCallable
 from ..fixtures.models import (
+    DedupeTestParams,
+    ModelTestParams,
     dedupe_data_test_params,
     dedupe_model_test_params,
 )
@@ -17,12 +19,13 @@ def test_dedupers(
     # Fixtures
     matchbox_postgres: MatchboxPostgres,
     db_add_indexed_data: AddIndexedDataCallable,
+    warehouse: SourceWarehouse,
     warehouse_data: list[Source],
     # Parameterised data classes
-    fx_data,
-    fx_deduper,
+    fx_data: DedupeTestParams,
+    fx_deduper: ModelTestParams,
     # Pytest
-    request,
+    request: pytest.FixtureRequest,
 ):
     """Runs all deduper methodologies over exemplar tables.
 
@@ -30,22 +33,24 @@ def test_dedupers(
         1. That the input data is as expected
         2. That the data is deduplicated correctly
         3. That the deduplicated probabilities are inserted correctly
-        4. That the correct number of clusters are resolved
-        5. That the resolved clusters are inserted correctly
+        4. That the correct number of clusters are resolved and inserted correctly
     """
     # i. Ensure database is ready, collect fixtures, perform any special
     # deduper cleaning
 
     db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
-    df = request.getfixturevalue(fx_data.fixture)
+    select: dict[Source, list[str]]
+    df: DataFrame
+
+    select, df = request.getfixturevalue(fx_data.fixture)
 
     fields = list(fx_data.fields.keys())
 
     if fx_deduper.rename_fields:
         df_renamed = df.copy().rename(columns=fx_data.fields)
         fields_renamed = list(fx_data.fields.values())
-        df_renamed = df_renamed.filter(["data_hash"] + fields_renamed)
+        df_renamed = df_renamed.filter(["hash"] + fields_renamed)
 
     # 1. Input data is as expected
 
@@ -61,20 +66,20 @@ def test_dedupers(
     deduper_name = f"{fx_deduper.name}_{fx_data.source}"
     deduper_settings = fx_deduper.build_settings(fx_data)
 
-    deduper = make_deduper(
-        dedupe_run_name=deduper_name,
+    model = make_model(
+        model_name=deduper_name,
         description=f"Testing dedupe of {fx_data.source} with {fx_deduper.name} method",
-        deduper=fx_deduper.cls,
-        deduper_settings=deduper_settings,
-        data=df_renamed if fx_deduper.rename_fields else df,
-        data_source=fx_data.source,
+        model_class=fx_deduper.cls,
+        model_settings=deduper_settings,
+        left_data=df_renamed if fx_deduper.rename_fields else df,
+        left_source=fx_data.source,
     )
 
-    deduped = deduper()
+    results = model.run()
 
-    deduped_df = deduped.to_df()
-    deduped_df_with_source = deduped.inspect_with_source(
-        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
+    deduped_df = results.probabilities.to_df()
+    deduped_df_with_source = results.probabilities.inspect_with_source(
+        left_data=df, left_key="hash", right_data=df, right_key="hash"
     )
 
     assert isinstance(deduped_df, DataFrame)
@@ -86,20 +91,11 @@ def test_dedupers(
             deduped_df_with_source[field + "_y"]
         )
 
-    # 3. Deduplicated probabilities are inserted correctly
+    # 3. Correct number of clusters are resolved
 
-    deduped.to_matchbox(backend=matchbox_postgres)
-
-    model = matchbox_postgres.get_model(model=deduper_name)
-    assert model.probabilities.count() == fx_data.tgt_prob_n
-
-    # 4. Correct number of clusters are resolved
-
-    clusters_dupes = to_clusters(results=deduped, key="data_hash", threshold=0)
-
-    clusters_dupes_df = clusters_dupes.to_df()
-    clusters_dupes_df_with_source = clusters_dupes.inspect_with_source(
-        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
+    clusters_dupes_df = results.clusters.to_df()
+    clusters_dupes_df_with_source = results.clusters.inspect_with_source(
+        left_data=df, left_key="hash", right_data=df, right_key="hash"
     )
 
     assert isinstance(clusters_dupes_df, DataFrame)
@@ -111,25 +107,21 @@ def test_dedupers(
             clusters_dupes_df_with_source[field + "_y"]
         )
 
-    clusters_all = to_clusters(df, results=deduped, key="data_hash", threshold=0)
+    # 4. Probabilities and clusters are inserted correctly
 
-    clusters_all_df = clusters_all.to_df()
-    clusters_all_df_with_source = clusters_all.inspect_with_source(
-        left_data=df, left_key="data_hash", right_data=df, right_key="data_hash"
-    )
-
-    assert isinstance(clusters_all_df, DataFrame)
-    assert clusters_all_df.parent.nunique() == fx_data.unique_n
-
-    assert isinstance(clusters_all_df_with_source, DataFrame)
-    for field in fields:
-        assert clusters_all_df_with_source[field + "_x"].equals(
-            clusters_all_df_with_source[field + "_y"]
-        )
-
-    # 5. Resolved clusters are inserted correctly
-
-    clusters_all.to_matchbox(backend=matchbox_postgres)
+    results.to_matchbox(backend=matchbox_postgres)
 
     model = matchbox_postgres.get_model(model=deduper_name)
-    assert model.clusters.count() == fx_data.unique_n
+    assert model.probabilities.dataframe.shape[0] == fx_data.tgt_prob_n
+
+    model.truth = 0.0
+
+    clusters = query(
+        selector=select,
+        backend=matchbox_postgres,
+        return_type="pandas",
+        model=deduper_name,
+    )
+
+    assert isinstance(clusters, DataFrame)
+    assert clusters.hash.nunique() == fx_data.unique_n

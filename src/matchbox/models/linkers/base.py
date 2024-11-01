@@ -1,11 +1,8 @@
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict
 
 from pandas import DataFrame
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
-
-from matchbox.common.results import ProbabilityResults
 
 
 class LinkerSettings(BaseModel):
@@ -19,7 +16,7 @@ class LinkerSettings(BaseModel):
     @field_validator("left_id", "right_id")
     @classmethod
     def _id_for_cmf(cls, v: str, info: ValidationInfo) -> str:
-        enforce = "cluster_hash"
+        enforce = "hash"
         if v != enforce:
             warnings.warn(
                 f"For offline deduplication, {info.field_name} can be any field. \n\n"
@@ -51,30 +48,3 @@ class Linker(BaseModel, ABC):
     @abstractmethod
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
         return
-
-
-def make_linker(
-    link_run_name: str,
-    description: str,
-    linker: Linker,
-    linker_settings: Dict[str, Any],
-    left_data: DataFrame,
-    left_source: str,
-    right_data: DataFrame,
-    right_source: str,
-) -> Callable[[DataFrame, DataFrame], ProbabilityResults]:
-    linker_instance = linker.from_settings(**linker_settings)
-    linker_instance.prepare(left=left_data, right=right_data)
-
-    def linker(
-        left_data: DataFrame = left_data, right_data: DataFrame = right_data
-    ) -> ProbabilityResults:
-        return ProbabilityResults(
-            dataframe=linker_instance.link(left=left_data, right=right_data),
-            run_name=link_run_name,
-            description=description,
-            left=left_source,
-            right=right_source,
-        )
-
-    return linker

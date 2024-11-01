@@ -5,7 +5,7 @@ from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, Field, field_validator
 
 from matchbox.helpers import comparison
-from matchbox.linkers.make_linker import Linker, LinkerSettings
+from matchbox.models.linkers.base import Linker, LinkerSettings
 
 
 class WeightedComparison(BaseModel):
@@ -45,8 +45,8 @@ class WeightedDeterministicSettings(LinkerSettings):
     Example:
 
         >>> {
-        ...     left_id: "cluster_hash",
-        ...     right_id: "cluster_hash",
+        ...     left_id: "hash",
+        ...     right_id: "hash",
         ...     weighted_comparisons: [
         ...         ("l.company_name = r.company_name", .7),
         ...         ("l.postcode = r.postcode", .7),

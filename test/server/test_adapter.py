@@ -1,4 +1,3 @@
-import random
 from typing import Callable
 
 import pytest
@@ -10,11 +9,18 @@ from matchbox.common.exceptions import (
     MatchboxModelError,
 )
 from matchbox.common.hash import HASH_FUNC
+from matchbox.common.results import (
+    ClusterResults,
+    ProbabilityResults,
+    Results,
+    to_clusters,
+)
 from matchbox.helpers.selector import query, selector, selectors
-from matchbox.server.base import MatchboxModelAdapter
-from matchbox.server.models import Cluster, Probability, Source
+from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
+from matchbox.server.models import Source
 from pandas import DataFrame
 
+from ..fixtures.db import SetupDatabaseCallable
 from ..fixtures.models import (
     dedupe_data_test_params,
     link_data_test_params,
@@ -47,11 +53,11 @@ class TestMatchboxBackend:
         setup_database: Callable,
         warehouse_data: list[Source],
     ):
-        self.backend = backend_instance
-        self.setup_database = lambda level: setup_database(
+        self.backend: MatchboxDBAdapter = backend_instance
+        self.setup_database: SetupDatabaseCallable = lambda level: setup_database(
             self.backend, warehouse_data, level
         )
-        self.warehouse_data = warehouse_data
+        self.warehouse_data: list[Source] = warehouse_data
 
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""
@@ -71,8 +77,12 @@ class TestMatchboxBackend:
         naive_crn = self.backend.get_model(model="naive_test.crn")
         assert naive_crn.hash
         assert naive_crn.name
-        assert isinstance(naive_crn.probabilities.count(), int)
-        assert isinstance(naive_crn.clusters.count(), int)
+        assert naive_crn.probabilities
+        assert naive_crn.clusters
+        assert naive_crn.results
+        assert isinstance(naive_crn.truth, float)  # otherwise we assert 0.0
+        assert naive_crn.ancestors
+        assert isinstance(naive_crn.ancestors_cache, dict)  # otherwise we assert {}
 
     def test_validate_hashes(self):
         """Test validating data hashes."""
@@ -91,16 +101,12 @@ class TestMatchboxBackend:
             return_type="pandas",
         )
 
-        self.backend.validate_hashes(
-            hashes=df_crn.data_hash.to_list(), hash_type="data"
-        )
-        self.backend.validate_hashes(
-            hashes=df_crn.cluster_hash.drop_duplicates().to_list(), hash_type="cluster"
-        )
+        hashes = df_crn.hash.to_list()
+        assert len(hashes) > 0
+        self.backend.validate_hashes(hashes=hashes)
+
         with pytest.raises(MatchboxDataError):
-            self.backend.validate_hashes(
-                hashes=[HASH_FUNC(b"nonexistant").digest()], hash_type="data"
-            )
+            self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistant").digest()])
 
     def test_get_dataset(self):
         """Test querying data from the database."""
@@ -214,191 +220,155 @@ class TestMatchboxBackend:
 
         assert self.backend.models.count() == model_count + 3
 
-    def test_model_insert_probabilities(self):
-        """Test that model insert probabilities are correct."""
+    def test_model_get_probabilities(self):
+        """Test that a model's ProbabilityResults can be retrieved."""
         self.setup_database("dedupe")
+        naive_crn = self.backend.get_model(model="naive_test.crn")
+        assert isinstance(naive_crn.probabilities, ProbabilityResults)
+        assert len(naive_crn.probabilities.dataframe) > 0
+        assert naive_crn.probabilities.metadata.name == "naive_test.crn"
 
-        crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["crn"],
-            engine=crn.database.engine,
+        self.backend.validate_hashes(
+            hashes=naive_crn.probabilities.dataframe["hash"].to_list()
         )
-        df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            model=None,
-            return_type="pandas",
+        self.backend.validate_hashes(
+            hashes=naive_crn.probabilities.dataframe["left_id"].to_list()
         )
-
-        duns = self.warehouse_data[1]
-        select_duns = selector(
-            table=str(duns),
-            fields=["id", "duns"],
-            engine=duns.database.engine,
-        )
-        df_crn_deduped = query(
-            selector=select_crn,
-            backend=self.backend,
-            model="naive_test.crn",
-            return_type="pandas",
-        )
-        df_duns_deduped = query(
-            selector=select_duns,
-            backend=self.backend,
-            model="naive_test.duns",
-            return_type="pandas",
+        self.backend.validate_hashes(
+            hashes=naive_crn.probabilities.dataframe["right_id"].to_list()
         )
 
-        self.backend.insert_model(
-            "dedupe_1", left=str(crn), description="Test deduper 1"
-        )
-        self.backend.insert_model(
-            "dedupe_2", left=str(duns), description="Test deduper 1"
-        )
-        self.backend.insert_model(
-            "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
-        )
-
-        # Test dedupe probabilities
-        dedupe_probabilities = [
-            Probability(
-                hash=HASH_FUNC(random.randbytes(32)).digest(),
-                left=crn_prob_1,
-                right=crn_prob_2,
-                probability=1.0,
-            )
-            for crn_prob_1, crn_prob_2 in zip(
-                df_crn["data_hash"].to_list()[:10],
-                reversed(df_crn["data_hash"].to_list()[:10]),
-                strict=True,
-            )
-        ]
-        dedupe_1 = self.backend.get_model(model="dedupe_1")
-
-        assert dedupe_1.probabilities.count() == 0
-
-        dedupe_1.insert_probabilities(
-            probabilities=dedupe_probabilities,
-            probability_type="deduplications",
-            batch_size=10,
-        )
-
-        assert dedupe_1.probabilities.count() == 10
-
-        # Test link probabilities
-        link_probabilities = [
-            Probability(
-                hash=HASH_FUNC(random.randbytes(32)).digest(),
-                left=crn_prob,
-                right=duns_prob,
-                probability=1.0,
-            )
-            for crn_prob, duns_prob in zip(
-                df_crn_deduped["cluster_hash"].to_list()[:10],
-                df_duns_deduped["cluster_hash"].to_list()[:10],
-                strict=True,
-            )
-        ]
-        link_1 = self.backend.get_model(model="link_1")
-
-        assert link_1.probabilities.count() == 0
-
-        link_1.insert_probabilities(
-            probabilities=link_probabilities,
-            probability_type="links",
-            batch_size=10,
-        )
-
-        assert link_1.probabilities.count() == 10
-
-    def test_model_insert_clusters(self):
-        """Test that model insert clusters are correct."""
+    def test_model_get_clusters(self):
+        """Test that a model's ClusterResults can be retrieved."""
         self.setup_database("dedupe")
+        naive_crn = self.backend.get_model(model="naive_test.crn")
+        assert isinstance(naive_crn.clusters, ClusterResults)
+        assert len(naive_crn.clusters.dataframe) > 0
+        assert naive_crn.clusters.metadata.name == "naive_test.crn"
 
-        crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["crn"],
-            engine=crn.database.engine,
+        self.backend.validate_hashes(
+            hashes=naive_crn.clusters.dataframe["parent"].to_list()
         )
-        df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            model=None,
-            return_type="pandas",
+        self.backend.validate_hashes(
+            hashes=naive_crn.clusters.dataframe["child"].to_list()
         )
 
-        duns = self.warehouse_data[1]
-        select_duns = selector(
-            table=str(duns),
-            fields=["id", "duns"],
-            engine=duns.database.engine,
+    def test_model_truth(self):
+        """Test that a model's truth can be set and retrieved."""
+        self.setup_database("dedupe")
+        naive_crn = self.backend.get_model(model="naive_test.crn")
+        # Retrieve
+        pre_truth = naive_crn.truth
+
+        # Set
+        naive_crn.truth = 0.5
+
+        # Retrieve again
+        post_truth = naive_crn.truth
+
+        # Check difference
+        assert pre_truth != post_truth
+
+    def test_model_ancestors(self):
+        """Test that a model's ancestors can be retrieved."""
+        self.setup_database("link")
+        linker_name = "deterministic_naive_test.crn_naive_test.duns"
+        linker = self.backend.get_model(model=linker_name)
+
+        assert isinstance(linker.ancestors, dict)
+
+        truth_found = False
+        for model, truth in linker.ancestors.items():
+            if isinstance(truth, float):
+                # Not all ancestors have truth values, but one must
+                truth_found = True
+            assert isinstance(model, str)
+            assert isinstance(truth, (float, type(None)))
+
+        assert truth_found
+
+    def test_model_results(self):
+        """Test that a model's Results can be set and retrieved."""
+        self.setup_database("dedupe")
+        naive_crn = self.backend.get_model(model="naive_test.crn")
+
+        # Retrieve
+        pre_results = naive_crn.results
+
+        assert isinstance(pre_results, Results)
+        assert len(pre_results.probabilities.dataframe) > 0
+        assert pre_results.probabilities.metadata.name == "naive_test.crn"
+        assert len(pre_results.clusters.dataframe) > 0
+        assert pre_results.clusters.metadata.name == "naive_test.crn"
+
+        # Set
+        target_row = pre_results.probabilities.dataframe.iloc[0]
+        target_hash = target_row["hash"]
+        target_left_id = target_row["left_id"]
+        target_right_id = target_row["right_id"]
+
+        matches_hash_mask = pre_results.probabilities.dataframe["hash"] != target_hash
+        matches_left_mask = (
+            pre_results.probabilities.dataframe["left_id"] != target_left_id
         )
-        df_crn_deduped = query(
-            selector=select_crn,
-            backend=self.backend,
-            model="naive_test.crn",
-            return_type="pandas",
-        )
-        df_duns_deduped = query(
-            selector=select_duns,
-            backend=self.backend,
-            model="naive_test.duns",
-            return_type="pandas",
-        )
-
-        self.backend.insert_model(
-            "dedupe_1", left=str(crn), description="Test deduper 1"
-        )
-        self.backend.insert_model(
-            "dedupe_2", left=str(duns), description="Test deduper 1"
-        )
-        self.backend.insert_model(
-            "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
-        )
-
-        # Test dedupe clusters
-        dedupe_clusters = [
-            Cluster(parent=crn_prob_1, child=crn_prob_2)
-            for crn_prob_1, crn_prob_2 in zip(
-                df_crn["data_hash"].to_list()[:10],
-                reversed(df_crn["data_hash"].to_list()[:10]),
-                strict=True,
-            )
-        ]
-        dedupe_1 = self.backend.get_model(model="dedupe_1")
-
-        assert dedupe_1.clusters.count() == 0
-
-        dedupe_1.insert_clusters(
-            clusters=dedupe_clusters,
-            cluster_type="deduplications",
-            batch_size=10,
-        )
-
-        assert dedupe_1.clusters.count() == 10
-
-        # Test link clusters
-        link_clusters = [
-            Cluster(parent=crn_prob, child=duns_prob)
-            for crn_prob, duns_prob in zip(
-                df_crn_deduped["cluster_hash"].to_list()[:10],
-                df_duns_deduped["cluster_hash"].to_list()[:10],
-                strict=True,
-            )
-        ]
-        link_1 = self.backend.get_model(model="link_1")
-
-        assert link_1.clusters.count() == 0
-
-        link_1.insert_clusters(
-            clusters=link_clusters,
-            cluster_type="links",
-            batch_size=10,
+        matches_right_mask = (
+            pre_results.probabilities.dataframe["right_id"] != target_right_id
         )
 
-        assert link_1.clusters.count() == 10
+        df_probabilities_truncated = pre_results.probabilities.dataframe[
+            matches_hash_mask & matches_left_mask & matches_right_mask
+        ].copy()
+
+        probabilities_truncated = ProbabilityResults(
+            dataframe=df_probabilities_truncated,
+            model=pre_results.probabilities.model,
+            metadata=pre_results.probabilities.metadata,
+        )
+
+        results = Results(
+            probabilities=probabilities_truncated,
+            clusters=to_clusters(results=probabilities_truncated),
+        )
+
+        naive_crn.results = results
+
+        # Retrieve again
+        post_results = naive_crn.results
+
+        # Check difference
+        assert len(pre_results.probabilities.dataframe) != len(
+            post_results.probabilities.dataframe
+        )
+        assert len(pre_results.clusters.dataframe) != len(
+            post_results.clusters.dataframe
+        )
+
+        # Check similarity
+        assert (
+            pre_results.probabilities.metadata.name
+            == post_results.probabilities.metadata.name
+        )
+        assert pre_results.clusters.metadata.name == post_results.clusters.metadata.name
+
+    def test_model_ancestors_cache(self):
+        """Test that a model's ancestors cache can be set and retrieved."""
+        self.setup_database("link")
+        linker_name = "deterministic_naive_test.crn_naive_test.duns"
+        linker = self.backend.get_model(model=linker_name)
+
+        # Retrieve
+        pre_ancestors_cache = linker.ancestors_cache
+
+        # Set
+        updated_ancestors_cache = {k: 0.5 for k in pre_ancestors_cache.keys()}
+        linker.ancestors_cache = updated_ancestors_cache
+
+        # Retrieve again
+        post_ancestors_cache = linker.ancestors_cache
+
+        # Check difference
+        assert pre_ancestors_cache != post_ancestors_cache
+        assert post_ancestors_cache == updated_ancestors_cache
 
     def test_index(
         self,
@@ -451,7 +421,7 @@ class TestMatchboxBackend:
 
         assert df_crn_full.shape[0] == 3000
         assert set(df_crn_full.columns) == {
-            "data_hash",
+            "hash",
             "test_crn_id",
             "test_crn_crn",
         }
@@ -491,7 +461,7 @@ class TestMatchboxBackend:
         )
 
         assert set(df_crn_duns_full.columns) == {
-            "data_hash",
+            "hash",
             "test_crn_id",
             "test_crn_crn",
             "test_duns_id",
@@ -520,13 +490,11 @@ class TestMatchboxBackend:
         assert isinstance(df_crn, DataFrame)
         assert df_crn.shape[0] == 3000
         assert set(df_crn.columns) == {
-            "cluster_hash",
-            "data_hash",
+            "hash",
             "test_crn_crn",
             "test_crn_company_name",
         }
-        assert df_crn.data_hash.nunique() == 3000
-        assert df_crn.cluster_hash.nunique() == 1000
+        assert df_crn.hash.nunique() == 1000
 
     def test_query_with_link_model(self):
         """Test querying data from a link point of truth."""
@@ -560,13 +528,11 @@ class TestMatchboxBackend:
         assert isinstance(crn_duns, DataFrame)
         assert crn_duns.shape[0] == 3500
         assert set(crn_duns.columns) == {
-            "cluster_hash",
-            "data_hash",
+            "hash",
             "test_crn_crn",
             "test_duns_duns",
         }
-        assert crn_duns.data_hash.nunique() == 3500
-        assert crn_duns.cluster_hash.nunique() == 1000
+        assert crn_duns.hash.nunique() == 1000
 
     def test_clear(self):
         """Test clearing the database."""
