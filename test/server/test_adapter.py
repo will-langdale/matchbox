@@ -261,7 +261,7 @@ class TestMatchboxBackend:
                 # Not all ancestors have truth values, but one must
                 truth_found = True
             assert isinstance(model, str)
-            assert isinstance(truth, float or None)
+            assert isinstance(truth, (float, type(None)))
 
         assert truth_found
 

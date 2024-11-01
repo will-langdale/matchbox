@@ -2,10 +2,10 @@ from typing import NamedTuple
 
 import pandas as pd
 import pyarrow as pa
-from sqlalchemy import Engine, and_, exists, func, literal, select
+import rustworkx as rx
+from sqlalchemy import Engine, and_, exists, func, select
 from sqlalchemy.orm import Session
 
-from matchbox.common.db import sql_to_df
 from matchbox.common.results import (
     ClusterResults,
     ModelMetadata,
@@ -19,7 +19,6 @@ from matchbox.server.postgresql.orm import (
     ModelsFrom,
     Probabilities,
 )
-from matchbox.server.postgresql.utils.query import hash_to_hex_decode
 
 
 class SourceInfo(NamedTuple):
@@ -212,6 +211,23 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
     )
 
 
+def _get_all_leaf_descendants(graph: rx.PyDiGraph, node_id: int) -> set[int]:
+    """Get all leaf descendant node IDs of a given node in the graph."""
+    descendants = set()
+    to_process = [node_id]
+
+    while to_process:
+        current = to_process.pop()
+        children = [edge[1] for edge in graph.out_edges(current)]
+
+        if not children:
+            descendants.add(current)
+        else:
+            to_process.extend(children)
+
+    return descendants
+
+
 def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
     """
     Recover the model's Clusters.
@@ -228,9 +244,10 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
     Returns:
         A ClusterResults object containing connected components and model metadata
     """
-    source_info = _get_source_info(engine=engine, model_hash=model.hash)
+    source_info: SourceInfo = _get_source_info(engine=engine, model_hash=model.hash)
 
     with Session(engine) as session:
+        # Build metadata
         left = session.get(Models, source_info.left)
         right = session.get(Models, source_info.right) if source_info.right else None
 
@@ -242,45 +259,92 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
             right_source=right.name if source_info.right else None,
         )
 
-    # Subquery to identify leaf nodes (clusters with no children)
-    leaf_nodes = ~exists().where(Contains.parent == Clusters.hash)
-
-    # Recursive CTE to get all descendants
-    descendants = select(
-        Contains.parent.label("component"),
-        Contains.child.label("descendant"),
-        literal(1).label("depth"),
-    ).cte(recursive=True)
-
-    descendants_recursive = descendants.union_all(
-        select(
-            descendants.c.component,
-            Contains.child.label("descendant"),
-            descendants.c.depth + 1,
-        ).join(Contains, Contains.parent == descendants.c.descendant)
-    )
-
-    # Final query to get all components with their leaf descendants
-    components_query = (
-        select(
-            Clusters.hash.label("parent"),
-            descendants_recursive.c.descendant.label("child"),
-            Probabilities.probability.label("threshold"),
+        # Get all clusters and their relationships for this model
+        hierarchy_query = (
+            select(Contains.parent, Contains.child, Probabilities.probability)
+            .join(
+                Probabilities,
+                and_(
+                    Probabilities.cluster == Contains.parent,
+                    Probabilities.model == model.hash,
+                ),
+            )
+            .order_by(Probabilities.probability.desc())
         )
-        .join(
-            Probabilities,
-            and_(
-                Probabilities.cluster == Clusters.hash,
-                Probabilities.model == hash_to_hex_decode(model.hash),
-            ),
+
+        hierarchy = session.execute(hierarchy_query).fetchall()
+
+        # Get all leaf nodes (clusters with no children) and their IDs
+        leaf_query = select(Clusters.hash, Clusters.id).where(
+            ~Clusters.hash.in_(select(Contains.parent).distinct())
         )
-        .join(descendants_recursive, descendants_recursive.c.component == Clusters.hash)
-        .where(leaf_nodes)
-        .order_by(Probabilities.probability.desc())
-        .distinct()
+        leaf_nodes = {
+            row.hash: row.id[0] if row.id else None
+            for row in session.execute(leaf_query)
+        }
+
+        # Get unique thresholds and components at each threshold
+        threshold_query = (
+            select(Probabilities.cluster, Probabilities.probability)
+            .where(Probabilities.model == model.hash)
+            .order_by(Probabilities.probability.desc())
+        )
+        threshold_components = session.execute(threshold_query).fetchall()
+
+    # Build directed graph of the full hierarchy
+    graph = rx.PyDiGraph()
+    nodes: dict[bytes, int] = {}  # node_hash -> node_id
+
+    def get_node_id(hash: bytes) -> int:
+        if hash not in nodes:
+            nodes[hash] = graph.add_node(hash)
+        return nodes[hash]
+
+    # Add all edges to graph
+    for parent, child, prob in hierarchy:
+        parent_id = get_node_id(parent)
+        child_id = get_node_id(child)
+        graph.add_edge(parent_id, child_id, prob)
+
+    # Process each threshold level
+    components: list[tuple[bytes, bytes, float]] = []
+    seen_combinations = set()
+
+    threshold_groups = {}
+    for comp, thresh in threshold_components:
+        if thresh not in threshold_groups:
+            threshold_groups[thresh] = []
+        threshold_groups[thresh].append(comp)
+
+    # Process thresholds in descending order
+    for threshold in sorted(threshold_groups.keys(), reverse=True):
+        for component in threshold_groups[threshold]:
+            component_id = get_node_id(component)
+
+            leaf_ids = _get_all_leaf_descendants(graph, component_id)
+
+            leaf_hashes = {
+                graph.get_node_data(leaf_id)
+                for leaf_id in leaf_ids
+                if graph.get_node_data(leaf_id) in leaf_nodes
+            }
+
+            for leaf in leaf_hashes:
+                if leaf_nodes[leaf] is not None:
+                    relation = (component, leaf, threshold)
+                    if relation not in seen_combinations:
+                        components.append(relation)
+                        seen_combinations.add(relation)
+
+    df = pd.DataFrame(components, columns=["parent", "child", "threshold"]).astype(
+        {
+            "parent": pd.ArrowDtype(pa.binary()),
+            "child": pd.ArrowDtype(pa.binary()),
+            "threshold": pd.ArrowDtype(pa.float32()),
+        }
     )
 
     return ClusterResults(
-        dataframe=sql_to_df(stmt=components_query, engine=engine, return_type="pandas"),
+        dataframe=df,
         metadata=metadata,
     )
