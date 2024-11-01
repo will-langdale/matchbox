@@ -3,7 +3,7 @@ from typing import NamedTuple
 import pandas as pd
 import pyarrow as pa
 import rustworkx as rx
-from sqlalchemy import Engine, and_, exists, func, select
+from sqlalchemy import Engine, and_, case, exists, func, select
 from sqlalchemy.orm import Session
 
 from matchbox.common.results import (
@@ -151,17 +151,17 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
     """
     Recover the model's ProbabilityResults.
 
-    Probabilities are the model's Clusters identified by:
-
-    * Exactly two children
-    * Both children are leaf nodes (not parents in Contains table)
+    For each probability this model assigned:
+    - Get its two immediate children
+    - Filter for children that aren't parents of other clusters this model scored
+    - Determine left/right by tracing ancestry to source models using query helpers
 
     Args:
         engine: SQLAlchemy engine
         model: Model instance to query
 
     Returns:
-        A ProbabilityResults object containing pairwise probabilities and model metadata
+        ProbabilityResults containing the original pairwise probabilities
     """
     source_info: SourceInfo = _get_source_info(engine=engine, model_hash=model.hash)
 
@@ -177,9 +177,24 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
             right_source=right.name if source_info.right else None,
         )
 
-        # Get all clusters and their relationships for this model
-        hierarchy_query = (
-            select(Contains.parent, Contains.child, Probabilities.probability)
+        # First get all clusters this model assigned probabilities to
+        model_clusters = (
+            select(Probabilities.cluster)
+            .where(Probabilities.model == model.hash)
+            .cte("model_clusters")
+        )
+
+        # Get clusters that are parents in Contains for model's probabilities
+        model_parents = (
+            select(Contains.parent)
+            .join(model_clusters, Contains.child == model_clusters.c.cluster)
+            .cte("model_parents")
+        )
+
+        # Get valid pairs (those with exactly 2 children)
+        # where neither child is a parent in the model's hierarchy
+        valid_pairs = (
+            select(Contains.parent)
             .join(
                 Probabilities,
                 and_(
@@ -187,81 +202,67 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
                     Probabilities.model == model.hash,
                 ),
             )
-            .order_by(Probabilities.probability.desc())
+            .where(~Contains.child.in_(select(model_parents)))
+            .group_by(Contains.parent)
+            .having(func.count() == 2)
+            .cte("valid_pairs")
         )
 
-        hierarchy = session.execute(hierarchy_query).fetchall()
-
-        # Get all leaf nodes
-        leaf_query = select(Clusters.hash).where(
-            ~Clusters.hash.in_(select(Contains.parent).distinct())
-        )
-        leaf_nodes = {row.hash for row in session.execute(leaf_query)}
-
-        # Get component probabilities
-        prob_query = (
-            select(Probabilities.cluster, Probabilities.probability)
-            .where(Probabilities.model == model.hash)
-            .order_by(Probabilities.probability.desc())
-        )
-        probabilities = dict(session.execute(prob_query).all())
-
-    # Build directed graph of the hierarchy
-    graph = rx.PyDiGraph()
-    nodes: dict[bytes, int] = {}  # node_hash -> node_id
-    reverse_nodes: dict[int, bytes] = {}  # node_id -> node_hash
-
-    def get_node_id(hash: bytes) -> int:
-        if hash not in nodes:
-            node_id = graph.add_node(hash)
-            nodes[hash] = node_id
-            reverse_nodes[node_id] = hash
-        return nodes[hash]
-
-    # Add all edges to graph
-    for parent, child, _ in hierarchy:
-        parent_id = get_node_id(parent)
-        child_id = get_node_id(child)
-        graph.add_edge(parent_id, child_id, None)
-
-    # Find original pairs
-    pairs: list[dict] = []
-    seen_pairs = set()  # To avoid duplicates
-
-    for node_id in range(len(nodes)):
-        children = _get_immediate_children(graph, node_id)
-
-        # Check if this node has exactly two leaf children
-        if len(children) == 2 and all(_is_leaf(graph, child) for child in children):
-            parent_hash = reverse_nodes[node_id]
-            child_hashes = [reverse_nodes[child] for child in children]
-
-            # Only process if both children are in leaf_nodes
-            if child_hashes[0] in leaf_nodes and child_hashes[1] in leaf_nodes:
-                child_hashes.sort()
-
-                pair_key = (parent_hash, child_hashes[0], child_hashes[1])
-                if pair_key not in seen_pairs:
-                    pairs.append(
-                        {
-                            "hash": parent_hash,
-                            "left_id": child_hashes[0],
-                            "right_id": child_hashes[1],
-                            "probability": probabilities[parent_hash],
-                        }
+        # Join to get children and probabilities
+        pairs = (
+            select(
+                Contains.parent.label("hash"),
+                func.array_agg(
+                    case(
+                        (
+                            Contains.child.in_(list(source_info.left_ancestors)),
+                            Contains.child,
+                        ),
+                        (
+                            Contains.child.in_(list(source_info.right_ancestors))
+                            if source_info.right_ancestors
+                            else Contains.child.notin_(
+                                list(source_info.left_ancestors)
+                            ),
+                            Contains.child,
+                        ),
                     )
-                    seen_pairs.add(pair_key)
+                ).label("children"),
+                func.min(Probabilities.probability).label("probability"),
+            )
+            .join(valid_pairs, valid_pairs.c.parent == Contains.parent)
+            .join(
+                Probabilities,
+                and_(
+                    Probabilities.cluster == Contains.parent,
+                    Probabilities.model == model.hash,
+                ),
+            )
+            .group_by(Contains.parent)
+        ).cte("pairs")
 
-    df = pd.DataFrame(pairs).astype(
-        {
-            "hash": pd.ArrowDtype(pa.binary()),
-            "left_id": pd.ArrowDtype(pa.binary()),
-            "right_id": pd.ArrowDtype(pa.binary()),
-            "probability": pd.ArrowDtype(pa.float32()),
-        }
-    )
+        # Final select to properly split out left and right
+        final_select = select(
+            pairs.c.hash,
+            pairs.c.children[1].label("left_id"),
+            pairs.c.children[2].label("right_id"),
+            pairs.c.probability,
+        )
 
-    return ProbabilityResults(dataframe=df, metadata=metadata)
+        results = session.execute(final_select).fetchall()
+
+        df = pd.DataFrame(
+            results, columns=["hash", "left_id", "right_id", "probability"]
+        ).astype(
+            {
+                "hash": pd.ArrowDtype(pa.binary()),
+                "left_id": pd.ArrowDtype(pa.binary()),
+                "right_id": pd.ArrowDtype(pa.binary()),
+                "probability": pd.ArrowDtype(pa.float32()),
+            }
+        )
+
+        return ProbabilityResults(dataframe=df, metadata=metadata)
 
 
 def _get_all_leaf_descendants(graph: rx.PyDiGraph, node_id: int) -> set[int]:
