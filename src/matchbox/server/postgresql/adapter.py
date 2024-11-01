@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 from rustworkx import PyDiGraph
-from sqlalchemy import Engine, and_, bindparam, func, or_, select
+from sqlalchemy import Engine, and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from matchbox.common.exceptions import (
@@ -389,6 +389,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
         with Session(MBDB.get_engine()) as session:
             if model := session.query(Models).filter(Models.name == model).first():
                 if certain:
+                    delete_stmt = delete(Models).where(
+                        Models.hash.in_(
+                            [model.hash, *(d.hash for d in model.descendants)]
+                        )
+                    )
+                    session.execute(delete_stmt)
                     session.delete(model)
                     session.commit()
                 else:

@@ -361,7 +361,7 @@ class TestMatchboxBackend:
 
         # Set
         updated_ancestors_cache = {k: 0.5 for k in pre_ancestors_cache.keys()}
-        linker.ancessors_cache = updated_ancestors_cache
+        linker.ancestors_cache = updated_ancestors_cache
 
         # Retrieve again
         post_ancestors_cache = linker.ancestors_cache
