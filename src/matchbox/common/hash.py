@@ -14,7 +14,7 @@ else:
 T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 
-HASH_FUNC = hashlib.sha1
+HASH_FUNC = hashlib.sha256
 
 
 def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, Any]]:
