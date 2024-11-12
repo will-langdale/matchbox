@@ -113,7 +113,7 @@ def insert_model(
     Args:
         model: Name of the new model
         left: Name of the left parent model
-        right: Name of the left parent model. Same as left in a link job
+        right: Name of the right parent model. Same as left in a link job
         description: Model description
         engine: SQLAlchemy engine instance
 
@@ -139,7 +139,8 @@ def insert_model(
         session.flush()
 
         def _create_closure_entries(parent_model: Models) -> None:
-            """Create closure entries for the new model."""
+            """Create closure entries for the new model, i.e. mappings between
+            nodes and any of their direct or indirect parents"""
             session.add(
                 ModelsFrom(
                     parent=parent_model.hash,

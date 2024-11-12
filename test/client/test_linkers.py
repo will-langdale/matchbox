@@ -37,7 +37,6 @@ def test_linkers(
         1. That the input data is as expected
         2. That the data is linked correctly
         3. That the linked probabilities are inserted correctly
-        4. That the correct number of clusters are resolved
         4. That the correct number of clusters are resolved and inserted correctly
     """
     # i. Ensure database is ready, collect fixtures, perform any special linker cleaning
