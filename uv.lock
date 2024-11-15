@@ -807,7 +807,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5.2" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "rustworkx", specifier = ">=0.15.1" },
-    { name = "splink", specifier = "<4" },
+    { name = "splink", specifier = ">=4.0.5" },
     { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "tomli", specifier = ">=2.0.1" },
 ]
@@ -1048,12 +1048,6 @@ wheels = [
 ]
 
 [[package]]
-name = "phonetics"
-version = "1.0.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/67/a5/d1b6dbcbb05477aa5f0c5e73a7d68c6d23ab098af4461072f00999ed573a/phonetics-1.0.5.tar.gz", hash = "sha256:16263948c82fce1e257964b2ab4adc953f995e0fa7e2e60e6ba336d77a7235ba", size = 8848 }
-
-[[package]]
 name = "pillow"
 version = "10.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1159,8 +1153,6 @@ version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/18/c7/8c6872f7372eb6a6b2e4708b88419fb46b857f7a2e1892966b851cc79fc9/psutil-6.0.0.tar.gz", hash = "sha256:8faae4f310b6d969fa26ca0545338b21f73c6b15db7c4a8d934a5482faa818f2", size = 508067 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/66/78c9c3020f573c58101dc43a44f6855d01bbbd747e24da2f0c4491200ea3/psutil-6.0.0-cp27-none-win32.whl", hash = "sha256:02b69001f44cc73c1c5279d02b30a817e339ceb258ad75997325e0e6169d8b35", size = 249766 },
-    { url = "https://files.pythonhosted.org/packages/e1/3f/2403aa9558bea4d3854b0e5e567bc3dd8e9fbc1fc4453c0aa9aafeb75467/psutil-6.0.0-cp27-none-win_amd64.whl", hash = "sha256:21f1fb635deccd510f69f485b87433460a603919b45e2a324ad65b0cc74f8fb1", size = 253024 },
     { url = "https://files.pythonhosted.org/packages/0b/37/f8da2fbd29690b3557cca414c1949f92162981920699cd62095a984983bf/psutil-6.0.0-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:c588a7e9b1173b6e866756dde596fd4cad94f9399daf99ad8c3258b3cb2b47a0", size = 250961 },
     { url = "https://files.pythonhosted.org/packages/35/56/72f86175e81c656a01c4401cd3b1c923f891b31fbcebe98985894176d7c9/psutil-6.0.0-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6ed2440ada7ef7d0d608f20ad89a04ec47d2d3ab7190896cd62ca5fc4fe08bf0", size = 287478 },
     { url = "https://files.pythonhosted.org/packages/19/74/f59e7e0d392bc1070e9a70e2f9190d652487ac115bb16e2eff6b22ad1d24/psutil-6.0.0-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5fd9a97c8e94059b0ef54a7d4baf13b405011176c3b6ff257c247cae0d560ecd", size = 290455 },
@@ -1633,7 +1625,7 @@ wheels = [
 
 [[package]]
 name = "splink"
-version = "3.9.15"
+version = "4.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "altair" },
@@ -1641,13 +1633,13 @@ dependencies = [
     { name = "igraph" },
     { name = "jinja2" },
     { name = "jsonschema" },
+    { name = "numpy" },
     { name = "pandas" },
-    { name = "phonetics" },
     { name = "sqlglot" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/fe/457c18d9f54e6b34ddd4a908ee90e61b8287006560d36952afec7cae45d9/splink-3.9.15.tar.gz", hash = "sha256:d52a4f2e48567b502621924cbd909f88c6cb88b32442d575deb4c16bbbb2ccad", size = 3655727 }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/51/66dd1871f1ed6edaad43dc1121dd1e59d4ef0c5d3cd993b23b5c751ab94e/splink-4.0.5.tar.gz", hash = "sha256:72dbdaa7a1211733018d01a80b87f3bfecd32216a1693b1c67fe31db9034f356", size = 3654992 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/8a/99cf732fb1a6aac4535e0c4a641c1159a5f1d2fa9bce6452c52f078c7ba5/splink-3.9.15-py3-none-any.whl", hash = "sha256:1b8f557743e633c785fa6da4030821d0cd1ccf03336d662db59f809956f4ec87", size = 3713845 },
+    { url = "https://files.pythonhosted.org/packages/9b/68/bb9108f4341e41b95d203c9c8f47d7f52a7d6e96348b83dc3ba1f075e91d/splink-4.0.5-py3-none-any.whl", hash = "sha256:0afc28e12fc863030ad1add89dffa54c91a35b50f14fee64ac78bfa43f5d8866", size = 3717815 },
 ]
 
 [[package]]
