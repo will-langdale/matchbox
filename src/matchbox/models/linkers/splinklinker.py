@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional, Type
 
 from pandas import DataFrame
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
 from splink.internals.linker_components.training import LinkerTraining
@@ -49,8 +49,7 @@ class SplinkSettings(LinkerSettings):
     A data class to enforce the Splink linker's settings dictionary shape.
     """
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     database_api: Type[DuckDBAPI] = Field(
         default=DuckDBAPI,
