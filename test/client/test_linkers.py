@@ -206,6 +206,7 @@ def test_splink_training_functions():
             function="estimate_u_using_random_sampling", arguments={"foo": "bar"}
         )
 
+
 def test_splink_settings():
     valid_settings = SplinkSettings(
         left_id="hash",
@@ -233,4 +234,3 @@ def test_splink_settings():
             linker_settings=SettingsCreator(link_type="link_only"),
             threshold=None,
         )
-        

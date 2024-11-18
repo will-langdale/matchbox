@@ -143,7 +143,7 @@ class SplinkSettings(LinkerSettings):
                 "left_id and right_id must match in a Splink linker."
             )
         return self
-    
+
     @model_validator(mode="after")
     def check_link_only(self) -> "SplinkSettings":
         if self.linker_settings.link_type != "link_only":
