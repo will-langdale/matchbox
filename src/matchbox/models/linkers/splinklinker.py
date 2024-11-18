@@ -146,7 +146,7 @@ class SplinkSettings(LinkerSettings):
 
     @model_validator(mode="after")
     def add_enforced_settings(self) -> "SplinkSettings":
-        if self.linked_settings.link_type != "link_only":
+        if self.linker_settings.link_type != "link_only":
             raise ValueError('link_type must be set to "link_only"')
         self.linker_settings.link_type = "link_only"
         self.linker_settings.unique_id_column_name = self.left_id
