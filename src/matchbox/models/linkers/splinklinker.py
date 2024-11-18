@@ -7,6 +7,7 @@ from pandas import DataFrame
 from pydantic import BaseModel, Field, model_validator
 from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
+from splink.internals.linker_components.training import LinkerTraining
 
 from matchbox.models.linkers.base import Linker, LinkerSettings
 
@@ -14,19 +15,19 @@ logic_logger = logging.getLogger("mb_logic")
 
 
 class SplinkLinkerFunction(BaseModel):
-    """A method of splink.linker.Linker used to train the linker."""
+    """A method of splink.Linker.training used to train the linker."""
 
     function: str
     arguments: Dict[str, Any]
 
     @model_validator(mode="after")
     def validate_function_and_arguments(self) -> "SplinkLinkerFunction":
-        if not hasattr(SplinkLibLinkerClass, self.function):
+        if not hasattr(LinkerTraining, self.function):
             raise ValueError(
                 f"Function {self.function} not found as method of Splink Linker class"
             )
 
-        splink_linker_func = getattr(SplinkLibLinkerClass, self.function)
+        splink_linker_func = getattr(LinkerTraining, self.function)
         splink_linker_func_param_set = set(
             inspect.signature(splink_linker_func).parameters.keys()
         )
@@ -64,8 +65,9 @@ class SplinkSettings(LinkerSettings):
     )
     linker_training_functions: List[SplinkLinkerFunction] = Field(
         description="""
-            A list of dictionaries keyed to functions, with values of the function's
-            argument dictionary, to be run against the Linker in the order supplied.
+            A list of dictionaries where keys are the names of methods for
+            splink.Linker.training and values are dictionaries encoding the arguments of
+            those methods. Each function will be run in the order supplied.
 
             Example:
             
@@ -215,7 +217,7 @@ class SplinkLinker(Linker):
         )
 
         for func in self.settings.linker_training_functions:
-            proc_func = getattr(self._linker, func.function)
+            proc_func = getattr(self._linker.training, func.function)
             proc_func(**func.arguments)
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
