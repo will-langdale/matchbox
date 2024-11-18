@@ -56,13 +56,6 @@ class SplinkSettings(LinkerSettings):
         """,
     )
 
-    linker_class: Type[SplinkLibLinkerClass] = Field(
-        default=SplinkLibLinkerClass,
-        description="""
-            A Splink Linker class.
-        """,
-        validate_default=True,
-    )
     linker_training_functions: List[SplinkLinkerFunction] = Field(
         description="""
             A list of dictionaries where keys are the names of methods for
@@ -170,7 +163,6 @@ class SplinkLinker(Linker):
         cls,
         left_id: str,
         right_id: str,
-        linker_class: SplinkLibLinkerClass,
         linker_training_functions: List[Dict[str, Any]],
         linker_settings: SettingsCreator,
         threshold: float,
@@ -178,7 +170,6 @@ class SplinkLinker(Linker):
         settings = SplinkSettings(
             left_id=left_id,
             right_id=right_id,
-            linker_class=linker_class,
             linker_training_functions=[
                 SplinkLinkerFunction(**func) for func in linker_training_functions
             ],
@@ -209,7 +200,7 @@ class SplinkLinker(Linker):
         left[self.settings.left_id] = left[self.settings.left_id].apply(str)
         right[self.settings.right_id] = right[self.settings.right_id].apply(str)
 
-        self._linker = self.settings.linker_class(
+        self._linker = SplinkLibLinkerClass(
             input_table_or_tables=[left, right],
             input_table_aliases=["l", "r"],
             settings=self.settings.linker_settings,
