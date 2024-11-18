@@ -49,6 +49,9 @@ class SplinkSettings(LinkerSettings):
     A data class to enforce the Splink linker's settings dictionary shape.
     """
 
+    class Config:
+        arbitrary_types_allowed = True
+
     database_api: Type[DuckDBAPI] = Field(
         default=DuckDBAPI,
         description="""
