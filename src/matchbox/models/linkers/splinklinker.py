@@ -92,11 +92,9 @@ class SplinkSettings(LinkerSettings):
             See Splink's documentation for a full description of available settings.
             https://moj-analytical-services.github.io/splink/api_docs/settings_dict_guide.html
 
-            The following settings are enforced by matchbox:
-
-            * link_type is set to "link_only"
-            * unique_id_column_name is set to the value of left_id and right_id, which
-                must match
+            * link_type must be set to "link_only"
+            * unique_id_column_name is overridden to the value of left_id and right_id,
+                which must match
 
             Example:
 
@@ -149,6 +147,8 @@ class SplinkSettings(LinkerSettings):
 
     @model_validator(mode="after")
     def add_enforced_settings(self) -> "SplinkSettings":
+        if self.linked_settings.link_type != "link_only":
+            raise ValueError('link_type must be set to "link_only"')
         self.linker_settings.link_type = "link_only"
         self.linker_settings.unique_id_column_name = self.left_id
         return self
