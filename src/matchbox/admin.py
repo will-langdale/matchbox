@@ -5,11 +5,13 @@ import click
 import tomli
 from dotenv import find_dotenv, load_dotenv
 
+from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import (
-    MatchboxSettings,
     Source,
 )
 from matchbox.server.models import SourceWarehouse
+
+logger = logging.getLogger("admin_pipeline")
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -17,7 +19,7 @@ load_dotenv(dotenv_path)
 
 def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
     """Loads datasets for indexing from the datasets settings TOML file."""
-    config = tomli.load(datasets)
+    config = tomli.loads(datasets.read_text())
 
     warehouses: dict[str, SourceWarehouse] = {}
     for alias, warehouse_config in config["warehouses"].items():
@@ -36,12 +38,14 @@ def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
 @click.argument(
     "datasets", type=click.Path(exists=True, dir_okay=False, path_type=Path)
 )
-def make_cmf(datasets: Path) -> None:
-    backend = MatchboxSettings().backend
+@inject_backend
+def make_cmf(backend: MatchboxDBAdapter, datasets: Path) -> None:
     dataset_dict = load_datasets_from_config(datasets=datasets)
 
     for dataset in dataset_dict.values():
-        backend.index(dataset=dataset, engine=dataset.database.engine)
+        logger.info(f"Indexing {dataset}")
+        backend.index(dataset=dataset)
+        logger.info(f"Finished indexing {dataset}")
 
 
 if __name__ == "__main__":

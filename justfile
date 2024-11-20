@@ -1,6 +1,6 @@
 # Make datasets table
 matchbox:
-    uv run python src/matchbox/admin.py --datasets datasets.toml
+    uv run python src/matchbox/admin.py datasets.toml
 
 # Delete all compiled Python files
 clean:

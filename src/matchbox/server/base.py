@@ -14,6 +14,7 @@ from typing import (
     cast,
 )
 
+from dotenv import find_dotenv, load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
@@ -36,6 +37,9 @@ else:
     Results = Any
 
 
+dotenv_path = find_dotenv(usecwd=True)
+load_dotenv(dotenv_path, override=True)
+
 R = TypeVar("R")
 P = ParamSpec("P")
 
@@ -43,7 +47,7 @@ P = ParamSpec("P")
 class MatchboxBackends(StrEnum):
     """The available backends for Matchbox."""
 
-    POSTGRES = "postgres"
+    POSTGRES = "postgresql"
 
 
 class MatchboxSettings(BaseSettings):
