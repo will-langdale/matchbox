@@ -1,6 +1,6 @@
 from typing import Any, Callable
 
-import splink.duckdb.comparison_library as cl
+import splink.comparison_library as cl
 from matchbox.models.dedupers import NaiveDeduper
 from matchbox.models.dedupers.base import Deduper
 from matchbox.models.linkers import (
@@ -10,8 +10,8 @@ from matchbox.models.linkers import (
 )
 from matchbox.models.linkers.base import Linker
 from pydantic import BaseModel, Field
-from splink.duckdb import blocking_rule_library as brl
-from splink.duckdb.linker import DuckDBLinker
+from splink import SettingsCreator
+from splink import blocking_rule_library as brl
 
 
 class DedupeTestParams(BaseModel):
@@ -236,21 +236,21 @@ def make_splink_li_settings(data: LinkTestParams) -> dict[str, Any]:
     # The m parameter is 1 because we're testing in a deterministic system, and
     # many of these tests only have one field, so we can't use expectation
     # maximisation to estimate. For testing raw functionality, fine to use 1
-    linker_settings = {
-        "retain_matching_columns": False,
-        "retain_intermediate_calculation_columns": False,
-        "blocking_rules_to_generate_predictions": [
+    linker_settings = SettingsCreator(
+        link_type="link_only",
+        retain_matching_columns=False,
+        retain_intermediate_calculation_columns=False,
+        blocking_rules_to_generate_predictions=[
             brl.block_on(field) for field in fields
         ],
-        "comparisons": [
-            cl.exact_match(field, m_probability_exact_match=1) for field in fields
+        comparisons=[
+            cl.ExactMatch(field).configure(m_probabilities=[1, 0]) for field in fields
         ],
-    }
+    )
 
     return {
         "left_id": "hash",
         "right_id": "hash",
-        "linker_class": DuckDBLinker,
         "linker_training_functions": linker_training_functions,
         "linker_settings": linker_settings,
         "threshold": None,

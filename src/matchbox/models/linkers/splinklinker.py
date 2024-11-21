@@ -4,9 +4,10 @@ import logging
 from typing import Any, Dict, List, Optional, Type
 
 from pandas import DataFrame
-from pydantic import BaseModel, Field, model_validator
-from splink.duckdb.linker import DuckDBLinker
-from splink.linker import Linker as SplinkLibLinkerClass
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from splink import DuckDBAPI, SettingsCreator
+from splink import Linker as SplinkLibLinkerClass
+from splink.internals.linker_components.training import LinkerTraining
 
 from matchbox.models.linkers.base import Linker, LinkerSettings
 
@@ -14,19 +15,19 @@ logic_logger = logging.getLogger("mb_logic")
 
 
 class SplinkLinkerFunction(BaseModel):
-    """A method of splink.linker.Linker used to train the linker."""
+    """A method of splink.Linker.training used to train the linker."""
 
     function: str
     arguments: Dict[str, Any]
 
     @model_validator(mode="after")
     def validate_function_and_arguments(self) -> "SplinkLinkerFunction":
-        if not hasattr(SplinkLibLinkerClass, self.function):
+        if not hasattr(LinkerTraining, self.function):
             raise ValueError(
                 f"Function {self.function} not found as method of Splink Linker class"
             )
 
-        splink_linker_func = getattr(SplinkLibLinkerClass, self.function)
+        splink_linker_func = getattr(LinkerTraining, self.function)
         splink_linker_func_param_set = set(
             inspect.signature(splink_linker_func).parameters.keys()
         )
@@ -48,18 +49,20 @@ class SplinkSettings(LinkerSettings):
     A data class to enforce the Splink linker's settings dictionary shape.
     """
 
-    linker_class: Type[SplinkLibLinkerClass] = Field(
-        default=DuckDBLinker,
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    database_api: Type[DuckDBAPI] = Field(
+        default=DuckDBAPI,
         description="""
-            A Splink Linker class. Defaults to DuckDBLinker, and has only been tested
-            with this class.
+            The Splink DB API, to choose between DuckDB (default) and Spark (untested)
         """,
-        validate_default=True,
     )
+
     linker_training_functions: List[SplinkLinkerFunction] = Field(
         description="""
-            A list of dictionaries keyed to functions, with values of the function's
-            argument dictionary, to be run against the Linker in the order supplied.
+            A list of dictionaries where keys are the names of methods for
+            splink.Linker.training and values are dictionaries encoding the arguments of
+            those methods. Each function will be run in the order supplied.
 
             Example:
             
@@ -81,54 +84,39 @@ class SplinkSettings(LinkerSettings):
             
         """
     )
-    linker_settings: Dict = Field(
+    linker_settings: SettingsCreator = Field(
         description="""
-            A valid settings dictionary for a Splink linker.
+            A valid Splink SettingsCreator.
 
             See Splink's documentation for a full description of available settings.
-            https://moj-analytical-services.github.io/splink/settings_dict_guide.html
+            https://moj-analytical-services.github.io/splink/api_docs/settings_dict_guide.html
 
-            The following settings are enforced by the Company Matching Framework:
-
-            * link_type is set to "link_only"
-            * unique_id_column_name is set to the value of left_id and right_id, which
-                must match
+            * link_type must be set to "link_only"
+            * unique_id_column_name is overridden to the value of left_id and right_id,
+                which must match
 
             Example:
 
-                >>> from splink.duckdb.blocking_rule_library import block_on
-                ... import splink.duckdb.comparison_library as cl
-                ... import splink.duckdb.comparison_template_library as ctl
+                >>> from splink import SettingsCreator, block_on
+                ... import splink.comparison_library as cl
+                ... import splink.comparison_template_library as ctl
                 ... 
-                ... splink_settings={
-                ...     "retain_matching_columns": False,
-                ...     "retain_intermediate_calculation_columns": False,
-                ...     "blocking_rules_to_generate_predictions": [
-                ...         \"""
-                ...             (l.company_name = r.company_name)
-                ...             and (
-                ...                 l.name_unusual_tokens <> ''
-                ...                 and r.name_unusual_tokens <> ''
-                ...             )
-                ...         \""",
-                ...         \"""
-                ...             (l.postcode = r.postcode)
-                ...             and (
-                ...                 l.postcode <> ''
-                ...                 and r.postcode <> ''
-                ...             )
-                ...         \""",
+                ... splink_settings = SettingsCreator(
+                ...     retain_matching_columns=False,
+                ...     retain_intermediate_calculation_columns=False,
+                ...     blocking_rules_to_generate_predictions=[
+                ...         block_on("company_name"),
+                ...         block_on("postcode"),
                 ...     ],
-                ...     "comparisons": [
+                ...     comparisons=[
                 ...         cl.jaro_winkler_at_thresholds(
                 ...             "company_name", 
                 ...             [0.9, 0.6], 
                 ...             term_frequency_adjustments=True
                 ...         ),
-                ...         ctl.postcode_comparison("postcode"),
-                ...     ],
-                ... }
-            
+                ...         ctl.postcode_comparison("postcode"), 
+                ...     ]
+                ... )         
         """
     )
     threshold: Optional[float] = Field(
@@ -157,13 +145,14 @@ class SplinkSettings(LinkerSettings):
         return self
 
     @model_validator(mode="after")
+    def check_link_only(self) -> "SplinkSettings":
+        if self.linker_settings.link_type != "link_only":
+            raise ValueError('link_type must be set to "link_only"')
+        return self
+
+    @model_validator(mode="after")
     def add_enforced_settings(self) -> "SplinkSettings":
-        enforced_settings = {
-            "link_type": "link_only",
-            "unique_id_column_name": self.left_id,
-        }
-        for k, v in enforced_settings.items():
-            self.linker_settings[k] = v
+        self.linker_settings.unique_id_column_name = self.left_id
         return self
 
 
@@ -179,15 +168,13 @@ class SplinkLinker(Linker):
         cls,
         left_id: str,
         right_id: str,
-        linker_class: SplinkLibLinkerClass,
         linker_training_functions: List[Dict[str, Any]],
-        linker_settings: Dict[str, Any],
+        linker_settings: SettingsCreator,
         threshold: float,
     ) -> "SplinkLinker":
         settings = SplinkSettings(
             left_id=left_id,
             right_id=right_id,
-            linker_class=linker_class,
             linker_training_functions=[
                 SplinkLinkerFunction(**func) for func in linker_training_functions
             ],
@@ -218,14 +205,15 @@ class SplinkLinker(Linker):
         left[self.settings.left_id] = left[self.settings.left_id].apply(str)
         right[self.settings.right_id] = right[self.settings.right_id].apply(str)
 
-        self._linker = self.settings.linker_class(
+        self._linker = SplinkLibLinkerClass(
             input_table_or_tables=[left, right],
             input_table_aliases=["l", "r"],
-            settings_dict=self.settings.linker_settings,
+            settings=self.settings.linker_settings,
+            db_api=self.settings.database_api(),
         )
 
         for func in self.settings.linker_training_functions:
-            proc_func = getattr(self._linker, func.function)
+            proc_func = getattr(self._linker.training, func.function)
             proc_func(**func.arguments)
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
@@ -235,7 +223,9 @@ class SplinkLinker(Linker):
                 "These values will be ignored"
             )
 
-        res = self._linker.predict(threshold_match_probability=self.settings.threshold)
+        res = self._linker.inference.predict(
+            threshold_match_probability=self.settings.threshold
+        )
 
         return (
             res.as_pandas_dataframe()
