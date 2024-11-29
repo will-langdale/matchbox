@@ -1,10 +1,25 @@
-from fastapi import FastAPI, HTTPException
+from enum import StrEnum
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+
+from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 app = FastAPI(
     title="matchbox API",
     version="0.1.0",
 )
+
+
+class BackendEntityType(StrEnum):
+    DATASETS = "datasets"
+    MODELS = "models"
+    DATA = "data"
+    CLUSTERS = "clusters"
+    CREATES = "creates"
+    MERGES = "merges"
+    PROPOSES = "proposes"
 
 
 class HealthCheck(BaseModel):
@@ -13,14 +28,33 @@ class HealthCheck(BaseModel):
     status: str = "OK"
 
 
+class CountResult(BaseModel):
+    """Response model for count results"""
+
+    entities: dict[BackendEntityType, int]
+
+
+def get_backend() -> MatchboxDBAdapter:
+    return BackendManager.get_backend()
+
+
 @app.get("/health")
 async def healthcheck() -> HealthCheck:
     return HealthCheck(status="OK")
 
 
 @app.get("/testing/count")
-async def count_backend_items(entity: str | None = None):
-    raise HTTPException(status_code=501, detail="Not implemented")
+async def count_backend_items(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    entity: BackendEntityType | None = None,
+) -> CountResult:
+    if entity is not None:
+        return CountResult(
+            entities={str(entity): getattr(backend, str(entity)).count()}
+        )
+    else:
+        res = {str(e): getattr(backend, str(e)).count() for e in BackendEntityType}
+        return CountResult(entities=res)
 
 
 @app.post("/testing/clear")
