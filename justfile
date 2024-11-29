@@ -16,3 +16,7 @@ format:
 test:
     docker compose up -d --wait
     uv run pytest
+
+# Run development version of API
+api:
+	uv run fastapi dev src/matchbox/server/api.py
