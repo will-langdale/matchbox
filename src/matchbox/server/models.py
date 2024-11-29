@@ -20,6 +20,11 @@ from matchbox.common.hash import HASH_FUNC
 
 T = TypeVar("T")
 
+# TEMPORARY
+import logging
+
+logger = logging.getLogger("cmf_pipelines")
+
 
 class Probability(BaseModel):
     """A probability of a match in the Matchbox database.
@@ -126,8 +131,12 @@ class Source(BaseModel):
 
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
+        logger.info("Matchbox: Start of to_table()")
+        logger.info("Matchbox: MetaData()")
         metadata = MetaData(schema=self.db_schema)
+        logger.info("Matchbox: Table()")
         table = Table(self.db_table, metadata, autoload_with=self.database.engine)
+        logger.info("Matchbox: End of to_table()")
         return table
 
     def _select(
@@ -154,10 +163,19 @@ class Source(BaseModel):
 
     def to_hash(self) -> bytes:
         """Generate a unique hash based on the table's columns and datatypes."""
+        logger.info("Matchbox: Start of to_hash()")
+        logger.info("Matchbox: to_table()")
         table = self.to_table()
-        schema_representation = ",".join(
+
+        # Original
+        # schema_representation = ",".join(
+        #     f"{col.name}:{str(col.type)}" for col in table.columns
+        # )
+
+        schema_representation = f"{str(self)}: " + ",".join(
             f"{col.name}:{str(col.type)}" for col in table.columns
         )
+        logger.info("Matchbox: End of to_hash()")
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
     def to_arrow(
@@ -177,5 +195,8 @@ class Source(BaseModel):
         limit: int | None = None,
     ) -> DataFrame:
         """Returns the dataset as a pandas DataFrame."""
+        logger.info("Matchbox: Start of to_pandas()")
+        logger.info("Matchbox: _select()")
         stmt = self._select(fields=fields, pks=pks, limit=limit)
+        logger.info("Matchbox: sql_to_df")
         return sql_to_df(stmt, self.database.engine, return_type="pandas")

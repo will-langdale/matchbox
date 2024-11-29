@@ -31,6 +31,9 @@ T = TypeVar("T")
 
 logic_logger = logging.getLogger("mb_logic")
 
+# Temporary
+pipelines_logger = logging.getLogger("cmf_pipelines")
+
 
 def hash_to_hex_decode(hash: bytes) -> bytes:
     """A workround for PostgreSQL so we can compile the query and use ConnectorX."""
@@ -258,6 +261,7 @@ def query(
         A table containing the requested data from each table, unioned together,
         with the hash key of each row in Matchbox, in the requested return type
     """
+    pipelines_logger.info("Matchbox: Start of query()")
     tables: list[pa.Table] = []
 
     if limit:
@@ -266,6 +270,7 @@ def query(
 
     with Session(engine) as session:
         # If a model was specified, validate and retrieve it
+        pipelines_logger.info("Matchbox: query() - Retrive model")
         truth_model = None
         if model is not None:
             truth_model = session.query(Models).filter(Models.name == model).first()
@@ -275,6 +280,7 @@ def query(
         # Process each source dataset
         for source, fields in selector.items():
             # Get the dataset model
+            pipelines_logger.info("Matchbox: query() - Retrieve dataset model")
             dataset = (
                 session.query(Models)
                 .join(Sources, Sources.model == Models.hash)
@@ -291,6 +297,7 @@ def query(
                     db_schema=source.db_schema, db_table=source.db_table
                 )
 
+            pipelines_logger.info("Matchbox: _resolve_cluster_hierarchy()")
             hash_query = _resolve_cluster_hierarchy(
                 dataset_hash=dataset.hash,
                 model=truth_model if truth_model else dataset,
@@ -305,14 +312,17 @@ def query(
                     limit_remainder -= 1
                 hash_query = hash_query.limit(limit_base + remain)
 
+            pipelines_logger.info("Matchbox: sql_to_df()")
             # Get cluster assignments
             mb_hashes = sql_to_df(hash_query, engine, return_type="arrow")
 
+            pipelines_logger.info("Matchbox: to_arrow()")
             # Get source data
             raw_data = source.to_arrow(
                 fields=set([source.db_pk] + fields), pks=mb_hashes["id"].to_pylist()
             )
 
+            pipelines_logger.info("Matchbox: key_to_sqlalchemy_label()")
             # Join and select columns
             joined_table = raw_data.join(
                 right_table=mb_hashes,
@@ -321,6 +331,7 @@ def query(
                 join_type="inner",
             )
 
+            pipelines_logger.info("Matchbox: key_to_sqlalchemy_label() - keep cols")
             keep_cols = ["hash"] + [key_to_sqlalchemy_label(f, source) for f in fields]
             match_cols = [col for col in joined_table.column_names if col in keep_cols]
 
@@ -329,6 +340,7 @@ def query(
     # Combine results
     result = pa.concat_tables(tables, promote_options="default")
 
+    pipelines_logger.info("Matchbox: End of query()")
     # Return in requested format
     if return_type == "arrow":
         return result

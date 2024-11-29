@@ -16,10 +16,16 @@ HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 
 HASH_FUNC = hashlib.sha256
 
+# TEMPORARY
+import logging
+
+logger = logging.getLogger("cmf_pipelines")
+
 
 def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
     with Session(dataset.database.engine) as warehouse_session:
+        logger.info("Matchbox: Start of dataset_to_hashlist")
         source_table = dataset.to_table()
 
         # Exclude the primary key from the columns to be hashed
@@ -27,13 +33,16 @@ def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, An
             [col for col in list(source_table.c.keys()) if col != dataset.db_pk]
         )
 
+        logger.info("Matchbox: select()")
         slct_stmt = select(
             func.concat(*source_table.c[cols]).label("raw"),
             func.array_agg(source_table.c[dataset.db_pk].cast(String)).label("id"),
         ).group_by(*source_table.c[cols])
 
+        logger.info("Matchbox: execute() slct_stmt with array_agg of cols")
         raw_result = warehouse_session.execute(slct_stmt)
 
+        logger.info("Matchbox: hash_data()")
         to_insert = [
             {
                 "hash": hash_data(data.raw),
@@ -43,6 +52,7 @@ def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, An
             for data in raw_result.all()
         ]
 
+    logger.info("Matchbox: End of dataset_to_hashlist")
     return to_insert
 
 

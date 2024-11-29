@@ -34,6 +34,11 @@ from matchbox.server.postgresql.utils.results import (
     get_model_probabilities,
 )
 
+# TEMPORARY
+import logging
+
+logger = logging.getLogger("cmf_pipelines")
+
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
     from polars import DataFrame as PolarsDataFrame
@@ -299,6 +304,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             dataset: The dataset to index.
             engine: The SQLAlchemy engine of your data warehouse.
         """
+        logger.info("Matchbox: insert_dataset()")
         insert_dataset(
             dataset=dataset,
             engine=MBDB.get_engine(),

@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from datetime import datetime
 
 import click
 import tomli
@@ -50,7 +51,8 @@ def make_cmf(backend: MatchboxDBAdapter, datasets: Path) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(
+        filename=f".logs/admin_pipeline_{datetime.now()}.log",
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(name)s - %(filename)s->%(funcName)s():%(lineno)s - %(levelname)s - %(message)s",
     )
     make_cmf()

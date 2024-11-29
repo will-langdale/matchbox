@@ -30,6 +30,7 @@ logic_logger = logging.getLogger("mb_logic")
 def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
 
+    logic_logger.info("Matchbox: Start of insert_dataset()")
     db_logger = logging.getLogger("sqlalchemy.engine")
     db_logger.setLevel(logging.WARNING)
 
@@ -37,6 +38,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     # Insert dataset #
     ##################
 
+    logic_logger.info("Matchbox: to_hash()")
     model_hash = dataset.to_hash()
 
     model_data = {
@@ -52,6 +54,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         "id": dataset.db_pk,
     }
 
+    logic_logger.info("Matchbox: dataset_to_hashlist()")
     clusters = dataset_to_hashlist(dataset=dataset, model_hash=model_hash)
 
     with engine.connect() as conn:
@@ -59,6 +62,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
 
         # Upsert into Models table
         models_stmt = insert(Models).values([model_data])
+        logic_logger.info("Matchbox: on_conflict_do_update()")
         models_stmt = models_stmt.on_conflict_do_update(
             index_elements=["hash"],
             set_={
@@ -80,13 +84,15 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
                 "id": sources_stmt.excluded.id,
             },
         )
-        conn.execute(sources_stmt)
+        logic_logger.info("Matchbox: sources_stmt")
+        result = conn.execute(sources_stmt)
 
         conn.commit()
 
         logic_logger.info(f"{dataset} added to Sources table")
 
         # Upsert into Clusters table
+        logic_logger.info("Matchbox: batch_ingest()")
         batch_ingest(
             records=[(clus["hash"], clus["dataset"], clus["id"]) for clus in clusters],
             table=Clusters,
