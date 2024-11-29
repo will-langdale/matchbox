@@ -1,6 +1,6 @@
-# 🔥 Matchbox (neé Company Matching Framework)
+# 🔥 Matchbox (née Company Matching Framework)
 
-Record matching is a chore. Matchbox is a march pipeline orchestration tool that aims to:
+Record matching is a chore. Matchbox is a match pipeline orchestration tool that aims to:
 
 * Make matching an iterative, collaborative, measurable problem
 * Allow organisations to know they have matching records without having to share the data
@@ -10,7 +10,7 @@ Matchbox doesn't store raw data, instead indexing the data in your warehouse and
 
 ## Use cases
 
-### Data archiects and engineers
+### Data architects and engineers
 
 * Reconcile entities across disparate datasets
 * Rationalise about the quality of different entity matching pipelines and serve up the best
