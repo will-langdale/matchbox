@@ -22,6 +22,11 @@ class BackendEntityType(StrEnum):
     PROPOSES = "proposes"
 
 
+class ModelResultsType(StrEnum):
+    PROBABILITIES = "probabilities"
+    CLUSTERS = "clusters"
+
+
 class HealthCheck(BaseModel):
     """Response model to validate and return when performing a health check."""
 
@@ -99,7 +104,7 @@ async def delete_model(name: str):
 
 
 @app.get("/models/{name}/results")
-async def get_results(name: str):
+async def get_results(name: str, result_type: ModelResultsType | None):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
