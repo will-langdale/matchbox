@@ -48,12 +48,13 @@ async def count_backend_items(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     entity: BackendEntityType | None = None,
 ) -> CountResult:
+    def get_count(e: BackendEntityType) -> int:
+        return getattr(backend, str(e)).count()
+
     if entity is not None:
-        return CountResult(
-            entities={str(entity): getattr(backend, str(entity)).count()}
-        )
+        return CountResult(entities={str(entity): get_count(entity)})
     else:
-        res = {str(e): getattr(backend, str(e)).count() for e in BackendEntityType}
+        res = {str(e): get_count(e) for e in BackendEntityType}
         return CountResult(entities=res)
 
 
