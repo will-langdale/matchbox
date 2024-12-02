@@ -21,7 +21,6 @@ dependencies = [
     "rustworkx>=0.15.1",
     "splink>=4.0.5",
     "sqlalchemy>=2.0.35",
-    "tomli>=2.0.1",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +29,7 @@ typing = [
 ]
 server = [
     "fastapi[standard]>=0.115.0,<0.116.0",
+    "tomli>=2.0.1",
 ]
 
 [tool.uv]
