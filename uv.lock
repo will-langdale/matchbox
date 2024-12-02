@@ -926,12 +926,12 @@ dependencies = [
     { name = "rustworkx" },
     { name = "splink" },
     { name = "sqlalchemy" },
-    { name = "tomli" },
 ]
 
 [package.optional-dependencies]
 server = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "tomli" },
 ]
 typing = [
     { name = "polars" },
@@ -966,7 +966,7 @@ requires-dist = [
     { name = "rustworkx", specifier = ">=0.15.1" },
     { name = "splink", specifier = ">=4.0.5" },
     { name = "sqlalchemy", specifier = ">=2.0.35" },
-    { name = "tomli", specifier = ">=2.0.1" },
+    { name = "tomli", marker = "extra == 'server'", specifier = ">=2.0.1" },
 ]
 
 [package.metadata.requires-dev]

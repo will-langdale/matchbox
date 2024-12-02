@@ -5,11 +5,11 @@ import click
 import tomli
 from dotenv import find_dotenv, load_dotenv
 
+from matchbox.common.db import SourceWarehouse
 from matchbox.server.base import (
     MatchboxSettings,
     Source,
 )
-from matchbox.server.models import SourceWarehouse
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)

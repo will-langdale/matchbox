@@ -3,6 +3,7 @@ import logging
 from dotenv import find_dotenv, load_dotenv
 from matchbox import process, query
 from matchbox.clean import company_name, company_number
+from matchbox.common.db import Source
 from matchbox.helpers import (
     cleaner,
     cleaners,
@@ -11,7 +12,6 @@ from matchbox.helpers import (
     selector,
     selectors,
 )
-from matchbox.server.models import Source
 from matchbox.server.postgresql import MatchboxPostgres
 from matplotlib.figure import Figure
 from pandas import DataFrame

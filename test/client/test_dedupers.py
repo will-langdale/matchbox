@@ -1,6 +1,6 @@
 import pytest
 from matchbox import make_model, query
-from matchbox.server.models import Source, SourceWarehouse
+from matchbox.common.db import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres
 from pandas import DataFrame
 
