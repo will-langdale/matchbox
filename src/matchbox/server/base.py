@@ -47,7 +47,7 @@ P = ParamSpec("P")
 class MatchboxBackends(StrEnum):
     """The available backends for Matchbox."""
 
-    POSTGRES = "postgresql"
+    POSTGRES = "postgres"
 
 
 class MatchboxSettings(BaseSettings):
