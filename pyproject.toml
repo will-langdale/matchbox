@@ -1,6 +1,6 @@
 [project]
 name = "matchbox"
-version = "0.1.0"
+version = "0.2.0"
 description = "A framework for orchestrating and comparing various company matching methodologies."
 authors = [{ name = "DDaTDataScienceTeam" }]
 license = {file = "LICENSE"}
