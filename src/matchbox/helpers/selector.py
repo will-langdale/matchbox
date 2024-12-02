@@ -8,11 +8,6 @@ from matchbox.common.db import get_schema_table_names
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.models import Source
 
-# TEMPORARY
-import logging
-
-logger = logging.getLogger("cmf_pipelines")
-
 
 @inject_backend
 def selector(
@@ -31,14 +26,10 @@ def selector(
     Returns:
         A dictionary of the validated Source and fields
     """
-    logger.info("Matchbox: Start of selector()")
-    logger.info("Matchbox: get_schema_table_names()")
     db_schema, db_table = get_schema_table_names(table, validate=True)
-    logger.info("Matchbox: backend.get_dataset()")
     dataset = backend.get_dataset(db_schema=db_schema, db_table=db_table, engine=engine)
 
     # Validate the fields
-    logger.info("Matchbox: inspect()")
     inspector = inspect(engine)
     all_cols = set(
         column["name"]
@@ -47,7 +38,7 @@ def selector(
     selected_cols = set(fields)
     if not selected_cols <= all_cols:
         raise ValueError(f"{selected_cols.difference(all_cols)} not found in {dataset}")
-    logger.info("Matchbox: End of selector()")
+
     return {dataset: fields}
 
 

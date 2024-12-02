@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-from datetime import datetime
 
 import click
 import tomli
@@ -20,7 +19,7 @@ load_dotenv(dotenv_path)
 
 @inject_backend
 def index_dataset(backend: MatchboxDBAdapter, dataset: Source) -> None:
-    backend.index(dataset=dataset, engine=dataset.database.engine)
+    backend.index(dataset=dataset)
 
 
 def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
@@ -46,10 +45,11 @@ def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
 )
 @inject_backend
 def make_matchbox(backend: MatchboxDBAdapter, datasets: Path) -> None:
-    
-    for dataset in datasets:
+    dataset_dict = load_datasets_from_config(datasets=datasets)
+
+    for dataset in dataset_dict.values():
         logger.info(f"Indexing {dataset}")
-        index_dataset(Source(dataset))
+        index_dataset(dataset)
         logger.info(f"Finished indexing {dataset}")
 
 
