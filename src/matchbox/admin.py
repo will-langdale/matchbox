@@ -18,6 +18,11 @@ dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
+@inject_backend
+def index_dataset(backend: MatchboxDBAdapter, dataset: Source) -> None:
+    backend.index(dataset=dataset, engine=dataset.database.engine)
+
+
 def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
     """Loads datasets for indexing from the datasets settings TOML file."""
     config = tomli.loads(datasets.read_text())
@@ -40,19 +45,17 @@ def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
     "datasets", type=click.Path(exists=True, dir_okay=False, path_type=Path)
 )
 @inject_backend
-def make_cmf(backend: MatchboxDBAdapter, datasets: Path) -> None:
-    dataset_dict = load_datasets_from_config(datasets=datasets)
-
-    for dataset in dataset_dict.values():
+def make_matchbox(backend: MatchboxDBAdapter, datasets: Path) -> None:
+    
+    for dataset in datasets:
         logger.info(f"Indexing {dataset}")
-        backend.index(dataset=dataset)
+        index_dataset(Source(dataset))
         logger.info(f"Finished indexing {dataset}")
 
 
 if __name__ == "__main__":
     logging.basicConfig(
-        filename=f".logs/admin_pipeline_{datetime.now()}.log",
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(filename)s->%(funcName)s():%(lineno)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    make_cmf()
+    make_matchbox()
