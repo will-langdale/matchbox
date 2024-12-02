@@ -4,6 +4,7 @@ import rustworkx as rx
 from sqlalchemy import (
     Engine,
     delete,
+    select,
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -125,55 +126,69 @@ def insert_model(
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
-        model_hash = list_to_value_ordered_hash([left.hash, right.hash, model])
+        model_hash = list_to_value_ordered_hash([left.hash, right.hash, bytes(model, encoding="utf-8")])
 
-        # Create new model
-        new_model = Models(
+        # Check if model exists
+        exists_stmt = select(Models).where(Models.hash == model_hash)
+        exists = session.scalar(exists_stmt) is not None
+
+        # Upsert new model
+        stmt = insert(Models).values(
             hash=model_hash,
             type=ModelType.MODEL.value,
             name=model,
             description=description,
             truth=1.0,
+        ).on_conflict_do_update(
+            index_elements=['hash'],
+            set_={
+                'name': model,
+                'description': description
+            }
         )
-        session.add(new_model)
-        session.flush()
 
-        def _create_closure_entries(parent_model: Models) -> None:
-            """Create closure entries for the new model, i.e. mappings between
-            nodes and any of their direct or indirect parents"""
-            session.add(
-                ModelsFrom(
-                    parent=parent_model.hash,
-                    child=model_hash,
-                    level=1,
-                    truth_cache=parent_model.truth,
-                )
-            )
+        session.execute(stmt)
 
-            ancestor_entries = (
-                session.query(ModelsFrom)
-                .filter(ModelsFrom.child == parent_model.hash)
-                .all()
-            )
+        if not exists:
 
-            for entry in ancestor_entries:
+            def _create_closure_entries(parent_model: Models) -> None:
+                """Create closure entries for the new model, i.e. mappings between
+                nodes and any of their direct or indirect parents"""
                 session.add(
                     ModelsFrom(
-                        parent=entry.parent,
+                        parent=parent_model.hash,
                         child=model_hash,
-                        level=entry.level + 1,
-                        truth_cache=entry.truth_cache,
+                        level=1,
+                        truth_cache=parent_model.truth,
                     )
                 )
 
-        # Create model lineage entries
-        _create_closure_entries(parent_model=left)
+                ancestor_entries = (
+                    session.query(ModelsFrom)
+                    .filter(ModelsFrom.child == parent_model.hash)
+                    .all()
+                )
 
-        if right != left:
-            _create_closure_entries(parent_model=right)
+                for entry in ancestor_entries:
+                    session.add(
+                        ModelsFrom(
+                            parent=entry.parent,
+                            child=model_hash,
+                            level=entry.level + 1,
+                            truth_cache=entry.truth_cache,
+                        )
+                    )
+
+            # Create model lineage entries
+            _create_closure_entries(parent_model=left)
+
+            if right != left:
+                _create_closure_entries(parent_model=right)
 
         session.commit()
 
+    status = "Inserted new" if not exists else "Updated existing"
+    logic_logger.info(f"[{model}] {status} model with hash {model_hash}")
     logic_logger.info(f"[{model}] Done!")
 
 
