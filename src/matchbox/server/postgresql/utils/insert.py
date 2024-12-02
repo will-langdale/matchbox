@@ -126,25 +126,28 @@ def insert_model(
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
-        model_hash = list_to_value_ordered_hash([left.hash, right.hash, bytes(model, encoding="utf-8")])
+        model_hash = list_to_value_ordered_hash(
+            [left.hash, right.hash, bytes(model, encoding="utf-8")]
+        )
 
         # Check if model exists
         exists_stmt = select(Models).where(Models.hash == model_hash)
         exists = session.scalar(exists_stmt) is not None
 
         # Upsert new model
-        stmt = insert(Models).values(
-            hash=model_hash,
-            type=ModelType.MODEL.value,
-            name=model,
-            description=description,
-            truth=1.0,
-        ).on_conflict_do_update(
-            index_elements=['hash'],
-            set_={
-                'name': model,
-                'description': description
-            }
+        stmt = (
+            insert(Models)
+            .values(
+                hash=model_hash,
+                type=ModelType.MODEL.value,
+                name=model,
+                description=description,
+                truth=1.0,
+            )
+            .on_conflict_do_update(
+                index_elements=["hash"],
+                set_={"name": model, "description": description},
+            )
         )
 
         session.execute(stmt)
