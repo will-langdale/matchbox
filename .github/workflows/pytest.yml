@@ -7,7 +7,7 @@ on:
 
 env:
   MB__BATCH_SIZE: 10_000
-  MB__BACKEND_TYPE: postgres
+  MB__BACKEND_TYPE: postgresql
   MB__DATASETS_CONFIG: datasets.toml
   # PostgreSQL backend settings
   MB__POSTGRES__HOST: localhost
