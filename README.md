@@ -5,8 +5,21 @@ Record matching is a chore. Matchbox is a match pipeline orchestration tool that
 * Make matching an iterative, collaborative, measurable problem
 * Allow organisations to know they have matching records without having to share the data
 * Allow matching pipelines to run iteratively
+* Support batch and real-time matching 
 
 Matchbox doesn't store raw data, instead indexing the data in your warehouse and leaving permissioning at the level of the user, service or pipeline. 
+
+## Installation
+To install the matchbox client:
+```
+pip install "matchbox @ git+ssh://git@github.com/uktrade/matchbox.git"
+```
+
+To install the full package, including the server features:
+
+```
+pip install "matchbox[server] @ git+ssh://git@github.com/uktrade/matchbox.git"
+```
 
 ## Use cases
 
@@ -48,7 +61,7 @@ If the dataset isn't already in matchbox, it'll need to be indexed.
 
 Pipelines using this part of matchbox will:
 
-1. Use `matchbox.query()` to retrive source data from a particular model's perspective
+1. Use `matchbox.query()` to retrieve source data from a particular model's perspective
 2. Use `matchbox.process()` to clean the data with standardised processes
 3. Use `matchbox.make_model()` with `matchbox.dedupers` and `matchbox.linkers` to create a new model
 4. Generate probabilistic model outputs using `model.run()`

@@ -909,14 +909,12 @@ wheels = [
 
 [[package]]
 name = "matchbox"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "altair" },
     { name = "click" },
     { name = "connectorx" },
     { name = "duckdb" },
-    { name = "fastapi", extra = ["standard"] },
     { name = "matplotlib" },
     { name = "pandas" },
     { name = "pg-bulk-ingest" },
@@ -932,6 +930,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+server = [
+    { name = "fastapi", extra = ["standard"] },
+]
 typing = [
     { name = "polars" },
 ]
@@ -949,11 +950,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "altair", specifier = ">=5.4.1" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "connectorx", specifier = ">=0.3.3" },
     { name = "duckdb", specifier = ">=1.1.1" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0,<0.116.0" },
+    { name = "fastapi", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.115.0,<0.116.0" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pg-bulk-ingest", specifier = ">=0.0.54" },
