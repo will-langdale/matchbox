@@ -1,10 +1,15 @@
 from enum import StrEnum
 from typing import Annotated
 
+from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
+
+dotenv_path = find_dotenv(usecwd=True)
+load_dotenv(dotenv_path)
+
 
 app = FastAPI(
     title="matchbox API",
@@ -45,6 +50,7 @@ def get_backend() -> MatchboxDBAdapter:
 
 @app.get("/health")
 async def healthcheck() -> HealthCheck:
+    """ """
     return HealthCheck(status="OK")
 
 
