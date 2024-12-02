@@ -1,3 +1,4 @@
+from matchbox.server.api import app
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxSettings,
@@ -5,6 +6,6 @@ from matchbox.server.base import (
     inject_backend,
 )
 
-__all__ = ["MatchboxDBAdapter", "MatchboxSettings", "inject_backend"]
+__all__ = ["app", "MatchboxDBAdapter", "MatchboxSettings", "inject_backend"]
 
 initialise_matchbox()
