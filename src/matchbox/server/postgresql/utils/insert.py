@@ -125,7 +125,7 @@ def insert_model(
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
-        model_hash = list_to_value_ordered_hash([left.hash, right.hash])
+        model_hash = list_to_value_ordered_hash([left.hash, right.hash, model])
 
         # Create new model
         new_model = Models(
