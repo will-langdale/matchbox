@@ -11,7 +11,7 @@ from matchbox.server.base import (
 )
 from matchbox.server.models import SourceWarehouse
 
-logger = logging.getLogger("admin_pipeline")
+logger = logging.getLogger("mb_logic")
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
