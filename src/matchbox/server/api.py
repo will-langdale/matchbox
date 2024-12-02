@@ -99,8 +99,8 @@ async def get_model(name: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.post("/models")
-async def add_model():
+@app.post("/models/{name}")
+async def add_model(name: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 

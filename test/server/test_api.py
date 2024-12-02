@@ -56,7 +56,7 @@ class TestMatchboxAPI:
     #     response = client.get("/sources/test_source")
     #     assert response.status_code == 200
 
-    # def test_insert_source():
+    # def test_add_source():
     #     response = client.post("/sources")
     #     assert response.status_code == 200
 
