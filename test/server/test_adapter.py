@@ -220,6 +220,13 @@ class TestMatchboxBackend:
 
         assert self.backend.models.count() == model_count + 3
 
+        # Test model upsert
+        self.backend.insert_model(
+            "link_1", left="dedupe_1", right="dedupe_2", description="Test upsert"
+        )
+
+        assert self.backend.models.count() == model_count + 3
+
     def test_model_get_probabilities(self):
         """Test that a model's ProbabilityResults can be retrieved."""
         self.setup_database("dedupe")
