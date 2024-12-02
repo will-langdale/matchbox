@@ -1,47 +1,48 @@
-from typing import Callable
+from unittest.mock import Mock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 from matchbox.server import app
-from matchbox.server.base import Source
 
 client = TestClient(app)
 
 
 class TestMatchboxAPI:
-    @pytest.fixture
-    def setup(
-        self,
-        setup_database: Callable,
-        warehouse_data: list[Source],
-        matchbox_postgres,
-    ):
-        setup_database(matchbox_postgres, warehouse_data, "link")
-
     def test_healthcheck(self):
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "OK"}
 
-    def test_count_all_backend_items(self, setup):
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_count_all_backend_items(self, get_backend):
+        entity_counts = {
+            "datasets": 1,
+            "models": 2,
+            "data": 3,
+            "clusters": 4,
+            "creates": 5,
+            "merges": 6,
+            "proposes": 7,
+        }
+        mock_backend = Mock()
+        for e, c in entity_counts.items():
+            mock_e = Mock()
+            mock_e.count = Mock(return_value=c)
+            setattr(mock_backend, e, mock_e)
+        get_backend.return_value = mock_backend
+
         response = client.get("/testing/count")
         assert response.status_code == 200
-        assert response.json() == {
-            "entities": {
-                "datasets": 3,
-                "models": 5,
-                "data": 4500,
-                "clusters": 5500,
-                "creates": 5500,
-                "merges": 12000,
-                "proposes": 5500,
-            }
-        }
+        assert response.json() == {"entities": entity_counts}
 
-    def test_count_backend_item(self, setup):
-        response = client.get("/testing/count", params={"entity": "datasets"})
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_count_backend_item(self, get_backend):
+        mock_backend = Mock()
+        mock_backend.models.count = Mock(return_value=20)
+        get_backend.return_value = mock_backend
+
+        response = client.get("/testing/count", params={"entity": "models"})
         assert response.status_code == 200
-        assert response.json() == {"entities": {"datasets": 3}}
+        assert response.json() == {"entities": {"models": 20}}
 
     # def test_clear_backend():
     #     response = client.post("/testing/clear")
