@@ -1,3 +1,4 @@
+import json
 from enum import StrEnum
 from typing import Annotated
 
@@ -9,7 +10,6 @@ from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
-
 
 app = FastAPI(
     title="matchbox API",
@@ -43,6 +43,14 @@ class CountResult(BaseModel):
 
     entities: dict[BackendEntityType, int]
 
+class Source(BaseModel):
+    """Response model for sources"""
+    schema: str
+    table: str
+    id: str
+
+class Sources(BaseModel):
+    sources: list[Source]
 
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
@@ -56,8 +64,8 @@ async def healthcheck() -> HealthCheck:
 
 @app.get("/testing/count")
 async def count_backend_items(
-    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-    entity: BackendEntityType | None = None,
+        backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+        entity: BackendEntityType | None = None,
 ) -> CountResult:
     def get_count(e: BackendEntityType) -> int:
         return getattr(backend, str(e)).count()
@@ -75,8 +83,19 @@ async def clear_backend():
 
 
 @app.get("/sources")
-async def list_sources():
-    raise HTTPException(status_code=501, detail="Not implemented")
+async def list_sources(
+        backend: Annotated[MatchboxDBAdapter, Depends(get_backend)]
+) -> Sources:
+    datasets = backend.datasets.list()
+    result = []
+    for dataset in datasets:
+        print(dataset)
+        result.append(Source(
+            table=getattr(dataset, "table"),
+            id= getattr(dataset, "id"),
+            schema= getattr(dataset, "schema"),
+            ))
+    return Sources(sources=result)
 
 
 @app.get("/sources/{hash}")
