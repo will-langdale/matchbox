@@ -55,7 +55,9 @@ class TestMatchboxAPI:
 
     @patch("matchbox.server.base.BackendManager.get_backend")
     def test_list_sources(self, get_backend):
-        obj_mock = Sources(table="mock table", schema="mock_schema", id="mock_id")
+        hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
+        byte_arr = bytearray.fromhex(hash_hex)
+        obj_mock = Sources(table="mock table", schema="mock_schema", id="mock_id", model=byte_arr)
         mock_backend = Mock()
         mock_backend.datasets.list = Mock(return_value=[obj_mock])
         get_backend.return_value = mock_backend
@@ -65,8 +67,8 @@ class TestMatchboxAPI:
     @patch("matchbox.server.base.BackendManager.get_backend")
     def test_get_source(self, get_backend):
         hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
-        test = bytearray.fromhex(hash_hex)
-        obj_mock = Sources(table="mock_table", schema="mock_schema", id="mock_id", model=test)
+        byte_arr = bytearray.fromhex(hash_hex)
+        obj_mock = Sources(table="mock_table", schema="mock_schema", id="mock_id", model=byte_arr)
         mock_backend = Mock()
         mock_backend.datasets.list = Mock(return_value=[obj_mock])
         get_backend.return_value = mock_backend

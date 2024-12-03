@@ -49,7 +49,7 @@ class Source(BaseModel):
     schema: str
     table: str
     id: str
-    model: bytes
+    model: str
 
 
 class Sources(BaseModel):
@@ -98,7 +98,7 @@ async def list_sources(
             table=getattr(dataset, "table"),
             id=getattr(dataset, "id"),
             schema=getattr(dataset, "schema"),
-            model = hexlify(getattr(dataset, "model"))
+            model = hexlify(getattr(dataset, "model")).decode('ascii')
         ))
     return Sources(sources=result)
 
