@@ -14,7 +14,7 @@ format:
 
 # Scan for secrets
 scan:
-    trufflehog git file://matchbox/
+    trufflehog git file://. --only-verified
 
 # Run Python tests
 test:
