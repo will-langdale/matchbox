@@ -1,4 +1,3 @@
-
 from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -77,7 +76,7 @@ class TestMatchboxAPI:
             "table": "mock_table",
             "id": "mock_id",
             "model": hash_hex
-         }
+             }
         }
 
     # def test_add_source():
