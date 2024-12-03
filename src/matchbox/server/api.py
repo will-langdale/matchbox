@@ -1,4 +1,4 @@
-import json
+from binascii import hexlify
 from enum import StrEnum
 from typing import Annotated
 
@@ -6,7 +6,7 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from matchbox.server.base import BackendManager, MatchboxDBAdapter
+from matchbox.server.base import BackendManager, MatchboxDBAdapter, MatchboxModelAdapter
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -43,14 +43,18 @@ class CountResult(BaseModel):
 
     entities: dict[BackendEntityType, int]
 
+
 class Source(BaseModel):
     """Response model for sources"""
     schema: str
     table: str
     id: str
+    model: bytes
+
 
 class Sources(BaseModel):
     sources: list[Source]
+
 
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
@@ -92,15 +96,28 @@ async def list_sources(
         print(dataset)
         result.append(Source(
             table=getattr(dataset, "table"),
-            id= getattr(dataset, "id"),
-            schema= getattr(dataset, "schema"),
-            ))
+            id=getattr(dataset, "id"),
+            schema=getattr(dataset, "schema"),
+            model = hexlify(getattr(dataset, "model"))
+        ))
     return Sources(sources=result)
 
 
 @app.get("/sources/{hash}")
-async def get_source(hash: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+async def get_source(hash: str,
+                     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)]
+                     )-> dict[str, Source] | str:
+    datasets = backend.datasets.list()
+    for dataset in datasets:
+        model = hexlify(getattr(dataset, "model")).decode('ascii')
+        if model == hash:
+            result_obj = Source(
+            table=getattr(dataset, "table"),
+            id=getattr(dataset, "id"),
+            schema=getattr(dataset, "schema"),
+            model = model)
+            return {"source": result_obj}
+    return "Source not found"
 
 
 @app.post("/sources/{hash}")

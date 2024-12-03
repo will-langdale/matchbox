@@ -1,5 +1,7 @@
+import base64
 from unittest.mock import Mock, patch, MagicMock
 
+from binascii import hexlify
 from fastapi.testclient import TestClient
 
 from build.lib.matchbox.server.base import ListableAndCountable
@@ -60,9 +62,24 @@ class TestMatchboxAPI:
         response = client.get("/sources")
         assert response.status_code == 200
 
-    # def test_get_source():
-    #     response = client.get("/sources/test_source")
-    #     assert response.status_code == 200
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_get_source(self, get_backend):
+        hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
+        test = bytearray.fromhex(hash_hex)
+        obj_mock = Sources(table="mock_table", schema="mock_schema", id="mock_id", model=test)
+        mock_backend = Mock()
+        mock_backend.datasets.list = Mock(return_value=[obj_mock])
+        get_backend.return_value = mock_backend
+
+        response = client.get(f"/sources/{hash_hex}")
+        assert response.status_code == 200
+        assert response.json() == {"source": {
+            "schema": "mock_schema",
+            "table": "mock_table",
+            "id": "mock_id",
+            "model": hash_hex
+         }
+        }
 
     # def test_add_source():
     #     response = client.post("/sources")
