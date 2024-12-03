@@ -164,7 +164,7 @@ class Source(BaseModel):
     def to_hash(self) -> bytes:
         """Generate a unique hash based on the table's columns and datatypes."""
         table = self.to_table()
-        schema_representation = ",".join(
+        schema_representation = f"{str(self)}: " + ",".join(
             f"{col.name}:{str(col.type)}" for col in table.columns
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
