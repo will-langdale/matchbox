@@ -65,6 +65,8 @@ This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated
 
 Secret scanning is done with [trufflehog](https://github.com/trufflesecurity/trufflehog).
 
+For security, use of [pre-commit](https://pre-commit.com) is expected. Ensure your hooks are installed with `pre-commit install`.
+
 Task running is done with [just](https://just.systems/man/en/). To see all available commands:
 
 ```console
