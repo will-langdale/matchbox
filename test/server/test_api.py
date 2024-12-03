@@ -1,10 +1,7 @@
-import base64
-from unittest.mock import Mock, patch, MagicMock
 
-from binascii import hexlify
+from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
 
-from build.lib.matchbox.server.base import ListableAndCountable
 from matchbox.server import app
 from matchbox.server.postgresql.orm import Sources
 
