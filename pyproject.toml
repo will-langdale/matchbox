@@ -7,19 +7,16 @@ license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "click>=8.1.7",
     "connectorx>=0.3.3",
     "duckdb>=1.1.1",
     "matplotlib>=3.9.2",
     "pandas>=2.2.3",
-    "pg-bulk-ingest>=0.0.54",
-    "psycopg2>=2.9.10",
     "pyarrow>=17.0.0",
     "pydantic-settings>=2.5.2",
     "pydantic>=2.9.2",
     "python-dotenv>=1.0.1",
     "rustworkx>=0.15.1",
-    "splink>=4.0.5",
+    "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",
 ]
 
@@ -28,6 +25,7 @@ typing = [
     "polars>=1.11.0",
 ]
 server = [
+    "click>=8.1.7",
     "fastapi[standard]>=0.115.0,<0.116.0",
     "tomli>=2.0.1",
 ]
