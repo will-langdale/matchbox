@@ -15,9 +15,9 @@ from matchbox.common.results import (
     Results,
     to_clusters,
 )
-from matchbox.helpers.selector import query, selector, selectors
+from matchbox.helpers.selector import match, query, selector, selectors
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
-from matchbox.server.models import Source
+from matchbox.server.models import Match, Source
 from pandas import DataFrame
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -540,6 +540,62 @@ class TestMatchboxBackend:
             "test_duns_duns",
         }
         assert crn_duns.hash.nunique() == 1000
+
+    def test_match(self, revolution_inc: dict[str, list[str]]):
+        """Test that matching data works."""
+        self.setup_database("link")
+
+        crn_x_duns = "deterministic_naive_test.crn_naive_test.duns"
+        crn_wh = self.warehouse_data[0]
+        duns_wh = self.warehouse_data[1]
+
+        # Test 1:* match
+
+        res = match(
+            backend=self.backend,
+            source_id=revolution_inc["duns"][0],
+            source=str(duns_wh),
+            target=str(crn_wh),
+            model=crn_x_duns,
+        )
+
+        assert isinstance(res, Match)
+        assert Match.source == str(duns_wh)
+        assert Match.target == str(crn_wh)
+        assert Match.source_id == set(revolution_inc["duns"])
+        assert Match.target_id == set(revolution_inc["crn"])
+
+        # Test *:1 match
+
+        res = match(
+            backend=self.backend,
+            source_id=revolution_inc["crn"][0],
+            source=str(crn_wh),
+            target=str(duns_wh),
+            model=crn_x_duns,
+        )
+
+        assert isinstance(res, Match)
+        assert Match.source == str(crn_wh)
+        assert Match.target == str(duns_wh)
+        assert Match.source_id == set(revolution_inc["crn"])
+        assert Match.target_id == set(revolution_inc["duns"])
+
+        # Test 0:0 match
+
+        res = match(
+            backend=self.backend,
+            source_id="foo",
+            source=str(crn_wh),
+            target=str(duns_wh),
+            model=crn_x_duns,
+        )
+
+        assert isinstance(res, Match)
+        assert Match.source == str(crn_wh)
+        assert Match.target == str(duns_wh)
+        assert Match.source_id == set()
+        assert Match.target_id == set()
 
     def test_clear(self):
         """Test clearing the database."""

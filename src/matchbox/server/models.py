@@ -21,6 +21,16 @@ from matchbox.common.hash import HASH_FUNC
 T = TypeVar("T")
 
 
+class Match(BaseModel):
+    """A match between primary keys in the Matchbox database."""
+
+    cluster: bytes
+    source: str
+    source_id: set[str] = Field(default_factory=set)
+    target: str
+    target_id: set[str] = Field(default_factory=set)
+
+
 class Probability(BaseModel):
     """A probability of a match in the Matchbox database.
 

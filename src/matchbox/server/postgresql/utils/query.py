@@ -13,7 +13,7 @@ from matchbox.common.exceptions import (
     MatchboxDatasetError,
     MatchboxModelError,
 )
-from matchbox.server.models import Source
+from matchbox.server.models import Match, Source
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
@@ -341,3 +341,25 @@ def query(
         )
     else:
         raise ValueError(f"return_type of {return_type} not valid")
+
+
+def match(
+    source_id: str,
+    source: str,
+    target: str | list[str],
+    model: str,
+    engine: Engine,
+    threshold: float | dict[str, float] | None = None,
+) -> Match | list[Match]:
+    """Matches an ID in a source dataset and returns the keys in the targets.
+
+    To accomplish this, the function:
+
+    * Reconstructs the model lineage from the specified model
+    * Iterates through each target, and
+        * Retrieves its cluster hash according to the model
+        * Retrieves all other IDs in the cluster in the source dataset
+        * Retrieves all other IDs in the cluster in the target dataset
+    * Returns the results as Match objects, one per target
+    """
+    pass
