@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     ForeignKey,
+    Index,
     select,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
@@ -105,6 +106,22 @@ class Models(CountMixin, MBDB.MatchboxBase):
             )
             return set(session.execute(descendant_query).scalars().all())
 
+    def get_lineage(self) -> dict[bytes, float]:
+        """Returns all ancestors and their cached truth values from this model."""
+        with Session(MBDB.get_engine()) as session:
+            lineage_query = (
+                select(ModelsFrom.parent, ModelsFrom.truth_cache)
+                .where(ModelsFrom.child == self.hash)
+                .order_by(ModelsFrom.level.desc())
+            )
+
+            results = session.execute(lineage_query).all()
+
+            lineage = {parent: truth for parent, truth in results}
+            lineage[self.hash] = self.truth
+
+            return lineage
+
     def get_lineage_to_dataset(
         self, model: "Models"
     ) -> tuple[bytes, dict[bytes, float]]:
@@ -179,8 +196,12 @@ class Contains(CountMixin, MBDB.MatchboxBase):
         BYTEA, ForeignKey("clusters.hash", ondelete="CASCADE"), primary_key=True
     )
 
-    # Constraints
-    __table_args__ = (CheckConstraint("parent != child", name="no_self_containment"),)
+    # Constraints and indices
+    __table_args__ = (
+        CheckConstraint("parent != child", name="no_self_containment"),
+        Index("ix_contains_parent_child", "parent", "child"),
+        Index("ix_contains_child_parent", "child", "parent"),
+    )
 
 
 class Clusters(CountMixin, MBDB.MatchboxBase):
@@ -208,6 +229,9 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Clusters.hash == Contains.child",
         backref="parents",
     )
+
+    # Constraints and indices
+    __table_args__ = (Index("ix_clusters_id_gin", id, postgresql_using="gin"),)
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
