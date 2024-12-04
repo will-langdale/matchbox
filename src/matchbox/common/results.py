@@ -278,18 +278,23 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
     edges_df = (
         results.dataframe.sort_values("probability", ascending=False)
         .filter(["left_id", "right_id", "probability"])
-        .astype({"left_id": "binary[pyarrow]", "right_id": "binary[pyarrow]"})
+        .astype(
+            {"left_id": "large_binary[pyarrow]", "right_id": "large_binary[pyarrow]"}
+        )
     )
 
+    # Get unique probability thresholds, sorted
+    thresholds = edges_df["probability"].unique()
+
     # Process edges grouped by probability threshold
-    for prob, group in edges_df.groupby("probability"):
+    for prob in thresholds:
+        threshold_edges = edges_df[edges_df["probability"] == prob]
         # Get state before adding this batch of edges
         old_components = {frozenset(comp) for comp in rx.connected_components(G)}
 
         # Add all nodes and edges at this probability threshold
-        for left, right in group[["left_id", "right_id"]].itertuples(
-            index=False, name=None
-        ):
+        edge_values = threshold_edges[["left_id", "right_id"]].values
+        for left, right in edge_values:
             for hash_val in (left, right):
                 if hash_val not in added:
                     idx = G.add_node(hash_val)
