@@ -215,6 +215,7 @@ def _cluster_results_to_hierarchical(
 
     thresholds = sorted(cluster_df["threshold"].unique(), reverse=True)
 
+    # Add all clusters corresponding to a simple two-item probability edge
     hierarchy = []
     for _, row in prob_df.iterrows():
         parent, left_id, right_id, prob = row[
