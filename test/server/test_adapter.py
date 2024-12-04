@@ -541,15 +541,13 @@ class TestMatchboxBackend:
         }
         assert crn_duns.hash.nunique() == 1000
 
-    def test_match(self, revolution_inc: dict[str, list[str]]):
-        """Test that matching data works."""
+    def test_match_one_to_many(self, revolution_inc: dict[str, list[str]]):
+        """Test that matching data works when the target has many IDs."""
         self.setup_database("link")
 
         crn_x_duns = "deterministic_naive_test.crn_naive_test.duns"
         crn_wh = self.warehouse_data[0]
         duns_wh = self.warehouse_data[1]
-
-        # Test 1:* match
 
         res = match(
             backend=self.backend,
@@ -565,7 +563,13 @@ class TestMatchboxBackend:
         assert res.source_id == set(revolution_inc["duns"])
         assert res.target_id == set(revolution_inc["crn"])
 
-        # Test *:1 match
+    def test_match_many_to_one(self, revolution_inc: dict[str, list[str]]):
+        """Test that matching data works when the source has more possible IDs."""
+        self.setup_database("link")
+
+        crn_x_duns = "deterministic_naive_test.crn_naive_test.duns"
+        crn_wh = self.warehouse_data[0]
+        duns_wh = self.warehouse_data[1]
 
         res = match(
             backend=self.backend,
@@ -581,7 +585,13 @@ class TestMatchboxBackend:
         assert res.source_id == set(revolution_inc["crn"])
         assert res.target_id == set(revolution_inc["duns"])
 
-        # Test 0:0 match
+    def test_match_none_to_none(self):
+        """Test that matching data work when the supplied key doesn't exist."""
+        self.setup_database("link")
+
+        crn_x_duns = "deterministic_naive_test.crn_naive_test.duns"
+        crn_wh = self.warehouse_data[0]
+        duns_wh = self.warehouse_data[1]
 
         res = match(
             backend=self.backend,
