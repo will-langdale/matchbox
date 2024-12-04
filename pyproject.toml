@@ -7,6 +7,7 @@ license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "click>=8.1.7",
     "connectorx>=0.3.3",
     "duckdb>=1.1.1",
     "matplotlib>=3.9.2",
@@ -21,15 +22,14 @@ dependencies = [
     "sqlalchemy>=2.0.35",
 ]
 
-[project.optional-dependencies]
-typing = [
-    "polars>=1.11.0",
-]
+[dependency-groups]
 server = [
-    "click>=8.1.7",
     "fastapi[standard]>=0.115.0,<0.116.0",
     "pg-bulk-ingest>=0.0.54",
     "tomli>=2.0.1",
+]
+typing = [
+    "polars>=1.11.0",
 ]
 
 [tool.uv]
@@ -42,6 +42,7 @@ dev-dependencies = [
     "ruff>=0.6.8",
     "docker>=7.1.0",
 ]
+default-groups = ["dev", "foo"]
 package = true
 
 [tool.ruff]
