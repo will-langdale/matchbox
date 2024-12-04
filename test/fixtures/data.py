@@ -81,10 +81,9 @@ def duns_companies(all_companies: DataFrame) -> DataFrame:
         all_companies.filter(["company_name", "duns"])
         .sample(n=500)
         .reset_index(drop=True)
-        .reset_index(names="id")
         .convert_dtypes(dtype_backend="pyarrow")
     )
-    df_duns["id"] = df_duns["id"].apply(lambda x: uuid.UUID(int=x))
+    df_duns["id"] = df_duns.index
 
     return df_duns
 

@@ -9,16 +9,19 @@ from pyarrow import Table as ArrowTable
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
-    Engine,
+    ColumnElement,
     MetaData,
-    Select,
+    String,
     Table,
+    cast,
     create_engine,
     select,
 )
 from sqlalchemy import text as sqltext
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql.selectable import Select
 
 if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame
@@ -148,13 +151,27 @@ class Source(BaseModel):
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
         table = self.to_table()
 
+        def _get_column(col_name: str) -> ColumnElement:
+            """Helper to get a column with proper casting and labeling for PKs"""
+            col = table.columns[col_name]
+            if col_name == self.db_pk:
+                return cast(col, String).label(
+                    f"{table.schema}_{table.name}_{col_name}"
+                )
+            return col
+
+        # Determine which columns to select
         if fields:
-            stmt = select(table.c[tuple(fields)])
+            select_cols = [_get_column(field) for field in fields]
         else:
-            stmt = select(table)
+            select_cols = [_get_column(col.name) for col in table.columns]
+
+        stmt = select(*select_cols)
 
         if pks:
-            stmt = stmt.where(table.c[self.db_pk].in_(pks))
+            string_pks = [str(pk) for pk in pks]
+            pk_col = table.columns[self.db_pk]
+            stmt = stmt.where(cast(pk_col, String).in_(string_pks))
 
         if limit:
             stmt = stmt.limit(limit)
