@@ -912,12 +912,10 @@ name = "matchbox"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "click" },
     { name = "connectorx" },
     { name = "duckdb" },
     { name = "matplotlib" },
     { name = "pandas" },
-    { name = "pg-bulk-ingest" },
     { name = "psycopg2" },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -930,7 +928,9 @@ dependencies = [
 
 [package.optional-dependencies]
 server = [
+    { name = "click" },
     { name = "fastapi", extra = ["standard"] },
+    { name = "pg-bulk-ingest" },
     { name = "tomli" },
 ]
 typing = [
@@ -950,13 +950,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "click", specifier = ">=8.1.7" },
+    { name = "click", marker = "extra == 'server'", specifier = ">=8.1.7" },
     { name = "connectorx", specifier = ">=0.3.3" },
     { name = "duckdb", specifier = ">=1.1.1" },
     { name = "fastapi", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.115.0,<0.116.0" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "pandas", specifier = ">=2.2.3" },
-    { name = "pg-bulk-ingest", specifier = ">=0.0.54" },
+    { name = "pg-bulk-ingest", marker = "extra == 'server'", specifier = ">=0.0.54" },
     { name = "polars", marker = "extra == 'typing'", specifier = ">=1.11.0" },
     { name = "psycopg2", specifier = ">=2.9.10" },
     { name = "pyarrow", specifier = ">=17.0.0" },
@@ -964,7 +964,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5.2" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "rustworkx", specifier = ">=0.15.1" },
-    { name = "splink", specifier = ">=4.0.5" },
+    { name = "splink", specifier = ">=4.0.5,<4.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "tomli", marker = "extra == 'server'", specifier = ">=2.0.1" },
 ]

@@ -74,7 +74,10 @@ With the truth threshold set to `1.0` by default, deterministic methodologies ar
 
 ## Development
 
-This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/).
+This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/). To install all dependencies for this project, run
+```
+uv sync --all-extras
+```
 
 Task running is done with [just](https://just.systems/man/en/). To see all available commands:
 
