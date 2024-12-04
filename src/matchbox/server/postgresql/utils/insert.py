@@ -242,27 +242,27 @@ def _cluster_results_to_hierarchical(
             if len(members) <= 2:
                 continue
 
-            ultimate_parents: set[bytes] = set()
+            seen = set(members)
+            current = set(members)
+            ultimate_parents = set()
 
-            # Process each member's ancestry
-            for member in members:
-                current = {member}
-                seen = {member}
+            # Keep traversing until we've explored all paths
+            while current:
+                next_level = set()
+                # If any current nodes have no parents above threshold,
+                # they are ultimate parents for this threshold
+                for node in current:
+                    parents = {
+                        p for p, prob in adj_dict[node] if prob >= threshold_float
+                    }
+                    next_parents = parents - seen
+                    if not parents:  # No parents = ultimate parent
+                        ultimate_parents.add(node)
 
-                while current:
-                    next_level = set()
-                    for node in current:
-                        # Get parents with probability >= threshold
-                        parents = {
-                            p for p, prob in adj_dict[node] if prob >= threshold_float
-                        }
-                        next_level.update(parents - seen)
-                        seen.update(parents)
+                    next_level.update(next_parents)
+                    seen.update(parents)
 
-                    if not next_level:
-                        # If no parents found, current nodes are ultimate parents
-                        ultimate_parents.update(current)
-                    current = next_level
+                current = next_level
 
             for up in ultimate_parents:
                 hierarchy.append((parent, up, threshold_float))
