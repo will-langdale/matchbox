@@ -1,10 +1,10 @@
 [warehouses.pg_warehouse]
 db_type = "postgresql"
-username = "your_username"
-password = "your_password"
+database = "warehouse"
+user = "warehouse_user"
+password = "warehouse_password"
 host = "localhost"
-port = 5432
-database = "companies_db"
+port = 7654
 
 [datasets.companies_house]
 database = "pg_warehouse"
