@@ -560,10 +560,10 @@ class TestMatchboxBackend:
         )
 
         assert isinstance(res, Match)
-        assert Match.source == str(duns_wh)
-        assert Match.target == str(crn_wh)
-        assert Match.source_id == set(revolution_inc["duns"])
-        assert Match.target_id == set(revolution_inc["crn"])
+        assert res.source == str(duns_wh)
+        assert res.target == str(crn_wh)
+        assert res.source_id == set(revolution_inc["duns"])
+        assert res.target_id == set(revolution_inc["crn"])
 
         # Test *:1 match
 
@@ -576,10 +576,10 @@ class TestMatchboxBackend:
         )
 
         assert isinstance(res, Match)
-        assert Match.source == str(crn_wh)
-        assert Match.target == str(duns_wh)
-        assert Match.source_id == set(revolution_inc["crn"])
-        assert Match.target_id == set(revolution_inc["duns"])
+        assert res.source == str(crn_wh)
+        assert res.target == str(duns_wh)
+        assert res.source_id == set(revolution_inc["crn"])
+        assert res.target_id == set(revolution_inc["duns"])
 
         # Test 0:0 match
 
@@ -592,10 +592,10 @@ class TestMatchboxBackend:
         )
 
         assert isinstance(res, Match)
-        assert Match.source == str(crn_wh)
-        assert Match.target == str(duns_wh)
-        assert Match.source_id == set()
-        assert Match.target_id == set()
+        assert res.source == str(crn_wh)
+        assert res.target == str(duns_wh)
+        assert res.source_id == set()
+        assert res.target_id == set()
 
     def test_clear(self):
         """Test clearing the database."""

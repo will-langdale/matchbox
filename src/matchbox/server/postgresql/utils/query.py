@@ -470,8 +470,13 @@ def match(
                 Contains.parent.label("parent"),
                 literal(1).label("level"),
             )
-            .join(Contains, Contains.child == source_cluster)
-            .where(Contains.parent.in_(select(valid_clusters.c.cluster)))
+            .select_from(Contains)
+            .where(
+                and_(
+                    Contains.child == source_cluster,
+                    Contains.parent.in_(select(valid_clusters.c.cluster)),
+                )
+            )
             .cte("hierarchy_up", recursive=True)
         )
 
@@ -533,6 +538,7 @@ def match(
         # Get all matched IDs
         final_stmt = (
             select(
+                hierarchy_down.c.parent.label("cluster"),
                 hierarchy_down.c.dataset,
                 hierarchy_down.c.id,
             )
@@ -542,8 +548,11 @@ def match(
         matches = session.execute(final_stmt).all()
 
         # Group matches by dataset
+        cluster = None
         matches_by_dataset = {}
-        for dataset_hash, id in matches:
+        for cluster_hash, dataset_hash, id in matches:
+            if cluster is None:
+                cluster = cluster_hash
             if dataset_hash not in matches_by_dataset:
                 matches_by_dataset[dataset_hash] = set()
             matches_by_dataset[dataset_hash].add(id)
@@ -561,22 +570,20 @@ def match(
             )
             target_name = f"{target_schema}.{target_table}"
 
-            highest_cluster = highest_parent.scalar() if matches else None
-
             # Get source and target IDs
             source_ids = {
                 id
-                for dataset_hash, id in matches
+                for _, dataset_hash, id in matches
                 if dataset_hash == source_dataset.hash
             }
             target_ids = {
                 id
-                for dataset_hash, id in matches
+                for _, dataset_hash, id in matches
                 if dataset_hash == target_dataset.hash
             }
 
             match_obj = Match(
-                cluster=highest_cluster,
+                cluster=cluster,
                 source=source_name,
                 source_id=source_ids,
                 target=target_name,
