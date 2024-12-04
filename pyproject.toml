@@ -7,32 +7,30 @@ license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "altair>=5.4.1",
     "click>=8.1.7",
     "connectorx>=0.3.3",
     "duckdb>=1.1.1",
-    "fastapi[standard]>=0.115.0,<0.116.0",
     "matplotlib>=3.9.2",
     "pandas>=2.2.3",
-    "pg-bulk-ingest>=0.0.54",
     "psycopg2>=2.9.10",
     "pyarrow>=17.0.0",
     "pydantic-settings>=2.5.2",
     "pydantic>=2.9.2",
     "python-dotenv>=1.0.1",
     "rustworkx>=0.15.1",
-    "splink>=4.0.5",
+    "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",
-    "tomli>=2.0.1",
 ]
 
 [project.optional-dependencies]
-typing = [
-    "polars>=1.11.0",
+server = [
+    "fastapi[standard]>=0.115.0,<0.116.0",
+    "pg-bulk-ingest>=0.0.54",
+    "tomli>=2.0.1",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ipykernel>=6.29.5",
     "pre-commit>=3.8.0",
     "pytest>=8.3.3",
@@ -41,6 +39,12 @@ dev-dependencies = [
     "ruff>=0.6.8",
     "docker>=7.1.0",
 ]
+typing = [
+    "polars>=1.11.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "typing"]
 package = true
 
 [tool.ruff]

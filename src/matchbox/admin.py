@@ -5,11 +5,11 @@ import click
 import tomli
 from dotenv import find_dotenv, load_dotenv
 
+from matchbox.common.db import SourceWarehouse
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import (
     Source,
 )
-from matchbox.server.models import SourceWarehouse
 
 logger = logging.getLogger("mb_logic")
 
