@@ -111,7 +111,19 @@ def _union_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
     valid_clusters = None
 
     for model_hash, threshold in lineage_thresholds.items():
-        model_valid = _get_valid_clusters_for_model(model_hash, threshold)
+        if threshold is None:
+            # This is a dataset - get all its clusters directly
+            model_valid = select(Clusters.hash.label("cluster")).where(
+                Clusters.dataset == hash_to_hex_decode(model_hash)
+            )
+        else:
+            # This is a model - get clusters meeting threshold
+            model_valid = select(Probabilities.cluster.label("cluster")).where(
+                and_(
+                    Probabilities.model == hash_to_hex_decode(model_hash),
+                    Probabilities.probability >= threshold,
+                )
+            )
 
         if valid_clusters is None:
             valid_clusters = model_valid
@@ -519,14 +531,15 @@ def match(
         hierarchy_down = hierarchy_down.union_all(recursive_down)
 
         # Get all matched IDs
-        matches = session.execute(
+        final_stmt = (
             select(
                 hierarchy_down.c.dataset,
                 hierarchy_down.c.id,
             )
             .distinct()
             .select_from(hierarchy_down)
-        ).all()
+        )
+        matches = session.execute(final_stmt).all()
 
         # Group matches by dataset
         matches_by_dataset = {}

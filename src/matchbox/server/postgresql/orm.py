@@ -132,11 +132,11 @@ class Models(CountMixin, MBDB.MatchboxBase):
             )
 
         if self.hash == model.hash:
-            return {}
+            return {model.hash: None}
 
         with Session(MBDB.get_engine()) as session:
             path_query = (
-                select(ModelsFrom.parent, ModelsFrom.truth_cache, Models.type)
+                select(ModelsFrom.parent, ModelsFrom.truth_cache)
                 .join(Models, Models.hash == ModelsFrom.parent)
                 .where(ModelsFrom.child == self.hash)
                 .order_by(ModelsFrom.level.desc())
@@ -144,17 +144,12 @@ class Models(CountMixin, MBDB.MatchboxBase):
 
             results = session.execute(path_query).all()
 
-            if not any(parent == model.hash for parent, _, _ in results):
+            if not any(parent == model.hash for parent, _ in results):
                 raise ValueError(
                     f"No path exists between model {self.name} and dataset {model.name}"
                 )
 
-            lineage = {
-                parent: truth
-                for parent, truth, type in results
-                if type != ModelType.DATASET.value
-            }
-
+            lineage = {parent: truth for parent, truth in results}
             lineage[self.hash] = self.truth
 
             return lineage
