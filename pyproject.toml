@@ -22,18 +22,15 @@ dependencies = [
     "sqlalchemy>=2.0.35",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 server = [
     "fastapi[standard]>=0.115.0,<0.116.0",
     "pg-bulk-ingest>=0.0.54",
     "tomli>=2.0.1",
 ]
-typing = [
-    "polars>=1.11.0",
-]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ipykernel>=6.29.5",
     "pre-commit>=3.8.0",
     "pytest>=8.3.3",
@@ -42,7 +39,12 @@ dev-dependencies = [
     "ruff>=0.6.8",
     "docker>=7.1.0",
 ]
-default-groups = ["dev", "foo"]
+typing = [
+    "polars>=1.11.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "typing"]
 package = true
 
 [tool.ruff]
