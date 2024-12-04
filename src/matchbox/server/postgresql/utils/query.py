@@ -72,6 +72,12 @@ def _resolve_thresholds(
     resolved_thresholds = {}
 
     for model_hash, default_truth in lineage_truths.items():
+        # Dataset
+        if default_truth is None:
+            resolved_thresholds[model_hash] = None
+            continue
+
+        # Model
         if threshold is None:
             resolved_thresholds[model_hash] = default_truth
         elif isinstance(threshold, float):
@@ -91,16 +97,6 @@ def _resolve_thresholds(
             raise ValueError(f"Invalid threshold type: {type(threshold)}")
 
     return resolved_thresholds
-
-
-def _get_valid_clusters_for_model(model_hash: bytes, threshold: float) -> Select:
-    """Get clusters that meet the threshold for a specific model."""
-    return select(Probabilities.cluster.label("cluster")).where(
-        and_(
-            Probabilities.model == hash_to_hex_decode(model_hash),
-            Probabilities.probability >= threshold,
-        )
-    )
 
 
 def _union_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
@@ -158,6 +154,9 @@ def _resolve_cluster_hierarchy(
     """
     with Session(engine) as session:
         dataset_model = session.get(Models, dataset_hash)
+        if dataset_model is None:
+            raise MatchboxDatasetError("Dataset not found")
+
         try:
             lineage_truths = model.get_lineage_to_dataset(model=dataset_model)
         except ValueError as e:
@@ -181,6 +180,7 @@ def _resolve_cluster_hierarchy(
             )
             .where(
                 and_(
+                    Clusters.hash.in_(select(valid_clusters.c.cluster)),
                     Clusters.dataset == hash_to_hex_decode(dataset_hash),
                     Clusters.id.isnot(None),
                 )
