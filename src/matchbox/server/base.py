@@ -20,7 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from rustworkx import PyDiGraph
 from sqlalchemy import Engine
 
-from matchbox.server.models import Match, Source
+from matchbox.common.db import Match, Source
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame

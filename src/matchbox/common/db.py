@@ -1,11 +1,27 @@
-from typing import TYPE_CHECKING, Any, Literal, Union, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 import connectorx as cx
 import pyarrow as pa
 from matchbox.common.exceptions import MatchboxValidatonError
+from matchbox.common.hash import HASH_FUNC
 from pandas import DataFrame
-from sqlalchemy import Engine, Select
+from pyarrow import Table as ArrowTable
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import (
+    LABEL_STYLE_TABLENAME_PLUS_COL,
+    ColumnElement,
+    MetaData,
+    String,
+    Table,
+    cast,
+    create_engine,
+    select,
+)
+from sqlalchemy import text as sqltext
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql.selectable import Select
 
 if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame
@@ -13,6 +29,192 @@ else:
     PolarsDataFrame = Any
 
 ReturnTypeStr = Literal["arrow", "pandas", "polars"]
+
+T = TypeVar("T")
+
+
+class Match(BaseModel):
+    """A match between primary keys in the Matchbox database."""
+
+    cluster: bytes
+    source: str
+    source_id: set[str] = Field(default_factory=set)
+    target: str
+    target_id: set[str] = Field(default_factory=set)
+
+
+class Probability(BaseModel):
+    """A probability of a match in the Matchbox database.
+
+    A probability describes the likelihood of a match between two clusters.
+    """
+
+    hash: bytes
+    left: bytes
+    right: bytes
+    probability: float = Field(default=None, ge=0, le=1)
+
+
+class Cluster(BaseModel):
+    """A cluster of data in the Matchbox database.
+
+    A cluster describes a single entity resolved at the specified probability
+    threshold or higher.
+    """
+
+    parent: bytes
+    children: set[bytes]
+    threshold: float = Field(default=None, ge=0, le=1)
+
+
+class SourceWarehouse(BaseModel):
+    """A warehouse where source data for datasets in Matchbox can be found."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+    )
+
+    alias: str
+    db_type: str
+    user: str
+    password: str = Field(repr=False)
+    host: str
+    port: int
+    database: str
+    _engine: Engine | None = None
+
+    @property
+    def engine(self) -> Engine:
+        if self._engine is None:
+            connection_string = f"{self.db_type}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+            self._engine = create_engine(connection_string)
+            self.test_connection()
+        return self._engine
+
+    def test_connection(self):
+        try:
+            with self.engine.connect() as connection:
+                connection.execute(sqltext("SELECT 1"))
+        except SQLAlchemyError:
+            self._engine = None
+            raise
+
+    def __str__(self):
+        return (
+            f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
+            f"host={self.host}, port={self.port}, database={self.database})"
+        )
+
+    @classmethod
+    def from_engine(cls, engine: Engine, alias: str | None = None) -> "SourceWarehouse":
+        """Create a SourceWarehouse instance from an SQLAlchemy Engine object."""
+        url = engine.url
+
+        warehouse = cls(
+            alias=alias or url.database,
+            db_type=url.drivername,
+            user=url.username,
+            password=url.password,
+            host=url.host,
+            port=url.port or 0,
+            database=url.database,
+        )
+        _ = warehouse.engine
+
+        return warehouse
+
+
+class Source(BaseModel):
+    """A dataset that can be indexed in the Matchbox database."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+    database: SourceWarehouse | None = None
+    db_pk: str
+    db_schema: str
+    db_table: str
+
+    def __str__(self) -> str:
+        return f"{self.db_schema}.{self.db_table}"
+
+    def __hash__(self) -> int:
+        return hash(
+            (type(self), self.db_pk, self.db_schema, self.db_table, self.database.alias)
+        )
+
+    def to_table(self) -> Table:
+        """Returns the dataset as a SQLAlchemy Table object."""
+        metadata = MetaData(schema=self.db_schema)
+        table = Table(self.db_table, metadata, autoload_with=self.database.engine)
+        return table
+
+    def _select(
+        self,
+        fields: list[str] | None,
+        pks: list[T] | None = None,
+        limit: int | None = None,
+    ) -> Select:
+        """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
+        table = self.to_table()
+
+        def _get_column(col_name: str) -> ColumnElement:
+            """Helper to get a column with proper casting and labeling for PKs"""
+            col = table.columns[col_name]
+            if col_name == self.db_pk:
+                return cast(col, String).label(
+                    f"{table.schema}_{table.name}_{col_name}"
+                )
+            return col
+
+        # Determine which columns to select
+        if fields:
+            select_cols = [_get_column(field) for field in fields]
+        else:
+            select_cols = [_get_column(col.name) for col in table.columns]
+
+        stmt = select(*select_cols)
+
+        if pks:
+            string_pks = [str(pk) for pk in pks]
+            pk_col = table.columns[self.db_pk]
+            stmt = stmt.where(cast(pk_col, String).in_(string_pks))
+
+        if limit:
+            stmt = stmt.limit(limit)
+
+        return stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
+
+    def to_hash(self) -> bytes:
+        """Generate a unique hash based on the table's columns and datatypes."""
+        table = self.to_table()
+        schema_representation = f"{str(self)}: " + ",".join(
+            f"{col.name}:{str(col.type)}" for col in table.columns
+        )
+        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
+
+    def to_arrow(
+        self,
+        fields: list[str] | None = None,
+        pks: list[T] | None = None,
+        limit: int | None = None,
+    ) -> ArrowTable:
+        """Returns the dataset as a PyArrow Table."""
+        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        return sql_to_df(stmt, self.database.engine, return_type="arrow")
+
+    def to_pandas(
+        self,
+        fields: list[str] | None,
+        pks: list[T] | None = None,
+        limit: int | None = None,
+    ) -> DataFrame:
+        """Returns the dataset as a pandas DataFrame."""
+        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        return sql_to_df(stmt, self.database.engine, return_type="pandas")
 
 
 def convert_large_binary_to_binary(table: pa.Table) -> pa.Table:

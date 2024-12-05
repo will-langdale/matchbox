@@ -5,6 +5,7 @@ from rustworkx import PyDiGraph
 from sqlalchemy import Engine, and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from matchbox.common.db import Match, Source, SourceWarehouse
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
@@ -12,7 +13,6 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
-from matchbox.server.models import Match, Source, SourceWarehouse
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (
     Clusters,

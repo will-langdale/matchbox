@@ -17,12 +17,11 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
-from matchbox.common.db import get_schema_table_names, sql_to_df
+from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
     MatchboxDatasetError,
     MatchboxModelError,
 )
-from matchbox.server.models import Match, Source
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,

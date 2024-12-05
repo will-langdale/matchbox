@@ -7,7 +7,7 @@ from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
-    from matchbox.server.models import Source
+    from matchbox.common.db import Source
 else:
     Source = Any
 
