@@ -11,7 +11,14 @@ from sqlalchemy import Engine, Index, MetaData, Table
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
-from matchbox.server.postgresql.orm import Models, ModelsFrom, ModelType, Sources
+from matchbox.server.postgresql.orm import (
+    Clusters,
+    Contains,
+    Models,
+    ModelsFrom,
+    ModelType,
+    Sources,
+)
 
 # Retrieval
 
@@ -46,6 +53,44 @@ def get_model_subgraph(engine: Engine) -> rx.PyDiGraph:
             parent_idx = models.get(edge.parent)
             child_idx = models.get(edge.child)
             _ = G.add_edge(parent_idx, child_idx, {"type": "from"})
+
+    return G
+
+
+def get_data_subgraph(engine: Engine) -> rx.PyDiGraph:
+    """Retrieves the complete data subgraph as a PyDiGraph."""
+    G = rx.PyDiGraph()
+    nodes = {}
+
+    with Session(engine) as session:
+        sources = {source.model: source for source in session.query(Sources).all()}
+
+        for source in sources.values():
+            source_id = f"{source.schema}.{source.table}"
+            if source_id not in nodes:
+                source_idx = G.add_node({"id": source_id, "type": "source"})
+                nodes[source_id] = source_idx
+
+        for cluster in session.query(Clusters).all():
+            cluster_id = cluster.hash
+            if cluster_id not in nodes:
+                cluster_idx = G.add_node({"id": cluster_id, "type": "cluster"})
+                nodes[cluster_id] = cluster_idx
+
+            if cluster.id is not None and cluster.dataset is not None:
+                source = sources.get(cluster.dataset)
+                if source:
+                    data_id = str(cluster.id)
+                    data_idx = G.add_node({"id": data_id, "type": "data"})
+
+                    source_id = f"{source.schema}.{source.table}"
+                    G.add_edge(data_idx, nodes[source_id], {"type": "source"})
+                    G.add_edge(nodes[cluster_id], data_idx, {"type": "data"})
+
+        for contains in session.query(Contains).all():
+            G.add_edge(
+                nodes[contains.parent], nodes[contains.child], {"type": "contains"}
+            )
 
     return G
 
