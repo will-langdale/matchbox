@@ -358,6 +358,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     db_schema=dataset.schema,
                     db_table=dataset.table,
                     db_pk=dataset.id,
+                    index=None,
                     database=SourceWarehouse.from_engine(engine),
                 )
             else:

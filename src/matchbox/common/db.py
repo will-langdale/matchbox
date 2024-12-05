@@ -116,6 +116,14 @@ class SourceWarehouse(BaseModel):
         return warehouse
 
 
+class SourceColumn(BaseModel):
+    """A column in a dataset that can be indexed in the Matchbox database."""
+
+    name: str
+    type: str | None = None
+    literal: str | None = None
+
+
 class Source(BaseModel):
     """A dataset that can be indexed in the Matchbox database."""
 
@@ -123,10 +131,11 @@ class Source(BaseModel):
         populate_by_name=True,
     )
 
-    database: SourceWarehouse | None = None
+    database: SourceWarehouse
     db_pk: str
     db_schema: str
     db_table: str
+    index: list[SourceColumn | bytes]
 
     def __str__(self) -> str:
         return f"{self.db_schema}.{self.db_table}"

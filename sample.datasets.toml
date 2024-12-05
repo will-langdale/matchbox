@@ -11,21 +11,41 @@ database = "pg_warehouse"
 db_schema = "companieshouse"
 db_table = "companies"
 db_pk = "id"
+index = [
+    { name = "crn", type = "text", literal = "crn" },
+    { name = "company_name", type = "text", literal = "company_name" },
+    { name = "postcode", type = "text", literal = "postcode" }
+]
 
 [datasets.data_hub_companies]
 database = "pg_warehouse"
 db_schema = "dbt"
 db_table = "data_hub__companies"
 db_pk = "id"
+index = [
+    { name = "cdms", type = "text", literal = "cdms" },
+    { name = "company_name", type = "text", literal = "company_name" },
+    { name = "postcode", type = "text", literal = "postcode" }
+]
 
 [datasets.hmrc_exporters]
 database = "pg_warehouse"
 db_schema = "hmrc"
 db_table = "trade__exporters"
 db_pk = "id"
+index = [
+    { name = "company_name", type = "text", literal = "company_name" },
+    { name = "postcode", type = "text", literal = "postcode" }
+]
 
 [datasets.export_wins]
 database = "pg_warehouse"
 db_schema = "dbt"
 db_table = "export_wins__wins_dataset"
 db_pk = "id"
+index = [
+    { name = "company_name", type = "text", literal = "company_name" },
+    { name = "cdms", type = "text", literal = "cdms" },
+    { name = "dh_id", type = "text", literal = "data_hub_company_id" },
+    { name = "postcode", type = "text", literal = "postcode" }
+]
