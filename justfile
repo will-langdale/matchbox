@@ -12,6 +12,10 @@ format:
     uv run ruff format .
     uv run ruff check . --fix
 
+# Scan for secrets
+scan:
+    trufflehog git file://. --only-verified
+
 # Run Python tests
 test:
     docker compose up -d --wait
