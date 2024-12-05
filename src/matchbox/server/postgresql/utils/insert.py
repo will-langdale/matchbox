@@ -1,6 +1,6 @@
 import logging
+from collections import defaultdict
 
-import rustworkx as rx
 from sqlalchemy import (
     Engine,
     delete,
@@ -195,15 +195,6 @@ def insert_model(
     logic_logger.info(f"[{model}] Done!")
 
 
-def _find_ultimate_parents(subgraph: rx.PyDiGraph, child_nodes: set[int]) -> set[int]:
-    """Find ultimate parents of the child nodes in the subgraph."""
-    all_ancestors = set().union(
-        *(rx.ancestors(subgraph, child) for child in child_nodes)
-    )
-
-    return {node for node in all_ancestors if len(subgraph.in_edges(node)) == 0}
-
-
 def _cluster_results_to_hierarchical(
     probabilities: ProbabilityResults,
     clusters: ClusterResults,
@@ -218,67 +209,64 @@ def _cluster_results_to_hierarchical(
     Returns:
         List of (parent, child, threshold) tuples representing the hierarchy
     """
-    # Create initial graph of base components
-    graph = rx.PyDiGraph()
-    nodes: dict[bytes, int] = {}  # node_name -> node_id
-    hierarchy: list[tuple[bytes, bytes, float]] = []
-
-    def get_node_id(name: bytes) -> int:
-        if name not in nodes:
-            nodes[name] = graph.add_node(name)
-        return nodes[name]
-
-    # 1. Build base component graph from ProbabilityResults
+    # Create initial hierarchy from base components
     prob_df = probabilities.dataframe
+    cluster_df = clusters.dataframe
+
+    thresholds = sorted(cluster_df["threshold"].unique(), reverse=True)
+
+    # Add all clusters corresponding to a simple two-item probability edge
+    hierarchy = []
     for _, row in prob_df.iterrows():
-        parent = row["hash"]
-        left_id = row["left_id"]
-        right_id = row["right_id"]
-        prob = float(row["probability"])
-
-        parent_id = get_node_id(parent)
-        left_node = get_node_id(left_id)
-        right_node = get_node_id(right_id)
-        graph.add_edge(parent_id, left_node, prob)
-        graph.add_edge(parent_id, right_node, prob)
-
-        hierarchy.extend([(parent, left_id, prob), (parent, right_id, prob)])
-
-    # 2. Process ClusterResults by threshold descending
-    thresholds = sorted(clusters.dataframe["threshold"].unique(), reverse=True)
-
-    for threshold in thresholds:
-        group = clusters.dataframe[clusters.dataframe["threshold"] == threshold]
-        threshold = float(threshold)
-
-        # Create subgraph of relevant nodes and edges at this threshold
-        graph_edge_indices = graph.edge_indices()
-        subgraph_edges = [
-            graph.get_edge_endpoints_by_index(graph_edge_indices[e])
-            for e in graph.filter_edges(lambda w, t=threshold: w >= t)
+        parent, left_id, right_id, prob = row[
+            ["hash", "left_id", "right_id", "probability"]
         ]
-        subgraph = graph.edge_subgraph(subgraph_edges)
+        hierarchy.extend(
+            [(parent, left_id, float(prob)), (parent, right_id, float(prob))]
+        )
 
-        # Process each component at this threshold
-        for parent, comp_group in group.groupby("parent"):
-            members = set(comp_group["child"])
+    # Create adjacency structure for quick lookups
+    adj_dict: dict[bytes, set[tuple[bytes, float]]] = defaultdict(set)
+    for parent, child, prob in hierarchy:
+        adj_dict[child].add((parent, prob))
+
+    # Process each threshold level, getting clusters at each threshold
+    for threshold in thresholds:
+        threshold_float = float(threshold)
+
+        current_clusters = cluster_df[cluster_df["threshold"] == threshold]
+
+        # Group by parent to process each component
+        for parent, group in current_clusters.groupby("parent"):
+            members = set(group["child"])
             if len(members) <= 2:
                 continue
 
-            # Find ultimate parents of children using threshold
-            child_node_ids = {nodes[child] for child in members}
-            ultimate_parent_ids = _find_ultimate_parents(
-                subgraph=subgraph, child_nodes=child_node_ids
-            )
+            seen = set(members)
+            current = set(members)
+            ultimate_parents = set()
 
-            # Add component to graph
-            parent_id = get_node_id(parent)
+            # Keep traversing until we've explored all paths
+            while current:
+                next_level = set()
+                # If any current nodes have no parents above threshold,
+                # they are ultimate parents for this threshold
+                for node in current:
+                    parents = {
+                        p for p, prob in adj_dict[node] if prob >= threshold_float
+                    }
+                    next_parents = parents - seen
+                    if not parents:  # No parents = ultimate parent
+                        ultimate_parents.add(node)
 
-            # Add edges to ultimate parents
-            for up_id in ultimate_parent_ids:
-                up_name = graph.get_node_data(up_id)
-                graph.add_edge(parent_id, up_id, threshold)
-                hierarchy.append((parent, up_name, threshold))
+                    next_level.update(next_parents)
+                    seen.update(parents)
+
+                current = next_level
+
+            for up in ultimate_parents:
+                hierarchy.append((parent, up, threshold_float))
+                adj_dict[up].add((parent, threshold_float))
 
     return sorted(hierarchy, key=lambda x: (x[2], x[0], x[1]), reverse=True)
 
