@@ -15,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.selectable import Select
+from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
@@ -363,6 +363,145 @@ def query(
         raise ValueError(f"return_type of {return_type} not valid")
 
 
+def _build_unnested_clusters() -> CTE:
+    """Create CTE that unnests cluster IDs for easier joining."""
+    return (
+        select(Clusters.hash, Clusters.dataset, func.unnest(Clusters.id).label("id"))
+        .select_from(Clusters)
+        .cte("unnested_clusters")
+    )
+
+
+def _find_source_cluster(
+    unnested_clusters: CTE, source_dataset_hash: bytes, source_id: str
+) -> Select:
+    """Find the initial cluster containing the source ID."""
+    return (
+        select(unnested_clusters.c.hash)
+        .select_from(unnested_clusters)
+        .where(
+            and_(
+                unnested_clusters.c.dataset == hash_to_hex_decode(source_dataset_hash),
+                unnested_clusters.c.id == source_id,
+            )
+        )
+        .scalar_subquery()
+    )
+
+
+def _build_hierarchy_up(
+    source_cluster: Select, valid_clusters: CTE | None = None
+) -> CTE:
+    """
+    Build recursive CTE that finds all parent clusters.
+
+    Args:
+        source_cluster: Subquery that finds starting cluster
+        valid_clusters: Optional CTE of valid clusters to filter by
+    """
+    # Base case: direct parents
+    base = (
+        select(
+            source_cluster.label("original_cluster"),
+            source_cluster.label("child"),
+            Contains.parent.label("parent"),
+            literal(1).label("level"),
+        )
+        .select_from(Contains)
+        .where(Contains.child == source_cluster)
+    )
+
+    # Add valid clusters filter if provided
+    if valid_clusters is not None:
+        base = base.where(Contains.parent.in_(select(valid_clusters.c.cluster)))
+
+    hierarchy_up = base.cte("hierarchy_up", recursive=True)
+
+    # Recursive case
+    recursive = (
+        select(
+            hierarchy_up.c.original_cluster,
+            hierarchy_up.c.parent.label("child"),
+            Contains.parent.label("parent"),
+            (hierarchy_up.c.level + 1).label("level"),
+        )
+        .select_from(hierarchy_up)
+        .join(Contains, Contains.child == hierarchy_up.c.parent)
+    )
+
+    # Add valid clusters filter to recursive part if provided
+    if valid_clusters is not None:
+        recursive = recursive.where(
+            Contains.parent.in_(select(valid_clusters.c.cluster))
+        )
+
+    return hierarchy_up.union_all(recursive)
+
+
+def _find_highest_parent(hierarchy_up: CTE) -> Select:
+    """Find the topmost parent cluster from the hierarchy."""
+    return (
+        select(hierarchy_up.c.parent)
+        .order_by(hierarchy_up.c.level.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
+def _build_hierarchy_down(
+    highest_parent: Select, unnested_clusters: CTE, valid_clusters: CTE | None = None
+) -> CTE:
+    """
+    Build recursive CTE that finds all child clusters and their IDs.
+
+    Args:
+        highest_parent: Subquery that finds top cluster
+        unnested_clusters: CTE with unnested cluster IDs
+        valid_clusters: Optional CTE of valid clusters to filter by
+    """
+    # Base case: direct children
+    base = (
+        select(
+            highest_parent.label("parent"),
+            Contains.child.label("child"),
+            literal(1).label("level"),
+            unnested_clusters.c.dataset.label("dataset"),
+            unnested_clusters.c.id.label("id"),
+        )
+        .select_from(Contains)
+        .join(unnested_clusters, unnested_clusters.c.hash == Contains.child)
+        .where(Contains.parent == highest_parent)
+    )
+
+    # Add valid clusters filter if provided
+    if valid_clusters is not None:
+        base = base.where(Contains.child.in_(select(valid_clusters.c.cluster)))
+
+    hierarchy_down = base.cte("hierarchy_down", recursive=True)
+
+    # Recursive case
+    recursive = (
+        select(
+            hierarchy_down.c.parent,
+            Contains.child.label("child"),
+            (hierarchy_down.c.level + 1).label("level"),
+            unnested_clusters.c.dataset.label("dataset"),
+            unnested_clusters.c.id.label("id"),
+        )
+        .select_from(hierarchy_down)
+        .join(Contains, Contains.parent == hierarchy_down.c.child)
+        .join(unnested_clusters, unnested_clusters.c.hash == Contains.child)
+    )
+
+    # Add valid clusters filter to recursive part if provided
+    if valid_clusters is not None:
+        recursive = recursive.where(
+            Contains.child.in_(select(valid_clusters.c.cluster))
+        )
+
+    return hierarchy_down.union_all(recursive)
+
+
 def match(
     source_id: str,
     source: str,
@@ -437,102 +576,12 @@ def match(
         # Get valid clusters across all models
         valid_clusters = _union_valid_clusters(thresholds)
 
-        # Unnest cluster IDs
-        unnested_clusters = (
-            select(
-                Clusters.hash, Clusters.dataset, func.unnest(Clusters.id).label("id")
-            )
-            .select_from(Clusters)
-            .cte("unnested_clusters")
-        )
-
-        # Find source ID's initial cluster
-        source_cluster = (
-            select(unnested_clusters.c.hash)
-            .select_from(unnested_clusters)
-            .where(
-                and_(
-                    unnested_clusters.c.dataset
-                    == hash_to_hex_decode(source_dataset.hash),
-                    unnested_clusters.c.id == source_id,
-                )
-            )
-            .scalar_subquery()
-        )
-
-        # Build recursive hierarchy CTE going up
-        hierarchy_up = (
-            # Base case: direct parents
-            select(
-                source_cluster.label("original_cluster"),
-                source_cluster.label("child"),
-                Contains.parent.label("parent"),
-                literal(1).label("level"),
-            )
-            .select_from(Contains)
-            .where(
-                and_(
-                    Contains.child == source_cluster,
-                    Contains.parent.in_(select(valid_clusters.c.cluster)),
-                )
-            )
-            .cte("hierarchy_up", recursive=True)
-        )
-
-        # Recursive case going up
-        recursive_up = (
-            select(
-                hierarchy_up.c.original_cluster,
-                hierarchy_up.c.parent.label("child"),
-                Contains.parent.label("parent"),
-                (hierarchy_up.c.level + 1).label("level"),
-            )
-            .select_from(hierarchy_up)
-            .join(Contains, Contains.child == hierarchy_up.c.parent)
-            .where(Contains.parent.in_(select(valid_clusters.c.cluster)))
-        )
-
-        hierarchy_up = hierarchy_up.union_all(recursive_up)
-
-        # Get highest parent
-        highest_parent = (
-            select(hierarchy_up.c.parent)
-            .order_by(hierarchy_up.c.level.desc())
-            .limit(1)
-            .scalar_subquery()
-        )
-
-        # Build recursive hierarchy CTE going down
-        hierarchy_down = (
-            # Base case: direct children from highest parent
-            select(
-                highest_parent.label("parent"),
-                Contains.child.label("child"),
-                literal(1).label("level"),
-                unnested_clusters.c.dataset.label("dataset"),
-                unnested_clusters.c.id.label("id"),
-            )
-            .select_from(Contains)
-            .join(unnested_clusters, unnested_clusters.c.hash == Contains.child)
-            .where(Contains.parent == highest_parent)
-            .cte("hierarchy_down", recursive=True)
-        )
-
-        # Recursive case going down
-        recursive_down = (
-            select(
-                hierarchy_down.c.parent,
-                Contains.child.label("child"),
-                (hierarchy_down.c.level + 1).label("level"),
-                unnested_clusters.c.dataset.label("dataset"),
-                unnested_clusters.c.id.label("id"),
-            )
-            .select_from(hierarchy_down)
-            .join(Contains, Contains.parent == hierarchy_down.c.child)
-            .join(unnested_clusters, unnested_clusters.c.hash == Contains.child)
-        )
-
-        hierarchy_down = hierarchy_down.union_all(recursive_down)
+        # Build the query components
+        unnested = _build_unnested_clusters()
+        source_cluster = _find_source_cluster(unnested, source_dataset.hash, source_id)
+        hierarchy_up = _build_hierarchy_up(source_cluster, valid_clusters)
+        highest = _find_highest_parent(hierarchy_up)
+        hierarchy_down = _build_hierarchy_down(highest, unnested, valid_clusters)
 
         # Get all matched IDs
         final_stmt = (
