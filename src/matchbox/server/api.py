@@ -1,12 +1,12 @@
 from binascii import hexlify
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Optional
 
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel
-
-from matchbox.server.base import BackendManager, MatchboxDBAdapter, MatchboxModelAdapter
+from matchbox.server.postgresql.utils.aws_s3_client import upload_to_s3
+from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -44,16 +44,17 @@ class CountResult(BaseModel):
     entities: dict[BackendEntityType, int]
 
 
-class Source(BaseModel):
-    """Response model for sources"""
+class SourceItem(BaseModel):
+    """Response model for source"""
     schema: str
     table: str
     id: str
-    model: str
+    model: Optional[str] = None
 
 
 class Sources(BaseModel):
-    sources: list[Source]
+    """Response model for sources"""
+    sources: list[SourceItem]
 
 
 def get_backend() -> MatchboxDBAdapter:
@@ -94,7 +95,7 @@ async def list_sources(
     result = []
     for dataset in datasets:
         print(dataset)
-        result.append(Source(
+        result.append(SourceItem(
             table=getattr(dataset, "table"),
             id=getattr(dataset, "id"),
             schema=getattr(dataset, "schema"),
@@ -106,12 +107,12 @@ async def list_sources(
 @app.get("/sources/{hash}")
 async def get_source(hash: str,
                      backend: Annotated[MatchboxDBAdapter, Depends(get_backend)]
-                     )-> dict[str, Source] | str:
+                     )-> dict[str, SourceItem] | str:
     datasets = backend.datasets.list()
     for dataset in datasets:
         model = hexlify(getattr(dataset, "model")).decode('ascii')
         if model == hash:
-            result_obj = Source(
+            result_obj = SourceItem(
             table=getattr(dataset, "table"),
             id=getattr(dataset, "id"),
             schema=getattr(dataset, "schema"),
@@ -120,9 +121,13 @@ async def get_source(hash: str,
     return "Source not found"
 
 
-@app.post("/sources/{hash}")
-async def add_source(hash: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.post("/sources/uploadFile")
+async def add_source_to_s3(file: UploadFile, bucket_name: str = Form(...), object_name: str = Form(...)):
+    is_file_uploaded = upload_to_s3(file.file, bucket_name, object_name)
+    if is_file_uploaded:
+        return "File was successfully uplaoded"
+    return "File could not be uplaoded"
+
 
 
 @app.get("/models")
