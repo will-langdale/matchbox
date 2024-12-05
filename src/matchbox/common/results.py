@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING, Any, List
 
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
+from matchbox.common.db import Cluster, Probability
 from matchbox.common.hash import (
     columns_to_value_ordered_hash,
     list_to_value_ordered_hash,
 )
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
-from matchbox.server.models import Cluster, Probability
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from sqlalchemy import Table

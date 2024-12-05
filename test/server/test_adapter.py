@@ -3,6 +3,7 @@ from typing import Callable
 import pytest
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
+from matchbox.common.db import Source
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
@@ -17,7 +18,6 @@ from matchbox.common.results import (
 )
 from matchbox.helpers.selector import query, selector, selectors
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
-from matchbox.server.models import Source
 from pandas import DataFrame
 
 from ..fixtures.db import SetupDatabaseCallable
