@@ -3,9 +3,9 @@ from enum import StrEnum
 from typing import Annotated, Optional
 
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, File, UploadFile, Form
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, Form
 from pydantic import BaseModel
-from matchbox.server.postgresql.utils.aws_s3_client import upload_to_s3
+from matchbox.server.utils.aws_s3_client import upload_to_s3
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 dotenv_path = find_dotenv(usecwd=True)
