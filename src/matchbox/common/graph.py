@@ -16,10 +16,16 @@ class ResolutionNode(BaseModel):
     name: str
     kind = ResolutionNodeKind
 
+    def __hash__(self):
+        return hash(self.hash)
+
 
 class ResolutionEdge(BaseModel):
     parent: bytes
     child: bytes
+
+    def __hash__(self):
+        return hash((self.parent, self.child))
 
 
 class ResolutionGraph(BaseModel):

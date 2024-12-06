@@ -23,7 +23,7 @@ from matchbox.server.postgresql.orm import Models, ModelsFrom
 
 def get_resolution_graph(engine: Engine) -> ResolutionGraph:
     """Retrieves the resolution graph."""
-    G = ResolutionGraph()
+    G = ResolutionGraph(nodes=set(), edges=set())
     with Session(engine) as session:
         for resolution in session.query(Models).all():
             G.nodes.add(

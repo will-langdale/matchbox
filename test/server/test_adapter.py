@@ -1,7 +1,6 @@
 from typing import Callable
 
 import pytest
-import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from matchbox.common.db import Source
 from matchbox.common.exceptions import (
@@ -9,6 +8,7 @@ from matchbox.common.exceptions import (
     MatchboxDatasetError,
     MatchboxModelError,
 )
+from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.results import (
     ClusterResults,
@@ -128,11 +128,11 @@ class TestMatchboxBackend:
         """Test getting model from the model subgraph."""
         self.setup_database("link")
 
-        subgraph = self.backend.get_resolution_graph()
+        graph = self.backend.get_resolution_graph()
 
-        assert isinstance(subgraph, rx.PyDiGraph)
-        assert subgraph.num_nodes() > 0
-        assert subgraph.num_edges() > 0
+        assert isinstance(graph, ResolutionGraph)
+        assert len(graph.nodes) > 0
+        assert len(graph.edges) > 0
 
     def test_get_model(self):
         """Test getting a model from the database."""
