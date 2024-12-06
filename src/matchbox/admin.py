@@ -32,7 +32,7 @@ def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
     for dataset_name, dataset_config in config["datasets"].items():
         warehouse_alias = dataset_config.get("database")
         dataset_config["database"] = warehouses[warehouse_alias]
-        datasets[dataset_name] = Source(**dataset_config)
+        datasets[dataset_name] = Source(alias=dataset_name, **dataset_config)
 
     return datasets
 

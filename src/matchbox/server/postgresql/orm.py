@@ -152,6 +152,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     model = Column(
         BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
     )
+    alias = Column(VARCHAR, nullable=False, unique=True)
     schema = Column(VARCHAR, nullable=False)
     table = Column(VARCHAR, nullable=False)
     id = Column(VARCHAR, nullable=False)

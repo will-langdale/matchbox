@@ -201,6 +201,9 @@ class Source(BaseModel):
     )
 
     database: SourceWarehouse
+    alias: str = Field(
+        default_factory=lambda data: f"{data['db_schema']}.{data['db_table']}"
+    )
     db_pk: str
     db_schema: str
     db_table: str
@@ -235,8 +238,8 @@ class Source(BaseModel):
         # Column logic
         # Get all locally specified columns, or remotely specified hashes
         local_columns: list[SourceColumn] = []
+        star_index: int | None = None
         local_hashes: SourceIndex | None = None
-        select_all = False
         if isinstance(data["index"], dict):
             # Came from Matchbox database
             local_hashes = SourceIndex(**data["index"])
@@ -244,18 +247,20 @@ class Source(BaseModel):
             # Came from TOML
             for column in data["index"]:
                 if column["literal"] == "*":
-                    select_all = True
+                    star_index = len(local_columns)
                     continue
                 local_columns.append(SourceColumn(**column, indexed=True))
-                continue
 
         # Get all remote columns using the user's creds and merge with local spec
         remote_columns = [
-            SourceColumn(literal=col.name, type=str(col.type), indexed=select_all)
+            SourceColumn(literal=col.name, type=str(col.type), indexed=False)
             for col in table.columns
             if col.name not in data["db_pk"]
         ]
         db_columns: list[SourceColumn] = []
+        db_indexed_columns: list[SourceColumn] = []
+        db_non_indexed_columns: list[SourceColumn] = []
+
         for remote_column in remote_columns:
             if local_columns:
                 # Came from TOML, index and alias are configured from TOML
@@ -263,15 +268,25 @@ class Source(BaseModel):
                     if remote_column == local_column:
                         if local_column.type is None:
                             local_column.type = remote_column.type
-                        db_columns.append(local_column)
+                        db_indexed_columns.append(local_column)
                         break
                 else:
-                    db_columns.append(remote_column)
+                    db_non_indexed_columns.append(remote_column)
             elif local_hashes:
                 # Came from database, index is true when hashes match
                 if remote_column in local_hashes.literal + local_hashes.alias:
                     remote_column.indexed = True
                     db_columns.append(remote_column)
+
+        if local_columns:
+            # Concatenate with TOML order, honouring star location (if present)
+            if star_index:
+                db_columns = db_indexed_columns
+                for c in db_non_indexed_columns:
+                    c.indexed = True
+                    db_columns.insert(star_index, c)
+            else:
+                db_columns = db_indexed_columns + db_non_indexed_columns
 
         data["db_columns"] = db_columns
         return data
@@ -320,9 +335,8 @@ class Source(BaseModel):
 
     def to_hash(self) -> bytes:
         """Generate a unique hash based on the table's columns and datatypes."""
-        table = self.to_table()
-        schema_representation = f"{str(self)}: " + ",".join(
-            f"{col.name}:{str(col.type)}" for col in table.columns
+        schema_representation = f"{self.alias}: " + ",".join(
+            f"{col.alias.name}:{col.type}" for col in self.db_columns if col.indexed
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
