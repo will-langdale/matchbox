@@ -125,14 +125,21 @@ class TestMatchboxBackend:
             )
 
     def test_get_resolution_graph(self):
-        """Test getting model from the model subgraph."""
+        """Test getting model from the resolution graph."""
+        graph = self.backend.get_resolution_graph()
+        assert len(graph.nodes) == 0
+        assert len(graph.edges) == 0
+        assert isinstance(graph, ResolutionGraph)
+
         self.setup_database("link")
 
         graph = self.backend.get_resolution_graph()
-
-        assert isinstance(graph, ResolutionGraph)
-        assert len(graph.nodes) > 0
-        assert len(graph.edges) > 0
+        # TODO: This is fragile. The fixtures at the moment are written in a confusing
+        # way. We have 3 datasets, 3 dedupers, and 2 linkers.
+        # But why 11 edges?
+        assert len(graph.nodes) == 8
+        assert len(graph.edges) == 11
+        raise AssertionError
 
     def test_get_model(self):
         """Test getting a model from the database."""

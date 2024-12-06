@@ -39,5 +39,5 @@ class ResolutionGraph(BaseModel):
             node_data = {"id": hash_to_str(n.hash), "name": n.name, "kind": str(n.kind)}
             nodes[n.hash] = G.add_node(node_data)
         for e in self.edges:
-            G.add_edge(nodes[e.parent], nodes[e.child], {"type": "from"})
+            G.add_edge(nodes[e.parent], nodes[e.child], {})
         return G
