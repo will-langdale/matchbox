@@ -16,6 +16,6 @@ def _url(path: str) -> str:
     return api_root + path
 
 
-def get_resolution_graph() -> ResolutionGraph:
+def _get_resolution_graph() -> ResolutionGraph:
     G = httpx.get(_url("/report/resolutions")).json()
     return ResolutionGraph.model_validate(G)
