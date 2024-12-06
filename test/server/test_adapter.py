@@ -3,7 +3,7 @@ from typing import Callable
 import pytest
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
-from matchbox.common.db import Source
+from matchbox.common.db import Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
@@ -114,9 +114,24 @@ class TestMatchboxBackend:
 
         crn = self.warehouse_data[0]
 
-        self.backend.get_dataset(
+        crn_retrieved = self.backend.get_dataset(
             db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
         )
+
+        assert crn.db_columns == crn_retrieved.db_columns
+
+        cols: dict[str, list[SourceColumn]] = {}
+
+        # Indexing isn't used in the custom equality check
+        for col in crn.db_columns + crn_retrieved.db_columns:
+            if col.literal.name not in cols:
+                cols[col.literal.name] = [col]
+            else:
+                cols[col.literal.name].append(col)
+
+        for c1, c2 in cols.values():
+            assert c1.indexed == c2.indexed
+
         with pytest.raises(MatchboxDatasetError):
             self.backend.get_dataset(
                 db_schema="nonexistant",
