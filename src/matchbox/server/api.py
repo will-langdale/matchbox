@@ -154,6 +154,6 @@ async def validate_hashes():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/report/models")
-async def get_model_subgraph():
+@app.get("/report/resolutions")
+async def get_resolutions():
     raise HTTPException(status_code=501, detail="Not implemented")

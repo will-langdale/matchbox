@@ -112,6 +112,6 @@ class TestMatchboxAPI:
     #     response = client.get("/validate/hash")
     #     assert response.status_code == 200
 
-    # def test_get_model_subgraph():
-    #     response = client.get("/report/models")
+    # def test_get_resolution_graph():
+    #     response = client.get("/report/resolutions")
     #     assert response.status_code == 200
