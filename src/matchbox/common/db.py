@@ -6,12 +6,7 @@ from matchbox.common.exceptions import MatchboxValidatonError
 from matchbox.common.hash import HASH_FUNC
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -121,13 +116,26 @@ class SourceWarehouse(BaseModel):
         return warehouse
 
 
+class SourceColumnName(BaseModel):
+    """A column name in the Matchbox database."""
+
+    name: str
+
+    @property
+    def hash(self) -> bytes:
+        """Generate a unique hash based on the column name."""
+        return HASH_FUNC(self.name.encode("utf-8")).digest()
+
+
 class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    literal: str = Field(description="The literal name of the column in the database.")
-    alias: str = Field(
+    literal: SourceColumnName = Field(
+        description="The literal name of the column in the database."
+    )
+    alias: SourceColumnName = Field(
         default_factory=lambda data: data["literal"],
         description="The alias to use when hashing the dataset in Matchbox.",
     )
@@ -156,25 +164,26 @@ class SourceColumn(BaseModel):
         Returns:
             bool: True if the objects are considered equal, False otherwise
         """
-        literal_hash = HASH_FUNC(str(self.literal).encode("utf-8")).digest()
-        alias_hash = HASH_FUNC(str(self.alias).encode("utf-8")).digest()
-
         if isinstance(other, SourceColumn):
             if self.literal == other.literal or self.alias == other.alias:
                 return True
 
-            other_literal_hash = HASH_FUNC(str(other.literal).encode("utf-8")).digest()
-            other_alias_hash = HASH_FUNC(str(other.alias).encode("utf-8")).digest()
-
-            self_hashes = {literal_hash, alias_hash}
-            other_hashes = {other_literal_hash, other_alias_hash}
+            self_hashes = {self.literal.hash, self.alias.hash}
+            other_hashes = {other.literal.hash, other.alias.hash}
 
             return bool(self_hashes & other_hashes)
 
         if isinstance(other, bytes):
-            return other in {literal_hash, alias_hash}
+            return other in {self.literal.hash, self.alias.hash}
 
         return NotImplemented
+
+    @field_validator("literal", "alias", mode="before")
+    def string_to_name(cls: "SourceColumn", value: str) -> SourceColumnName:
+        if isinstance(value, str):
+            return SourceColumnName(name=value)
+        else:
+            raise ValueError("Column name must be a string.")
 
 
 class SourceIndex(BaseModel):
