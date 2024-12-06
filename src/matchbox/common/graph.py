@@ -17,15 +17,9 @@ class ResolutionNode(BaseModel):
     kind = ResolutionNodeKind
 
 
-class ResolutionEdgeKind(StrEnum):
-    DEDUPLICATES = "deduplicates"
-    FROM = "from"
-
-
 class ResolutionEdge(BaseModel):
     parent: bytes
     child: bytes
-    kind: ResolutionEdgeKind
 
 
 class ResolutionGraph(BaseModel):
@@ -39,7 +33,7 @@ class ResolutionGraph(BaseModel):
     def to_rx(self) -> rx.PyDiGraph:
         G = rx.PyDiGraph()
         for n in self.nodes:
-            G.add_node({"id": hash_to_str(n.hash), "name": n.name, "type": str(n.kind)})
+            G.add_node({"id": hash_to_str(n.hash), "name": n.name, "kind": str(n.kind)})
         for e in self.edges:
-            G.add_edge(e.parent, e.child, {"type": str(e.kind)})
+            G.add_edge(e.parent, e.child)
         return G

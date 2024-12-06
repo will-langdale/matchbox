@@ -124,11 +124,11 @@ class TestMatchboxBackend:
                 engine=crn.database.engine,
             )
 
-    def test_get_model_subgraph(self):
+    def test_get_resolution_graph(self):
         """Test getting model from the model subgraph."""
         self.setup_database("link")
 
-        subgraph = self.backend.get_model_subgraph()
+        subgraph = self.backend.get_resolution_graph()
 
         assert isinstance(subgraph, rx.PyDiGraph)
         assert subgraph.num_nodes() > 0
