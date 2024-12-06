@@ -413,6 +413,25 @@ class TestMatchboxBackend:
 
         assert self.backend.data.count() == unique
 
+    def test_query_warning(self):
+        """Tests querying non-indexed fields warns the user."""
+        self.setup_database("index")
+
+        crn = self.warehouse_data[0]
+        select_crn = selector(
+            table=str(crn),
+            fields=["id", "crn"],
+            engine=crn.database.engine,
+        )
+        with pytest.warns(Warning):
+            query(
+                selector=select_crn,
+                backend=self.backend,
+                model=None,
+                return_type="pandas",
+                limit=10,
+            )
+
     def test_query_single_table(self):
         """Test querying data from the database."""
         self.setup_database("index")
