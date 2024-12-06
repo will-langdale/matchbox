@@ -5,6 +5,7 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
+from matchbox.common.graph import ResolutionGraph
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 dotenv_path = find_dotenv(usecwd=True)
@@ -155,5 +156,7 @@ async def validate_hashes():
 
 
 @app.get("/report/resolutions")
-async def get_resolutions():
-    raise HTTPException(status_code=501, detail="Not implemented")
+async def get_resolutions(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+) -> ResolutionGraph:
+    return backend.get_resolution_graph()
