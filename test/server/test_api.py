@@ -2,10 +2,7 @@ from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 from matchbox.common.graph import (
-    ResolutionEdge,
     ResolutionGraph,
-    ResolutionNode,
-    ResolutionNodeKind,
 )
 from matchbox.server import app
 
@@ -119,28 +116,9 @@ class TestMatchboxAPI:
     #     assert response.status_code == 200
 
     @patch("matchbox.server.base.BackendManager.get_backend")
-    def test_get_resolution_graph(self, get_backend):
-        res_graph = ResolutionGraph(
-            nodes={
-                ResolutionNode(
-                    hash=bytes(1), name="1", kind=ResolutionNodeKind.DATASET
-                ),
-                ResolutionNode(
-                    hash=bytes(2), name="2", kind=ResolutionNodeKind.DATASET
-                ),
-                ResolutionNode(hash=bytes(3), name="3", kind=ResolutionNodeKind.MODEL),
-                ResolutionNode(hash=bytes(4), name="4", kind=ResolutionNodeKind.MODEL),
-                ResolutionNode(hash=bytes(5), name="5", kind=ResolutionNodeKind.MODEL),
-            },
-            edges={
-                ResolutionEdge(parent=bytes(2), child=bytes(1)),
-                ResolutionEdge(parent=bytes(4), child=bytes(3)),
-                ResolutionEdge(parent=bytes(5), child=bytes(2)),
-                ResolutionEdge(parent=bytes(5), child=bytes(4)),
-            },
-        )
+    def test_get_resolution_graph(self, get_backend, resolution_graph):
         mock_backend = Mock()
-        mock_backend.get_resolution_graph = Mock(return_value=res_graph)
+        mock_backend.get_resolution_graph = Mock(return_value=resolution_graph)
         get_backend.return_value = mock_backend
 
         response = client.get("/report/resolutions")
