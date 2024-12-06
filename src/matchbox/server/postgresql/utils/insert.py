@@ -52,8 +52,8 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         "table": dataset.db_table,
         "id": dataset.db_pk,
         "indices": {
-            "literal": [c.literal.hash for c in dataset.db_columns if c.indexed],
-            "alias": [c.alias.hash for c in dataset.db_columns if c.indexed],
+            "literal": [c.literal.base64 for c in dataset.db_columns if c.indexed],
+            "alias": [c.alias.base64 for c in dataset.db_columns if c.indexed],
         },
     }
 

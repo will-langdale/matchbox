@@ -1,3 +1,4 @@
+import base64
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 import connectorx as cx
@@ -126,6 +127,11 @@ class SourceColumnName(BaseModel):
         """Generate a unique hash based on the column name."""
         return HASH_FUNC(self.name.encode("utf-8")).digest()
 
+    @property
+    def base64(self) -> str:
+        """Generate a base64 encoded hash based on the column name."""
+        return base64.b64encode(self.hash).decode("utf-8")
+
 
 class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
@@ -201,13 +207,13 @@ class Source(BaseModel):
     )
 
     database: SourceWarehouse
-    alias: str = Field(
-        default_factory=lambda data: f"{data['db_schema']}.{data['db_table']}"
-    )
     db_pk: str
     db_schema: str
     db_table: str
     db_columns: list[SourceColumn]
+    alias: str = Field(
+        default_factory=lambda data: f"{data['db_schema']}.{data['db_table']}"
+    )
 
     def __str__(self) -> str:
         return f"{self.db_schema}.{self.db_table}"
@@ -240,12 +246,13 @@ class Source(BaseModel):
         local_columns: list[SourceColumn] = []
         star_index: int | None = None
         local_hashes: SourceIndex | None = None
-        if isinstance(data["index"], dict):
+        index_data: dict | list | None = data.get("index")
+        if isinstance(index_data, dict):
             # Came from Matchbox database
-            local_hashes = SourceIndex(**data["index"])
+            local_hashes = SourceIndex(**index_data)
         else:
             # Came from TOML
-            for column in data["index"]:
+            for column in index_data or []:
                 if column["literal"] == "*":
                     star_index = len(local_columns)
                     continue
@@ -287,6 +294,12 @@ class Source(BaseModel):
                     db_columns.insert(star_index, c)
             else:
                 db_columns = db_indexed_columns + db_non_indexed_columns
+
+        if not local_columns and not local_hashes:
+            # No columns specified, index all columns except the primary key
+            for col in remote_columns:
+                col.indexed = True
+            db_columns = remote_columns
 
         data["db_columns"] = db_columns
         return data
