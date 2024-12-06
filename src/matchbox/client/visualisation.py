@@ -2,15 +2,14 @@ import rustworkx as rx
 from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 
-from matchbox.server.base import MatchboxDBAdapter, inject_backend
+from matchbox.client.handler import get_resolution_graph
 
 
-@inject_backend
-def draw_model_tree(backend: MatchboxDBAdapter) -> Figure:
+def draw_resolution_graph() -> Figure:
     """
-    Draws the model subgraph.
+    Draws the resolution graph.
     """
-    G = backend.get_model_subgraph()
+    G = get_resolution_graph()
 
     node_indices = G.node_indices()
     datasets = {
