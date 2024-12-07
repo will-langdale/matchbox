@@ -23,5 +23,4 @@ api:
 # Run Python tests
 test:
     docker compose up -d --wait
-    just api > /dev/null 2>&1 &
     uv run pytest
