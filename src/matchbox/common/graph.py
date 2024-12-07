@@ -14,7 +14,7 @@ class ResolutionNodeKind(StrEnum):
 class ResolutionNode(BaseModel):
     hash: bytes
     name: str
-    kind = ResolutionNodeKind
+    kind: ResolutionNodeKind
 
     def __hash__(self):
         return hash(self.hash)
