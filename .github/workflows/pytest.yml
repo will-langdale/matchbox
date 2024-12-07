@@ -16,6 +16,7 @@ env:
   MB__POSTGRES__PASSWORD: matchbox_password
   MB__POSTGRES__DATABASE: matchbox
   MB__POSTGRES__DB_SCHEMA: mb
+  API__ROOT: http://localhost:8000
 
 
 jobs:
@@ -38,6 +39,10 @@ jobs:
       - name: Set up PostgreSQL
         run: |
           docker compose up -d --wait
+      
+      - name: Run API
+        run: |
+          uv run fastapi dev src/matchbox/server/api.py > /dev/null 2>&1 &
 
       - name: Run pytest
         run: |
