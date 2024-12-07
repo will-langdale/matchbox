@@ -134,12 +134,10 @@ class TestMatchboxBackend:
         self.setup_database("link")
 
         graph = self.backend.get_resolution_graph()
-        # TODO: This is fragile. The fixtures at the moment are written in a confusing
-        # way. We have 3 datasets, 3 dedupers, and 2 linkers.
-        # But why 11 edges?
+        # Nodes: 3 datasets, 3 dedupers, and 2 linkers
+        # Edges: 1 per deduper, 2 per linker
         assert len(graph.nodes) == 8
-        assert len(graph.edges) == 11
-        raise AssertionError
+        assert len(graph.edges) == 7
 
     def test_get_model(self):
         """Test getting a model from the database."""

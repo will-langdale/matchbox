@@ -34,7 +34,7 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
                 )
             )
 
-        for edge in session.query(ModelsFrom).all():
+        for edge in session.query(ModelsFrom).filter(ModelsFrom.level == 1).all():
             G.edges.add(ResolutionEdge(parent=edge.parent, child=edge.child))
 
     return G
