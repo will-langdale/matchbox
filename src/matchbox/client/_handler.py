@@ -3,7 +3,7 @@ from os import getenv
 import httpx
 
 
-def _url(path: str) -> str:
+def url(path: str) -> str:
     """
     Return path prefixed by API root, determined from environment
     """
@@ -14,5 +14,5 @@ def _url(path: str) -> str:
     return api_root + path
 
 
-def _get_resolution_graph() -> str:
-    return httpx.get(_url("/report/resolutions")).text
+def get_resolution_graph() -> str:
+    return httpx.get(url("/report/resolutions")).text

@@ -2,7 +2,7 @@ import rustworkx as rx
 from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 
-from matchbox.client.handler import _get_resolution_graph
+from matchbox.client._handler import get_resolution_graph
 from matchbox.common.graph import ResolutionGraph
 
 
@@ -10,7 +10,7 @@ def draw_resolution_graph() -> Figure:
     """
     Draws the resolution graph.
     """
-    res_graph = ResolutionGraph.model_validate_json(_get_resolution_graph())
+    res_graph = ResolutionGraph.model_validate_json(get_resolution_graph())
     G: rx.PyDiGraph = res_graph.to_rx()
 
     node_indices = G.node_indices()
