@@ -2,6 +2,8 @@ from os import getenv
 
 import httpx
 
+from matchbox.common.graph import ResolutionGraph
+
 
 def url(path: str) -> str:
     """
@@ -15,4 +17,5 @@ def url(path: str) -> str:
 
 
 def get_resolution_graph() -> str:
-    return httpx.get(url("/report/resolutions")).text
+    res = httpx.get(url("/report/resolutions")).json()
+    return ResolutionGraph.model_validate(res)
