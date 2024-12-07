@@ -42,7 +42,7 @@ jobs:
       
       - name: Run API
         run: |
-          uv run fastapi dev src/matchbox/server/api.py > /dev/null 2>&1 &
+          uv run fastapi dev src/matchbox/server/api.py &
 
       - name: Run pytest
         run: |
