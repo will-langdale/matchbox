@@ -9,11 +9,11 @@ interactions:
       connection:
       - keep-alive
       host:
-      - localhost:8080
+      - localhost:8000
       user-agent:
       - python-httpx/0.28.0
     method: GET
-    uri: http://localhost:8080/report/resolutions
+    uri: http://localhost:8000/report/resolutions
   response:
     body:
       string: '{"nodes":[],"edges":[]}'

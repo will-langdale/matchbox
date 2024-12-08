@@ -16,10 +16,6 @@ format:
 scan:
     trufflehog git file://. --only-verified
 
-# Run development version of API
-api:
-    uv run fastapi dev src/matchbox/server/api.py
-
 # Run Python tests
 test:
     docker compose up -d --wait
