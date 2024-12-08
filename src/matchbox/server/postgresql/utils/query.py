@@ -459,7 +459,7 @@ def _build_hierarchy_down(
         unnested_clusters: CTE with unnested cluster IDs
         valid_clusters: Optional CTE of valid clusters to filter by
     """
-    # Base case: direct children
+    # Base case: Get both direct children and their IDs
     base = (
         select(
             highest_parent.label("parent"),
@@ -469,7 +469,12 @@ def _build_hierarchy_down(
             unnested_clusters.c.id.label("id"),
         )
         .select_from(Contains)
-        .join(unnested_clusters, unnested_clusters.c.hash == Contains.child)
+        .join_from(
+            Contains,
+            unnested_clusters,
+            unnested_clusters.c.hash == Contains.child,
+            isouter=True,
+        )
         .where(Contains.parent == highest_parent)
     )
 
@@ -479,7 +484,7 @@ def _build_hierarchy_down(
 
     hierarchy_down = base.cte("hierarchy_down", recursive=True)
 
-    # Recursive case
+    # Recursive case: Get both intermediate nodes AND their leaf records
     recursive = (
         select(
             hierarchy_down.c.parent,
@@ -489,8 +494,18 @@ def _build_hierarchy_down(
             unnested_clusters.c.id.label("id"),
         )
         .select_from(hierarchy_down)
-        .join(Contains, Contains.parent == hierarchy_down.c.child)
-        .join(unnested_clusters, unnested_clusters.c.hash == Contains.child)
+        .join_from(
+            hierarchy_down,
+            Contains,
+            Contains.parent == hierarchy_down.c.child,
+        )
+        .join_from(
+            Contains,
+            unnested_clusters,
+            unnested_clusters.c.hash == Contains.child,
+            isouter=True,
+        )
+        .where(hierarchy_down.c.id.is_(None))  # Only recurse on non-leaf nodes
     )
 
     # Add valid clusters filter to recursive part if provided
