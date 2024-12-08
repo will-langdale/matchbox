@@ -9,11 +9,11 @@ interactions:
       connection:
       - keep-alive
       host:
-      - localhost:8000
+      - localhost:8080
       user-agent:
       - python-httpx/0.28.0
     method: GET
-    uri: http://localhost:8000/report/resolutions
+    uri: http://localhost:8080/report/resolutions
   response:
     body:
       string: '{"nodes":[],"edges":[]}'
@@ -23,7 +23,7 @@ interactions:
       content-type:
       - application/json
       date:
-      - Sat, 07 Dec 2024 19:35:11 GMT
+      - Sun, 08 Dec 2024 16:55:39 GMT
       server:
       - uvicorn
     status:
