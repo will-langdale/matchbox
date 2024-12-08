@@ -84,6 +84,25 @@ class SourceWarehouse(BaseModel):
             self.test_connection()
         return self._engine
 
+    def __str__(self):
+        return (
+            f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
+            f"host={self.host}, port={self.port}, database={self.database})"
+        )
+
+    def __eq__(self, other):
+        if not isinstance(other, SourceWarehouse):
+            return False
+        return (
+            self.alias == other.alias
+            and self.db_type == other.db_type
+            and self.user == other.user
+            and self.password == other.password
+            and self.host == other.host
+            and self.port == other.port
+            and self.database == other.database
+        )
+
     def test_connection(self):
         try:
             with self.engine.connect() as connection:
@@ -91,12 +110,6 @@ class SourceWarehouse(BaseModel):
         except SQLAlchemyError:
             self._engine = None
             raise
-
-    def __str__(self):
-        return (
-            f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
-            f"host={self.host}, port={self.port}, database={self.database})"
-        )
 
     @classmethod
     def from_engine(cls, engine: Engine, alias: str | None = None) -> "SourceWarehouse":
@@ -142,7 +155,7 @@ class SourceColumn(BaseModel):
         description="The literal name of the column in the database."
     )
     alias: SourceColumnName = Field(
-        default_factory=lambda data: data["literal"],
+        default_factory=lambda data: SourceColumnName(name=data["literal"].name),
         description="The alias to use when hashing the dataset in Matchbox.",
     )
     type: str | None = Field(
@@ -287,7 +300,7 @@ class Source(BaseModel):
 
         if local_columns:
             # Concatenate with TOML order, honouring star location (if present)
-            if star_index:
+            if star_index is not None:
                 db_columns = db_indexed_columns
                 for c in db_non_indexed_columns:
                     c.indexed = True
