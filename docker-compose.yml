@@ -21,6 +21,14 @@ services:
       - "5432:5432"
     volumes:
       - matchbox_data:/var/lib/postgresql/data
+  api:
+    build:
+      context: .
+      dockerfile: src/matchbox/server/Dockerfile
+    ports:
+      - "8080:8000"
+    depends_on:
+      - matchbox-postgres
 
 volumes:
   warehouse_data:
