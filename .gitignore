@@ -6,6 +6,7 @@ datasets.toml
 scratch/
 *.ipynb_checkpoints
 .ruff_cache
+*.parquet
 
 # DuckDB
 *.duckdb
@@ -15,6 +16,8 @@ scratch/
 .tmp/
 notebooks/tmp*
 
+# Mac
+.DS_Store
 
 ##########################
 # Boilerplate .gitignore #
