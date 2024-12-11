@@ -11,7 +11,7 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import Source, sql_to_df
 from matchbox.common.exceptions import (
     MatchboxDatasetError,
-    MatchboxModelError,
+    MatchboxResolutionError,
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -145,7 +145,9 @@ def _resolve_cluster_hierarchy(
                 dataset=dataset_resolution
             )
         except ValueError as e:
-            raise MatchboxModelError(f"Invalid resolution lineage: {str(e)}") from e
+            raise MatchboxResolutionError(
+                f"Invalid resolution lineage: {str(e)}"
+            ) from e
 
         thresholds = _resolve_thresholds(
             lineage_truths=lineage_truths,
@@ -279,7 +281,7 @@ def query(
                 .first()
             )
             if point_truth is None:
-                raise MatchboxModelError(f"Resolution {resolution} not found")
+                raise MatchboxResolutionError(resolution_name=resolution)
 
         # Process each source dataset
         for source, fields in selector.items():

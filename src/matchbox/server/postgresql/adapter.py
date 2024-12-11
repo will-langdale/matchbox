@@ -8,7 +8,7 @@ from matchbox.common.db import Source, SourceWarehouse
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
-    MatchboxModelError,
+    MatchboxResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeKind
 from matchbox.common.results import ClusterResults, ProbabilityResults, Results
@@ -244,7 +244,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
             if model := session.query(Resolutions).filter_by(name=model_name).first():
                 return cls(model, backend=backend)
             else:
-                raise MatchboxModelError(model_name=model_name)
+                raise MatchboxResolutionError(resolution_name=model_name)
 
 
 class MatchboxPostgres(MatchboxDBAdapter):
@@ -384,7 +384,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             if resolution := session.query(Resolutions).filter_by(name=model).first():
                 return MatchboxPostgresModel(resolution=resolution, backend=self)
             else:
-                raise MatchboxModelError(model_name=model)
+                raise MatchboxResolutionError(resolution_name=model)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -395,22 +395,22 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         with Session(MBDB.get_engine()) as session:
             if (
-                model := session.query(Resolutions)
+                resolution := session.query(Resolutions)
                 .filter(Resolutions.name == model)
                 .first()
             ):
                 if certain:
                     delete_stmt = delete(Resolutions).where(
                         Resolutions.hash.in_(
-                            [model.hash, *(d.hash for d in model.descendants)]
+                            [resolution.hash, *(d.hash for d in resolution.descendants)]
                         )
                     )
                     session.execute(delete_stmt)
-                    session.delete(model)
+                    session.delete(resolution)
                     session.commit()
                 else:
-                    childen = model.descendants
-                    children_names = ", ".join([m.name for m in childen])
+                    childen = resolution.descendants
+                    children_names = ", ".join([r.name for r in childen])
                     raise ValueError(
                         f"This operation will delete the resolutions {children_names}, "
                         "as well as all probabilities they have created. \n\n"
@@ -419,7 +419,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                         "If you're sure you want to continue, rerun with certain=True"
                     )
             else:
-                raise MatchboxModelError(model_name=model)
+                raise MatchboxResolutionError(resolution_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -443,7 +443,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.query(Resolutions).filter(Resolutions.name == left).first()
             )
             if not left_resolution:
-                raise MatchboxModelError(model_name=left)
+                raise MatchboxResolutionError(resolution_name=left)
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
@@ -452,7 +452,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     session.query(Resolutions).filter(Resolutions.name == right).first()
                 )
                 if not right_resolution:
-                    raise MatchboxModelError(model_name=right)
+                    raise MatchboxResolutionError(resolution_name=right)
 
         insert_model(
             model=model,

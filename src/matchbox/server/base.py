@@ -234,7 +234,7 @@ class MatchboxDBAdapter(ABC):
     settings: "MatchboxSettings"
 
     datasets: ListableAndCountable
-    resolutions: Countable
+    models: Countable
     data: Countable
     clusters: Countable
     creates: Countable

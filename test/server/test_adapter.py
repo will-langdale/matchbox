@@ -6,7 +6,7 @@ from matchbox.common.db import Source
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
-    MatchboxModelError,
+    MatchboxResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
@@ -146,7 +146,7 @@ class TestMatchboxBackend:
         model = self.backend.get_model(model="naive_test.crn")
         assert isinstance(model, MatchboxModelAdapter)
 
-        with pytest.raises(MatchboxModelError):
+        with pytest.raises(MatchboxResolutionError):
             self.backend.get_model(model="nonexistant")
 
     def test_delete_model(self):
