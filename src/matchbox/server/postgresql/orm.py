@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     ForeignKey,
+    UniqueConstraint,
     select,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
@@ -152,7 +153,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     model = Column(
         BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
     )
-    alias = Column(VARCHAR, nullable=False, unique=True)
+    alias = Column(VARCHAR, nullable=False)
     schema = Column(VARCHAR, nullable=False)
     table = Column(VARCHAR, nullable=False)
     id = Column(VARCHAR, nullable=False)
@@ -161,6 +162,11 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     # Relationships
     dataset_model = relationship("Models", back_populates="source")
     clusters = relationship("Clusters", back_populates="source")
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("alias", "schema", "table", name="unique_alias_schema_table"),
+    )
 
     @classmethod
     def list(cls) -> list["Sources"]:

@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from textwrap import dedent
@@ -14,7 +13,7 @@ def warehouse_toml(warehouse: SourceWarehouse) -> str:
         [warehouses.{warehouse.alias}]
         db_type = "{warehouse.db_type}"
         user = "{warehouse.user}"
-        password = "{warehouse.password}"
+        password = "{warehouse.password.get_secret_value()}"
         host = "{warehouse.host}"
         port = {warehouse.port}
         database = "{warehouse.database}"
@@ -24,7 +23,7 @@ def warehouse_toml(warehouse: SourceWarehouse) -> str:
 def source_toml(source: Source, index: list[dict[str, str]]) -> str:
     index_str = dumps({"index": index}).replace("\n", "\n        ")
     return dedent(f"""
-        [datasets.{re.sub(r"[^a-zA-Z0-9]", "", source.alias)}]
+        [datasets.{source.alias.replace(".", "")}]
         database = "test_warehouse"
         db_schema = "{source.db_schema}"
         db_table = "{source.db_table}"
@@ -75,7 +74,7 @@ def test_load_datasets_from_config(
     config = load_datasets_from_config(temp_file_path)
 
     # Helper variables
-    source = config.get(re.sub(r"[^a-zA-Z0-9]", "", crn.alias))
+    source = config.get(crn.alias.replace(".", ""))
     named = [idx["literal"] for idx in index if idx["literal"] != "*"]
     has_star = any(idx["literal"] == "*" for idx in index)
     star_pos = next((i for i, idx in enumerate(index) if idx["literal"] == "*"), None)
@@ -83,7 +82,7 @@ def test_load_datasets_from_config(
 
     # Test 1: Core attributes match
     assert source.database == warehouse
-    assert source.alias == re.sub(r"[^a-zA-Z0-9]", "", crn.alias)
+    assert source.alias == crn.alias.replace(".", "")
     assert source.db_schema == crn.db_schema
     assert source.db_table == crn.db_table
     assert source.db_pk == crn.db_pk

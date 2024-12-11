@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Callable
 
 import pytest
@@ -120,14 +121,11 @@ class TestMatchboxBackend:
 
         assert crn.db_columns == crn_retrieved.db_columns
 
-        cols: dict[str, list[SourceColumn]] = {}
+        cols: defaultdict[str, list[SourceColumn]] = defaultdict(list)
 
         # Indexing isn't used in the custom equality check
         for col in crn.db_columns + crn_retrieved.db_columns:
-            if col.literal.name not in cols:
-                cols[col.literal.name] = [col]
-            else:
-                cols[col.literal.name].append(col)
+            cols[col.literal.name].append(col)
 
         for c1, c2 in cols.values():
             assert c1.indexed == c2.indexed

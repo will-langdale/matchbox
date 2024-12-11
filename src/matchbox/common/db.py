@@ -7,7 +7,14 @@ from matchbox.common.exceptions import MatchboxValidatonError
 from matchbox.common.hash import HASH_FUNC
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -70,7 +77,7 @@ class SourceWarehouse(BaseModel):
     alias: str
     db_type: str
     user: str
-    password: str = Field(repr=False)
+    password: SecretStr
     host: str
     port: int
     database: str
@@ -79,16 +86,10 @@ class SourceWarehouse(BaseModel):
     @property
     def engine(self) -> Engine:
         if self._engine is None:
-            connection_string = f"{self.db_type}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+            connection_string = f"{self.db_type}://{self.user}:{self.password.get_secret_value()}@{self.host}:{self.port}/{self.database}"
             self._engine = create_engine(connection_string)
             self.test_connection()
         return self._engine
-
-    def __str__(self):
-        return (
-            f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
-            f"host={self.host}, port={self.port}, database={self.database})"
-        )
 
     def __eq__(self, other):
         if not isinstance(other, SourceWarehouse):
@@ -205,13 +206,6 @@ class SourceColumn(BaseModel):
             raise ValueError("Column name must be a string.")
 
 
-class SourceIndex(BaseModel):
-    """The hashes of column names in the Matchbox database."""
-
-    literal: list[bytes]
-    alias: list[bytes]
-
-
 class Source(BaseModel):
     """A dataset that can be indexed in the Matchbox database."""
 
@@ -243,8 +237,8 @@ class Source(BaseModel):
 
         Handles three scenarios:
             1. No columns specified - all columns except primary key are indexed
-            2. Columns specified in TOML - uses specified columns with optional '*'
-            3. Indices from database - uses existing column hash information
+            2. Indices from database - uses existing column hash information
+            3. Columns specified in TOML - uses specified columns with optional '*'
         """
         # Initialise warehouse and get table metadata
         warehouse = (
@@ -275,12 +269,11 @@ class Source(BaseModel):
 
         # Case 2: Columns from database
         if isinstance(index_data, dict):
-            source_index = SourceIndex(**index_data)
             data["db_columns"] = [
                 SourceColumn(
                     literal=col.literal.name,
                     type=col.type,
-                    indexed=col in source_index.literal + source_index.alias,
+                    indexed=col in index_data["literal"] + index_data["alias"],
                 )
                 for col in remote_columns
             ]
