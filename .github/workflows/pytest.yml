@@ -23,7 +23,7 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Copy environment variables
-        run: cp test.env .env
+        run: cp environments/dev_docker.env .env
       
       - name: Run DBs and API
         run: |
