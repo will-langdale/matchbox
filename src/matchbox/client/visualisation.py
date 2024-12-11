@@ -3,6 +3,7 @@ from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 
 from matchbox.client._handler import get_resolution_graph
+from matchbox.common.graph import ResolutionNodeKind
 
 
 def draw_resolution_graph() -> Figure:
@@ -15,15 +16,15 @@ def draw_resolution_graph() -> Figure:
     datasets = {
         G[node_indices[i]]["id"]: i
         for i in node_indices
-        if G[node_indices[i]]["kind"] == "dataset"
+        if G[node_indices[i]]["kind"] == ResolutionNodeKind.DATASET.value
     }
 
     colours = []
     for i in node_indices:
         kind = G[node_indices[i]]["kind"]
-        if kind == "dataset":
+        if kind == ResolutionNodeKind.DATASET.value:
             colours.append((0, 0, 1, 0.2))
-        elif kind == "model":
+        elif kind == ResolutionNodeKind.MODEL.value:
             colours.append((1, 0, 0, 0.2))
 
     return mpl_draw(

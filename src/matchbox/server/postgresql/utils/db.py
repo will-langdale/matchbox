@@ -16,7 +16,7 @@ from matchbox.common.graph import (
     ResolutionNode,
     ResolutionNodeKind,
 )
-from matchbox.server.postgresql.orm import Models, ModelsFrom
+from matchbox.server.postgresql.orm import ResolutionFrom, Resolutions
 
 # Retrieval
 
@@ -25,7 +25,7 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
     """Retrieves the resolution graph."""
     G = ResolutionGraph(nodes=set(), edges=set())
     with Session(engine) as session:
-        for resolution in session.query(Models).all():
+        for resolution in session.query(Resolutions).all():
             G.nodes.add(
                 ResolutionNode(
                     hash=resolution.hash,
@@ -34,7 +34,9 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
                 )
             )
 
-        for edge in session.query(ModelsFrom).filter(ModelsFrom.level == 1).all():
+        for edge in (
+            session.query(ResolutionFrom).filter(ResolutionFrom.level == 1).all()
+        ):
             G.edges.add(ResolutionEdge(parent=edge.parent, child=edge.child))
 
     return G

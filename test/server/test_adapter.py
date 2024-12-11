@@ -97,7 +97,7 @@ class TestMatchboxBackend:
         df_crn = query(
             selector=select_crn,
             backend=self.backend,
-            model="naive_test.crn",
+            resolution="naive_test.crn",
             return_type="pandas",
         )
 
@@ -106,7 +106,7 @@ class TestMatchboxBackend:
         self.backend.validate_hashes(hashes=hashes)
 
         with pytest.raises(MatchboxDataError):
-            self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistant").digest()])
+            self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistent").digest()])
 
     def test_get_dataset(self):
         """Test querying data from the database."""
@@ -125,7 +125,7 @@ class TestMatchboxBackend:
             )
 
     def test_get_resolution_graph(self):
-        """Test getting model from the resolution graph."""
+        """Test getting the resolution graph."""
         graph = self.backend.get_resolution_graph()
         assert len(graph.nodes) == 0
         assert len(graph.edges) == 0
@@ -158,7 +158,7 @@ class TestMatchboxBackend:
         * Any models that depended on this model, and their creates edges
         * Any probability values associated with the model
         * All of the above for all parent models. As every model is defined by
-            its children, deleting a model means cascading deletion to all ancestors
+            its parents, deleting a model means cascading deletion to all descendants
         """
         self.setup_database("link")
 
@@ -167,13 +167,13 @@ class TestMatchboxBackend:
         deduper_to_delete = "naive_test.crn"
         total_models = len(dedupe_data_test_params) + len(link_data_test_params)
 
-        model_list_pre_delete = self.backend.models.count()
+        models_pre_delete = self.backend.models.count()
         cluster_count_pre_delete = self.backend.clusters.count()
         cluster_assoc_count_pre_delete = self.backend.creates.count()
         proposed_merge_probs_pre_delete = self.backend.proposes.count()
         actual_merges_pre_delete = self.backend.merges.count()
 
-        assert model_list_pre_delete == total_models
+        assert models_pre_delete == total_models
         assert cluster_count_pre_delete > 0
         assert cluster_assoc_count_pre_delete > 0
         assert proposed_merge_probs_pre_delete > 0
@@ -182,14 +182,14 @@ class TestMatchboxBackend:
         # Perform deletion
         self.backend.delete_model(deduper_to_delete, certain=True)
 
-        model_list_post_delete = self.backend.models.count()
+        models_post_delete = self.backend.models.count()
         cluster_count_post_delete = self.backend.clusters.count()
         cluster_assoc_count_post_delete = self.backend.creates.count()
         proposed_merge_probs_post_delete = self.backend.proposes.count()
         actual_merges_post_delete = self.backend.merges.count()
 
         # Deletes deduper and parent linkers: 3 models gone
-        assert model_list_post_delete == model_list_pre_delete - 3
+        assert models_post_delete == models_pre_delete - 3
 
         # Cluster, dedupe and link count unaffected
         assert cluster_count_post_delete == cluster_count_pre_delete
@@ -207,7 +207,7 @@ class TestMatchboxBackend:
         duns = self.warehouse_data[1]
 
         # Test deduper insertion
-        model_count = self.backend.models.count()
+        models_count = self.backend.models.count()
 
         self.backend.insert_model(
             "dedupe_1", left=str(crn), description="Test deduper 1"
@@ -216,21 +216,21 @@ class TestMatchboxBackend:
             "dedupe_2", left=str(duns), description="Test deduper 1"
         )
 
-        assert self.backend.models.count() == model_count + 2
+        assert self.backend.models.count() == models_count + 2
 
         # Test linker insertion
         self.backend.insert_model(
             "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
         )
 
-        assert self.backend.models.count() == model_count + 3
+        assert self.backend.models.count() == models_count + 3
 
         # Test model upsert
         self.backend.insert_model(
             "link_1", left="dedupe_1", right="dedupe_2", description="Test upsert"
         )
 
-        assert self.backend.models.count() == model_count + 3
+        assert self.backend.models.count() == models_count + 3
 
     def test_model_get_probabilities(self):
         """Test that a model's ProbabilityResults can be retrieved."""
@@ -416,7 +416,7 @@ class TestMatchboxBackend:
         df_crn_sample = query(
             selector=select_crn,
             backend=self.backend,
-            model=None,
+            resolution=None,
             return_type="pandas",
             limit=10,
         )
@@ -427,7 +427,7 @@ class TestMatchboxBackend:
         df_crn_full = query(
             selector=select_crn,
             backend=self.backend,
-            model=None,
+            resolution=None,
             return_type="pandas",
         )
 
@@ -460,7 +460,7 @@ class TestMatchboxBackend:
         df_crn_duns_full = query(
             selector=select_crn_duns,
             backend=self.backend,
-            model=None,
+            resolution=None,
             return_type="pandas",
         )
 
@@ -495,7 +495,7 @@ class TestMatchboxBackend:
         df_crn = query(
             selector=select_crn,
             backend=self.backend,
-            model="naive_test.crn",
+            resolution="naive_test.crn",
             return_type="pandas",
         )
 
@@ -533,7 +533,7 @@ class TestMatchboxBackend:
         crn_duns = query(
             selector=select_crn_duns,
             backend=self.backend,
-            model=linker_name,
+            resolution=linker_name,
             return_type="pandas",
         )
 

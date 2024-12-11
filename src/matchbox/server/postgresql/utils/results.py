@@ -6,6 +6,7 @@ import rustworkx as rx
 from sqlalchemy import Engine, and_, case, exists, func, select
 from sqlalchemy.orm import Session
 
+from matchbox.common.graph import ResolutionNodeKind
 from matchbox.common.results import (
     ClusterResults,
     ModelMetadata,
@@ -15,9 +16,9 @@ from matchbox.common.results import (
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
-    Models,
-    ModelsFrom,
     Probabilities,
+    ResolutionFrom,
+    Resolutions,
 )
 from matchbox.server.postgresql.utils.query import hash_to_hex_decode
 
@@ -31,13 +32,15 @@ class SourceInfo(NamedTuple):
     right_ancestors: set[bytes] | None
 
 
-def _get_model_parents(engine: Engine, model_hash: bytes) -> tuple[bytes, bytes | None]:
+def _get_model_parents(
+    engine: Engine, resolution_hash: bytes
+) -> tuple[bytes, bytes | None]:
     """Get the model's immediate parent models."""
     parent_query = (
-        select(Models.hash, Models.type)
-        .join(ModelsFrom, Models.hash == ModelsFrom.parent)
-        .where(ModelsFrom.child == model_hash)
-        .where(ModelsFrom.level == 1)
+        select(Resolutions.hash, Resolutions.type)
+        .join(ResolutionFrom, Resolutions.hash == ResolutionFrom.parent)
+        .where(ResolutionFrom.child == resolution_hash)
+        .where(ResolutionFrom.level == 1)
     )
 
     with engine.connect() as conn:
@@ -50,9 +53,9 @@ def _get_model_parents(engine: Engine, model_hash: bytes) -> tuple[bytes, bytes 
         p1_hash, p1_type = p1
         p2_hash, p2_type = p2
         # Put dataset first if it exists
-        if p1_type == "dataset":
+        if p1_type == ResolutionNodeKind.DATASET:
             return p1_hash, p2_hash
-        elif p2_type == "dataset":
+        elif p2_type == ResolutionNodeKind.DATASET:
             return p2_hash, p1_hash
         # Both models, maintain original order
         return p1_hash, p2_hash
@@ -60,13 +63,15 @@ def _get_model_parents(engine: Engine, model_hash: bytes) -> tuple[bytes, bytes 
         raise ValueError(f"Model has unexpected number of parents: {len(parents)}")
 
 
-def _get_source_info(engine: Engine, model_hash: bytes) -> SourceInfo:
-    """Get source models and their ancestry information."""
-    left_hash, right_hash = _get_model_parents(engine=engine, model_hash=model_hash)
+def _get_source_info(engine: Engine, resolution_hash: bytes) -> SourceInfo:
+    """Get source resolutions and their ancestry information."""
+    left_hash, right_hash = _get_model_parents(
+        engine=engine, resolution_hash=resolution_hash
+    )
 
     with Session(engine) as session:
-        left = session.get(Models, left_hash)
-        right = session.get(Models, right_hash) if right_hash else None
+        left = session.get(Resolutions, left_hash)
+        right = session.get(Resolutions, right_hash) if right_hash else None
 
         left_ancestors = {left_hash} | {m.hash for m in left.ancestors}
         if right:
@@ -82,7 +87,7 @@ def _get_source_info(engine: Engine, model_hash: bytes) -> SourceInfo:
     )
 
 
-def _get_leaf_pair_clusters(engine: Engine, model_hash: bytes) -> list[tuple]:
+def _get_leaf_pair_clusters(engine: Engine, resolution_hash: bytes) -> list[tuple]:
     """Get all clusters with exactly two leaf children."""
     # Subquery to identify leaf nodes
     leaf_nodes = ~exists().where(Contains.parent == Clusters.hash).correlate(Clusters)
@@ -99,7 +104,7 @@ def _get_leaf_pair_clusters(engine: Engine, model_hash: bytes) -> list[tuple]:
             Probabilities,
             and_(
                 Probabilities.cluster == Contains.parent,
-                Probabilities.model == model_hash,
+                Probabilities.resolution == resolution_hash,
             ),
         )
         .join(Clusters, Clusters.hash == Contains.child)
@@ -116,7 +121,7 @@ def _determine_hash_order(
     engine: Engine,
     hashes: list[bytes],
     datasets: list[bytes],
-    left_source: Models,
+    left_source: Resolutions,
     left_ancestors: set[bytes],
 ) -> tuple[int, int]:
     """Determine which child corresponds to left/right source."""
@@ -130,7 +135,7 @@ def _determine_hash_order(
     left_prob_query = (
         select(Probabilities)
         .where(Probabilities.cluster == hashes[0])
-        .where(Probabilities.model.in_(left_ancestors))
+        .where(Probabilities.resolution.in_(left_ancestors))
     )
     with engine.connect() as conn:
         has_left_prob = conn.execute(left_prob_query).fetchone() is not None
@@ -148,62 +153,71 @@ def _is_leaf(graph: rx.PyDiGraph, node_id: int) -> bool:
     return len(graph.out_edges(node_id)) == 0
 
 
-def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults:
+def get_model_probabilities(
+    engine: Engine, resolution: Resolutions
+) -> ProbabilityResults:
     """
     Recover the model's ProbabilityResults.
 
     For each probability this model assigned:
     - Get its two immediate children
     - Filter for children that aren't parents of other clusters this model scored
-    - Determine left/right by tracing ancestry to source models using query helpers
+    - Determine left/right by tracing ancestry to source resolutions using query helpers
 
     Args:
         engine: SQLAlchemy engine
-        model: Model instance to query
+        resolution: Resolution of model kind to query
 
     Returns:
         ProbabilityResults containing the original pairwise probabilities
     """
-    source_info: SourceInfo = _get_source_info(engine=engine, model_hash=model.hash)
+    if resolution.type != ResolutionNodeKind.MODEL:
+        raise ValueError("Expected resolution of model kind")
+
+    source_info: SourceInfo = _get_source_info(
+        engine=engine, resolution_hash=resolution.hash
+    )
 
     with Session(engine) as session:
-        left = session.get(Models, source_info.left)
-        right = session.get(Models, source_info.right) if source_info.right else None
+        left = session.get(Resolutions, source_info.left)
+        right = (
+            session.get(Resolutions, source_info.right) if source_info.right else None
+        )
 
         metadata = ModelMetadata(
-            name=model.name,
-            description=model.description or "",
+            name=resolution.name,
+            description=resolution.description or "",
             type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
             left_source=left.name,
             right_source=right.name if source_info.right else None,
         )
 
-        # First get all clusters this model assigned probabilities to
-        model_clusters = (
+        # First get all clusters this resolution assigned probabilities to
+        resolution_clusters = (
             select(Probabilities.cluster)
-            .where(Probabilities.model == hash_to_hex_decode(model.hash))
-            .cte("model_clusters")
+            .where(Probabilities.resolution == hash_to_hex_decode(resolution.hash))
+            .cte("resolution_clusters")
         )
 
-        # Get clusters that are parents in Contains for model's probabilities
-        model_parents = (
+        # Get clusters that are parents in Contains for resolution's probabilities
+        resolution_parents = (
             select(Contains.parent)
-            .join(model_clusters, Contains.child == model_clusters.c.cluster)
-            .cte("model_parents")
+            .join(resolution_clusters, Contains.child == resolution_clusters.c.cluster)
+            .cte("resolution_parents")
         )
 
         # Get valid pairs (those with exactly 2 children)
-        # where neither child is a parent in the model's hierarchy
+        # where neither child is a parent in the resolution's hierarchy
         valid_pairs = (
             select(Contains.parent)
             .join(
                 Probabilities,
                 and_(
                     Probabilities.cluster == Contains.parent,
-                    Probabilities.model == hash_to_hex_decode(model.hash),
+                    Probabilities.resolution == hash_to_hex_decode(resolution.hash),
                 ),
             )
-            .where(~Contains.child.in_(select(model_parents)))
+            .where(~Contains.child.in_(select(resolution_parents)))
             .group_by(Contains.parent)
             .having(func.count() == 2)
             .cte("valid_pairs")
@@ -236,7 +250,7 @@ def get_model_probabilities(engine: Engine, model: Models) -> ProbabilityResults
                 Probabilities,
                 and_(
                     Probabilities.cluster == Contains.parent,
-                    Probabilities.model == hash_to_hex_decode(model.hash),
+                    Probabilities.resolution == hash_to_hex_decode(resolution.hash),
                 ),
             )
             .group_by(Contains.parent)
@@ -283,7 +297,7 @@ def _get_all_leaf_descendants(graph: rx.PyDiGraph, node_id: int) -> set[int]:
     return descendants
 
 
-def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
+def get_model_clusters(engine: Engine, resolution: Resolutions) -> ClusterResults:
     """
     Recover the model's Clusters.
 
@@ -294,34 +308,41 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
 
     Args:
         engine: SQLAlchemy engine
-        model: Model instance to query
+        model: Resolution of model kind to query
 
     Returns:
         A ClusterResults object containing connected components and model metadata
     """
-    source_info: SourceInfo = _get_source_info(engine=engine, model_hash=model.hash)
+    if resolution.type != ResolutionNodeKind.MODEL:
+        raise ValueError("Expected resolution of model kind")
+
+    source_info: SourceInfo = _get_source_info(
+        engine=engine, resolution_hash=resolution.hash
+    )
 
     with Session(engine) as session:
         # Build metadata
-        left = session.get(Models, source_info.left)
-        right = session.get(Models, source_info.right) if source_info.right else None
+        left = session.get(Resolutions, source_info.left)
+        right = (
+            session.get(Resolutions, source_info.right) if source_info.right else None
+        )
 
         metadata = ModelMetadata(
-            name=model.name,
-            description=model.description or "",
+            name=resolution.name,
+            description=resolution.description or "",
             type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
             left_source=left.name,
             right_source=right.name if source_info.right else None,
         )
 
-        # Get all clusters and their relationships for this model
+        # Get all clusters and their relationships for this resolution
         hierarchy_query = (
             select(Contains.parent, Contains.child, Probabilities.probability)
             .join(
                 Probabilities,
                 and_(
                     Probabilities.cluster == Contains.parent,
-                    Probabilities.model == model.hash,
+                    Probabilities.resolution == resolution.hash,
                 ),
             )
             .order_by(Probabilities.probability.desc())
@@ -341,7 +362,7 @@ def get_model_clusters(engine: Engine, model: Models) -> ClusterResults:
         # Get unique thresholds and components at each threshold
         threshold_query = (
             select(Probabilities.cluster, Probabilities.probability)
-            .where(Probabilities.model == model.hash)
+            .where(Probabilities.resolution == resolution.hash)
             .order_by(Probabilities.probability.desc())
         )
         threshold_components = session.execute(threshold_query).fetchall()

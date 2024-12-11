@@ -66,16 +66,13 @@ class Model:
         if not self._backend:
             raise MatchboxModelError("No backend configured for this model")
 
-        try:
-            self._backend.insert_model(
-                model=self.metadata.name,
-                left=self.metadata.left_source,
-                right=self.metadata.right_source,
-                description=self.metadata.description,
-            )
-            self._connect()
-        except Exception as e:
-            raise MatchboxModelError from e
+        self._backend.insert_model(
+            model=self.metadata.name,
+            left=self.metadata.left_source,
+            right=self.metadata.right_source,
+            description=self.metadata.description,
+        )
+        self._connect()
 
     @property
     @ensure_connection

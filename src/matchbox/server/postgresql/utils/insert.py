@@ -17,9 +17,9 @@ from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
-    Models,
-    ModelsFrom,
     Probabilities,
+    ResolutionFrom,
+    Resolutions,
     Sources,
 )
 from matchbox.server.postgresql.utils.db import batch_ingest
@@ -37,43 +37,43 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     # Insert dataset #
     ##################
 
-    model_hash = dataset.to_hash()
+    resolution_hash = dataset.to_hash()
 
-    model_data = {
-        "hash": model_hash,
+    resolution_data = {
+        "hash": resolution_hash,
         "type": ResolutionNodeKind.DATASET.value,
         "name": f"{dataset.db_schema}.{dataset.db_table}",
     }
 
     source_data = {
-        "model": model_hash,
+        "resolution": resolution_hash,
         "schema": dataset.db_schema,
         "table": dataset.db_table,
         "id": dataset.db_pk,
     }
 
-    clusters = dataset_to_hashlist(dataset=dataset, model_hash=model_hash)
+    clusters = dataset_to_hashlist(dataset=dataset, resolution_hash=resolution_hash)
 
     with engine.connect() as conn:
         logic_logger.info(f"Adding {dataset}")
 
-        # Upsert into Models table
-        models_stmt = insert(Models).values([model_data])
-        models_stmt = models_stmt.on_conflict_do_update(
+        # Upsert into Resolutions table
+        resolution_stmt = insert(Resolutions).values([resolution_data])
+        resolution_stmt = resolution_stmt.on_conflict_do_update(
             index_elements=["hash"],
             set_={
-                "name": models_stmt.excluded.name,
-                "type": models_stmt.excluded.type,
+                "name": resolution_stmt.excluded.name,
+                "type": resolution_stmt.excluded.type,
             },
         )
-        conn.execute(models_stmt)
+        conn.execute(resolution_stmt)
 
-        logic_logger.info(f"{dataset} added to Models table")
+        logic_logger.info(f"{dataset} added to Resolutions table")
 
         # Upsert into Sources table
         sources_stmt = insert(Sources).values([source_data])
         sources_stmt = sources_stmt.on_conflict_do_update(
-            index_elements=["model"],
+            index_elements=["resolution"],
             set_={
                 "schema": sources_stmt.excluded.schema,
                 "table": sources_stmt.excluded.table,
@@ -103,8 +103,8 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
 
 def insert_model(
     model: str,
-    left: Models,
-    right: Models,
+    left: Resolutions,
+    right: Resolutions,
     description: str,
     engine: Engine,
 ) -> None:
@@ -113,8 +113,8 @@ def insert_model(
 
     Args:
         model: Name of the new model
-        left: Name of the left parent model
-        right: Name of the right parent model. Same as left in a link job
+        left: Left parent of the model
+        right: Right parent of the model. Same as left in a dedupe job
         description: Model description
         engine: SQLAlchemy engine instance
 
@@ -126,19 +126,19 @@ def insert_model(
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
-        model_hash = list_to_value_ordered_hash(
+        resolution_hash = list_to_value_ordered_hash(
             [left.hash, right.hash, bytes(model, encoding="utf-8")]
         )
 
-        # Check if model exists
-        exists_stmt = select(Models).where(Models.hash == model_hash)
+        # Check if resolution exists
+        exists_stmt = select(Resolutions).where(Resolutions.hash == resolution_hash)
         exists = session.scalar(exists_stmt) is not None
 
-        # Upsert new model
+        # Upsert new resolution
         stmt = (
-            insert(Models)
+            insert(Resolutions)
             .values(
-                hash=model_hash,
+                hash=resolution_hash,
                 type=ResolutionNodeKind.MODEL.value,
                 name=model,
                 description=description,
@@ -154,44 +154,44 @@ def insert_model(
 
         if not exists:
 
-            def _create_closure_entries(parent_model: Models) -> None:
+            def _create_closure_entries(parent_resolution: Resolutions) -> None:
                 """Create closure entries for the new model, i.e. mappings between
                 nodes and any of their direct or indirect parents"""
                 session.add(
-                    ModelsFrom(
-                        parent=parent_model.hash,
-                        child=model_hash,
+                    ResolutionFrom(
+                        parent=parent_resolution.hash,
+                        child=resolution_hash,
                         level=1,
-                        truth_cache=parent_model.truth,
+                        truth_cache=parent_resolution.truth,
                     )
                 )
 
                 ancestor_entries = (
-                    session.query(ModelsFrom)
-                    .filter(ModelsFrom.child == parent_model.hash)
+                    session.query(ResolutionFrom)
+                    .filter(ResolutionFrom.child == parent_resolution.hash)
                     .all()
                 )
 
                 for entry in ancestor_entries:
                     session.add(
-                        ModelsFrom(
+                        ResolutionFrom(
                             parent=entry.parent,
-                            child=model_hash,
+                            child=resolution_hash,
                             level=entry.level + 1,
                             truth_cache=entry.truth_cache,
                         )
                     )
 
-            # Create model lineage entries
-            _create_closure_entries(parent_model=left)
+            # Create resolution lineage entries
+            _create_closure_entries(parent_resolution=left)
 
             if right != left:
-                _create_closure_entries(parent_model=right)
+                _create_closure_entries(parent_resolution=right)
 
         session.commit()
 
     status = "Inserted new" if not exists else "Updated existing"
-    logic_logger.info(f"[{model}] {status} model with hash {model_hash}")
+    logic_logger.info(f"[{model}] {status} model with hash {resolution_hash}")
     logic_logger.info(f"[{model}] Done!")
 
 
@@ -272,7 +272,7 @@ def _cluster_results_to_hierarchical(
 
 
 def insert_results(
-    model: Models,
+    resolution: Resolutions,
     engine: Engine,
     results: Results,
     batch_size: int,
@@ -289,7 +289,7 @@ def insert_results(
     This allows easy querying of clusters at any threshold.
 
     Args:
-        model: Model object to associate results with
+        resolution: Resolution of model kind to associate results with
         engine: SQLAlchemy engine instance
         results: A results object
         batch_size: Number of records to insert in each batch
@@ -298,23 +298,23 @@ def insert_results(
         MatchboxModelError if the specified model doesn't exist.
     """
     logic_logger.info(
-        f"[{model.name}] Writing results data with batch size {batch_size}"
+        f"[{resolution.name}] Writing results data with batch size {batch_size}"
     )
 
     with Session(engine) as session:
         try:
-            # Clear existing probabilities for this model
+            # Clear existing probabilities for this resolution
             session.execute(
-                delete(Probabilities).where(Probabilities.model == model.hash)
+                delete(Probabilities).where(Probabilities.resolution == resolution.hash)
             )
 
             session.commit()
-            logic_logger.info(f"[{model.name}] Removed old probabilities")
+            logic_logger.info(f"[{resolution.name}] Removed old probabilities")
 
         except SQLAlchemyError as e:
             session.rollback()
             logic_logger.error(
-                f"[{model.name}] Failed to clear old probabilities: {str(e)}"
+                f"[{resolution.name}] Failed to clear old probabilities: {str(e)}"
             )
             raise
 
@@ -322,7 +322,7 @@ def insert_results(
         try:
             total_records = results.clusters.dataframe.shape[0]
             logic_logger.info(
-                f"[{model.name}] Inserting {total_records} results objects"
+                f"[{resolution.name}] Inserting {total_records} results objects"
             )
 
             cluster_records: list[tuple[bytes, None, None]] = []
@@ -334,7 +334,7 @@ def insert_results(
             ):
                 cluster_records.append((parent, None, None))
                 contains_records.append((parent, child))
-                probability_records.append((model.hash, parent, threshold))
+                probability_records.append((resolution.hash, parent, threshold))
 
             batch_ingest(
                 records=cluster_records,
@@ -344,7 +344,7 @@ def insert_results(
             )
 
             logic_logger.info(
-                f"[{model.name}] Successfully inserted {len(cluster_records)} "
+                f"[{resolution.name}] Successfully inserted {len(cluster_records)} "
                 "objects into Clusters table"
             )
 
@@ -356,7 +356,7 @@ def insert_results(
             )
 
             logic_logger.info(
-                f"[{model.name}] Successfully inserted {len(contains_records)} "
+                f"[{resolution.name}] Successfully inserted {len(contains_records)} "
                 "objects into Contains table"
             )
 
@@ -368,12 +368,12 @@ def insert_results(
             )
 
             logic_logger.info(
-                f"[{model.name}] Successfully inserted {len(probability_records)} "
+                f"[{resolution.name}] Successfully inserted {len(probability_records)} "
                 "objects into Probabilities table"
             )
 
         except SQLAlchemyError as e:
-            logic_logger.error(f"[{model.name}] Failed to insert data: {str(e)}")
+            logic_logger.error(f"[{resolution.name}] Failed to insert data: {str(e)}")
             raise
 
-    logic_logger.info(f"[{model.name}] Insert operation complete!")
+    logic_logger.info(f"[{resolution.name}] Insert operation complete!")

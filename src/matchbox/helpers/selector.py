@@ -60,7 +60,7 @@ def query(
     backend: MatchboxDBAdapter,
     selector: dict[str, list[str]],
     return_type: Literal["pandas", "arrow"] = None,
-    model: str | None = None,
+    resolution: str | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int | None = None,
 ) -> DataFrame | ArrowTable:
@@ -71,14 +71,14 @@ def query(
         selector: the tables and fields to query
         return_type: the form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
-        model (optional): the model to use for filtering results
+        resolution (optional): the resolution to use for filtering results
         threshold (optional): the threshold to use for creating clusters
-            If None, uses the models' default threshold
-            If a float, uses that threshold for the specified model, and the
-            model's cached thresholds for its ancestors
-            If a dictionary, expects a shape similar to model.ancestors, keyed
-            by model name and valued by the threshold to use for that model. Will
-            use these threshold values instead of the cached thresholds
+            If None, uses the resolutions' default threshold
+            If a float, uses that threshold for the specified resolution, and the
+            resolution's cached thresholds for its ancestors
+            If a dictionary, expects a shape similar to resolution.ancestors, keyed
+            by resolution name and valued by the threshold to use for that resolution.
+            Will use these threshold values instead of the cached thresholds
         limit (optional): the number to use in a limit clause. Useful for testing
 
     Returns:
@@ -86,7 +86,7 @@ def query(
     """
     return backend.query(
         selector=selector,
-        model=model,
+        resolution=resolution,
         threshold=threshold,
         return_type="pandas" if not return_type else return_type,
         limit=limit,

@@ -76,7 +76,7 @@ def test_process(
     crn = query(
         selector=select_crn,
         backend=matchbox_postgres,
-        model=None,
+        resolution=None,
         return_type="pandas",
     )
 
