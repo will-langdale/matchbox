@@ -14,7 +14,7 @@ from matchbox.common.graph import (
     ResolutionEdge,
     ResolutionGraph,
     ResolutionNode,
-    ResolutionNodeKind,
+    ResolutionNodeType,
 )
 from matchbox.server.postgresql.orm import ResolutionFrom, Resolutions
 
@@ -30,7 +30,7 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
                 ResolutionNode(
                     hash=resolution.hash,
                     name=resolution.name,
-                    kind=ResolutionNodeKind(resolution.type),
+                    type=ResolutionNodeType(resolution.type),
                 )
             )
 

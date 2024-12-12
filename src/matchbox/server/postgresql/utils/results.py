@@ -6,7 +6,7 @@ import rustworkx as rx
 from sqlalchemy import Engine, and_, case, exists, func, select
 from sqlalchemy.orm import Session
 
-from matchbox.common.graph import ResolutionNodeKind
+from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.results import (
     ClusterResults,
     ModelMetadata,
@@ -53,9 +53,9 @@ def _get_model_parents(
         p1_hash, p1_type = p1
         p2_hash, p2_type = p2
         # Put dataset first if it exists
-        if p1_type == ResolutionNodeKind.DATASET:
+        if p1_type == ResolutionNodeType.DATASET:
             return p1_hash, p2_hash
-        elif p2_type == ResolutionNodeKind.DATASET:
+        elif p2_type == ResolutionNodeType.DATASET:
             return p2_hash, p1_hash
         # Both models, maintain original order
         return p1_hash, p2_hash
@@ -166,13 +166,13 @@ def get_model_probabilities(
 
     Args:
         engine: SQLAlchemy engine
-        resolution: Resolution of model kind to query
+        resolution: Resolution of type model to query
 
     Returns:
         ProbabilityResults containing the original pairwise probabilities
     """
-    if resolution.type != ResolutionNodeKind.MODEL:
-        raise ValueError("Expected resolution of model kind")
+    if resolution.type != ResolutionNodeType.MODEL:
+        raise ValueError("Expected resolution of type model")
 
     source_info: SourceInfo = _get_source_info(
         engine=engine, resolution_hash=resolution.hash
@@ -308,13 +308,13 @@ def get_model_clusters(engine: Engine, resolution: Resolutions) -> ClusterResult
 
     Args:
         engine: SQLAlchemy engine
-        model: Resolution of model kind to query
+        model: Resolution of type model to query
 
     Returns:
         A ClusterResults object containing connected components and model metadata
     """
-    if resolution.type != ResolutionNodeKind.MODEL:
-        raise ValueError("Expected resolution of model kind")
+    if resolution.type != ResolutionNodeType.MODEL:
+        raise ValueError("Expected resolution of type model")
 
     source_info: SourceInfo = _get_source_info(
         engine=engine, resolution_hash=resolution.hash

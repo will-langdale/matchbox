@@ -10,7 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
 from sqlalchemy.orm import Session, relationship
 
-from matchbox.common.graph import ResolutionNodeKind
+from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -101,7 +101,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         self, dataset: "Resolutions"
     ) -> tuple[bytes, dict[bytes, float]]:
         """Returns the resolution lineage and cached truth values to a dataset."""
-        if dataset.type != ResolutionNodeKind.DATASET.value:
+        if dataset.type != ResolutionNodeType.DATASET.value:
             raise ValueError(
                 f"Target resolution must be of type 'dataset', got {dataset.type}"
             )
@@ -129,7 +129,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             lineage = {
                 parent: truth
                 for parent, truth, type in results
-                if type != ResolutionNodeKind.DATASET.value
+                if type != ResolutionNodeType.DATASET.value
             }
 
             lineage[self.hash] = self.truth

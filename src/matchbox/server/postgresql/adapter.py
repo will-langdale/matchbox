@@ -10,7 +10,7 @@ from matchbox.common.exceptions import (
     MatchboxDatasetError,
     MatchboxResolutionError,
 )
-from matchbox.common.graph import ResolutionGraph, ResolutionNodeKind
+from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
@@ -94,11 +94,11 @@ class FilteredResolutions(BaseModel):
 
             filter_list = []
             if self.datasets:
-                filter_list.append(Resolutions.type == ResolutionNodeKind.DATASET)
+                filter_list.append(Resolutions.type == ResolutionNodeType.DATASET)
             if self.humans:
-                filter_list.append(Resolutions.type == ResolutionNodeKind.HUMAN)
+                filter_list.append(Resolutions.type == ResolutionNodeType.HUMAN)
             if self.models:
-                filter_list.append(Resolutions.type == ResolutionNodeKind.MODEL)
+                filter_list.append(Resolutions.type == ResolutionNodeType.MODEL)
 
             if filter_list:
                 query = query.filter(or_(*filter_list))

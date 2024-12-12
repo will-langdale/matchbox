@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from matchbox.common.db import Source
-from matchbox.common.graph import ResolutionNodeKind
+from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import dataset_to_hashlist, list_to_value_ordered_hash
 from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.postgresql.orm import (
@@ -41,7 +41,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
 
     resolution_data = {
         "hash": resolution_hash,
-        "type": ResolutionNodeKind.DATASET.value,
+        "type": ResolutionNodeType.DATASET.value,
         "name": f"{dataset.db_schema}.{dataset.db_table}",
     }
 
@@ -139,7 +139,7 @@ def insert_model(
             insert(Resolutions)
             .values(
                 hash=resolution_hash,
-                type=ResolutionNodeKind.MODEL.value,
+                type=ResolutionNodeType.MODEL.value,
                 name=model,
                 description=description,
                 truth=1.0,
@@ -281,7 +281,7 @@ def insert_results(
     This allows easy querying of clusters at any threshold.
 
     Args:
-        resolution: Resolution of model kind to associate results with
+        resolution: Resolution of type model to associate results with
         engine: SQLAlchemy engine instance
         results: A results object
         batch_size: Number of records to insert in each batch
