@@ -1,5 +1,3 @@
-from enum import Enum
-
 from sqlalchemy import (
     FLOAT,
     INTEGER,
@@ -8,32 +6,28 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     Index,
+    UniqueConstraint,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
 from sqlalchemy.orm import Session, relationship
 
+from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
 
-class ModelType(Enum):
-    MODEL = "model"
-    DATASET = "dataset"
-    HUMAN = "human"
+class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
+    """Resolution lineage closure table with cached truth values."""
 
-
-class ModelsFrom(CountMixin, MBDB.MatchboxBase):
-    """Model lineage closure table with cached truth values."""
-
-    __tablename__ = "models_from"
+    __tablename__ = "resolution_from"
 
     # Columns
     parent = Column(
-        BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
     )
     child = Column(
-        BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
+        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
     )
     level = Column(INTEGER, nullable=False)
     truth_cache = Column(FLOAT, nullable=True)
@@ -45,14 +39,13 @@ class ModelsFrom(CountMixin, MBDB.MatchboxBase):
     )
 
 
-class Models(CountMixin, MBDB.MatchboxBase):
-    """Table of models and model-like objects: models, datasets and humans.
+class Resolutions(CountMixin, MBDB.MatchboxBase):
+    """Table of resolution points: models, datasets and humans.
 
-    By model-like objects, we mean objects that produce probabilities or own
-    data in the clusters table.
+    Resolutions produce probabilities or own data in the clusters table.
     """
 
-    __tablename__ = "models"
+    __tablename__ = "resolutions"
 
     # Columns
     hash = Column(BYTEA, primary_key=True)
@@ -62,15 +55,15 @@ class Models(CountMixin, MBDB.MatchboxBase):
     truth = Column(FLOAT)
 
     # Relationships
-    source = relationship("Sources", back_populates="dataset_model", uselist=False)
+    source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
     probabilities = relationship(
         "Probabilities", back_populates="proposed_by", cascade="all, delete-orphan"
     )
     children = relationship(
-        "Models",
-        secondary=ModelsFrom.__table__,
-        primaryjoin="Models.hash == ModelsFrom.parent",
-        secondaryjoin="Models.hash == ModelsFrom.child",
+        "Resolutions",
+        secondary=ResolutionFrom.__table__,
+        primaryjoin="Resolutions.hash == ResolutionFrom.parent",
+        secondaryjoin="Resolutions.hash == ResolutionFrom.child",
         backref="parents",
     )
 
@@ -78,31 +71,31 @@ class Models(CountMixin, MBDB.MatchboxBase):
     __table_args__ = (
         CheckConstraint(
             "type IN ('model', 'dataset', 'human')",
-            name="model_type_constraints",
+            name="resolution_type_constraints",
         ),
     )
 
     @property
-    def ancestors(self) -> set["Models"]:
-        """Returns all ancestors (parents, grandparents, etc.) of this model."""
+    def ancestors(self) -> set["Resolutions"]:
+        """Returns all ancestors (parents, grandparents, etc.) of this resolution."""
         with Session(MBDB.get_engine()) as session:
             ancestor_query = (
-                select(Models)
-                .select_from(Models)
-                .join(ModelsFrom, Models.hash == ModelsFrom.parent)
-                .where(ModelsFrom.child == self.hash)
+                select(Resolutions)
+                .select_from(Resolutions)
+                .join(ResolutionFrom, Resolutions.hash == ResolutionFrom.parent)
+                .where(ResolutionFrom.child == self.hash)
             )
             return set(session.execute(ancestor_query).scalars().all())
 
     @property
-    def descendants(self) -> set["Models"]:
-        """Returns all descendants (children, grandchildren, etc.) of this model."""
+    def descendants(self) -> set["Resolutions"]:
+        """Returns descendants (children, grandchildren, etc.) of this resolution."""
         with Session(MBDB.get_engine()) as session:
             descendant_query = (
-                select(Models)
-                .select_from(Models)
-                .join(ModelsFrom, Models.hash == ModelsFrom.child)
-                .where(ModelsFrom.parent == self.hash)
+                select(Resolutions)
+                .select_from(Resolutions)
+                .join(ResolutionFrom, Resolutions.hash == ResolutionFrom.child)
+                .where(ResolutionFrom.parent == self.hash)
             )
             return set(session.execute(descendant_query).scalars().all())
 
@@ -110,9 +103,9 @@ class Models(CountMixin, MBDB.MatchboxBase):
         """Returns all ancestors and their cached truth values from this model."""
         with Session(MBDB.get_engine()) as session:
             lineage_query = (
-                select(ModelsFrom.parent, ModelsFrom.truth_cache)
-                .where(ModelsFrom.child == self.hash)
-                .order_by(ModelsFrom.level.desc())
+                select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
+                .where(ResolutionFrom.child == self.hash)
+                .order_by(ResolutionFrom.level.desc())
             )
 
             results = session.execute(lineage_query).all()
@@ -123,30 +116,30 @@ class Models(CountMixin, MBDB.MatchboxBase):
             return lineage
 
     def get_lineage_to_dataset(
-        self, model: "Models"
+        self, dataset: "Resolutions"
     ) -> tuple[bytes, dict[bytes, float]]:
-        """Returns the model lineage and cached truth values to a dataset."""
-        if model.type != ModelType.DATASET.value:
+        """Returns the resolution lineage and cached truth values to a dataset."""
+        if dataset.type != ResolutionNodeType.DATASET.value:
             raise ValueError(
-                f"Target model must be of type 'dataset', got {model.type}"
+                f"Target resolution must be of type 'dataset', got {dataset.type}"
             )
 
-        if self.hash == model.hash:
-            return {model.hash: None}
+        if self.hash == dataset.hash:
+            return {dataset.hash: None}
 
         with Session(MBDB.get_engine()) as session:
             path_query = (
-                select(ModelsFrom.parent, ModelsFrom.truth_cache)
-                .join(Models, Models.hash == ModelsFrom.parent)
-                .where(ModelsFrom.child == self.hash)
-                .order_by(ModelsFrom.level.desc())
+                select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
+                .join(Resolutions, Resolutions.hash == ResolutionFrom.parent)
+                .where(ResolutionFrom.child == self.hash)
+                .order_by(ResolutionFrom.level.desc())
             )
 
             results = session.execute(path_query).all()
 
-            if not any(parent == model.hash for parent, _ in results):
+            if not any(parent == dataset.hash for parent, _ in results):
                 raise ValueError(
-                    f"No path exists between model {self.name} and dataset {model.name}"
+                    f"No path between resolution {self.name}, dataset {dataset.name}"
                 )
 
             lineage = {parent: truth for parent, truth in results}
@@ -161,16 +154,23 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
-    model = Column(
-        BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
+    resolution = Column(
+        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
     )
+    alias = Column(VARCHAR, nullable=False)
     schema = Column(VARCHAR, nullable=False)
     table = Column(VARCHAR, nullable=False)
     id = Column(VARCHAR, nullable=False)
+    indices = Column(JSONB, nullable=False)
 
     # Relationships
-    dataset_model = relationship("Models", back_populates="source")
+    dataset_resolution = relationship("Resolutions", back_populates="source")
     clusters = relationship("Clusters", back_populates="source")
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("alias", "schema", "table", name="unique_alias_schema_table"),
+    )
 
     @classmethod
     def list(cls) -> list["Sources"]:
@@ -206,7 +206,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     hash = Column(BYTEA, primary_key=True)
-    dataset = Column(BYTEA, ForeignKey("sources.model"), nullable=True)
+    dataset = Column(BYTEA, ForeignKey("sources.resolution"), nullable=True)
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
@@ -230,13 +230,13 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
-    """Table of probabilities that a cluster merge is correct, according to a model."""
+    """Table of probabilities that a cluster is correct, according to a resolution."""
 
     __tablename__ = "probabilities"
 
     # Columns
-    model = Column(
-        BYTEA, ForeignKey("models.hash", ondelete="CASCADE"), primary_key=True
+    resolution = Column(
+        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
     )
     cluster = Column(
         BYTEA, ForeignKey("clusters.hash", ondelete="CASCADE"), primary_key=True
@@ -244,7 +244,7 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     probability = Column(FLOAT, nullable=False)
 
     # Relationships
-    proposed_by = relationship("Models", back_populates="probabilities")
+    proposed_by = relationship("Resolutions", back_populates="probabilities")
     proposes = relationship("Clusters", back_populates="probabilities")
 
     # Constraints

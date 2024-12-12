@@ -61,7 +61,7 @@ If the dataset isn't already in matchbox, it'll need to be indexed.
 
 Pipelines using this part of matchbox will:
 
-1. Use `matchbox.query()` to retrieve source data from a particular model's perspective
+1. Use `matchbox.query()` to retrieve source data from the perspective of a particular resolution point
 2. Use `matchbox.process()` to clean the data with standardised processes
 3. Use `matchbox.make_model()` with `matchbox.dedupers` and `matchbox.linkers` to create a new model
 4. Generate probabilistic model outputs using `model.run()`
@@ -79,6 +79,10 @@ This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated
 ```
 uv sync --all-extras
 ```
+
+Secret scanning is done with [trufflehog](https://github.com/trufflesecurity/trufflehog).
+
+For security, use of [pre-commit](https://pre-commit.com) is expected. Ensure your hooks are installed with `pre-commit install`.
 
 Task running is done with [just](https://just.systems/man/en/). To see all available commands:
 

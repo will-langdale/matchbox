@@ -3,10 +3,17 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 import connectorx as cx
 import pyarrow as pa
 from matchbox.common.exceptions import MatchboxValidatonError
-from matchbox.common.hash import HASH_FUNC
+from matchbox.common.hash import HASH_FUNC, hash_to_base64
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -91,7 +98,7 @@ class SourceWarehouse(BaseModel):
     alias: str
     db_type: str
     user: str
-    password: str = Field(repr=False)
+    password: SecretStr
     host: str
     port: int
     database: str
@@ -100,10 +107,23 @@ class SourceWarehouse(BaseModel):
     @property
     def engine(self) -> Engine:
         if self._engine is None:
-            connection_string = f"{self.db_type}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+            connection_string = f"{self.db_type}://{self.user}:{self.password.get_secret_value()}@{self.host}:{self.port}/{self.database}"
             self._engine = create_engine(connection_string)
             self.test_connection()
         return self._engine
+
+    def __eq__(self, other):
+        if not isinstance(other, SourceWarehouse):
+            return False
+        return (
+            self.alias == other.alias
+            and self.db_type == other.db_type
+            and self.user == other.user
+            and self.password == other.password
+            and self.host == other.host
+            and self.port == other.port
+            and self.database == other.database
+        )
 
     def test_connection(self):
         try:
@@ -112,12 +132,6 @@ class SourceWarehouse(BaseModel):
         except SQLAlchemyError:
             self._engine = None
             raise
-
-    def __str__(self):
-        return (
-            f"SourceWarehouse(alias={self.alias}, type={self.db_type}, "
-            f"host={self.host}, port={self.port}, database={self.database})"
-        )
 
     @classmethod
     def from_engine(cls, engine: Engine, alias: str | None = None) -> "SourceWarehouse":
@@ -138,6 +152,81 @@ class SourceWarehouse(BaseModel):
         return warehouse
 
 
+class SourceColumnName(BaseModel):
+    """A column name in the Matchbox database."""
+
+    name: str
+
+    @property
+    def hash(self) -> bytes:
+        """Generate a unique hash based on the column name."""
+        return HASH_FUNC(self.name.encode("utf-8")).digest()
+
+    @property
+    def base64(self) -> str:
+        """Generate a base64 encoded hash based on the column name."""
+        return hash_to_base64(self.hash)
+
+
+class SourceColumn(BaseModel):
+    """A column in a dataset that can be indexed in the Matchbox database."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    literal: SourceColumnName = Field(
+        description="The literal name of the column in the database."
+    )
+    alias: SourceColumnName = Field(
+        default_factory=lambda data: SourceColumnName(name=data["literal"].name),
+        description="The alias to use when hashing the dataset in Matchbox.",
+    )
+    type: str | None = Field(
+        default=None, description="The type to cast the column to before hashing data."
+    )
+    indexed: bool = Field(description="Whether the column is indexed in the database.")
+
+    def __eq__(self, other: object) -> bool:
+        """Compare SourceColumn with another SourceColumn or bytes object.
+
+        Two SourceColumns are equal if:
+
+        * Their literal names match, or
+        * Their alias names match, or
+        * The hash of either their literal or alias matches the other object's
+        corresponding hash
+
+        A SourceColumn is equal to a bytes object if:
+
+        * The hash of either its literal or alias matches the bytes object
+
+        Args:
+            other: Another SourceColumn or a bytes object to compare against
+
+        Returns:
+            bool: True if the objects are considered equal, False otherwise
+        """
+        if isinstance(other, SourceColumn):
+            if self.literal == other.literal or self.alias == other.alias:
+                return True
+
+            self_hashes = {self.literal.hash, self.alias.hash}
+            other_hashes = {other.literal.hash, other.alias.hash}
+
+            return bool(self_hashes & other_hashes)
+
+        if isinstance(other, bytes):
+            return other in {self.literal.hash, self.alias.hash}
+
+        return NotImplemented
+
+    @field_validator("literal", "alias", mode="before")
+    def string_to_name(cls: "SourceColumn", value: str) -> SourceColumnName:
+        if isinstance(value, str):
+            return SourceColumnName(name=value)
+        else:
+            raise ValueError("Column name must be a string.")
+
+
 class Source(BaseModel):
     """A dataset that can be indexed in the Matchbox database."""
 
@@ -145,10 +234,14 @@ class Source(BaseModel):
         populate_by_name=True,
     )
 
-    database: SourceWarehouse | None = None
+    database: SourceWarehouse
     db_pk: str
     db_schema: str
     db_table: str
+    db_columns: list[SourceColumn]
+    alias: str = Field(
+        default_factory=lambda data: f"{data['db_schema']}.{data['db_table']}"
+    )
 
     def __str__(self) -> str:
         return f"{self.db_schema}.{self.db_table}"
@@ -157,6 +250,86 @@ class Source(BaseModel):
         return hash(
             (type(self), self.db_pk, self.db_schema, self.db_table, self.database.alias)
         )
+
+    @model_validator(mode="before")
+    @classmethod
+    def hash_columns(cls, data: dict[str, Any]) -> "Source":
+        """Shapes indices data from either the backend or TOML.
+
+        Handles three scenarios:
+            1. No columns specified - all columns except primary key are indexed
+            2. Indices from database - uses existing column hash information
+            3. Columns specified in TOML - specified columns are indexed
+        """
+        # Initialise warehouse and get table metadata
+        warehouse = (
+            data["database"]
+            if isinstance(data["database"], SourceWarehouse)
+            else SourceWarehouse(**data["database"])
+        )
+
+        metadata = MetaData(schema=data["db_schema"])
+        table = Table(data["db_table"], metadata, autoload_with=warehouse.engine)
+
+        # Get all columns except primary key
+        remote_columns = [
+            SourceColumn(literal=col.name, type=str(col.type), indexed=False)
+            for col in table.columns
+            if col.name not in data["db_pk"]
+        ]
+
+        index_data = data.get("index")
+
+        # Case 1: No columns specified - index everything
+        if not index_data:
+            data["db_columns"] = [
+                SourceColumn(literal=col.literal.name, type=col.type, indexed=True)
+                for col in remote_columns
+            ]
+            return data
+
+        # Case 2: Columns from database
+        if isinstance(index_data, dict):
+            data["db_columns"] = [
+                SourceColumn(
+                    literal=col.literal.name,
+                    type=col.type,
+                    indexed=col in index_data["literal"] + index_data["alias"],
+                )
+                for col in remote_columns
+            ]
+            return data
+
+        # Case 3: Columns from TOML
+        local_columns = []
+
+        # Process TOML column specifications
+        for column in index_data:
+            local_columns.append(
+                SourceColumn(
+                    literal=column["literal"],
+                    alias=column.get("alias", column["literal"]),
+                    indexed=True,
+                )
+            )
+
+        # Match remote columns with local specifications
+        indexed_columns = []
+        non_indexed_columns = []
+
+        for remote_col in remote_columns:
+            matched = False
+            for local_col in local_columns:
+                if remote_col.literal == local_col.literal:
+                    indexed_columns.append(local_col)
+                    matched = True
+                    break
+            if not matched:
+                non_indexed_columns.append(remote_col)
+
+        data["db_columns"] = indexed_columns + non_indexed_columns
+
+        return data
 
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
@@ -202,9 +375,8 @@ class Source(BaseModel):
 
     def to_hash(self) -> bytes:
         """Generate a unique hash based on the table's columns and datatypes."""
-        table = self.to_table()
-        schema_representation = f"{str(self)}: " + ",".join(
-            f"{col.name}:{str(col.type)}" for col in table.columns
+        schema_representation = f"{self.alias}: " + ",".join(
+            f"{col.alias.name}:{col.type}" for col in self.db_columns if col.indexed
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
