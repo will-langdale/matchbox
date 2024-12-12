@@ -6,6 +6,8 @@ datasets.toml
 scratch/
 *.ipynb_checkpoints
 .ruff_cache
+notebooks/
+*.parquet
 
 # DuckDB
 *.duckdb
