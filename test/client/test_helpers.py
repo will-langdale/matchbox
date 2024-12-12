@@ -8,12 +8,10 @@ from matchbox.helpers import (
     cleaner,
     cleaners,
     comparison,
-    draw_model_tree,
     selector,
     selectors,
 )
 from matchbox.server.postgresql import MatchboxPostgres
-from matplotlib.figure import Figure
 from pandas import DataFrame
 
 from ..fixtures.db import AddIndexedDataCallable
@@ -78,7 +76,7 @@ def test_process(
     crn = query(
         selector=select_crn,
         backend=matchbox_postgres,
-        model=None,
+        resolution=None,
         return_type="pandas",
     )
 
@@ -106,8 +104,3 @@ def test_comparisons():
     )
 
     assert comparison_name_id is not None
-
-
-def test_draw_model_tree(matchbox_postgres: MatchboxPostgres):
-    plt = draw_model_tree(backend=matchbox_postgres)
-    assert isinstance(plt, Figure)

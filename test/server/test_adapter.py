@@ -1,14 +1,15 @@
+from collections import defaultdict
 from typing import Callable
 
 import pytest
-import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
-from matchbox.common.db import Source
+from matchbox.common.db import Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
-    MatchboxModelError,
+    MatchboxResolutionError,
 )
+from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.results import (
     ClusterResults,
@@ -97,7 +98,7 @@ class TestMatchboxBackend:
         df_crn = query(
             selector=select_crn,
             backend=self.backend,
-            model="naive_test.crn",
+            resolution="naive_test.crn",
             return_type="pandas",
         )
 
@@ -106,7 +107,7 @@ class TestMatchboxBackend:
         self.backend.validate_hashes(hashes=hashes)
 
         with pytest.raises(MatchboxDataError):
-            self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistant").digest()])
+            self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistent").digest()])
 
     def test_get_dataset(self):
         """Test querying data from the database."""
@@ -114,9 +115,21 @@ class TestMatchboxBackend:
 
         crn = self.warehouse_data[0]
 
-        self.backend.get_dataset(
+        crn_retrieved = self.backend.get_dataset(
             db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
         )
+
+        assert crn.db_columns == crn_retrieved.db_columns
+
+        cols: defaultdict[str, list[SourceColumn]] = defaultdict(list)
+
+        # Indexing isn't used in the custom equality check
+        for col in crn.db_columns + crn_retrieved.db_columns:
+            cols[col.literal.name].append(col)
+
+        for c1, c2 in cols.values():
+            assert c1.indexed == c2.indexed
+
         with pytest.raises(MatchboxDatasetError):
             self.backend.get_dataset(
                 db_schema="nonexistant",
@@ -124,15 +137,20 @@ class TestMatchboxBackend:
                 engine=crn.database.engine,
             )
 
-    def test_get_model_subgraph(self):
-        """Test getting model from the model subgraph."""
+    def test_get_resolution_graph(self):
+        """Test getting the resolution graph."""
+        graph = self.backend.get_resolution_graph()
+        assert len(graph.nodes) == 0
+        assert len(graph.edges) == 0
+        assert isinstance(graph, ResolutionGraph)
+
         self.setup_database("link")
 
-        subgraph = self.backend.get_model_subgraph()
-
-        assert isinstance(subgraph, rx.PyDiGraph)
-        assert subgraph.num_nodes() > 0
-        assert subgraph.num_edges() > 0
+        graph = self.backend.get_resolution_graph()
+        # Nodes: 3 datasets, 3 dedupers, and 2 linkers
+        # Edges: 1 per deduper, 2 per linker
+        assert len(graph.nodes) == 8
+        assert len(graph.edges) == 7
 
     def test_get_model(self):
         """Test getting a model from the database."""
@@ -141,7 +159,7 @@ class TestMatchboxBackend:
         model = self.backend.get_model(model="naive_test.crn")
         assert isinstance(model, MatchboxModelAdapter)
 
-        with pytest.raises(MatchboxModelError):
+        with pytest.raises(MatchboxResolutionError):
             self.backend.get_model(model="nonexistant")
 
     def test_delete_model(self):
@@ -153,7 +171,7 @@ class TestMatchboxBackend:
         * Any models that depended on this model, and their creates edges
         * Any probability values associated with the model
         * All of the above for all parent models. As every model is defined by
-            its children, deleting a model means cascading deletion to all ancestors
+            its parents, deleting a model means cascading deletion to all descendants
         """
         self.setup_database("link")
 
@@ -162,13 +180,13 @@ class TestMatchboxBackend:
         deduper_to_delete = "naive_test.crn"
         total_models = len(dedupe_data_test_params) + len(link_data_test_params)
 
-        model_list_pre_delete = self.backend.models.count()
+        models_pre_delete = self.backend.models.count()
         cluster_count_pre_delete = self.backend.clusters.count()
         cluster_assoc_count_pre_delete = self.backend.creates.count()
         proposed_merge_probs_pre_delete = self.backend.proposes.count()
         actual_merges_pre_delete = self.backend.merges.count()
 
-        assert model_list_pre_delete == total_models
+        assert models_pre_delete == total_models
         assert cluster_count_pre_delete > 0
         assert cluster_assoc_count_pre_delete > 0
         assert proposed_merge_probs_pre_delete > 0
@@ -177,14 +195,14 @@ class TestMatchboxBackend:
         # Perform deletion
         self.backend.delete_model(deduper_to_delete, certain=True)
 
-        model_list_post_delete = self.backend.models.count()
+        models_post_delete = self.backend.models.count()
         cluster_count_post_delete = self.backend.clusters.count()
         cluster_assoc_count_post_delete = self.backend.creates.count()
         proposed_merge_probs_post_delete = self.backend.proposes.count()
         actual_merges_post_delete = self.backend.merges.count()
 
         # Deletes deduper and parent linkers: 3 models gone
-        assert model_list_post_delete == model_list_pre_delete - 3
+        assert models_post_delete == models_pre_delete - 3
 
         # Cluster, dedupe and link count unaffected
         assert cluster_count_post_delete == cluster_count_pre_delete
@@ -202,7 +220,7 @@ class TestMatchboxBackend:
         duns = self.warehouse_data[1]
 
         # Test deduper insertion
-        model_count = self.backend.models.count()
+        models_count = self.backend.models.count()
 
         self.backend.insert_model(
             "dedupe_1", left=str(crn), description="Test deduper 1"
@@ -211,21 +229,21 @@ class TestMatchboxBackend:
             "dedupe_2", left=str(duns), description="Test deduper 1"
         )
 
-        assert self.backend.models.count() == model_count + 2
+        assert self.backend.models.count() == models_count + 2
 
         # Test linker insertion
         self.backend.insert_model(
             "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
         )
 
-        assert self.backend.models.count() == model_count + 3
+        assert self.backend.models.count() == models_count + 3
 
         # Test model upsert
         self.backend.insert_model(
             "link_1", left="dedupe_1", right="dedupe_2", description="Test upsert"
         )
 
-        assert self.backend.models.count() == model_count + 3
+        assert self.backend.models.count() == models_count + 3
 
     def test_model_get_probabilities(self):
         """Test that a model's ProbabilityResults can be retrieved."""
@@ -398,6 +416,25 @@ class TestMatchboxBackend:
 
         assert self.backend.data.count() == unique
 
+    def test_query_warning(self):
+        """Tests querying non-indexed fields warns the user."""
+        self.setup_database("index")
+
+        crn = self.warehouse_data[0]
+        select_crn = selector(
+            table=str(crn),
+            fields=["id", "crn"],
+            engine=crn.database.engine,
+        )
+        with pytest.warns(Warning):
+            query(
+                selector=select_crn,
+                backend=self.backend,
+                resolution=None,
+                return_type="pandas",
+                limit=10,
+            )
+
     def test_query_single_table(self):
         """Test querying data from the database."""
         self.setup_database("index")
@@ -411,7 +448,7 @@ class TestMatchboxBackend:
         df_crn_sample = query(
             selector=select_crn,
             backend=self.backend,
-            model=None,
+            resolution=None,
             return_type="pandas",
             limit=10,
         )
@@ -422,7 +459,7 @@ class TestMatchboxBackend:
         df_crn_full = query(
             selector=select_crn,
             backend=self.backend,
-            model=None,
+            resolution=None,
             return_type="pandas",
         )
 
@@ -455,7 +492,7 @@ class TestMatchboxBackend:
         df_crn_duns_full = query(
             selector=select_crn_duns,
             backend=self.backend,
-            model=None,
+            resolution=None,
             return_type="pandas",
         )
 
@@ -490,7 +527,7 @@ class TestMatchboxBackend:
         df_crn = query(
             selector=select_crn,
             backend=self.backend,
-            model="naive_test.crn",
+            resolution="naive_test.crn",
             return_type="pandas",
         )
 
@@ -528,7 +565,7 @@ class TestMatchboxBackend:
         crn_duns = query(
             selector=select_crn_duns,
             backend=self.backend,
-            model=linker_name,
+            resolution=linker_name,
             return_type="pandas",
         )
 

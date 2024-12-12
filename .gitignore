@@ -6,6 +6,8 @@ datasets.toml
 scratch/
 *.ipynb_checkpoints
 .ruff_cache
+notebooks/
+*.parquet
 
 # DuckDB
 *.duckdb
@@ -176,6 +178,9 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Mac things
+.DS_Store
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
