@@ -8,7 +8,6 @@ scratch/
 .ruff_cache
 notebooks/
 *.parquet
-.DS_Store
 
 # DuckDB
 *.duckdb
