@@ -9,17 +9,17 @@ class MatchboxValidatonError(Exception):
     """Validation of data failed."""
 
 
-class MatchboxModelError(Exception):
-    """Model not found."""
+class MatchboxResolutionError(Exception):
+    """Resolution not found."""
 
-    def __init__(self, message: str = None, model_name: str = None):
+    def __init__(self, message: str = None, resolution_name: str = None):
         if message is None:
-            message = "Model not found."
-            if model_name is not None:
-                message = f"Model {model_name} not found."
+            message = "Resolution not found."
+            if resolution_name is not None:
+                message = f"Resolution {resolution_name} not found."
 
         super().__init__(message)
-        self.model_name = model_name
+        self.resolution_name = resolution_name
 
 
 class MatchboxDatasetError(Exception):

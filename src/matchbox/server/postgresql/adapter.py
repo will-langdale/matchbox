@@ -8,18 +8,18 @@ from matchbox.common.db import Source, SourceWarehouse
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
-    MatchboxModelError,
+    MatchboxResolutionError,
 )
-from matchbox.common.graph import ResolutionGraph
+from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
-    Models,
-    ModelsFrom,
     Probabilities,
+    ResolutionFrom,
+    Resolutions,
     Sources,
 )
 from matchbox.server.postgresql.utils.db import get_resolution_graph
@@ -70,17 +70,19 @@ class FilteredProbabilities(BaseModel):
             query = session.query(func.count()).select_from(Probabilities)
 
             if self.over_truth:
-                query = query.join(Models, Probabilities.model == Models.hash).filter(
+                query = query.join(
+                    Resolutions, Probabilities.resolution == Resolutions.hash
+                ).filter(
                     and_(
-                        Models.truth.isnot(None),
-                        Probabilities.probability > Models.truth,
+                        Resolutions.truth.isnot(None),
+                        Probabilities.probability > Resolutions.truth,
                     )
                 )
             return query.scalar()
 
 
-class FilteredModels(BaseModel):
-    """Wrapper class for filtered model queries"""
+class FilteredResolutions(BaseModel):
+    """Wrapper class for filtered resolution queries"""
 
     datasets: bool = False
     humans: bool = False
@@ -88,15 +90,15 @@ class FilteredModels(BaseModel):
 
     def count(self) -> int:
         with MBDB.get_session() as session:
-            query = session.query(func.count()).select_from(Models)
+            query = session.query(func.count()).select_from(Resolutions)
 
             filter_list = []
             if self.datasets:
-                filter_list.append(Models.type == "dataset")
+                filter_list.append(Resolutions.type == ResolutionNodeType.DATASET)
             if self.humans:
-                filter_list.append(Models.type == "human")
+                filter_list.append(Resolutions.type == ResolutionNodeType.HUMAN)
             if self.models:
-                filter_list.append(Models.type == "model")
+                filter_list.append(Resolutions.type == ResolutionNodeType.MODEL)
 
             if filter_list:
                 query = query.filter(or_(*filter_list))
@@ -107,31 +109,33 @@ class FilteredModels(BaseModel):
 class MatchboxPostgresModel(MatchboxModelAdapter):
     """An adapter for Matchbox models in PostgreSQL."""
 
-    def __init__(self, model: Models, backend: "MatchboxPostgres"):
-        self.model: Models = model
+    def __init__(self, resolution: Resolutions, backend: "MatchboxPostgres"):
+        self.resolution: Resolutions = resolution
         self.backend: "MatchboxPostgres" = backend
 
     @property
     def hash(self) -> bytes:
         with Session(MBDB.get_engine()) as session:
-            session.add(self.model)
-            return self.model.hash
+            session.add(self.resolution)
+            return self.resolution.hash
 
     @property
     def name(self) -> str:
         with Session(MBDB.get_engine()) as session:
-            session.add(self.model)
-            return self.model.name
+            session.add(self.resolution)
+            return self.resolution.name
 
     @property
     def probabilities(self) -> ProbabilityResults:
         """Retrieve probabilities for this model."""
-        return get_model_probabilities(engine=MBDB.get_engine(), model=self.model)
+        return get_model_probabilities(
+            engine=MBDB.get_engine(), resolution=self.resolution
+        )
 
     @property
     def clusters(self) -> ClusterResults:
         """Retrieve clusters for this model."""
-        return get_model_clusters(engine=MBDB.get_engine(), model=self.model)
+        return get_model_clusters(engine=MBDB.get_engine(), resolution=self.resolution)
 
     @property
     def results(self) -> Results:
@@ -143,7 +147,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         """Inserts results for this model."""
         insert_results(
             results=results,
-            model=self.model,
+            resolution=self.resolution,
             engine=MBDB.get_engine(),
             batch_size=self.backend.settings.batch_size,
         )
@@ -152,15 +156,15 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     def truth(self) -> float:
         """Gets the current truth threshold for this model."""
         with Session(MBDB.get_engine()) as session:
-            session.add(self.model)
-            return self.model.truth
+            session.add(self.resolution)
+            return self.resolution.truth
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Sets the truth threshold for this model, changing the default clusters."""
         with Session(MBDB.get_engine()) as session:
-            self.model.truth = truth
-            session.add(self.model)
+            self.resolution.truth = truth
+            session.add(self.resolution)
             session.commit()
 
     @property
@@ -173,8 +177,11 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         the current truth values of all ancestor models.
         """
         with Session(MBDB.get_engine()) as session:
-            session.add(self.model)
-            return {model.name: model.truth for model in self.model.ancestors}
+            session.add(self.resolution)
+            return {
+                resolution.name: resolution.truth
+                for resolution in self.resolution.ancestors
+            }
 
     @property
     def ancestors_cache(self) -> dict[str, float]:
@@ -188,10 +195,10 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         """
         with Session(MBDB.get_engine()) as session:
             query = (
-                select(Models.name, ModelsFrom.truth_cache)
-                .join(Models, Models.hash == ModelsFrom.parent)
-                .where(ModelsFrom.child == self.model.hash)
-                .where(ModelsFrom.truth_cache.isnot(None))
+                select(Resolutions.name, ResolutionFrom.truth_cache)
+                .join(Resolutions, Resolutions.hash == ResolutionFrom.parent)
+                .where(ResolutionFrom.child == self.resolution.hash)
+                .where(ResolutionFrom.truth_cache.isnot(None))
             )
 
             return {
@@ -210,8 +217,8 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         with Session(MBDB.get_engine()) as session:
             model_names = list(new_values.keys())
             name_to_hash = dict(
-                session.query(Models.name, Models.hash)
-                .filter(Models.name.in_(model_names))
+                session.query(Resolutions.name, Resolutions.hash)
+                .filter(Resolutions.name.in_(model_names))
                 .all()
             )
 
@@ -221,9 +228,9 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
                     raise ValueError(f"Model '{model_name}' not found in database")
 
                 session.execute(
-                    ModelsFrom.__table__.update()
-                    .where(ModelsFrom.parent == parent_hash)
-                    .where(ModelsFrom.child == self.model.hash)
+                    ResolutionFrom.__table__.update()
+                    .where(ResolutionFrom.parent == parent_hash)
+                    .where(ResolutionFrom.child == self.resolution.hash)
                     .values(truth_cache=truth_value)
                 )
 
@@ -234,10 +241,10 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         cls, model_name: str, backend: "MatchboxPostgres"
     ) -> "MatchboxPostgresModel":
         with Session(MBDB.get_engine()) as session:
-            if model := session.query(Models).filter_by(name=model_name).first():
+            if model := session.query(Resolutions).filter_by(name=model_name).first():
                 return cls(model, backend=backend)
             else:
-                raise MatchboxModelError(model_name=model_name)
+                raise MatchboxResolutionError(resolution_name=model_name)
 
 
 class MatchboxPostgres(MatchboxDBAdapter):
@@ -249,7 +256,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         MBDB.create_database()
 
         self.datasets = Sources
-        self.models = FilteredModels(datasets=False, humans=False, models=True)
+        self.models = FilteredResolutions(datasets=False, humans=False, models=True)
         self.data = FilteredClusters(has_dataset=True)
         self.clusters = FilteredClusters(has_dataset=False)
         self.merges = Contains
@@ -259,18 +266,18 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def query(
         self,
         selector: dict[str, list[str]],
-        model: str | None = None,
+        resolution: str | None = None,
         threshold: float | dict[str, float] | None = None,
         return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
     ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
-        """Queries the database from an optional model of truth.
+        """Queries the database from an optional point of truth.
 
         Args:
             selector: the tables and fields to query
             return_type: the form to return data in, one of "pandas" or "arrow"
                 Defaults to pandas for ease of use
-            model (optional): the model to use for filtering results
+            resolution (optional): the resolution to use for filtering results
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold
                 If a float, uses that threshold for the specified model, and the
@@ -287,7 +294,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             selector=selector,
             engine=MBDB.get_engine(),
             return_type=return_type if return_type else "pandas",
-            model=model,
+            resolution=resolution,
             threshold=threshold,
             limit=limit,
         )
@@ -364,51 +371,55 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 raise MatchboxDatasetError(db_schema=db_schema, db_table=db_table)
 
     def get_resolution_graph(self) -> ResolutionGraph:
-        """Get the full subgraph of a model."""
+        """Get the full resolution graph."""
         return get_resolution_graph(engine=MBDB.get_engine())
 
     def get_model(self, model: str) -> MatchboxPostgresModel:
         """Get a model from the database.
 
         Args:
-            model: The model to get.
+            model: The name of the model to get.
         """
         with Session(MBDB.get_engine()) as session:
-            if model := session.query(Models).filter_by(name=model).first():
-                return MatchboxPostgresModel(model=model, backend=self)
+            if resolution := session.query(Resolutions).filter_by(name=model).first():
+                return MatchboxPostgresModel(resolution=resolution, backend=self)
             else:
-                raise MatchboxModelError(model_name=model)
+                raise MatchboxResolutionError(resolution_name=model)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
 
         Args:
-            model: The model to delete.
+            model: The name of the model to delete.
             certain: Whether to delete the model without confirmation.
         """
         with Session(MBDB.get_engine()) as session:
-            if model := session.query(Models).filter(Models.name == model).first():
+            if (
+                resolution := session.query(Resolutions)
+                .filter(Resolutions.name == model)
+                .first()
+            ):
                 if certain:
-                    delete_stmt = delete(Models).where(
-                        Models.hash.in_(
-                            [model.hash, *(d.hash for d in model.descendants)]
+                    delete_stmt = delete(Resolutions).where(
+                        Resolutions.hash.in_(
+                            [resolution.hash, *(d.hash for d in resolution.descendants)]
                         )
                     )
                     session.execute(delete_stmt)
-                    session.delete(model)
+                    session.delete(resolution)
                     session.commit()
                 else:
-                    childen = model.descendants
-                    children_names = ", ".join([m.name for m in childen])
+                    childen = resolution.descendants
+                    children_names = ", ".join([r.name for r in childen])
                     raise ValueError(
-                        f"This operation will delete the models {children_names}, "
+                        f"This operation will delete the resolutions {children_names}, "
                         "as well as all probabilities they have created. \n\n"
                         "It won't delete validation associated with these "
                         "probabilities. \n\n"
                         "If you're sure you want to continue, rerun with certain=True"
                     )
             else:
-                raise MatchboxModelError(model_name=model)
+                raise MatchboxResolutionError(resolution_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -428,21 +439,25 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 the database
         """
         with Session(MBDB.get_engine()) as session:
-            left_model = session.query(Models).filter(Models.name == left).first()
-            if not left_model:
-                raise MatchboxModelError(model_name=left)
+            left_resolution = (
+                session.query(Resolutions).filter(Resolutions.name == left).first()
+            )
+            if not left_resolution:
+                raise MatchboxResolutionError(resolution_name=left)
 
             # Overwritten with actual right model if in a link job
-            right_model = left_model
+            right_resolution = left_resolution
             if right:
-                right_model = session.query(Models).filter(Models.name == right).first()
-                if not right_model:
-                    raise MatchboxModelError(model_name=right)
+                right_resolution = (
+                    session.query(Resolutions).filter(Resolutions.name == right).first()
+                )
+                if not right_resolution:
+                    raise MatchboxResolutionError(resolution_name=right)
 
         insert_model(
             model=model,
-            left=left_model,
-            right=right_model,
+            left=left_resolution,
+            right=right_resolution,
             description=description,
             engine=MBDB.get_engine(),
         )

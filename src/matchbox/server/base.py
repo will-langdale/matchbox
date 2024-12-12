@@ -245,7 +245,7 @@ class MatchboxDBAdapter(ABC):
     def query(
         self,
         selector: dict[str, list[str]],
-        model: str | None = None,
+        resolution: str | None = None,
         threshold: float | dict[str, float] | None = None,
         return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
