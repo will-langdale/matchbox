@@ -22,8 +22,9 @@ def warehouse_toml(warehouse: SourceWarehouse) -> str:
 
 def source_toml(source: Source, index: list[dict[str, str]]) -> str:
     index_str = dumps({"index": index}).replace("\n", "\n        ")
+    alias = source.alias if "." not in source.alias else f'"{source.alias}"'
     return dedent(f"""
-        [datasets.{source.alias.replace(".", "")}]
+        [datasets.{alias}]
         database = "test_warehouse"
         db_schema = "{source.db_schema}"
         db_table = "{source.db_table}"
@@ -74,7 +75,7 @@ def test_load_datasets_from_config(
     config = load_datasets_from_config(temp_file_path)
 
     # Helper variables
-    source = config.get(crn.alias.replace(".", ""))
+    source = config.get(crn.alias)
     named = [idx["literal"] for idx in index if idx["literal"] != "*"]
     has_star = any(idx["literal"] == "*" for idx in index)
     star_pos = next((i for i, idx in enumerate(index) if idx["literal"] == "*"), None)
@@ -82,7 +83,7 @@ def test_load_datasets_from_config(
 
     # Test 1: Core attributes match
     assert source.database == warehouse
-    assert source.alias == crn.alias.replace(".", "")
+    assert source.alias == crn.alias
     assert source.db_schema == crn.db_schema
     assert source.db_table == crn.db_table
     assert source.db_pk == crn.db_pk
