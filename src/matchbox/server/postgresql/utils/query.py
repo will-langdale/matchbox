@@ -273,14 +273,14 @@ def query(
 
     with Session(engine) as session:
         # If a resolution was specified, validate and retrieve it
-        point_truth = None
+        point_of_truth = None
         if resolution is not None:
-            point_truth = (
+            point_of_truth = (
                 session.query(Resolutions)
                 .filter(Resolutions.name == resolution)
                 .first()
             )
-            if point_truth is None:
+            if point_of_truth is None:
                 raise MatchboxResolutionError(resolution_name=resolution)
 
         # Process each source dataset
@@ -304,7 +304,7 @@ def query(
 
             hash_query = _resolve_cluster_hierarchy(
                 dataset_hash=dataset.hash,
-                resolution=point_truth if point_truth else dataset,
+                resolution=point_of_truth if point_of_truth else dataset,
                 threshold=threshold,
                 engine=engine,
             )
