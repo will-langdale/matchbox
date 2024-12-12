@@ -70,14 +70,13 @@ def get_data_subgraph(engine: Engine) -> rx.PyDiGraph:
                 nodes[cluster_id] = cluster_idx
 
             if cluster.id is not None and cluster.dataset is not None:
-                source = sources.get(cluster.dataset)
-                if source:
-                    data_id = str(cluster.id)
-                    data_idx = G.add_node({"id": data_id, "type": "data"})
+                source = sources[cluster.dataset]
+                data_id = str(cluster.id)
+                data_idx = G.add_node({"id": data_id, "type": "data"})
 
-                    source_id = f"{source.schema}.{source.table}"
-                    G.add_edge(data_idx, nodes[source_id], {"type": "source"})
-                    G.add_edge(nodes[cluster_id], data_idx, {"type": "data"})
+                source_id = f"{source.schema}.{source.table}"
+                G.add_edge(data_idx, nodes[source_id], {"type": "source"})
+                G.add_edge(nodes[cluster_id], data_idx, {"type": "data"})
 
         for contains in session.query(Contains).all():
             G.add_edge(

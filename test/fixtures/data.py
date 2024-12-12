@@ -120,6 +120,12 @@ def revolution_inc(
     Revolution Inc. as it exists across all three datasets.
 
     UUIDs are converted to strings to mirror how Matchbox stores them.
+
+    Based on the above fixtures, should return:
+
+    * Three CRNs
+    * One DUNS
+    * Two CDMS
     """
     crn_ids = crn_companies[
         crn_companies["company_name"].str.contains("Revolution", case=False)
@@ -129,11 +135,7 @@ def revolution_inc(
         duns_companies["company_name"].str.contains("Revolution", case=False)
     ]["id"].tolist()
 
-    revolution_crn = crn_companies[
-        crn_companies["company_name"].str.contains("Revolution", case=False)
-    ]["crn"].iloc[0]
-
-    cdms_ids = cdms_companies[cdms_companies["crn"] == revolution_crn]["id"].tolist()
+    cdms_ids = cdms_companies[cdms_companies["crn"] == crn_ids[0]]["id"].tolist()
 
     return {
         "crn": [str(id) for id in crn_ids],
