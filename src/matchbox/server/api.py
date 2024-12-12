@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
-from matchbox.server.utils.aws_s3_client import upload_to_s3
+from matchbox.server.utils.s3 import upload_to_s3
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
