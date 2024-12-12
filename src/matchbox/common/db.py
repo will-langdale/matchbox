@@ -237,7 +237,7 @@ class Source(BaseModel):
         Handles three scenarios:
             1. No columns specified - all columns except primary key are indexed
             2. Indices from database - uses existing column hash information
-            3. Columns specified in TOML - uses specified columns with optional '*'
+            3. Columns specified in TOML - specified columns are indexed
         """
         # Initialise warehouse and get table metadata
         warehouse = (
@@ -280,14 +280,16 @@ class Source(BaseModel):
 
         # Case 3: Columns from TOML
         local_columns = []
-        star_index = None
 
         # Process TOML column specifications
-        for i, column in enumerate(index_data):
-            if column["literal"] == "*":
-                star_index = i
-                continue
-            local_columns.append(SourceColumn(**column, indexed=True))
+        for column in index_data:
+            local_columns.append(
+                SourceColumn(
+                    literal=column["literal"],
+                    alias=column.get("alias", column["literal"]),
+                    indexed=True,
+                )
+            )
 
         # Match remote columns with local specifications
         indexed_columns = []
@@ -296,23 +298,14 @@ class Source(BaseModel):
         for remote_col in remote_columns:
             matched = False
             for local_col in local_columns:
-                if remote_col == local_col:
-                    if local_col.type is None:
-                        local_col.type = remote_col.type
+                if remote_col.literal == local_col.literal:
                     indexed_columns.append(local_col)
                     matched = True
                     break
             if not matched:
                 non_indexed_columns.append(remote_col)
 
-        # Handle wildcard insertion
-        if star_index is not None:
-            for col in non_indexed_columns:
-                col.indexed = True
-            indexed_columns[star_index:star_index] = non_indexed_columns
-            data["db_columns"] = indexed_columns
-        else:
-            data["db_columns"] = indexed_columns + non_indexed_columns
+        data["db_columns"] = indexed_columns + non_indexed_columns
 
         return data
 

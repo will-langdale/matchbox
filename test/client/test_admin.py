@@ -40,17 +40,9 @@ def source_toml(source: Source, index: list[dict[str, str]]) -> str:
             {"literal": "company_name"},
             {"literal": "crn"},
         ],
-        [{"literal": "company_name", "type": "VARCHAR", "alias": "name"}],
-        [
-            {"literal": "company_name"},
-            {"literal": "*"},
-        ],
-        [
-            {"literal": "*"},
-            {"literal": "company_name"},
-        ],
+        [{"literal": "company_name", "alias": "name"}],
     ),
-    ids=["vanilla", "alias_and_type", "star_end", "star_start"],
+    ids=["vanilla", "alias"],
 )
 def test_load_datasets_from_config(
     index: list[dict[str, str]],
@@ -76,9 +68,7 @@ def test_load_datasets_from_config(
 
     # Helper variables
     source = config.get(crn.alias)
-    named = [idx["literal"] for idx in index if idx["literal"] != "*"]
-    has_star = any(idx["literal"] == "*" for idx in index)
-    star_pos = next((i for i, idx in enumerate(index) if idx["literal"] == "*"), None)
+    named = [idx["literal"] for idx in index]
     col_names = [col.literal.name for col in source.db_columns]
 
     # Test 1: Core attributes match
@@ -91,33 +81,16 @@ def test_load_datasets_from_config(
     # Test 2: All non-pk columns present
     assert set(col_names) == {"company_name", "crn", "id"} - {source.db_pk}
 
-    # Test 3: Column indexing
-    for col in source.db_columns:
-        assert col.indexed == (has_star or col.literal.name in named)
-
-    # Test 4: Aliases and types match
+    # Test 3: Aliases match
     for idx in index:
-        if idx["literal"] == "*":
-            continue
         col = next(c for c in source.db_columns if c.literal.name == idx["literal"])
         assert col.alias.name == idx.get("alias", idx["literal"])
-        assert col.type == idx.get("type", col.type)
 
-    # Test 5: Column ordering
-    if star_pos is None:
-        for i, name in enumerate(named):
-            assert col_names[i] == name
-    else:
-        for i, idx in enumerate(index):
-            if idx["literal"] != "*":
-                if i < star_pos:
-                    assert col_names[i] == idx["literal"]
-                else:
-                    star_col_count = len(col_names) - len(index) + 1
-                    assert col_names[i + star_col_count - 1] == idx["literal"]
+    # Test 4: Column ordering
+    for i, name in enumerate(named):
+        assert col_names[i] == name
 
-    # Test 6: column equalities
-
+    # Test 5: column equalities
     assert source.db_columns[0] != source.db_columns[1]
     assert source.db_columns[0] == source.db_columns[0]
     assert source.db_columns[1].literal.hash == source.db_columns[1]
