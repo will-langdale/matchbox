@@ -1,8 +1,9 @@
+from collections import defaultdict
 from typing import Callable
 
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from matchbox.common.db import Source
+from matchbox.common.db import Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
@@ -114,9 +115,21 @@ class TestMatchboxBackend:
 
         crn = self.warehouse_data[0]
 
-        self.backend.get_dataset(
+        crn_retrieved = self.backend.get_dataset(
             db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
         )
+
+        assert crn.db_columns == crn_retrieved.db_columns
+
+        cols: defaultdict[str, list[SourceColumn]] = defaultdict(list)
+
+        # Indexing isn't used in the custom equality check
+        for col in crn.db_columns + crn_retrieved.db_columns:
+            cols[col.literal.name].append(col)
+
+        for c1, c2 in cols.values():
+            assert c1.indexed == c2.indexed
+
         with pytest.raises(MatchboxDatasetError):
             self.backend.get_dataset(
                 db_schema="nonexistant",
@@ -402,6 +415,25 @@ class TestMatchboxBackend:
         )
 
         assert self.backend.data.count() == unique
+
+    def test_query_warning(self):
+        """Tests querying non-indexed fields warns the user."""
+        self.setup_database("index")
+
+        crn = self.warehouse_data[0]
+        select_crn = selector(
+            table=str(crn),
+            fields=["id", "crn"],
+            engine=crn.database.engine,
+        )
+        with pytest.warns(Warning):
+            query(
+                selector=select_crn,
+                backend=self.backend,
+                resolution=None,
+                return_type="pandas",
+                limit=10,
+            )
 
     def test_query_single_table(self):
         """Test querying data from the database."""

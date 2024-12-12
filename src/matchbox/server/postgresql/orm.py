@@ -5,9 +5,10 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     ForeignKey,
+    UniqueConstraint,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -146,13 +147,20 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     resolution = Column(
         BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
     )
+    alias = Column(VARCHAR, nullable=False)
     schema = Column(VARCHAR, nullable=False)
     table = Column(VARCHAR, nullable=False)
     id = Column(VARCHAR, nullable=False)
+    indices = Column(JSONB, nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")
     clusters = relationship("Clusters", back_populates="source")
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("alias", "schema", "table", name="unique_alias_schema_table"),
+    )
 
     @classmethod
     def list(cls) -> list["Sources"]:
