@@ -18,7 +18,7 @@ HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 HASH_FUNC = hashlib.sha256
 
 
-def hash_to_str(hash: bytes) -> str:
+def hash_to_base64(hash: bytes) -> str:
     return base64.b64encode(hash).decode("utf-8")
 
 

@@ -7,7 +7,7 @@ from matchbox.common.graph import (
 from matchbox.common.graph import (
     ResolutionNodeType as ResType,
 )
-from matchbox.common.hash import hash_to_str
+from matchbox.common.hash import hash_to_base64
 from rustworkx import PyDiGraph
 
 
@@ -35,7 +35,7 @@ def resolution_graph() -> ResolutionGraph:
 @pytest.fixture
 def pydigraph() -> PyDiGraph:
     def make_id(n: int) -> str:
-        return hash_to_str(bytes(n))
+        return hash_to_base64(bytes(n))
 
     G = PyDiGraph()
     n1 = G.add_node({"id": make_id(1), "name": "1", "type": str(ResType.DATASET)})

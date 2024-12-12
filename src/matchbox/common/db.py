@@ -1,10 +1,9 @@
-import base64
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 import connectorx as cx
 import pyarrow as pa
 from matchbox.common.exceptions import MatchboxValidatonError
-from matchbox.common.hash import HASH_FUNC
+from matchbox.common.hash import HASH_FUNC, hash_to_base64
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
 from pydantic import (
@@ -144,7 +143,7 @@ class SourceColumnName(BaseModel):
     @property
     def base64(self) -> str:
         """Generate a base64 encoded hash based on the column name."""
-        return base64.b64encode(self.hash).decode("utf-8")
+        return hash_to_base64(self.hash)
 
 
 class SourceColumn(BaseModel):
