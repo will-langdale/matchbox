@@ -51,11 +51,11 @@ class Match(BaseModel):
 
     @model_validator(mode="after")
     def found_or_none(self) -> "Match":
-        if self.target and not (self.source and self.cluster):
+        if self.target_id and not (self.source_id and self.cluster):
             raise ValueError(
                 "A match must have sources and a cluster if target was found."
             )
-        if self.cluster and not self.source:
+        if self.cluster and not self.source_id:
             raise ValueError("A match must have source if cluster is set.")
         return self
 
