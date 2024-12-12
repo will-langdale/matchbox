@@ -1,6 +1,6 @@
-from unittest.mock import Mock, patch, MagicMock
-from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch
 
+from fastapi.testclient import TestClient
 from matchbox.server import app
 from matchbox.server.postgresql.orm import Sources
 
@@ -53,7 +53,9 @@ class TestMatchboxAPI:
     def test_list_sources(self, get_backend):
         hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
         byte_arr = bytearray.fromhex(hash_hex)
-        obj_mock = Sources(table="mock table", schema="mock_schema", id="mock_id", model=byte_arr)
+        obj_mock = Sources(
+            table="mock table", schema="mock_schema", id="mock_id", model=byte_arr
+        )
         mock_backend = Mock()
         mock_backend.datasets.list = Mock(return_value=[obj_mock])
         get_backend.return_value = mock_backend
@@ -64,19 +66,22 @@ class TestMatchboxAPI:
     def test_get_source(self, get_backend):
         hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
         byte_arr = bytearray.fromhex(hash_hex)
-        obj_mock = Sources(table="mock_table", schema="mock_schema", id="mock_id", model=byte_arr)
+        obj_mock = Sources(
+            table="mock_table", schema="mock_schema", id="mock_id", model=byte_arr
+        )
         mock_backend = Mock()
         mock_backend.datasets.list = Mock(return_value=[obj_mock])
         get_backend.return_value = mock_backend
 
         response = client.get(f"/sources/{hash_hex}")
         assert response.status_code == 200
-        assert response.json() == {"source": {
-            "schema": "mock_schema",
-            "table": "mock_table",
-            "id": "mock_id",
-            "model": hash_hex
-             }
+        assert response.json() == {
+            "source": {
+                "schema": "mock_schema",
+                "table": "mock_table",
+                "id": "mock_id",
+                "model": hash_hex,
+            }
         }
 
     # def test_add_source():

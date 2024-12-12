@@ -3,10 +3,11 @@ from enum import StrEnum
 from typing import Annotated, Optional
 
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, Form
+from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from matchbox.server.utils.aws_s3_client import upload_to_s3
+
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
+from matchbox.server.utils.aws_s3_client import upload_to_s3
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -46,6 +47,7 @@ class CountResult(BaseModel):
 
 class SourceItem(BaseModel):
     """Response model for source"""
+
     schema: str
     table: str
     id: str
@@ -54,6 +56,7 @@ class SourceItem(BaseModel):
 
 class Sources(BaseModel):
     """Response model for sources"""
+
     sources: list[SourceItem]
 
 
@@ -69,8 +72,8 @@ async def healthcheck() -> HealthCheck:
 
 @app.get("/testing/count")
 async def count_backend_items(
-        backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-        entity: BackendEntityType | None = None,
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    entity: BackendEntityType | None = None,
 ) -> CountResult:
     def get_count(e: BackendEntityType) -> int:
         return getattr(backend, str(e)).count()
@@ -89,45 +92,49 @@ async def clear_backend():
 
 @app.get("/sources")
 async def list_sources(
-        backend: Annotated[MatchboxDBAdapter, Depends(get_backend)]
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
 ) -> Sources:
     datasets = backend.datasets.list()
     result = []
     for dataset in datasets:
         print(dataset)
-        result.append(SourceItem(
-            table=getattr(dataset, "table"),
-            id=getattr(dataset, "id"),
-            schema=getattr(dataset, "schema"),
-            model = hexlify(getattr(dataset, "model")).decode('ascii')
-        ))
+        result.append(
+            SourceItem(
+                table=dataset.table,
+                id=dataset.id,
+                schema=dataset.schema,
+                model=hexlify(dataset.model).decode("ascii"),
+            )
+        )
     return Sources(sources=result)
 
 
 @app.get("/sources/{hash}")
-async def get_source(hash: str,
-                     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)]
-                     )-> dict[str, SourceItem] | str:
+async def get_source(
+    hash: str, backend: Annotated[MatchboxDBAdapter, Depends(get_backend)]
+) -> dict[str, SourceItem] | str:
     datasets = backend.datasets.list()
     for dataset in datasets:
-        model = hexlify(getattr(dataset, "model")).decode('ascii')
+        model = hexlify(dataset.model).decode("ascii")
         if model == hash:
             result_obj = SourceItem(
-            table=getattr(dataset, "table"),
-            id=getattr(dataset, "id"),
-            schema=getattr(dataset, "schema"),
-            model = model)
+                table=dataset.table,
+                id=dataset.id,
+                schema=dataset.schema,
+                model=model,
+            )
             return {"source": result_obj}
     return "Source not found"
 
 
 @app.post("/sources/uploadFile")
-async def add_source_to_s3(file: UploadFile, bucket_name: str = Form(...), object_name: str = Form(...)):
+async def add_source_to_s3(
+    file: UploadFile, bucket_name: str = Form(...), object_name: str = Form(...)
+):
     is_file_uploaded = upload_to_s3(file.file, bucket_name, object_name)
     if is_file_uploaded:
         return "File was successfully uplaoded"
     return "File could not be uplaoded"
-
 
 
 @app.get("/models")
