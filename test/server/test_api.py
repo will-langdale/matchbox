@@ -57,7 +57,7 @@ class TestMatchboxAPI:
         hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
         byte_arr = bytearray.fromhex(hash_hex)
         obj_mock = Sources(
-            table="mock table", schema="mock_schema", id="mock_id", model=byte_arr
+            table="mock table", schema="mock_schema", id="mock_id", resolution=byte_arr
         )
         mock_backend = Mock()
         mock_backend.datasets.list = Mock(return_value=[obj_mock])
@@ -70,7 +70,7 @@ class TestMatchboxAPI:
         hash_hex = "5eb63bbbe01eeed093cb22bb8f5acdc3"
         byte_arr = bytearray.fromhex(hash_hex)
         obj_mock = Sources(
-            table="mock_table", schema="mock_schema", id="mock_id", model=byte_arr
+            table="mock_table", schema="mock_schema", id="mock_id", resolution=byte_arr
         )
         mock_backend = Mock()
         mock_backend.datasets.list = Mock(return_value=[obj_mock])
@@ -83,7 +83,7 @@ class TestMatchboxAPI:
                 "schema": "mock_schema",
                 "table": "mock_table",
                 "id": "mock_id",
-                "model": hash_hex,
+                "resolution": hash_hex,
             }
         }
 

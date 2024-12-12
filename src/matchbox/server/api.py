@@ -1,6 +1,6 @@
 from binascii import hexlify
 from enum import StrEnum
-from typing import Annotated, Optional
+from typing import Annotated
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
@@ -52,7 +52,7 @@ class SourceItem(BaseModel):
     schema: str
     table: str
     id: str
-    model: Optional[str] = None
+    resolution: str | None = None
 
 
 class Sources(BaseModel):
@@ -98,13 +98,12 @@ async def list_sources(
     datasets = backend.datasets.list()
     result = []
     for dataset in datasets:
-        print(dataset)
         result.append(
             SourceItem(
                 table=dataset.table,
                 id=dataset.id,
                 schema=dataset.schema,
-                model=hexlify(dataset.model).decode("ascii"),
+                resolution=hexlify(dataset.resolution).decode("ascii"),
             )
         )
     return Sources(sources=result)
@@ -116,13 +115,13 @@ async def get_source(
 ) -> dict[str, SourceItem] | str:
     datasets = backend.datasets.list()
     for dataset in datasets:
-        model = hexlify(dataset.model).decode("ascii")
-        if model == hash:
+        resolution = hexlify(dataset.resolution).decode("ascii")
+        if resolution == hash:
             result_obj = SourceItem(
                 table=dataset.table,
                 id=dataset.id,
                 schema=dataset.schema,
-                model=model,
+                resolution=resolution,
             )
             return {"source": result_obj}
     return "Source not found"
