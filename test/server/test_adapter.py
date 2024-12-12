@@ -430,7 +430,7 @@ class TestMatchboxBackend:
             query(
                 selector=select_crn,
                 backend=self.backend,
-                model=None,
+                resolution=None,
                 return_type="pandas",
                 limit=10,
             )
