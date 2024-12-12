@@ -22,7 +22,9 @@ def hash_to_str(hash: bytes) -> str:
     return base64.b64encode(hash).decode("utf-8")
 
 
-def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, Any]]:
+def dataset_to_hashlist(
+    dataset: Source, resolution_hash: bytes
+) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
     with Session(dataset.database.engine) as warehouse_session:
         source_table = dataset.to_table()
@@ -40,7 +42,7 @@ def dataset_to_hashlist(dataset: Source, model_hash: bytes) -> list[dict[str, An
         to_insert = [
             {
                 "hash": hash_data(data.raw),
-                "dataset": model_hash,
+                "dataset": resolution_hash,
                 "id": data.id,
             }
             for data in raw_result.all()
