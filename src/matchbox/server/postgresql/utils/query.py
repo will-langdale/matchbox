@@ -52,7 +52,7 @@ def key_to_sqlalchemy_label(key: str, source: Source) -> str:
 
 
 def source_to_dataset_resolution(source: Source | str, session: Session) -> Resolutions:
-    """Converts a Source object to a Sources ORM object."""
+    """Converts a common Source object to a Resolutions ORM object."""
     if isinstance(source, str):
         source_schema, source_table = get_schema_table_names(source, validate=True)
     else:
@@ -578,19 +578,24 @@ def match(
     """
     # Split source and target into schema/table
     targets = [target] if isinstance(target, str) else target
-    target_pairs = [get_schema_table_names(t, validate=True) for t in targets]
 
     with Session(engine) as session:
         # Get source, target and truth resolutions
         source_resolution = source_to_dataset_resolution(source, session)
+
+        # Get target resolutions with schema/table info
         target_resolutions = []
-        for target in targets:
-            target_resolutions.append(source_to_dataset_resolution(target, session))
+        for t in targets:
+            schema, table = get_schema_table_names(t, validate=True)
+            target_resolution = source_to_dataset_resolution(t, session)
+            target_resolutions.append((target_resolution, f"{schema}.{table}"))
+
+        # Get truth resolution
         truth_resolution = (
             session.query(Resolutions).filter(Resolutions.name == resolution).first()
         )
         if truth_resolution is None:
-            raise MatchboxResolutionError(f"Resolution {resolution} not found")
+            raise MatchboxResolutionError(resolution_name=resolution)
 
         # Get resolution lineage and resolve thresholds
         lineage_truths = truth_resolution.get_lineage()
@@ -627,7 +632,7 @@ def match(
 
         # Group matches by dataset
         cluster = None
-        matches_by_dataset = {}
+        matches_by_dataset: dict[bytes, set] = {}
         for cluster_hash, dataset_hash, id in matches:
             if cluster is None:
                 cluster = cluster_hash
@@ -635,36 +640,14 @@ def match(
                 matches_by_dataset[dataset_hash] = set()
             matches_by_dataset[dataset_hash].add(id)
 
-        # Create Match objects for each target
         result = []
-        for target_resolution in target_resolutions:
-            # Get source/target table names
-            target_schema, target_table = next(
-                (schema, table)
-                for schema, table in target_pairs
-                if session.get(Sources, target_resolution.hash).schema == schema
-                and session.get(Sources, target_resolution.hash).table == table
-            )
-            target_name = f"{target_schema}.{target_table}"
-
-            # Get source and target IDs
-            source_ids = {
-                id
-                for _, dataset_hash, id in matches
-                if dataset_hash == source_resolution.hash
-            }
-            target_ids = {
-                id
-                for _, dataset_hash, id in matches
-                if dataset_hash == target_resolution.hash
-            }
-
+        for target_resolution, target_name in target_resolutions:
             match_obj = Match(
                 cluster=cluster,
                 source=source,
-                source_id=source_ids,
+                source_id=matches_by_dataset.get(source_resolution.hash, set()),
                 target=target_name,
-                target_id=target_ids,
+                target_id=matches_by_dataset.get(target_resolution.hash, set()),
             )
             result.append(match_obj)
 
