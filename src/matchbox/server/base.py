@@ -19,7 +19,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
-from matchbox.common.db import Source
+from matchbox.common.db import Match, Source
 from matchbox.common.graph import ResolutionGraph
 
 if TYPE_CHECKING:
@@ -250,6 +250,16 @@ class MatchboxDBAdapter(ABC):
         return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
     ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
+
+    @abstractmethod
+    def match(
+        self,
+        source_id: str,
+        source: str,
+        target: str | list[str],
+        resolution: str,
+        threshold: float | dict[str, float] | None = None,
+    ) -> Match | list[Match]: ...
 
     @abstractmethod
     def index(self, dataset: Source) -> None: ...
