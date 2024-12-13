@@ -135,13 +135,23 @@ def revolution_inc(
         duns_companies["company_name"].str.contains("Revolution", case=False)
     ]["id"].tolist()
 
-    cdms_ids = cdms_companies[cdms_companies["crn"] == crn_ids[0]]["id"].tolist()
+    revolution_crn = crn_companies[
+        crn_companies["company_name"].str.contains("Revolution", case=False)
+    ]["crn"].iloc[0]
 
-    return {
+    cdms_ids = cdms_companies[cdms_companies["crn"] == revolution_crn]["id"].tolist()
+
+    revolution = {
         "crn": [str(id) for id in crn_ids],
         "duns": [str(id) for id in duns_ids],
         "cdms": [str(id) for id in cdms_ids],
     }
+
+    assert len(revolution.get("crn", [])) == 3
+    assert len(revolution.get("duns", [])) == 1
+    assert len(revolution.get("cdms", [])) == 2
+
+    return revolution
 
 
 @pytest.fixture(scope="session")
@@ -167,13 +177,23 @@ def winner_inc(
         duns_companies["company_name"].str.contains("Winner", case=False)
     ]["id"].tolist()
 
-    cdms_ids = cdms_companies[cdms_companies["crn"] == crn_ids[0]]["id"].tolist()
+    winner_crn = crn_companies[
+        crn_companies["company_name"].str.contains("Revolution", case=False)
+    ]["crn"].iloc[0]
 
-    return {
+    cdms_ids = cdms_companies[cdms_companies["crn"] == winner_crn]["id"].tolist()
+
+    winner = {
         "crn": [str(id) for id in crn_ids],
         "duns": [str(id) for id in duns_ids],
         "cdms": [str(id) for id in cdms_ids],
     }
+
+    assert len(winner.get("crn", [])) == 3
+    assert len(winner.get("duns", [])) == 0
+    assert len(winner.get("cdms", [])) == 2
+
+    return winner
 
 
 @pytest.fixture(scope="function")
