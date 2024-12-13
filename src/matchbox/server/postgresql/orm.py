@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     ForeignKey,
+    Index,
     UniqueConstraint,
     select,
 )
@@ -98,6 +99,22 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             )
             return set(session.execute(descendant_query).scalars().all())
 
+    def get_lineage(self) -> dict[bytes, float]:
+        """Returns all ancestors and their cached truth values from this model."""
+        with Session(MBDB.get_engine()) as session:
+            lineage_query = (
+                select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
+                .where(ResolutionFrom.child == self.hash)
+                .order_by(ResolutionFrom.level.desc())
+            )
+
+            results = session.execute(lineage_query).all()
+
+            lineage = {parent: truth for parent, truth in results}
+            lineage[self.hash] = self.truth
+
+            return lineage
+
     def get_lineage_to_dataset(
         self, dataset: "Resolutions"
     ) -> tuple[bytes, dict[bytes, float]]:
@@ -108,13 +125,11 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             )
 
         if self.hash == dataset.hash:
-            return {}
+            return {dataset.hash: None}
 
         with Session(MBDB.get_engine()) as session:
             path_query = (
-                select(
-                    ResolutionFrom.parent, ResolutionFrom.truth_cache, Resolutions.type
-                )
+                select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
                 .join(Resolutions, Resolutions.hash == ResolutionFrom.parent)
                 .where(ResolutionFrom.child == self.hash)
                 .order_by(ResolutionFrom.level.desc())
@@ -122,17 +137,12 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
             results = session.execute(path_query).all()
 
-            if not any(parent == dataset.hash for parent, _, _ in results):
+            if not any(parent == dataset.hash for parent, _ in results):
                 raise ValueError(
                     f"No path between resolution {self.name}, dataset {dataset.name}"
                 )
 
-            lineage = {
-                parent: truth
-                for parent, truth, type in results
-                if type != ResolutionNodeType.DATASET.value
-            }
-
+            lineage = {parent: truth for parent, truth in results}
             lineage[self.hash] = self.truth
 
             return lineage
@@ -181,8 +191,12 @@ class Contains(CountMixin, MBDB.MatchboxBase):
         BYTEA, ForeignKey("clusters.hash", ondelete="CASCADE"), primary_key=True
     )
 
-    # Constraints
-    __table_args__ = (CheckConstraint("parent != child", name="no_self_containment"),)
+    # Constraints and indices
+    __table_args__ = (
+        CheckConstraint("parent != child", name="no_self_containment"),
+        Index("ix_contains_parent_child", "parent", "child"),
+        Index("ix_contains_child_parent", "child", "parent"),
+    )
 
 
 class Clusters(CountMixin, MBDB.MatchboxBase):
@@ -210,6 +224,9 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Clusters.hash == Contains.child",
         backref="parents",
     )
+
+    # Constraints and indices
+    __table_args__ = (Index("ix_clusters_id_gin", id, postgresql_using="gin"),)
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
