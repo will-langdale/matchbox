@@ -1,8 +1,9 @@
 from enum import StrEnum
 
 import rustworkx as rx
-from matchbox.common.hash import hash_to_str
 from pydantic import BaseModel
+
+from matchbox.common.hash import hash_to_str
 
 
 class ResolutionNodeKind(StrEnum):

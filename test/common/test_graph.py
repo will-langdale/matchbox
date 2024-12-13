@@ -1,7 +1,8 @@
 from typing import Any
 
-from matchbox.common.graph import ResolutionGraph
 from rustworkx import PyDiGraph, is_isomorphic
+
+from matchbox.common.graph import ResolutionGraph
 
 
 def test_res_graph_to_rx(resolution_graph: ResolutionGraph, pydigraph: PyDiGraph):

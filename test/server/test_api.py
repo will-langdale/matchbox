@@ -1,6 +1,7 @@
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
+
 from matchbox.common.graph import (
     ResolutionGraph,
 )

@@ -2,8 +2,9 @@ from functools import wraps
 from pathlib import Path
 from typing import Callable
 
-from matchbox.client._handler import get_resolution_graph
 from vcr import use_cassette
+
+from matchbox.client._handler import get_resolution_graph
 
 
 def vcr_cassette(func: Callable) -> Callable:

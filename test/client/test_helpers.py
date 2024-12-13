@@ -1,6 +1,8 @@
 import logging
 
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame
+
 from matchbox import process, query
 from matchbox.clean import company_name, company_number
 from matchbox.common.db import Source
@@ -12,7 +14,6 @@ from matchbox.helpers import (
     selectors,
 )
 from matchbox.server.postgresql import MatchboxPostgres
-from pandas import DataFrame
 
 from ..fixtures.db import AddIndexedDataCallable
 

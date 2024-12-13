@@ -1,6 +1,10 @@
 from typing import Any, Callable
 
 import splink.comparison_library as cl
+from pydantic import BaseModel, Field
+from splink import SettingsCreator
+from splink import blocking_rule_library as brl
+
 from matchbox.models.dedupers import NaiveDeduper
 from matchbox.models.dedupers.base import Deduper
 from matchbox.models.linkers import (
@@ -9,9 +13,6 @@ from matchbox.models.linkers import (
     WeightedDeterministicLinker,
 )
 from matchbox.models.linkers.base import Linker
-from pydantic import BaseModel, Field
-from splink import SettingsCreator
-from splink import blocking_rule_library as brl
 
 
 class DedupeTestParams(BaseModel):

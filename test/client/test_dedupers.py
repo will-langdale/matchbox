@@ -1,8 +1,9 @@
 import pytest
+from pandas import DataFrame
+
 from matchbox import make_model, query
 from matchbox.common.db import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres
-from pandas import DataFrame
 
 from ..fixtures.db import AddIndexedDataCallable
 from ..fixtures.models import (
