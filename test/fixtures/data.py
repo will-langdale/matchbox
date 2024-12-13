@@ -144,6 +144,38 @@ def revolution_inc(
     }
 
 
+@pytest.fixture(scope="session")
+def winner_inc(
+    crn_companies: DataFrame, duns_companies: DataFrame, cdms_companies: DataFrame
+) -> dict[str, str]:
+    """
+    Winner Inc. as it exists across all three datasets.
+
+    UUIDs are converted to strings to mirror how Matchbox stores them.
+
+    Based on the above fixtures, should return:
+
+    * Three CRNs
+    * Zero DUNS
+    * Two CDMS
+    """
+    crn_ids = crn_companies[
+        crn_companies["company_name"].str.contains("Winner", case=False)
+    ]["id"].tolist()
+
+    duns_ids = duns_companies[
+        duns_companies["company_name"].str.contains("Winner", case=False)
+    ]["id"].tolist()
+
+    cdms_ids = cdms_companies[cdms_companies["crn"] == crn_ids[0]]["id"].tolist()
+
+    return {
+        "crn": [str(id) for id in crn_ids],
+        "duns": [str(id) for id in duns_ids],
+        "cdms": [str(id) for id in cdms_ids],
+    }
+
+
 @pytest.fixture(scope="function")
 def query_clean_crn(
     matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
