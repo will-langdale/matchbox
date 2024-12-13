@@ -1,4 +1,5 @@
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import pyarrow as pa
@@ -11,13 +12,13 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import Source, sql_to_df
 from matchbox.common.exceptions import (
     MatchboxDatasetError,
-    MatchboxModelError,
+    MatchboxResolutionError,
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
-    Models,
     Probabilities,
+    Resolutions,
     Sources,
 )
 
@@ -43,39 +44,39 @@ def key_to_sqlalchemy_label(key: str, source: Source) -> str:
 
 def _resolve_thresholds(
     lineage_truths: dict[str, float],
-    model: Models,
+    resolution: Resolutions,
     threshold: float | dict[str, float] | None,
     session: Session,
 ) -> dict[bytes, float]:
     """
-    Resolves final thresholds for each model in the lineage based on user input.
+    Resolves final thresholds for each resolution in the lineage based on user input.
 
     Args:
-        lineage_truths: Dict from get_lineage_to_dataset with model hash -> cached truth
-        model: The target model being used for clustering
+        lineage_truths: Dict from with resolution hash -> cached truth
+        resolution: The target resolution being used for clustering
         threshold: User-supplied threshold value or dict
         session: SQLAlchemy session
 
     Returns:
-        Dict mapping model hash to their final threshold values
+        Dict mapping resolution hash to their final threshold values
     """
     resolved_thresholds = {}
 
-    for model_hash, default_truth in lineage_truths.items():
+    for resolution_hash, default_truth in lineage_truths.items():
         if threshold is None:
-            resolved_thresholds[model_hash] = default_truth
+            resolved_thresholds[resolution_hash] = default_truth
         elif isinstance(threshold, float):
-            resolved_thresholds[model_hash] = (
-                threshold if model_hash == model.hash.hex() else default_truth
+            resolved_thresholds[resolution_hash] = (
+                threshold if resolution_hash == resolution.hash.hex() else default_truth
             )
         elif isinstance(threshold, dict):
-            model_obj = (
-                session.query(Models)
-                .filter(Models.hash == bytes.fromhex(model_hash))
+            resolution_obj = (
+                session.query(Resolutions)
+                .filter(Resolutions.hash == bytes.fromhex(resolution_hash))
                 .first()
             )
-            resolved_thresholds[model_hash] = threshold.get(
-                model_obj.name, default_truth
+            resolved_thresholds[resolution_hash] = threshold.get(
+                resolution_obj.name, default_truth
             )
         else:
             raise ValueError(f"Invalid threshold type: {type(threshold)}")
@@ -83,30 +84,34 @@ def _resolve_thresholds(
     return resolved_thresholds
 
 
-def _get_valid_clusters_for_model(model_hash: bytes, threshold: float) -> Select:
-    """Get clusters that meet the threshold for a specific model."""
+def _get_valid_clusters_for_resolution(
+    resolution_hash: bytes, threshold: float
+) -> Select:
+    """Get clusters that meet the threshold for a specific resolution."""
     return select(Probabilities.cluster.label("cluster")).where(
         and_(
-            Probabilities.model == hash_to_hex_decode(model_hash),
+            Probabilities.resolution == hash_to_hex_decode(resolution_hash),
             Probabilities.probability >= threshold,
         )
     )
 
 
 def _union_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
-    """Creates a CTE of clusters that are valid for any model in the lineage.
+    """Creates a CTE of clusters that are valid for any resolution in the lineage.
 
-    Each model may have a different threshold.
+    Each resolution may have a different threshold.
     """
     valid_clusters = None
 
-    for model_hash, threshold in lineage_thresholds.items():
-        model_valid = _get_valid_clusters_for_model(model_hash, threshold)
+    for resolution_hash, threshold in lineage_thresholds.items():
+        resolution_valid = _get_valid_clusters_for_resolution(
+            resolution_hash, threshold
+        )
 
         if valid_clusters is None:
-            valid_clusters = model_valid
+            valid_clusters = resolution_valid
         else:
-            valid_clusters = union(valid_clusters, model_valid)
+            valid_clusters = union(valid_clusters, resolution_valid)
 
     if valid_clusters is None:
         # Handle empty lineage case
@@ -117,7 +122,7 @@ def _union_valid_clusters(lineage_thresholds: dict[bytes, float]) -> Select:
 
 def _resolve_cluster_hierarchy(
     dataset_hash: bytes,
-    model: Models,
+    resolution: Resolutions,
     engine: Engine,
     threshold: float | dict[str, float] | None = None,
 ) -> Select:
@@ -126,29 +131,33 @@ def _resolve_cluster_hierarchy(
 
     Args:
         dataset_hash: Hash of the dataset to query
-        model: Model object representing the point of truth
+        resolution: Resolution object representing the point of truth
         engine: Engine for database connection
-        threshold: Optional threshold value or dict of model_name -> threshold
+        threshold: Optional threshold value or dict of resolution_name -> threshold
 
     Returns:
         SQLAlchemy Select statement that will resolve to (hash, id) pairs, where
         hash is the ultimate parent cluster hash and id is the original record ID
     """
     with Session(engine) as session:
-        dataset_model = session.get(Models, dataset_hash)
+        dataset_resolution = session.get(Resolutions, dataset_hash)
         try:
-            lineage_truths = model.get_lineage_to_dataset(model=dataset_model)
+            lineage_truths = resolution.get_lineage_to_dataset(
+                dataset=dataset_resolution
+            )
         except ValueError as e:
-            raise MatchboxModelError(f"Invalid model lineage: {str(e)}") from e
+            raise MatchboxResolutionError(
+                f"Invalid resolution lineage: {str(e)}"
+            ) from e
 
         thresholds = _resolve_thresholds(
             lineage_truths=lineage_truths,
-            model=model,
+            resolution=resolution,
             threshold=threshold,
             session=session,
         )
 
-        # Get clusters valid across all models in lineage
+        # Get clusters valid across all resolutions in lineage
         valid_clusters = _union_valid_clusters(thresholds)
 
         # Get base mapping of IDs to clusters
@@ -233,7 +242,7 @@ def query(
     selector: dict[Source, list[str]],
     engine: Engine,
     return_type: Literal["pandas", "arrow", "polars"] = "pandas",
-    model: str | None = None,
+    resolution: str | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
 ) -> DataFrame | pa.Table | PolarsDataFrame:
@@ -241,7 +250,7 @@ def query(
     Queries Matchbox and the Source warehouse to retrieve linked data.
 
     Takes the dictionaries of tables and fields outputted by selectors and
-    queries database for them. If a model "point of truth" is supplied, will
+    queries database for them. If a "point of truth" resolution is supplied, will
     attach the clusters this data belongs to.
 
     To accomplish this, the function:
@@ -264,19 +273,23 @@ def query(
         limit_remainder = limit % len(selector)
 
     with Session(engine) as session:
-        # If a model was specified, validate and retrieve it
-        truth_model = None
-        if model is not None:
-            truth_model = session.query(Models).filter(Models.name == model).first()
-            if truth_model is None:
-                raise MatchboxModelError(f"Model {model} not found")
+        # If a resolution was specified, validate and retrieve it
+        point_of_truth = None
+        if resolution is not None:
+            point_of_truth = (
+                session.query(Resolutions)
+                .filter(Resolutions.name == resolution)
+                .first()
+            )
+            if point_of_truth is None:
+                raise MatchboxResolutionError(resolution_name=resolution)
 
         # Process each source dataset
         for source, fields in selector.items():
-            # Get the dataset model
+            # Get the dataset resolution
             dataset = (
-                session.query(Models)
-                .join(Sources, Sources.model == Models.hash)
+                session.query(Resolutions)
+                .join(Sources, Sources.resolution == Resolutions.hash)
                 .filter(
                     Sources.schema == source.db_schema,
                     Sources.table == source.db_table,
@@ -290,9 +303,20 @@ def query(
                     db_schema=source.db_schema, db_table=source.db_table
                 )
 
+            # Warn if non-indexed fields have been requested
+            not_indexed = set(fields) - set(
+                c.literal.name for c in source.db_columns if c.indexed
+            )
+            if not_indexed:
+                warnings.warn(
+                    "Found non-indexed fields. Do not use these fields in match jobs:"
+                    f"{', '.join(sorted(not_indexed))}",
+                    stacklevel=2,
+                )
+
             hash_query = _resolve_cluster_hierarchy(
                 dataset_hash=dataset.hash,
-                model=truth_model if truth_model else dataset,
+                resolution=point_of_truth if point_of_truth else dataset,
                 threshold=threshold,
                 engine=engine,
             )

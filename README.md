@@ -61,7 +61,7 @@ If the dataset isn't already in matchbox, it'll need to be indexed.
 
 Pipelines using this part of matchbox will:
 
-1. Use `matchbox.query()` to retrieve source data from a particular model's perspective
+1. Use `matchbox.query()` to retrieve source data from the perspective of a particular resolution point
 2. Use `matchbox.process()` to clean the data with standardised processes
 3. Use `matchbox.make_model()` with `matchbox.dedupers` and `matchbox.linkers` to create a new model
 4. Generate probabilistic model outputs using `model.run()`

@@ -121,7 +121,7 @@ def test_dedupers(
         selector=select,
         backend=matchbox_postgres,
         return_type="pandas",
-        model=deduper_name,
+        resolution=deduper_name,
     )
 
     assert isinstance(clusters, DataFrame)

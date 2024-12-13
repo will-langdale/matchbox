@@ -3,7 +3,7 @@ from typing import Any, Callable, ParamSpec, TypeVar
 
 from pandas import DataFrame
 
-from matchbox.common.exceptions import MatchboxModelError
+from matchbox.common.exceptions import MatchboxResolutionError
 from matchbox.common.results import (
     ClusterResults,
     ModelMetadata,
@@ -54,28 +54,25 @@ class Model:
     def _connect(self) -> None:
         """Establish connection to the model in the backend database."""
         if not self._backend:
-            raise MatchboxModelError("No backend configured for this model")
+            raise MatchboxResolutionError("No backend configured for this model")
 
         try:
             self._model = self._backend.get_model(self.metadata.name)
         except Exception as e:
-            raise MatchboxModelError from e
+            raise MatchboxResolutionError from e
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
         if not self._backend:
-            raise MatchboxModelError("No backend configured for this model")
+            raise MatchboxResolutionError("No backend configured for this model")
 
-        try:
-            self._backend.insert_model(
-                model=self.metadata.name,
-                left=self.metadata.left_source,
-                right=self.metadata.right_source,
-                description=self.metadata.description,
-            )
-            self._connect()
-        except Exception as e:
-            raise MatchboxModelError from e
+        self._backend.insert_model(
+            model=self.metadata.name,
+            left=self.metadata.left_source,
+            right=self.metadata.right_source,
+            description=self.metadata.description,
+        )
+        self._connect()
 
     @property
     @ensure_connection
@@ -135,7 +132,7 @@ class Model:
         """Calculate probabilities for the model."""
         if self.metadata.type == ModelType.LINKER:
             if self.right_data is None:
-                raise MatchboxModelError("Right dataset required for linking")
+                raise MatchboxResolutionError("Right dataset required for linking")
 
             results = self.model_instance.link(
                 left=self.left_data, right=self.right_data

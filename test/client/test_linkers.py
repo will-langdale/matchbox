@@ -185,7 +185,7 @@ def test_linkers(
         selector=l_r_selector,
         backend=matchbox_postgres,
         return_type="pandas",
-        model=linker_name,
+        resolution=linker_name,
     )
 
     assert isinstance(clusters, DataFrame)
