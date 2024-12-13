@@ -7,6 +7,7 @@ import duckdb
 import pandas as pd
 import pyarrow as pa
 import pytest
+
 from matchbox.clean import drop
 from matchbox.clean.steps import (
     clean_punctuation,

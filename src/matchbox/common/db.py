@@ -2,8 +2,6 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 import connectorx as cx
 import pyarrow as pa
-from matchbox.common.exceptions import MatchboxValidatonError
-from matchbox.common.hash import HASH_FUNC, hash_to_base64
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
 from pydantic import (
@@ -29,6 +27,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.selectable import Select
+
+from matchbox.common.exceptions import MatchboxValidatonError
+from matchbox.common.hash import HASH_FUNC, hash_to_base64
 
 if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame

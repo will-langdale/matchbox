@@ -3,6 +3,8 @@ from typing import Callable
 
 import pytest
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame
+
 from matchbox.common.db import Match, Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
@@ -19,7 +21,6 @@ from matchbox.common.results import (
 )
 from matchbox.helpers.selector import match, query, selector, selectors
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
-from pandas import DataFrame
 
 from ..fixtures.db import SetupDatabaseCallable
 from ..fixtures.models import (

@@ -6,12 +6,13 @@ import numpy as np
 import pandas as pd
 import pytest
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame
+
 from matchbox import process, query
 from matchbox.clean import company_name
 from matchbox.common.db import Source
 from matchbox.helpers import cleaner, cleaners, selector
 from matchbox.server.postgresql import MatchboxPostgres
-from pandas import DataFrame
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)

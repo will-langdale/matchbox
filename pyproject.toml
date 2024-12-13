@@ -57,7 +57,7 @@ exclude = [
 line-length = 88
 indent-width = 4
 target-version = "py311"
-src = ["."]
+src = ["src"]
 
 [tool.ruff.lint]
 select = [

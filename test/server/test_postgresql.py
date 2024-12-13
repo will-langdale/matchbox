@@ -1,5 +1,7 @@
 import pytest
 import rustworkx as rx
+from pandas import DataFrame
+
 from matchbox.common.results import (
     ClusterResults,
     ModelMetadata,
@@ -7,7 +9,6 @@ from matchbox.common.results import (
     ProbabilityResults,
 )
 from matchbox.server.postgresql.utils.insert import _cluster_results_to_hierarchical
-from pandas import DataFrame
 
 
 @pytest.fixture

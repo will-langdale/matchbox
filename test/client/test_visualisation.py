@@ -1,7 +1,8 @@
 from unittest.mock import patch
 
-from matchbox.client.visualisation import draw_resolution_graph
 from matplotlib.figure import Figure
+
+from matchbox.client.visualisation import draw_resolution_graph
 
 
 @patch("matchbox.client.visualisation.get_resolution_graph")

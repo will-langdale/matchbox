@@ -1,5 +1,6 @@
-from matchbox.common.hash import columns_to_value_ordered_hash
 from pandas import Series, concat
+
+from matchbox.common.hash import columns_to_value_ordered_hash
 
 
 def test_hash_conversion(all_companies):

@@ -1,4 +1,6 @@
 import pytest
+from rustworkx import PyDiGraph
+
 from matchbox.common.graph import (
     ResolutionEdge,
     ResolutionGraph,
@@ -8,7 +10,6 @@ from matchbox.common.graph import (
     ResolutionNodeType as ResType,
 )
 from matchbox.common.hash import hash_to_base64
-from rustworkx import PyDiGraph
 
 
 @pytest.fixture
