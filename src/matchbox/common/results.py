@@ -1,8 +1,11 @@
 import logging
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
@@ -193,7 +196,7 @@ class ClusterResults(ResultsBaseDataclass):
         model (Model): x
     """
 
-    _expected_fields: List[str] = ["parent", "child", "threshold"]
+    _expected_fields: list[str] = ["parent", "child", "threshold"]
 
     def inspect_with_source(
         self,
@@ -319,4 +322,52 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
         dataframe=DataFrame(components).convert_dtypes(dtype_backend="pyarrow"),
         model=results.model,
         metadata=results.metadata,
+    )
+
+
+def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
+    """
+    Takes an Arrow table of probabilities and adds a component column.
+
+    Expects an Arrow table of column, left, right, probability.
+
+    Returns a table with an additional column, component.
+    """
+    # Create index to use in graph
+    unique = pc.unique(
+        pa.concat_arrays(
+            [
+                probabilities["left"].combine_chunks(),
+                probabilities["right"].combine_chunks(),
+            ]
+        )
+    )
+    left_indices = pc.index_in(probabilities["left"], unique)
+    right_indices = pc.index_in(probabilities["right"], unique)
+
+    # Create and process graph
+    n_nodes = len(unique)
+    n_edges = len(probabilities)
+
+    graph = rx.PyGraph(node_count_hint=n_nodes, edge_count_hint=n_edges)
+    graph.add_nodes_from(range(n_nodes))
+
+    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=False))
+    graph.add_edges_from_no_data(edges)
+
+    components = rx.connected_components(graph)
+
+    # Convert components to arrays, map back to input to join, and reattach
+    component_indices = np.concatenate([np.array(list(c)) for c in components])
+    component_labels = np.repeat(
+        np.arange(len(components)), [len(c) for c in components]
+    )
+
+    node_to_component = np.zeros(len(unique), dtype=np.int64)
+    node_to_component[component_indices] = component_labels
+
+    edge_components = pa.array(node_to_component[left_indices.to_numpy()])
+
+    return probabilities.append_column("component", edge_components).sort_by(
+        [("component", "ascending"), ("probability", "descending")]
     )
