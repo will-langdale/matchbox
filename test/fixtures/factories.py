@@ -178,8 +178,8 @@ def generate_dummy_probabilities(
     lefts, rights, probs = zip(*all_edges, strict=False)
 
     # Create PyArrow arrays
-    left_array = pa.array(lefts, type=pa.int64())
-    right_array = pa.array(rights, type=pa.int64())
+    left_array = pa.array(lefts, type=pa.int32())
+    right_array = pa.array(rights, type=pa.int32())
     prob_array = pa.array(probs, type=pa.uint8())
 
     return pa.table(

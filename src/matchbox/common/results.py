@@ -1,7 +1,8 @@
 import logging
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic, Hashable, Iterator, TypeVar
 
 import numpy as np
 import pyarrow as pa
@@ -15,6 +16,7 @@ from sqlalchemy import Table
 from matchbox.common.db import Cluster, Probability
 from matchbox.common.hash import (
     columns_to_value_ordered_hash,
+    combine_integers,
     list_to_value_ordered_hash,
 )
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
@@ -23,6 +25,8 @@ if TYPE_CHECKING:
     from matchbox.models.models import Model, ModelMetadata
 else:
     Model = Any
+
+T = TypeVar("T", bound=Hashable)
 
 logic_logger = logging.getLogger("mb_logic")
 
@@ -370,4 +374,180 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
 
     return probabilities.append_column("component", edge_components).sort_by(
         [("component", "ascending"), ("probability", "descending")]
+    )
+
+
+class UnionFindWithDiff(Generic[T]):
+    """A UnionFind data structure with diff capabilities."""
+
+    def __init__(self):
+        self.parent: dict[T, T] = {}
+        self.rank: dict[T, int] = {}
+        self._shadow_parent: dict[T, T] = {}
+        self._shadow_rank: dict[T, int] = {}
+        self._pending_pairs: list[tuple[T, T]] = []
+
+    def make_set(self, x: T) -> None:
+        if x not in self.parent:
+            self.parent[x] = x
+            self.rank[x] = 0
+
+    def find(self, x: T, parent_dict: dict[T, T] | None = None) -> T:
+        if parent_dict is None:
+            parent_dict = self.parent
+
+        if x not in parent_dict:
+            self.make_set(x)
+            if parent_dict is self._shadow_parent:
+                self._shadow_parent[x] = x
+                self._shadow_rank[x] = 0
+
+        while parent_dict[x] != x:
+            parent_dict[x] = parent_dict[parent_dict[x]]
+            x = parent_dict[x]
+        return x
+
+    def union(self, x: T, y: T) -> None:
+        root_x = self.find(x)
+        root_y = self.find(y)
+
+        if root_x != root_y:
+            self._pending_pairs.append((x, y))
+
+            if self.rank[root_x] < self.rank[root_y]:
+                root_x, root_y = root_y, root_x
+            self.parent[root_y] = root_x
+            if self.rank[root_x] == self.rank[root_y]:
+                self.rank[root_x] += 1
+
+    def get_component(self, x: T, parent_dict: dict[T, T] | None = None) -> set[T]:
+        if parent_dict is None:
+            parent_dict = self.parent
+
+        root = self.find(x, parent_dict)
+        return {y for y in parent_dict if self.find(y, parent_dict) == root}
+
+    def get_components(self, parent_dict: dict[T, T] | None = None) -> list[set[T]]:
+        if parent_dict is None:
+            parent_dict = self.parent
+
+        components = defaultdict(set)
+        for x in parent_dict:
+            root = self.find(x, parent_dict)
+            components[root].add(x)
+        return list(components.values())
+
+    def diff(self) -> Iterator[tuple[set[T], set[T]]]:
+        """
+        Returns differences including all pairwise merges that occurred since last diff,
+        excluding cases where old_comp == new_comp.
+        """
+        # Get current state before processing pairs
+        current_components = self.get_components()
+        reported_pairs = set()
+
+        # Process pending pairs
+        for x, y in self._pending_pairs:
+            # Find the final component containing the pair
+            final_component = next(
+                comp for comp in current_components if x in comp and y in comp
+            )
+
+            # Only report if the pair forms a proper subset of the final component
+            pair_component = {x, y}
+            if (
+                pair_component != final_component
+                and frozenset((frozenset(pair_component), frozenset(final_component)))
+                not in reported_pairs
+            ):
+                reported_pairs.add(
+                    frozenset((frozenset(pair_component), frozenset(final_component)))
+                )
+                yield (pair_component, final_component)
+
+        self._pending_pairs.clear()
+
+        # Handle initial state
+        if not self._shadow_parent:
+            self._shadow_parent = self.parent.copy()
+            self._shadow_rank = self.rank.copy()
+            return
+
+        # Get old components
+        old_components = self.get_components(self._shadow_parent)
+
+        # Report changes between old and new states
+        for old_comp in old_components:
+            if len(old_comp) > 1:  # Only consider non-singleton old components
+                sample_elem = next(iter(old_comp))
+                new_comp = next(
+                    comp for comp in current_components if sample_elem in comp
+                )
+
+                # Only yield if the components are different and this pair
+                # hasn't been reported
+                if (
+                    old_comp != new_comp
+                    and frozenset((frozenset(old_comp), frozenset(new_comp)))
+                    not in reported_pairs
+                ):
+                    reported_pairs.add(
+                        frozenset((frozenset(old_comp), frozenset(new_comp)))
+                    )
+                    yield (old_comp, new_comp)
+
+        # Update shadow copy
+        self._shadow_parent = self.parent.copy()
+        self._shadow_rank = self.rank.copy()
+
+
+def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa.Table:
+    """
+    Convert pairwise probabilities into a hierarchical representation.
+
+    Assumes data is pre-sorted by probability descending.
+
+    Args:
+        table: Arrow Table with columns ['left', 'right', 'probability']
+
+    Returns:
+        Arrow Table with columns ['parent', 'child', 'probability']
+    """
+    hierarchy: list[tuple[int, int, float]] = []
+    uf = UnionFindWithDiff[int]()
+    probs = pc.unique(table["probability"])
+
+    for threshold in probs:
+        # Get current probability rows
+        mask = pc.equal(table["probability"], threshold)
+        current_probs = table.filter(mask)
+
+        # Add rows to union-find
+        for row in zip(
+            current_probs["left"].to_numpy(),
+            current_probs["right"].to_numpy(),
+            strict=False,
+        ):
+            left, right = row
+            uf.union(left, right)
+            parent = combine_integers(left, right)
+            hierarchy.extend([(parent, left, threshold), (parent, right, threshold)])
+
+        # Process union-find diffs
+        for old_comp, new_comp in uf.diff():
+            if len(old_comp) > 1:
+                parent = combine_integers(*new_comp)
+                child = combine_integers(*old_comp)
+                hierarchy.extend([(parent, child, threshold)])
+            else:
+                parent = combine_integers(*new_comp)
+                hierarchy.extend([(parent, old_comp.pop(), threshold)])
+
+    parents, children, probs = zip(*hierarchy, strict=False)
+    return pa.table(
+        {
+            "parent": pa.array(parents, type=dtype()),
+            "child": pa.array(children, type=dtype()),
+            "probability": pa.array(probs, type=pa.uint8()),
+        }
     )

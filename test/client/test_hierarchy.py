@@ -1,10 +1,33 @@
+from functools import lru_cache
+from itertools import chain
 from typing import Any
+from unittest.mock import patch
 
+import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
-from matchbox.common.results import attach_components_to_probabilities
+from matchbox.common.hash import combine_integers
+from matchbox.common.results import (
+    attach_components_to_probabilities,
+    component_to_hierarchy,
+)
 from test.fixtures.factories import generate_dummy_probabilities, verify_components
+
+
+@lru_cache(maxsize=None)
+def _combine_strings(*n: str) -> str:
+    """
+    Combine n strings into a single string.
+
+    Args:
+        *args: Variable number of strings to combine
+
+    Returns:
+        A single string
+    """
+    letters = set(chain.from_iterable(n))
+    return "".join(sorted(letters))
 
 
 @pytest.mark.parametrize(
@@ -74,3 +97,132 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
     with_components = attach_components_to_probabilities(probabilities=probabilities)
 
     assert len(pc.unique(with_components["component"])) == parameters["num_components"]
+
+
+@pytest.mark.parametrize(
+    ("integer_list"),
+    [
+        [1, 2, 3],
+        [9, 0],
+        [-4, -5, -6],
+        [7, -8, 9],
+    ],
+    ids=["positive", "pair_only", "negative", "mixed"],
+)
+def test_combine_integers(integer_list: list[int]):
+    res = combine_integers(*integer_list)
+    assert isinstance(res, int)
+    assert res < 0
+
+
+@pytest.mark.parametrize(
+    ("probabilities", "hierarchy"),
+    [
+        # Test case 1: Equal probabilities
+        (
+            {
+                "left": ["a", "b", "c"],
+                "right": ["b", "c", "d"],
+                "probability": [100, 100, 100],
+            },
+            {
+                ("ab", "a", 100),
+                ("ab", "b", 100),
+                ("bc", "b", 100),
+                ("bc", "c", 100),
+                ("cd", "c", 100),
+                ("cd", "d", 100),
+                ("abcd", "ab", 100),
+                ("abcd", "bc", 100),
+                ("abcd", "cd", 100),
+            },
+        ),
+        # Test case 2: Asymmetric probabilities
+        (
+            {
+                "left": ["w", "x", "y"],
+                "right": ["x", "y", "z"],
+                "probability": [90, 85, 80],
+            },
+            {
+                ("wx", "w", 90),
+                ("wx", "x", 90),
+                ("xy", "x", 85),
+                ("xy", "y", 85),
+                ("wxy", "wx", 85),
+                ("wxy", "xy", 85),
+                ("yz", "y", 80),
+                ("yz", "z", 80),
+                ("wxyz", "wxy", 80),
+                ("wxyz", "yz", 80),
+            },
+        ),
+        # Test case 3: Single two-item component
+        (
+            {
+                "left": ["x"],
+                "right": ["y"],
+                "probability": [90],
+            },
+            {
+                ("xy", "x", 90),
+                ("xy", "y", 90),
+            },
+        ),
+    ],
+    ids=["equal", "asymmetric", "single"],
+)
+def test_component_to_hierarchy(
+    probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
+):
+    with patch(
+        "matchbox.common.results.combine_integers", side_effect=_combine_strings
+    ):
+        probabilities_table = (
+            pa.Table.from_pydict(probabilities)
+            .cast(
+                pa.schema(
+                    [
+                        ("left", pa.string()),
+                        ("right", pa.string()),
+                        ("probability", pa.uint8()),
+                    ]
+                )
+            )
+            .sort_by([("probability", "descending")])
+        )
+
+        parents, children, probs = zip(*hierarchy, strict=False)
+
+        hierarchy_true = (
+            pa.table(
+                [parents, children, probs], names=["parent", "child", "probability"]
+            )
+            .cast(
+                pa.schema(
+                    [
+                        ("parent", pa.string()),
+                        ("child", pa.string()),
+                        ("probability", pa.uint8()),
+                    ]
+                )
+            )
+            .sort_by(
+                [
+                    ("probability", "descending"),
+                    ("parent", "ascending"),
+                    ("child", "ascending"),
+                ]
+            )
+            .filter(pc.is_valid(pc.field("parent")))
+        )
+
+        hierarchy = component_to_hierarchy(probabilities_table, pa.string).sort_by(
+            [
+                ("probability", "descending"),
+                ("parent", "ascending"),
+                ("child", "ascending"),
+            ]
+        )
+
+        assert hierarchy.equals(hierarchy_true)

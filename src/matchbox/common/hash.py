@@ -1,5 +1,6 @@
 import base64
 import hashlib
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
@@ -109,3 +110,40 @@ def columns_to_value_ordered_hash(data: DataFrame, columns: list[str]) -> Series
         hashed_records.append(hashed_vals)
 
     return Series(hashed_records)
+
+
+@lru_cache(maxsize=None)
+def combine_integers(*n: int) -> int:
+    """
+    Combine n integers into a single negative integer.
+
+    Used to create a symmetric deterministic hash of two integers that populates the
+    range of integers efficiently and reduces the likelihood of collisions.
+
+    Aims to vectorise amazingly when used in Arrow.
+
+    Does this by:
+
+    * Using a Mersenne prime as a modulus
+    * Making negative integers positive with modulo, sped up with bitwise operations
+    * Combining using symmetric operations with coprime multipliers
+
+    Args:
+        *args: Variable number of integers to combine
+
+    Returns:
+        A negative integer
+    """
+    P = 2147483647
+
+    total = 0
+    product = 1
+
+    for x in sorted(n):
+        x_pos = (x ^ (x >> 31)) - (x >> 31)
+        total = (total + x_pos) % P
+        product = (product * x_pos) % P
+
+    result = (31 * total + 37 * product) % P
+
+    return -result
