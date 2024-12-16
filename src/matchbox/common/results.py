@@ -1,6 +1,8 @@
 import logging
+import multiprocessing
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Generic, Hashable, Iterator, TypeVar
 
@@ -551,3 +553,74 @@ def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa
             "probability": pa.array(probs, type=pa.uint8()),
         }
     )
+
+
+def to_hierarchical_clusters(
+    probabilities: pa.Table, dtype: pa.DataType = pa.int32
+) -> pa.Table:
+    """
+    Converts a table of pairwise probabilities into a table of hierarchical clusters.
+
+    Args:
+        probabilities: Arrow table with columns ['component', 'left', 'right',
+            'probability']
+
+    Returns:
+        Arrow table with columns ['parent', 'child', 'probability']
+    """
+    probabilities = probabilities.sort_by(
+        [("component", "ascending"), ("probability", "descending")]
+    )
+    components = pc.unique(probabilities["component"])
+    n_cores = multiprocessing.cpu_count()
+    n_components = len(components)
+
+    logic_logger.info(f"Processing {n_components} components using {n_cores} workers")
+
+    # Split table into separate component tables
+    component_col = probabilities["component"]
+    indices = []
+    start_idx = 0
+
+    for i in range(1, len(component_col)):
+        if component_col[i] != component_col[i - 1]:
+            indices.append((start_idx, i))
+            start_idx = i
+
+    indices.append((start_idx, len(component_col)))
+
+    component_tables = []
+    for start, end in indices:
+        idx_array = pa.array(range(start, end))
+        component_tables.append(probabilities.take(idx_array))
+
+    # Process components in parallel
+    results = []
+    with ProcessPoolExecutor(max_workers=n_cores) as executor:
+        futures = [
+            executor.submit(component_to_hierarchy, component_table, dtype)
+            for component_table in component_tables
+        ]
+
+        for future in futures:
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                logic_logger.error(f"Error processing component: {str(e)}")
+                continue
+
+    logic_logger.info(f"Completed processing {len(results)} components successfully")
+
+    # Create empty table if no results
+    if not results:
+        logic_logger.warning("No results to concatenate")
+        return pa.table(
+            {
+                "parent": pa.array([], type=dtype()),
+                "child": pa.array([], type=dtype()),
+                "probability": pa.array([], type=pa.uint8()),
+            }
+        )
+
+    return pa.concat_tables(results)

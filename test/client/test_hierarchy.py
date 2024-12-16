@@ -11,6 +11,7 @@ from matchbox.common.hash import combine_integers
 from matchbox.common.results import (
     attach_components_to_probabilities,
     component_to_hierarchy,
+    to_hierarchical_clusters,
 )
 from test.fixtures.factories import generate_dummy_probabilities, verify_components
 
@@ -226,3 +227,96 @@ def test_component_to_hierarchy(
         )
 
         assert hierarchy.equals(hierarchy_true)
+
+
+@pytest.mark.parametrize(
+    ("input_data", "expected_hierarchy"),
+    [
+        # Single component test case
+        (
+            {
+                "component": [1, 1, 1],
+                "left": ["a", "b", "c"],
+                "right": ["b", "c", "d"],
+                "probability": [90, 85, 80],
+            },
+            {
+                ("abc", "a", 90),
+                ("abc", "b", 90),
+                ("abc", "c", 85),
+                ("abcd", "abc", 80),
+                ("abcd", "d", 80),
+            },
+        ),
+        # Multiple components test case
+        (
+            {
+                "component": [1, 1, 2, 2],
+                "left": ["a", "b", "x", "y"],
+                "right": ["b", "c", "y", "z"],
+                "probability": [90, 85, 95, 92],
+            },
+            {
+                ("abc", "a", 90),
+                ("abc", "b", 90),
+                ("abc", "c", 85),
+                ("xyz", "x", 95),
+                ("xyz", "y", 95),
+                ("xyz", "z", 92),
+            },
+        ),
+    ],
+    ids=["single_component", "multiple_components"],
+)
+def test_hierarchical_clusters(input_data, expected_hierarchy):
+    # Create input table
+    probabilities = pa.table(
+        input_data,
+        schema=pa.schema(
+            [
+                ("component", pa.int32()),
+                ("left", pa.string()),
+                ("right", pa.string()),
+                ("probability", pa.uint8()),
+            ]
+        ),
+    )
+
+    # Create expected output table
+    parents, children, probs = zip(*expected_hierarchy, strict=False)
+    expected = (
+        pa.table([parents, children, probs], names=["parent", "child", "probability"])
+        .cast(
+            pa.schema(
+                [
+                    ("parent", pa.string()),
+                    ("child", pa.string()),
+                    ("probability", pa.uint8()),
+                ]
+            )
+        )
+        .sort_by(
+            [
+                ("probability", "descending"),
+                ("parent", "ascending"),
+                ("child", "ascending"),
+            ]
+        )
+    )
+
+    with patch(
+        "matchbox.common.results.combine_integers", side_effect=_combine_strings
+    ):
+        result = to_hierarchical_clusters(probabilities, dtype=pa.string)
+
+        # Sort result the same way as expected for comparison
+        result = result.sort_by(
+            [
+                ("probability", "descending"),
+                ("parent", "ascending"),
+                ("child", "ascending"),
+            ]
+        )
+
+        assert result.schema == expected.schema
+        assert result.equals(expected)
