@@ -303,7 +303,7 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
     )
 
     # Get unique probability thresholds, sorted
-    thresholds = edges_df["probability"].unique()
+    thresholds = sorted(edges_df["probability"].unique())
 
     # Process edges grouped by probability threshold
     for prob in thresholds:
@@ -367,7 +367,7 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
     graph = rx.PyGraph(node_count_hint=n_nodes, edge_count_hint=n_edges)
     graph.add_nodes_from(range(n_nodes))
 
-    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=False))
+    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=True))
     graph.add_edges_from_no_data(edges)
 
     components = rx.connected_components(graph)
@@ -541,7 +541,7 @@ def component_to_hierarchy(
         for row in zip(
             current_probs["left"].to_numpy(),
             current_probs["right"].to_numpy(),
-            strict=False,
+            strict=True,
         ):
             left, right = row
             uf.union(left, right)
@@ -558,7 +558,7 @@ def component_to_hierarchy(
                 parent = im.index(*new_comp)
                 hierarchy.extend([(parent, old_comp.pop(), threshold)])
 
-    parents, children, probs = zip(*hierarchy, strict=False)
+    parents, children, probs = zip(*hierarchy, strict=True)
     hierarchy_results = pa.table(
         {
             "parent": pa.array(parents, type=dtype()),

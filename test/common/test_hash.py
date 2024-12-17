@@ -1,28 +1,48 @@
 from matchbox.common.hash import IntMap
 
 
-def test_core_intmap():
-    im = IntMap()
-    im.index(1, 2)
-    im.index(3, 4)
-    im.index(-1, -2)
+def test_intmap_basic():
+    im1 = IntMap(salt=10)
+    a = im1.index(1, 2)
+    b = im1.index(3, 4)
+    c = im1.index(a, b)
 
-    keys, values = im.export()
-    assert keys == [-1, -2, -3]
-    assert values == [(1, 2), (3, 4), (-1, -2)]
+    assert len({a, b, c}) == 3
+    assert max(a, b, c) < 0
 
 
-def test_salted_intmap():
-    im = IntMap(salt=10)
-    a = im.index(1, 2)
-    b = im.index(3, 4)
-    c = im.index(a, b)
+def test_intmap_same():
+    im1 = IntMap(salt=10)
+    a = im1.index(1, 2)
+    b = im1.index(3, 4)
+    c = im1.index(a, b)
 
-    keys, values = im.export()
+    im2 = IntMap(salt=10)
+    x = im2.index(1, 2)
+    y = im2.index(3, 4)
+    z = im2.index(a, b)
 
-    assert keys == [a, b, c]
-    assert a < 0 and a != -1
-    assert b < 0 and a != -2
-    assert c < 0 and c != -3
+    assert (a, b, c) == (x, y, z)
 
-    assert values == [(1, 2), (3, 4), (a, b)]
+
+def test_intmap_different():
+    im1 = IntMap(salt=10)
+    a = im1.index(1, 2)
+    b = im1.index(3, 4)
+    c = im1.index(a, b)
+
+    im2 = IntMap(salt=11)
+    x = im2.index(1, 2)
+    y = im2.index(3, 4)
+    z = im2.index(a, b)
+
+    for v1, v2 in zip([a, b, c], [x, y, z], strict=True):
+        assert v1 != v2
+
+
+def test_intmap_unordered():
+    im1 = IntMap(salt=10)
+    a = im1.index(1, 2, 3)
+    b = im1.index(3, 1, 2)
+
+    assert a == b
