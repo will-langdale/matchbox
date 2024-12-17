@@ -112,6 +112,36 @@ def columns_to_value_ordered_hash(data: DataFrame, columns: list[str]) -> Series
     return Series(hashed_records)
 
 
+class IntMap:
+    def __init__(self, salt: int | None = None):
+        self.keys: list[int] = []
+        self.values: list[tuple[int]] = []
+        if salt and salt < 0:
+            raise ValueError("The salt must be a positive int")
+        self.salt: int | None = salt
+
+    def _add_salt(self, val: int) -> int:
+        """
+        If given a positive int, return as is, otherwise use Cantor pairing function
+        to combine the salt with a negative int key, and minus it.
+        """
+        if val >= 0:
+            return val
+        return -int(0.5 * (self.salt - val) * (self.salt - val + 1) - val)
+
+    def index(self, *refs: int) -> int:
+        new_key: int = -len(self.values) - 1
+        if self.salt:
+            new_key = self._add_salt(new_key)
+
+        self.keys.append(new_key)
+        self.values.append(refs)
+        return new_key
+
+    def export(self) -> tuple[list[int], list[list[int]]]:
+        return self.keys, self.values
+
+
 @lru_cache(maxsize=None)
 def combine_integers(*n: int) -> int:
     """
