@@ -559,6 +559,7 @@ def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
     dtype: pa.DataType = pa.int32,
+    timeout: int = 300,
 ) -> pa.Table:
     """
     Converts a table of pairwise probabilities into a table of hierarchical clusters.
@@ -566,6 +567,9 @@ def to_hierarchical_clusters(
     Args:
         probabilities: Arrow table with columns ['component', 'left', 'right',
             'probability']
+        proc_func: Function to process each component
+        dtype: Arrow data type for parent/child columns
+        timeout: Maximum seconds to wait for each component to process
 
     Returns:
         Arrow table with columns ['parent', 'child', 'probability']
@@ -606,8 +610,13 @@ def to_hierarchical_clusters(
 
         for future in futures:
             try:
-                result = future.result()
+                result = future.result(timeout=timeout)
                 results.append(result)
+            except TimeoutError:
+                logic_logger.error(
+                    f"Component processing timed out after {timeout} seconds"
+                )
+                continue
             except Exception as e:
                 logic_logger.error(f"Error processing component: {str(e)}")
                 continue
