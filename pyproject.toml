@@ -21,6 +21,7 @@ dependencies = [
     "rustworkx>=0.15.1",
     "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",
+    "rich>=13.9.4",
 ]
 
 [project.optional-dependencies]
