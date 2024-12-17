@@ -13,6 +13,15 @@ import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from sqlalchemy import Table
 
 from matchbox.common.db import Cluster, Probability
@@ -579,6 +588,16 @@ def to_hierarchical_clusters(
     Returns:
         Arrow table with columns ['parent', 'child', 'probability']
     """
+    console = Console()
+    progress_columns = [
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+    ]
+
     probabilities = probabilities.sort_by(
         [("component", "ascending"), ("probability", "descending")]
     )
@@ -586,19 +605,26 @@ def to_hierarchical_clusters(
     n_cores = multiprocessing.cpu_count()
     n_components = len(components)
 
-    logic_logger.info(f"Processing {n_components} components using {n_cores} workers")
+    logic_logger.info(f"Processing {n_components:,} components using {n_cores} workers")
 
     # Split table into separate component tables
     component_col = probabilities["component"]
     indices = []
     start_idx = 0
 
-    for i in range(1, len(component_col)):
-        if component_col[i] != component_col[i - 1]:
-            indices.append((start_idx, i))
-            start_idx = i
+    with Progress(*progress_columns, console=console) as progress:
+        split_task = progress.add_task(
+            "[cyan]Splitting tables...", total=len(component_col)
+        )
 
-    indices.append((start_idx, len(component_col)))
+        for i in range(1, len(component_col)):
+            if component_col[i] != component_col[i - 1]:
+                indices.append((start_idx, i))
+                start_idx = i
+            progress.update(split_task, advance=1)
+
+        indices.append((start_idx, len(component_col)))
+        progress.update(split_task, completed=len(component_col))
 
     component_tables = []
     for start, end in indices:
@@ -607,26 +633,32 @@ def to_hierarchical_clusters(
 
     # Process components in parallel
     results = []
-    with ProcessPoolExecutor(max_workers=n_cores) as executor:
-        futures = [
-            executor.submit(proc_func, component_table, dtype, salt)
-            for salt, component_table in enumerate(component_tables)
-        ]
+    with Progress(*progress_columns, console=console) as progress:
+        process_task = progress.add_task(
+            "[green]Processing components...", total=len(component_tables)
+        )
 
-        for future in futures:
-            try:
-                result = future.result(timeout=timeout)
-                results.append(result)
-            except TimeoutError:
-                logic_logger.error(
-                    f"Component processing timed out after {timeout} seconds"
-                )
-                raise
-            except Exception as e:
-                logic_logger.error(f"Error processing component: {str(e)}")
-                raise
+        with ProcessPoolExecutor(max_workers=n_cores) as executor:
+            futures = [
+                executor.submit(proc_func, component_table, dtype, salt)
+                for salt, component_table in enumerate(component_tables)
+            ]
 
-    logic_logger.info(f"Completed processing {len(results)} components successfully")
+            for future in futures:
+                try:
+                    result = future.result(timeout=timeout)
+                    results.append(result)
+                    progress.update(process_task, advance=1)
+                except TimeoutError:
+                    logic_logger.error(
+                        f"Component processing timed out after {timeout} seconds"
+                    )
+                    raise
+                except Exception as e:
+                    logic_logger.error(f"Error processing component: {str(e)}")
+                    raise
+
+    logic_logger.info(f"Completed processing {len(results):,} components successfully")
 
     # Create empty table if no results
     if not results:
