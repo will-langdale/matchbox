@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Generic, Hashable, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Hashable, Iterator, TypeVar
 
 import numpy as np
 import pyarrow as pa
@@ -556,7 +556,9 @@ def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa
 
 
 def to_hierarchical_clusters(
-    probabilities: pa.Table, dtype: pa.DataType = pa.int32
+    probabilities: pa.Table,
+    proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
+    dtype: pa.DataType = pa.int32,
 ) -> pa.Table:
     """
     Converts a table of pairwise probabilities into a table of hierarchical clusters.
@@ -598,7 +600,7 @@ def to_hierarchical_clusters(
     results = []
     with ProcessPoolExecutor(max_workers=n_cores) as executor:
         futures = [
-            executor.submit(component_to_hierarchy, component_table, dtype)
+            executor.submit(proc_func, component_table, dtype)
             for component_table in component_tables
         ]
 

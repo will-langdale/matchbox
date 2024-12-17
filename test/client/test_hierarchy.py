@@ -31,6 +31,13 @@ def _combine_strings(*n: str) -> str:
     return "".join(sorted(letters))
 
 
+def _component_to_hierarchy_patched(table: pa.Table, dtype: pa.DataType) -> pa.Table:
+    with patch(
+        "matchbox.common.results.combine_integers", side_effect=_combine_strings
+    ):
+        return component_to_hierarchy(table, dtype)
+
+
 @pytest.mark.parametrize(
     ("parameters"),
     [
@@ -241,11 +248,16 @@ def test_component_to_hierarchy(
                 "probability": [90, 85, 80],
             },
             {
-                ("abc", "a", 90),
-                ("abc", "b", 90),
-                ("abc", "c", 85),
+                ("ab", "a", 90),
+                ("ab", "b", 90),
+                ("bc", "b", 85),
+                ("bc", "c", 85),
+                ("abc", "ab", 85),
+                ("abc", "bc", 85),
+                ("cd", "c", 80),
+                ("cd", "d", 80),
                 ("abcd", "abc", 80),
-                ("abcd", "d", 80),
+                ("abcd", "cd", 80),
             },
         ),
         # Multiple components test case
@@ -257,12 +269,18 @@ def test_component_to_hierarchy(
                 "probability": [90, 85, 95, 92],
             },
             {
-                ("abc", "a", 90),
-                ("abc", "b", 90),
-                ("abc", "c", 85),
-                ("xyz", "x", 95),
-                ("xyz", "y", 95),
-                ("xyz", "z", 92),
+                ("xy", "x", 95),
+                ("xy", "y", 95),
+                ("yz", "y", 92),
+                ("yz", "z", 92),
+                ("xyz", "xy", 92),
+                ("xyz", "yz", 92),
+                ("ab", "a", 90),
+                ("ab", "b", 90),
+                ("bc", "b", 85),
+                ("bc", "c", 85),
+                ("abc", "ab", 85),
+                ("abc", "bc", 85),
             },
         ),
     ],
@@ -304,19 +322,18 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
         )
     )
 
-    with patch(
-        "matchbox.common.results.combine_integers", side_effect=_combine_strings
-    ):
-        result = to_hierarchical_clusters(probabilities, dtype=pa.string)
+    # Run and compare
+    result = to_hierarchical_clusters(
+        probabilities, dtype=pa.string, proc_func=_component_to_hierarchy_patched
+    )
 
-        # Sort result the same way as expected for comparison
-        result = result.sort_by(
-            [
-                ("probability", "descending"),
-                ("parent", "ascending"),
-                ("child", "ascending"),
-            ]
-        )
+    result = result.sort_by(
+        [
+            ("probability", "descending"),
+            ("parent", "ascending"),
+            ("child", "ascending"),
+        ]
+    )
 
-        assert result.schema == expected.schema
-        assert result.equals(expected)
+    assert result.schema == expected.schema
+    assert result.equals(expected)
