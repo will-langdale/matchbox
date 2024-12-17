@@ -2,7 +2,9 @@ name: Ruff
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: 
+      - main
+      - 'feature/new-ingest-process'
   workflow_dispatch:
 
 jobs:
