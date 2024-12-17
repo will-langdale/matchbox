@@ -1,6 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from functools import lru_cache
 from itertools import chain
-from typing import Any
+from typing import Any, Iterator
 from unittest.mock import patch
 
 import pyarrow as pa
@@ -29,6 +31,23 @@ def _combine_strings(*n: str) -> str:
     """
     letters = set(chain.from_iterable(n))
     return "".join(sorted(letters))
+
+
+@contextmanager
+def parallel_pool_for_tests(
+    max_workers: int = 2, timeout: int = 30
+) -> Iterator[ThreadPoolExecutor]:
+    """Context manager for safe parallel execution in tests using threads.
+
+    Args:
+        max_workers: Maximum number of worker threads
+        timeout: Maximum seconds to wait for each task
+    """
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        try:
+            yield executor
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
 
 @pytest.mark.parametrize(
@@ -241,11 +260,16 @@ def test_component_to_hierarchy(
                 "probability": [90, 85, 80],
             },
             {
-                ("abc", "a", 90),
-                ("abc", "b", 90),
-                ("abc", "c", 85),
+                ("ab", "a", 90),
+                ("ab", "b", 90),
+                ("bc", "b", 85),
+                ("bc", "c", 85),
+                ("abc", "ab", 85),
+                ("abc", "bc", 85),
+                ("cd", "c", 80),
+                ("cd", "d", 80),
                 ("abcd", "abc", 80),
-                ("abcd", "d", 80),
+                ("abcd", "cd", 80),
             },
         ),
         # Multiple components test case
@@ -257,12 +281,18 @@ def test_component_to_hierarchy(
                 "probability": [90, 85, 95, 92],
             },
             {
-                ("abc", "a", 90),
-                ("abc", "b", 90),
-                ("abc", "c", 85),
-                ("xyz", "x", 95),
-                ("xyz", "y", 95),
-                ("xyz", "z", 92),
+                ("xy", "x", 95),
+                ("xy", "y", 95),
+                ("yz", "y", 92),
+                ("yz", "z", 92),
+                ("xyz", "xy", 92),
+                ("xyz", "yz", 92),
+                ("ab", "a", 90),
+                ("ab", "b", 90),
+                ("bc", "b", 85),
+                ("bc", "c", 85),
+                ("abc", "ab", 85),
+                ("abc", "bc", 85),
             },
         ),
     ],
@@ -304,19 +334,25 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
         )
     )
 
-    with patch(
-        "matchbox.common.results.combine_integers", side_effect=_combine_strings
+    # Run and compare
+    with (
+        patch(
+            "matchbox.common.results.ProcessPoolExecutor",
+            lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
+        ),
+        patch("matchbox.common.results.combine_integers", side_effect=_combine_strings),
     ):
-        result = to_hierarchical_clusters(probabilities, dtype=pa.string)
-
-        # Sort result the same way as expected for comparison
-        result = result.sort_by(
-            [
-                ("probability", "descending"),
-                ("parent", "ascending"),
-                ("child", "ascending"),
-            ]
+        result = to_hierarchical_clusters(
+            probabilities, dtype=pa.string, proc_func=component_to_hierarchy
         )
 
-        assert result.schema == expected.schema
-        assert result.equals(expected)
+    result = result.sort_by(
+        [
+            ("probability", "descending"),
+            ("parent", "ascending"),
+            ("child", "ascending"),
+        ]
+    )
+
+    assert result.schema == expected.schema
+    assert result.equals(expected)

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Generic, Hashable, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Hashable, Iterator, TypeVar
 
 import numpy as np
 import pyarrow as pa
@@ -561,7 +561,10 @@ def component_to_hierarchy(
 
 
 def to_hierarchical_clusters(
-    probabilities: pa.Table, dtype: pa.DataType = pa.int32
+    probabilities: pa.Table,
+    proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
+    dtype: pa.DataType = pa.int32,
+    timeout: int = 300,
 ) -> pa.Table:
     """
     Converts a table of pairwise probabilities into a table of hierarchical clusters.
@@ -569,6 +572,9 @@ def to_hierarchical_clusters(
     Args:
         probabilities: Arrow table with columns ['component', 'left', 'right',
             'probability']
+        proc_func: Function to process each component
+        dtype: Arrow data type for parent/child columns
+        timeout: Maximum seconds to wait for each component to process
 
     Returns:
         Arrow table with columns ['parent', 'child', 'probability']
@@ -603,17 +609,22 @@ def to_hierarchical_clusters(
     results = []
     with ProcessPoolExecutor(max_workers=n_cores) as executor:
         futures = [
-            executor.submit(component_to_hierarchy, component_table, dtype, salt)
+            executor.submit(proc_func, component_table, dtype, salt)
             for salt, component_table in enumerate(component_tables)
         ]
 
         for future in futures:
             try:
-                result = future.result()
+                result = future.result(timeout=timeout)
                 results.append(result)
+            except TimeoutError:
+                logic_logger.error(
+                    f"Component processing timed out after {timeout} seconds"
+                )
+                raise
             except Exception as e:
                 logic_logger.error(f"Error processing component: {str(e)}")
-                continue
+                raise
 
     logic_logger.info(f"Completed processing {len(results)} components successfully")
 
