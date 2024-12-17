@@ -616,10 +616,10 @@ def to_hierarchical_clusters(
                 logic_logger.error(
                     f"Component processing timed out after {timeout} seconds"
                 )
-                continue
+                raise
             except Exception as e:
                 logic_logger.error(f"Error processing component: {str(e)}")
-                continue
+                raise
 
     logic_logger.info(f"Completed processing {len(results)} components successfully")
 
