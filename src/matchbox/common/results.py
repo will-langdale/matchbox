@@ -559,14 +559,13 @@ def component_to_hierarchy(
                 hierarchy.extend([(parent, old_comp.pop(), threshold)])
 
     parents, children, probs = zip(*hierarchy, strict=True)
-    hierarchy_results = pa.table(
+    return pa.table(
         {
             "parent": pa.array(parents, type=dtype()),
             "child": pa.array(children, type=dtype()),
             "probability": pa.array(probs, type=pa.uint8()),
         }
     )
-    return hierarchy_results
 
 
 def to_hierarchical_clusters(
