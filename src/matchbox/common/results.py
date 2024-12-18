@@ -514,7 +514,7 @@ class UnionFindWithDiff(Generic[T]):
 
 
 def component_to_hierarchy(
-    table: pa.Table, dtype: pa.DataType = pa.int32, salt: int | None = None
+    table: pa.Table, dtype: pa.DataType = pa.int32, salt: int = 1
 ) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
