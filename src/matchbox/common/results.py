@@ -390,8 +390,10 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
 
 class DisjointSet(Generic[T]):
     """
-    Disjoint set forest with "path compression" and "union by rank" heuristics as in
-    Cormen, Thomas H., et al. Introduction to algorithms. MIT press, 2022
+    Disjoint set forest with "path compression" and "union by rank" heuristics.
+
+    This follows implementation from Cormen, Thomas H., et al. Introduction to
+    algorithms. MIT press, 2022
     """
 
     def __init__(self):
