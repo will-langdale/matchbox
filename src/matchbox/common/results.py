@@ -447,7 +447,7 @@ def component_to_hierarchy(
     Returns:
         Arrow Table with columns ['parent', 'child', 'probability']
     """
-    probs = sorted(pc.unique(table["probability"]))
+    probs = np.sort(pc.unique(table["probability"]).to_numpy())[::-1]
 
     djs = DisjointSet[int]()  # implements connected components
     im = IntMap(salt=salt)  # generates IDs for new clusters
@@ -523,9 +523,7 @@ def to_hierarchical_clusters(
         TimeRemainingColumn(),
     ]
 
-    probabilities = probabilities.sort_by(
-        [("component", "ascending"), ("probability", "descending")]
-    )
+    probabilities = probabilities.sort_by([("component", "ascending")])
     components = pc.unique(probabilities["component"])
     n_cores = multiprocessing.cpu_count()
     n_components = len(components)
