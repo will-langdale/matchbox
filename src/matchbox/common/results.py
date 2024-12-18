@@ -447,7 +447,7 @@ def component_to_hierarchy(
     Returns:
         Arrow Table with columns ['parent', 'child', 'probability']
     """
-    probs = pc.unique(table["probability"])
+    probs = sorted(pc.unique(table["probability"]))
 
     djs = DisjointSet[int]()  # implements connected components
     im = IntMap(salt=salt)  # generates IDs for new clusters
@@ -476,14 +476,13 @@ def component_to_hierarchy(
                 continue  # Skip pairs already handled by pairwise probabilities
 
             parent = im.index(*children)
-            root_sets = (current_roots[c] for c in children)
-            union_roots: set[int] = set.union(*root_sets)
-
-            for r in union_roots:
-                hierarchy.append((parent, r, threshold))
-
+            prev_roots: set[int] = set()
             for child in children:
+                prev_roots.update(current_roots[child])
                 current_roots[child] = {parent}
+
+            for r in prev_roots:
+                hierarchy.append((parent, r, threshold))
 
     parents, children, probs = zip(*hierarchy, strict=True)
     return pa.table(
