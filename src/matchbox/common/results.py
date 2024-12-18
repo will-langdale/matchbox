@@ -26,8 +26,8 @@ from sqlalchemy import Table
 
 from matchbox.common.db import Cluster, Probability
 from matchbox.common.hash import (
+    IntMap,
     columns_to_value_ordered_hash,
-    combine_integers,
     list_to_value_ordered_hash,
 )
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
@@ -303,7 +303,7 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
     )
 
     # Get unique probability thresholds, sorted
-    thresholds = edges_df["probability"].unique()
+    thresholds = sorted(edges_df["probability"].unique())
 
     # Process edges grouped by probability threshold
     for prob in thresholds:
@@ -367,7 +367,7 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
     graph = rx.PyGraph(node_count_hint=n_nodes, edge_count_hint=n_edges)
     graph.add_nodes_from(range(n_nodes))
 
-    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=False))
+    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=True))
     graph.add_edges_from_no_data(edges)
 
     components = rx.connected_components(graph)
@@ -413,6 +413,7 @@ class UnionFindWithDiff(Generic[T]):
                 self._shadow_parent[x] = x
                 self._shadow_rank[x] = 0
 
+        # TODO: Instead of being a `while`, could this be an `if`?
         while parent_dict[x] != x:
             parent_dict[x] = parent_dict[parent_dict[x]]
             x = parent_dict[x]
@@ -512,7 +513,9 @@ class UnionFindWithDiff(Generic[T]):
         self._shadow_rank = self.rank.copy()
 
 
-def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa.Table:
+def component_to_hierarchy(
+    table: pa.Table, dtype: pa.DataType = pa.int32, salt: int = 1
+) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
 
@@ -526,6 +529,7 @@ def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa
     """
     hierarchy: list[tuple[int, int, float]] = []
     uf = UnionFindWithDiff[int]()
+    im = IntMap(salt=salt)
     probs = pc.unique(table["probability"])
 
     for threshold in probs:
@@ -537,24 +541,24 @@ def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa
         for row in zip(
             current_probs["left"].to_numpy(),
             current_probs["right"].to_numpy(),
-            strict=False,
+            strict=True,
         ):
             left, right = row
             uf.union(left, right)
-            parent = combine_integers(left, right)
+            parent = im.index(left, right)
             hierarchy.extend([(parent, left, threshold), (parent, right, threshold)])
 
         # Process union-find diffs
         for old_comp, new_comp in uf.diff():
             if len(old_comp) > 1:
-                parent = combine_integers(*new_comp)
-                child = combine_integers(*old_comp)
+                parent = im.index(*new_comp)
+                child = im.index(*old_comp)
                 hierarchy.extend([(parent, child, threshold)])
             else:
-                parent = combine_integers(*new_comp)
+                parent = im.index(*new_comp)
                 hierarchy.extend([(parent, old_comp.pop(), threshold)])
 
-    parents, children, probs = zip(*hierarchy, strict=False)
+    parents, children, probs = zip(*hierarchy, strict=True)
     return pa.table(
         {
             "parent": pa.array(parents, type=dtype()),
@@ -635,8 +639,8 @@ def to_hierarchical_clusters(
 
         with ProcessPoolExecutor(max_workers=n_cores) as executor:
             futures = [
-                executor.submit(proc_func, component_table, dtype)
-                for component_table in component_tables
+                executor.submit(proc_func, component_table, dtype, salt)
+                for salt, component_table in enumerate(component_tables)
             ]
 
             for future in futures:

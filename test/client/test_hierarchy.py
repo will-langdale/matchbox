@@ -9,7 +9,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
-from matchbox.common.hash import combine_integers
 from matchbox.common.results import (
     attach_components_to_probabilities,
     component_to_hierarchy,
@@ -120,22 +119,6 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
 
 
 @pytest.mark.parametrize(
-    ("integer_list"),
-    [
-        [1, 2, 3],
-        [9, 0],
-        [-4, -5, -6],
-        [7, -8, 9],
-    ],
-    ids=["positive", "pair_only", "negative", "mixed"],
-)
-def test_combine_integers(integer_list: list[int]):
-    res = combine_integers(*integer_list)
-    assert isinstance(res, int)
-    assert res < 0
-
-
-@pytest.mark.parametrize(
     ("probabilities", "hierarchy"),
     [
         # Test case 1: Equal probabilities
@@ -195,9 +178,9 @@ def test_combine_integers(integer_list: list[int]):
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
 ):
-    with patch(
-        "matchbox.common.results.combine_integers", side_effect=_combine_strings
-    ):
+    with patch("matchbox.common.results.IntMap") as MockIntMap:
+        instance = MockIntMap.return_value
+        instance.index.side_effect = _combine_strings
         probabilities_table = (
             pa.Table.from_pydict(probabilities)
             .cast(
@@ -340,8 +323,10 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
             "matchbox.common.results.ProcessPoolExecutor",
             lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
         ),
-        patch("matchbox.common.results.combine_integers", side_effect=_combine_strings),
+        patch("matchbox.common.results.IntMap") as MockIntMap,
     ):
+        instance = MockIntMap.return_value
+        instance.index.side_effect = _combine_strings
         result = to_hierarchical_clusters(
             probabilities, dtype=pa.string, proc_func=component_to_hierarchy
         )
