@@ -23,9 +23,7 @@ def hash_to_base64(hash: bytes) -> str:
     return base64.b64encode(hash).decode("utf-8")
 
 
-def dataset_to_hashlist(
-    dataset: Source, resolution_hash: bytes
-) -> list[dict[str, Any]]:
+def dataset_to_hashlist(dataset: Source) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
     with Session(dataset.database.engine) as warehouse_session:
         source_table = dataset.to_table()
@@ -35,7 +33,9 @@ def dataset_to_hashlist(
 
         slct_stmt = select(
             func.concat(*source_table.c[cols_to_index]).label("raw"),
-            func.array_agg(source_table.c[dataset.db_pk].cast(String)).label("id"),
+            func.array_agg(source_table.c[dataset.db_pk].cast(String)).label(
+                "source_pk"
+            ),
         ).group_by(*source_table.c[cols_to_index])
 
         raw_result = warehouse_session.execute(slct_stmt)
@@ -43,8 +43,7 @@ def dataset_to_hashlist(
         to_insert = [
             {
                 "hash": hash_data(data.raw),
-                "dataset": resolution_hash,
-                "id": data.id,
+                "source_pk": data.source_pk,
             }
             for data in raw_result.all()
         ]

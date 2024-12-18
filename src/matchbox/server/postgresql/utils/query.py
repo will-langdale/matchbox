@@ -60,7 +60,7 @@ def source_to_dataset_resolution(source: Source | str, session: Session) -> Reso
 
     source_dataset = (
         session.query(Resolutions)
-        .join(Sources, Sources.resolution == Resolutions.hash)
+        .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
         .filter(
             Sources.schema == source_schema,
             Sources.table == source_table,
@@ -96,26 +96,26 @@ def _resolve_thresholds(
     """
     resolved_thresholds = {}
 
-    for resolution_hash, default_truth in lineage_truths.items():
+    for resolution_id, default_truth in lineage_truths.items():
         # Dataset
         if default_truth is None:
-            resolved_thresholds[resolution_hash] = None
+            resolved_thresholds[resolution_id] = None
             continue
 
         # Model
         if threshold is None:
-            resolved_thresholds[resolution_hash] = default_truth
+            resolved_thresholds[resolution_id] = default_truth
         elif isinstance(threshold, float):
-            resolved_thresholds[resolution_hash] = (
-                threshold if resolution_hash == resolution.hash.hex() else default_truth
+            resolved_thresholds[resolution_id] = (
+                threshold if resolution_id == resolution.hash.hex() else default_truth
             )
         elif isinstance(threshold, dict):
             resolution_obj = (
                 session.query(Resolutions)
-                .filter(Resolutions.hash == bytes.fromhex(resolution_hash))
+                .filter(Resolutions.resolution_id == bytes.fromhex(resolution_id))
                 .first()
             )
-            resolved_thresholds[resolution_hash] = threshold.get(
+            resolved_thresholds[resolution_id] = threshold.get(
                 resolution_obj.name, default_truth
             )
         else:
@@ -214,13 +214,13 @@ def _resolve_cluster_hierarchy(
         mapping_0 = (
             select(
                 Clusters.hash.label("cluster_hash"),
-                func.unnest(Clusters.id).label("id"),
+                func.unnest(Clusters.source_pk).label("source_pk"),
             )
             .where(
                 and_(
                     Clusters.hash.in_(select(valid_clusters.c.cluster)),
                     Clusters.dataset == hash_to_hex_decode(dataset_hash),
-                    Clusters.id.isnot(None),
+                    Clusters.source_pk.isnot(None),
                 )
             )
             .cte("mapping_0")
@@ -271,7 +271,7 @@ def _resolve_cluster_hierarchy(
         # Final mapping with coalesced results
         final_mapping = (
             select(
-                mapping_0.c.id,
+                mapping_0.c.source_pk,
                 func.coalesce(
                     highest_parents.c.highest_parent, mapping_0.c.cluster_hash
                 ).label("final_parent"),
@@ -286,7 +286,9 @@ def _resolve_cluster_hierarchy(
         )
 
         # Final select statement
-        return select(final_mapping.c.final_parent.label("hash"), final_mapping.c.id)
+        return select(
+            final_mapping.c.final_parent.label("hash"), final_mapping.c.source_pk
+        )
 
 
 def query(
@@ -406,23 +408,27 @@ def query(
 def _build_unnested_clusters() -> CTE:
     """Create CTE that unnests cluster IDs for easier joining."""
     return (
-        select(Clusters.hash, Clusters.dataset, func.unnest(Clusters.id).label("id"))
+        select(
+            Clusters.hash,
+            Clusters.dataset,
+            func.unnest(Clusters.source_pk).label("source_pk"),
+        )
         .select_from(Clusters)
         .cte("unnested_clusters")
     )
 
 
 def _find_source_cluster(
-    unnested_clusters: CTE, source_dataset_hash: bytes, source_id: str
+    unnested_clusters: CTE, source_dataset_hash: bytes, source_pk: str
 ) -> Select:
-    """Find the initial cluster containing the source ID."""
+    """Find the initial cluster containing the source primary key."""
     return (
         select(unnested_clusters.c.hash)
         .select_from(unnested_clusters)
         .where(
             and_(
                 unnested_clusters.c.dataset == hash_to_hex_decode(source_dataset_hash),
-                unnested_clusters.c.id == source_id,
+                unnested_clusters.c.source_pk == source_pk,
             )
         )
         .scalar_subquery()
@@ -506,7 +512,7 @@ def _build_hierarchy_down(
             Contains.child.label("child"),
             literal(1).label("level"),
             unnested_clusters.c.dataset.label("dataset"),
-            unnested_clusters.c.id.label("id"),
+            unnested_clusters.c.source_pk.label("source_pk"),
         )
         .select_from(Contains)
         .join_from(
@@ -531,7 +537,7 @@ def _build_hierarchy_down(
             Contains.child.label("child"),
             (hierarchy_down.c.level + 1).label("level"),
             unnested_clusters.c.dataset.label("dataset"),
-            unnested_clusters.c.id.label("id"),
+            unnested_clusters.c.source_pk.label("source_pk"),
         )
         .select_from(hierarchy_down)
         .join_from(
@@ -545,7 +551,7 @@ def _build_hierarchy_down(
             unnested_clusters.c.hash == Contains.child,
             isouter=True,
         )
-        .where(hierarchy_down.c.id.is_(None))  # Only recurse on non-leaf nodes
+        .where(hierarchy_down.c.source_pk.is_(None))  # Only recurse on non-leaf nodes
     )
 
     # Add valid clusters filter to recursive part if provided
@@ -558,7 +564,7 @@ def _build_hierarchy_down(
 
 
 def match(
-    source_id: str,
+    source_pk: str,
     source: str,
     target: str | list[str],
     resolution: str,
@@ -612,7 +618,7 @@ def match(
         # Build the query components
         unnested = _build_unnested_clusters()
         source_cluster = _find_source_cluster(
-            unnested, source_resolution.hash, source_id
+            unnested, source_resolution.hash, source_pk
         )
         hierarchy_up = _build_hierarchy_up(source_cluster, valid_clusters)
         highest = _find_highest_parent(hierarchy_up)
@@ -623,7 +629,7 @@ def match(
             select(
                 hierarchy_down.c.parent.label("cluster"),
                 hierarchy_down.c.dataset,
-                hierarchy_down.c.id,
+                hierarchy_down.c.source_pk,
             )
             .distinct()
             .select_from(hierarchy_down)

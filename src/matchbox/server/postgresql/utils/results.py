@@ -3,7 +3,7 @@ from typing import NamedTuple
 import pandas as pd
 import pyarrow as pa
 import rustworkx as rx
-from sqlalchemy import Engine, and_, case, exists, func, select
+from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from matchbox.common.graph import ResolutionNodeType
@@ -33,13 +33,13 @@ class SourceInfo(NamedTuple):
 
 
 def _get_model_parents(
-    engine: Engine, resolution_hash: bytes
+    engine: Engine, resolution_id: int
 ) -> tuple[bytes, bytes | None]:
     """Get the model's immediate parent models."""
     parent_query = (
-        select(Resolutions.hash, Resolutions.type)
-        .join(ResolutionFrom, Resolutions.hash == ResolutionFrom.parent)
-        .where(ResolutionFrom.child == resolution_hash)
+        select(Resolutions.resolution_id, Resolutions.type)
+        .join(ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent)
+        .where(ResolutionFrom.child == resolution_id)
         .where(ResolutionFrom.level == 1)
     )
 
@@ -63,10 +63,10 @@ def _get_model_parents(
         raise ValueError(f"Model has unexpected number of parents: {len(parents)}")
 
 
-def _get_source_info(engine: Engine, resolution_hash: bytes) -> SourceInfo:
+def _get_source_info(engine: Engine, resolution_id: id) -> SourceInfo:
     """Get source resolutions and their ancestry information."""
     left_hash, right_hash = _get_model_parents(
-        engine=engine, resolution_hash=resolution_hash
+        engine=engine, resolution_id=resolution_id
     )
 
     with Session(engine) as session:
@@ -85,72 +85,6 @@ def _get_source_info(engine: Engine, resolution_hash: bytes) -> SourceInfo:
         left_ancestors=left_ancestors,
         right_ancestors=right_ancestors,
     )
-
-
-def _get_leaf_pair_clusters(engine: Engine, resolution_hash: bytes) -> list[tuple]:
-    """Get all clusters with exactly two leaf children."""
-    # Subquery to identify leaf nodes
-    leaf_nodes = ~exists().where(Contains.parent == Clusters.hash).correlate(Clusters)
-
-    query = (
-        select(
-            Contains.parent.label("parent_hash"),
-            Probabilities.probability,
-            func.array_agg(Clusters.hash).label("child_hashes"),
-            func.array_agg(Clusters.dataset).label("child_datasets"),
-            func.array_agg(Clusters.id).label("child_ids"),
-        )
-        .join(
-            Probabilities,
-            and_(
-                Probabilities.cluster == Contains.parent,
-                Probabilities.resolution == resolution_hash,
-            ),
-        )
-        .join(Clusters, Clusters.hash == Contains.child)
-        .where(leaf_nodes)
-        .group_by(Contains.parent, Probabilities.probability)
-        .having(func.count() == 2)
-    )
-
-    with engine.connect() as conn:
-        return conn.execute(query).fetchall()
-
-
-def _determine_hash_order(
-    engine: Engine,
-    hashes: list[bytes],
-    datasets: list[bytes],
-    left_source: Resolutions,
-    left_ancestors: set[bytes],
-) -> tuple[int, int]:
-    """Determine which child corresponds to left/right source."""
-    # Check dataset assignment first
-    if datasets[0] == left_source.hash:
-        return 0, 1
-    elif datasets[1] == left_source.hash:
-        return 1, 0
-
-    # Check probability ancestry
-    left_prob_query = (
-        select(Probabilities)
-        .where(Probabilities.cluster == hashes[0])
-        .where(Probabilities.resolution.in_(left_ancestors))
-    )
-    with engine.connect() as conn:
-        has_left_prob = conn.execute(left_prob_query).fetchone() is not None
-
-    return (0, 1) if has_left_prob else (1, 0)
-
-
-def _get_immediate_children(graph: rx.PyDiGraph, node_id: int) -> set[int]:
-    """Get immediate child node IDs of a given node in the graph."""
-    return {edge[1] for edge in graph.out_edges(node_id)}
-
-
-def _is_leaf(graph: rx.PyDiGraph, node_id: int) -> bool:
-    """Check if a node is a leaf (has no children)."""
-    return len(graph.out_edges(node_id)) == 0
 
 
 def get_model_probabilities(
@@ -175,7 +109,7 @@ def get_model_probabilities(
         raise ValueError("Expected resolution of type model")
 
     source_info: SourceInfo = _get_source_info(
-        engine=engine, resolution_hash=resolution.hash
+        engine=engine, resolution_id=resolution.resolution_id
     )
 
     with Session(engine) as session:
@@ -351,11 +285,11 @@ def get_model_clusters(engine: Engine, resolution: Resolutions) -> ClusterResult
         hierarchy = session.execute(hierarchy_query).fetchall()
 
         # Get all leaf nodes (clusters with no children) and their IDs
-        leaf_query = select(Clusters.hash, Clusters.id).where(
+        leaf_query = select(Clusters.hash, Clusters.source_pk).where(
             ~Clusters.hash.in_(select(Contains.parent).distinct())
         )
         leaf_nodes = {
-            row.hash: row.id[0] if row.id else None
+            row.hash: row.source_pk[0] if row.source_pk else None
             for row in session.execute(leaf_query)
         }
 

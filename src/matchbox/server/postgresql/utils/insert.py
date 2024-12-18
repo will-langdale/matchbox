@@ -46,7 +46,6 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     }
 
     source_data = {
-        "resolution": resolution_hash,
         "alias": dataset.alias,
         "schema": dataset.db_schema,
         "table": dataset.db_table,
@@ -57,10 +56,15 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         },
     }
 
-    clusters = dataset_to_hashlist(dataset=dataset, resolution_hash=resolution_hash)
+    clusters = dataset_to_hashlist(dataset=dataset)
 
     with engine.connect() as conn:
         logic_logger.info(f"Adding {dataset}")
+
+        # Generate existing max primary key values
+        next_cluster_id = Clusters.next_id()
+        resolution_data["resolution_id"] = Resolutions.next_id()
+        source_data["resolution_id"] = resolution_data["resolution_id"]
 
         # Upsert into Resolutions table
         resolution_stmt = insert(Resolutions).values([resolution_data])
@@ -78,7 +82,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         # Upsert into Sources table
         sources_stmt = insert(Sources).values([source_data])
         sources_stmt = sources_stmt.on_conflict_do_update(
-            index_elements=["resolution"],
+            index_elements=["resolution_id"],
             set_={
                 "schema": sources_stmt.excluded.schema,
                 "table": sources_stmt.excluded.table,
@@ -93,7 +97,15 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
 
         # Upsert into Clusters table
         batch_ingest(
-            records=[(clus["hash"], clus["dataset"], clus["id"]) for clus in clusters],
+            records=[
+                (
+                    next_cluster_id + i,
+                    clus["hash"],
+                    source_data["resolution_id"],
+                    clus["source_pk"],
+                )
+                for i, clus in enumerate(clusters)
+            ],
             table=Clusters,
             conn=conn,
             batch_size=batch_size,
@@ -137,12 +149,15 @@ def insert_model(
 
         # Check if resolution exists
         exists_stmt = select(Resolutions).where(Resolutions.hash == resolution_hash)
-        exists = session.scalar(exists_stmt) is not None
+        exists_obj = session.scalar(exists_stmt)
+        exists = exists_obj is not None
+        resolution_id = Resolutions.next_id()
 
         # Upsert new resolution
         stmt = (
             insert(Resolutions)
             .values(
+                resolution_id=resolution_id if not exists else exists_obj.resolution_id,
                 hash=resolution_hash,
                 type=ResolutionNodeType.MODEL.value,
                 name=model,
@@ -150,7 +165,7 @@ def insert_model(
                 truth=1.0,
             )
             .on_conflict_do_update(
-                index_elements=["hash"],
+                index_elements=["resolution_id", "hash"],
                 set_={"name": model, "description": description},
             )
         )

@@ -142,7 +142,7 @@ def batch_ingest(
     We isolate the table and metadata as pg_bulk_ingest will try and drop unrelated
     tables if they're in the same schema.
     """
-    isolated_metadata, isolated_table = isolate_table(table)
+    isolated_metadata, isolated_table = isolate_table(table=table)
 
     fn_batch = data_to_batch(
         records=records,

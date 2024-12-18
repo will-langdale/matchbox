@@ -72,7 +72,7 @@ class FilteredProbabilities(BaseModel):
 
             if self.over_truth:
                 query = query.join(
-                    Resolutions, Probabilities.resolution == Resolutions.hash
+                    Resolutions, Probabilities.resolution == Resolutions.resolution_id
                 ).filter(
                     and_(
                         Resolutions.truth.isnot(None),
@@ -197,7 +197,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         with Session(MBDB.get_engine()) as session:
             query = (
                 select(Resolutions.name, ResolutionFrom.truth_cache)
-                .join(Resolutions, Resolutions.hash == ResolutionFrom.parent)
+                .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
                 .where(ResolutionFrom.child == self.resolution.hash)
                 .where(ResolutionFrom.truth_cache.isnot(None))
             )
@@ -217,21 +217,21 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
         with Session(MBDB.get_engine()) as session:
             model_names = list(new_values.keys())
-            name_to_hash = dict(
-                session.query(Resolutions.name, Resolutions.hash)
+            name_to_id = dict(
+                session.query(Resolutions.name, Resolutions.resolution_id)
                 .filter(Resolutions.name.in_(model_names))
                 .all()
             )
 
             for model_name, truth_value in new_values.items():
-                parent_hash = name_to_hash.get(model_name)
-                if parent_hash is None:
+                parent_id = name_to_id.get(model_name)
+                if parent_id is None:
                     raise ValueError(f"Model '{model_name}' not found in database")
 
                 session.execute(
                     ResolutionFrom.__table__.update()
-                    .where(ResolutionFrom.parent == parent_hash)
-                    .where(ResolutionFrom.child == self.resolution.hash)
+                    .where(ResolutionFrom.parent == parent_id)
+                    .where(ResolutionFrom.child == self.resolution.resolution_id)
                     .values(truth_cache=truth_value)
                 )
 
@@ -302,7 +302,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def match(
         self,
-        source_id: str,
+        source_pk: str,
         source: str,
         target: str | list[str],
         resolution: str,
@@ -311,7 +311,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Matches an ID in a source dataset and returns the keys in the targets.
 
         Args:
-            source_id: The ID of the source to match.
+            source_pk: The ID of the source to match.
             source: The name of the source dataset.
             target: The name of the target dataset(s).
             resolution: The name of the resolution to use for matching.
@@ -325,7 +325,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 Will use these threshold values instead of the cached thresholds
         """
         return match(
-            source_id=source_id,
+            source_pk=source_pk,
             source=source,
             target=target,
             resolution=resolution,
@@ -442,8 +442,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
             ):
                 if certain:
                     delete_stmt = delete(Resolutions).where(
-                        Resolutions.hash.in_(
-                            [resolution.hash, *(d.hash for d in resolution.descendants)]
+                        Resolutions.resolution_id.in_(
+                            [
+                                resolution.resolution_id,
+                                *(d.resolution_id for d in resolution.descendants),
+                            ]
                         )
                     )
                     session.execute(delete_stmt)
