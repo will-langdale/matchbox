@@ -388,6 +388,37 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
     )
 
 
+class DisjointSet(Generic[T]):
+    """
+    Disjoint set forest with "path compression" and "union by rank" heuristics as in
+    Cormen, Thomas H., et al. Introduction to algorithms. MIT press, 2022
+    """
+
+    def __init__(self):
+        self.parent: dict[T, T] = {}
+        self.rank: dict[T, int] = {}
+
+    def make_set(self, x: T) -> None:
+        self.parent[x] = x
+        self.rank[x] = 0
+
+    def union(self, x: T, y: T) -> None:
+        self.link(self.find(x), self.find(y))
+
+    def link(self, x: T, y: T) -> None:
+        if self.rank[x] > self.rank[y]:
+            self.parent[y] = x
+        else:
+            self.parent[x] = y
+            if self.rank[x] == self.rank[y]:
+                self.rank[y] += 1
+
+    def find_set(self, x: T) -> T:
+        if x != self.parent[x]:
+            self.parent[x] = self.find_set(self.parent[x])
+        return self.parent[x]
+
+
 class UnionFindWithDiff(Generic[T]):
     """A UnionFind data structure with diff capabilities."""
 
