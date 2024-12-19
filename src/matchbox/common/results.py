@@ -555,7 +555,7 @@ class UnionFindWithDiff(Generic[T]):
         self._shadow_rank = self.rank.copy()
 
 
-def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa.Table:
+def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.uint64) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
 
@@ -610,7 +610,7 @@ def component_to_hierarchy(table: pa.Table, dtype: pa.DataType = pa.int32) -> pa
 def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
-    dtype: pa.DataType = pa.int32,
+    dtype: pa.DataType = pa.uint64,
     timeout: int = 300,
 ) -> pa.Table:
     """

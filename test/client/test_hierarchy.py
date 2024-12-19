@@ -304,7 +304,7 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
         input_data,
         schema=pa.schema(
             [
-                ("component", pa.int32()),
+                ("component", pa.uint64()),
                 ("left", pa.string()),
                 ("right", pa.string()),
                 ("probability", pa.uint8()),

@@ -201,9 +201,9 @@ def get_model_probabilities(
             results, columns=["id", "left_id", "right_id", "probability"]
         ).astype(
             {
-                "id": pd.ArrowDtype(pa.int32()),
-                "left_id": pd.ArrowDtype(pa.int32()),
-                "right_id": pd.ArrowDtype(pa.int32()),
+                "id": pd.ArrowDtype(pa.uint64()),
+                "left_id": pd.ArrowDtype(pa.uint64()),
+                "right_id": pd.ArrowDtype(pa.uint64()),
                 "probability": pd.ArrowDtype(pa.float32()),
             }
         )
@@ -344,8 +344,8 @@ def get_model_clusters(engine: Engine, resolution: Resolutions) -> ClusterResult
 
     df = pd.DataFrame(components, columns=["parent", "child", "threshold"]).astype(
         {
-            "parent": pd.ArrowDtype(pa.int32()),
-            "child": pd.ArrowDtype(pa.int32()),
+            "parent": pd.ArrowDtype(pa.uint64()),
+            "child": pd.ArrowDtype(pa.uint64()),
             "threshold": pd.ArrowDtype(pa.float32()),
         }
     )
