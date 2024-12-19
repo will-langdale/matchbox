@@ -204,7 +204,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
             query = (
                 select(Resolutions.name, ResolutionFrom.truth_cache)
                 .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
-                .where(ResolutionFrom.child == self.resolution.hash)
+                .where(ResolutionFrom.child == self.resolution.resolution_id)
                 .where(ResolutionFrom.truth_cache.isnot(None))
             )
 

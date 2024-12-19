@@ -128,7 +128,7 @@ class TestMatchboxBackend:
             return_type="pandas",
         )
 
-        hashes = df_crn.hash.to_list()
+        hashes = df_crn.id.to_list()
         assert len(hashes) > 0
         self.backend.validate_hashes(hashes=hashes)
 
@@ -155,7 +155,7 @@ class TestMatchboxBackend:
         ids = df_crn.id.to_list()
         assert len(ids) > 0
         hashes = self.backend.id_to_hash(ids=ids)
-        assert len(hashes) == len(ids)
+        assert len(hashes) == len(set(ids))
 
         assert self.backend.id_to_hash(ids=[-6]) == {-6: None}
 
@@ -176,10 +176,12 @@ class TestMatchboxBackend:
             return_type="pandas",
         )
 
-        hashes = df_crn.hash.to_list()
-        assert len(hashes) > 0
+        ids = df_crn.id.to_list()
+        assert len(ids) > 0
 
+        hashes = list(self.backend.id_to_hash(ids=ids).values())
         ids = self.backend.hash_to_id(hashes=hashes)
+
         assert len(ids) == len(hashes)
 
         nonexistent_hash = HASH_FUNC(b"nonexistent").digest()

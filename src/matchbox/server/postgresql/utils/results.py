@@ -293,7 +293,7 @@ def get_model_clusters(engine: Engine, resolution: Resolutions) -> ClusterResult
         # Get unique thresholds and components at each threshold
         threshold_query = (
             select(Probabilities.cluster, Probabilities.probability)
-            .where(Probabilities.resolution == resolution.hash)
+            .where(Probabilities.resolution == resolution.resolution_id)
             .order_by(Probabilities.probability.desc())
         )
         threshold_components = session.execute(threshold_query).fetchall()

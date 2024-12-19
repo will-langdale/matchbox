@@ -133,9 +133,12 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Reattaches hashes from the backend
         * Uses them to create the new ID column
         """
-        no_id = "id" not in data["dataframe"].columns
-        no_bytes_l = pd.api.types.is_integer_dtype(data["dataframe"]["left_id"])
-        no_bytes_r = pd.api.types.is_integer_dtype(data["dataframe"]["left_id"])
+        id_exits = "id" in data["dataframe"].columns
+        l_is_int = pd.api.types.is_integer_dtype(data["dataframe"]["left_id"])
+        r_is_int = pd.api.types.is_integer_dtype(data["dataframe"]["left_id"])
+
+        if id_exits and l_is_int and r_is_int:
+            return data
 
         def _make_id_hasher(backend: MatchboxDBAdapter):
             """Closure for converting int columns to hash using a lookup."""
@@ -158,15 +161,15 @@ class ProbabilityResults(ResultsBaseDataclass):
         hash_column = _make_id_hasher(backend=data["model"]._backend)
 
         # Update lookup with left_id, then convert to hash
-        if no_bytes_l:
+        if l_is_int:
             hash_column(df=data["dataframe"], column_name="left_id")
 
         # Update lookup with right_id, then convert to hash
-        if no_bytes_r:
+        if r_is_int:
             hash_column(df=data["dataframe"], column_name="right_id")
 
         # Create ID column if it doesn't exist and hash the values
-        if no_id:
+        if not id_exits:
             data["dataframe"][["left_id", "right_id"]] = data["dataframe"][
                 ["left_id", "right_id"]
             ].astype("binary[pyarrow]")
