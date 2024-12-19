@@ -31,11 +31,6 @@ T = TypeVar("T")
 logic_logger = logging.getLogger("mb_logic")
 
 
-def hash_to_hex_decode(hash: bytes) -> bytes:
-    """A workround for PostgreSQL so we can compile the query and use ConnectorX."""
-    return func.decode(hash.hex(), "hex")
-
-
 def key_to_sqlalchemy_label(key: str, source: Source) -> str:
     """Converts a key to the SQLAlchemy LABEL_STYLE_TABLENAME_PLUS_COL."""
     return f"{source.db_schema}_{source.db_table}_{key}"
