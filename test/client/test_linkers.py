@@ -230,7 +230,7 @@ def test_splink_settings():
     with pytest.raises(ValueError):
         valid_settings = SplinkSettings(
             left_id="id",
-            right_id="id",
+            right_id="id2",
             linker_training_functions=[],
             linker_settings=SettingsCreator(link_type="link_only"),
             threshold=None,

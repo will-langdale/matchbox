@@ -70,9 +70,9 @@ def _get_source_info(engine: Engine, resolution_id: int) -> SourceInfo:
         left = session.get(Resolutions, left_id)
         right = session.get(Resolutions, right_id) if right_id else None
 
-        left_ancestors = {left_id} | {m.hash for m in left.ancestors}
+        left_ancestors = {left_id} | {m.resolution_id for m in left.ancestors}
         if right:
-            right_ancestors = {right_id} | {m.hash for m in right.ancestors}
+            right_ancestors = {right_id} | {m.resolution_id for m in right.ancestors}
         else:
             right_ancestors = None
 
@@ -235,7 +235,7 @@ def get_model_clusters(engine: Engine, resolution: Resolutions) -> ClusterResult
     Clusters are the connected components of the model at every threshold.
 
     While they're stored in a hierarchical structure, we need to recover the
-    original components, where all child hashes are leaf Clusters.
+    original components, where all child IDs are leaf Clusters.
 
     Args:
         engine: SQLAlchemy engine
