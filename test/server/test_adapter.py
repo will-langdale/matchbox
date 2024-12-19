@@ -77,6 +77,7 @@ class TestMatchboxBackend:
         """Test that model properties obey their protocol restrictions."""
         self.setup_database("dedupe")
         naive_crn = self.backend.get_model(model="naive_test.crn")
+        assert naive_crn.id
         assert naive_crn.hash
         assert naive_crn.name
         assert naive_crn.probabilities
@@ -85,6 +86,30 @@ class TestMatchboxBackend:
         assert isinstance(naive_crn.truth, float)  # otherwise we assert 0.0
         assert naive_crn.ancestors
         assert isinstance(naive_crn.ancestors_cache, dict)  # otherwise we assert {}
+
+    def test_validate_ids(self):
+        """Test validating data IDs."""
+        self.setup_database("dedupe")
+
+        crn = self.warehouse_data[0]
+        select_crn = selector(
+            table=str(crn),
+            fields=["company_name", "crn"],
+            engine=crn.database.engine,
+        )
+        df_crn = query(
+            selector=select_crn,
+            backend=self.backend,
+            resolution="naive_test.crn",
+            return_type="pandas",
+        )
+
+        ids = df_crn.id.to_list()
+        assert len(ids) > 0
+        self.backend.validate_ids(ids=ids)
+
+        with pytest.raises(MatchboxDataError):
+            self.backend.validate_ids(ids=[-6])
 
     def test_validate_hashes(self):
         """Test validating data hashes."""
@@ -109,6 +134,58 @@ class TestMatchboxBackend:
 
         with pytest.raises(MatchboxDataError):
             self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistent").digest()])
+
+    def test_id_to_hash(self):
+        """Test getting ID to hash lookup from the database."""
+        self.setup_database("dedupe")
+
+        crn = self.warehouse_data[0]
+        select_crn = selector(
+            table=str(crn),
+            fields=["company_name", "crn"],
+            engine=crn.database.engine,
+        )
+        df_crn = query(
+            selector=select_crn,
+            backend=self.backend,
+            resolution="naive_test.crn",
+            return_type="pandas",
+        )
+
+        ids = df_crn.id.to_list()
+        assert len(ids) > 0
+        hashes = self.backend.id_to_hash(ids=ids)
+        assert len(hashes) == len(ids)
+
+        assert self.backend.id_to_hash(ids=[-6]) == {-6: None}
+
+    def test_hash_to_id(self):
+        """Test getting hash to ID lookup from the database."""
+        self.setup_database("dedupe")
+
+        crn = self.warehouse_data[0]
+        select_crn = selector(
+            table=str(crn),
+            fields=["company_name", "crn"],
+            engine=crn.database.engine,
+        )
+        df_crn = query(
+            selector=select_crn,
+            backend=self.backend,
+            resolution="naive_test.crn",
+            return_type="pandas",
+        )
+
+        hashes = df_crn.hash.to_list()
+        assert len(hashes) > 0
+
+        ids = self.backend.hash_to_id(hashes=hashes)
+        assert len(ids) == len(hashes)
+
+        nonexistent_hash = HASH_FUNC(b"nonexistent").digest()
+        assert self.backend.hash_to_id(hashes=[nonexistent_hash]) == {
+            nonexistent_hash: None
+        }
 
     def test_get_dataset(self):
         """Test querying data from the database."""
@@ -254,14 +331,12 @@ class TestMatchboxBackend:
         assert len(naive_crn.probabilities.dataframe) > 0
         assert naive_crn.probabilities.metadata.name == "naive_test.crn"
 
-        self.backend.validate_hashes(
-            hashes=naive_crn.probabilities.dataframe["hash"].to_list()
+        self.backend.validate_ids(ids=naive_crn.probabilities.dataframe["id"].to_list())
+        self.backend.validate_ids(
+            ids=naive_crn.probabilities.dataframe["left_id"].to_list()
         )
-        self.backend.validate_hashes(
-            hashes=naive_crn.probabilities.dataframe["left_id"].to_list()
-        )
-        self.backend.validate_hashes(
-            hashes=naive_crn.probabilities.dataframe["right_id"].to_list()
+        self.backend.validate_ids(
+            ids=naive_crn.probabilities.dataframe["right_id"].to_list()
         )
 
     def test_model_get_clusters(self):
@@ -272,12 +347,8 @@ class TestMatchboxBackend:
         assert len(naive_crn.clusters.dataframe) > 0
         assert naive_crn.clusters.metadata.name == "naive_test.crn"
 
-        self.backend.validate_hashes(
-            hashes=naive_crn.clusters.dataframe["parent"].to_list()
-        )
-        self.backend.validate_hashes(
-            hashes=naive_crn.clusters.dataframe["child"].to_list()
-        )
+        self.backend.validate_ids(ids=naive_crn.clusters.dataframe["parent"].to_list())
+        self.backend.validate_ids(ids=naive_crn.clusters.dataframe["child"].to_list())
 
     def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""
@@ -329,11 +400,11 @@ class TestMatchboxBackend:
 
         # Set
         target_row = pre_results.probabilities.dataframe.iloc[0]
-        target_hash = target_row["hash"]
+        target_id = target_row["id"]
         target_left_id = target_row["left_id"]
         target_right_id = target_row["right_id"]
 
-        matches_hash_mask = pre_results.probabilities.dataframe["hash"] != target_hash
+        matches_id_mask = pre_results.probabilities.dataframe["id"] != target_id
         matches_left_mask = (
             pre_results.probabilities.dataframe["left_id"] != target_left_id
         )
@@ -342,7 +413,7 @@ class TestMatchboxBackend:
         )
 
         df_probabilities_truncated = pre_results.probabilities.dataframe[
-            matches_hash_mask & matches_left_mask & matches_right_mask
+            matches_id_mask & matches_left_mask & matches_right_mask
         ].copy()
 
         probabilities_truncated = ProbabilityResults(
@@ -466,7 +537,7 @@ class TestMatchboxBackend:
 
         assert df_crn_full.shape[0] == 3000
         assert set(df_crn_full.columns) == {
-            "hash",
+            "id",
             "test_crn_id",
             "test_crn_crn",
         }
@@ -506,7 +577,7 @@ class TestMatchboxBackend:
         )
 
         assert set(df_crn_duns_full.columns) == {
-            "hash",
+            "id",
             "test_crn_id",
             "test_crn_crn",
             "test_duns_id",
@@ -535,11 +606,11 @@ class TestMatchboxBackend:
         assert isinstance(df_crn, DataFrame)
         assert df_crn.shape[0] == 3000
         assert set(df_crn.columns) == {
-            "hash",
+            "id",
             "test_crn_crn",
             "test_crn_company_name",
         }
-        assert df_crn.hash.nunique() == 1000
+        assert df_crn.id.nunique() == 1000
 
     def test_query_with_link_model(self):
         """Test querying data from a link point of truth."""
@@ -573,11 +644,11 @@ class TestMatchboxBackend:
         assert isinstance(crn_duns, DataFrame)
         assert crn_duns.shape[0] == 3500
         assert set(crn_duns.columns) == {
-            "hash",
+            "id",
             "test_crn_crn",
             "test_duns_duns",
         }
-        assert crn_duns.hash.nunique() == 1000
+        assert crn_duns.id.nunique() == 1000
 
     def test_match_one_to_many(self, revolution_inc: dict[str, list[str]]):
         """Test that matching data works when the target has many IDs."""

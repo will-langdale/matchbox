@@ -115,6 +115,12 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
         self.backend: "MatchboxPostgres" = backend
 
     @property
+    def id(self) -> int:
+        with Session(MBDB.get_engine()) as session:
+            session.add(self.resolution)
+            return self.resolution.resolution_id
+
+    @property
     def hash(self) -> bytes:
         with Session(MBDB.get_engine()) as session:
             session.add(self.resolution)
@@ -346,6 +352,40 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
+    def validate_ids(self, ids: list[int]) -> None:
+        """Validates a list of IDs exist in the database.
+
+        Args:
+            hashes: A list of IDs to validate.
+
+        Raises:
+            MatchboxDataError: If some items don't exist in the target table.
+        """
+        with Session(MBDB.get_engine()) as session:
+            data_inner_join = (
+                session.query(Clusters)
+                .filter(
+                    Clusters.cluster_id.in_(
+                        bindparam(
+                            "ins_ids",
+                            ids,
+                            expanding=True,
+                        )
+                    )
+                )
+                .all()
+            )
+
+        existing_ids = {item.cluster_id for item in data_inner_join}
+        missing_ids = set(ids) - existing_ids
+
+        if missing_ids:
+            raise MatchboxDataError(
+                message="Some items don't exist in Clusters table.",
+                table=Clusters.__tablename__,
+                data=missing_ids,
+            )
+
     def validate_hashes(self, hashes: list[bytes]) -> None:
         """Validates a list of hashes exist in the database.
 
@@ -379,6 +419,62 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 table=Clusters.__tablename__,
                 data=missing_hashes,
             )
+
+    def id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:
+        """Get a lookup of hashes from a list of IDs.
+
+        Args:
+            ids: A list of IDs to get hashes for.
+
+        Returns:
+            A dictionary mapping IDs to hashes.
+        """
+        initial_dict = {id: None for id in ids}
+
+        with Session(MBDB.get_engine()) as session:
+            data_inner_join = (
+                session.query(Clusters)
+                .filter(
+                    Clusters.cluster_id.in_(
+                        bindparam(
+                            "ins_ids",
+                            ids,
+                            expanding=True,
+                        )
+                    )
+                )
+                .all()
+            )
+
+        return initial_dict | {item.cluster_id: item.hash for item in data_inner_join}
+
+    def hash_to_id(self, hashes: list[bytes]) -> dict[bytes, int | None]:
+        """Get a lookup of IDs from a list of hashes.
+
+        Args:
+            hashes: A list of hashes to get IDs for.
+
+        Returns:
+            A dictionary mapping hashes to IDs.
+        """
+        initial_dict = {hash: None for hash in hashes}
+
+        with Session(MBDB.get_engine()) as session:
+            data_inner_join = (
+                session.query(Clusters)
+                .filter(
+                    Clusters.hash.in_(
+                        bindparam(
+                            "ins_ids",
+                            hashes,
+                            expanding=True,
+                        )
+                    )
+                )
+                .all()
+            )
+
+        return initial_dict | {item.hash: item.cluster_id for item in data_inner_join}
 
     def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
         """Get a source dataset from the database.
