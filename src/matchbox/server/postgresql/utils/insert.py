@@ -39,7 +39,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     resolution_hash = dataset.to_hash()
 
     resolution_data = {
-        "hash": resolution_hash,
+        "resolution_hash": resolution_hash,
         "type": ResolutionNodeType.DATASET.value,
         "name": f"{dataset.db_schema}.{dataset.db_table}",
     }
@@ -68,7 +68,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         # Upsert into Resolutions table
         resolution_stmt = insert(Resolutions).values([resolution_data])
         resolution_stmt = resolution_stmt.on_conflict_do_update(
-            index_elements=["hash"],
+            index_elements=["resolution_hash"],
             set_={
                 "name": resolution_stmt.excluded.name,
                 "type": resolution_stmt.excluded.type,
@@ -143,11 +143,17 @@ def insert_model(
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
         resolution_hash = list_to_value_ordered_hash(
-            [left.hash, right.hash, bytes(model, encoding="utf-8")]
+            [
+                left.resolution_hash,
+                right.resolution_hash,
+                bytes(model, encoding="utf-8"),
+            ]
         )
 
         # Check if resolution exists
-        exists_stmt = select(Resolutions).where(Resolutions.hash == resolution_hash)
+        exists_stmt = select(Resolutions).where(
+            Resolutions.resolution_hash == resolution_hash
+        )
         exists_obj = session.scalar(exists_stmt)
         exists = exists_obj is not None
         resolution_id = (
@@ -159,14 +165,14 @@ def insert_model(
             insert(Resolutions)
             .values(
                 resolution_id=resolution_id,
-                hash=resolution_hash,
+                resolution_hash=resolution_hash,
                 type=ResolutionNodeType.MODEL.value,
                 name=model,
                 description=description,
                 truth=1.0,
             )
             .on_conflict_do_update(
-                index_elements=["hash"],
+                index_elements=["resolution_hash"],
                 set_={"name": model, "description": description},
             )
         )
@@ -288,40 +294,6 @@ def _cluster_results_to_hierarchical(
     )
 
 
-def _update_lookup_with_column(
-    df: pd.DataFrame,
-    column_name: str,
-    lookup: dict[bytes, int | None],
-    engine: Engine,
-):
-    """Updates the hash to int lookup based on the supplied data and column.
-
-    Mimics backend functionality. Would expect this function to disappear when
-    feature branch merges -- only here because data moves differently right now.
-    """
-    hashes = df[column_name].unique().tolist()
-    initial_dict = {hash: None for hash in hashes}
-
-    with Session(engine) as session:
-        data_inner_join = (
-            session.query(Clusters)
-            .filter(
-                Clusters.hash.in_(
-                    bindparam(
-                        "ins_ids",
-                        hashes,
-                        expanding=True,
-                    )
-                )
-            )
-            .all()
-        )
-
-    return lookup.update(
-        initial_dict | {item.hash: item.cluster_id for item in data_inner_join}
-    )
-
-
 def insert_results(
     resolution: Resolutions,
     engine: Engine,
@@ -365,7 +337,7 @@ def insert_results(
         data_inner_join = (
             session.query(Clusters)
             .filter(
-                Clusters.hash.in_(
+                Clusters.cluster_hash.in_(
                     bindparam(
                         "ins_ids",
                         hashes,
@@ -378,7 +350,7 @@ def insert_results(
 
         gen_cluster_id = count(Clusters.next_id())
 
-    lookup.update({item.hash: item.cluster_id for item in data_inner_join})
+    lookup.update({item.cluster_hash: item.cluster_id for item in data_inner_join})
     lookup = {k: next(gen_cluster_id) if v is None else v for k, v in lookup.items()}
 
     hierarchy["parent_id"] = (

@@ -55,7 +55,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     resolution_id = Column(BIGINT, primary_key=True)
-    hash = Column(BYTEA, nullable=False, unique=True)
+    resolution_hash = Column(BYTEA, nullable=False, unique=True)
     type = Column(VARCHAR, nullable=False)
     name = Column(VARCHAR, nullable=False, unique=True)
     description = Column(VARCHAR)
@@ -226,7 +226,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     cluster_id = Column(BIGINT, primary_key=True)
-    hash = Column(BYTEA, nullable=False)
+    cluster_hash = Column(BYTEA, nullable=False)
     dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
@@ -249,7 +249,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     # Constraints and indices
     __table_args__ = (
         Index("ix_clusters_id_gin", source_pk, postgresql_using="gin"),
-        UniqueConstraint("hash", name="clusters_hash_key"),
+        UniqueConstraint("cluster_hash", name="clusters_hash_key"),
     )
 
     @classmethod

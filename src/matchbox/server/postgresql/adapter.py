@@ -124,7 +124,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
     def hash(self) -> bytes:
         with Session(MBDB.get_engine()) as session:
             session.add(self.resolution)
-            return self.resolution.hash
+            return self.resolution.resolution_hash
 
     @property
     def name(self) -> str:
@@ -399,7 +399,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             data_inner_join = (
                 session.query(Clusters)
                 .filter(
-                    Clusters.hash.in_(
+                    Clusters.cluster_hash.in_(
                         bindparam(
                             "ins_hashs",
                             hashes,
@@ -410,7 +410,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .all()
             )
 
-        existing_hashes = {item.hash for item in data_inner_join}
+        existing_hashes = {item.cluster_hash for item in data_inner_join}
         missing_hashes = set(hashes) - existing_hashes
 
         if missing_hashes:
@@ -446,7 +446,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .all()
             )
 
-        return initial_dict | {item.cluster_id: item.hash for item in data_inner_join}
+        return initial_dict | {
+            item.cluster_id: item.cluster_hash for item in data_inner_join
+        }
 
     def hash_to_id(self, hashes: list[bytes]) -> dict[bytes, int | None]:
         """Get a lookup of IDs from a list of hashes.
@@ -463,7 +465,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             data_inner_join = (
                 session.query(Clusters)
                 .filter(
-                    Clusters.hash.in_(
+                    Clusters.cluster_hash.in_(
                         bindparam(
                             "ins_ids",
                             hashes,
@@ -474,7 +476,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .all()
             )
 
-        return initial_dict | {item.hash: item.cluster_id for item in data_inner_join}
+        return initial_dict | {
+            item.cluster_hash: item.cluster_id for item in data_inner_join
+        }
 
     def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
         """Get a source dataset from the database.
