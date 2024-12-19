@@ -31,7 +31,7 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
         for resolution in session.query(Resolutions).all():
             G.nodes.add(
                 ResolutionNode(
-                    hash=resolution.hash,
+                    id=resolution.resolution_id,
                     name=resolution.name,
                     type=ResolutionNodeType(resolution.type),
                 )
