@@ -22,10 +22,10 @@ erDiagram
         jsonb indices
     }
     Clusters {
-        bigserial cluster_id PK,FK
+        bigint cluster_id PK,FK
         bytes hash
-        bytes dataset FK
-        array<string> source_pk
+        bigint dataset FK
+        array[string] source_pk
     }
     Contains {
         bigint parent PK,FK
@@ -37,7 +37,7 @@ erDiagram
         float probability
     }
     Resolutions {
-        bigserial resolution_id PK,FK
+        bigint resolution_id PK,FK
         bytes hash
         enum type
         string name

@@ -419,7 +419,9 @@ class TestMatchboxBackend:
         ].copy()
 
         probabilities_truncated = ProbabilityResults(
-            dataframe=df_probabilities_truncated,
+            dataframe=df_probabilities_truncated[
+                ["left_id", "right_id", "probability"]
+            ],
             model=pre_results.probabilities.model,
             metadata=pre_results.probabilities.metadata,
         )

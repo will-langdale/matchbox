@@ -13,7 +13,7 @@ import pyarrow.compute as pc
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -125,21 +125,22 @@ class ProbabilityResults(ResultsBaseDataclass):
         "probability",
     ]
 
-    @model_validator(mode="before")
+    @field_validator("dataframe", mode="before")
     @classmethod
-    def results_to_hash(cls, data: dict) -> "ProbabilityResults":
+    def results_to_hash(cls, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Adds an ID column to the dataframe if it doesn't already exist.
 
         * Reattaches hashes from the backend
         * Uses them to create the new ID column
         """
-        id_exits = "id" in data["dataframe"].columns
-        l_is_int = pd.api.types.is_integer_dtype(data["dataframe"]["left_id"])
-        r_is_int = pd.api.types.is_integer_dtype(data["dataframe"]["left_id"])
+        id_exits = "id" in dataframe.columns
+        l_is_int = pd.api.types.is_integer_dtype(dataframe["left_id"])
+        r_is_int = pd.api.types.is_integer_dtype(dataframe["left_id"])
 
         if id_exits and l_is_int and r_is_int:
-            return data
+            return dataframe
 
+        @inject_backend
         def _make_id_hasher(backend: MatchboxDBAdapter):
             """Closure for converting int columns to hash using a lookup."""
             lookup: dict[int, bytes] = {}
@@ -158,27 +159,27 @@ class ProbabilityResults(ResultsBaseDataclass):
 
             return _hash_column
 
-        hash_column = _make_id_hasher(backend=data["model"]._backend)
+        hash_column = _make_id_hasher()
 
         # Update lookup with left_id, then convert to hash
         if l_is_int:
-            hash_column(df=data["dataframe"], column_name="left_id")
+            hash_column(df=dataframe, column_name="left_id")
 
         # Update lookup with right_id, then convert to hash
         if r_is_int:
-            hash_column(df=data["dataframe"], column_name="right_id")
+            hash_column(df=dataframe, column_name="right_id")
 
         # Create ID column if it doesn't exist and hash the values
         if not id_exits:
-            data["dataframe"][["left_id", "right_id"]] = data["dataframe"][
+            dataframe[["left_id", "right_id"]] = dataframe[
                 ["left_id", "right_id"]
             ].astype("binary[pyarrow]")
-            data["dataframe"]["id"] = columns_to_value_ordered_hash(
-                data=data["dataframe"], columns=["left_id", "right_id"]
+            dataframe["id"] = columns_to_value_ordered_hash(
+                data=dataframe, columns=["left_id", "right_id"]
             )
-            data["dataframe"]["id"] = data["dataframe"]["id"].astype("binary[pyarrow]")
+            dataframe["id"] = dataframe["id"].astype("binary[pyarrow]")
 
-        return data
+        return dataframe
 
     def inspect_with_source(
         self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
