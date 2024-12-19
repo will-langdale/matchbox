@@ -15,8 +15,8 @@ from matchbox.common.graph import (
 def resolution_graph() -> ResolutionGraph:
     res_graph = ResolutionGraph(
         nodes={
-            ResolutionNode(id=2, name="2", type=ResType.DATASET),
             ResolutionNode(id=1, name="1", type=ResType.DATASET),
+            ResolutionNode(id=2, name="2", type=ResType.DATASET),
             ResolutionNode(id=3, name="3", type=ResType.MODEL),
             ResolutionNode(id=4, name="4", type=ResType.MODEL),
             ResolutionNode(id=5, name="5", type=ResType.MODEL),

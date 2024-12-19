@@ -360,6 +360,10 @@ def insert_results(
         hierarchy["child"].apply(lambda i: lookup[i]).astype("int32[pyarrow]")
     )
 
+    hierarchy_unique_parents = hierarchy[
+        ["parent_id", "parent", "threshold"]
+    ].drop_duplicates()
+
     with Session(engine) as session:
         try:
             # Clear existing probabilities for this resolution
@@ -388,10 +392,10 @@ def insert_results(
 
             cluster_records: list[tuple[int, bytes, None, None]] = list(
                 zip(
-                    hierarchy["parent_id"],
-                    hierarchy["parent"],
-                    [None] * hierarchy.shape[0],
-                    [None] * hierarchy.shape[0],
+                    hierarchy_unique_parents["parent_id"],
+                    hierarchy_unique_parents["parent"],
+                    [None] * hierarchy_unique_parents.shape[0],
+                    [None] * hierarchy_unique_parents.shape[0],
                     strict=True,
                 )
             )
@@ -404,9 +408,9 @@ def insert_results(
             )
             probability_records: list[tuple[int, int, float]] = list(
                 zip(
-                    [resolution.resolution_id] * hierarchy.shape[0],
-                    hierarchy["parent_id"],
-                    hierarchy["threshold"],
+                    [resolution.resolution_id] * hierarchy_unique_parents.shape[0],
+                    hierarchy_unique_parents["parent_id"],
+                    hierarchy_unique_parents["threshold"],
                     strict=True,
                 )
             )
