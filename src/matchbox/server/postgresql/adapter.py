@@ -317,7 +317,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Matches an ID in a source dataset and returns the keys in the targets.
 
         Args:
-            source_pk: The ID of the source to match.
+            source_pk: The primary key to match from the source.
             source: The name of the source dataset.
             target: The name of the target dataset(s).
             resolution: The name of the resolution to use for matching.

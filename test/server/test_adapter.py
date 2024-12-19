@@ -128,7 +128,8 @@ class TestMatchboxBackend:
             return_type="pandas",
         )
 
-        hashes = df_crn.id.to_list()
+        ids = df_crn.id.to_list()
+        hashes = list(self.backend.id_to_hash(ids=ids).values())
         assert len(hashes) > 0
         self.backend.validate_hashes(hashes=hashes)
 
@@ -180,9 +181,9 @@ class TestMatchboxBackend:
         assert len(ids) > 0
 
         hashes = list(self.backend.id_to_hash(ids=ids).values())
-        ids = self.backend.hash_to_id(hashes=hashes)
+        ids_remote = self.backend.hash_to_id(hashes=hashes)
 
-        assert len(ids) == len(hashes)
+        assert len(set(ids)) == len(hashes) == len(ids_remote)
 
         nonexistent_hash = HASH_FUNC(b"nonexistent").digest()
         assert self.backend.hash_to_id(hashes=[nonexistent_hash]) == {
@@ -664,7 +665,7 @@ class TestMatchboxBackend:
 
         res = match(
             backend=self.backend,
-            source_id=revolution_inc["duns"][0],
+            source_pk=revolution_inc["duns"][0],
             source=str(duns_wh),
             target=str(crn_wh),
             resolution=crn_x_duns,
@@ -687,7 +688,7 @@ class TestMatchboxBackend:
 
         res = match(
             backend=self.backend,
-            source_id=revolution_inc["crn"][0],
+            source_pk=revolution_inc["crn"][0],
             source=str(crn_wh),
             target=str(duns_wh),
             resolution=crn_x_duns,
@@ -710,7 +711,7 @@ class TestMatchboxBackend:
 
         res = match(
             backend=self.backend,
-            source_id=winner_inc["crn"][0],
+            source_pk=winner_inc["crn"][0],
             source=str(crn_wh),
             target=str(duns_wh),
             resolution=crn_x_duns,
@@ -733,7 +734,7 @@ class TestMatchboxBackend:
 
         res = match(
             backend=self.backend,
-            source_id="foo",
+            source_pk="foo",
             source=str(crn_wh),
             target=str(duns_wh),
             resolution=crn_x_duns,

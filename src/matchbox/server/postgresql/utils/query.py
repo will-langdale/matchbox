@@ -509,7 +509,7 @@ def _build_hierarchy_down(
         .join_from(
             Contains,
             unnested_clusters,
-            unnested_clusters.c.hash == Contains.child,
+            unnested_clusters.c.cluster_id == Contains.child,
             isouter=True,
         )
         .where(Contains.parent == highest_parent)
@@ -539,7 +539,7 @@ def _build_hierarchy_down(
         .join_from(
             Contains,
             unnested_clusters,
-            unnested_clusters.c.hash == Contains.child,
+            unnested_clusters.c.cluster_id == Contains.child,
             isouter=True,
         )
         .where(hierarchy_down.c.source_pk.is_(None))  # Only recurse on non-leaf nodes
@@ -630,21 +630,25 @@ def match(
         # Group matches by dataset
         cluster = None
         matches_by_dataset: dict[int, set] = {}
-        for cluster_id, dataset_hash, id in matches:
+        for cluster_id, dataset_id, id in matches:
             if cluster is None:
                 cluster = cluster_id
-            if dataset_hash not in matches_by_dataset:
-                matches_by_dataset[dataset_hash] = set()
-            matches_by_dataset[dataset_hash].add(id)
+            if dataset_id not in matches_by_dataset:
+                matches_by_dataset[dataset_id] = set()
+            matches_by_dataset[dataset_id].add(id)
 
         result = []
         for target_resolution, target_name in target_resolutions:
             match_obj = Match(
                 cluster=cluster,
                 source=source,
-                source_id=matches_by_dataset.get(source_resolution.hash, set()),
+                source_id=matches_by_dataset.get(
+                    source_resolution.resolution_id, set()
+                ),
                 target=target_name,
-                target_id=matches_by_dataset.get(target_resolution.hash, set()),
+                target_id=matches_by_dataset.get(
+                    target_resolution.resolution_id, set()
+                ),
             )
             result.append(match_obj)
 

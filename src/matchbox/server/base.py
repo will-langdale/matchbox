@@ -255,7 +255,7 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def match(
         self,
-        source_id: str,
+        source_pk: str,
         source: str,
         target: str | list[str],
         resolution: str,
