@@ -129,15 +129,15 @@ class TestMatchboxBackend:
         )
 
         ids = df_crn.id.to_list()
-        hashes = list(self.backend.id_to_hash(ids=ids).values())
+        hashes = list(self.backend.cluster_id_to_hash(ids=ids).values())
         assert len(hashes) > 0
         self.backend.validate_hashes(hashes=hashes)
 
         with pytest.raises(MatchboxDataError):
             self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistent").digest()])
 
-    def test_id_to_hash(self):
-        """Test getting ID to hash lookup from the database."""
+    def test_cluster_id_to_hash(self):
+        """Test getting ID to Cluster hash lookup from the database."""
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
@@ -155,40 +155,13 @@ class TestMatchboxBackend:
 
         ids = df_crn.id.to_list()
         assert len(ids) > 0
-        hashes = self.backend.id_to_hash(ids=ids)
+
+        hashes = self.backend.cluster_id_to_hash(ids=ids)
         assert len(hashes) == len(set(ids))
+        assert set(ids) == set(hashes.keys())
+        assert all(isinstance(h, bytes) for h in hashes.values())
 
-        assert self.backend.id_to_hash(ids=[-6]) == {-6: None}
-
-    def test_hash_to_id(self):
-        """Test getting hash to ID lookup from the database."""
-        self.setup_database("dedupe")
-
-        crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
-        )
-        df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
-            return_type="pandas",
-        )
-
-        ids = df_crn.id.to_list()
-        assert len(ids) > 0
-
-        hashes = list(self.backend.id_to_hash(ids=ids).values())
-        ids_remote = self.backend.hash_to_id(hashes=hashes)
-
-        assert len(set(ids)) == len(hashes) == len(ids_remote)
-
-        nonexistent_hash = HASH_FUNC(b"nonexistent").digest()
-        assert self.backend.hash_to_id(hashes=[nonexistent_hash]) == {
-            nonexistent_hash: None
-        }
+        assert self.backend.cluster_id_to_hash(ids=[-6]) == {-6: None}
 
     def test_get_dataset(self):
         """Test querying data from the database."""

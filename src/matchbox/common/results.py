@@ -149,7 +149,7 @@ class ProbabilityResults(ResultsBaseDataclass):
                 hashed_column = f"{column_name}_hashed"
                 unique_ids = df[column_name].unique().tolist()
 
-                lookup.update(backend.id_to_hash(ids=unique_ids))
+                lookup.update(backend.cluster_id_to_hash(ids=unique_ids))
 
                 df[hashed_column] = (
                     df[column_name].map(lookup).astype("binary[pyarrow]")

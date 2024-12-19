@@ -420,8 +420,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 data=missing_hashes,
             )
 
-    def id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:
-        """Get a lookup of hashes from a list of IDs.
+    def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:
+        """Get a lookup of Cluster hashes from a list of IDs.
 
         Args:
             ids: A list of IDs to get hashes for.
@@ -448,36 +448,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         return initial_dict | {
             item.cluster_id: item.cluster_hash for item in data_inner_join
-        }
-
-    def hash_to_id(self, hashes: list[bytes]) -> dict[bytes, int | None]:
-        """Get a lookup of IDs from a list of hashes.
-
-        Args:
-            hashes: A list of hashes to get IDs for.
-
-        Returns:
-            A dictionary mapping hashes to IDs.
-        """
-        initial_dict = {hash: None for hash in hashes}
-
-        with Session(MBDB.get_engine()) as session:
-            data_inner_join = (
-                session.query(Clusters)
-                .filter(
-                    Clusters.cluster_hash.in_(
-                        bindparam(
-                            "ins_ids",
-                            hashes,
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
-            )
-
-        return initial_dict | {
-            item.cluster_hash: item.cluster_id for item in data_inner_join
         }
 
     def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
