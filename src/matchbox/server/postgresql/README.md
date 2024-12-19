@@ -23,7 +23,7 @@ erDiagram
     }
     Clusters {
         bigint cluster_id PK,FK
-        bytes hash
+        bytes cluster_hash
         bigint dataset FK
         array[string] source_pk
     }
@@ -38,7 +38,7 @@ erDiagram
     }
     Resolutions {
         bigint resolution_id PK,FK
-        bytes hash
+        bytes resolution_hash
         enum type
         string name
         string description
