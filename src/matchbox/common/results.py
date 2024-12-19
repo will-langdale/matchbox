@@ -133,11 +133,11 @@ class ProbabilityResults(ResultsBaseDataclass):
         * Reattaches hashes from the backend
         * Uses them to create the new ID column
         """
-        id_exits = "id" in dataframe.columns
+        id_exists = "id" in dataframe.columns
         l_is_int = pd.api.types.is_integer_dtype(dataframe["left_id"])
-        r_is_int = pd.api.types.is_integer_dtype(dataframe["left_id"])
+        r_is_int = pd.api.types.is_integer_dtype(dataframe["right_id"])
 
-        if id_exits and l_is_int and r_is_int:
+        if id_exists and l_is_int and r_is_int:
             return dataframe
 
         @inject_backend
@@ -170,7 +170,7 @@ class ProbabilityResults(ResultsBaseDataclass):
             hash_column(df=dataframe, column_name="right_id")
 
         # Create ID column if it doesn't exist and hash the values
-        if not id_exits:
+        if not id_exists:
             dataframe[["left_id", "right_id"]] = dataframe[
                 ["left_id", "right_id"]
             ].astype("binary[pyarrow]")
