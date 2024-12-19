@@ -422,7 +422,7 @@ class TestMatchboxBackend:
         probabilities_truncated = ProbabilityResults(
             dataframe=df_probabilities_truncated[
                 ["left_id", "right_id", "probability"]
-            ],
+            ].reset_index(drop=True),
             model=pre_results.probabilities.model,
             metadata=pre_results.probabilities.metadata,
         )
