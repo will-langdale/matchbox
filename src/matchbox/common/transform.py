@@ -199,7 +199,10 @@ def component_to_hierarchy(
     Returns:
         Arrow Table with columns ['parent', 'child', 'probability']
     """
-    probs = np.sort(pc.unique(table["probability"]).to_numpy())[::-1]
+    ascending_probs = np.sort(
+        pc.unique(table["probability"]).to_numpy(zero_copy_only=False)
+    )
+    probs = ascending_probs[::-1]
 
     djs = DisjointSet[int]()  # implements connected components
     im = IntMap(salt=salt)  # generates IDs for new clusters
@@ -239,8 +242,8 @@ def component_to_hierarchy(
     parents, children, probs = zip(*hierarchy, strict=True)
     return pa.table(
         {
-            "parent": pa.array(parents, type=dtype()),
-            "child": pa.array(children, type=dtype()),
+            "parent": pa.array(parents, type=pa.int64()),
+            "child": pa.array(children, type=pa.int64()),
             "probability": pa.array(probs, type=pa.uint8()),
         }
     )
@@ -259,7 +262,6 @@ def to_hierarchical_clusters(
         probabilities: Arrow table with columns ['component', 'left', 'right',
             'probability']
         proc_func: Function to process each component
-        dtype: Arrow data type for parent/child columns
         timeout: Maximum seconds to wait for each component to process
 
     Returns:
@@ -315,7 +317,7 @@ def to_hierarchical_clusters(
 
         with ProcessPoolExecutor(max_workers=n_cores) as executor:
             futures = [
-                executor.submit(proc_func, component_table, dtype, salt)
+                executor.submit(proc_func, component_table, salt)
                 for salt, component_table in enumerate(component_tables)
             ]
 
@@ -340,8 +342,8 @@ def to_hierarchical_clusters(
         logic_logger.warning("No results to concatenate")
         return pa.table(
             {
-                "parent": pa.array([], type=dtype()),
-                "child": pa.array([], type=dtype()),
+                "parent": pa.array([], type=pa.int64()),
+                "child": pa.array([], type=pa.int64()),
                 "probability": pa.array([], type=pa.uint8()),
             }
         )
