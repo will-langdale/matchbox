@@ -318,17 +318,15 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
     )
 
     # Run and compare
-    with (
-        patch(
-            "matchbox.common.transform.ProcessPoolExecutor",
-            lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
-        ),
-        patch("matchbox.common.transform.IntMap") as MockIntMap,
+    with patch(
+        "matchbox.common.transform.ProcessPoolExecutor",
+        lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
     ):
-        instance = MockIntMap.return_value
-        instance.index.side_effect = _combine_strings
         result = to_hierarchical_clusters(
-            probabilities, dtype=pa.string, proc_func=component_to_hierarchy
+            probabilities,
+            dtype=pa.string,
+            proc_func=component_to_hierarchy,
+            hash_func=_combine_strings,
         )
 
     result = result.sort_by(

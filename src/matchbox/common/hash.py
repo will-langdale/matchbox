@@ -70,13 +70,13 @@ def hash_data(data: str) -> bytes:
     return HASH_FUNC(prep_for_hash(data)).digest()
 
 
-def list_to_value_ordered_hash(list_: list[T]) -> bytes:
-    """Returns a single hash of a list ordered by its values.
+def hash_values(*values: *tuple[T, ...]) -> bytes:
+    """Returns a single hash of a tuple of items ordered by its values.
 
     List must be sorted as the different orders of value must produce the same hash.
     """
     try:
-        sorted_vals = sorted(list_)
+        sorted_vals = sorted(values)
     except TypeError as e:
         raise TypeError("Can only order lists or columns of the same datatype.") from e
 
@@ -104,7 +104,7 @@ def columns_to_value_ordered_hash(data: DataFrame, columns: list[str]) -> Series
     hashed_records = []
 
     for record in bytes_records:
-        hashed_vals = list_to_value_ordered_hash(record.values())
+        hashed_vals = hash_values(*record.values())
         hashed_records.append(hashed_vals)
 
     return Series(hashed_records)
