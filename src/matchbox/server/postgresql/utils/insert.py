@@ -266,20 +266,13 @@ def _map_ids(
     return ids
 
 
-def _create_lookup(results: Results, engine: Engine):
-    """Creates an ID-Hash lookup for existing Cluster.
+def _create_id_lookup(*id_arrs: *tuple[pa.Array, ...], engine: Engine):
+    """Creates an ID-Hash lookup for existing Clusters.
 
     This shares logic with MatchboxDBAdapter.cluster_id_to_hash, and should use
     it when this is moved to an API layer.
     """
-    ids = pc.unique(
-        pa.concat_arrays(
-            [
-                pc.unique(results.probabilities["right_id"]),
-                pc.unique(results.probabilities["left_id"]),
-            ]
-        )
-    )
+    unique_ids = pc.unique(pa.concat_arrays([pc.unique(a) for a in id_arrs]))
 
     with Session(engine) as session:
         matched = (
@@ -288,7 +281,7 @@ def _create_lookup(results: Results, engine: Engine):
                 Clusters.cluster_id.in_(
                     bindparam(
                         "ins_ids",
-                        ids.to_pylist(),
+                        unique_ids.to_pylist(),
                         expanding=True,
                     )
                 )
@@ -304,8 +297,68 @@ def _create_lookup(results: Results, engine: Engine):
     )
 
 
+def _create_hash_lookup(*hash_arrs: *tuple[pa.Array, ...], engine: Engine):
+    """Creates a Hash-ID lookup for existing Clusters.
+
+    This shares logic with MatchboxDBAdapter.cluster_hash_to_id, and should use
+    it when this is moved to an API layer.
+    """
+    unique_hashes = pc.unique(pa.concat_arrays([pc.unique(a) for a in hash_arrs]))
+
+    with Session(engine) as session:
+        matched = (
+            session.query(Clusters)
+            .filter(
+                Clusters.cluster_hash.in_(
+                    bindparam(
+                        "ins_hashes",
+                        unique_hashes.to_pylist(),
+                        expanding=True,
+                    )
+                )
+            )
+            .all()
+        )
+
+    return pa.table(
+        {
+            "id": pa.array([c.cluster_id for c in matched], type=pa.uint64()),
+            "hash": pa.array([c.cluster_hash for c in matched], type=pa.large_binary()),
+        }
+    )
+
+
+def _get_existing_hash_mask(hashes: pa.Array, engine: Engine) -> pa.Array:
+    """Given a an array of hashes, return a mask array of the ones in Clusters.
+
+    Array contains true if the value exists.
+    """
+    with Session(engine) as session:
+        existing = (
+            session.query(Clusters.cluster_hash)
+            .filter(
+                Clusters.cluster_hash.in_(
+                    bindparam(
+                        "ins_hashes",
+                        hashes.to_pylist(),
+                        expanding=True,
+                    )
+                )
+            )
+            .all()
+        )
+
+    existing_hashes = {row[0] for row in existing}
+
+    mask = pa.array(
+        [hash_val in existing_hashes for hash_val in hashes], type=pa.bool_()
+    )
+
+    return mask
+
+
 def _results_to_insert_tables(
-    resolution: Resolutions, results: Results, lookup: pa.Table
+    resolution: Resolutions, results: Results, engine: Engine
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
     """Takes Results and returns three Arrow tables that can be inserted exactly.
 
@@ -325,6 +378,13 @@ def _results_to_insert_tables(
                 * probabilities, pa.uint8()
     """
     logic_logger.info(f"[{resolution.name}] Wrangling data to insert tables")
+
+    # Create initial ID-Hash lookup for probabilities
+    lookup = _create_id_lookup(
+        results.probabilities["left_id"],
+        results.probabilities["right_id"],
+        engine=engine,
+    )
 
     # Look up hashes
     left = _map_ids(
@@ -357,6 +417,12 @@ def _results_to_insert_tables(
         hash_func=hash_values,
         dtype=pa.large_binary,
     )
+
+    # New hashes may already exist. Augment the lookup
+    new_lookup = _create_hash_lookup(
+        hierarchy["parent"], hierarchy["child"], engine=engine
+    )
+    lookup = drop_duplicates(pa.concat_tables([lookup, new_lookup]))
 
     cluster_id_generator = count(Clusters.next_id())
 
@@ -413,7 +479,11 @@ def _results_to_insert_tables(
         }
     )
 
-    #
+    # Final masking to ensure we only insert new Clusters
+    # pg_bulk_ingest can't handle upsert on non-primary key
+
+    mask = pc.invert(pc.is_in(clusters["cluster_hash"], lookup["hash"]))
+    clusters = clusters.filter(mask)
 
     logic_logger.info(f"[{resolution.name}] Wrangling complete!")
 
@@ -450,9 +520,8 @@ def insert_results(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"
     )
 
-    lookup = _create_lookup(results=results, engine=engine)
     clusters, contains, probabilities = _results_to_insert_tables(
-        resolution=resolution, results=results, lookup=lookup
+        resolution=resolution, results=results, engine=engine
     )
 
     with Session(engine) as session:
