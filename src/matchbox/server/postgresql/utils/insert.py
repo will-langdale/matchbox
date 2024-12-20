@@ -261,7 +261,7 @@ def _map_ids(
             [next(replace) if is_null else None for is_null in nulls.to_pylist()],
             type=ids.type,
         )
-        return pc.coalesce([ids, replacements])
+        return pc.coalesce(ids, replacements)
 
     return ids
 
@@ -384,8 +384,9 @@ def _results_to_insert_tables(
         }
     )
     hierarchy_deduped = drop_duplicates(
-        hierarchy.select("parent_id", "parent_hash"),
-        on=["parent_id", "parent_hash"],
+        hierarchy.select(["parent_id", "parent_hash", "probability"]),
+        on=["parent_id", "parent_hash", "probability"],
+        keep="first",
     )
 
     # Wrangle to output formats
@@ -400,14 +401,19 @@ def _results_to_insert_tables(
             ),
         }
     )
-    contains = hierarchy.select("parent_id", "child_id")
+    contains = hierarchy.select(["parent_id", "child_id"])
     probabilities = pa.table(
         {
-            "resolution": resolution.resolution_id,
+            "resolution": pa.array(
+                [resolution.resolution_id] * hierarchy_deduped.shape[0],
+                type=pa.uint64(),
+            ),
             "cluster": hierarchy_deduped["parent_id"],
             "probability": hierarchy_deduped["probability"],
         }
     )
+
+    #
 
     logic_logger.info(f"[{resolution.name}] Wrangling complete!")
 
@@ -449,23 +455,34 @@ def insert_results(
         resolution=resolution, results=results, lookup=lookup
     )
 
-    with engine.connect() as conn:
+    with Session(engine) as session:
         try:
             # Clear existing probabilities for this resolution
-            conn.execute(
+            session.execute(
                 delete(Probabilities).where(
                     Probabilities.resolution == resolution.resolution_id
                 )
             )
 
+            session.commit()
             logic_logger.info(f"[{resolution.name}] Removed old probabilities")
 
+        except SQLAlchemyError as e:
+            session.rollback()
+            logic_logger.error(
+                f"[{resolution.name}] Failed to clear old probabilities: {str(e)}"
+            )
+            raise
+
+    with engine.connect() as conn:
+        try:
             logic_logger.info(
-                f"[{resolution.name}] Inserting {clusters.shape[0]:,} results objects"
+                f"[{resolution.name}] Inserting {clusters.shape[0]:,} results "
+                "objects"
             )
 
             batch_ingest(
-                records=clusters.to_pylist(),
+                records=[tuple(c.values()) for c in clusters.to_pylist()],
                 table=Clusters,
                 conn=conn,
                 batch_size=batch_size,
@@ -477,7 +494,7 @@ def insert_results(
             )
 
             batch_ingest(
-                records=contains.to_pylist(),
+                records=[tuple(c.values()) for c in contains.to_pylist()],
                 table=Contains,
                 conn=conn,
                 batch_size=batch_size,
@@ -489,19 +506,18 @@ def insert_results(
             )
 
             batch_ingest(
-                records=probabilities.to_pylist(),
+                records=[tuple(c.values()) for c in probabilities.to_pylist()],
                 table=Probabilities,
                 conn=conn,
                 batch_size=batch_size,
             )
 
             logic_logger.info(
-                f"[{resolution.name}] Successfully inserted {probabilities.shape[0]} "
-                "objects into Probabilities table"
+                f"[{resolution.name}] Successfully inserted "
+                f"{probabilities.shape[0]} objects into Probabilities table"
             )
 
         except SQLAlchemyError as e:
-            conn.rollback()
             logic_logger.error(f"[{resolution.name}] Failed to insert data: {str(e)}")
             raise
 
