@@ -3,6 +3,8 @@ from typing import Any, Callable, ParamSpec, TypeVar
 
 from pandas import DataFrame
 
+from matchbox.client.models.dedupers.base import Deduper
+from matchbox.client.models.linkers.base import Linker
 from matchbox.common.exceptions import MatchboxResolutionError
 from matchbox.common.results import (
     ClusterResults,
@@ -12,8 +14,6 @@ from matchbox.common.results import (
     Results,
     to_clusters,
 )
-from matchbox.models.dedupers.base import Deduper
-from matchbox.models.linkers.base import Linker
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import MatchboxModelAdapter
 

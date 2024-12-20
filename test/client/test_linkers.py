@@ -3,9 +3,12 @@ from pandas import DataFrame
 from splink import SettingsCreator
 
 from matchbox import make_model, query
+from matchbox.client.helpers import selectors
+from matchbox.client.models.linkers.splinklinker import (
+    SplinkLinkerFunction,
+    SplinkSettings,
+)
 from matchbox.common.db import Source, SourceWarehouse
-from matchbox.helpers import selectors
-from matchbox.models.linkers.splinklinker import SplinkLinkerFunction, SplinkSettings
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable

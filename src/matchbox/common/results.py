@@ -34,7 +34,7 @@ from matchbox.common.hash import (
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
 
 if TYPE_CHECKING:
-    from matchbox.models.models import Model, ModelMetadata
+    from matchbox.client.models.models import Model, ModelMetadata
 else:
     Model = Any
 

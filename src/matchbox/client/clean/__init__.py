@@ -1,4 +1,4 @@
-from matchbox.clean.lib import (
+from matchbox.client.clean.lib import (
     company_name,
     company_number,
     drop,
@@ -8,7 +8,7 @@ from matchbox.clean.lib import (
     postcode,
     postcode_to_area,
 )
-from matchbox.clean.utils import alias, cleaning_function, unnest_renest
+from matchbox.client.clean.utils import alias, cleaning_function, unnest_renest
 
 __all__ = (
     # Cleaning functions

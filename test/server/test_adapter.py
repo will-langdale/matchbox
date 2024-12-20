@@ -5,6 +5,7 @@ import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
+from matchbox.client.helpers.selector import match, query, selector, selectors
 from matchbox.common.db import Match, Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
@@ -19,7 +20,6 @@ from matchbox.common.results import (
     Results,
     to_clusters,
 )
-from matchbox.helpers.selector import match, query, selector, selectors
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable

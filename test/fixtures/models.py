@@ -5,14 +5,14 @@ from pydantic import BaseModel, Field
 from splink import SettingsCreator
 from splink import blocking_rule_library as brl
 
-from matchbox.models.dedupers import NaiveDeduper
-from matchbox.models.dedupers.base import Deduper
-from matchbox.models.linkers import (
+from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.models.dedupers.base import Deduper
+from matchbox.client.models.linkers import (
     DeterministicLinker,
     SplinkLinker,
     WeightedDeterministicLinker,
 )
-from matchbox.models.linkers.base import Linker
+from matchbox.client.models.linkers.base import Linker
 
 
 class DedupeTestParams(BaseModel):

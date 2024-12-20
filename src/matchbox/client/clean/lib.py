@@ -2,8 +2,8 @@ from functools import partial
 
 from pandas import DataFrame
 
-from matchbox.clean import steps
-from matchbox.clean import utils as cu
+from matchbox.client.clean import steps
+from matchbox.client.clean import utils as cu
 
 
 def company_name(
