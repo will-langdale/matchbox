@@ -12,7 +12,7 @@ A quick overview of where we're aiming:
 import matchbox
 
 from matchbox import clean
-from matchbox.helpers import (
+from matchbox.client.helpers import (
     selector, 
     selectors, 
     cleaner, 

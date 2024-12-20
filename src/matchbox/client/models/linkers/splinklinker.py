@@ -9,7 +9,7 @@ from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
 from splink.internals.linker_components.training import LinkerTraining
 
-from matchbox.models.linkers.base import Linker, LinkerSettings
+from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
 logic_logger = logging.getLogger("mb_logic")
 

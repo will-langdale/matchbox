@@ -1,4 +1,4 @@
-from matchbox.common.results import DisjointSet
+from matchbox.common.transform import DisjointSet
 
 
 class TestDisjointSet:

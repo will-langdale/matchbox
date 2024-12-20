@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame
     from pyarrow import Table as ArrowTable
 
-    from matchbox.common.results import ClusterResults, ProbabilityResults, Results
+    from matchbox.client.results import ClusterResults, ProbabilityResults, Results
 else:
     PandasDataFrame = Any
     PolarsDataFrame = Any

@@ -4,15 +4,15 @@ from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
 from matchbox import process, query
-from matchbox.clean import company_name, company_number
-from matchbox.common.db import Source
-from matchbox.helpers import (
+from matchbox.client.clean import company_name, company_number
+from matchbox.client.helpers import (
     cleaner,
     cleaners,
     comparison,
     selector,
     selectors,
 )
+from matchbox.common.db import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddIndexedDataCallable

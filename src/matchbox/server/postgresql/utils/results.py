@@ -6,13 +6,13 @@ import rustworkx as rx
 from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
-from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.results import (
+from matchbox.client.results import (
     ClusterResults,
     ModelMetadata,
     ModelType,
     ProbabilityResults,
 )
+from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,

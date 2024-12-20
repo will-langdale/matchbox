@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
-from matchbox.common.results import (
+from matchbox.common.transform import (
     attach_components_to_probabilities,
     component_to_hierarchy,
     to_hierarchical_clusters,
@@ -178,7 +178,7 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
 ):
-    with patch("matchbox.common.results.IntMap") as MockIntMap:
+    with patch("matchbox.common.transform.IntMap") as MockIntMap:
         instance = MockIntMap.return_value
         instance.index.side_effect = _combine_strings
         probabilities_table = (
@@ -320,10 +320,10 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
     # Run and compare
     with (
         patch(
-            "matchbox.common.results.ProcessPoolExecutor",
+            "matchbox.common.transform.ProcessPoolExecutor",
             lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
         ),
-        patch("matchbox.common.results.IntMap") as MockIntMap,
+        patch("matchbox.common.transform.IntMap") as MockIntMap,
     ):
         instance = MockIntMap.return_value
         instance.index.side_effect = _combine_strings

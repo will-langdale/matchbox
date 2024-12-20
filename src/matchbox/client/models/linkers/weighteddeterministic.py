@@ -4,8 +4,8 @@ import duckdb
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, Field, field_validator
 
-from matchbox.helpers import comparison
-from matchbox.models.linkers.base import Linker, LinkerSettings
+from matchbox.client.helpers import comparison
+from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
 
 class WeightedComparison(BaseModel):

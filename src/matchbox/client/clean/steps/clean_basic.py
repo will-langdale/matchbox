@@ -1,6 +1,6 @@
 from typing import Dict, List
 
-from matchbox.clean.utils import ABBREVIATIONS, STOPWORDS
+from matchbox.client.clean.utils import ABBREVIATIONS, STOPWORDS
 
 
 def remove_whitespace(column: str) -> str:
