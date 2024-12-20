@@ -2,7 +2,7 @@ import pytest
 import rustworkx as rx
 from pandas import DataFrame
 
-from matchbox.common.results import (
+from matchbox.client.results import (
     ClusterResults,
     ModelMetadata,
     ModelType,

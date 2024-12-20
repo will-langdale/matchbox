@@ -9,10 +9,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from matchbox.client.results import ClusterResults, ProbabilityResults, Results
 from matchbox.common.db import Source
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import dataset_to_hashlist, list_to_value_ordered_hash
-from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,

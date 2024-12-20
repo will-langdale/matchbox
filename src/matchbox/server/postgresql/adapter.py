@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from matchbox.client.results import ClusterResults, ProbabilityResults, Results
 from matchbox.common.db import Match, Source, SourceWarehouse
 from matchbox.common.exceptions import (
     MatchboxDataError,
@@ -12,7 +13,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.results import ClusterResults, ProbabilityResults, Results
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (

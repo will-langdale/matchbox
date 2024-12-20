@@ -5,15 +5,15 @@ from pandas import DataFrame
 
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
-from matchbox.common.exceptions import MatchboxResolutionError
-from matchbox.common.results import (
+from matchbox.client.results import (
     ClusterResults,
     ModelMetadata,
     ModelType,
     ProbabilityResults,
     Results,
-    to_clusters,
 )
+from matchbox.common.exceptions import MatchboxResolutionError
+from matchbox.common.transform import to_clusters
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import MatchboxModelAdapter
 

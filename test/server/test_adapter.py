@@ -6,6 +6,11 @@ from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
 from matchbox.client.helpers.selector import match, query, selector, selectors
+from matchbox.client.results import (
+    ClusterResults,
+    ProbabilityResults,
+    Results,
+)
 from matchbox.common.db import Match, Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
@@ -14,12 +19,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
-from matchbox.common.results import (
-    ClusterResults,
-    ProbabilityResults,
-    Results,
-    to_clusters,
-)
+from matchbox.common.transform import to_clusters
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable

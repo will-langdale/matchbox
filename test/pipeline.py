@@ -6,7 +6,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 from rich.logging import RichHandler
 
-from matchbox.common.results import (
+from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
 )
