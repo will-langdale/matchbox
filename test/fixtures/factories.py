@@ -26,7 +26,7 @@ def verify_components(table) -> dict:
         for left, right in zip(
             table["left"].to_numpy(),
             table["right"].to_numpy(),
-            strict=False,
+            strict=True,
         )
     ]
 
@@ -83,7 +83,7 @@ def _split_values_into_components(
 
 def generate_dummy_probabilities(
     left_values: list[int],
-    right_values: list[int],
+    right_values: list[int] | None,
     prob_range: tuple[float, float],
     num_components: int,
     total_rows: int,
@@ -102,6 +102,8 @@ def generate_dummy_probabilities(
         PyArrow Table with 'left', 'right', and 'probability' columns
     """
     # Validate inputs
+    if right_values is None:
+        right_values = left_values
     if len(left_values) < 2 or len(right_values) < 2:
         raise ValueError("Need at least 2 possible values for both left and right")
     if num_components > min(len(left_values), len(right_values)):
@@ -167,15 +169,17 @@ def generate_dummy_probabilities(
             )
 
             component_edges = base_edges + list(
-                zip(random_lefts, random_rights, random_probs, strict=False)
+                zip(random_lefts, random_rights, random_probs, strict=True)
             )
         else:
             component_edges = base_edges
 
         all_edges.extend(component_edges)
 
+    # Drop self-references
+    all_edges = [(le, ri, pr) for le, ri, pr in all_edges if le != ri]
     # Convert to arrays
-    lefts, rights, probs = zip(*all_edges, strict=False)
+    lefts, rights, probs = zip(*all_edges, strict=True)
 
     # Create PyArrow arrays
     left_array = pa.array(lefts, type=pa.uint64())
