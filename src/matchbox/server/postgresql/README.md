@@ -32,7 +32,7 @@ erDiagram
         bigint child PK,FK
     }
     Probabilities {
-        bigint model PK,FK
+        bigint resolution PK,FK
         bigint cluster PK,FK
         float probability
     }
