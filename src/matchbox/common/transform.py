@@ -186,7 +186,7 @@ class DisjointSet(Generic[T]):
 
 
 def component_to_hierarchy(
-    table: pa.Table, dtype: pa.DataType = pa.uint64, salt: int = 1
+    table: pa.Table, salt: int, dtype: pa.DataType = pa.uint64
 ) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
@@ -229,6 +229,9 @@ def component_to_hierarchy(
         for children in djs.get_components():
             if len(children) <= 2:
                 continue  # Skip pairs already handled by pairwise probabilities
+
+            if im.has_mapping(*children):
+                continue  # Skip unchanged components from previous thresholds
 
             parent = im.index(*children)
             prev_roots: set[int] = set()
@@ -317,7 +320,7 @@ def to_hierarchical_clusters(
 
         with ProcessPoolExecutor(max_workers=n_cores) as executor:
             futures = [
-                executor.submit(proc_func, component_table, salt)
+                executor.submit(proc_func, component_table, salt=salt)
                 for salt, component_table in enumerate(component_tables)
             ]
 
