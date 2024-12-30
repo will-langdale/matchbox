@@ -164,6 +164,7 @@ def generate_dummy_probabilities(
     if right_values is None:
         right_values = left_values
         deduplicate = True
+
     if len(left_values) < 2 or len(right_values) < 2:
         raise ValueError("Need at least 2 possible values for both left and right")
     if num_components > min(len(left_values), len(right_values)):
