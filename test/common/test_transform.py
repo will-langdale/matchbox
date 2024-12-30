@@ -9,12 +9,12 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
+from matchbox.common.factories import generate_dummy_probabilities, verify_components
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     component_to_hierarchy,
     to_hierarchical_clusters,
 )
-from test.fixtures.factories import generate_dummy_probabilities, verify_components
 
 
 @lru_cache(maxsize=None)
