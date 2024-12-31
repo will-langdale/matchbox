@@ -73,71 +73,6 @@ def _calculate_max_possible_edges(
     return max_edges_per_component * num_components
 
 
-def _split_values_into_components(
-    values: list[int], num_components: int
-) -> list[np.ndarray]:
-    """
-    Split values into non-overlapping groups for each component.
-
-    Args:
-        values: List of values to split
-        num_components: Number of components to create
-
-    Returns:
-        List of arrays, one for each component
-    """
-    values = np.array(values)
-    np.random.shuffle(values)
-    return np.array_split(values, num_components)
-
-
-def _generate_remaining_edges(
-    left_values: list[int],
-    right_values: list[int],
-    len_component: int,
-    base_edges: set[tuple[int, int, int]],
-    deduplicate: bool,
-) -> list[tuple[int, int, int]]:
-    """
-    Generate remaining edges in component, recursing if necessary when generated edges
-    need to be discarded.
-
-    Args:
-        left_values: list of integers on the left table
-        right_values: list of integers on the right table
-        len_component: total number of edges to generate
-        base_edges: set representing edges generated so far
-        deduplicate: whether probabilities are for deduplication
-
-    Returns:
-        Total set of edges generated at current recursion step
-    """
-    remaining_edges = len_component - len(base_edges)
-    if remaining_edges <= 0:
-        return base_edges
-
-    lefts = np.random.choice(left_values, size=remaining_edges)
-    rights = np.random.choice(right_values, size=remaining_edges)
-
-    new_edges = set()
-    for le, r in zip(lefts, rights, strict=True):
-        if le == r:
-            continue
-        if deduplicate:
-            le, r = sorted([le, r])
-            new_edges.add((le, r))
-
-    base_edges.update(new_edges)
-
-    return _generate_remaining_edges(
-        left_values,
-        right_values,
-        len_component,
-        base_edges,
-        deduplicate,
-    )
-
-
 def generate_dummy_probabilities(
     left_values: list[int],
     right_values: list[int] | None,
@@ -190,12 +125,10 @@ def generate_dummy_probabilities(
     prob_max = int(prob_range[1] * 100)
 
     # Split values into completely separate groups for each component
-    left_components = _split_values_into_components(left_values, num_components)
-    if deduplicate:
-        # for each left-right component pair, the right equals the left rotated by one
-        right_components = [np.roll(c, 1) for c in left_components]
-    else:
-        right_components = _split_values_into_components(right_values, num_components)
+    left_components = np.array_split(np.array(left_values), num_components)
+    right_components = np.array_split(np.array(right_values), num_components)
+    # For each left-right component pair, the right equals the left rotated by one
+    right_components = [np.roll(c, 1) for c in right_components]
 
     # Calculate base number of edges per component
     base_edges_per_component = total_rows // num_components
@@ -213,10 +146,9 @@ def generate_dummy_probabilities(
         if comp_idx < remaining_edges:
             edges_in_component += 1
 
-        # Ensure basic connectivity within the component
+        # Ensure basic connectivity within the component by creating a spanning-tree
+        # like structure
         base_edges = set()
-
-        # Create a spanning tree-like structure
         for i in range(len(comp_left_values)):
             left = comp_left_values[i]
             right = comp_right_values[i % len(comp_right_values)]
@@ -229,20 +161,28 @@ def generate_dummy_probabilities(
         base_edges = {(le, ri) for le, ri in base_edges if le != ri}
 
         # Generate remaining random edges strictly within this component
-        component_edges = _generate_remaining_edges(
-            comp_left_values,
-            comp_right_values,
-            base_edges_per_component,
-            base_edges,
-            deduplicate,
+        # TODO: this can certainly be optimised
+        all_possible_edges = [
+            (x, y)
+            for x in comp_left_values
+            for y in comp_right_values
+            if x != y and (x, y) not in base_edges
+        ]
+        edges_required = edges_in_component - len(base_edges)
+        extra_edges_idx = np.random.choice(
+            len(all_possible_edges), size=edges_required, replace=False
         )
+        extra_edges = [
+            e for i, e in enumerate(all_possible_edges) if i in extra_edges_idx
+        ]
+        component_edges = list(base_edges) + extra_edges
         random_probs = np.random.randint(
             prob_min, prob_max + 1, size=len(component_edges)
         )
 
         component_edges = [
             (le, ri, pr)
-            for (le, ri), pr in zip(component_edges, random_probs, strict=False)
+            for (le, ri), pr in zip(component_edges, random_probs, strict=True)
         ]
 
         all_edges.extend(component_edges)

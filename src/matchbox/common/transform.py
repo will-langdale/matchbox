@@ -186,7 +186,7 @@ class DisjointSet(Generic[T]):
 
 
 def component_to_hierarchy(
-    table: pa.Table, salt: int, dtype: pa.DataType = pa.uint64
+    table: pa.Table, salt: int, dtype: pa.DataType = pa.int64
 ) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
@@ -245,8 +245,8 @@ def component_to_hierarchy(
     parents, children, probs = zip(*hierarchy, strict=True)
     return pa.table(
         {
-            "parent": pa.array(parents, type=pa.int64()),
-            "child": pa.array(children, type=pa.int64()),
+            "parent": pa.array(parents, type=dtype()),
+            "child": pa.array(children, type=dtype()),
             "probability": pa.array(probs, type=pa.uint8()),
         }
     )
@@ -255,7 +255,7 @@ def component_to_hierarchy(
 def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
-    dtype: pa.DataType = pa.uint64,
+    dtype: pa.DataType = pa.int64,
     timeout: int = 300,
 ) -> pa.Table:
     """
@@ -320,7 +320,7 @@ def to_hierarchical_clusters(
 
         with ProcessPoolExecutor(max_workers=n_cores) as executor:
             futures = [
-                executor.submit(proc_func, component_table, salt=salt)
+                executor.submit(proc_func, component_table, salt=salt, dtype=dtype)
                 for salt, component_table in enumerate(component_tables)
             ]
 
@@ -345,8 +345,8 @@ def to_hierarchical_clusters(
         logic_logger.warning("No results to concatenate")
         return pa.table(
             {
-                "parent": pa.array([], type=pa.int64()),
-                "child": pa.array([], type=pa.int64()),
+                "parent": pa.array([], type=dtype()),
+                "child": pa.array([], type=dtype()),
                 "probability": pa.array([], type=pa.uint8()),
             }
         )
