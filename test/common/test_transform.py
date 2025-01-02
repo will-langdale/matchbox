@@ -10,6 +10,7 @@ import pyarrow.compute as pc
 import pytest
 
 from matchbox.common.factories import generate_dummy_probabilities, verify_components
+from matchbox.common.hash import IntMap
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     component_to_hierarchy,
@@ -178,9 +179,7 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
 ):
-    with patch("matchbox.common.transform.IntMap") as MockIntMap:
-        instance = MockIntMap.return_value
-        instance.index.side_effect = _combine_strings
+    with patch.object(IntMap, "index", side_effect=_combine_strings):
         probabilities_table = (
             pa.Table.from_pydict(probabilities)
             .cast(
@@ -220,7 +219,9 @@ def test_component_to_hierarchy(
             .filter(pc.is_valid(pc.field("parent")))
         )
 
-        hierarchy = component_to_hierarchy(probabilities_table, pa.string).sort_by(
+        hierarchy = component_to_hierarchy(
+            probabilities_table, salt=1, dtype=pa.string
+        ).sort_by(
             [
                 ("probability", "descending"),
                 ("parent", "ascending"),
@@ -323,10 +324,8 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
             "matchbox.common.transform.ProcessPoolExecutor",
             lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
         ),
-        patch("matchbox.common.transform.IntMap") as MockIntMap,
+        patch.object(IntMap, "index", side_effect=_combine_strings),
     ):
-        instance = MockIntMap.return_value
-        instance.index.side_effect = _combine_strings
         result = to_hierarchical_clusters(
             probabilities, dtype=pa.string, proc_func=component_to_hierarchy
         )
