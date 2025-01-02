@@ -1,6 +1,7 @@
 import pytest
 import rustworkx as rx
 from pandas import DataFrame
+from sqlalchemy import text
 
 from matchbox.client.results import (
     ClusterResults,
@@ -8,6 +9,8 @@ from matchbox.client.results import (
     ModelType,
     ProbabilityResults,
 )
+from matchbox.server.postgresql.benchmark.init_schema import create_tables, empty_schema
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.utils.insert import _cluster_results_to_hierarchical
 
 
@@ -204,3 +207,22 @@ def test_cluster_results_to_hierarchical(
 
     if actual_relations:  # Skip verification for empty case
         verify_hierarchy(hierarchy.itertuples(index=False))
+
+
+def test_benchmark_init_schema():
+    schema = MBDB.MatchboxBase.metadata.schema
+    count_tables = text(f"""
+        select count(*)
+        from information_schema.tables
+        where table_schema = '{schema}';
+    """)
+
+    with MBDB.get_engine().connect() as con:
+        con.execute(text(empty_schema()))
+        n_tables = int(con.execute(count_tables).scalar())
+        assert n_tables == 0
+
+        con.execute(text(create_tables()))
+        n_tables_expected = len(MBDB.MatchboxBase.metadata.tables)
+        n_tables = int(con.execute(count_tables).scalar())
+        assert n_tables == n_tables_expected
