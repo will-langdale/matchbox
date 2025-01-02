@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from functools import lru_cache
 from itertools import chain
 from typing import Any, Iterator
 from unittest.mock import patch
@@ -18,10 +17,10 @@ from matchbox.common.transform import (
 )
 
 
-@lru_cache(maxsize=None)
-def _combine_strings(*n: str) -> str:
+def _combine_strings(self, *n: str) -> str:
     """
-    Combine n strings into a single string.
+    Combine n strings into a single string, with a cache.
+    Meant to replace `matchbox.common.hash.IntMap.index`
 
     Args:
         *args: Variable number of strings to combine
@@ -29,8 +28,15 @@ def _combine_strings(*n: str) -> str:
     Returns:
         A single string
     """
+    value_set = frozenset(n)
+    if value_set in self.mapping:
+        return self.mapping[value_set]
+
     letters = set(chain.from_iterable(n))
-    return "".join(sorted(letters))
+
+    new_id = "".join(sorted(letters))
+    self.mapping[value_set] = new_id
+    return new_id
 
 
 @contextmanager
@@ -173,13 +179,32 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
                 ("xy", "y", 90),
             },
         ),
+        # Test case 4: A component larger than two remains unchanged
+        # at a successive threshold
+        (
+            {
+                "left": ["x", "y", "a"],
+                "right": ["y", "z", "b"],
+                "probability": [90, 90, 85],
+            },
+            {
+                ("xy", "x", 90),
+                ("xy", "y", 90),
+                ("yz", "y", 90),
+                ("yz", "z", 90),
+                ("xyz", "xy", 90),
+                ("xyz", "yz", 90),
+                ("ab", "a", 85),
+                ("ab", "b", 85),
+            },
+        ),
     ],
-    ids=["equal", "asymmetric", "single"],
+    ids=["equal", "asymmetric", "single", "unchanged"],
 )
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
 ):
-    with patch.object(IntMap, "index", side_effect=_combine_strings):
+    with patch.object(IntMap, "index", _combine_strings):
         probabilities_table = (
             pa.Table.from_pydict(probabilities)
             .cast(
