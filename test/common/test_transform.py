@@ -310,7 +310,7 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
             "matchbox.common.transform.ProcessPoolExecutor",
             lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
         ),
-        patch.object(IntMap, "index", side_effect=_combine_strings),
+        patch.object(IntMap, "index", _combine_strings),
     ):
         result = to_hierarchical_clusters(
             probabilities, dtype=pa.string, proc_func=component_to_hierarchy

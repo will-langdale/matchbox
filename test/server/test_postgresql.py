@@ -247,7 +247,7 @@ def test_benchmark_generate_tables():
         con.execute(text(empty_schema()))
         con.commit()
 
-        results = generate_all_tables(20, 5, 15, 5, 30)
+        results = generate_all_tables(20, 5, 15, 5, 100)
 
         for table_name, table_arrow in results.items():
             df = table_arrow.to_pandas()
