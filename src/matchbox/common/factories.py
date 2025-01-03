@@ -46,64 +46,91 @@ def verify_components(table) -> dict:
     }
 
 
-def _calculate_min_possible_edges(
-    n_nodes: int, num_components: int, deduplicate: bool
-) -> int:
+def _min_edges_component(left: int, right: int, deduplicate: bool) -> int:
     """
-    Calculate a conservative minimum number of edges to connect all components.
+    Calculate min edges for component to be connected.
+    Does so by assuming a spanning tree.
 
     Args:
-        n_nodes: Number of nodes on larger table (either left or right)
-        num_components: Number of components to split into
-        deduplicate: Whether we are dealing with probabilities for deduplication
+        left: number of nodes of component on the left
+        right: number of nodes of component on the right (for linking)
+        deduplicate: whether edges are for deduplication
 
     Returns:
-        Minimum possible number of edges
+        Minimum number of edges
     """
-    # Sizes of components for larger table. Because components in other table
-    # might be smaller, the final estimate might be larger than necessary
-    min_nodes_per_component = n_nodes // num_components
-    max_nodes_per_component = min_nodes_per_component + 1
+    if not deduplicate:
+        return left + right - 1
 
-    if deduplicate:
-        return max_nodes_per_component - 1
+    return left - 1
 
-    return (
-        # connect left[i] to right[i]
-        (min_nodes_per_component)
-        # connect right[i] to left[i+1]
-        + (min_nodes_per_component - 1)
-        # connect left[0] to all remaining
-        + (max_nodes_per_component - min_nodes_per_component)
+
+def _max_edges_component(left: int, right: int, deduplicate: bool) -> int:
+    """
+    Calculate max edges for component to be avoid duplication.
+    Considers complete graph for deduping, and complete bipartite graph for linking.
+
+    Args:
+        left: number of nodes of component on the left
+        right: number of nodes of component on the right (for linking)
+        deduplicate: whether edges are for deduplication
+
+    Returns:
+        Maximum number of edges
+    """
+    if not deduplicate:
+        return left * right
+    # n*(n-1) is always divisible by 2
+    return left * (left - 1) // 2
+
+
+def calculate_min_max_edges(
+    left_nodes: int, right_nodes: int, num_components: int, deduplicate: bool
+) -> tuple[int, int]:
+    """
+    Calculate min and max edges for a graph.
+
+    Args:
+        left_nodes: number of nodes in left source
+        right_nodes: number of nodes in right source
+        num_components: number of requested components
+        deduplicate: whether edges are for deduplication
+
+    Returns:
+        Two-tuple representing min and max edges
+    """
+    left_mod, right_mod = left_nodes % num_components, right_nodes % num_components
+    left_div, right_div = left_nodes // num_components, right_nodes // num_components
+
+    min_mod, max_mod = sorted([left_mod, right_mod])
+
+    min_edges, max_edges = 0, 0
+    # components where both sides have maximum nodes
+    min_edges += (
+        _min_edges_component(left_div + 1, right_div + 1, deduplicate) * min_mod
+    )
+    max_edges += (
+        _max_edges_component(left_div + 1, right_div + 1, deduplicate) * min_mod
+    )
+    # components where one side has maximum nodes
+    left_after_min_mod, right_after_min_mod = left_div + 1, right_div
+    if left_mod == min_mod:
+        left_after_min_mod, right_after_min_mod = left_div, right_div + 1
+    min_edges += _min_edges_component(
+        left_after_min_mod, right_after_min_mod, deduplicate
+    ) * (max_mod - min_mod)
+    max_edges += _max_edges_component(
+        left_after_min_mod, right_after_min_mod, deduplicate
+    ) * (max_mod - min_mod)
+    # components where both side have maximum nodes
+    min_edges += _min_edges_component(left_div, right_div, deduplicate) * (
+        num_components - max_mod
+    )
+    max_edges += _max_edges_component(left_div, right_div, deduplicate) * (
+        num_components - max_mod
     )
 
-
-def _calculate_max_possible_edges(
-    n_nodes: int, num_components: int, deduplicate: bool
-) -> int:
-    """
-    Calculate a conservative max number of edges given n nodes split into k components.
-
-    Args:
-        n_nodes: Total number of nodes on smallest table (either left or right)
-        num_components: Number of components to split into
-        deduplicate: Whether we are dealing with probabilities for deduplication
-
-    Returns:
-        Maximum possible number of edges
-    """
-    # Size of components for smaller table we will generate. Because components of other
-    # table might be larger, the final estimate might be smaller than necessary
-    min_nodes_per_component = n_nodes // num_components
-    if deduplicate:
-        # Max edges in undirected graph of size n
-        max_edges_per_component = (
-            min_nodes_per_component * (min_nodes_per_component - 1) / 2
-        )
-    else:
-        # Complete bipartite graph
-        max_edges_per_component = min_nodes_per_component * min_nodes_per_component
-    return max_edges_per_component * num_components
+    return min_edges, max_edges
 
 
 def generate_dummy_probabilities(
@@ -140,20 +167,18 @@ def generate_dummy_probabilities(
             "Cannot have more components than minimum of left/right values"
         )
 
-    min_nodes, max_nodes = sorted([len(left_values), len(right_values)])
-    min_possible_edges = _calculate_min_possible_edges(
-        max_nodes, num_components, deduplicate
+    left_nodes, right_nodes = len(left_values), len(right_values)
+    min_possible_edges, max_possible_edges = calculate_min_max_edges(
+        left_nodes, right_nodes, num_components, deduplicate
     )
-    max_possible_edges = _calculate_max_possible_edges(
-        min_nodes, num_components, deduplicate
-    )
+
     mode = "dedupe" if deduplicate else "link"
     if total_rows < min_possible_edges:
         raise ValueError(
             dedent(f"""
             Cannot generate {total_rows:,} {mode} edges with {num_components:,}
             components.
-            Min edges is {min_possible_edges:,} for {min_nodes:,}+{max_nodes:,} nodes.
+            Min edges is {min_possible_edges:,} for nodes given.
             Either decrease the number of nodes, increase the number of components, 
             or increase the total edges requested.
             """)
@@ -163,11 +188,13 @@ def generate_dummy_probabilities(
             dedent(f"""
             Cannot generate {total_rows:,} {mode} edges with {num_components:,}
             components. 
-            Max edges is {max_possible_edges:,} for {min_nodes:,}+{max_nodes:,} nodes.
+            Max edges is {max_possible_edges:,} for nodes given.
             Either increase the number of nodes, decrease the number of components, 
             or decrease the total edges requested.
             """)
         )
+
+    n_extra_edges = total_rows - min_possible_edges
 
     # Convert probability range to integers (60-80 for 0.60-0.80)
     prob_min = int(prob_range[0] * 100)
@@ -178,10 +205,6 @@ def generate_dummy_probabilities(
     right_components = np.array_split(np.array(right_values), num_components)
     # For each left-right component pair, the right equals the left rotated by one
     right_components = [np.roll(c, 1) for c in right_components]
-
-    # Calculate base number of edges per component
-    base_edges_per_component = total_rows // num_components
-    remaining_edges = total_rows % num_components
 
     all_edges = []
 
@@ -194,56 +217,62 @@ def generate_dummy_probabilities(
             [len(comp_left_values), len(comp_right_values)]
         )
 
-        edges_in_component = base_edges_per_component
-        # Distribute remaining edges, one per component
-        if comp_idx < remaining_edges:
-            edges_in_component += 1
-
         # Ensure basic connectivity within the component by creating a spanning-tree
-        # like structure
         base_edges = set()
         # For deduping (A B C) you just need (A - B) (B - C) (C - A)
-        # which just needs matching pairwise the data and its rotated version
-        # For linking (A B) and (C D E), we begin by adding (A - C) and (B - D)
-        for i in range(min_comp_nodes):
-            small_n, large_n = sorted([comp_left_values[i], comp_right_values[i]])
-            base_edges.add((small_n, large_n))
-        if not deduplicate:
-            # For linking, for example above, we now add (C - B)
+        # which just needs matching pairwise the data and its rotated version.
+        # For deduping, `min_comp_nodes` == `max_comp_nodes`
+        if deduplicate:
             for i in range(min_comp_nodes - 1):
-                small_n, large_n = sorted(
-                    [comp_left_values[i + 1], comp_right_values[i]]
-                )
+                small_n, large_n = sorted([comp_left_values[i], comp_right_values[i]])
                 base_edges.add((small_n, large_n))
-            # For linking, for example above, we now add (A - D)
+        else:
+            # For linking (A B) and (C D E), we begin by adding (A - C) and (B - D)
+            for i in range(min_comp_nodes):
+                base_edges.add((comp_left_values[i], comp_right_values[i]))
+            # we now add (C - B)
+            for i in range(min_comp_nodes - 1):
+                base_edges.add((comp_left_values[i + 1], comp_right_values[i]))
+            # we now add (A - D)
             left_right_diff = max_comp_nodes - min_comp_nodes
             for i in range(left_right_diff):
-                small_comp_half, large_comp_half = comp_left_values, comp_right_values
+                left_i, right_i = 0, min_comp_nodes + i
                 if len(comp_right_values) < len(comp_left_values):
-                    small_comp_half, large_comp_half = (
-                        comp_right_values,
-                        comp_left_values,
-                    )
+                    left_i, right_i = min_comp_nodes + i, 0
 
-                base_edges.add(
-                    (small_comp_half[0], large_comp_half[min_comp_nodes + i])
-                )
+                base_edges.add((comp_left_values[left_i], comp_right_values[right_i]))
 
-        # Remove self-references from base edges
-        base_edges = {(le, ri) for le, ri in base_edges if le != ri}
-
-        edges_required = edges_in_component - len(base_edges)
         component_edges = list(base_edges)
 
-        if edges_required > 0:
+        if n_extra_edges > 0:
             # Generate remaining random edges strictly within this component
             # TODO: this can certainly be optimised
-            all_possible_edges = [
-                tuple(sorted([x, y]))
-                for x in comp_left_values
-                for y in comp_right_values
-                if x != y and (x, y) not in base_edges
-            ]
+            if deduplicate:
+                all_possible_edges = list(
+                    {
+                        tuple(sorted([x, y]))
+                        for x in comp_left_values
+                        for y in comp_right_values
+                        if x != y and tuple(sorted([x, y])) not in base_edges
+                    }
+                )
+            else:
+                all_possible_edges = list(
+                    {
+                        (x, y)
+                        for x in comp_left_values
+                        for y in comp_right_values
+                        if x != y and (x, y) not in base_edges
+                    }
+                )
+            max_new_edges = len(all_possible_edges)
+            if max_new_edges >= n_extra_edges:
+                edges_required = n_extra_edges
+                n_extra_edges = 0
+            else:
+                edges_required = max_new_edges
+                n_extra_edges -= max_new_edges
+
             extra_edges_idx = np.random.choice(
                 len(all_possible_edges), size=edges_required, replace=False
             )
