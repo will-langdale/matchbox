@@ -4,7 +4,6 @@ from typing import Iterable
 
 import click
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from matchbox.common.factories import generate_dummy_probabilities
@@ -51,7 +50,9 @@ def _hash_list_int(li: list[int]) -> list[bytes]:
     return [HASH_FUNC(str(i).encode("utf-8")).digest() for i in li]
 
 
-def _unique_clusters(all_parents: Iterable[int], all_probabilities: Iterable[int]) -> tuple[list[int], list[float]]:
+def _unique_clusters(
+    all_parents: Iterable[int], all_probabilities: Iterable[int]
+) -> tuple[list[int], list[float]]:
     ll = set()
     clusters = []
     probabilities = []
@@ -185,8 +186,7 @@ def generate_result_tables(
     n_probs: int,
     prob_min: float = 0.6,
     prob_max: float = 1,
-    prob_threshold: float = 0.7,
-) -> tuple[pa.Table, pa.Table, pa.Table]:
+) -> tuple[list[int], pa.Table, pa.Table, pa.Table]:
     """
     Generate probabilities, contains and clusters tables.
 
@@ -199,22 +199,16 @@ def generate_result_tables(
         n_probs: total number of probability edges to be generated
         prob_min: minimum value for probabilities to be generated
         prob_max: maximum value for probabilities to be generated
-        prob_threshold: minimum value for probabilities to be kept
 
     Returns:
-        Tuple with 3 PyArrow tables, for probabolities, contains and clusters
+        Tuple with 1 list of top-level clusters and 3 PyArrow tables, for probabilities,
+        contains and clusters
     """
     probs = generate_dummy_probabilities(
         left_ids, right_ids, [prob_min, prob_max], n_components, n_probs
     )
 
-    filtered_probs = probs.filter(
-        pc.greater(probs["probability"], int(prob_threshold * 100))
-    )
-
-    clusters = to_hierarchical_clusters(
-        attach_components_to_probabilities(filtered_probs)
-    )
+    clusters = to_hierarchical_clusters(attach_components_to_probabilities(probs))
 
     indexed_parents = id_creator.create(clusters["parent"].to_pylist())
     indexed_children = id_creator.create(clusters["child"].to_pylist())
@@ -222,6 +216,10 @@ def generate_result_tables(
     final_clusters, final_probs = _unique_clusters(
         indexed_parents, clusters["probability"].to_numpy()
     )
+
+    set_children = set(indexed_children)
+    source_entries = left_ids if right_ids is None else left_ids + right_ids
+    top_clusters = [c for c in final_clusters + source_entries if c not in set_children]
 
     probabilities_table = pa.table(
         {
@@ -251,7 +249,7 @@ def generate_result_tables(
         }
     )
 
-    return (probabilities_table, contains_table, clusters_table)
+    return (top_clusters, probabilities_table, contains_table, clusters_table)
 
 
 def generate_all_tables(
@@ -282,27 +280,31 @@ def generate_all_tables(
     clusters_source2 = generate_cluster_source(source_len, source_len * 2)
 
     id_creator = IDCreator(source_len * 2)
-    probabilities_dedupe1, contains_dedupe1, clusters_dedupe1 = generate_result_tables(
-        clusters_source1["cluster_id"].to_pylist(),
-        None,
-        3,
-        id_creator,
-        dedupe_components,
-        dedupe_len,
+    top_clusters1, probabilities_dedupe1, contains_dedupe1, clusters_dedupe1 = (
+        generate_result_tables(
+            clusters_source1["cluster_id"].to_pylist(),
+            None,
+            3,
+            id_creator,
+            dedupe_components,
+            dedupe_len,
+        )
     )
 
-    probabilities_dedupe2, contains_dedupe2, clusters_dedupe2 = generate_result_tables(
-        clusters_source2["cluster_id"].to_pylist(),
-        None,
-        4,
-        id_creator.reset_mapping(),
-        dedupe_components,
-        dedupe_len,
+    top_clusters2, probabilities_dedupe2, contains_dedupe2, clusters_dedupe2 = (
+        generate_result_tables(
+            clusters_source2["cluster_id"].to_pylist(),
+            None,
+            4,
+            id_creator.reset_mapping(),
+            dedupe_components,
+            dedupe_len,
+        )
     )
 
-    probabilities_link, contains_link, clusters_link = generate_result_tables(
-        contains_dedupe1["parent"].to_pylist(),
-        contains_dedupe2["parent"].to_pylist(),
+    _, probabilities_link, contains_link, clusters_link = generate_result_tables(
+        top_clusters1,
+        top_clusters2,
         5,
         id_creator.reset_mapping(),
         link_components,
@@ -339,38 +341,38 @@ def generate_all_tables(
 def main(settings, output_dir):
     PRESETS = {
         "xs": {
-            "source_len": 1_000,
-            "dedupe_components": 500,
-            "dedupe_len": 500,
-            "link_components": 2_000,
+            "source_len": 10_000,
+            "dedupe_components": 8000,
+            "dedupe_len": 2000,
+            "link_components": 6000,
             "link_len": 10_000,
         },
         "s": {
             "source_len": 100_000,
-            "dedupe_components": 25_000,
-            "dedupe_len": 100_000,
-            "link_components": 20_000,
+            "dedupe_components": 80_000,
+            "dedupe_len": 20_000,
+            "link_components": 60_000,
             "link_len": 100_000,
         },
         "m": {
             "source_len": 1_000_000,
-            "dedupe_components": 250_000,
-            "dedupe_len": 1_000_000,
-            "link_components": 200_000,
+            "dedupe_components": 800_000,
+            "dedupe_len": 200_000,
+            "link_components": 600_000,
             "link_len": 1_000_000,
         },
         "l": {
             "source_len": 10_000_000,
-            "dedupe_components": 2_500_000,
-            "dedupe_len": 10_000_000,
-            "link_components": 2_000_000,
+            "dedupe_components": 8_000_000,
+            "dedupe_len": 2_000_000,
+            "link_components": 6_000_000,
             "link_len": 10_000_000,
         },
         "xl": {
             "source_len": 100_000_000,
-            "dedupe_components": 25_000_000,
-            "dedupe_len": 100_000_000,
-            "link_components": 20_000_000,
+            "dedupe_components": 80_000_000,
+            "dedupe_len": 20_000_000,
+            "link_components": 60_000_000,
             "link_len": 100_000_000,
         },
     }
@@ -388,9 +390,15 @@ def main(settings, output_dir):
     link_components = config["link_components"]
 
     all_tables = generate_all_tables(
-        source_len, dedupe_components, dedupe_len, link_len, link_components
+        source_len=source_len,
+        dedupe_components=dedupe_components,
+        dedupe_len=dedupe_len,
+        link_components=link_components,
+        link_len=link_len,
     )
 
+    output_dir /= settings
+    output_dir.mkdir(parents=True, exist_ok=True)
     for name, table in all_tables.items():
         pq.write_table(table, output_dir / f"{name}.parquet")
 
