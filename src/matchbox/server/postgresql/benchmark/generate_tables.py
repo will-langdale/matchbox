@@ -137,7 +137,7 @@ def generate_resolution_from() -> pa.Table:
     # 1 and 2 are sources; 3 and 4 are dedupers; 5 is a linker
     resolution_parent = [1, 1, 3, 2, 2, 4]
     resolution_child = [3, 5, 5, 4, 5, 5]
-    resolution_level = [1, 2, 1, 2, 1, 1]
+    resolution_level = [1, 2, 1, 1, 2, 1]
     resolution_truth_cache = [None, None, 0.7, None, None, 0.7]
 
     return pa.table(
@@ -339,9 +339,9 @@ def generate_all_tables(
 def main(settings, output_dir):
     PRESETS = {
         "xs": {
-            "source_len": 10_000,
-            "dedupe_components": 2_500,
-            "dedupe_len": 10_000,
+            "source_len": 1_000,
+            "dedupe_components": 500,
+            "dedupe_len": 500,
             "link_components": 2_000,
             "link_len": 10_000,
         },
