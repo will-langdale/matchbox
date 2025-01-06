@@ -1,21 +1,19 @@
 import logging
-from itertools import count
-from typing import Iterator
 
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import Engine, bindparam, delete, select
+from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.selectable import Select
 
 from matchbox.client.results import Results
-from matchbox.common.db import Source
+from matchbox.common.db import Source, sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import dataset_to_hashlist, hash_values
 from matchbox.common.transform import (
     attach_components_to_probabilities,
-    drop_duplicates,
     to_hierarchical_clusters,
 )
 from matchbox.server.postgresql.orm import (
@@ -230,7 +228,6 @@ def _map_ids(
     lookup: pa.Table,
     source: str,
     target: str,
-    replace: Iterator | None = None,
 ) -> pa.Array:
     """Maps values in an array to a lookup, replacing nulls with an iterator.
 
@@ -239,122 +236,87 @@ def _map_ids(
         lookup: Table of values to map to
         source: Name of the column to map from
         target: Name of the column to map to
-        replace (optional): Iterator that generates values to replace nulls
-
-    Raises:
-        ValueError if nulls are found with no replacement iterator
 
     Returns:
         Array of mapped values
     """
     indices = pc.index_in(array, lookup[source])
-    ids = pc.take(lookup[target], indices)
-    nulls = pc.is_null(ids)
-
-    if replace is None and pc.any(nulls).as_py():
-        raise ValueError(
-            "Null values found in mapping but no replacement iterator provided"
-        )
-
-    if replace:
-        replacements = pa.array(
-            [next(replace) if is_null else None for is_null in nulls.to_pylist()],
-            type=ids.type,
-        )
-        return pc.coalesce(ids, replacements)
-
-    return ids
+    return pc.take(lookup[target], indices)
 
 
-def _create_id_lookup(*id_arrs: *tuple[pa.Array, ...], engine: Engine):
-    """Creates an ID-Hash lookup for existing Clusters.
-
-    This shares logic with MatchboxDBAdapter.cluster_id_to_hash, and should use
-    it when this is moved to an API layer.
+def _get_resolution_related_clusters(resolution_id: int) -> Select:
     """
-    unique_ids = pc.unique(pa.concat_arrays([pc.unique(a) for a in id_arrs]))
+    Get cluster hashes and IDs for a resolution, its parents, and siblings.
 
-    with Session(engine) as session:
-        matched = (
-            session.query(Clusters)
-            .filter(
-                Clusters.cluster_id.in_(
-                    bindparam(
-                        "ins_ids",
-                        unique_ids.to_pylist(),
-                        expanding=True,
-                    )
-                )
-            )
-            .all()
-        )
+    * When a parent is a dataset, retrieves the data via the Sources table.
+    * When a parent is a model, retrieves the data via the Probabilities table.
 
-    return pa.table(
-        {
-            "id": pa.array([c.cluster_id for c in matched], type=pa.uint64()),
-            "hash": pa.array([c.cluster_hash for c in matched], type=pa.large_binary()),
-        }
+    This corresponds to all possible existing clusters that a resolution might ever be
+    able to link together, or propose.
+
+    Args:
+        resolution_id: The ID of the resolution to query
+
+    Returns:
+        List of tuples containing (cluster_hash, cluster_id)
+    """
+    direct_resolution = select(Resolutions.resolution_id).where(
+        Resolutions.resolution_id == resolution_id
     )
 
-
-def _create_hash_lookup(*hash_arrs: *tuple[pa.Array, ...], engine: Engine):
-    """Creates a Hash-ID lookup for existing Clusters.
-
-    This shares logic with MatchboxDBAdapter.cluster_hash_to_id, and should use
-    it when this is moved to an API layer.
-    """
-    unique_hashes = pc.unique(pa.concat_arrays([pc.unique(a) for a in hash_arrs]))
-
-    with Session(engine) as session:
-        matched = (
-            session.query(Clusters)
-            .filter(
-                Clusters.cluster_hash.in_(
-                    bindparam(
-                        "ins_hashes",
-                        unique_hashes.to_pylist(),
-                        expanding=True,
-                    )
-                )
-            )
-            .all()
-        )
-
-    return pa.table(
-        {
-            "id": pa.array([c.cluster_id for c in matched], type=pa.uint64()),
-            "hash": pa.array([c.cluster_hash for c in matched], type=pa.large_binary()),
-        }
+    parent_resolutions = select(ResolutionFrom.parent).where(
+        ResolutionFrom.child == resolution_id
     )
 
-
-def _get_existing_hash_mask(hashes: pa.Array, engine: Engine) -> pa.Array:
-    """Given a an array of hashes, return a mask array of the ones in Clusters.
-
-    Array contains true if the value exists.
-    """
-    with Session(engine) as session:
-        existing = (
-            session.query(Clusters.cluster_hash)
-            .filter(
-                Clusters.cluster_hash.in_(
-                    bindparam(
-                        "ins_hashes",
-                        hashes.to_pylist(),
-                        expanding=True,
-                    )
+    sibling_resolutions = (
+        select(ResolutionFrom.child)
+        .where(
+            ResolutionFrom.parent.in_(
+                select(ResolutionFrom.parent).where(
+                    ResolutionFrom.child == resolution_id
                 )
             )
-            .all()
         )
-
-    existing_hashes = {row[0] for row in existing}
-
-    mask = pa.array(
-        [hash_val in existing_hashes for hash_val in hashes], type=pa.bool_()
+        .where(ResolutionFrom.child != resolution_id)
     )
 
-    return mask
+    resolution_set = union(
+        direct_resolution, parent_resolutions, sibling_resolutions
+    ).cte("resolution_set")
+
+    # Main query
+    base_query = (
+        select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
+        .distinct()
+        .select_from(Clusters)
+        .join(Probabilities, Probabilities.cluster == Clusters.cluster_id, isouter=True)
+    )
+
+    # Subquery for source datasets
+    source_datasets = (
+        select(Resolutions.resolution_id)
+        .join(
+            resolution_set, resolution_set.c.resolution_id == Resolutions.resolution_id
+        )
+        .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
+    )
+
+    # Subquery for model resolutions
+    model_resolutions = (
+        select(Resolutions.resolution_id)
+        .join(
+            resolution_set, resolution_set.c.resolution_id == Resolutions.resolution_id
+        )
+        .where(~exists().where(Sources.resolution_id == Resolutions.resolution_id))
+    )
+
+    # Combine conditions
+    final_query = base_query.where(
+        (Clusters.dataset.in_(source_datasets))
+        | (Probabilities.resolution.in_(model_resolutions))
+    )
+
+    return final_query
 
 
 def _results_to_insert_tables(
@@ -379,12 +341,13 @@ def _results_to_insert_tables(
     """
     logic_logger.info(f"[{resolution.name}] Wrangling data to insert tables")
 
-    # Create initial ID-Hash lookup for probabilities
-    lookup = _create_id_lookup(
-        results.probabilities["left_id"],
-        results.probabilities["right_id"],
+    # Create ID-Hash lookup for existing probabilities
+    lookup = sql_to_df(
+        stmt=_get_resolution_related_clusters(resolution.resolution_id),
         engine=engine,
+        return_type="arrow",
     )
+    lookup = lookup.cast(pa.schema([("hash", pa.large_binary()), ("id", pa.uint64())]))
 
     # Look up hashes
     left = _map_ids(
@@ -418,72 +381,72 @@ def _results_to_insert_tables(
         dtype=pa.large_binary,
     )
 
-    # New hashes may already exist. Augment the lookup
-    new_lookup = _create_hash_lookup(
-        hierarchy["parent"], hierarchy["child"], engine=engine
+    # Create Clusters Arrow table to insert, containing only new clusters
+    new_hashes = pc.unique(
+        pc.filter(
+            hierarchy["parent"],
+            pc.invert(pc.is_in(hierarchy["parent"], value_set=lookup["hash"])),
+        )
     )
-    lookup = drop_duplicates(pa.concat_tables([lookup, new_lookup]))
-
-    cluster_id_generator = count(Clusters.next_id())
-
-    parent_ids = _map_ids(
-        array=hierarchy["parent"],
-        lookup=lookup,
-        source="hash",
-        target="id",
-        replace=cluster_id_generator,
-    )
-    child_ids = _map_ids(
-        array=hierarchy["child"],
-        lookup=lookup,
-        source="hash",
-        target="id",
-        replace=cluster_id_generator,
-    )
-
-    hierarchy = pa.table(
-        {
-            "parent_id": parent_ids,
-            "parent_hash": hierarchy["parent"],
-            "child_id": child_ids,
-            "probability": hierarchy["probability"],
-        }
-    )
-    hierarchy_deduped = drop_duplicates(
-        hierarchy.select(["parent_id", "parent_hash", "probability"]),
-        on=["parent_id", "parent_hash", "probability"],
-        keep="first",
-    )
-
-    # Wrangle to output formats
-
+    start_id = Clusters.next_id()
     clusters = pa.table(
         {
-            "cluster_id": hierarchy_deduped["parent_id"],
-            "cluster_hash": hierarchy_deduped["parent_hash"],
-            "dataset": pa.nulls(hierarchy_deduped.shape[0], type=pa.uint64()),
-            "source_pk": pa.nulls(
-                hierarchy_deduped.shape[0], type=pa.list_(pa.string())
+            "cluster_id": pa.array(
+                range(start_id, start_id + len(new_hashes), 1), type=pa.uint64()
             ),
+            "cluster_hash": new_hashes,
+            "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
+            "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
         }
     )
-    contains = hierarchy.select(["parent_id", "child_id"])
+
+    # Create Probabilities Arrow table to insert, containing all generated probabilities
+    augmented_lookup = pa.concat_tables(
+        [
+            lookup,
+            clusters.select(["cluster_hash", "cluster_id"]).rename_columns(
+                ["hash", "id"]
+            ),
+        ]
+    )
     probabilities = pa.table(
         {
             "resolution": pa.array(
-                [resolution.resolution_id] * hierarchy_deduped.shape[0],
+                [resolution.resolution_id] * hierarchy.shape[0],
                 type=pa.uint64(),
             ),
-            "cluster": hierarchy_deduped["parent_id"],
-            "probability": hierarchy_deduped["probability"],
+            "cluster": _map_ids(
+                array=hierarchy["parent"],
+                lookup=augmented_lookup,
+                source="hash",
+                target="id",
+            ),
+            "probability": hierarchy["probability"],
         }
     )
 
-    # Final masking to ensure we only insert new Clusters
-    # pg_bulk_ingest can't handle upsert on non-primary key
-
-    mask = pc.invert(pc.is_in(clusters["cluster_hash"], lookup["hash"]))
-    clusters = clusters.filter(mask)
+    # Create Contains Arrow table to insert, containing only new contains edges
+    # Recall that clusters are defined by their parents, so all existing clusters
+    # already have the same parent-child relationships as were calculated here
+    hierarchy_new = hierarchy.filter(
+        pa.compute.is_in(hierarchy["parent"], value_set=new_hashes)
+    )
+    contains = pa.table(
+        {
+            "parent": _map_ids(
+                array=hierarchy_new["parent"],
+                lookup=augmented_lookup,
+                source="hash",
+                target="id",
+            ),
+            "child": _map_ids(
+                array=hierarchy_new["child"],
+                lookup=augmented_lookup,
+                source="hash",
+                target="id",
+            ),
+        }
+    )
 
     logic_logger.info(f"[{resolution.name}] Wrangling complete!")
 

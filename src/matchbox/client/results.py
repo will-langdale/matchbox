@@ -90,8 +90,9 @@ class Results(BaseModel):
 
         table_fields = set(value.column_names)
         expected_fields = {"left_id", "right_id", "probability"}
+        optional_fields = {"id"}
 
-        if table_fields != expected_fields:
+        if table_fields - optional_fields != expected_fields:
             raise ValueError(f"Expected {expected_fields}. \n" f"Found {table_fields}.")
 
         def _check_range(arr: pa.Array, min: float, max: float) -> bool:
@@ -122,6 +123,18 @@ class Results(BaseModel):
                 i=value.schema.get_field_index("probability"),
                 field_="probability",
                 column=probability_uint8,
+            )
+
+        if "id" in table_fields:
+            return value.cast(
+                pa.schema(
+                    [
+                        ("id", pa.uint64()),
+                        ("left_id", pa.uint64()),
+                        ("right_id", pa.uint64()),
+                        ("probability", pa.uint8()),
+                    ]
+                )
             )
 
         return value.cast(

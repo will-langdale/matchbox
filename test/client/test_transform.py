@@ -99,6 +99,20 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
     assert len(pc.unique(with_components["component"])) == parameters["num_components"]
 
 
+def test_empty_attach_components_to_probabilities():
+    probabilities = pa.table(
+        {
+            "left": [],
+            "right": [],
+            "probability": [],
+        }
+    )
+
+    with_components = attach_components_to_probabilities(probabilities=probabilities)
+
+    assert len(with_components) == 0
+
+
 @pytest.mark.parametrize(
     ("probabilities", "hierarchy"),
     [

@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Callable
 
+import pyarrow.compute as pc
 import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
@@ -304,36 +305,35 @@ class TestMatchboxBackend:
         assert len(pre_results.probabilities) > 0
         assert pre_results.metadata.name == "naive_test.crn"
 
-        self.backend.validate_ids(ids=pre_results.probabilities["id"].to_list())
-        self.backend.validate_ids(ids=pre_results.probabilities["left_id"].to_list())
-        self.backend.validate_ids(ids=pre_results.probabilities["right_id"].to_list())
+        self.backend.validate_ids(ids=pre_results.probabilities["id"].to_pylist())
+        self.backend.validate_ids(ids=pre_results.probabilities["left_id"].to_pylist())
+        self.backend.validate_ids(ids=pre_results.probabilities["right_id"].to_pylist())
 
         # Set
-        target_row = pre_results.probabilities.dataframe.iloc[0]
+        target_row = pre_results.probabilities.to_pylist()[0]
         target_id = target_row["id"]
         target_left_id = target_row["left_id"]
         target_right_id = target_row["right_id"]
 
-        matches_id_mask = pre_results.probabilities.dataframe["id"] != target_id
-        matches_left_mask = (
-            pre_results.probabilities.dataframe["left_id"] != target_left_id
+        matches_id_mask = pc.not_equal(pre_results.probabilities["id"], target_id)
+        matches_left_mask = pc.not_equal(
+            pre_results.probabilities["left_id"], target_left_id
         )
-        matches_right_mask = (
-            pre_results.probabilities.dataframe["right_id"] != target_right_id
+        matches_right_mask = pc.not_equal(
+            pre_results.probabilities["right_id"], target_right_id
         )
 
-        df_probabilities_truncated = pre_results.probabilities.dataframe[
-            matches_id_mask & matches_left_mask & matches_right_mask
-        ].copy()
+        combined_mask = pc.and_(
+            pc.and_(matches_id_mask, matches_left_mask), matches_right_mask
+        )
+        df_probabilities_truncated = pre_results.probabilities.filter(combined_mask)
 
         results = Results(
-            probabilities=df_probabilities_truncated[
+            probabilities=df_probabilities_truncated.select(
                 ["left_id", "right_id", "probability"]
-            ].reset_index(
-                drop=True
-            ),  # Reset so adding ID doesn't try to match old index
-            model=pre_results.probabilities.model,
-            metadata=pre_results.probabilities.metadata,
+            ),
+            model=pre_results.model,
+            metadata=pre_results.metadata,
         )
 
         naive_crn.results = results
@@ -342,19 +342,10 @@ class TestMatchboxBackend:
         post_results = naive_crn.results
 
         # Check difference
-        assert len(pre_results.probabilities.dataframe) != len(
-            post_results.probabilities.dataframe
-        )
-        assert len(pre_results.clusters.dataframe) != len(
-            post_results.clusters.dataframe
-        )
+        assert len(pre_results.probabilities) != len(post_results.probabilities)
 
         # Check similarity
-        assert (
-            pre_results.probabilities.metadata.name
-            == post_results.probabilities.metadata.name
-        )
-        assert pre_results.clusters.metadata.name == post_results.clusters.metadata.name
+        assert pre_results.metadata.name == post_results.metadata.name
 
     def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""

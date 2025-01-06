@@ -10,17 +10,9 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import rustworkx as rx
 from dotenv import find_dotenv, load_dotenv
-from rich.console import Console
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
 
 from matchbox.common.hash import hash_values
+from matchbox.common.logging import build_progress_bar
 
 T = TypeVar("T", bound=Hashable)
 
@@ -94,6 +86,11 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
 
     Returns a table with an additional column, component.
     """
+    # Handle empty probabilities
+    if len(probabilities) == 0:
+        empty_components = pa.array([], type=pa.int64())
+        return probabilities.append_column("component", empty_components)
+
     # Create index to use in graph
     unique = pc.unique(
         pa.concat_arrays(
@@ -261,15 +258,15 @@ def to_hierarchical_clusters(
     Returns:
         Arrow table with columns ['parent', 'child', 'probability']
     """
-    console = Console()
-    progress_columns = [
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-    ]
+    # Handle empty probabilities
+    if len(probabilities) == 0:
+        return pa.table(
+            {
+                "parent": pa.array([], type=dtype()),
+                "child": pa.array([], type=dtype()),
+                "probability": pa.array([], type=pa.uint8()),
+            }
+        )
 
     probabilities = probabilities.sort_by([("component", "ascending")])
     components = pc.unique(probabilities["component"])
@@ -283,7 +280,7 @@ def to_hierarchical_clusters(
     indices = []
     start_idx = 0
 
-    with Progress(*progress_columns, console=console) as progress:
+    with build_progress_bar() as progress:
         split_task = progress.add_task(
             "[cyan]Splitting tables...", total=len(component_col)
         )
@@ -304,7 +301,7 @@ def to_hierarchical_clusters(
 
     # Process components in parallel
     results = []
-    with Progress(*progress_columns, console=console) as progress:
+    with build_progress_bar() as progress:
         process_task = progress.add_task(
             "[green]Processing components...", total=len(component_tables)
         )
