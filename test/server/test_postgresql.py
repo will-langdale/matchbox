@@ -249,6 +249,8 @@ def test_benchmark_generate_tables():
 
         results = generate_all_tables(20, 5, 15, 5, 100)
 
+        assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
+
         for table_name, table_arrow in results.items():
             df = table_arrow.to_pandas()
             # Pandas' `to_sql` dislikes arrays

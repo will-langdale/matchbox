@@ -186,7 +186,7 @@ class DisjointSet(Generic[T]):
 
 
 def component_to_hierarchy(
-    table: pa.Table, salt: int, dtype: pa.DataType = pa.int64
+    table: pa.Table, salt: int, dtype: pa.DataType = pa.uint64
 ) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
