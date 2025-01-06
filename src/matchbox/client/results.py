@@ -108,6 +108,10 @@ class Results(BaseModel):
                 mult = 100
             elif _check_range(value["probability"], 0, 100):
                 mult = 0
+            elif len(value["probability"]) == 0:
+                mult = 0
+                # Empty array, no need to check range
+                pass
             else:
                 p_max = pc.max(value["probability"])
                 p_min = pc.min(value["probability"])

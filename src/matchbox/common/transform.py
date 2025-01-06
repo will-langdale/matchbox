@@ -75,7 +75,12 @@ def to_clusters(results: pa.Table) -> pa.Table:
             components["child"].extend(children)
             components["threshold"].extend([prob] * len(children))
 
-    return pa.Table.from_pydict(components)
+    return pa.Table.from_pydict(
+        components,
+        schema=pa.schema(
+            [("parent", pa.uint64()), ("child", pa.uint64()), ("threshold", pa.uint8())]
+        ),
+    )
 
 
 def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
