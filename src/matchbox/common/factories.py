@@ -6,7 +6,7 @@ import pyarrow as pa
 import rustworkx as rx
 
 
-def verify_components(table) -> dict:
+def verify_components(table: pa.Table) -> dict:
     """
     Fast verification of connected components using rustworkx.
 
