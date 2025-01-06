@@ -51,7 +51,7 @@ def _hash_list_int(li: list[int]) -> list[bytes]:
     return [HASH_FUNC(str(i).encode("utf-8")).digest() for i in li]
 
 
-def _unique_clusters(all_parents: Iterable[int], all_probabilities: Iterable[int]):
+def _unique_clusters(all_parents: Iterable[int], all_probabilities: Iterable[int]) -> tuple[list[int], list[float]]:
     ll = set()
     clusters = []
     probabilities = []
