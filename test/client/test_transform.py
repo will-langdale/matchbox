@@ -1,7 +1,6 @@
 from functools import lru_cache
 from itertools import chain
 from typing import Any
-from unittest.mock import patch
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -173,57 +172,54 @@ def test_empty_attach_components_to_probabilities():
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
 ):
-    with patch("matchbox.common.transform.IntMap") as MockIntMap:
-        instance = MockIntMap.return_value
-        instance.index.side_effect = _combine_strings
-        probabilities_table = (
-            pa.Table.from_pydict(probabilities)
-            .cast(
-                pa.schema(
-                    [
-                        ("left", pa.string()),
-                        ("right", pa.string()),
-                        ("probability", pa.uint8()),
-                    ]
-                )
-            )
-            .sort_by([("probability", "descending")])
-        )
-
-        parents, children, probs = zip(*hierarchy, strict=False)
-
-        hierarchy_true = (
-            pa.table(
-                [parents, children, probs], names=["parent", "child", "probability"]
-            )
-            .cast(
-                pa.schema(
-                    [
-                        ("parent", pa.string()),
-                        ("child", pa.string()),
-                        ("probability", pa.uint8()),
-                    ]
-                )
-            )
-            .sort_by(
+    probabilities_table = (
+        pa.Table.from_pydict(probabilities)
+        .cast(
+            pa.schema(
                 [
-                    ("probability", "descending"),
-                    ("parent", "ascending"),
-                    ("child", "ascending"),
+                    ("left", pa.string()),
+                    ("right", pa.string()),
+                    ("probability", pa.uint8()),
                 ]
             )
-            .filter(pc.is_valid(pc.field("parent")))
         )
+        .sort_by([("probability", "descending")])
+    )
 
-        hierarchy = component_to_hierarchy(probabilities_table, pa.string).sort_by(
+    parents, children, probs = zip(*hierarchy, strict=False)
+
+    hierarchy_true = (
+        pa.table([parents, children, probs], names=["parent", "child", "probability"])
+        .cast(
+            pa.schema(
+                [
+                    ("parent", pa.string()),
+                    ("child", pa.string()),
+                    ("probability", pa.uint8()),
+                ]
+            )
+        )
+        .sort_by(
             [
                 ("probability", "descending"),
                 ("parent", "ascending"),
                 ("child", "ascending"),
             ]
         )
+        .filter(pc.is_valid(pc.field("parent")))
+    )
 
-        assert hierarchy.equals(hierarchy_true)
+    hierarchy = component_to_hierarchy(
+        table=probabilities_table, dtype=pa.string, hash_func=_combine_strings
+    ).sort_by(
+        [
+            ("probability", "descending"),
+            ("parent", "ascending"),
+            ("child", "ascending"),
+        ]
+    )
+
+    assert hierarchy.equals(hierarchy_true)
 
 
 @pytest.mark.parametrize(
