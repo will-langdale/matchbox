@@ -74,18 +74,4 @@ With the truth threshold set to `1.0` by default, deterministic methodologies ar
 
 ## Development
 
-This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/). To install all dependencies for this project, run:
-
-```
-uv sync --all-extras
-```
-
-Secret scanning is done with [trufflehog](https://github.com/trufflesecurity/trufflehog).
-
-For security, use of [pre-commit](https://pre-commit.com) is expected. Ensure your hooks are installed with `pre-commit install`.
-
-Task running is done with [just](https://just.systems/man/en/). To see all available commands:
-
-```console
-just -l
-```
+See our full development guide and coding standards in [CONTRIBUTING.md](./CONTRIBUTING.md)
