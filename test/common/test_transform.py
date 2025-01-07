@@ -6,18 +6,19 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
+from matchbox.common.factories import generate_dummy_probabilities
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     component_to_hierarchy,
     to_hierarchical_clusters,
 )
-from test.fixtures.factories import generate_dummy_probabilities, verify_components
 
 
 @lru_cache(maxsize=None)
 def _combine_strings(*n: str) -> str:
     """
-    Combine n strings into a single string.
+    Combine n strings into a single string, with a cache.
+    Meant to replace `matchbox.common.hash.IntMap.index`
 
     Args:
         *args: Variable number of strings to combine
@@ -27,45 +28,6 @@ def _combine_strings(*n: str) -> str:
     """
     letters = set(chain.from_iterable(n))
     return "".join(sorted(letters))
-
-
-@pytest.mark.parametrize(
-    ("parameters"),
-    [
-        {
-            "left_range": (0, 1_000),
-            "right_range": (1_000, 2_000),
-            "prob_range": (0.6, 0.8),
-            "num_components": 10,
-            "total_rows": 100_000,
-        },
-    ],
-    ids=["simple"],
-)
-def test_probabilities_factory(parameters: dict[str, Any]):
-    left_values = range(*parameters["left_range"])
-    right_values = range(*parameters["right_range"])
-
-    probabilities = generate_dummy_probabilities(
-        left_values=left_values,
-        right_values=right_values,
-        prob_range=parameters["prob_range"],
-        num_components=parameters["num_components"],
-        total_rows=parameters["total_rows"],
-    )
-    report = verify_components(table=probabilities)
-
-    assert report["num_components"] == parameters["num_components"]
-    assert set(pc.unique(probabilities["left"]).to_pylist()) == set(left_values)
-    assert set(pc.unique(probabilities["right"]).to_pylist()) == set(right_values)
-    assert (
-        pc.max(probabilities["probability"]).as_py() / 100
-        <= parameters["prob_range"][1]
-    )
-    assert (
-        pc.min(probabilities["probability"]).as_py() / 100
-        >= parameters["prob_range"][0]
-    )
 
 
 @pytest.mark.parametrize(
@@ -166,8 +128,27 @@ def test_empty_attach_components_to_probabilities():
                 ("xy", "y", 90),
             },
         ),
+        # Test case 4: A component larger than two remains unchanged
+        # at a successive threshold
+        (
+            {
+                "left": ["x", "y", "a"],
+                "right": ["y", "z", "b"],
+                "probability": [90, 90, 85],
+            },
+            {
+                ("xy", "x", 90),
+                ("xy", "y", 90),
+                ("yz", "y", 90),
+                ("yz", "z", 90),
+                ("xyz", "xy", 90),
+                ("xyz", "yz", 90),
+                ("ab", "a", 85),
+                ("ab", "b", 85),
+            },
+        ),
     ],
-    ids=["equal", "asymmetric", "single"],
+    ids=["equal", "asymmetric", "single", "unchanged"],
 )
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
