@@ -217,8 +217,8 @@ def generate_result_tables(
         indexed_parents, clusters["probability"].to_numpy()
     )
 
-    set_children = set(indexed_children)
     source_entries = left_ids if right_ids is None else left_ids + right_ids
+    set_children = set(indexed_children)
     top_clusters = [c for c in final_clusters + source_entries if c not in set_children]
 
     probabilities_table = pa.table(

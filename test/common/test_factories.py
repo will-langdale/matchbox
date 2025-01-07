@@ -49,6 +49,13 @@ def test_calculate_min_max_edges(
     ("parameters"),
     [
         {
+            "left_count": 5,
+            "right_count": None,
+            "prob_range": (0.6, 0.8),
+            "num_components": 3,
+            "total_rows": 2,
+        },
+        {
             "left_count": 1000,
             "right_count": None,
             "prob_range": (0.6, 0.8),
@@ -77,7 +84,13 @@ def test_calculate_min_max_edges(
             "total_rows": calculate_min_max_edges(1000, 1000, 10, False)[1],
         },
     ],
-    ids=["dedupe_min", "dedupe_max", "link_min", "link_max"],
+    ids=[
+        "dedupe_no_edges",
+        "dedupe_min",
+        "dedupe_max",
+        "link_min",
+        "link_max",
+    ],
 )
 def test_generate_dummy_probabilities(parameters: dict[str, Any]):
     len_left = parameters["left_count"]
@@ -103,19 +116,19 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         num_components=n_components,
         total_rows=total_rows,
     )
-    report = verify_components(table=probabilities)
+    report = verify_components(table=probabilities, all_nodes=rand_vals)
     p_left = probabilities["left"].to_pylist()
     p_right = probabilities["right"].to_pylist()
 
     assert report["num_components"] == n_components
 
-    # Link
+    # Link job
     if right_values:
-        assert set(p_left) == set(left_values)
-        assert set(p_right) == set(right_values)
+        assert set(p_left) <= set(left_values)
+        assert set(p_right) <= set(right_values)
     # Dedupe
     else:
-        assert set(p_left) | set(p_right) == set(left_values)
+        assert set(p_left) | set(p_right) <= set(left_values)
 
     assert (
         pc.max(probabilities["probability"]).as_py() / 100

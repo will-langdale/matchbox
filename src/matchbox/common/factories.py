@@ -1,45 +1,33 @@
 from collections import Counter
 from textwrap import dedent
+from typing import Any
 
 import numpy as np
 import pyarrow as pa
 import rustworkx as rx
 
+from matchbox.common.transform import graph_results
 
-def verify_components(table: pa.Table) -> dict:
+
+def verify_components(all_nodes: list[Any], table: pa.Table) -> dict:
     """
     Fast verification of connected components using rustworkx.
 
     Args:
+        all_nodes: list of identities of inputs being matched
         table: PyArrow table with 'left', 'right' columns
 
     Returns:
         dictionary containing basic component statistics
     """
-    graph = rx.PyGraph()
-
-    unique_nodes = set(table["left"].to_numpy()) | set(table["right"].to_numpy())
-    graph.add_nodes_from(range(len(unique_nodes)))
-
-    node_to_idx = {node: idx for idx, node in enumerate(unique_nodes)}
-    edges = [
-        (node_to_idx[left], node_to_idx[right])
-        for left, right in zip(
-            table["left"].to_numpy(),
-            table["right"].to_numpy(),
-            strict=True,
-        )
-    ]
-
-    graph.add_edges_from_no_data(edges)
-
+    graph, _, _ = graph_results(table, all_nodes)
     components = rx.connected_components(graph)
     component_sizes = Counter(len(component) for component in components)
 
     return {
         "num_components": len(components),
-        "total_nodes": len(unique_nodes),
-        "total_edges": len(edges),
+        "total_nodes": graph.num_nodes(),
+        "total_edges": graph.num_edges(),
         "component_sizes": component_sizes,
         "min_component_size": min(component_sizes.keys()),
         "max_component_size": max(component_sizes.keys()),
@@ -122,7 +110,7 @@ def calculate_min_max_edges(
     max_edges += _max_edges_component(
         left_after_min_mod, right_after_min_mod, deduplicate
     ) * (max_mod - min_mod)
-    # components where both side have maximum nodes
+    # components where both side have minimum nodes
     min_edges += _min_edges_component(left_div, right_div, deduplicate) * (
         num_components - max_mod
     )
@@ -173,6 +161,9 @@ def generate_dummy_probabilities(
     )
 
     mode = "dedupe" if deduplicate else "link"
+
+    if total_rows == 0:
+        raise ValueError("At least one edge must be generated")
     if total_rows < min_possible_edges:
         raise ValueError(
             dedent(f"""
@@ -204,7 +195,7 @@ def generate_dummy_probabilities(
     left_components = np.array_split(np.array(left_values), num_components)
     right_components = np.array_split(np.array(right_values), num_components)
     # For each left-right component pair, the right equals the left rotated by one
-    right_components = [np.roll(c, 1) for c in right_components]
+    right_components = [np.roll(c, -1) for c in right_components]
 
     all_edges = []
 

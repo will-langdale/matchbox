@@ -2,7 +2,7 @@ import logging
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable, Generic, Hashable, TypeVar
+from typing import Callable, Generic, Hashable, Iterable, TypeVar
 
 import numpy as np
 import pyarrow as pa
@@ -92,14 +92,23 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
     )
 
 
-def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
+def graph_results(
+    probabilities: pa.Table, all_nodes: Iterable[int] | None = None
+) -> tuple[rx.PyDiGraph, np.ndarray, np.ndarray]:
     """
-    Takes an Arrow table of probabilities and adds a component column.
+    Convert probability table to graph representation.
 
-    Expects an Arrow table of column, left, right, probability.
-
-    Returns a table with an additional column, component.
+    Args:
+        probabilities: PyArrow table with 'left', 'right' columns
+        all_nodes: superset of node identities figuring in probabilities table.
+            Used to optionally add isolated nodes to the graph.
+    Returns:
+        A tuple containing:
+        - Rustwork directed graph
+        - A list mapping the 'left' probabilities column to node indices in the graph
+        - A list mapping the 'right' probabilities column to node indices in the graph
     """
+
     # Create index to use in graph
     unique = pc.unique(
         pa.concat_arrays(
@@ -109,8 +118,9 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
             ]
         )
     )
-    left_indices = pc.index_in(probabilities["left"], unique)
-    right_indices = pc.index_in(probabilities["right"], unique)
+
+    left_indices = pc.index_in(probabilities["left"], unique).to_numpy()
+    right_indices = pc.index_in(probabilities["right"], unique).to_numpy()
 
     # Create and process graph
     n_nodes = len(unique)
@@ -119,9 +129,25 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
     graph = rx.PyGraph(node_count_hint=n_nodes, edge_count_hint=n_edges)
     graph.add_nodes_from(range(n_nodes))
 
-    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=True))
+    if all_nodes is not None:
+        isolated_nodes = len(set(all_nodes) - set(unique.to_pylist()))
+        graph.add_nodes_from(range(isolated_nodes))
+
+    edges = tuple(zip(left_indices, right_indices, strict=True))
     graph.add_edges_from_no_data(edges)
 
+    return graph, left_indices, right_indices
+
+
+def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
+    """
+    Takes an Arrow table of probabilities and adds a component column.
+
+    Expects an Arrow table of column, left, right, probability.
+
+    Returns a table with an additional column, component.
+    """
+    graph, left_indices, _ = graph_results(probabilities)
     components = rx.connected_components(graph)
 
     # Convert components to arrays, map back to input to join, and reattach
@@ -130,10 +156,10 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
         np.arange(len(components)), [len(c) for c in components]
     )
 
-    node_to_component = np.zeros(len(unique), dtype=np.int64)
+    node_to_component = np.zeros(graph.num_nodes(), dtype=np.int64)
     node_to_component[component_indices] = component_labels
 
-    edge_components = pa.array(node_to_component[left_indices.to_numpy()])
+    edge_components = pa.array(node_to_component[left_indices])
 
     return probabilities.append_column("component", edge_components).sort_by(
         [("component", "ascending"), ("probability", "descending")]
