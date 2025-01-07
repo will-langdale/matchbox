@@ -247,7 +247,7 @@ def test_benchmark_generate_tables():
         con.execute(text(empty_schema()))
         con.commit()
 
-        results = generate_all_tables(20, 5, 15, 5, 100)
+        results = generate_all_tables(20, 5, 25, 5, 25)
 
         assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
 
