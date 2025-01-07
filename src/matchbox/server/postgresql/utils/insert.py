@@ -229,7 +229,7 @@ def _map_ids(
     source: str,
     target: str,
 ) -> pa.Array:
-    """Maps values in an array to a lookup, replacing nulls with an iterator.
+    """Maps values in an array via a lookup.
 
     Args:
         array: Array of values to map

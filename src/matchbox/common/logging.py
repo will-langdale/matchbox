@@ -15,7 +15,7 @@ def get_console():
 
 
 def build_progress_bar(console: Console | None = None) -> Progress:
-    """Create a progress bar with custom columns."""
+    """Create a progress bar."""
     if console is None:
         console = get_console()
 
