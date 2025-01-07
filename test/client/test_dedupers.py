@@ -80,32 +80,30 @@ def test_dedupers(
 
     results = model.run()
 
-    deduped_df_with_source = results.inspect_probabilities(
+    result_with_source = results.inspect_probabilities(
         left_data=df, left_key="id", right_data=df, right_key="id"
     )
 
     assert isinstance(results.probabilities, pa.Table)
     assert results.probabilities.shape[0] == fx_data.tgt_prob_n
 
-    assert isinstance(deduped_df_with_source, DataFrame)
+    assert isinstance(result_with_source, DataFrame)
     for field in fields:
-        assert deduped_df_with_source[field + "_x"].equals(
-            deduped_df_with_source[field + "_y"]
-        )
+        assert result_with_source[field + "_x"].equals(result_with_source[field + "_y"])
 
     # 3. Correct number of clusters are resolved
 
-    clusters_dupes_df_with_source = results.inspect_clusters(
+    clusters_with_source = results.inspect_clusters(
         left_data=df, left_key="id", right_data=df, right_key="id"
     )
 
     assert isinstance(results.clusters, pa.Table)
     assert pc.count_distinct(results.clusters["parent"]).as_py() == fx_data.tgt_clus_n
 
-    assert isinstance(clusters_dupes_df_with_source, DataFrame)
+    assert isinstance(clusters_with_source, DataFrame)
     for field in fields:
-        assert clusters_dupes_df_with_source[field + "_x"].equals(
-            clusters_dupes_df_with_source[field + "_y"]
+        assert clusters_with_source[field + "_x"].equals(
+            clusters_with_source[field + "_y"]
         )
 
     # 4. Probabilities and clusters are inserted correctly
