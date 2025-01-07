@@ -127,7 +127,7 @@ class Results(BaseModel):
                     target_type=pa.uint8(), allow_float_truncate=True
                 ),
             )
-            value.set_column(
+            value = value.set_column(
                 i=value.schema.get_field_index("probability"),
                 field_="probability",
                 column=probability_uint8,

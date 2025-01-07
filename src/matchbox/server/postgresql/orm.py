@@ -285,5 +285,5 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
 
     # Constraints
     __table_args__ = (
-        CheckConstraint("probability BETWEEN 0 AND 1", name="valid_probability"),
+        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
     )
