@@ -2,7 +2,7 @@ import logging
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable, Generic, Hashable, TypeVar
+from typing import Callable, Generic, Hashable, Iterable, TypeVar
 
 import numpy as np
 import pyarrow as pa
@@ -92,14 +92,23 @@ def to_clusters(results: ProbabilityResults) -> ClusterResults:
     )
 
 
-def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
+def graph_results(
+    probabilities: pa.Table, all_nodes: Iterable[int] | None = None
+) -> tuple[rx.PyDiGraph, np.ndarray, np.ndarray]:
     """
-    Takes an Arrow table of probabilities and adds a component column.
+    Convert probability table to graph representation.
 
-    Expects an Arrow table of column, left, right, probability.
-
-    Returns a table with an additional column, component.
+    Args:
+        probabilities: PyArrow table with 'left', 'right' columns
+        all_nodes: superset of node identities figuring in probabilities table.
+            Used to optionally add isolated nodes to the graph.
+    Returns:
+        A tuple containing:
+        - Rustwork directed graph
+        - A list mapping the 'left' probabilities column to node indices in the graph
+        - A list mapping the 'right' probabilities column to node indices in the graph
     """
+
     # Create index to use in graph
     unique = pc.unique(
         pa.concat_arrays(
@@ -109,8 +118,9 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
             ]
         )
     )
-    left_indices = pc.index_in(probabilities["left"], unique)
-    right_indices = pc.index_in(probabilities["right"], unique)
+
+    left_indices = pc.index_in(probabilities["left"], unique).to_numpy()
+    right_indices = pc.index_in(probabilities["right"], unique).to_numpy()
 
     # Create and process graph
     n_nodes = len(unique)
@@ -119,9 +129,25 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
     graph = rx.PyGraph(node_count_hint=n_nodes, edge_count_hint=n_edges)
     graph.add_nodes_from(range(n_nodes))
 
-    edges = tuple(zip(left_indices.to_numpy(), right_indices.to_numpy(), strict=True))
+    if all_nodes is not None:
+        isolated_nodes = len(set(all_nodes) - set(unique.to_pylist()))
+        graph.add_nodes_from(range(isolated_nodes))
+
+    edges = tuple(zip(left_indices, right_indices, strict=True))
     graph.add_edges_from_no_data(edges)
 
+    return graph, left_indices, right_indices
+
+
+def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
+    """
+    Takes an Arrow table of probabilities and adds a component column.
+
+    Expects an Arrow table of column, left, right, probability.
+
+    Returns a table with an additional column, component.
+    """
+    graph, left_indices, _ = graph_results(probabilities)
     components = rx.connected_components(graph)
 
     # Convert components to arrays, map back to input to join, and reattach
@@ -130,10 +156,10 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
         np.arange(len(components)), [len(c) for c in components]
     )
 
-    node_to_component = np.zeros(len(unique), dtype=np.int64)
+    node_to_component = np.zeros(graph.num_nodes(), dtype=np.int64)
     node_to_component[component_indices] = component_labels
 
-    edge_components = pa.array(node_to_component[left_indices.to_numpy()])
+    edge_components = pa.array(node_to_component[left_indices])
 
     return probabilities.append_column("component", edge_components).sort_by(
         [("component", "ascending"), ("probability", "descending")]
@@ -186,7 +212,7 @@ class DisjointSet(Generic[T]):
 
 
 def component_to_hierarchy(
-    table: pa.Table, dtype: pa.DataType = pa.uint64, salt: int = 1
+    table: pa.Table, salt: int, dtype: pa.DataType = pa.uint64
 ) -> pa.Table:
     """
     Convert pairwise probabilities into a hierarchical representation.
@@ -199,7 +225,10 @@ def component_to_hierarchy(
     Returns:
         Arrow Table with columns ['parent', 'child', 'probability']
     """
-    probs = np.sort(pc.unique(table["probability"]).to_numpy())[::-1]
+    ascending_probs = np.sort(
+        pc.unique(table["probability"]).to_numpy(zero_copy_only=False)
+    )
+    probs = ascending_probs[::-1]
 
     djs = DisjointSet[int]()  # implements connected components
     im = IntMap(salt=salt)  # generates IDs for new clusters
@@ -227,6 +256,9 @@ def component_to_hierarchy(
             if len(children) <= 2:
                 continue  # Skip pairs already handled by pairwise probabilities
 
+            if im.has_mapping(*children):
+                continue  # Skip unchanged components from previous thresholds
+
             parent = im.index(*children)
             prev_roots: set[int] = set()
             for child in children:
@@ -249,7 +281,7 @@ def component_to_hierarchy(
 def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
-    dtype: pa.DataType = pa.uint64,
+    dtype: pa.DataType = pa.int64,
     timeout: int = 300,
 ) -> pa.Table:
     """
@@ -259,7 +291,6 @@ def to_hierarchical_clusters(
         probabilities: Arrow table with columns ['component', 'left', 'right',
             'probability']
         proc_func: Function to process each component
-        dtype: Arrow data type for parent/child columns
         timeout: Maximum seconds to wait for each component to process
 
     Returns:
@@ -315,7 +346,7 @@ def to_hierarchical_clusters(
 
         with ProcessPoolExecutor(max_workers=n_cores) as executor:
             futures = [
-                executor.submit(proc_func, component_table, dtype, salt)
+                executor.submit(proc_func, component_table, salt=salt, dtype=dtype)
                 for salt, component_table in enumerate(component_tables)
             ]
 

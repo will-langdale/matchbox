@@ -155,3 +155,14 @@ class IntMap:
         self.mapping[value_set] = salted_id
 
         return salted_id
+
+    def has_mapping(self, *values: int) -> bool:
+        """
+        Args:
+            values: the integers in the set you want to index
+
+        Returns:
+            Boolean indicating whether index for values already exists
+        """
+        value_set = frozenset(values)
+        return value_set in self.mapping
