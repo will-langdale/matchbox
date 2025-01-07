@@ -9,6 +9,7 @@ from dotenv import find_dotenv, load_dotenv
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
 
@@ -50,7 +51,10 @@ def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(self: "Results", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.clusters:
-            self.clusters = to_clusters(self.probabilities)
+            im = IntMap(salt=42)
+            self.clusters = to_clusters(
+                results=self.probabilities, dtype=pa.int64, hash_func=im.index
+            )
         return func(self, *args, **kwargs)
 
     return wrapper
@@ -209,7 +213,7 @@ class Results(BaseModel):
             right_data=right_data,
             right_key=right_key,
             left_merge_col="left_id",
-            right_merge_col="left_id",
+            right_merge_col="right_id",
         )
 
     @calculate_clusters

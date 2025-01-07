@@ -22,7 +22,11 @@ dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
-def to_clusters(results: pa.Table) -> pa.Table:
+def to_clusters(
+    results: pa.Table,
+    dtype: pa.DataType = pa.large_binary,
+    hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
+) -> pa.Table:
     """
     Converts probabilities into a list of connected components formed at each threshold.
 
@@ -68,8 +72,8 @@ def to_clusters(results: pa.Table) -> pa.Table:
 
         # For each changed component, add ALL members at current threshold
         for comp in changed_components:
-            children = sorted([G.get_node_data(n) for n in comp])
-            parent = hash_values(*children)
+            children = [G.get_node_data(n) for n in comp]
+            parent = hash_func(*children)
 
             components["parent"].extend([parent] * len(children))
             components["child"].extend(children)
@@ -78,7 +82,7 @@ def to_clusters(results: pa.Table) -> pa.Table:
     return pa.Table.from_pydict(
         components,
         schema=pa.schema(
-            [("parent", pa.uint64()), ("child", pa.uint64()), ("threshold", pa.uint8())]
+            [("parent", dtype()), ("child", dtype()), ("threshold", pa.uint8())]
         ),
     )
 
