@@ -70,7 +70,7 @@ def hash_data(data: str) -> bytes:
     return HASH_FUNC(prep_for_hash(data)).digest()
 
 
-def hash_values(*values: *tuple[T, ...]) -> bytes:
+def hash_values(*values: tuple[T, ...]) -> bytes:
     """Returns a single hash of a tuple of items ordered by its values.
 
     List must be sorted as the different orders of value must produce the same hash.
@@ -125,9 +125,12 @@ class IntMap:
     (which will be negative). The salt allows to work with a parallel execution
     model, where each worker maintains their separate ID space, as long as each worker
     operates on disjoint subsets of positive integers.
+
+    Args:
+        salt (optional): A positive integer to salt the Cantor pairing function
     """
 
-    def __init__(self, salt: int):
+    def __init__(self, salt: int = 42):
         self.mapping: dict[frozenset[int], int] = {}
         if salt < 0:
             raise ValueError("The salt must be a positive integer")

@@ -29,6 +29,11 @@ def to_clusters(
     """
     Converts probabilities into a list of connected components formed at each threshold.
 
+    Args:
+        results: Arrow table with columns ['left_id', 'right_id', 'probability']
+        dtype: Arrow data type for the parent and child columns
+        hash_func: Function to hash the parent and child values
+
     Returns:
         Arrow table of parent, child, threshold, sorted by probability descending.
     """
@@ -221,6 +226,8 @@ def component_to_hierarchy(
 
     Args:
         table: Arrow Table with columns ['left', 'right', 'probability']
+        dtype: Arrow data type for the parent and child columns
+        hash_func: Function to hash the parent and child values
 
     Returns:
         Arrow Table with columns ['parent', 'child', 'probability']
@@ -296,6 +303,8 @@ def to_hierarchical_clusters(
         probabilities: Arrow table with columns ['component', 'left', 'right',
             'probability']
         proc_func: Function to process each component
+        hash_func: Function to hash the parent and child values
+        dtype: Arrow data type for the parent and child columns
         timeout: Maximum seconds to wait for each component to process
 
     Returns:

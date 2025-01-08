@@ -51,7 +51,7 @@ def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(self: "Results", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.clusters:
-            im = IntMap(salt=42)
+            im = IntMap()
             self.clusters = to_clusters(
                 results=self.probabilities, dtype=pa.int64, hash_func=im.index
             )
@@ -113,9 +113,8 @@ class Results(BaseModel):
             elif _check_range(value["probability"], 0, 100):
                 mult = 0
             elif len(value["probability"]) == 0:
-                mult = 0
                 # Empty array, no need to check range
-                pass
+                mult = 0
             else:
                 p_max = pc.max(value["probability"])
                 p_min = pc.min(value["probability"])
