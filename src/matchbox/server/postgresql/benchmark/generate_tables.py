@@ -13,101 +13,7 @@ from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
 )
-
-
-class HashIDMap:
-    """An object to help map between IDs and hashes.
-
-    When given a set of IDs, returns their hashes. If any ID doesn't have a hash,
-    it will error.
-
-    When given a set of hashes, it will return their IDs. If any don't have IDs, it
-    will create one and return it as part of the set.
-
-    Args:
-        start: The first integer to use for new IDs
-        lookup (optional): A lookup table to use for existing hashes
-    """
-
-    def __init__(self, start: int, lookup: pa.Table = None):
-        self._next_int = start
-        if not lookup:
-            self._lookup = pa.Table(
-                pa.schema([("id", pa.uint64()), ("hash", pa.large_binary())])
-            )
-        else:
-            self._lookup = lookup
-
-        if self._lookup.column_names != ["id", "hash"]:
-            raise ValueError("Lookup table must have columns 'id' and 'hash'")
-
-    def get_hashes(self, ids: pa.UInt64Array) -> pa.LargeBinaryArray:
-        """Returns the hashes of the given IDs."""
-        indices = pc.index_in(ids, self._lookup["id"])
-
-        if pc.any(pc.is_null(indices)).as_py():
-            m_mask = pc.is_null(indices)
-            m_ids = pc.filter(ids, m_mask)
-
-            raise ValueError(
-                f"The following IDs were not found in lookup table: {m_ids.to_pylist()}"
-            )
-
-        return pc.take(self._lookup["hash"], indices)
-
-    def get_ids(self, hashes: pa.LargeBinaryArray) -> pa.UInt64Array:
-        """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
-        indices = pc.index_in(hashes, self._lookup["hash"])
-        new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
-
-        if len(new_hashes) > 0:
-            new_ids = pa.array(
-                range(self._next_int, self._next_int + len(new_hashes)),
-                type=pa.uint64(),
-            )
-
-            new_entries = pa.Table.from_arrays(
-                [new_ids, new_hashes], names=["id", "hash"]
-            )
-
-            self._next_int += len(new_hashes)
-            self._lookup = pa.concat_tables([self._lookup, new_entries])
-
-            indices = pc.index_in(hashes, self._lookup["hash"])
-
-        return pc.take(self._lookup["id"], indices)
-
-
-class IDCreator:
-    """
-    A generator of incremental integer IDs from positive and negative integers.
-
-    Positive integers will be returned as they are, while a new ID will be generated
-    for each negative integer.
-    """
-
-    def __init__(self, start: int):
-        self.id_map = dict()
-        self._next_int = start
-
-    def create(self, temp_ids: list[int]) -> list[int]:
-        results = []
-        for ti in temp_ids:
-            if ti >= 0:
-                results.append(ti)
-            elif ti in self.id_map:
-                results.append(self.id_map[ti])
-            else:
-                self.id_map[ti] = self._next_int
-                results.append(self._next_int)
-                self._next_int += 1
-
-        return results
-
-    def reset_mapping(self):
-        self.__init__(self._next_int)
-
-        return self
+from matchbox.server.postgresql.utils.insert import HashIDMap
 
 
 def _hash_list_int(li: list[int]) -> list[bytes]:
@@ -247,12 +153,12 @@ def generate_result_tables(
     left_ids: Iterable[int],
     right_ids: Iterable[int] | None,
     resolution_id: int,
-    id_creator: IDCreator,
+    next_id: int,
     n_components: int,
     n_probs: int,
     prob_min: float = 0.6,
     prob_max: float = 1,
-) -> tuple[list[int], pa.Table, pa.Table, pa.Table]:
+) -> tuple[list[int], pa.Table, pa.Table, pa.Table, int]:
     """
     Generate probabilities, contains and clusters tables.
 
@@ -260,15 +166,15 @@ def generate_result_tables(
         left_ids: list of IDs for rows to dedupe, or for left rows to link
         right_ids: list of IDs for right rows to link
         resolution_id: ID of resolution for this dedupe or link model
-        id_creator: an IDCreator instance
+        next_id: the next ID to use when generating IDs
         n_components: number of implied connected components
         n_probs: total number of probability edges to be generated
         prob_min: minimum value for probabilities to be generated
         prob_max: maximum value for probabilities to be generated
 
     Returns:
-        Tuple with 1 list of top-level clusters and 3 PyArrow tables, for probabilities,
-        contains and clusters
+        Tuple with 1 list of top-level clusters, 3 PyArrow tables, for probabilities,
+        contains and clusters, and the next ID to use for future calls
     """
     probs = generate_dummy_probabilities(
         left_ids, right_ids, [prob_min, prob_max], n_components, n_probs
@@ -287,7 +193,7 @@ def generate_result_tables(
         }
     )
 
-    hm = HashIDMap(start=id_creator._next_int, lookup=lookup)
+    hm = HashIDMap(start=next_id, lookup=lookup)
 
     # Join hashes, probabilities and components
     probs_with_ccs = attach_components_to_probabilities(
@@ -342,7 +248,13 @@ def generate_result_tables(
         }
     )
 
-    return (top_clusters, probabilities_table, contains_table, clusters_table)
+    return (
+        top_clusters,
+        probabilities_table,
+        contains_table,
+        clusters_table,
+        hm._next_int,
+    )
 
 
 def generate_all_tables(
@@ -372,36 +284,43 @@ def generate_all_tables(
     clusters_source1 = generate_cluster_source(0, source_len)
     clusters_source2 = generate_cluster_source(source_len, source_len * 2)
 
-    id_creator = IDCreator(source_len * 2)
-    top_clusters1, probabilities_dedupe1, contains_dedupe1, clusters_dedupe1 = (
-        generate_result_tables(
-            clusters_source1["cluster_id"].to_pylist(),
-            None,
-            3,
-            id_creator,
-            dedupe_components,
-            dedupe_len,
-        )
-    )
-
-    top_clusters2, probabilities_dedupe2, contains_dedupe2, clusters_dedupe2 = (
-        generate_result_tables(
-            clusters_source2["cluster_id"].to_pylist(),
-            None,
-            4,
-            id_creator.reset_mapping(),
-            dedupe_components,
-            dedupe_len,
-        )
-    )
-
-    _, probabilities_link, contains_link, clusters_link = generate_result_tables(
+    (
         top_clusters1,
+        probabilities_dedupe1,
+        contains_dedupe1,
+        clusters_dedupe1,
+        next_id1,
+    ) = generate_result_tables(
+        left_ids=clusters_source1["cluster_id"].to_pylist(),
+        right_ids=None,
+        resolution_id=3,
+        next_id=source_len * 2,
+        n_components=dedupe_components,
+        n_probs=dedupe_len,
+    )
+
+    (
         top_clusters2,
-        5,
-        id_creator.reset_mapping(),
-        link_components,
-        link_len,
+        probabilities_dedupe2,
+        contains_dedupe2,
+        clusters_dedupe2,
+        next_id2,
+    ) = generate_result_tables(
+        left_ids=clusters_source2["cluster_id"].to_pylist(),
+        right_ids=None,
+        resolution_id=4,
+        next_id=next_id1,
+        n_components=dedupe_components,
+        n_probs=dedupe_len,
+    )
+
+    _, probabilities_link, contains_link, clusters_link, _ = generate_result_tables(
+        left_ids=top_clusters1,
+        right_ids=top_clusters2,
+        resolution_id=5,
+        next_id=next_id2,
+        n_components=link_components,
+        n_probs=link_len,
     )
 
     probabilities = pa.concat_tables(

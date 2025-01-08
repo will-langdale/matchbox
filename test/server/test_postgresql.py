@@ -55,4 +55,4 @@ def test_benchmark_generate_tables():
             for c in df.columns:
                 if df[c].dtype == "uint64":
                     df[c] = df[c].astype("int64")
-            df.to_sql(table_name, con, schema)
+            df.to_sql(name=table_name, con=con, schema=schema)

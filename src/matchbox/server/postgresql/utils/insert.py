@@ -29,6 +29,69 @@ from matchbox.server.postgresql.utils.db import batch_ingest
 logic_logger = logging.getLogger("mb_logic")
 
 
+class HashIDMap:
+    """An object to help map between IDs and hashes.
+
+    When given a set of IDs, returns their hashes. If any ID doesn't have a hash,
+    it will error.
+
+    When given a set of hashes, it will return their IDs. If any don't have IDs, it
+    will create one and return it as part of the set.
+
+    Args:
+        start: The first integer to use for new IDs
+        lookup (optional): A lookup table to use for existing hashes
+    """
+
+    def __init__(self, start: int, lookup: pa.Table = None):
+        self._next_int = start
+        if not lookup:
+            self._lookup = pa.Table(
+                pa.schema([("id", pa.uint64()), ("hash", pa.large_binary())])
+            )
+        else:
+            self._lookup = lookup
+
+        if self._lookup.column_names != ["id", "hash"]:
+            raise ValueError("Lookup table must have columns 'id' and 'hash'")
+
+    def get_hashes(self, ids: pa.UInt64Array) -> pa.LargeBinaryArray:
+        """Returns the hashes of the given IDs."""
+        indices = pc.index_in(ids, self._lookup["id"])
+
+        if pc.any(pc.is_null(indices)).as_py():
+            m_mask = pc.is_null(indices)
+            m_ids = pc.filter(ids, m_mask)
+
+            raise ValueError(
+                f"The following IDs were not found in lookup table: {m_ids.to_pylist()}"
+            )
+
+        return pc.take(self._lookup["hash"], indices)
+
+    def get_ids(self, hashes: pa.LargeBinaryArray) -> pa.UInt64Array:
+        """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
+        indices = pc.index_in(hashes, self._lookup["hash"])
+        new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
+
+        if len(new_hashes) > 0:
+            new_ids = pa.array(
+                range(self._next_int, self._next_int + len(new_hashes)),
+                type=pa.uint64(),
+            )
+
+            new_entries = pa.Table.from_arrays(
+                [new_ids, new_hashes], names=["id", "hash"]
+            )
+
+            self._next_int += len(new_hashes)
+            self._lookup = pa.concat_tables([self._lookup, new_entries])
+
+            indices = pc.index_in(hashes, self._lookup["hash"])
+
+        return pc.take(self._lookup["id"], indices)
+
+
 def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
 
