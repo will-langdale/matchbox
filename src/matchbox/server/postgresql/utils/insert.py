@@ -293,21 +293,15 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
     )
 
     # Subquery for source datasets
-    source_datasets = (
-        select(Resolutions.resolution_id)
-        .join(
-            resolution_set, resolution_set.c.resolution_id == Resolutions.resolution_id
-        )
-        .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
+    source_datasets = select(resolution_set.c.resolution_id).join(
+        Sources, Sources.resolution_id == resolution_set.c.resolution_id
     )
 
     # Subquery for model resolutions
-    model_resolutions = (
-        select(Resolutions.resolution_id)
-        .join(
-            resolution_set, resolution_set.c.resolution_id == Resolutions.resolution_id
-        )
-        .where(~exists().where(Sources.resolution_id == Resolutions.resolution_id))
+    model_resolutions = select(resolution_set.c.resolution_id).where(
+        ~exists()
+        .select_from(Sources)
+        .where(Sources.resolution_id == resolution_set.c.resolution_id)
     )
 
     # Combine conditions
