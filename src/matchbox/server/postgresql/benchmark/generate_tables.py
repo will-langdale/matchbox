@@ -4,14 +4,78 @@ from typing import Iterable
 
 import click
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from matchbox.common.factories import generate_dummy_probabilities
-from matchbox.common.hash import HASH_FUNC
+from matchbox.common.hash import HASH_FUNC, hash_data, hash_values
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
 )
+
+
+class HashIDMap:
+    """An object to help map between IDs and hashes.
+
+    When given a set of IDs, returns their hashes. If any ID doesn't have a hash,
+    it will error.
+
+    When given a set of hashes, it will return their IDs. If any don't have IDs, it
+    will create one and return it as part of the set.
+
+    Args:
+        start: The first integer to use for new IDs
+        lookup (optional): A lookup table to use for existing hashes
+    """
+
+    def __init__(self, start: int, lookup: pa.Table = None):
+        self._next_int = start
+        if not lookup:
+            self._lookup = pa.Table(
+                pa.schema([("id", pa.uint64()), ("hash", pa.large_binary())])
+            )
+        else:
+            self._lookup = lookup
+
+        if self._lookup.column_names != ["id", "hash"]:
+            raise ValueError("Lookup table must have columns 'id' and 'hash'")
+
+    def get_hashes(self, ids: pa.UInt64Array) -> pa.LargeBinaryArray:
+        """Returns the hashes of the given IDs."""
+        indices = pc.index_in(ids, self._lookup["id"])
+
+        if pc.any(pc.is_null(indices)).as_py():
+            m_mask = pc.is_null(indices)
+            m_ids = pc.filter(ids, m_mask)
+
+            raise ValueError(
+                f"The following IDs were not found in lookup table: {m_ids.to_pylist()}"
+            )
+
+        return pc.take(self._lookup["hash"], indices)
+
+    def get_ids(self, hashes: pa.LargeBinaryArray) -> pa.UInt64Array:
+        """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
+        indices = pc.index_in(hashes, self._lookup["hash"])
+        new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
+
+        if len(new_hashes) > 0:
+            new_ids = pa.array(
+                range(self._next_int, self._next_int + len(new_hashes)),
+                type=pa.uint64(),
+            )
+
+            new_entries = pa.Table.from_arrays(
+                [new_ids, new_hashes], names=["id", "hash"]
+            )
+
+            self._next_int += len(new_hashes)
+            self._lookup = pa.concat_tables([self._lookup, new_entries])
+
+            indices = pc.index_in(hashes, self._lookup["hash"])
+
+        return pc.take(self._lookup["id"], indices)
 
 
 class IDCreator:
@@ -119,7 +183,9 @@ def generate_resolutions() -> pa.Table:
     return pa.table(
         {
             "resolution_id": pa.array(resolutions_resolution_id, type=pa.uint64()),
-            "resolution_hash": pa.array(resolutions_resolution_hash, type=pa.binary()),
+            "resolution_hash": pa.array(
+                resolutions_resolution_hash, type=pa.large_binary()
+            ),
             "type": pa.array(resolutions_type, type=pa.string()),
             "name": pa.array(resolutions_name, type=pa.string()),
             "description": pa.array(resolutions_name, type=pa.string()),
@@ -170,7 +236,7 @@ def generate_cluster_source(range_left: int, range_right: int) -> pa.Table:
     return pa.table(
         {
             "cluster_id": pa.array(source, type=pa.uint64()),
-            "cluster_hash": pa.array(_hash_list_int(source), type=pa.binary()),
+            "cluster_hash": pa.array(_hash_list_int(source), type=pa.large_binary()),
             "dataset": pa.array([1] * len(source), type=pa.uint64()),
             "source_pk": pa.array(create_source_pk(source), type=pa.list_(pa.string())),
         }
@@ -208,43 +274,70 @@ def generate_result_tables(
         left_ids, right_ids, [prob_min, prob_max], n_components, n_probs
     )
 
-    clusters = to_hierarchical_clusters(attach_components_to_probabilities(probs))
-
-    indexed_parents = id_creator.create(clusters["parent"].to_pylist())
-    indexed_children = id_creator.create(clusters["child"].to_pylist())
-
-    final_clusters, final_probs = _unique_clusters(
-        indexed_parents, clusters["probability"].to_numpy()
+    # Create a lookup table for hashes
+    all_probs = pa.concat_arrays(
+        [probs["left"].combine_chunks(), probs["right"].combine_chunks()]
+    )
+    lookup = pa.table(
+        {
+            "id": all_probs,
+            "hash": pa.array(
+                [hash_data(p) for p in all_probs.to_pylist()], type=pa.large_binary()
+            ),
+        }
     )
 
-    source_entries = left_ids if right_ids is None else left_ids + right_ids
-    set_children = set(indexed_children)
-    top_clusters = [c for c in final_clusters + source_entries if c not in set_children]
+    hm = HashIDMap(start=id_creator._next_int, lookup=lookup)
+
+    # Join hashes, probabilities and components
+    probs_with_ccs = attach_components_to_probabilities(
+        pa.table(
+            {
+                "left": hm.get_hashes(probs["left"]),
+                "right": hm.get_hashes(probs["right"]),
+                "probability": probs["probability"],
+            }
+        )
+    )
+
+    # Calculate hierarchies
+    hierarchy = to_hierarchical_clusters(
+        probabilities=probs_with_ccs,
+        hash_func=hash_values,
+        dtype=pa.large_binary,
+    )
+
+    # Shape into tables
+    parent_ids = hm.get_ids(hierarchy["parent"])
+    child_ids = hm.get_ids(hierarchy["child"])
+    unique_parent_ids = pc.unique(parent_ids)
+    mask = pc.invert(pc.is_in(unique_parent_ids, pc.unique(child_ids)))
+    top_clusters = pc.filter(unique_parent_ids, mask)
 
     probabilities_table = pa.table(
         {
             "resolution": pa.array(
-                [resolution_id] * len(final_clusters), type=pa.uint64()
+                [resolution_id] * hierarchy.shape[0], type=pa.uint64()
             ),
-            "cluster": pa.array(final_clusters, type=pa.uint64()),
-            "probability": pa.array(final_probs, type=pa.float64()),
+            "cluster": parent_ids,
+            "probability": hierarchy["probability"],
         }
     )
 
     contains_table = pa.table(
         {
-            "parent": pa.array(indexed_parents, type=pa.uint64()),
-            "child": pa.array(indexed_children, type=pa.uint64()),
+            "parent": parent_ids,
+            "child": child_ids,
         }
     )
 
     clusters_table = pa.table(
         {
-            "cluster_id": pa.array(final_clusters, type=pa.uint64()),
-            "cluster_hash": pa.array(_hash_list_int(final_clusters), type=pa.binary()),
-            "dataset": pa.array([None] * len(final_clusters), type=pa.uint64()),
+            "cluster_id": unique_parent_ids,
+            "cluster_hash": hm.get_hashes(unique_parent_ids),
+            "dataset": pa.array([None] * len(unique_parent_ids), type=pa.uint64()),
             "source_pk": pa.array(
-                [None] * len(final_clusters), type=pa.list_(pa.string())
+                [None] * len(unique_parent_ids), type=pa.list_(pa.string())
             ),
         }
     )
