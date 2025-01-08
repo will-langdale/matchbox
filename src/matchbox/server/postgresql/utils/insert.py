@@ -44,20 +44,25 @@ class HashIDMap:
     """
 
     def __init__(self, start: int, lookup: pa.Table = None):
-        self._next_int = start
+        self.next_int = start
         if not lookup:
-            self._lookup = pa.Table(
-                pa.schema([("id", pa.uint64()), ("hash", pa.large_binary())])
+            self.lookup = pa.Table.from_arrays(
+                [
+                    pa.array([], type=pa.uint64()),
+                    pa.array([], type=pa.large_binary()),
+                    pa.array([], type=pa.bool_()),
+                ],
+                names=["id", "hash", "new"],
             )
         else:
-            self._lookup = lookup
-
-        if self._lookup.column_names != ["id", "hash"]:
-            raise ValueError("Lookup table must have columns 'id' and 'hash'")
+            new_column = pa.array([False] * lookup.shape[0], type=pa.bool_())
+            self.lookup = pa.Table.from_arrays(
+                [lookup["id"], lookup["hash"], new_column], names=["id", "hash", "new"]
+            )
 
     def get_hashes(self, ids: pa.UInt64Array) -> pa.LargeBinaryArray:
         """Returns the hashes of the given IDs."""
-        indices = pc.index_in(ids, self._lookup["id"])
+        indices = pc.index_in(ids, self.lookup["id"])
 
         if pc.any(pc.is_null(indices)).as_py():
             m_mask = pc.is_null(indices)
@@ -67,29 +72,34 @@ class HashIDMap:
                 f"The following IDs were not found in lookup table: {m_ids.to_pylist()}"
             )
 
-        return pc.take(self._lookup["hash"], indices)
+        return pc.take(self.lookup["hash"], indices)
 
     def get_ids(self, hashes: pa.LargeBinaryArray) -> pa.UInt64Array:
         """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
-        indices = pc.index_in(hashes, self._lookup["hash"])
+        indices = pc.index_in(hashes, self.lookup["hash"])
         new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
 
         if len(new_hashes) > 0:
             new_ids = pa.array(
-                range(self._next_int, self._next_int + len(new_hashes)),
+                range(self.next_int, self.next_int + len(new_hashes)),
                 type=pa.uint64(),
             )
 
             new_entries = pa.Table.from_arrays(
-                [new_ids, new_hashes], names=["id", "hash"]
+                [
+                    new_ids,
+                    new_hashes,
+                    pa.array([True] * len(new_hashes), type=pa.bool_()),
+                ],
+                names=["id", "hash", "new"],
             )
 
-            self._next_int += len(new_hashes)
-            self._lookup = pa.concat_tables([self._lookup, new_entries])
+            self.next_int += len(new_hashes)
+            self.lookup = pa.concat_tables([self.lookup, new_entries])
 
-            indices = pc.index_in(hashes, self._lookup["hash"])
+            indices = pc.index_in(hashes, self.lookup["hash"])
 
-        return pc.take(self._lookup["id"], indices)
+        return pc.take(self.lookup["id"], indices)
 
 
 def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
@@ -383,18 +393,9 @@ def _results_to_insert_tables(
 
     Returns:
         A tuple containing:
-            * The Clusters table
-                * cluster_id, pa.uint64()
-                * cluster_hash, pa.large_binary()
-                * dataset, pa.uint64() (all Null)
-                * source_pk, pa.list_(type=pa.string())) (all Null)
-            * The Contains table
-                * parent, pa.uint64()
-                * child, pa.uint64()
-            * The Probabilities table
-                * resolution, pa.uint64()
-                * cluster, pa.uint64()
-                * probabilities, pa.uint8()
+            * A Clusters update Arrow table
+            * A Contains update Arrow table
+            * A Probabilities update Arrow table
     """
     logic_logger.info(f"[{resolution.name}] Wrangling data to insert tables")
 
@@ -406,26 +407,14 @@ def _results_to_insert_tables(
     )
     lookup = lookup.cast(pa.schema([("hash", pa.large_binary()), ("id", pa.uint64())]))
 
-    # Look up hashes
-    left = _map_ids(
-        array=results.probabilities["left_id"],
-        lookup=lookup,
-        source="id",
-        target="hash",
-    )
-    right = _map_ids(
-        array=results.probabilities["right_id"],
-        lookup=lookup,
-        source="id",
-        target="hash",
-    )
+    hm = HashIDMap(start=Clusters.next_id(), lookup=lookup)
 
     # Join hashes, probabilities and components
     probs_with_ccs = attach_components_to_probabilities(
         pa.table(
             {
-                "left": left,
-                "right": right,
+                "left": hm.get_hashes(results.probabilities["left_id"]),
+                "right": hm.get_hashes(results.probabilities["right_id"]),
                 "probability": results.probabilities["probability"],
             }
         )
@@ -438,47 +427,26 @@ def _results_to_insert_tables(
         dtype=pa.large_binary,
     )
 
-    # Create Clusters Arrow table to insert, containing only new clusters
-    new_hashes = pc.unique(
-        pc.filter(
-            hierarchy["parent"],
-            pc.invert(pc.is_in(hierarchy["parent"], value_set=lookup["hash"])),
-        )
-    )
-    start_id = Clusters.next_id()
-    clusters = pa.table(
-        {
-            "cluster_id": pa.array(
-                range(start_id, start_id + len(new_hashes), 1), type=pa.uint64()
-            ),
-            "cluster_hash": new_hashes,
-            "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
-            "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
-        }
-    )
-
     # Create Probabilities Arrow table to insert, containing all generated probabilities
-    augmented_lookup = pa.concat_tables(
-        [
-            lookup,
-            clusters.select(["cluster_hash", "cluster_id"]).rename_columns(
-                ["hash", "id"]
-            ),
-        ]
-    )
     probabilities = pa.table(
         {
             "resolution": pa.array(
                 [resolution.resolution_id] * hierarchy.shape[0],
                 type=pa.uint64(),
             ),
-            "cluster": _map_ids(
-                array=hierarchy["parent"],
-                lookup=augmented_lookup,
-                source="hash",
-                target="id",
-            ),
+            "cluster": hm.get_ids(hierarchy["parent"]),
             "probability": hierarchy["probability"],
+        }
+    )
+
+    # Create Clusters Arrow table to insert, containing only new clusters
+    new_hashes = pc.filter(hm.lookup["hash"], hm.lookup["new"])
+    clusters = pa.table(
+        {
+            "cluster_id": pc.filter(hm.lookup["id"], hm.lookup["new"]),
+            "cluster_hash": new_hashes,
+            "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
+            "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
         }
     )
 
@@ -490,18 +458,8 @@ def _results_to_insert_tables(
     )
     contains = pa.table(
         {
-            "parent": _map_ids(
-                array=hierarchy_new["parent"],
-                lookup=augmented_lookup,
-                source="hash",
-                target="id",
-            ),
-            "child": _map_ids(
-                array=hierarchy_new["child"],
-                lookup=augmented_lookup,
-                source="hash",
-                target="id",
-            ),
+            "parent": hm.get_ids(hierarchy_new["parent"]),
+            "child": hm.get_ids(hierarchy_new["child"]),
         }
     )
 

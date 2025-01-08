@@ -20,22 +20,6 @@ def _hash_list_int(li: list[int]) -> list[bytes]:
     return [HASH_FUNC(str(i).encode("utf-8")).digest() for i in li]
 
 
-def _unique_clusters(
-    all_parents: Iterable[int], all_probabilities: Iterable[int]
-) -> tuple[list[int], list[float]]:
-    ll = set()
-    clusters = []
-    probabilities = []
-    for parent, prob in zip(all_parents, all_probabilities, strict=True):
-        if parent in ll:
-            continue
-        else:
-            ll.add(parent)
-            clusters.append(parent)
-            probabilities.append(prob / 100)
-    return clusters, probabilities
-
-
 def generate_sources() -> pa.Table:
     """
     Generate sources table.
@@ -253,7 +237,7 @@ def generate_result_tables(
         probabilities_table,
         contains_table,
         clusters_table,
-        hm._next_int,
+        hm.next_int,
     )
 
 
