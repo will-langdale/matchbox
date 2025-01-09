@@ -1,15 +1,12 @@
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from functools import lru_cache
 from itertools import chain
-from typing import Any, Iterator
-from unittest.mock import patch
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
 from matchbox.common.factories import generate_dummy_probabilities
-from matchbox.common.hash import IntMap
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     component_to_hierarchy,
@@ -17,7 +14,8 @@ from matchbox.common.transform import (
 )
 
 
-def _combine_strings(self, *n: str) -> str:
+@lru_cache(maxsize=None)
+def _combine_strings(*n: str) -> str:
     """
     Combine n strings into a single string, with a cache.
     Meant to replace `matchbox.common.hash.IntMap.index`
@@ -28,32 +26,8 @@ def _combine_strings(self, *n: str) -> str:
     Returns:
         A single string
     """
-    value_set = frozenset(n)
-    if value_set in self.mapping:
-        return self.mapping[value_set]
-
     letters = set(chain.from_iterable(n))
-
-    new_id = "".join(sorted(letters))
-    self.mapping[value_set] = new_id
-    return new_id
-
-
-@contextmanager
-def parallel_pool_for_tests(
-    max_workers: int = 2, timeout: int = 30
-) -> Iterator[ThreadPoolExecutor]:
-    """Context manager for safe parallel execution in tests using threads.
-
-    Args:
-        max_workers: Maximum number of worker threads
-        timeout: Maximum seconds to wait for each task
-    """
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        try:
-            yield executor
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+    return "".join(sorted(letters))
 
 
 @pytest.mark.parametrize(
@@ -84,6 +58,20 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
     with_components = attach_components_to_probabilities(probabilities=probabilities)
 
     assert len(pc.unique(with_components["component"])) == parameters["num_components"]
+
+
+def test_empty_attach_components_to_probabilities():
+    probabilities = pa.table(
+        {
+            "left": [],
+            "right": [],
+            "probability": [],
+        }
+    )
+
+    with_components = attach_components_to_probabilities(probabilities=probabilities)
+
+    assert len(with_components) == 0
 
 
 @pytest.mark.parametrize(
@@ -165,57 +153,54 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
 def test_component_to_hierarchy(
     probabilities: dict[str, list[str | float]], hierarchy: set[tuple[str, str, int]]
 ):
-    with patch.object(IntMap, "index", _combine_strings):
-        probabilities_table = (
-            pa.Table.from_pydict(probabilities)
-            .cast(
-                pa.schema(
-                    [
-                        ("left", pa.string()),
-                        ("right", pa.string()),
-                        ("probability", pa.uint8()),
-                    ]
-                )
-            )
-            .sort_by([("probability", "descending")])
-        )
-
-        parents, children, probs = zip(*hierarchy, strict=False)
-
-        hierarchy_true = (
-            pa.table(
-                [parents, children, probs], names=["parent", "child", "probability"]
-            )
-            .cast(
-                pa.schema(
-                    [
-                        ("parent", pa.string()),
-                        ("child", pa.string()),
-                        ("probability", pa.uint8()),
-                    ]
-                )
-            )
-            .sort_by(
+    probabilities_table = (
+        pa.Table.from_pydict(probabilities)
+        .cast(
+            pa.schema(
                 [
-                    ("probability", "descending"),
-                    ("parent", "ascending"),
-                    ("child", "ascending"),
+                    ("left", pa.string()),
+                    ("right", pa.string()),
+                    ("probability", pa.uint8()),
                 ]
             )
-            .filter(pc.is_valid(pc.field("parent")))
         )
+        .sort_by([("probability", "descending")])
+    )
 
-        hierarchy = component_to_hierarchy(
-            probabilities_table, salt=1, dtype=pa.string
-        ).sort_by(
+    parents, children, probs = zip(*hierarchy, strict=False)
+
+    hierarchy_true = (
+        pa.table([parents, children, probs], names=["parent", "child", "probability"])
+        .cast(
+            pa.schema(
+                [
+                    ("parent", pa.string()),
+                    ("child", pa.string()),
+                    ("probability", pa.uint8()),
+                ]
+            )
+        )
+        .sort_by(
             [
                 ("probability", "descending"),
                 ("parent", "ascending"),
                 ("child", "ascending"),
             ]
         )
+        .filter(pc.is_valid(pc.field("parent")))
+    )
 
-        assert hierarchy.equals(hierarchy_true)
+    hierarchy = component_to_hierarchy(
+        table=probabilities_table, dtype=pa.string, hash_func=_combine_strings
+    ).sort_by(
+        [
+            ("probability", "descending"),
+            ("parent", "ascending"),
+            ("child", "ascending"),
+        ]
+    )
+
+    assert hierarchy.equals(hierarchy_true)
 
 
 @pytest.mark.parametrize(
@@ -305,16 +290,12 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
     )
 
     # Run and compare
-    with (
-        patch(
-            "matchbox.common.transform.ProcessPoolExecutor",
-            lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
-        ),
-        patch.object(IntMap, "index", _combine_strings),
-    ):
-        result = to_hierarchical_clusters(
-            probabilities, dtype=pa.string, proc_func=component_to_hierarchy
-        )
+    result = to_hierarchical_clusters(
+        probabilities,
+        dtype=pa.string,
+        proc_func=component_to_hierarchy,
+        hash_func=_combine_strings,
+    )
 
     result = result.sort_by(
         [

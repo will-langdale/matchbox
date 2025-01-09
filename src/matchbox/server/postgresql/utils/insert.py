@@ -1,18 +1,21 @@
 import logging
-from collections import defaultdict
-from itertools import count
 
-import numpy as np
-import pandas as pd
-from sqlalchemy import Engine, bindparam, delete, select
+import pyarrow as pa
+import pyarrow.compute as pc
+from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.selectable import Select
 
-from matchbox.client.results import ClusterResults, ProbabilityResults, Results
-from matchbox.common.db import Source
+from matchbox.client.results import Results
+from matchbox.common.db import Source, sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import dataset_to_hashlist, list_to_value_ordered_hash
+from matchbox.common.hash import dataset_to_hashlist, hash_values
+from matchbox.common.transform import (
+    attach_components_to_probabilities,
+    to_hierarchical_clusters,
+)
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
@@ -24,6 +27,79 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.db import batch_ingest
 
 logic_logger = logging.getLogger("mb_logic")
+
+
+class HashIDMap:
+    """An object to help map between IDs and hashes.
+
+    When given a set of IDs, returns their hashes. If any ID doesn't have a hash,
+    it will error.
+
+    When given a set of hashes, it will return their IDs. If any don't have IDs, it
+    will create one and return it as part of the set.
+
+    Args:
+        start: The first integer to use for new IDs
+        lookup (optional): A lookup table to use for existing hashes
+    """
+
+    def __init__(self, start: int, lookup: pa.Table = None):
+        self.next_int = start
+        if not lookup:
+            self.lookup = pa.Table.from_arrays(
+                [
+                    pa.array([], type=pa.uint64()),
+                    pa.array([], type=pa.binary()),
+                    pa.array([], type=pa.bool_()),
+                ],
+                names=["id", "hash", "new"],
+            )
+        else:
+            new_column = pa.array([False] * lookup.shape[0], type=pa.bool_())
+            self.lookup = pa.Table.from_arrays(
+                [lookup["id"], lookup["hash"], new_column], names=["id", "hash", "new"]
+            )
+
+    def get_hashes(self, ids: pa.UInt64Array) -> pa.LargeBinaryArray:
+        """Returns the hashes of the given IDs."""
+        indices = pc.index_in(ids, self.lookup["id"])
+
+        if pc.any(pc.is_null(indices)).as_py():
+            m_mask = pc.is_null(indices)
+            m_ids = pc.filter(ids, m_mask)
+
+            raise ValueError(
+                f"The following IDs were not found in lookup table: {m_ids.to_pylist()}"
+            )
+
+        return pc.take(self.lookup["hash"], indices)
+
+    def get_ids(self, hashes: pa.LargeBinaryArray) -> pa.UInt64Array:
+        """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
+        indices = pc.index_in(hashes, self.lookup["hash"])
+        new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
+
+        if len(new_hashes) > 0:
+            new_ids = pa.array(
+                range(self.next_int, self.next_int + len(new_hashes)),
+                type=pa.uint64(),
+            )
+
+            new_entries = pa.Table.from_arrays(
+                [
+                    new_ids,
+                    new_hashes,
+                    pa.array([True] * len(new_hashes), type=pa.bool_()),
+                ],
+                names=["id", "hash", "new"],
+            )
+
+            self.next_int += len(new_hashes)
+            self.lookup = pa.concat_tables([self.lookup, new_entries])
+
+            indices = pc.index_in(hashes, self.lookup["hash"])
+
+        return pc.take(self.lookup["id"], indices)
 
 
 def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
@@ -142,12 +218,10 @@ def insert_model(
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
-        resolution_hash = list_to_value_ordered_hash(
-            [
-                left.resolution_hash,
-                right.resolution_hash,
-                bytes(model, encoding="utf-8"),
-            ]
+        resolution_hash = hash_values(
+            left.resolution_hash,
+            right.resolution_hash,
+            bytes(model, encoding="utf-8"),
         )
 
         # Check if resolution exists
@@ -222,76 +296,176 @@ def insert_model(
     logic_logger.info(f"[{model}] Done!")
 
 
-def _cluster_results_to_hierarchical(
-    probabilities: ProbabilityResults,
-    clusters: ClusterResults,
-) -> pd.DataFrame:
-    """
-    Converts results to a hierarchical structure by building up from base components.
+def _map_ids(
+    array: pa.Array,
+    lookup: pa.Table,
+    source: str,
+    target: str,
+) -> pa.Array:
+    """Maps values in an array via a lookup.
 
     Args:
-        probabilities: Original pairwise probabilities containing base components
-        clusters: Connected components at each threshold
+        array: Array of values to map
+        lookup: Table of values to map to
+        source: Name of the column to map from
+        target: Name of the column to map to
 
     Returns:
-        Pandas DataFrame of (parent, child, threshold) tuples representing the hierarchy
+        Array of mapped values
     """
-    prob_df = probabilities.dataframe
-    cluster_df = clusters.dataframe
+    indices = pc.index_in(array, lookup[source])
+    return pc.take(lookup[target], indices)
 
-    # Sort thresholds in descending order
-    thresholds = sorted(cluster_df["threshold"].unique(), reverse=True)
 
-    hierarchy: list[tuple[int, int, float]] = []
-    ultimate_parents: dict[int, set[int]] = defaultdict(set)
+def _get_resolution_related_clusters(resolution_id: int) -> Select:
+    """
+    Get cluster hashes and IDs for a resolution, its parents, and siblings.
 
-    # Process each threshold level
-    for threshold in thresholds:
-        threshold_float = float(threshold)
+    * When a parent is a dataset, retrieves the data via the Sources table.
+    * When a parent is a model, retrieves the data via the Probabilities table.
 
-        # Add new pairwise relationships at this threshold
-        current_probs = prob_df[prob_df["probability"] == threshold_float]
+    This corresponds to all possible existing clusters that a resolution might ever be
+    able to link together, or propose.
 
-        for _, row in current_probs.iterrows():
-            parent = row["id"]
-            left_id = row["left_id"]
-            right_id = row["right_id"]
+    Args:
+        resolution_id: The ID of the resolution to query
 
-            hierarchy.extend(
-                [
-                    (parent, left_id, threshold_float),
-                    (parent, right_id, threshold_float),
-                ]
-            )
-
-            ultimate_parents[left_id].add(parent)
-            ultimate_parents[right_id].add(parent)
-
-        # Process clusters at this threshold
-        current_clusters = cluster_df[cluster_df["threshold"] == threshold_float]
-
-        # Group by parent to process components together
-        for parent, group in current_clusters.groupby("parent"):
-            children = set(group["child"])
-            if len(children) <= 2:
-                continue  # Skip pairs already handled by pairwise probabilities
-
-            current_ultimate_parents: set[int] = set()
-            for child in children:
-                current_ultimate_parents.update(ultimate_parents[child])
-
-            for up in current_ultimate_parents:
-                hierarchy.append((parent, up, threshold_float))
-
-            for child in children:
-                ultimate_parents[child] = {parent}
-
-    # Sort hierarchy by threshold (descending), then parent, then child
-    return (
-        pd.DataFrame(hierarchy, columns=["parent", "child", "threshold"])
-        .sort_values(["threshold", "parent", "child"], ascending=[False, True, True])
-        .reset_index(drop=True)
+    Returns:
+        List of tuples containing (cluster_hash, cluster_id)
+    """
+    direct_resolution = select(Resolutions.resolution_id).where(
+        Resolutions.resolution_id == resolution_id
     )
+
+    parent_resolutions = select(ResolutionFrom.parent).where(
+        ResolutionFrom.child == resolution_id
+    )
+
+    sibling_resolutions = (
+        select(ResolutionFrom.child)
+        .where(
+            ResolutionFrom.parent.in_(
+                select(ResolutionFrom.parent).where(
+                    ResolutionFrom.child == resolution_id
+                )
+            )
+        )
+        .where(ResolutionFrom.child != resolution_id)
+    )
+
+    resolution_set = union(
+        direct_resolution, parent_resolutions, sibling_resolutions
+    ).cte("resolution_set")
+
+    # Main query
+    base_query = (
+        select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
+        .distinct()
+        .select_from(Clusters)
+        .join(Probabilities, Probabilities.cluster == Clusters.cluster_id, isouter=True)
+    )
+
+    # Subquery for source datasets
+    source_datasets = select(resolution_set.c.resolution_id).join(
+        Sources, Sources.resolution_id == resolution_set.c.resolution_id
+    )
+
+    # Subquery for model resolutions
+    model_resolutions = select(resolution_set.c.resolution_id).where(
+        ~exists()
+        .select_from(Sources)
+        .where(Sources.resolution_id == resolution_set.c.resolution_id)
+    )
+
+    # Combine conditions
+    final_query = base_query.where(
+        (Clusters.dataset.in_(source_datasets))
+        | (Probabilities.resolution.in_(model_resolutions))
+    )
+
+    return final_query
+
+
+def _results_to_insert_tables(
+    resolution: Resolutions, results: Results, engine: Engine
+) -> tuple[pa.Table, pa.Table, pa.Table]:
+    """Takes Results and returns three Arrow tables that can be inserted exactly.
+
+    Returns:
+        A tuple containing:
+            * A Clusters update Arrow table
+            * A Contains update Arrow table
+            * A Probabilities update Arrow table
+    """
+    logic_logger.info(f"[{resolution.name}] Wrangling data to insert tables")
+
+    # Create ID-Hash lookup for existing probabilities
+    lookup = sql_to_df(
+        stmt=_get_resolution_related_clusters(resolution.resolution_id),
+        engine=engine,
+        return_type="arrow",
+    )
+    lookup = lookup.cast(pa.schema([("hash", pa.binary()), ("id", pa.uint64())]))
+
+    hm = HashIDMap(start=Clusters.next_id(), lookup=lookup)
+
+    # Join hashes, probabilities and components
+    probs_with_ccs = attach_components_to_probabilities(
+        pa.table(
+            {
+                "left": hm.get_hashes(results.probabilities["left_id"]),
+                "right": hm.get_hashes(results.probabilities["right_id"]),
+                "probability": results.probabilities["probability"],
+            }
+        )
+    )
+
+    # Calculate hierarchies
+    hierarchy = to_hierarchical_clusters(
+        probabilities=probs_with_ccs,
+        hash_func=hash_values,
+        dtype=pa.binary,
+    )
+
+    # Create Probabilities Arrow table to insert, containing all generated probabilities
+    probabilities = pa.table(
+        {
+            "resolution": pa.array(
+                [resolution.resolution_id] * hierarchy.shape[0],
+                type=pa.uint64(),
+            ),
+            "cluster": hm.get_ids(hierarchy["parent"]),
+            "probability": hierarchy["probability"],
+        }
+    )
+
+    # Create Clusters Arrow table to insert, containing only new clusters
+    new_hashes = pc.filter(hm.lookup["hash"], hm.lookup["new"])
+    clusters = pa.table(
+        {
+            "cluster_id": pc.filter(hm.lookup["id"], hm.lookup["new"]),
+            "cluster_hash": new_hashes,
+            "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
+            "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
+        }
+    )
+
+    # Create Contains Arrow table to insert, containing only new contains edges
+    # Recall that clusters are defined by their parents, so all existing clusters
+    # already have the same parent-child relationships as were calculated here
+    hierarchy_new = hierarchy.filter(
+        pa.compute.is_in(hierarchy["parent"], value_set=new_hashes)
+    )
+    contains = pa.table(
+        {
+            "parent": hm.get_ids(hierarchy_new["parent"]),
+            "child": hm.get_ids(hierarchy_new["child"]),
+        }
+    )
+
+    logic_logger.info(f"[{resolution.name}] Wrangling complete!")
+
+    return clusters, contains, probabilities
 
 
 def insert_results(
@@ -324,45 +498,9 @@ def insert_results(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"
     )
 
-    # Get the lookup of existing database values and generate new ones
-    hierarchy = _cluster_results_to_hierarchical(
-        probabilities=results.probabilities, clusters=results.clusters
+    clusters, contains, probabilities = _results_to_insert_tables(
+        resolution=resolution, results=results, engine=engine
     )
-    hashes = np.unique(
-        np.concatenate([hierarchy["parent"].unique(), hierarchy["child"].unique()])
-    ).tolist()
-    lookup: dict[bytes, int | None] = {hash: None for hash in hashes}
-
-    with Session(engine) as session:
-        data_inner_join = (
-            session.query(Clusters)
-            .filter(
-                Clusters.cluster_hash.in_(
-                    bindparam(
-                        "ins_ids",
-                        hashes,
-                        expanding=True,
-                    )
-                )
-            )
-            .all()
-        )
-
-        gen_cluster_id = count(Clusters.next_id())
-
-    lookup.update({item.cluster_hash: item.cluster_id for item in data_inner_join})
-    lookup = {k: next(gen_cluster_id) if v is None else v for k, v in lookup.items()}
-
-    hierarchy["parent_id"] = (
-        hierarchy["parent"].apply(lambda i: lookup[i]).astype("int32[pyarrow]")
-    )
-    hierarchy["child_id"] = (
-        hierarchy["child"].apply(lambda i: lookup[i]).astype("int32[pyarrow]")
-    )
-
-    hierarchy_unique_parents = hierarchy[
-        ["parent_id", "parent", "threshold"]
-    ].drop_duplicates()
 
     with Session(engine) as session:
         try:
@@ -385,70 +523,45 @@ def insert_results(
 
     with engine.connect() as conn:
         try:
-            total_records = results.clusters.dataframe.shape[0]
             logic_logger.info(
-                f"[{resolution.name}] Inserting {total_records:,} results objects"
-            )
-
-            cluster_records: list[tuple[int, bytes, None, None]] = list(
-                zip(
-                    hierarchy_unique_parents["parent_id"],
-                    hierarchy_unique_parents["parent"],
-                    [None] * hierarchy_unique_parents.shape[0],
-                    [None] * hierarchy_unique_parents.shape[0],
-                    strict=True,
-                )
-            )
-            contains_records: list[tuple[int, int]] = list(
-                zip(
-                    hierarchy["parent_id"],
-                    hierarchy["child_id"],
-                    strict=True,
-                )
-            )
-            probability_records: list[tuple[int, int, float]] = list(
-                zip(
-                    [resolution.resolution_id] * hierarchy_unique_parents.shape[0],
-                    hierarchy_unique_parents["parent_id"],
-                    hierarchy_unique_parents["threshold"],
-                    strict=True,
-                )
+                f"[{resolution.name}] Inserting {clusters.shape[0]:,} results "
+                "objects"
             )
 
             batch_ingest(
-                records=cluster_records,
+                records=[tuple(c.values()) for c in clusters.to_pylist()],
                 table=Clusters,
                 conn=conn,
                 batch_size=batch_size,
             )
 
             logic_logger.info(
-                f"[{resolution.name}] Successfully inserted {len(cluster_records)} "
+                f"[{resolution.name}] Successfully inserted {clusters.shape[0]} "
                 "objects into Clusters table"
             )
 
             batch_ingest(
-                records=contains_records,
+                records=[tuple(c.values()) for c in contains.to_pylist()],
                 table=Contains,
                 conn=conn,
                 batch_size=batch_size,
             )
 
             logic_logger.info(
-                f"[{resolution.name}] Successfully inserted {len(contains_records)} "
+                f"[{resolution.name}] Successfully inserted {contains.shape[0]} "
                 "objects into Contains table"
             )
 
             batch_ingest(
-                records=probability_records,
+                records=[tuple(c.values()) for c in probabilities.to_pylist()],
                 table=Probabilities,
                 conn=conn,
                 batch_size=batch_size,
             )
 
             logic_logger.info(
-                f"[{resolution.name}] Successfully inserted {len(probability_records)} "
-                "objects into Probabilities table"
+                f"[{resolution.name}] Successfully inserted "
+                f"{probabilities.shape[0]} objects into Probabilities table"
             )
 
         except SQLAlchemyError as e:

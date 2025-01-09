@@ -1,3 +1,5 @@
+import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 from pandas import DataFrame
 from splink import SettingsCreator
@@ -114,35 +116,33 @@ def test_linkers(
 
     results = model.run()
 
-    linked_df = results.probabilities.to_df()
-    linked_df_with_source = results.probabilities.inspect_with_source(
+    result_with_source = results.inspect_probabilities(
         left_data=df_l,
         left_key="id",
         right_data=df_r,
         right_key="id",
     )
 
-    assert isinstance(linked_df, DataFrame)
-    assert linked_df.shape[0] == fx_data.tgt_prob_n
+    assert isinstance(results.probabilities, pa.Table)
+    assert results.probabilities.shape[0] == fx_data.tgt_prob_n
 
-    assert isinstance(linked_df_with_source, DataFrame)
+    assert isinstance(result_with_source, DataFrame)
     for field_l, field_r in zip(fields_l, fields_r, strict=True):
-        assert linked_df_with_source[field_l].equals(linked_df_with_source[field_r])
+        assert result_with_source[field_l].equals(result_with_source[field_r])
 
     # 3. Correct number of clusters are resolved
 
-    clusters_links_df = results.clusters.to_df()
-    clusters_links_df_with_source = results.clusters.inspect_with_source(
+    clusters_with_source = results.inspect_clusters(
         left_data=df_l,
         left_key="id",
         right_data=df_r,
         right_key="id",
     )
 
-    assert isinstance(clusters_links_df, DataFrame)
-    assert clusters_links_df.parent.nunique() == fx_data.tgt_clus_n
+    assert isinstance(results.clusters, pa.Table)
+    assert pc.count_distinct(results.clusters["parent"]).as_py() == fx_data.tgt_clus_n
 
-    assert isinstance(clusters_links_df_with_source, DataFrame)
+    assert isinstance(clusters_with_source, DataFrame)
     for field_l, field_r in zip(fields_l, fields_r, strict=True):
         # When we enrich the ClusterResults in a deduplication job, every child
         # id will match something in the source data, because we're only using
@@ -157,7 +157,7 @@ def test_linkers(
             return s.dropna().unique()
 
         cluster_vals = (
-            clusters_links_df_with_source.filter(["parent", field_l, field_r])
+            clusters_with_source.filter(["parent", field_l, field_r])
             .groupby("parent")
             .agg(
                 {
@@ -178,7 +178,7 @@ def test_linkers(
     results.to_matchbox(backend=matchbox_postgres)
 
     model = matchbox_postgres.get_model(model=linker_name)
-    assert model.probabilities.dataframe.shape[0] == fx_data.tgt_prob_n
+    assert model.results.probabilities.shape[0] == fx_data.tgt_prob_n
 
     model.truth = 0.0
 
