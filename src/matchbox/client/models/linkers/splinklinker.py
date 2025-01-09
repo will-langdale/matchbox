@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, List, Optional, Type
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from splink import DuckDBAPI, SettingsCreator
@@ -241,12 +240,7 @@ class SplinkLinker(Linker):
                     df[f"{self.settings.right_id}_r"].apply(self._id_dtype_r),
                     type=pa.uint64(),
                 ),
-                pc.cast(
-                    pc.multiply(pa.array(df["match_probability"]), 100),
-                    options=pc.CastOptions(
-                        target_type=pa.uint8(), allow_float_truncate=True
-                    ),
-                ),
+                pa.array(df["match_probability"], type=pa.float32()),
             ],
             names=["left_id", "right_id", "probability"],
         )
