@@ -1,8 +1,12 @@
 from typing import Iterable
 
+import pytest
 from sqlalchemy import text
 
-from matchbox.server.postgresql.benchmark.generate_tables import generate_all_tables
+from matchbox.server.postgresql.benchmark.generate_tables import (
+    generate_all_tables,
+    generate_result_tables,
+)
 from matchbox.server.postgresql.benchmark.init_schema import create_tables, empty_schema
 from matchbox.server.postgresql.db import MBDB
 
@@ -26,6 +30,24 @@ def test_benchmark_init_schema():
         n_tables_expected = len(MBDB.MatchboxBase.metadata.tables)
         n_tables = int(con.execute(count_tables).scalar())
         assert n_tables == n_tables_expected
+
+
+@pytest.mark.parametrize(
+    "left_ids, right_ids, next_id, n_components, n_probs",
+    (
+        [range(10_000), None, 10_000, 8000, 2000],
+        [range(8000), range(8000, 16_000), 16_000, 6000, 10_000],
+    ),
+    ids=["dedupe", "link"],
+)
+def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_probs):
+    resolution_id = None
+
+    (top_clusters, _, _, _, _) = generate_result_tables(
+        left_ids, right_ids, resolution_id, next_id, n_components, n_probs
+    )
+
+    assert len(top_clusters) == n_components
 
 
 def test_benchmark_generate_tables():

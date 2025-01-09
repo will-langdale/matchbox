@@ -1,4 +1,5 @@
 import json
+from itertools import chain
 from pathlib import Path
 from typing import Iterable
 
@@ -14,6 +15,44 @@ from matchbox.common.transform import (
     to_hierarchical_clusters,
 )
 from matchbox.server.postgresql.utils.insert import HashIDMap
+
+PRESETS = {
+    "xs": {
+        "source_len": 10_000,
+        "dedupe_components": 8000,
+        "dedupe_len": 2000,
+        "link_components": 6000,
+        "link_len": 10_000,
+    },
+    "s": {
+        "source_len": 100_000,
+        "dedupe_components": 80_000,
+        "dedupe_len": 20_000,
+        "link_components": 60_000,
+        "link_len": 100_000,
+    },
+    "m": {
+        "source_len": 1_000_000,
+        "dedupe_components": 800_000,
+        "dedupe_len": 200_000,
+        "link_components": 600_000,
+        "link_len": 1_000_000,
+    },
+    "l": {
+        "source_len": 10_000_000,
+        "dedupe_components": 8_000_000,
+        "dedupe_len": 2_000_000,
+        "link_components": 6_000_000,
+        "link_len": 10_000_000,
+    },
+    "xl": {
+        "source_len": 100_000_000,
+        "dedupe_components": 80_000_000,
+        "dedupe_len": 20_000_000,
+        "link_components": 60_000_000,
+        "link_len": 100_000_000,
+    },
+}
 
 
 def _hash_list_int(li: list[int]) -> list[bytes]:
@@ -234,8 +273,11 @@ def generate_result_tables(
     parents_not_children = pc.filter(
         unique_parent_ids, pc.invert(pc.is_in(unique_parent_ids, unique_child_ids))
     )
+    right_ids_or_empty = [] if not right_ids else right_ids
+    all_sources = pa.array(chain(left_ids, right_ids_or_empty), type=pa.uint64())
+
     sources_not_children = pc.filter(
-        all_probs, pc.invert(pc.is_in(all_probs, unique_child_ids))
+        all_sources, pc.invert(pc.is_in(all_sources, unique_child_ids))
     )
     top_clusters = pc.unique(
         pa.concat_arrays([parents_not_children, sources_not_children])
@@ -344,44 +386,6 @@ def generate_all_tables(
 @click.option("-s", "--settings", type=str, required=True)
 @click.option("-o", "--output_dir", type=click.Path(exists=True, path_type=Path))
 def main(settings, output_dir):
-    PRESETS = {
-        "xs": {
-            "source_len": 10_000,
-            "dedupe_components": 8000,
-            "dedupe_len": 2000,
-            "link_components": 6000,
-            "link_len": 10_000,
-        },
-        "s": {
-            "source_len": 100_000,
-            "dedupe_components": 80_000,
-            "dedupe_len": 20_000,
-            "link_components": 60_000,
-            "link_len": 100_000,
-        },
-        "m": {
-            "source_len": 1_000_000,
-            "dedupe_components": 800_000,
-            "dedupe_len": 200_000,
-            "link_components": 600_000,
-            "link_len": 1_000_000,
-        },
-        "l": {
-            "source_len": 10_000_000,
-            "dedupe_components": 8_000_000,
-            "dedupe_len": 2_000_000,
-            "link_components": 6_000_000,
-            "link_len": 10_000_000,
-        },
-        "xl": {
-            "source_len": 100_000_000,
-            "dedupe_components": 80_000_000,
-            "dedupe_len": 20_000_000,
-            "link_components": 60_000_000,
-            "link_len": 100_000_000,
-        },
-    }
-
     if not output_dir:
         output_dir = Path.cwd() / "data" / "all_tables"
     if settings not in PRESETS:
