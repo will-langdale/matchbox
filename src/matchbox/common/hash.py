@@ -3,6 +3,7 @@ import hashlib
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
+import numpy as np
 from pandas import DataFrame, Series
 from sqlalchemy import String, func, select
 from sqlalchemy.orm import Session
@@ -58,12 +59,12 @@ def prep_for_hash(item: HashableItem) -> bytes:
         return bytes(item.encode())
     elif isinstance(item, UUID):
         return item.bytes
-    elif isinstance(item, int):
+    elif isinstance(item, (int, np.integer)):
         # https://stackoverflow.com/a/54141411
+        i = int(item)
         signed = True
-        length = ((item + ((item * signed) < 0)).bit_length() + 7 + signed) // 8
-        return item.to_bytes(length, byteorder="big", signed=signed)
-        # return item.to_bytes((item.bit_length() + 7) // 8, byteorder="big")
+        length = ((i + ((i * signed) < 0)).bit_length() + 7 + signed) // 8
+        return i.to_bytes(length, byteorder="big", signed=signed)
     else:
         raise ValueError(f"Cannot hash value of type {type(item)}")
 
