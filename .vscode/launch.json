@@ -19,6 +19,15 @@
                 "-v",
                 "-s"
             ]
-        }
+        },
+        {
+            "name": "Matchbox: Profile",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "cProfile",
+            "args": [
+                "-o", "/tmp/tmp.prof", "${file}"
+            ]
+        },
     ]
 }
