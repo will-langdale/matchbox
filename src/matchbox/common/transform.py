@@ -23,7 +23,7 @@ load_dotenv(dotenv_path)
 
 def to_clusters(
     results: pa.Table,
-    dtype: pa.DataType = pa.large_binary,
+    dtype: pa.DataType = pa.binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
     """
@@ -216,7 +216,7 @@ class DisjointSet(Generic[T]):
 
 def component_to_hierarchy(
     table: pa.Table,
-    dtype: pa.DataType = pa.large_binary,
+    dtype: pa.DataType = pa.binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
     """
@@ -293,7 +293,7 @@ def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
-    dtype: pa.DataType = pa.large_binary,
+    dtype: pa.DataType = pa.binary,
     timeout: int = 300,
 ) -> pa.Table:
     """

@@ -73,9 +73,7 @@ def generate_resolutions() -> pa.Table:
     return pa.table(
         {
             "resolution_id": pa.array(resolutions_resolution_id, type=pa.uint64()),
-            "resolution_hash": pa.array(
-                resolutions_resolution_hash, type=pa.large_binary()
-            ),
+            "resolution_hash": pa.array(resolutions_resolution_hash, type=pa.binary()),
             "type": pa.array(resolutions_type, type=pa.string()),
             "name": pa.array(resolutions_name, type=pa.string()),
             "description": pa.array(resolutions_name, type=pa.string()),
@@ -126,7 +124,7 @@ def generate_cluster_source(range_left: int, range_right: int) -> pa.Table:
     return pa.table(
         {
             "cluster_id": pa.array(source, type=pa.uint64()),
-            "cluster_hash": pa.array(_hash_list_int(source), type=pa.large_binary()),
+            "cluster_hash": pa.array(_hash_list_int(source), type=pa.binary()),
             "dataset": pa.array([1] * len(source), type=pa.uint64()),
             "source_pk": pa.array(create_source_pk(source), type=pa.list_(pa.string())),
         }
@@ -172,7 +170,7 @@ def generate_result_tables(
         {
             "id": all_probs,
             "hash": pa.array(
-                [hash_data(p) for p in all_probs.to_pylist()], type=pa.large_binary()
+                [hash_data(p) for p in all_probs.to_pylist()], type=pa.binary()
             ),
         }
     )
@@ -194,7 +192,7 @@ def generate_result_tables(
     hierarchy = to_hierarchical_clusters(
         probabilities=probs_with_ccs,
         hash_func=hash_values,
-        dtype=pa.large_binary,
+        dtype=pa.binary,
     )
 
     # Shape into tables
