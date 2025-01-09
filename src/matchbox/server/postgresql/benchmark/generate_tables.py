@@ -200,15 +200,7 @@ def generate_result_tables(
     parent_ids = hm.get_ids(hierarchy["parent"])
     child_ids = hm.get_ids(hierarchy["child"])
     unique_parent_ids = pc.unique(parent_ids)
-    candidate_top_clusters = pa.concat_arrays(
-        [
-            unique_parent_ids,
-            pa.array(left_ids, type=pa.uint64()),
-            pa.array([] if not right_ids else right_ids, type=pa.uint64()),
-        ]
-    )
-    mask = pc.invert(pc.is_in(candidate_top_clusters, pc.unique(child_ids)))
-    top_clusters = pc.filter(candidate_top_clusters, mask)
+    unique_child_ids = pc.unique(child_ids)
 
     probabilities_table = pa.table(
         {
@@ -236,6 +228,17 @@ def generate_result_tables(
                 [None] * len(unique_parent_ids), type=pa.list_(pa.string())
             ),
         }
+    )
+
+    # Compute top clusters
+    parents_not_children = pc.filter(
+        unique_parent_ids, pc.invert(pc.is_in(unique_parent_ids, unique_child_ids))
+    )
+    sources_not_children = pc.filter(
+        all_probs, pc.invert(pc.is_in(all_probs, unique_child_ids))
+    )
+    top_clusters = pc.unique(
+        pa.concat_arrays([parents_not_children, sources_not_children])
     )
 
     return (

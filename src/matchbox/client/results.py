@@ -99,33 +99,20 @@ class Results(BaseModel):
         if table_fields - optional_fields != expected_fields:
             raise ValueError(f"Expected {expected_fields}. \n" f"Found {table_fields}.")
 
-        def _check_range(arr: pa.Array, min: float, max: float) -> bool:
-            """Helper to check if an array falls in a range."""
-            return pa.compute.all(
-                pa.compute.and_(
-                    pa.compute.greater_equal(arr, min), pa.compute.less_equal(arr, max)
-                )
-            ).as_py()
-
+        # If a process produces floats, we multiply by 100 and coerce to uint8
         if pa.types.is_floating(value["probability"].type):
-            if _check_range(value["probability"], 0, 1):
-                mult = 100
-            elif _check_range(value["probability"], 0, 100):
-                mult = 0
-            elif len(value["probability"]) == 0:
-                # Empty array, no need to check range
-                mult = 0
-            else:
-                p_max = pc.max(value["probability"])
-                p_min = pc.min(value["probability"])
-                raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
-
             probability_uint8 = pc.cast(
-                pc.multiply(value["probability"], mult),
+                pc.multiply(value["probability"], 100),
                 options=pc.CastOptions(
                     target_type=pa.uint8(), allow_float_truncate=True
                 ),
             )
+
+            if pc.max(probability_uint8).as_py() > 100:
+                p_max = pc.max(value["probability"]).as_py()
+                p_min = pc.min(value["probability"]).as_py()
+                raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
+
             value = value.set_column(
                 i=value.schema.get_field_index("probability"),
                 field_="probability",
