@@ -1,11 +1,10 @@
 from typing import NamedTuple
 
-import pandas as pd
-import pyarrow as pa
 from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from matchbox.client.results import ModelMetadata, ModelType, Results
+from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.orm import (
     Contains,
@@ -186,17 +185,6 @@ def get_model_results(engine: Engine, resolution: Resolutions) -> Results:
             pairs.c.probability,
         )
 
-        results = session.execute(final_select).fetchall()
-
-        df = pd.DataFrame(
-            results, columns=["id", "left_id", "right_id", "probability"]
-        ).astype(
-            {
-                "id": pd.ArrowDtype(pa.uint64()),
-                "left_id": pd.ArrowDtype(pa.uint64()),
-                "right_id": pd.ArrowDtype(pa.uint64()),
-                "probability": pd.ArrowDtype(pa.float32()),
-            }
-        )
+        df = sql_to_df(stmt=final_select, engine=engine, return_type="arrow")
 
         return Results(probabilities=df, metadata=metadata)

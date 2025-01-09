@@ -3,6 +3,8 @@ import inspect
 import logging
 from typing import Any, Dict, List, Optional, Type
 
+import pyarrow as pa
+import pyarrow.compute as pc
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from splink import DuckDBAPI, SettingsCreator
@@ -227,21 +229,24 @@ class SplinkLinker(Linker):
             threshold_match_probability=self.settings.threshold
         )
 
-        return (
-            res.as_pandas_dataframe()
-            .convert_dtypes(dtype_backend="pyarrow")
-            .rename(
-                columns={
-                    f"{self.settings.left_id}_l": "left_id",
-                    f"{self.settings.right_id}_r": "right_id",
-                    "match_probability": "probability",
-                }
-            )
-            .assign(
-                left_id=lambda df: df.left_id.apply(self._id_dtype_l),
-                right_id=lambda df: df.right_id.apply(self._id_dtype_r),
-            )
-            .filter(["left_id", "right_id", "probability"])
-            .drop_duplicates()
-            .reset_index(drop=True)
+        df = res.as_pandas_dataframe().drop_duplicates()
+
+        return pa.table(
+            [
+                pa.array(
+                    df[f"{self.settings.left_id}_l"].apply(self._id_dtype_l),
+                    type=pa.uint64(),
+                ),
+                pa.array(
+                    df[f"{self.settings.right_id}_r"].apply(self._id_dtype_r),
+                    type=pa.uint64(),
+                ),
+                pc.cast(
+                    pc.multiply(pa.array(df["match_probability"]), 100),
+                    options=pc.CastOptions(
+                        target_type=pa.uint8(), allow_float_truncate=True
+                    ),
+                ),
+            ],
+            names=["left_id", "right_id", "probability"],
         )
