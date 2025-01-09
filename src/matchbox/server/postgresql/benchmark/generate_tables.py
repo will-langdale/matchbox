@@ -73,9 +73,7 @@ def generate_resolutions() -> pa.Table:
     return pa.table(
         {
             "resolution_id": pa.array(resolutions_resolution_id, type=pa.uint64()),
-            "resolution_hash": pa.array(
-                resolutions_resolution_hash, type=pa.large_binary()
-            ),
+            "resolution_hash": pa.array(resolutions_resolution_hash, type=pa.binary()),
             "type": pa.array(resolutions_type, type=pa.string()),
             "name": pa.array(resolutions_name, type=pa.string()),
             "description": pa.array(resolutions_name, type=pa.string()),
@@ -126,7 +124,7 @@ def generate_cluster_source(range_left: int, range_right: int) -> pa.Table:
     return pa.table(
         {
             "cluster_id": pa.array(source, type=pa.uint64()),
-            "cluster_hash": pa.array(_hash_list_int(source), type=pa.large_binary()),
+            "cluster_hash": pa.array(_hash_list_int(source), type=pa.binary()),
             "dataset": pa.array([1] * len(source), type=pa.uint64()),
             "source_pk": pa.array(create_source_pk(source), type=pa.list_(pa.string())),
         }
@@ -168,11 +166,12 @@ def generate_result_tables(
     all_probs = pa.concat_arrays(
         [probs["left"].combine_chunks(), probs["right"].combine_chunks()]
     )
+
     lookup = pa.table(
         {
             "id": all_probs,
             "hash": pa.array(
-                [hash_data(p) for p in all_probs.to_pylist()], type=pa.large_binary()
+                [hash_data(p) for p in all_probs.to_pylist()], type=pa.binary()
             ),
         }
     )
@@ -194,15 +193,22 @@ def generate_result_tables(
     hierarchy = to_hierarchical_clusters(
         probabilities=probs_with_ccs,
         hash_func=hash_values,
-        dtype=pa.large_binary,
+        dtype=pa.binary,
     )
 
     # Shape into tables
     parent_ids = hm.get_ids(hierarchy["parent"])
     child_ids = hm.get_ids(hierarchy["child"])
     unique_parent_ids = pc.unique(parent_ids)
-    mask = pc.invert(pc.is_in(unique_parent_ids, pc.unique(child_ids)))
-    top_clusters = pc.filter(unique_parent_ids, mask)
+    candidate_top_clusters = pa.concat_arrays(
+        [
+            unique_parent_ids,
+            pa.array(left_ids, type=pa.uint64()),
+            pa.array([] if not right_ids else right_ids, type=pa.uint64()),
+        ]
+    )
+    mask = pc.invert(pc.is_in(candidate_top_clusters, pc.unique(child_ids)))
+    top_clusters = pc.filter(candidate_top_clusters, mask)
 
     probabilities_table = pa.table(
         {
