@@ -58,8 +58,14 @@ def prep_for_hash(item: HashableItem) -> bytes:
         return bytes(item.encode())
     elif isinstance(item, UUID):
         return item.bytes
+    elif isinstance(item, int):
+        # https://stackoverflow.com/a/54141411
+        signed = True
+        length = ((item + ((item * signed) < 0)).bit_length() + 7 + signed) // 8
+        return item.to_bytes(length, byteorder="big", signed=signed)
+        # return item.to_bytes((item.bit_length() + 7) // 8, byteorder="big")
     else:
-        return bytes(item)
+        raise ValueError(f"Cannot hash value of type {type(item)}")
 
 
 def hash_data(data: str) -> bytes:
