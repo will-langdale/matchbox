@@ -56,11 +56,7 @@ def clean_punctuation(column: str) -> str:
     return rf"""
     trim(
         regexp_replace(
-            lower({
-                punctuation_to_spaces(
-                    periods_to_nothing(column)
-                )
-            }),
+            lower({punctuation_to_spaces(periods_to_nothing(column))}),
             '\s+',
             ' ',
             'g'
@@ -218,7 +214,7 @@ def regex_remove_list_of_strings(column: str, list_of_strings: List[str]) -> str
                 '',
                 'g'
             ),
-        '\s{2,}',
+        '\s{(2,)}',
         ' ',
         'g'
         )

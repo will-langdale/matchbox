@@ -51,6 +51,7 @@ typing = [
 [tool.uv]
 default-groups = ["dev", "typing"]
 package = true
+upgrade-package = ["ruff"]
 
 [tool.ruff]
 exclude = [
