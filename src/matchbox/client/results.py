@@ -97,7 +97,7 @@ class Results(BaseModel):
         optional_fields = {"id"}
 
         if table_fields - optional_fields != expected_fields:
-            raise ValueError(f"Expected {expected_fields}. \n" f"Found {table_fields}.")
+            raise ValueError(f"Expected {expected_fields}. \nFound {table_fields}.")
 
         # If a process produces floats, we multiply by 100 and coerce to uint8
         if pa.types.is_floating(value["probability"].type):

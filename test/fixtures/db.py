@@ -80,7 +80,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                 model = make_model(
                     model_name=deduper_name,
                     description=(
-                        f"Dedupe of {fx_data.source} " f"with {fx_deduper.name} method."
+                        f"Dedupe of {fx_data.source} with {fx_deduper.name} method."
                     ),
                     model_class=fx_deduper.cls,
                     model_settings=deduper_settings,
