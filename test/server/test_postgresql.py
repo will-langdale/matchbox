@@ -70,6 +70,7 @@ def test_benchmark_generate_tables():
 
     with MBDB.get_engine().connect() as con:
         con.execute(text(empty_schema()))
+        con.execute(text(create_tables()))
         con.commit()
 
         results = generate_all_tables(20, 5, 25, 5, 25)
@@ -85,7 +86,9 @@ def test_benchmark_generate_tables():
             for c in df.columns:
                 if df[c].dtype == "uint64":
                     df[c] = df[c].astype("int64")
-            df.to_sql(name=table_name, con=con, schema=schema)
+            df.to_sql(
+                name=table_name, con=con, schema=schema, index=False, if_exists="append"
+            )
 
 
 def test_hash_id_map():

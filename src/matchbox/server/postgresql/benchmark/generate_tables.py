@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Iterable
 
 import click
+import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -236,18 +237,41 @@ def generate_result_tables(
     )
 
     # Shape into tables
-    parent_ids = hm.get_ids(hierarchy["parent"])
-    child_ids = hm.get_ids(hierarchy["child"])
-    unique_parent_ids = pc.unique(parent_ids)
+    new_hierarchy_schema = pa.schema(
+        [
+            pa.field("parent", pa.uint64()),
+            pa.field("child", pa.uint64()),
+            pa.field("probability", pa.uint8()),
+        ]
+    )
+    hierarchy = pa.Table.from_arrays(
+        [
+            pa.array(hm.get_ids(hierarchy["parent"]), type=pa.uint64()),
+            pa.array(hm.get_ids(hierarchy["child"]), type=pa.uint64()),
+            hierarchy["probability"],
+        ],
+        schema=new_hierarchy_schema,
+    )
+
+    unique_parent_ids = pc.unique(hierarchy["parent"])
+    unique_indices = [
+        pc.index(hierarchy["parent"], value).as_py() for value in unique_parent_ids
+    ]
+    mask = np.full((len(hierarchy)), False)
+    mask[unique_indices] = True
+    unique_parent_hierarchy = hierarchy.filter(mask=mask)
+
+    parent_ids = hierarchy["parent"]
+    child_ids = hierarchy["child"]
     unique_child_ids = pc.unique(child_ids)
 
     probabilities_table = pa.table(
         {
             "resolution": pa.array(
-                [resolution_id] * hierarchy.shape[0], type=pa.uint64()
+                [resolution_id] * len(unique_parent_ids), type=pa.uint64()
             ),
-            "cluster": parent_ids,
-            "probability": hierarchy["probability"],
+            "cluster": unique_parent_ids,
+            "probability": unique_parent_hierarchy["probability"],
         }
     )
 
