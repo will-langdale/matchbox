@@ -42,7 +42,7 @@ def timer(description: str):
 
 
 if __name__ == "__main__":
-    config = PRESETS["s"]
+    config = PRESETS["l"]
     left_ids = range(config["dedupe_components"])
     right_ids = range(config["dedupe_components"], config["dedupe_components"] * 2)
     probs = generate_dummy_probabilities(

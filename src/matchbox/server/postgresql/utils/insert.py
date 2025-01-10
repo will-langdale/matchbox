@@ -524,8 +524,7 @@ def insert_results(
     with engine.connect() as conn:
         try:
             logic_logger.info(
-                f"[{resolution.name}] Inserting {clusters.shape[0]:,} results "
-                "objects"
+                f"[{resolution.name}] Inserting {clusters.shape[0]:,} results objects"
             )
 
             batch_ingest(
