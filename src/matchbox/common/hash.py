@@ -58,11 +58,16 @@ def prep_for_hash(item: HashableItem) -> bytes:
         return bytes(item.encode())
     elif isinstance(item, UUID):
         return item.bytes
+    elif isinstance(item, int):
+        # https://stackoverflow.com/a/54141411
+        signed = True
+        length = ((item + ((item * signed) < 0)).bit_length() + 7 + signed) // 8
+        return item.to_bytes(length, byteorder="big", signed=signed)
     else:
-        return bytes(item)
+        raise ValueError(f"Cannot hash value of type {type(item)}")
 
 
-def hash_data(data: str) -> bytes:
+def hash_data(data: HashableItem) -> bytes:
     """
     Hash the given data using the globally defined hash function.
     This function ties into the existing hashing utilities.

@@ -232,27 +232,23 @@ def component_to_hierarchy(
     Returns:
         Arrow Table with columns ['parent', 'child', 'probability']
     """
-    ascending_probs = np.sort(
-        pc.unique(table["probability"]).to_numpy(zero_copy_only=False)
-    )
-    probs = ascending_probs[::-1]
+    probs = pc.unique(table["probability"]).sort(order="descending")
 
     djs = DisjointSet[int]()  # implements connected components
     current_roots: dict[int, set[int]] = defaultdict(set)  # tracks ultimate parents
     hierarchy: list[tuple[int, int, float]] = []  # the output of this function
     seen_components: set[frozenset[int]] = set()  # track previously seen component sets
 
-    for threshold in probs:
-        # Get current probability rows
-        mask = pc.equal(table["probability"], threshold)
-        current_probs = table.filter(mask)
-
-        # Add new pairwise relationships at this threshold
-        for left, right in zip(
-            current_probs["left"].to_numpy(),
-            current_probs["right"].to_numpy(),
-            strict=True,
+    table_by_p = defaultdict(list)
+    for batch in table.to_batches():
+        d = batch.to_pydict()
+        for left, right, p in zip(
+            d["left"], d["right"], d["probability"], strict=False
         ):
+            table_by_p[p].append([left, right])
+
+    for threshold in probs.to_numpy():
+        for left, right in table_by_p[threshold]:
             djs.union(left, right)
             parent = hash_func(left, right)
             hierarchy.extend([(parent, left, threshold), (parent, right, threshold)])
@@ -294,7 +290,9 @@ def to_hierarchical_clusters(
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
     dtype: pa.DataType = pa.binary,
+    parallel: bool = True,
     timeout: int = 300,
+    min_rows_per_worker: int = 1000,
 ) -> pa.Table:
     """
     Converts a table of pairwise probabilities into a table of hierarchical clusters.
@@ -305,7 +303,11 @@ def to_hierarchical_clusters(
         proc_func: Function to process each component
         hash_func: Function to hash the parent and child values
         dtype: Arrow data type for the parent and child columns
-        timeout: Maximum seconds to wait for each component to process
+        parallel: Whether to work on separate connected components in parallel
+        timeout: Maximum seconds to wait for each worker to finish processing.
+            Ignored if parallel==False
+        min_rows_per_worker: Minimum number of rows to pass to each worker.
+            Ignored if parallel==False
 
     Returns:
         Arrow table with columns ['parent', 'child', 'probability']
@@ -338,7 +340,9 @@ def to_hierarchical_clusters(
         )
 
         for i in range(1, len(component_col)):
-            if component_col[i] != component_col[i - 1]:
+            if (component_col[i] != component_col[i - 1]) and (
+                (i - start_idx) >= min_rows_per_worker
+            ):
                 indices.append((start_idx, i))
                 start_idx = i
             progress.update(split_task, advance=1)
@@ -357,28 +361,33 @@ def to_hierarchical_clusters(
         process_task = progress.add_task(
             "[green]Processing components...", total=len(component_tables)
         )
-
-        with ProcessPoolExecutor(max_workers=n_cores) as executor:
-            futures = [
-                executor.submit(
-                    proc_func, component_table, hash_func=hash_func, dtype=dtype
-                )
-                for component_table in component_tables
-            ]
-
-            for future in futures:
-                try:
-                    result = future.result(timeout=timeout)
-                    results.append(result)
-                    progress.update(process_task, advance=1)
-                except TimeoutError:
-                    logic_logger.error(
-                        f"Component processing timed out after {timeout} seconds"
+        if parallel:
+            with ProcessPoolExecutor(max_workers=n_cores) as executor:
+                futures = [
+                    executor.submit(
+                        proc_func, component_table, hash_func=hash_func, dtype=dtype
                     )
-                    raise
-                except Exception as e:
-                    logic_logger.error(f"Error processing component: {str(e)}")
-                    raise
+                    for component_table in component_tables
+                ]
+                for future in futures:
+                    try:
+                        result = future.result(timeout=timeout)
+                        results.append(result)
+                        progress.update(process_task, advance=1)
+                    except TimeoutError:
+                        logic_logger.error(
+                            f"Component processing timed out after {timeout} seconds"
+                        )
+                        raise
+                    except Exception as e:
+                        logic_logger.error(f"Error processing component: {str(e)}")
+                        raise
+        else:
+            results = [
+                proc_func(component_table, hash_func=hash_func, dtype=dtype)
+                for component_table in component_tables
+                if not progress.update(process_task, advance=1)
+            ]
 
     logic_logger.info(f"Completed processing {len(results):,} components successfully")
 

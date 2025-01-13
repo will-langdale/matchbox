@@ -74,7 +74,7 @@ class HashIDMap:
 
         return pc.take(self.lookup["hash"], indices)
 
-    def get_ids(self, hashes: pa.LargeBinaryArray) -> pa.UInt64Array:
+    def get_ids(self, hashes: pa.BinaryArray) -> pa.UInt64Array:
         """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
         indices = pc.index_in(hashes, self.lookup["hash"])
         new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
