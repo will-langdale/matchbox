@@ -86,6 +86,22 @@ class Cluster(BaseModel):
 
 
 class SourceWarehouse(BaseModel):
+    """A Postgres warehouse where source data for datasets in Matchbox can be found."""
+
+    alias: str
+    db_type: str
+    _engine: Engine | None = None
+
+    def test_connection(self):
+        try:
+            with self.engine.connect() as connection:
+                connection.execute(sqltext("SELECT 1"))
+        except SQLAlchemyError:
+            self._engine = None
+            raise
+
+
+class PostgresWarehouse(SourceWarehouse):
     """A warehouse where source data for datasets in Matchbox can be found."""
 
     model_config = ConfigDict(
@@ -94,14 +110,11 @@ class SourceWarehouse(BaseModel):
         arbitrary_types_allowed=True,
     )
 
-    alias: str
-    db_type: str
     user: str
     password: SecretStr
     host: str
     port: int
     database: str
-    _engine: Engine | None = None
 
     @property
     def engine(self) -> Engine:
@@ -123,14 +136,6 @@ class SourceWarehouse(BaseModel):
             and self.port == other.port
             and self.database == other.database
         )
-
-    def test_connection(self):
-        try:
-            with self.engine.connect() as connection:
-                connection.execute(sqltext("SELECT 1"))
-        except SQLAlchemyError:
-            self._engine = None
-            raise
 
     @classmethod
     def from_engine(cls, engine: Engine, alias: str | None = None) -> "SourceWarehouse":
