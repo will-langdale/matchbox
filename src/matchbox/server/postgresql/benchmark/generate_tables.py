@@ -396,13 +396,14 @@ def generate_all_tables(
         ]
     )
 
+    # Order matters
     return {
         "resolutions": resolutions,
         "resolution_from": resolution_from,
         "sources": sources,
-        "probabilities": probabilities,
-        "contains": contains,
         "clusters": clusters,
+        "contains": contains,
+        "probabilities": probabilities,
     }
 
 
