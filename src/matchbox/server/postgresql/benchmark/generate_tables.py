@@ -251,15 +251,23 @@ def generate_result_tables(
             hierarchy["probability"],
         ],
         schema=new_hierarchy_schema,
-    )
+    ).sort_by([("parent", "ascending")])
 
-    unique_parent_ids = pc.unique(hierarchy["parent"])
-    unique_indices = [
-        pc.index(hierarchy["parent"], value).as_py() for value in unique_parent_ids
-    ]
+    prev_parent = None
+    unique_indices = []
+    i = -1
+    for batch in hierarchy.to_batches():
+        d = batch.to_pydict()
+        for parent in d["parent"]:
+            i += 1
+            if parent != prev_parent:
+                unique_indices.append(i)
+                prev_parent = parent
+
     mask = np.full((len(hierarchy)), False)
     mask[unique_indices] = True
     unique_parent_hierarchy = hierarchy.filter(mask=mask)
+    unique_parent_ids = unique_parent_hierarchy["parent"].combine_chunks()
 
     parent_ids = hierarchy["parent"]
     child_ids = hierarchy["child"]
