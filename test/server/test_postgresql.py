@@ -11,7 +11,6 @@ from matchbox.server.postgresql.benchmark.generate_tables import (
     generate_all_tables,
     generate_result_tables,
 )
-from matchbox.server.postgresql.benchmark.init_schema import create_tables, empty_schema
 from matchbox.server.postgresql.benchmark.query import compile_query_sql
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.utils.insert import HashIDMap
@@ -119,7 +118,7 @@ def test_benchmark_query_generation(
 
 
 @pytest.mark.parametrize(
-    "left_ids, right_ids, next_id, n_components, n_probs",
+    ("left_ids, right_ids, next_id, n_components, n_probs"),
     (
         [range(10_000), None, 10_000, 8000, 2000],
         [range(8000), range(8000, 16_000), 16_000, 6000, 10_000],
@@ -136,8 +135,9 @@ def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_p
     assert len(top_clusters) == n_components
 
 
-def test_benchmark_generate_tables():
+def test_benchmark_generate_tables(matchbox_postgres):
     schema = MBDB.MatchboxBase.metadata.schema
+    matchbox_postgres.clear(certain=True)
 
     def array_encode(array: Iterable[str]):
         if not array:
@@ -147,10 +147,6 @@ def test_benchmark_generate_tables():
         return "{" + list_rep + "}"
 
     with MBDB.get_engine().connect() as con:
-        con.execute(text(empty_schema()))
-        con.execute(text(create_tables()))
-        con.commit()
-
         results = generate_all_tables(20, 5, 25, 5, 25)
 
         assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
