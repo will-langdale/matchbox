@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import text
 
 from matchbox.common.db import Source
+from matchbox.server import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.benchmark.generate_tables import (
     generate_all_tables,
@@ -118,7 +119,7 @@ def test_benchmark_query_generation(
 
 
 @pytest.mark.parametrize(
-    ("left_ids, right_ids, next_id, n_components, n_probs"),
+    ("left_ids", "right_ids", "next_id", "n_components", "n_probs"),
     (
         [range(10_000), None, 10_000, 8000, 2000],
         [range(8000), range(8000, 16_000), 16_000, 6000, 10_000],
@@ -135,7 +136,7 @@ def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_p
     assert len(top_clusters) == n_components
 
 
-def test_benchmark_generate_tables(matchbox_postgres):
+def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
     schema = MBDB.MatchboxBase.metadata.schema
     matchbox_postgres.clear(certain=True)
 
