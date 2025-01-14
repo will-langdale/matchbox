@@ -1,3 +1,5 @@
+from abc import ABC
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 import connectorx as cx
@@ -39,6 +41,13 @@ else:
 ReturnTypeStr = Literal["arrow", "pandas", "polars"]
 
 T = TypeVar("T")
+
+
+class WarehouseType(StrEnum):
+    """The available warehouse types for Matchbox."""
+
+    POSTGRES = "postgres"
+    SQLITE = "sqlite"
 
 
 class Match(BaseModel):
@@ -85,8 +94,8 @@ class Cluster(BaseModel):
     threshold: float = Field(default=None, ge=0, le=1)
 
 
-class SourceWarehouse(BaseModel):
-    """A Postgres warehouse where source data for datasets in Matchbox can be found."""
+class SourceWarehouse(BaseModel, ABC):
+    """A warehouse where source data for datasets in Matchbox can be found."""
 
     alias: str
     db_type: str
@@ -100,9 +109,63 @@ class SourceWarehouse(BaseModel):
             self._engine = None
             raise
 
+    @classmethod
+    def from_engine(cls, engine: Engine, alias: str | None = None) -> "SourceWarehouse":
+        """Create a SourceWarehouse instance from an SQLAlchemy Engine object."""
+        db_type = engine.url.get_backend_name()
+
+        if db_type not in WarehouseType:
+            raise ValueError(f"A warehouse of type {db_type} is not supported")
+
+        if db_type == WarehouseType.POSTGRES:
+            return PostgresWarehouse.from_engine(engine=engine, alias=alias)
+        if db_type == WarehouseType.SQLITE:
+            return SQLiteWarehouse.from_engine(engine=engine, alias=alias)
+
+
+class SQLiteWarehouse(SourceWarehouse):
+    """A SQLite-backed warehouse."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+    )
+
+    database: str
+
+    @field_validator("db_type", mode="before")
+    def set_type(cls: "PostgresWarehouse", value: None) -> WarehouseType:
+        return WarehouseType.SQLITE
+
+    @property
+    def engine(self) -> Engine:
+        if self._engine is None:
+            connection_string = f"sqlite:///{self.database}"
+            self._engine = create_engine(connection_string)
+            self.test_connection()
+        return self._engine
+
+    def __eq__(self, other):
+        if not isinstance(other, SQLiteWarehouse):
+            return False
+        return self.alias == other.alias and self.database == other.database
+
+    @classmethod
+    def from_engine(cls, engine: Engine, alias: str | None = None) -> "SQLiteWarehouse":
+        url = engine.url
+
+        warehouse = cls(
+            alias=alias or url.database,
+            database=url.database,
+        )
+        _ = warehouse.engine
+
+        return warehouse
+
 
 class PostgresWarehouse(SourceWarehouse):
-    """A warehouse where source data for datasets in Matchbox can be found."""
+    """A Postgres-backed warehouse."""
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -116,16 +179,20 @@ class PostgresWarehouse(SourceWarehouse):
     port: int
     database: str
 
+    @field_validator("db_type", mode="before")
+    def set_type(cls: "PostgresWarehouse", value: None) -> WarehouseType:
+        return WarehouseType.POSTGRES
+
     @property
     def engine(self) -> Engine:
         if self._engine is None:
-            connection_string = f"{self.db_type}://{self.user}:{self.password.get_secret_value()}@{self.host}:{self.port}/{self.database}"
+            connection_string = f"postgres://{self.user}:{self.password.get_secret_value()}@{self.host}:{self.port}/{self.database}"
             self._engine = create_engine(connection_string)
             self.test_connection()
         return self._engine
 
     def __eq__(self, other):
-        if not isinstance(other, SourceWarehouse):
+        if not isinstance(other, PostgresWarehouse):
             return False
         return (
             self.alias == other.alias
@@ -138,13 +205,13 @@ class PostgresWarehouse(SourceWarehouse):
         )
 
     @classmethod
-    def from_engine(cls, engine: Engine, alias: str | None = None) -> "SourceWarehouse":
-        """Create a SourceWarehouse instance from an SQLAlchemy Engine object."""
+    def from_engine(
+        cls, engine: Engine, alias: str | None = None
+    ) -> "PostgresWarehouse":
         url = engine.url
 
         warehouse = cls(
             alias=alias or url.database,
-            db_type=url.drivername,
             user=url.username,
             password=url.password,
             host=url.host,
