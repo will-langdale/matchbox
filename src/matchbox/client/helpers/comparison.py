@@ -18,7 +18,7 @@ def comparison(sql_condition: str, dialect: str = "postgres") -> str:
             node[0], (exp.Connector, exp.Predicate, exp.Condition, exp.Identifier)
         ):
             raise ParseError(
-                "Must be valid WHERE clause statements. " f"Found {type(node[0])}"
+                f"Must be valid WHERE clause statements. Found {type(node[0])}"
             )
 
     left = False

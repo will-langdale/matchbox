@@ -1,4 +1,4 @@
-from matchbox.clean.steps.clean_basic import (
+from matchbox.client.clean.steps.clean_basic import (
     array_except,
     array_intersect,
     clean_punctuation,
@@ -23,7 +23,7 @@ from matchbox.clean.steps.clean_basic import (
     to_upper,
     tokenise,
 )
-from matchbox.clean.steps.clean_basic_original import (
+from matchbox.client.clean.steps.clean_basic_original import (
     cms_original_clean_cdms_id,
     cms_original_clean_ch_id,
     cms_original_clean_company_name_ch,

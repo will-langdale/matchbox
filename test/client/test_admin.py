@@ -5,7 +5,7 @@ from textwrap import dedent
 import pytest
 from tomli_w import dumps
 
-from matchbox.admin import load_datasets_from_config
+from matchbox.client.admin import load_datasets_from_config
 from matchbox.common.db import Source, SourceWarehouse
 
 

@@ -1,15 +1,17 @@
 from sqlalchemy import (
+    BIGINT,
     FLOAT,
     INTEGER,
-    VARCHAR,
+    SMALLINT,
     CheckConstraint,
     Column,
     ForeignKey,
     Index,
     UniqueConstraint,
+    func,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB, TEXT
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -24,10 +26,14 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     parent = Column(
-        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     child = Column(
-        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     level = Column(INTEGER, nullable=False)
     truth_cache = Column(FLOAT, nullable=True)
@@ -48,10 +54,11 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "resolutions"
 
     # Columns
-    hash = Column(BYTEA, primary_key=True)
-    type = Column(VARCHAR, nullable=False)
-    name = Column(VARCHAR, nullable=False, unique=True)
-    description = Column(VARCHAR)
+    resolution_id = Column(BIGINT, primary_key=True)
+    resolution_hash = Column(BYTEA, nullable=False)
+    type = Column(TEXT, nullable=False)
+    name = Column(TEXT, nullable=False)
+    description = Column(TEXT)
     truth = Column(FLOAT)
 
     # Relationships
@@ -62,8 +69,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     children = relationship(
         "Resolutions",
         secondary=ResolutionFrom.__table__,
-        primaryjoin="Resolutions.hash == ResolutionFrom.parent",
-        secondaryjoin="Resolutions.hash == ResolutionFrom.child",
+        primaryjoin="Resolutions.resolution_id == ResolutionFrom.parent",
+        secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
         backref="parents",
     )
 
@@ -73,6 +80,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             "type IN ('model', 'dataset', 'human')",
             name="resolution_type_constraints",
         ),
+        UniqueConstraint("resolution_hash", name="resolutions_hash_key"),
+        UniqueConstraint("name", name="resolutions_name_key"),
     )
 
     @property
@@ -82,8 +91,10 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             ancestor_query = (
                 select(Resolutions)
                 .select_from(Resolutions)
-                .join(ResolutionFrom, Resolutions.hash == ResolutionFrom.parent)
-                .where(ResolutionFrom.child == self.hash)
+                .join(
+                    ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent
+                )
+                .where(ResolutionFrom.child == self.resolution_id)
             )
             return set(session.execute(ancestor_query).scalars().all())
 
@@ -94,58 +105,67 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             descendant_query = (
                 select(Resolutions)
                 .select_from(Resolutions)
-                .join(ResolutionFrom, Resolutions.hash == ResolutionFrom.child)
-                .where(ResolutionFrom.parent == self.hash)
+                .join(ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.child)
+                .where(ResolutionFrom.parent == self.resolution_id)
             )
             return set(session.execute(descendant_query).scalars().all())
 
-    def get_lineage(self) -> dict[bytes, float]:
+    def get_lineage(self) -> dict[int, float]:
         """Returns all ancestors and their cached truth values from this model."""
         with Session(MBDB.get_engine()) as session:
             lineage_query = (
                 select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
-                .where(ResolutionFrom.child == self.hash)
+                .where(ResolutionFrom.child == self.resolution_id)
                 .order_by(ResolutionFrom.level.desc())
             )
 
             results = session.execute(lineage_query).all()
 
             lineage = {parent: truth for parent, truth in results}
-            lineage[self.hash] = self.truth
+            lineage[self.resolution_id] = self.truth
 
             return lineage
 
     def get_lineage_to_dataset(
         self, dataset: "Resolutions"
-    ) -> tuple[bytes, dict[bytes, float]]:
+    ) -> tuple[bytes, dict[int, float]]:
         """Returns the resolution lineage and cached truth values to a dataset."""
         if dataset.type != ResolutionNodeType.DATASET.value:
             raise ValueError(
                 f"Target resolution must be of type 'dataset', got {dataset.type}"
             )
 
-        if self.hash == dataset.hash:
-            return {dataset.hash: None}
+        if self.resolution_id == dataset.resolution_id:
+            return {dataset.resolution_id: None}
 
         with Session(MBDB.get_engine()) as session:
             path_query = (
                 select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
-                .join(Resolutions, Resolutions.hash == ResolutionFrom.parent)
-                .where(ResolutionFrom.child == self.hash)
+                .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
+                .where(ResolutionFrom.child == self.resolution_id)
                 .order_by(ResolutionFrom.level.desc())
             )
 
             results = session.execute(path_query).all()
 
-            if not any(parent == dataset.hash for parent, _ in results):
+            if not any(parent == dataset.resolution_id for parent, _ in results):
                 raise ValueError(
                     f"No path between resolution {self.name}, dataset {dataset.name}"
                 )
 
             lineage = {parent: truth for parent, truth in results}
-            lineage[self.hash] = self.truth
+            lineage[self.resolution_id] = self.truth
 
             return lineage
+
+    @classmethod
+    def next_id(cls) -> int:
+        """Returns the next available resolution_id."""
+        with Session(MBDB.get_engine()) as session:
+            result = session.execute(
+                select(func.coalesce(func.max(cls.resolution_id), 0))
+            ).scalar()
+            return result + 1
 
 
 class Sources(CountMixin, MBDB.MatchboxBase):
@@ -154,13 +174,15 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
-    resolution = Column(
-        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
+    resolution_id = Column(
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        primary_key=True,
     )
-    alias = Column(VARCHAR, nullable=False)
-    schema = Column(VARCHAR, nullable=False)
-    table = Column(VARCHAR, nullable=False)
-    id = Column(VARCHAR, nullable=False)
+    alias = Column(TEXT, nullable=False)
+    schema = Column(TEXT, nullable=False)
+    table = Column(TEXT, nullable=False)
+    id = Column(TEXT, nullable=False)
     indices = Column(JSONB, nullable=False)
 
     # Relationships
@@ -185,10 +207,10 @@ class Contains(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     parent = Column(
-        BYTEA, ForeignKey("clusters.hash", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
     child = Column(
-        BYTEA, ForeignKey("clusters.hash", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
 
     # Constraints and indices
@@ -205,12 +227,13 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "clusters"
 
     # Columns
-    hash = Column(BYTEA, primary_key=True)
-    dataset = Column(BYTEA, ForeignKey("sources.resolution"), nullable=True)
+    cluster_id = Column(BIGINT, primary_key=True)
+    cluster_hash = Column(BYTEA, nullable=False)
+    dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
-    id = Column(ARRAY(VARCHAR(36)), index=True, nullable=True)
+    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="clusters")
@@ -220,13 +243,25 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     children = relationship(
         "Clusters",
         secondary=Contains.__table__,
-        primaryjoin="Clusters.hash == Contains.parent",
-        secondaryjoin="Clusters.hash == Contains.child",
+        primaryjoin="Clusters.cluster_id == Contains.parent",
+        secondaryjoin="Clusters.cluster_id == Contains.child",
         backref="parents",
     )
 
     # Constraints and indices
-    __table_args__ = (Index("ix_clusters_id_gin", id, postgresql_using="gin"),)
+    __table_args__ = (
+        Index("ix_clusters_id_gin", source_pk, postgresql_using="gin"),
+        UniqueConstraint("cluster_hash", name="clusters_hash_key"),
+    )
+
+    @classmethod
+    def next_id(cls) -> int:
+        """Returns the next available cluster_id."""
+        with Session(MBDB.get_engine()) as session:
+            result = session.execute(
+                select(func.coalesce(func.max(cls.cluster_id), 0))
+            ).scalar()
+            return result + 1
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
@@ -236,12 +271,14 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     resolution = Column(
-        BYTEA, ForeignKey("resolutions.hash", ondelete="CASCADE"), primary_key=True
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     cluster = Column(
-        BYTEA, ForeignKey("clusters.hash", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
-    probability = Column(FLOAT, nullable=False)
+    probability = Column(SMALLINT, nullable=False)
 
     # Relationships
     proposed_by = relationship("Resolutions", back_populates="probabilities")
@@ -249,5 +286,5 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
 
     # Constraints
     __table_args__ = (
-        CheckConstraint("probability BETWEEN 0 AND 1", name="valid_probability"),
+        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
     )

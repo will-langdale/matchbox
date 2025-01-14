@@ -4,15 +4,15 @@ from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
 from matchbox import process, query
-from matchbox.clean import company_name, company_number
-from matchbox.common.db import Source
-from matchbox.helpers import (
+from matchbox.client.clean import company_name, company_number
+from matchbox.client.helpers import (
     cleaner,
     cleaners,
     comparison,
     selector,
     selectors,
 )
+from matchbox.common.db import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddIndexedDataCallable
@@ -100,7 +100,7 @@ def test_process(
 def test_comparisons():
     comparison_name_id = comparison(
         sql_condition=(
-            "l.company_name = r.company_name" " and l.data_hub_id = r.data_hub_id"
+            "l.company_name = r.company_name and l.data_hub_id = r.data_hub_id"
         )
     )
 

@@ -2,7 +2,9 @@ name: Unit tests
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: 
+      - main
+      - 'feature/**'
   workflow_dispatch:
 
 jobs:

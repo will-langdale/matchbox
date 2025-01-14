@@ -9,9 +9,9 @@ from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
 from matchbox import process, query
-from matchbox.clean import company_name
+from matchbox.client.clean import company_name
+from matchbox.client.helpers import cleaner, cleaners, selector
 from matchbox.common.db import Source
-from matchbox.helpers import cleaner, cleaners, selector
 from matchbox.server.postgresql import MatchboxPostgres
 
 dotenv_path = find_dotenv()

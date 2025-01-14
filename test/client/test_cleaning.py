@@ -8,15 +8,15 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from matchbox.clean import drop
-from matchbox.clean.steps import (
+from matchbox.client.clean import drop
+from matchbox.client.clean.steps import (
     clean_punctuation,
     expand_abbreviations,
     list_join_to_string,
     remove_stopwords,
     tokenise,
 )
-from matchbox.clean.utils import alias, cleaning_function, unnest_renest
+from matchbox.client.clean.utils import alias, cleaning_function, unnest_renest
 
 """
 ----------------------------
