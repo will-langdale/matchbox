@@ -56,9 +56,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     resolution_id = Column(BIGINT, primary_key=True)
-    resolution_hash = Column(BYTEA, nullable=False, unique=True)
+    resolution_hash = Column(BYTEA, nullable=False)
     type = Column(VARCHAR, nullable=False)
-    name = Column(VARCHAR, nullable=False, unique=True)
+    name = Column(VARCHAR, nullable=False)
     description = Column(VARCHAR)
     truth = Column(FLOAT)
 
@@ -81,6 +81,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             "type IN ('model', 'dataset', 'human')",
             name="resolution_type_constraints",
         ),
+        UniqueConstraint("resolution_hash", name="resolutions_hash_key"),
+        UniqueConstraint("name", name="resolutions_name_key"),
     )
 
     @property
