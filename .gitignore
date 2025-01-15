@@ -10,6 +10,9 @@ notebooks/
 *.parquet
 data/
 
+# SQLite database files
+*.db
+
 # DuckDB
 *.duckdb
 *.duckdb.*

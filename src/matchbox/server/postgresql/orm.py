@@ -181,7 +181,8 @@ class Sources(CountMixin, MBDB.MatchboxBase):
         primary_key=True,
     )
     alias = Column(VARCHAR, nullable=False)
-    schema = Column(VARCHAR, nullable=False)
+    # Some warehouses don't have a concept of schemas
+    schema = Column(VARCHAR, nullable=True)
     table = Column(VARCHAR, nullable=False)
     id = Column(VARCHAR, nullable=False)
     indices = Column(JSONB, nullable=False)

@@ -7,7 +7,7 @@ from pandas import DataFrame
 from sqlalchemy import text as sqltext
 
 from matchbox import make_model
-from matchbox.common.db import Source, SourceWarehouse
+from matchbox.common.sources import PostgresWarehouse, Source
 from matchbox.server.base import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 
@@ -222,11 +222,10 @@ def setup_database(
 
 
 @pytest.fixture(scope="session")
-def warehouse() -> SourceWarehouse:
+def warehouse() -> PostgresWarehouse:
     """Create a connection to the test warehouse database."""
-    warehouse = SourceWarehouse(
+    warehouse = PostgresWarehouse(
         alias="test_warehouse",
-        db_type="postgresql",
         user="warehouse_user",
         password="warehouse_password",
         host="localhost",
@@ -239,7 +238,7 @@ def warehouse() -> SourceWarehouse:
 
 @pytest.fixture(scope="session")
 def warehouse_data(
-    warehouse: SourceWarehouse,
+    warehouse: PostgresWarehouse,
     crn_companies: DataFrame,
     duns_companies: DataFrame,
     cdms_companies: DataFrame,

@@ -5,10 +5,11 @@ from uuid import UUID
 
 from pandas import DataFrame, Series
 from sqlalchemy import String, func, select
-from sqlalchemy.orm import Session
+
+from matchbox.common.db import sql_to_df
 
 if TYPE_CHECKING:
-    from matchbox.common.db import Source
+    from matchbox.common.sources import Source
 else:
     Source = Any
 
@@ -24,28 +25,29 @@ def hash_to_base64(hash: bytes) -> str:
 
 def dataset_to_hashlist(dataset: Source) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
-    with Session(dataset.database.engine) as warehouse_session:
-        source_table = dataset.to_table()
-        cols_to_index = tuple(
-            [col.literal.name for col in dataset.db_columns if col.indexed]
-        )
 
-        slct_stmt = select(
-            func.concat(*source_table.c[cols_to_index]).label("raw"),
-            func.array_agg(source_table.c[dataset.db_pk].cast(String)).label(
-                "source_pk"
-            ),
-        ).group_by(*source_table.c[cols_to_index])
+    source_table = dataset.to_table()
+    cols_to_index = tuple(
+        [col.literal.name for col in dataset.db_columns if col.indexed]
+    )
 
-        raw_result = warehouse_session.execute(slct_stmt)
+    slct_stmt = select(
+        func.concat(*source_table.c[cols_to_index]).label("raw"),
+        source_table.c[dataset.db_pk].cast(String).label("source_pk"),
+    )
 
-        to_insert = [
-            {
-                "hash": hash_data(data.raw),
-                "source_pk": data.source_pk,
-            }
-            for data in raw_result.all()
-        ]
+    raw_result = sql_to_df(slct_stmt, dataset.database.engine, "arrow")
+    grouped = raw_result.group_by("raw").aggregate([("source_pk", "list")])
+    grouped_data = grouped["raw"].to_pylist()
+    grouped_keys = grouped["source_pk_list"].to_pylist()
+
+    to_insert = [
+        {
+            "hash": hash_data(data),
+            "source_pk": keys,
+        }
+        for data, keys in zip(grouped_data, grouped_keys, strict=True)
+    ]
 
     return to_insert
 

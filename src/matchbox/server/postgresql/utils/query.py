@@ -8,11 +8,12 @@ from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
-from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
+from matchbox.common.db import Match, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
     MatchboxDatasetError,
     MatchboxResolutionError,
 )
+from matchbox.common.sources import Source
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,

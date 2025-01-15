@@ -12,7 +12,7 @@ from matchbox.client.helpers import (
     selector,
     selectors,
 )
-from matchbox.common.db import Source
+from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddIndexedDataCallable

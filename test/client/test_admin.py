@@ -6,7 +6,7 @@ import pytest
 from tomli_w import dumps
 
 from matchbox.client.admin import load_datasets_from_config
-from matchbox.common.db import Source, SourceWarehouse
+from matchbox.common.sources import Source, SourceWarehouse
 
 
 def warehouse_toml(warehouse: SourceWarehouse) -> str:

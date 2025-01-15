@@ -4,7 +4,8 @@ from pandas import DataFrame
 from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine, inspect
 
-from matchbox.common.db import Match, Source, get_schema_table_names
+from matchbox.common.db import Match, get_schema_table_names
+from matchbox.common.sources import Source
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
 

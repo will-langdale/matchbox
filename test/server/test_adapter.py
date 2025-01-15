@@ -8,7 +8,7 @@ from pandas import DataFrame
 
 from matchbox.client.helpers.selector import match, query, selector, selectors
 from matchbox.client.results import Results
-from matchbox.common.db import Match, Source, SourceColumn
+from matchbox.common.db import Match
 from matchbox.common.exceptions import (
     MatchboxDataError,
     MatchboxDatasetError,
@@ -16,6 +16,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
+from matchbox.common.sources import Source, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable

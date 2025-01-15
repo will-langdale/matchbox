@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.client.results import Results
-from matchbox.common.db import Source, sql_to_df
+from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import dataset_to_hashlist, hash_values
+from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,

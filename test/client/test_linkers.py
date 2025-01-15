@@ -10,7 +10,7 @@ from matchbox.client.models.linkers.splinklinker import (
     SplinkLinkerFunction,
     SplinkSettings,
 )
-from matchbox.common.db import Source, SourceWarehouse
+from matchbox.common.sources import Source, SourceWarehouse
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable

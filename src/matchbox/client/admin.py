@@ -5,7 +5,7 @@ import click
 import tomli
 from dotenv import find_dotenv, load_dotenv
 
-from matchbox.common.db import SourceWarehouse
+from matchbox.common.sources import SourceWarehouse
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import Source
 
@@ -26,7 +26,10 @@ def load_datasets_from_config(datasets: Path) -> dict[str, Source]:
 
     warehouses: dict[str, SourceWarehouse] = {}
     for alias, warehouse_config in config["warehouses"].items():
-        warehouses[alias] = SourceWarehouse(alias=alias, **warehouse_config)
+        warehouse_class = SourceWarehouse.get_warehouse_class(
+            warehouse_config["db_type"]
+        )
+        warehouses[alias] = warehouse_class(alias=alias, **warehouse_config)
 
     datasets: dict[str, Source] = {}
     for dataset_name, dataset_config in config["datasets"].items():
