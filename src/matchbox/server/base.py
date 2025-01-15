@@ -15,6 +15,7 @@ from typing import (
 )
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import find_dotenv, load_dotenv
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -68,16 +69,34 @@ class MatchboxDatastoreSettings(BaseSettings):
     access_key_id: SecretStr
     secret_access_key: SecretStr
     default_region: str
+    cache_bucket_name: str
 
     def get_client(self) -> S3Client:
-        """Returns an S3 client for the datastore."""
-        return boto3.client(
+        """Returns an S3 client for the datastore.
+
+        Creates S3 buckets if they don't exist.
+        """
+        client = boto3.client(
             "s3",
             endpoint_url=f"http://{self.host}:{self.port}",
             aws_access_key_id=self.access_key_id.get_secret_value(),
             aws_secret_access_key=self.secret_access_key.get_secret_value(),
             region_name=self.default_region,
         )
+
+        try:
+            client.head_bucket(Bucket=self.cache_bucket_name)
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            if error_code == "404":
+                client.create_bucket(
+                    Bucket=self.cache_bucket_name,
+                    CreateBucketConfiguration={
+                        "LocationConstraint": self.default_region
+                    },
+                )
+            else:
+                raise e
 
 
 class MatchboxSettings(BaseSettings):

@@ -31,8 +31,8 @@ services:
       - "${MB__DATASTORE_PORT:-9000}:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${MB__DATASTORE_ACCESS_KEY_ID:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MB__DATASTORE_SECRET_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${MB__DATASTORE__ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MB__DATASTORE__SECRET_ACCESS_KEY:-minioadmin}
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
