@@ -3,7 +3,6 @@ from sqlalchemy import (
     FLOAT,
     INTEGER,
     SMALLINT,
-    VARCHAR,
     CheckConstraint,
     Column,
     ForeignKey,
@@ -12,7 +11,7 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB, TEXT
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -57,9 +56,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     # Columns
     resolution_id = Column(BIGINT, primary_key=True)
     resolution_hash = Column(BYTEA, nullable=False)
-    type = Column(VARCHAR, nullable=False)
-    name = Column(VARCHAR, nullable=False)
-    description = Column(VARCHAR)
+    type = Column(TEXT, nullable=False)
+    name = Column(TEXT, nullable=False)
+    description = Column(TEXT)
     truth = Column(FLOAT)
 
     # Relationships
@@ -180,11 +179,11 @@ class Sources(CountMixin, MBDB.MatchboxBase):
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    alias = Column(VARCHAR, nullable=False)
+    alias = Column(TEXT, nullable=False)
     # Some warehouses don't have a concept of schemas
-    schema = Column(VARCHAR, nullable=True)
-    table = Column(VARCHAR, nullable=False)
-    id = Column(VARCHAR, nullable=False)
+    schema = Column(TEXT, nullable=True)
+    table = Column(TEXT, nullable=False)
+    id = Column(TEXT, nullable=False)
     indices = Column(JSONB, nullable=False)
 
     # Relationships
@@ -235,7 +234,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
-    source_pk = Column(ARRAY(VARCHAR(36)), index=True, nullable=True)
+    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="clusters")
