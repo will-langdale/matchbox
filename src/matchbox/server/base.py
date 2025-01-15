@@ -14,8 +14,9 @@ from typing import (
     cast,
 )
 
+import boto3
 from dotenv import find_dotenv, load_dotenv
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
@@ -23,17 +24,18 @@ from matchbox.common.db import Match, Source
 from matchbox.common.graph import ResolutionGraph
 
 if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
     from pandas import DataFrame as PandasDataFrame
     from polars import DataFrame as PolarsDataFrame
     from pyarrow import Table as ArrowTable
 
-    from matchbox.client.results import ClusterResults, ProbabilityResults, Results
+    from matchbox.client.results import Results
 else:
+    S3Client = Any
     PandasDataFrame = Any
     PolarsDataFrame = Any
     ArrowTable = Any
-    ClusterResults = Any
-    ProbabilityResults = Any
+
     Results = Any
 
 
@@ -48,6 +50,34 @@ class MatchboxBackends(StrEnum):
     """The available backends for Matchbox."""
 
     POSTGRES = "postgres"
+
+
+class MatchboxDatastoreSettings(BaseSettings):
+    """Settings specific to the datastore configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MB__DATASTORE__",
+        env_nested_delimiter="__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    host: str
+    port: str
+    access_key_id: SecretStr
+    secret_access_key: SecretStr
+    default_region: str
+
+    def get_client(self) -> S3Client:
+        """Returns an S3 client for the datastore."""
+        return boto3.client(
+            "s3",
+            endpoint_url=f"http://{self.host}:{self.port}",
+            aws_access_key_id=self.access_key_id.get_secret_value(),
+            aws_secret_access_key=self.secret_access_key.get_secret_value(),
+            region_name=self.default_region,
+        )
 
 
 class MatchboxSettings(BaseSettings):
@@ -65,6 +95,7 @@ class MatchboxSettings(BaseSettings):
     datasets_config: Path
     batch_size: int = Field(default=250_000)
     backend_type: MatchboxBackends
+    datastore: MatchboxDatastoreSettings
 
 
 class BackendManager:

@@ -1,6 +1,6 @@
 [project]
 name = "matchbox"
-version = "0.2.0"
+version = "0.2.1"
 description = "A framework for orchestrating and comparing various company matching methodologies."
 authors = [{ name = "DDaTDataScienceTeam" }]
 license = {file = "LICENSE"}
@@ -26,6 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
+    "boto3>=1.35.99",
     "fastapi[standard]>=0.115.0,<0.116.0",
     "pg-bulk-ingest>=0.0.54",
     "tomli>=2.0.1",
@@ -46,6 +47,7 @@ dev = [
     "vcrpy>=6.0.2",
 ]
 typing = [
+    "boto3-stubs[s3]>=1.35.99",
     "polars>=1.11.0",
 ]
 
