@@ -11,12 +11,13 @@ This document describes how you can get started with developing Matchbox.
 * [PostgreSQL](https://www.postgresql.org)
 * [pre-commit](https://pre-commit.com)
 * [just](https://just.systems/man/en/)
+* [Node.js](https://nodejs.org/en)
 
 ## Setup
 
 Set up environment variables by creating a `.env` file under project directory. See [/environments/dev_local.env](./environments/dev_local.env) for sensible defaults.
 
-This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/). [Docker](https://www.docker.com) is used for local development.
+This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/). [Docker](https://www.docker.com) is used for local development. Documentation is build using [11ty](https://www.11ty.dev) via [Node.js](https://nodejs.org/en).
 
 To install all dependencies for this project, run:
 
