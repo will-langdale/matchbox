@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from matchbox.client.models.models import make_model
 from matchbox.common.sources import Source, SourceWarehouse, SQLiteWarehouse
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
@@ -40,8 +41,24 @@ def create_source(
 
 
 @inject_backend
+def create_deduper(
+    backend: MatchboxDBAdapter,
+):
+    make_model(
+        model_name=...,
+        description="...",
+        model_class=...,
+        model_settings=...,
+        left_data=...,
+        left_source=...,
+    )
+
+
+@inject_backend
 def main(backend: MatchboxDBAdapter) -> None:
     source_len = 10_000
+    # dedupe_components = 9000
+    # dedupe_len = 2000
 
     backend.clear(certain=True)
 
@@ -54,6 +71,10 @@ def main(backend: MatchboxDBAdapter) -> None:
 
     create_source("alias1", "companies_house", warehouse, 0, source_len)
     create_source("alias2", "hmrc_exporters", warehouse, source_len, source_len * 2)
+
+    create_deduper(
+        "dedupe1",
+    )
 
 
 if __name__ == "__main__":
