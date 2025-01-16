@@ -6,13 +6,13 @@ import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 
-from matchbox.common.graph import ResolutionGraph
-from matchbox.common.schemas import (
+from matchbox.common.dtos import (
     BackendEntityType,
     CountResult,
     HealthCheck,
     ModelResultsType,
 )
+from matchbox.common.graph import ResolutionGraph
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
