@@ -1,3 +1,5 @@
+from typing import TypeVar
+
 from pandas import DataFrame
 from pyarrow import Table as ArrowTable
 from pydantic import (
@@ -18,6 +20,8 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import sql_to_df
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import SourceBase, SourceColumn
+
+T = TypeVar("T")
 
 
 class Source(SourceBase):

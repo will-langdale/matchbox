@@ -57,7 +57,7 @@ def query(
         Data in the requested return type
     """
     # TODO: Logic for joining the results will have to be moved here
-    # 
+    #
     return backend.query(
         selector=selectors,
         resolution=resolution,

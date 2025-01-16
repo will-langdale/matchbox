@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Callable
 
 import pyarrow.compute as pc
@@ -7,13 +8,15 @@ from pandas import DataFrame
 
 from matchbox.client.helpers.selector import match, query, selector, selectors
 from matchbox.client.results import Results
-from matchbox.common.db import Match, Source
+from matchbox.common.db import Match
 from matchbox.common.exceptions import (
     BackendResolutionError,
+    BackendSourceError,
     MatchboxDataError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
+from matchbox.common.sources import SourceBase, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -47,13 +50,13 @@ class TestMatchboxBackend:
         request: pytest.FixtureRequest,
         backend_instance: str,
         setup_database: Callable,
-        warehouse_data: list[Source],
+        warehouse_data: list[SourceBase],
     ):
         self.backend: MatchboxDBAdapter = backend_instance
         self.setup_database: SetupDatabaseCallable = lambda level: setup_database(
             self.backend, warehouse_data, level
         )
-        self.warehouse_data: list[Source] = warehouse_data
+        self.warehouse_data: list[SourceBase] = warehouse_data
 
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""
@@ -176,7 +179,7 @@ class TestMatchboxBackend:
         for c1, c2 in cols.values():
             assert c1.indexed == c2.indexed
 
-        with pytest.raises(MatchboxDatasetError):
+        with pytest.raises(BackendSourceError):
             self.backend.get_dataset(
                 db_schema="nonexistant",
                 db_table="nonexistant",

@@ -8,7 +8,6 @@ from pydantic import (
     ConfigDict,
     Field,
     SecretStr,
-    field_validator,
     model_validator,
 )
 from sqlalchemy import (
@@ -19,8 +18,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.selectable import Select
-
-from matchbox.common.hash import HASH_FUNC, hash_to_base64
 
 if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame
@@ -140,9 +137,6 @@ class SourceWarehouse(BaseModel):
         _ = warehouse.engine
 
         return warehouse
-
-
-
 
 
 def convert_large_binary_to_binary(table: pa.Table) -> pa.Table:
