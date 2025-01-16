@@ -95,8 +95,8 @@ async def list_models():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/models/{name}")
-async def get_model(name: str):
+@app.get("/resolution/{name}")
+async def get_resolution(name: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
