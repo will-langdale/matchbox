@@ -126,8 +126,8 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         "table": dataset.db_table,
         "id": dataset.db_pk,
         "indices": {
-            "literal": [c.literal.base64 for c in dataset.db_columns if c.indexed],
-            "alias": [c.alias.base64 for c in dataset.db_columns if c.indexed],
+            "literal": [c.literal.base64 for c in dataset.db_columns],
+            "alias": [c.alias.base64 for c in dataset.db_columns],
         },
     }
 
@@ -211,10 +211,10 @@ def insert_model(
         engine: SQLAlchemy engine instance
 
     Raises:
-        MatchboxResolutionError if the specified parent models don't exist.
+        BackendResolutionError if the specified parent models don't exist.
 
     Raises:
-        MatchboxResolutionError if the specified model doesn't exist.
+        BackendResolutionError if the specified model doesn't exist.
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
@@ -492,7 +492,7 @@ def insert_results(
         batch_size: Number of records to insert in each batch
 
     Raises:
-        MatchboxResolutionError if the specified model doesn't exist.
+        BackendResolutionError if the specified model doesn't exist.
     """
     logic_logger.info(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"

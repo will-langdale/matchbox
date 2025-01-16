@@ -26,9 +26,7 @@ def dataset_to_hashlist(dataset: Source) -> list[dict[str, Any]]:
     """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
     with Session(dataset.database.engine) as warehouse_session:
         source_table = dataset.to_table()
-        cols_to_index = tuple(
-            [col.literal.name for col in dataset.db_columns if col.indexed]
-        )
+        cols_to_index = tuple([col.literal.name for col in dataset.db_columns])
 
         slct_stmt = select(
             func.concat(*source_table.c[cols_to_index]).label("raw"),

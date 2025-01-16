@@ -5,11 +5,7 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
-class MatchboxValidatonError(Exception):
-    """Validation of data failed."""
-
-
-class MatchboxResolutionError(Exception):
+class BackendResolutionError(Exception):
     """Resolution not found."""
 
     def __init__(self, message: str = None, resolution_name: str = None):
@@ -28,15 +24,15 @@ class BackendSourceError(Exception):
     def __init__(
         self,
         message: str = None,
-        db_full_name: str | None = None,
+        full_name: str | None = None,
     ):
         if message is None:
             message = "Source not found on matchbox."
-            if db_full_name is not None:
-                message = f"Source {db_full_name} not found."
+            if full_name is not None:
+                message = f"Source {full_name} not found."
 
         super().__init__(message)
-        self.db_full_name = db_full_name
+        self.full_name = full_name
 
 
 class MatchboxDataError(Exception):
