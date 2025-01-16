@@ -17,7 +17,6 @@ from typing import (
 from dotenv import find_dotenv, load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import Engine
 
 from matchbox.common.db import Match, Source
 from matchbox.common.graph import ResolutionGraph
@@ -267,13 +266,13 @@ class MatchboxDBAdapter(ABC):
     def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]: ...
 
     @abstractmethod
-    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source: ...
-
-    @abstractmethod
     def get_resolution_graph(self) -> ResolutionGraph: ...
 
+    # @abstractmethod
+    # def get_model(self, model: str) -> MatchboxModelAdapter: ...
+
     @abstractmethod
-    def get_model(self, model: str) -> MatchboxModelAdapter: ...
+    def get_resolution(self, resolution_name: str) -> int: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...

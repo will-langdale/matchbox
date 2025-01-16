@@ -1,4 +1,3 @@
-from collections import defaultdict
 from typing import Callable
 
 import pyarrow.compute as pc
@@ -8,15 +7,14 @@ from pandas import DataFrame
 
 from matchbox.client.helpers.selector import match, query, selector, selectors
 from matchbox.client.results import Results
-from matchbox.common.db import Match, Source, SourceColumn
+from matchbox.common.db import Match, Source
 from matchbox.common.exceptions import (
+    BackendResolutionError,
     MatchboxDataError,
-    MatchboxDatasetError,
-    MatchboxResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
-from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
+from matchbox.server.base import MatchboxDBAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
 from ..fixtures.models import (
@@ -200,15 +198,23 @@ class TestMatchboxBackend:
         assert len(graph.nodes) == 8
         assert len(graph.edges) == 7
 
-    def test_get_model(self):
-        """Test getting a model from the database."""
+    # def test_get_model(self):
+    #     """Test getting a model from the database."""
+    #     self.setup_database("dedupe")
+
+    #     model = self.backend.get_model(model="naive_test.crn")
+    #     assert isinstance(model, MatchboxModelAdapter)
+
+    #     with pytest.raises(MatchboxResolutionError):
+    #         self.backend.get_model(model="nonexistant")
+
+    def test_get_resolution(self):
         self.setup_database("dedupe")
+        resolution_id = self.backend.get_model(model="naive_test.crn")
+        assert isinstance(resolution_id, int)
 
-        model = self.backend.get_model(model="naive_test.crn")
-        assert isinstance(model, MatchboxModelAdapter)
-
-        with pytest.raises(MatchboxResolutionError):
-            self.backend.get_model(model="nonexistant")
+        with pytest.raises(BackendResolutionError):
+            self.backend.get_resolution(resolution_name="nonexistent")
 
     def test_delete_model(self):
         """

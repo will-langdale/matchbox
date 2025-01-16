@@ -1,16 +1,14 @@
-import base64
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
-from sqlalchemy import Engine, and_, bindparam, delete, func, or_, select
+from sqlalchemy import and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from matchbox.client.results import Results
-from matchbox.common.db import Match, Source, SourceWarehouse
+from matchbox.common.db import Match, Source
 from matchbox.common.exceptions import (
+    BackendResolutionError,
     MatchboxDataError,
-    MatchboxDatasetError,
-    MatchboxResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
@@ -228,15 +226,15 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
             session.commit()
 
-    @classmethod
-    def get_model(
-        cls, model_name: str, backend: "MatchboxPostgres"
-    ) -> "MatchboxPostgresModel":
-        with Session(MBDB.get_engine()) as session:
-            if model := session.query(Resolutions).filter_by(name=model_name).first():
-                return cls(model, backend=backend)
-            else:
-                raise MatchboxResolutionError(resolution_name=model_name)
+    # @classmethod
+    # def get_model(
+    #     cls, model_name: str, backend: "MatchboxPostgres"
+    # ) -> "MatchboxPostgresModel":
+    #     with Session(MBDB.get_engine()) as session:
+    #         if model := session.query(Resolutions).filter_by(name=model_name).first():
+    #             return cls(model, backend=backend)
+    #         else:
+    #             raise MatchboxResolutionError(resolution_name=model_name)
 
 
 class MatchboxPostgres(MatchboxDBAdapter):
@@ -435,52 +433,41 @@ class MatchboxPostgres(MatchboxDBAdapter):
             item.cluster_id: item.cluster_hash for item in data_inner_join
         }
 
-    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
-        """Get a source dataset from the database.
-
-        Args:
-            db_schema: The schema of the dataset.
-            db_table: The table of the dataset.
-            engine: The engine to use to connect to your data warehouse.
-        """
-        with Session(MBDB.get_engine()) as session:
-            dataset = (
-                session.query(Sources)
-                .filter_by(schema=db_schema, table=db_table)
-                .first()
-            )
-            if dataset:
-                dataset_indices: dict[str, bytes] = {}
-                for index_type, index_b64_list in dataset.indices.items():
-                    dataset_indices[index_type] = [
-                        base64.b64decode(b64.encode("utf-8")) for b64 in index_b64_list
-                    ]
-                return Source(
-                    alias=dataset.alias,
-                    db_schema=dataset.schema,
-                    db_table=dataset.table,
-                    db_pk=dataset.id,
-                    db_columns=dataset_indices,
-                    database=SourceWarehouse.from_engine(engine),
-                )
-            else:
-                raise MatchboxDatasetError(db_schema=db_schema, db_table=db_table)
-
     def get_resolution_graph(self) -> ResolutionGraph:
         """Get the full resolution graph."""
         return get_resolution_graph(engine=MBDB.get_engine())
 
-    def get_model(self, model: str) -> MatchboxPostgresModel:
-        """Get a model from the database.
+    # def get_model(self, model: str) -> MatchboxPostgresModel:
+    #     """Get a model from the database.
+
+    #     Args:
+    #         model: The name of the model to get.
+    #     """
+    #     with Session(MBDB.get_engine()) as session:
+    #         if resolution := session.query(Resolutions).filter_by(name=model).first():
+    #             return MatchboxPostgresModel(resolution=resolution, backend=self)
+    #         else:
+    #             raise MatchboxResolutionError(resolution_name=model)
+
+    def get_resolution(self, resolution_name: str) -> int:
+        """Get a resolution ID from its name.
 
         Args:
             model: The name of the model to get.
+
+        Returns:
+            The resolution ID
         """
         with Session(MBDB.get_engine()) as session:
-            if resolution := session.query(Resolutions).filter_by(name=model).first():
-                return MatchboxPostgresModel(resolution=resolution, backend=self)
+            if (
+                resolution_id := session.query(Resolutions)
+                .filter_by(name=resolution_name)
+                .first()
+                .resolution_id
+            ):
+                return resolution_id
             else:
-                raise MatchboxResolutionError(resolution_name=model)
+                raise BackendResolutionError(resolution_name=resolution_name)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -518,7 +505,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                         "If you're sure you want to continue, rerun with certain=True"
                     )
             else:
-                raise MatchboxResolutionError(resolution_name=model)
+                raise BackendResolutionError(resolution_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -542,7 +529,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.query(Resolutions).filter(Resolutions.name == left).first()
             )
             if not left_resolution:
-                raise MatchboxResolutionError(resolution_name=left)
+                raise BackendResolutionError(resolution_name=left)
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
@@ -551,7 +538,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     session.query(Resolutions).filter(Resolutions.name == right).first()
                 )
                 if not right_resolution:
-                    raise MatchboxResolutionError(resolution_name=right)
+                    raise BackendResolutionError(resolution_name=right)
 
         insert_model(
             model=model,
