@@ -16,8 +16,7 @@ erDiagram
     Sources {
         bigint resolution_id PK,FK
         string alias
-        string schema
-        string table
+        string full_name
         string id
         jsonb indices
     }
