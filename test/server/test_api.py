@@ -1,11 +1,22 @@
+import io
+from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock, patch
+from uuid import UUID
 
+import pyarrow as pa
+import pytest
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
+from pandas import DataFrame
 
-from matchbox.common.graph import (
-    ResolutionGraph,
-)
+from matchbox.common.graph import ResolutionGraph
 from matchbox.server import app
+from matchbox.server.api import s3_to_recordbatch, table_to_s3
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+else:
+    S3Client = Any
 
 client = TestClient(app)
 
@@ -125,3 +136,41 @@ class TestMatchboxAPI:
         response = client.get("/report/resolutions")
         assert response.status_code == 200
         assert ResolutionGraph.model_validate(response.json())
+
+
+@pytest.mark.asyncio
+async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
+    """Test that a file can be uploaded to S3."""
+    # Create a mock bucket
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Create a mock UploadFile
+    all_companies["id"] = all_companies["id"].astype(str)
+    table = pa.Table.from_pandas(all_companies)
+    sink = pa.BufferOutputStream()
+    writer = pa.ipc.new_file(sink, table.schema)
+    writer.write_table(table)
+    writer.close()
+    file_content = sink.getvalue().to_pybytes()
+
+    file = UploadFile(filename="test.parquet", file=io.BytesIO(file_content))
+
+    # Call the function
+    upload_id = await table_to_s3(client=s3, bucket="test-bucket", file=file)
+
+    # Validate response
+    assert UUID(upload_id, version=4)
+
+    response_table = pa.Table.from_batches(
+        [
+            batch
+            async for batch in s3_to_recordbatch(
+                client=s3, bucket="test-bucket", key=f"{upload_id}.parquet"
+            )
+        ]
+    )
+
+    assert response_table.equals(table)

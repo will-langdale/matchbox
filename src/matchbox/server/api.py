@@ -1,12 +1,24 @@
-from enum import StrEnum
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
+from uuid import uuid4
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.schemas import (
+    BackendEntityType,
+    CountResult,
+    HealthCheck,
+    ModelResultsType,
+)
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+else:
+    S3Client = Any
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -18,40 +30,46 @@ app = FastAPI(
 )
 
 
-class BackendEntityType(StrEnum):
-    DATASETS = "datasets"
-    MODELS = "models"
-    DATA = "data"
-    CLUSTERS = "clusters"
-    CREATES = "creates"
-    MERGES = "merges"
-    PROPOSES = "proposes"
-
-
-class ModelResultsType(StrEnum):
-    PROBABILITIES = "probabilities"
-    CLUSTERS = "clusters"
-
-
-class HealthCheck(BaseModel):
-    """Response model to validate and return when performing a health check."""
-
-    status: str = "OK"
-
-
-class CountResult(BaseModel):
-    """Response model for count results"""
-
-    entities: dict[BackendEntityType, int]
-
-
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
 
 
+async def table_to_s3(client: S3Client, bucket: str, file: UploadFile) -> str:
+    """Upload a PyArrow Table to S3 and return the key."""
+    upload_id = str(uuid4())
+
+    file_bytes = await file.read()
+    reader = pa.BufferReader(file_bytes)
+    table = pa.ipc.open_file(reader).read_all()
+
+    sink = pa.BufferOutputStream()
+    pq.write_table(table, sink)
+
+    client.put_object(
+        Bucket=bucket,
+        Key=f"{upload_id}.parquet",
+        Body=sink.getvalue().to_pybytes(),
+    )
+
+    return upload_id
+
+
+async def s3_to_recordbatch(
+    client: S3Client, bucket: str, key: str, batch_size: int = 1000
+) -> AsyncGenerator[pa.RecordBatch, None]:
+    """Download a PyArrow Table from S3 and stream it as RecordBatches."""
+    response = client.get_object(Bucket=bucket, Key=key)
+    buffer = pa.BufferReader(response["Body"].read())
+
+    parquet_file = pq.ParquetFile(buffer)
+
+    for batch in parquet_file.iter_batches(batch_size=batch_size):
+        yield batch
+
+
 @app.get("/health")
 async def healthcheck() -> HealthCheck:
-    """ """
+    """Perform a health check and return the status."""
     return HealthCheck(status="OK")
 
 

@@ -29,6 +29,7 @@ server = [
     "boto3>=1.35.99",
     "fastapi[standard]>=0.115.0,<0.116.0",
     "pg-bulk-ingest>=0.0.54",
+    "python-multipart>=0.0.18",
     "tomli>=2.0.1",
 ]
 
@@ -45,6 +46,8 @@ dev = [
     "snakeviz>=2.2.2",
     "tomli-w>=1.1.0",
     "vcrpy>=6.0.2",
+    "moto[s3]>=5.0.26",
+    "pytest-asyncio>=0.25.2",
 ]
 typing = [
     "boto3-stubs[s3]>=1.35.99",

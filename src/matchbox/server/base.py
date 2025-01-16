@@ -65,7 +65,7 @@ class MatchboxDatastoreSettings(BaseSettings):
     )
 
     host: str
-    port: str
+    port: int
     access_key_id: SecretStr
     secret_access_key: SecretStr
     default_region: str
