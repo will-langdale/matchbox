@@ -22,23 +22,21 @@ class MatchboxResolutionError(Exception):
         self.resolution_name = resolution_name
 
 
-class MatchboxDatasetError(Exception):
-    """Dataset not found."""
+class BackendSourceError(Exception):
+    """Source not found on the server."""
 
     def __init__(
         self,
         message: str = None,
-        db_schema: str | None = None,
-        db_table: str | None = None,
+        db_full_name: str | None = None,
     ):
         if message is None:
-            message = "Dataset not found."
-            if db_table is not None:
-                message = f"Dataset {db_schema or ''}.{db_table} not found."
+            message = "Source not found on matchbox."
+            if db_full_name is not None:
+                message = f"Source {db_full_name} not found."
 
         super().__init__(message)
-        self.db_schema = db_schema
-        self.db_table = db_table
+        self.db_full_name = db_full_name
 
 
 class MatchboxDataError(Exception):
