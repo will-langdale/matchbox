@@ -10,8 +10,8 @@ from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
-    MatchboxDatasetError,
-    MatchboxResolutionError,
+    BackendResolutionError,
+    BackendSourceError,
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -36,26 +36,21 @@ def key_to_sqlalchemy_label(key: str, source: Source) -> str:
     return f"{source.db_schema}_{source.db_table}_{key}"
 
 
-def source_to_dataset_resolution(source: Source | str, session: Session) -> Resolutions:
-    """Converts a common Source object to a Resolutions ORM object."""
-    if isinstance(source, str):
-        source_schema, source_table = get_schema_table_names(source, validate=True)
-    else:
-        source_schema, source_table = source.db_schema, source.db_table
-
+def source_to_dataset_resolution(
+    source_full_name: str, session: Session
+) -> Resolutions:
+    """Converts a common the full name of a source to a Resolutions ORM object."""
     source_dataset = (
         session.query(Resolutions)
         .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
         .filter(
-            Sources.schema == source_schema,
-            Sources.table == source_table,
+            Sources.full_name == source_full_name,
         )
         .first()
     )
     if source_dataset is None:
-        raise MatchboxDatasetError(
-            db_schema=source_schema,
-            db_table=source_table,
+        raise BackendSourceError(
+            full_name=source_full_name,
         )
 
     return source_dataset
@@ -174,16 +169,14 @@ def _resolve_cluster_hierarchy(
     with Session(engine) as session:
         dataset_resolution = session.get(Resolutions, dataset_id)
         if dataset_resolution is None:
-            raise MatchboxDatasetError("Dataset not found")
+            raise BackendSourceError()
 
         try:
             lineage_truths = resolution.get_lineage_to_dataset(
                 dataset=dataset_resolution
             )
         except ValueError as e:
-            raise MatchboxResolutionError(
-                f"Invalid resolution lineage: {str(e)}"
-            ) from e
+            raise BackendResolutionError(f"Invalid resolution lineage: {str(e)}") from e
 
         thresholds = _resolve_thresholds(
             lineage_truths=lineage_truths,
@@ -320,7 +313,7 @@ def query(
                 .first()
             )
             if point_of_truth is None:
-                raise MatchboxResolutionError(resolution_name=resolution)
+                raise BackendResolutionError(resolution_name=resolution)
 
         # Process each source dataset
         for source, fields in selector.items():
@@ -328,9 +321,7 @@ def query(
             dataset_resolution = source_to_dataset_resolution(source, session)
 
             # Warn if non-indexed fields have been requested
-            not_indexed = set(fields) - set(
-                c.literal.name for c in source.db_columns if c.indexed
-            )
+            not_indexed = set(fields) - set(c.literal.name for c in source.db_columns)
             if not_indexed:
                 warnings.warn(
                     "Found non-indexed fields. Do not use these fields in match jobs:"
@@ -587,7 +578,7 @@ def match(
             session.query(Resolutions).filter(Resolutions.name == resolution).first()
         )
         if truth_resolution is None:
-            raise MatchboxResolutionError(resolution_name=resolution)
+            raise BackendResolutionError(resolution_name=resolution)
 
         # Get resolution lineage and resolve thresholds
         lineage_truths = truth_resolution.get_lineage()
