@@ -11,9 +11,9 @@ repos:
       pass_filenames: false
 
     # Check for secrets
-    - id: Trufflehog
-      name: Test
-      description: tty test
+    - id: trufflehog
+      name: trufflehog_scan
+      description: "Scanning local repo using the docker image"
       entry: bash -c "sudo docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo  --since-commit HEAD --fail"
       language: system
       stages: ["pre-commit", "pre-push"]
