@@ -4,13 +4,7 @@ from typing import Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -150,36 +144,18 @@ class Source(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
     alias: str
-    columns: list[SourceColumn] = []
     name_address: SourceNameAddress
     db_pk: str
-    alias: str
 
     _engine: Engine
+    _columns: list[SourceColumn] = None
 
-    @model_validator(mode="after")
-    def validate_columns(self) -> "Source":
-        """
-        Validates columns if specified, and sets to all remote otherwise.
-        """
-        table = self.to_table()
-
-        remote_columns = {
-            col.name: col.type for col in table.columns if col.name not in self.db_pk
-        }
-        if not self.columns:
-            self.columns = [
-                SourceColumn(literal=col_name, type=str(col_type))
-                for col_name, col_type in remote_columns
-            ]
-        else:
-            for col in self.columns:
-                if col.literal not in remote_columns:
-                    raise ValueError(
-                        f"Column {col.literal} not available in {self.full_name}"
-                    )
-
-        return self
+    @computed_field
+    def hashed_columns(self) -> list[tuple[str, str]]:
+        """Returns the hashes for the index columns, their literal version and alias"""
+        if not self._columns:
+            return []
+        return [(c.alias.base64, c.literal.base64) for c in self._columns]
 
     @property
     def engine(self) -> Engine | None:
@@ -227,6 +203,33 @@ class Source(BaseModel):
         if db_schema:
             return f"{db_schema}_{db_table}_{column}"
         return f"{db_table}_{column}"
+
+    @needs_engine
+    def index_columns(self, columns: list[SourceColumn] | None) -> "Source":
+        """Adds columns to usend to Matchbox server, overwriting previous value.
+
+        If no columns are specified, all columns from the source table will be used.
+        """
+
+        table = self.to_table()
+
+        remote_columns = {
+            col.name: col.type for col in table.columns if col.name not in self.db_pk
+        }
+
+        if not columns:
+            self._columns = [
+                SourceColumn(literal=col_name, type=str(col_type))
+                for col_name, col_type in remote_columns
+            ]
+        else:
+            for col in columns:
+                if col.literal not in remote_columns:
+                    raise ValueError(
+                        f"Column {col.literal} not available in {self.full_name}"
+                    )
+
+        return self
 
     @needs_engine
     def to_table(self) -> Table:
