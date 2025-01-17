@@ -168,12 +168,12 @@ class TestMatchboxBackend:
             db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
         )
 
-        assert crn.db_columns == crn_retrieved.db_columns
+        assert crn.columns == crn_retrieved.columns
 
         cols: defaultdict[str, list[SourceColumn]] = defaultdict(list)
 
         # Indexing isn't used in the custom equality check
-        for col in crn.db_columns + crn_retrieved.db_columns:
+        for col in crn.columns + crn_retrieved.columns:
             cols[col.literal.name].append(col)
 
         for c1, c2 in cols.values():

@@ -7,7 +7,8 @@ from pandas import DataFrame
 from sqlalchemy import text as sqltext
 
 from matchbox import make_model
-from matchbox.common.db import Source, SourceWarehouse
+from matchbox.common.db import SourceWarehouse
+from matchbox.common.sources import Source
 from matchbox.server.base import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 

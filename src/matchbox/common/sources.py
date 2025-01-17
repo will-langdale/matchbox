@@ -1,8 +1,10 @@
 import json
-from typing import TypeVar
+from functools import wraps
+from typing import Callable, ParamSpec, TypeVar
+from warnings import warn
 
+import pyarrow as pa
 from pandas import DataFrame
-from pyarrow import Table as ArrowTable
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -18,12 +20,14 @@ from sqlalchemy import (
     String,
     Table,
     cast,
+    func,
     select,
 )
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.hash import HASH_FUNC, hash_to_base64
+from matchbox.common.exceptions import SourceEngineError
+from matchbox.common.hash import HASH_FUNC, hash_data, hash_to_base64
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
 T = TypeVar("T")
@@ -128,33 +132,50 @@ class SourceNameAddress(BaseModel):
         return SourceNameAddress(full_name=full_name, warehouse_hash=hash)
 
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to ensure Engine is available to object."""
+
+    @wraps(func)
+    def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
+        if not self.engine:
+            raise SourceEngineError
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 class Source(BaseModel):
-    """A client-side dataset."""
+    """A dataset that can, or has been indexed on the backend."""
 
     alias: str
     columns: list[SourceColumn] = []
-    engine: Engine
     name_address: SourceNameAddress
     db_pk: str
     alias: str
 
+    _engine: Engine
+
     @model_validator(mode="after")
-    def hash_columns(self) -> "Source":
+    def validate_columns(self) -> "Source":
         """
-        Validates db_columns if specified, and sets to all remote otherwise.
+        Validates columns if specified, and sets to all remote otherwise.
         """
         table = self.to_table()
 
         remote_columns = {
             col.name: col.type for col in table.columns if col.name not in self.db_pk
         }
-        if not self.db_columns:
-            self.db_columns = [
+        if not self.columns:
+            self.columns = [
                 SourceColumn(literal=col_name, type=str(col_type))
                 for col_name, col_type in remote_columns
             ]
         else:
-            for col in self.db_columns:
+            for col in self.columns:
                 if col.literal not in remote_columns:
                     raise ValueError(
                         f"Column {col.literal} not available in {self.full_name}"
@@ -162,10 +183,59 @@ class Source(BaseModel):
 
         return self
 
+    @property
+    def engine(self) -> Engine | None:
+        return self._engine
+
+    @engine.setter
+    def set_engine(self, engine: Engine):
+        self._engine = engine
+
+    def split_full_name(self) -> tuple[str | None, str]:
+        schema_name_list = self.full_name.replace('"', "").split(".")
+
+        if len(schema_name_list) == 1:
+            db_schema = None
+            db_table = schema_name_list[0]
+        elif len(schema_name_list) == 2:
+            db_schema = schema_name_list[0]
+            db_table = schema_name_list[1]
+        else:
+            raise ValueError(
+                f"Could not identify schema and table in {self.full_name}."
+            )
+        return db_schema, db_table
+
+    @property
+    def content_address(self) -> bytes:
+        """Generate a unique hash based on the table's alias and shape."""
+        schema_representation = f"{self.alias}: " + ",".join(
+            f"{col.alias.name}:{col.type}" for col in self.columns
+        )
+        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
+
+    def format_column(self, column: str) -> str:
+        """
+        Outputs a full SQLAlchemy column representation.
+
+        Args:
+            column: the name of the column
+
+        Returns:
+            A string representing the table name and column
+        """
+
+        db_schema, db_table = self.split_full_name()
+        if db_schema:
+            return f"{db_schema}_{db_table}_{column}"
+        return f"{db_table}_{column}"
+
+    @needs_engine
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
-        metadata = MetaData(schema=self.db_schema)
-        table = Table(self.db_table, metadata, autoload_with=self.database.engine)
+        db_schema, db_table = self.split_full_name()
+        metadata = MetaData(schema=db_schema)
+        table = Table(db_table, metadata, autoload_with=self.database.engine)
         return table
 
     def _select(
@@ -181,9 +251,7 @@ class Source(BaseModel):
             """Helper to get a column with proper casting and labeling for PKs"""
             col = table.columns[col_name]
             if col_name == self.db_pk:
-                return cast(col, String).label(
-                    f"{table.schema}_{table.name}_{col_name}"
-                )
+                return cast(col, String).label(self.format_column(col_name))
             return col
 
         # Determine which columns to select
@@ -204,23 +272,18 @@ class Source(BaseModel):
 
         return stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
 
-    def to_hash(self) -> bytes:
-        """Generate a unique hash based on the table's columns and datatypes."""
-        schema_representation = f"{self.alias}: " + ",".join(
-            f"{col.alias.name}:{col.type}" for col in self.db_columns
-        )
-        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
-
+    @needs_engine
     def to_arrow(
         self,
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
-    ) -> ArrowTable:
+    ) -> pa.Table:
         """Returns the dataset as a PyArrow Table."""
         stmt = self._select(fields=fields, pks=pks, limit=limit)
-        return sql_to_df(stmt, self.database.engine, return_type="arrow")
+        return sql_to_df(stmt, self._engine, return_type="arrow")
 
+    @needs_engine
     def to_pandas(
         self,
         fields: list[str] | None,
@@ -229,7 +292,33 @@ class Source(BaseModel):
     ) -> DataFrame:
         """Returns the dataset as a pandas DataFrame."""
         stmt = self._select(fields=fields, pks=pks, limit=limit)
-        return sql_to_df(stmt, self.database.engine, return_type="pandas")
+        return sql_to_df(stmt, self._engine, return_type="pandas")
+
+    @needs_engine
+    def to_hashlist(self) -> pa.Table:
+        """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
+
+        source_table = self.to_table()
+        cols_to_index = tuple([col.literal.name for col in self.columns])
+
+        slct_stmt = select(
+            func.concat(*source_table.c[cols_to_index]).label("raw"),
+            source_table.c[self.db_pk].cast(String).label("source_pk"),
+        )
+
+        raw_result = sql_to_df(slct_stmt, self._engine, "arrow")
+        grouped = raw_result.group_by("raw").aggregate([("source_pk", "list")])
+        grouped_data = grouped["raw"]
+        grouped_keys = grouped["source_pk_list"]
+
+        return pa.table(
+            {
+                "source_pk": grouped_keys,
+                "hash": pa.array(
+                    [hash_data(d) for d in grouped_data.to_pylist()], type=pa.binary()
+                ),
+            }
+        )
 
 
 class Selector(BaseModel):
@@ -251,7 +340,9 @@ class Selector(BaseModel):
 
         indexed_cols = set(col.literal for col in source.columns)
         if not selected_cols <= indexed_cols:
-            pass
-            # TODO raise warning
+            warn(
+                "You are selecting columns that are not indexed in Matchbox",
+                stacklevel=2,
+            )
 
         return Selector(source_address, fields)

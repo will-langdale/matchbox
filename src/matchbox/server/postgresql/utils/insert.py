@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.client.results import Results
-from matchbox.common.db import Source, sql_to_df
+from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import dataset_to_hashlist, hash_values
+from matchbox.common.hash import hash_values
+from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -102,7 +103,7 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
+def insert_dataset(source: Source, engine: Engine, batch_size: int) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
 
     db_logger = logging.getLogger("sqlalchemy.engine")
@@ -112,29 +113,28 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
     # Insert dataset #
     ##################
 
-    resolution_hash = dataset.to_hash()
+    resolution_hash = source.content_address
 
     resolution_data = {
         "resolution_hash": resolution_hash,
         "type": ResolutionNodeType.DATASET.value,
-        "name": f"{dataset.db_schema}.{dataset.db_table}",
     }
 
     source_data = {
-        "alias": dataset.alias,
-        "schema": dataset.db_schema,
-        "table": dataset.db_table,
-        "id": dataset.db_pk,
+        "alias": source.alias,
+        "full_name": source.name_address.full_name,
+        "warehouse_hash": source.name_address.warehouse_hash,
+        "id": source.db_pk,
         "indices": {
-            "literal": [c.literal.base64 for c in dataset.db_columns],
-            "alias": [c.alias.base64 for c in dataset.db_columns],
+            "literal": [c.literal.base64 for c in source.columns],
+            "alias": [c.alias.base64 for c in source.columns],
         },
     }
 
-    clusters = dataset_to_hashlist(dataset=dataset)
+    clusters = source.to_hashlist()
 
     with engine.connect() as conn:
-        logic_logger.info(f"Adding {dataset}")
+        logic_logger.info(f"Adding {source}")
 
         # Generate existing max primary key values
         next_cluster_id = Clusters.next_id()
@@ -152,7 +152,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
         )
         conn.execute(resolution_stmt)
 
-        logic_logger.info(f"{dataset} added to Resolutions table")
+        logic_logger.info(f"{source} added to Resolutions table")
 
         # Upsert into Sources table
         sources_stmt = insert(Sources).values([source_data])
@@ -168,7 +168,7 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
 
         conn.commit()
 
-        logic_logger.info(f"{dataset} added to Sources table")
+        logic_logger.info(f"{source} added to Sources table")
 
         # Upsert into Clusters table
         batch_ingest(
@@ -188,9 +188,9 @@ def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
 
         conn.commit()
 
-        logic_logger.info(f"{dataset} added {len(clusters)} objects to Clusters table")
+        logic_logger.info(f"{source} added {len(clusters)} objects to Clusters table")
 
-    logic_logger.info(f"Finished {dataset}")
+    logic_logger.info(f"Finished {source}")
 
 
 def insert_model(

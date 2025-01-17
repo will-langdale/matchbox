@@ -321,7 +321,7 @@ def query(
             dataset_resolution = source_to_dataset_resolution(source, session)
 
             # Warn if non-indexed fields have been requested
-            not_indexed = set(fields) - set(c.literal.name for c in source.db_columns)
+            not_indexed = set(fields) - set(c.literal.name for c in source.columns)
             if not_indexed:
                 warnings.warn(
                     "Found non-indexed fields. Do not use these fields in match jobs:"

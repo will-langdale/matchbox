@@ -5,6 +5,10 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
+class SourceEngineError(Exception):
+    """Engine must be available"""
+
+
 class ServerResolutionError(Exception):
     """Resolution not found."""
 

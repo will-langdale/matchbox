@@ -1,16 +1,9 @@
 import base64
 import hashlib
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TypeVar
 from uuid import UUID
 
 from pandas import DataFrame, Series
-from sqlalchemy import String, func, select
-from sqlalchemy.orm import Session
-
-if TYPE_CHECKING:
-    from matchbox.common.db import Source
-else:
-    Source = Any
 
 T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
@@ -20,32 +13,6 @@ HASH_FUNC = hashlib.sha256
 
 def hash_to_base64(hash: bytes) -> str:
     return base64.b64encode(hash).decode("utf-8")
-
-
-def dataset_to_hashlist(dataset: Source) -> list[dict[str, Any]]:
-    """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
-    with Session(dataset.database.engine) as warehouse_session:
-        source_table = dataset.to_table()
-        cols_to_index = tuple([col.literal.name for col in dataset.db_columns])
-
-        slct_stmt = select(
-            func.concat(*source_table.c[cols_to_index]).label("raw"),
-            func.array_agg(source_table.c[dataset.db_pk].cast(String)).label(
-                "source_pk"
-            ),
-        ).group_by(*source_table.c[cols_to_index])
-
-        raw_result = warehouse_session.execute(slct_stmt)
-
-        to_insert = [
-            {
-                "hash": hash_data(data.raw),
-                "source_pk": data.source_pk,
-            }
-            for data in raw_result.all()
-        ]
-
-    return to_insert
 
 
 def prep_for_hash(item: HashableItem) -> bytes:
