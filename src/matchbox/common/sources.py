@@ -1,7 +1,6 @@
 import json
 from functools import wraps
 from typing import Callable, ParamSpec, TypeVar
-from warnings import warn
 
 import pyarrow as pa
 from pandas import DataFrame
@@ -28,7 +27,6 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import SourceEngineError
 from matchbox.common.hash import HASH_FUNC, hash_data, hash_to_base64
-from matchbox.server import MatchboxDBAdapter, inject_backend
 
 T = TypeVar("T")
 
@@ -319,30 +317,3 @@ class Source(BaseModel):
                 ),
             }
         )
-
-
-class Selector(BaseModel):
-    source_name_address: SourceNameAddress
-    fields: list[str]
-
-    @classmethod
-    @inject_backend
-    def verify(cls, backend: MatchboxDBAdapter, engine: Engine, full_name, fields):
-        source_address = SourceNameAddress.compose(engine, full_name)
-        source = backend.get_source(source_address)
-
-        warehouse_cols = set(source.to_table().columns.keys())
-        selected_cols = set(fields)
-        if not selected_cols <= warehouse_cols:
-            raise ValueError(
-                f"{selected_cols - warehouse_cols} not found in {source_address}"
-            )
-
-        indexed_cols = set(col.literal for col in source.columns)
-        if not selected_cols <= indexed_cols:
-            warn(
-                "You are selecting columns that are not indexed in Matchbox",
-                stacklevel=2,
-            )
-
-        return Selector(source_address, fields)
