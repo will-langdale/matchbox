@@ -3,8 +3,26 @@ const fs = require("fs");
 
 module.exports = function (eleventyConfig) {
   eleventyConfig.addPlugin(govukEleventyPlugin, {
+    showBreadcrumbs: false,
     icons: {
       shortcut: "/src/assets/dbt-favicon.png",
+      scssSettingsPath: "/src/assets/sass/_settings.scss",
+    },
+    navigation: {
+      items: [
+        {
+          text: "Client",
+          href: "/client",
+        },
+        {
+          text: "Server",
+          href: "/server",
+        },
+        {
+          text: "Contributing",
+          href: "/contributing",
+        },
+      ],
     },
     header: {
       logotype: {
@@ -12,7 +30,7 @@ module.exports = function (eleventyConfig) {
           encoding: "utf8",
         }),
       },
-      productName: "matchbox",
+      productName: "Matchbox",
     },
     footer: {
       meta: {
@@ -38,7 +56,6 @@ module.exports = function (eleventyConfig) {
     htmlTemplateEngine: "njk",
     markdownTemplateEngine: "njk",
     dir: {
-      // Use layouts from the plugin
       input: "src",
       output: "_site",
       layouts: "../node_modules/@x-govuk/govuk-eleventy-plugin/layouts",

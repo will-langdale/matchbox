@@ -1,4 +1,9 @@
-# Developer's guide
+---
+layout: page
+title: Developer's guide
+---
+
+{% from "govuk/components/warning-text/macro.njk" import govukWarningText %}
 
 This document describes how you can get started with developing Matchbox.
 
@@ -15,7 +20,7 @@ This document describes how you can get started with developing Matchbox.
 
 ## Setup
 
-Set up environment variables by creating a `.env` file under project directory. See [/environments/dev_local.env](./environments/dev_local.env) for sensible defaults.
+Set up environment variables by creating a `.env` file under project directory. See [`/environments/dev_local.env`](https://github.com/uktrade/matchbox/blob/main/environments/dev_local.env) for sensible defaults.
 
 This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/). [Docker](https://www.docker.com) is used for local development. Documentation is build using [11ty](https://www.11ty.dev) via [Node.js](https://nodejs.org/en).
 
@@ -27,7 +32,11 @@ uv sync --all-extras
 
 Secret scanning is done with [TruffleHog](https://github.com/trufflesecurity/trufflehog).
 
-For security, use of [pre-commit](https://pre-commit.com) is expected. Ensure your hooks are installed with `pre-commit install`.
+For security, use of [pre-commit](https://pre-commit.com) is expected. Ensure your hooks are installed:
+
+```console
+pre-commit install
+```
 
 Task running is done with [just](https://just.systems/man/en/). To see all available commands:
 
@@ -69,5 +78,9 @@ When contributing to the main matchbox repository and its associated repos, we t
 
 We commit as frequently as possible. We keep our commits as atomic as possible. We never push straight to main, instead we merge feature branches. Before merging to main, branches are peer reviewed.
 
-> [!CAUTION]
-> pre-commit **must** be turned on. Any secrets you commit to the repo are your own responsibility.
+{{ 
+    govukWarningText({
+        text: "Pre-commit must be turned on. Any secrets you commit to the repo are your own responsibility.",
+        iconFallbackText: "Warning"
+    }) 
+}}
