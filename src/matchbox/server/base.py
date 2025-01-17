@@ -7,7 +7,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Literal,
     ParamSpec,
     Protocol,
     TypeVar,
@@ -241,7 +240,6 @@ class MatchboxDBAdapter(ABC):
         selector: dict[str, list[str]],
         resolution: str | None = None,
         threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
     ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
 

@@ -1,5 +1,6 @@
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
+from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
@@ -9,9 +10,10 @@ from matchbox.common.db import Match
 from matchbox.common.exceptions import (
     MatchboxDataError,
     ServerResolutionError,
+    ServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Source
+from matchbox.common.sources import Source, SourceNameAddress
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (
@@ -227,16 +229,6 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
             session.commit()
 
-    # @classmethod
-    # def get_model(
-    #     cls, model_name: str, backend: "MatchboxPostgres"
-    # ) -> "MatchboxPostgresModel":
-    #     with Session(MBDB.get_engine()) as session:
-    #         if model := session.query(Resolutions).filter_by(name=model_name).first():
-    #             return cls(model, backend=backend)
-    #         else:
-    #             raise MatchboxResolutionError(resolution_name=model_name)
-
 
 class MatchboxPostgres(MatchboxDBAdapter):
     """A PostgreSQL adapter for Matchbox."""
@@ -256,10 +248,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(
         self,
-        selector: dict[str, list[str]],
-        resolution: str | None = None,
+        source_address: SourceNameAddress,
+        resolution_id: int,
         threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
     ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
         """Queries the database from an optional point of truth.
@@ -282,10 +273,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
             Data in the requested return type
         """
         return query(
-            selector=selector,
+            source_address=source_address,
+            resolution_id=resolution_id,
             engine=MBDB.get_engine(),
-            return_type=return_type if return_type else "pandas",
-            resolution=resolution,
             threshold=threshold,
             limit=limit,
         )
@@ -323,18 +313,46 @@ class MatchboxPostgres(MatchboxDBAdapter):
             threshold=threshold,
         )
 
-    def index(self, dataset: Source) -> None:
-        """Indexes a data from your data warehouse within Matchbox.
+    def index(self, source: Source, data_hashes: Table) -> None:
+        """Indexes to Matchbox a source dataset in your warehouse.
 
         Args:
-            dataset: The dataset to index.
-            engine: The SQLAlchemy engine of your data warehouse.
+            source: The source dataset to index.
         """
         insert_dataset(
-            dataset=dataset,
+            source=source,
+            data_hashes=data_hashes,
             engine=MBDB.get_engine(),
             batch_size=self.settings.batch_size,
         )
+
+    def get_source(self, source_name_address: SourceNameAddress) -> Source:
+        """Get a source from its name address.
+
+        Args:
+            source_name_address: The name address for the source
+
+        Returns:
+            A Source object
+        """
+        with Session(MBDB.get_engine()) as session:
+            if (
+                source := session.query(Sources)
+                .where(
+                    and_(
+                        Sources.full_name == source_name_address.full_name,
+                        Sources.warehouse_hash == source_name_address.warehouse_hash,
+                    )
+                )
+                .first()
+            ):
+                return Source(
+                    alias=source.alias,
+                    name_address=source_name_address,
+                    db_pk=source.db_pk,
+                )
+            else:
+                raise ServerSourceError(full_name=source_name_address.full_name)
 
     def validate_ids(self, ids: list[int]) -> None:
         """Validates a list of IDs exist in the database.
@@ -438,19 +456,19 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Get the full resolution graph."""
         return get_resolution_graph(engine=MBDB.get_engine())
 
-    # def get_model(self, model: str) -> MatchboxPostgresModel:
-    #     """Get a model from the database.
+    def get_model(self, model: str) -> MatchboxPostgresModel:
+        """Get a model from the database.
 
-    #     Args:
-    #         model: The name of the model to get.
-    #     """
-    #     with Session(MBDB.get_engine()) as session:
-    #         if resolution := session.query(Resolutions).filter_by(name=model).first():
-    #             return MatchboxPostgresModel(resolution=resolution, backend=self)
-    #         else:
-    #             raise MatchboxResolutionError(resolution_name=model)
+        Args:
+            model: The name of the model to get.
+        """
+        with Session(MBDB.get_engine()) as session:
+            if resolution := session.query(Resolutions).filter_by(name=model).first():
+                return MatchboxPostgresModel(resolution=resolution, backend=self)
+            else:
+                raise ServerResolutionError(resolution_name=model)
 
-    def get_resolution(self, resolution_name: str) -> int:
+    def get_resolution_id(self, resolution_name: str) -> int:
         """Get a resolution ID from its name.
 
         Args:
