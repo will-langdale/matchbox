@@ -15,12 +15,13 @@ from typing import (
 )
 
 from dotenv import find_dotenv, load_dotenv
+from pyarrow import Table
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from matchbox.common.db import Match
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Source
+from matchbox.common.sources import Source, SourceNameAddress
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
@@ -255,7 +256,10 @@ class MatchboxDBAdapter(ABC):
     ) -> Match | list[Match]: ...
 
     @abstractmethod
-    def index(self, dataset: Source) -> None: ...
+    def index(self, dataset: Source, data_hashes: Table) -> None: ...
+
+    @abstractmethod
+    def get_source(self, source_name_address: SourceNameAddress) -> Source: ...
 
     @abstractmethod
     def validate_ids(self, ids: list[int]) -> bool: ...
@@ -269,11 +273,11 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def get_resolution_graph(self) -> ResolutionGraph: ...
 
-    # @abstractmethod
-    # def get_model(self, model: str) -> MatchboxModelAdapter: ...
+    @abstractmethod
+    def get_model(self, model: str) -> MatchboxModelAdapter: ...
 
     @abstractmethod
-    def get_resolution(self, resolution_name: str) -> int: ...
+    def get_resolution_id(self, resolution_name: str) -> int: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...
