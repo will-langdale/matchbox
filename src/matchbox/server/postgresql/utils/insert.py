@@ -211,10 +211,10 @@ def insert_model(
         engine: SQLAlchemy engine instance
 
     Raises:
-        BackendResolutionError if the specified parent models don't exist.
+        ServerResolutionError if the specified parent models don't exist.
 
     Raises:
-        BackendResolutionError if the specified model doesn't exist.
+        ServerResolutionError if the specified model doesn't exist.
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
@@ -492,7 +492,7 @@ def insert_results(
         batch_size: Number of records to insert in each batch
 
     Raises:
-        BackendResolutionError if the specified model doesn't exist.
+        ServerResolutionError if the specified model doesn't exist.
     """
     logic_logger.info(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"

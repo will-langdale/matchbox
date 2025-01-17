@@ -10,9 +10,9 @@ from matchbox.client.helpers.selector import match, query, selector, selectors
 from matchbox.client.results import Results
 from matchbox.common.db import Match
 from matchbox.common.exceptions import (
-    BackendResolutionError,
-    BackendSourceError,
     MatchboxDataError,
+    ServerResolutionError,
+    ServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
@@ -179,7 +179,7 @@ class TestMatchboxBackend:
         for c1, c2 in cols.values():
             assert c1.indexed == c2.indexed
 
-        with pytest.raises(BackendSourceError):
+        with pytest.raises(ServerSourceError):
             self.backend.get_dataset(
                 db_schema="nonexistant",
                 db_table="nonexistant",
@@ -216,7 +216,7 @@ class TestMatchboxBackend:
         resolution_id = self.backend.get_model(model="naive_test.crn")
         assert isinstance(resolution_id, int)
 
-        with pytest.raises(BackendResolutionError):
+        with pytest.raises(ServerResolutionError):
             self.backend.get_resolution(resolution_name="nonexistent")
 
     def test_delete_model(self):

@@ -10,8 +10,8 @@ from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
-    BackendResolutionError,
-    BackendSourceError,
+    ServerResolutionError,
+    ServerSourceError,
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -49,7 +49,7 @@ def source_to_dataset_resolution(
         .first()
     )
     if source_dataset is None:
-        raise BackendSourceError(
+        raise ServerSourceError(
             full_name=source_full_name,
         )
 
@@ -169,14 +169,14 @@ def _resolve_cluster_hierarchy(
     with Session(engine) as session:
         dataset_resolution = session.get(Resolutions, dataset_id)
         if dataset_resolution is None:
-            raise BackendSourceError()
+            raise ServerSourceError()
 
         try:
             lineage_truths = resolution.get_lineage_to_dataset(
                 dataset=dataset_resolution
             )
         except ValueError as e:
-            raise BackendResolutionError(f"Invalid resolution lineage: {str(e)}") from e
+            raise ServerResolutionError(f"Invalid resolution lineage: {str(e)}") from e
 
         thresholds = _resolve_thresholds(
             lineage_truths=lineage_truths,
@@ -313,7 +313,7 @@ def query(
                 .first()
             )
             if point_of_truth is None:
-                raise BackendResolutionError(resolution_name=resolution)
+                raise ServerResolutionError(resolution_name=resolution)
 
         # Process each source dataset
         for source, fields in selector.items():
@@ -578,7 +578,7 @@ def match(
             session.query(Resolutions).filter(Resolutions.name == resolution).first()
         )
         if truth_resolution is None:
-            raise BackendResolutionError(resolution_name=resolution)
+            raise ServerResolutionError(resolution_name=resolution)
 
         # Get resolution lineage and resolve thresholds
         lineage_truths = truth_resolution.get_lineage()

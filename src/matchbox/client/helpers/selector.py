@@ -5,26 +5,24 @@ from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine
 
 from matchbox.common.db import Match
-from matchbox.common.sources import Selector, SourceNameAddress
+from matchbox.common.sources import Selector
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
 
-def select(full_name: str, fields: list[str], engine: Engine) -> Selector:
+def select(selection: dict[str, list[str]], engine: Engine) -> list[Selector]:
     """
-    Takes the full name of a table and the fields you want to select from it,
-    and initialises a Selector to send to the server.
+    Builds and verifies a list of selectors.
 
     Args:
-        full_name: a table name in the form "schema.table".
-        fields: a list of columns in the table
-        engine: the engine to use to connect to
-            your data warehouse
+        selection: a dict where full source names are mapped to lists of fields
+        engine: the engine to connect to a data warehouse
 
     Returns:
-        A Selector object
+        A list of Selector objects
     """
-
-    return Selector(SourceNameAddress.from_engine(engine, full_name), fields=fields)
+    return [
+        Selector.verify(engine, full_name, fields) for full_name, fields in selection
+    ]
 
 
 @inject_backend

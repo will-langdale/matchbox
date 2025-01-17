@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from matchbox.client.results import Results
 from matchbox.common.db import Match, Source
 from matchbox.common.exceptions import (
-    BackendResolutionError,
     MatchboxDataError,
+    ServerResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
@@ -467,7 +467,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             ):
                 return resolution_id
             else:
-                raise BackendResolutionError(resolution_name=resolution_name)
+                raise ServerResolutionError(resolution_name=resolution_name)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -505,7 +505,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                         "If you're sure you want to continue, rerun with certain=True"
                     )
             else:
-                raise BackendResolutionError(resolution_name=model)
+                raise ServerResolutionError(resolution_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -529,7 +529,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.query(Resolutions).filter(Resolutions.name == left).first()
             )
             if not left_resolution:
-                raise BackendResolutionError(resolution_name=left)
+                raise ServerResolutionError(resolution_name=left)
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
@@ -538,7 +538,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     session.query(Resolutions).filter(Resolutions.name == right).first()
                 )
                 if not right_resolution:
-                    raise BackendResolutionError(resolution_name=right)
+                    raise ServerResolutionError(resolution_name=right)
 
         insert_model(
             model=model,

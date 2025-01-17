@@ -5,7 +5,7 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
-class BackendResolutionError(Exception):
+class ServerResolutionError(Exception):
     """Resolution not found."""
 
     def __init__(self, message: str = None, resolution_name: str = None):
@@ -18,7 +18,7 @@ class BackendResolutionError(Exception):
         self.resolution_name = resolution_name
 
 
-class BackendSourceError(Exception):
+class ServerSourceError(Exception):
     """Source not found on the server."""
 
     def __init__(
