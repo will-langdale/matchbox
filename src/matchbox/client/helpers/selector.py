@@ -1,17 +1,56 @@
+import itertools
 from typing import Literal
+from warnings import warn
 
+import pyarrow as pa
 from pandas import DataFrame
-from pyarrow import Table as ArrowTable
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Engine
 
 from matchbox.common.db import Match
-from matchbox.common.sources import Selector
+from matchbox.common.sources import SourceNameAddress
 from matchbox.server import MatchboxDBAdapter, inject_backend
+
+
+class Selector(BaseModel):
+    source_name_address: SourceNameAddress
+    fields: list[str]
+    engine: Engine
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @classmethod
+    @inject_backend
+    def verify(
+        cls,
+        backend: MatchboxDBAdapter,
+        full_name: str,
+        fields: list[str],
+        engine: Engine,
+    ):
+        source_address = SourceNameAddress.compose(engine, full_name)
+        source = backend.get_source(source_address)
+
+        warehouse_cols = set(source.to_table().columns.keys())
+        selected_cols = set(fields)
+        if not selected_cols <= warehouse_cols:
+            raise ValueError(
+                f"{selected_cols - warehouse_cols} not found in {source_address}"
+            )
+
+        indexed_cols = set(col.literal for col in source.columns)
+        if not selected_cols <= indexed_cols:
+            warn(
+                "You are selecting columns that are not indexed in Matchbox",
+                stacklevel=2,
+            )
+
+        return Selector(source_address, fields, engine)
 
 
 def select(selection: dict[str, list[str]], engine: Engine) -> list[Selector]:
     """
-    Builds and verifies a list of selectors.
+    Builds and verifies a list of selectors from one engine.
 
     Args:
         selection: a dict where full source names are mapped to lists of fields
@@ -28,12 +67,12 @@ def select(selection: dict[str, list[str]], engine: Engine) -> list[Selector]:
 @inject_backend
 def query(
     backend: MatchboxDBAdapter,
-    selectors: list[Selector],
-    return_type: Literal["pandas", "arrow"] = None,
-    resolution: str | None = None,
+    resolution_name: str,
+    *selectors: list[Selector],
+    return_type: Literal["pandas", "arrow"] = "pandas",
     threshold: float | dict[str, float] | None = None,
     limit: int | None = None,
-) -> DataFrame | ArrowTable:
+) -> DataFrame | pa.Table:
     """Runs queries against the selected backend.
 
     Args:
@@ -54,15 +93,65 @@ def query(
     Returns:
         Data in the requested return type
     """
-    # TODO: Logic for joining the results will have to be moved here
-    #
-    return backend.query(
-        selector=selectors,
-        resolution=resolution,
-        threshold=threshold,
-        return_type="pandas" if not return_type else return_type,
-        limit=limit,
+
+    selectors = itertools.chain(*selectors)
+    resolution_id = backend.get_resolution_id(resolution_name)
+
+    # Divide the limit among selectors
+    n_selectors = len(selectors)
+    sub_limit_base = limit // n_selectors
+    sub_limit_remainder = limit % n_selectors
+    sub_limits = [sub_limit_base + 1] * sub_limit_remainder + [sub_limit_base] * (
+        n_selectors - sub_limit_remainder
     )
+
+    tables = list[pa.Table]
+    for selector, sub_limit in zip(selectors, sub_limits, strict=True):
+        # Get ids from matchbox
+        mb_ids = backend.query(
+            source_address=selector.source_name_address,
+            resolution_id=resolution_id,
+            threshold=threshold,
+            limit=sub_limit,
+        )
+
+        # Get source data
+        source = backend.get_source(selector.source_name_address)
+        source.engine = selector.engine
+
+        raw_data = source.to_arrow(
+            fields=set([source.db_pk] + selector.fields),
+            pks=mb_ids["source_pk"].to_pylist(),
+        )
+
+        # Join and select columns
+        joined_table = raw_data.join(
+            right_table=mb_ids,
+            keys=source.format_column(source.db_pk),
+            right_keys="source_pk",
+            join_type="inner",
+        )
+
+        keep_cols = ["id"] + [source.format_column(f) for f in selector.fields]
+        match_cols = [col for col in joined_table.column_names if col in keep_cols]
+
+        tables.append(joined_table.select(match_cols))
+
+    # Combine results
+    result = pa.concat_tables(tables, promote_options="default")
+
+    # Return in requested format
+    if return_type == "arrow":
+        return result
+    elif return_type == "pandas":
+        return result.to_pandas(
+            use_threads=True,
+            split_blocks=True,
+            self_destruct=True,
+            types_mapper=pa.ArrowDtype,
+        )
+    else:
+        raise ValueError(f"return_type of {return_type} not valid")
 
 
 @inject_backend
