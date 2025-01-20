@@ -477,17 +477,17 @@ def get_schema_table_names(full_name: str, validate: bool = False) -> tuple[str,
     Parameters:
         full_name: A string indicating a Postgres table
         validate: Whether to error if both schema and table aren't
-        detected
+            detected
 
     Raises:
         ValueError: When the function can't detect either a
-        schema.table or table format in the input
+            schema.table or table format in the input
         MatchboxValidatonError: If both schema and table can't be detected
-        when the validate argument is True
+            when the validate argument is True
 
     Returns:
         (schema, table): A tuple of schema and table name. If schema
-        cannot be inferred, returns None.
+            cannot be inferred, returns None.
     """
 
     schema_name_list = full_name.replace('"', "").split(".")

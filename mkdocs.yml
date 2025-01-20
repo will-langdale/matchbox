@@ -30,6 +30,13 @@ nav:
         - PostgreSQL: server/api/server/backends/postgresql.md
     - Common: 
       - Overview: server/api/common/index.md
+      - Database: server/api/common/db.md
+      - Exceptions: server/api/common/exceptions.md
+      - Factories: server/api/common/factories.md
+      - Graph: server/api/common/graph.md
+      - Hashing: server/api/common/hash.md
+      - Logging: server/api/common/logging.md
+      - Transform: server/api/common/transform.md
 - Contributing:
   - Guidelines: contributing.md
 
