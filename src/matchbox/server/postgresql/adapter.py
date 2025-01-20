@@ -329,7 +329,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         Args:
             dataset: The dataset to index.
-            engine: The SQLAlchemy engine of your data warehouse.
         """
         insert_dataset(
             dataset=dataset,
@@ -341,7 +340,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Validates a list of IDs exist in the database.
 
         Args:
-            hashes: A list of IDs to validate.
+            ids: A list of IDs to validate.
 
         Raises:
             MatchboxDataError: If some items don't exist in the target table.

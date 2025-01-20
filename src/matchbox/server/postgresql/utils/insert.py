@@ -211,10 +211,8 @@ def insert_model(
         engine: SQLAlchemy engine instance
 
     Raises:
-        MatchboxResolutionError if the specified parent models don't exist.
-
-    Raises:
-        MatchboxResolutionError if the specified model doesn't exist.
+        MatchboxResolutionError: The specified parent models don't exist.
+        MatchboxResolutionError: The specified model doesn't exist.
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
@@ -492,7 +490,7 @@ def insert_results(
         batch_size: Number of records to insert in each batch
 
     Raises:
-        MatchboxResolutionError if the specified model doesn't exist.
+        MatchboxResolutionError: If the specified model doesn't exist.
     """
     logic_logger.info(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"

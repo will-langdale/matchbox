@@ -22,7 +22,14 @@ nav:
 - Server:
   - Install: server/install.md
   - Deploy: server/deploy.md
-  - API reference: server/api.md
+  - API reference:
+    - Server: 
+      - Overview: server/api/server/index.md
+      - API: server/api/server/api.md
+      - Backends:
+        - PostgreSQL: server/api/server/backends/postgresql.md
+    - Common: 
+      - Overview: server/api/common/index.md
 - Contributing:
   - Guidelines: contributing.md
 
