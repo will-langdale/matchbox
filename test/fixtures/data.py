@@ -8,7 +8,7 @@ import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
-from matchbox import process
+from matchbox import process, query
 from matchbox.client.clean import company_name
 from matchbox.client.helpers import cleaner, cleaners, select
 from matchbox.client.helpers.selector import Selector
@@ -210,7 +210,7 @@ def query_clean_crn(
         engine=crn_source.engine,
     )
 
-    crn = crn_source.to_pandas(fields=["crn", "company_name"])
+    crn = query(select_crn, return_type="pandas")
 
     # Clean
     col_prefix = "test_crn_"
@@ -235,7 +235,7 @@ def query_clean_duns(
         {duns_source.address.full_name: ["duns", "company_name"]},
         engine=duns_source.engine,
     )
-    duns = duns_source.to_pandas(fields=["duns", "company_name"])
+    duns = query(select_duns, return_type="pandas")
 
     # Clean
     col_prefix = "test_duns_"
@@ -260,7 +260,7 @@ def query_clean_cdms(
         {cdms_source.address.full_name: ["crn", "cdms"]},
         engine=cdms_source.engine,
     )
-    cdms = cdms_source.to_pandas(fields=["crn", "cdms"])
+    cdms = query(select_cdms, return_type="pandas")
 
     # No cleaning needed, see original data
     return select_cdms, cdms
@@ -277,7 +277,7 @@ def query_clean_crn_deduped(
         {crn_source.address.full_name: ["crn", "company_name"]},
         engine=crn_source.engine,
     )
-    crn = crn_source.to_pandas(fields=["crn", "company_name"])
+    crn = query(select_crn, return_type="pandas")
 
     # Clean
     col_prefix = "test_crn_"
@@ -302,7 +302,7 @@ def query_clean_duns_deduped(
         {duns_source.address.full_name: ["duns", "company_name"]},
         engine=duns_source.engine,
     )
-    duns = duns_source.to_pandas(fields=["duns", "company_name"])
+    duns = query(select_duns, return_type="pandas")
 
     # Clean
     col_prefix = "test_duns_"
@@ -327,7 +327,7 @@ def query_clean_cdms_deduped(
         {cdms_source.address.full_name: ["crn", "cdms"]},
         engine=cdms_source.engine,
     )
-    cdms = cdms_source.to_pandas(fields=["crn", "cdms"])
+    cdms = query(select_cdms, return_type="pandas")
 
     # No cleaning needed, see original data
     return select_cdms, cdms

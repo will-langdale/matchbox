@@ -267,9 +267,9 @@ def _resolve_cluster_hierarchy(
 
 
 def query(
-    source_address: SourceAddress,
-    resolution_id: int,
     engine: Engine,
+    source_address: SourceAddress,
+    resolution_id: int | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
 ) -> DataFrame | pa.Table | PolarsDataFrame:
@@ -297,9 +297,22 @@ def query(
     with Session(engine) as session:
         dataset_resolution = get_dataset_resolution(source_address, session)
 
+        if resolution_id:
+            resolution = (
+                session.query(Resolutions)
+                .filter(Resolutions.resolution_id == resolution_id)
+                .first()
+            )
+            if resolution is None:
+                raise ServerResolutionError(resolution_name=resolution)
+        else:
+            resolution = dataset_resolution
+        if not resolution_id:
+            resolution_id = dataset_resolution.resolution_id
+
         id_query = _resolve_cluster_hierarchy(
             dataset_id=dataset_resolution.resolution_id,
-            resolution=resolution_id,
+            resolution=resolution,
             threshold=threshold,
             engine=engine,
         )

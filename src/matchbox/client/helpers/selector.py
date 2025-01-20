@@ -3,7 +3,7 @@ from typing import Literal
 from warnings import warn
 
 import pyarrow as pa
-from pandas import DataFrame
+from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel
 from sqlalchemy import Engine
 
@@ -50,12 +50,14 @@ def select(
             )
         selectors.append(Selector(source=source, fields=fields))
 
+    return selectors
+
 
 @inject_backend
 def query(
     backend: MatchboxDBAdapter,
-    resolution_name: str,
     *selectors: list[Selector],
+    resolution_name: str | None = None,
     return_type: Literal["pandas", "arrow"] = "pandas",
     threshold: float | dict[str, float] | None = None,
     limit: int | None = None,
@@ -80,19 +82,32 @@ def query(
     Returns:
         Data in the requested return type
     """
+    if not selectors:
+        raise ValueError("At least one selector must be specified")
 
-    selectors = itertools.chain(*selectors)
-    resolution_id = backend.get_resolution_id(resolution_name)
+    selectors = list(itertools.chain(*selectors))
+
+    if not resolution_name:
+        resolution_id = None
+        if len(selectors) > 1:
+            raise ValueError(
+                "A resolution name must be specified if querying more than one source"
+            )
+    else:
+        resolution_id = backend.get_resolution_id(resolution_name)
 
     # Divide the limit among selectors
-    n_selectors = len(selectors)
-    sub_limit_base = limit // n_selectors
-    sub_limit_remainder = limit % n_selectors
-    sub_limits = [sub_limit_base + 1] * sub_limit_remainder + [sub_limit_base] * (
-        n_selectors - sub_limit_remainder
-    )
+    if limit:
+        n_selectors = len(selectors)
+        sub_limit_base = limit // n_selectors
+        sub_limit_remainder = limit % n_selectors
+        sub_limits = [sub_limit_base + 1] * sub_limit_remainder + [sub_limit_base] * (
+            n_selectors - sub_limit_remainder
+        )
+    else:
+        sub_limits = [None] * len(selectors)
 
-    tables = list[pa.Table]
+    tables = []
     for selector, sub_limit in zip(selectors, sub_limits, strict=True):
         # Get ids from matchbox
         mb_ids = backend.query(
@@ -103,7 +118,7 @@ def query(
         )
 
         raw_data = selector.source.to_arrow(
-            fields=set(selector.fields),
+            fields=list(set(selector.fields)),
             pks=mb_ids["source_pk"].to_pylist(),
         )
 
@@ -131,7 +146,7 @@ def query(
             use_threads=True,
             split_blocks=True,
             self_destruct=True,
-            types_mapper=pa.ArrowDtype,
+            types_mapper=ArrowDtype,
         )
     else:
         raise ValueError(f"return_type of {return_type} not valid")

@@ -3,13 +3,9 @@ import logging
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
-from matchbox import process
+from matchbox import process, query
 from matchbox.client.clean import company_name, company_number
-from matchbox.client.helpers import (
-    cleaner,
-    cleaners,
-    comparison,
-)
+from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
@@ -40,7 +36,14 @@ def test_process(
     db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
     crn_source = warehouse_data[0]
-    crn = crn_source.to_pandas(fields=["crn", "company_name"])
+
+    crn = query(
+        select(
+            {crn_source.address.full_name: ["crn", "company_name"]},
+            engine=crn_source.engine,
+        ),
+        return_type="pandas",
+    )
 
     cleaner_name = cleaner(
         function=company_name,

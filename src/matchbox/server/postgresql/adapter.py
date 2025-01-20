@@ -248,9 +248,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def query(
         self,
         source_address: SourceAddress,
-        resolution_id: int,
+        resolution_id: int | None = None,
         threshold: float | dict[str, float] | None = None,
-        limit: int = None,
+        limit: int | None = None,
     ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
         """Queries the database from an optional point of truth.
 
@@ -272,9 +272,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
             Data in the requested return type
         """
         return query(
+            engine=MBDB.get_engine(),
             source_address=source_address,
             resolution_id=resolution_id,
-            engine=MBDB.get_engine(),
             threshold=threshold,
             limit=limit,
         )
