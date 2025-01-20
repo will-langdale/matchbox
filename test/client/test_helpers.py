@@ -3,14 +3,12 @@ import logging
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
-from matchbox import process, query
+from matchbox import process
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import (
     cleaner,
     cleaners,
     comparison,
-    selector,
-    selectors,
 )
 from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
@@ -21,33 +19,6 @@ dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
-
-
-def test_selectors(
-    matchbox_postgres: MatchboxPostgres,
-    db_add_indexed_data: AddIndexedDataCallable,
-    warehouse_data: list[Source],
-):
-    # Setup
-    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
-
-    crn_wh = warehouse_data[0]
-    select_crn = selector(
-        table=str(crn_wh),
-        fields=["id", "crn"],
-        engine=crn_wh.database.engine,
-    )
-
-    duns_wh = warehouse_data[1]
-    select_duns = selector(
-        table=str(duns_wh),
-        fields=["id", "duns"],
-        engine=duns_wh.database.engine,
-    )
-
-    select_crn_duns = selectors(select_crn, select_duns)
-
-    assert select_crn_duns is not None
 
 
 def test_cleaners():
@@ -68,18 +39,8 @@ def test_process(
     # Setup
     db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
-    crn_wh = warehouse_data[0]
-    select_crn = selector(
-        table=str(crn_wh),
-        fields=["crn", "company_name"],
-        engine=crn_wh.database.engine,
-    )
-    crn = query(
-        selector=select_crn,
-        backend=matchbox_postgres,
-        resolution=None,
-        return_type="pandas",
-    )
+    crn_source = warehouse_data[0]
+    crn = crn_source.to_pandas(fields=["crm", "company_name"])
 
     cleaner_name = cleaner(
         function=company_name,

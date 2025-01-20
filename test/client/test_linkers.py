@@ -5,7 +5,7 @@ from pandas import DataFrame
 from splink import SettingsCreator
 
 from matchbox import make_model, query
-from matchbox.client.helpers import selectors
+from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.linkers.splinklinker import (
     SplinkLinkerFunction,
     SplinkSettings,
@@ -57,8 +57,8 @@ def test_linkers(
         request=request,
     )
 
-    select_l: dict[Source, list[str]]
-    select_r: dict[Source, list[str]]
+    select_l: list[Selector]
+    select_r: list[Selector]
     df_l: DataFrame
     df_r: DataFrame
 
@@ -181,13 +181,11 @@ def test_linkers(
 
     model.truth = 0.0
 
-    l_r_selector = selectors(select_l, select_r)
-
     clusters = query(
-        selector=l_r_selector,
-        backend=matchbox_postgres,
+        linker_name,
+        select_l,
+        select_r,
         return_type="pandas",
-        resolution=linker_name,
     )
 
     assert isinstance(clusters, DataFrame)

@@ -8,11 +8,11 @@ import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
-from matchbox import process, query
+from matchbox import process
 from matchbox.client.clean import company_name
-from matchbox.client.helpers import cleaner, cleaners, selector
+from matchbox.client.helpers import cleaner, cleaners, select
+from matchbox.client.helpers.selector import Selector
 from matchbox.common.sources import Source
-from matchbox.server.postgresql import MatchboxPostgres
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -199,22 +199,18 @@ def winner_inc(
 
 @pytest.fixture(scope="function")
 def query_clean_crn(
-    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> tuple[dict[Source, list[str]], DataFrame]:
+    warehouse_data: list[Source],
+) -> tuple[list[Selector], DataFrame]:
     """Fixture for CRN data, and the selector used to get it."""
     # Select
-    crn_wh = warehouse_data[0]
-    select_crn = selector(
-        table=str(crn_wh),
-        fields=["crn", "company_name"],
-        engine=crn_wh.database.engine,
+    crn_source = warehouse_data[0]
+
+    select_crn = select(
+        {crn_source.address.full_name: ["crn", "company_name"]},
+        engine=crn_source.engine,
     )
-    crn = query(
-        selector=select_crn,
-        backend=matchbox_postgres,
-        resolution=None,
-        return_type="pandas",
-    )
+
+    crn = crn_source.to_pandas(fields=["crn", "company_name"])
 
     # Clean
     col_prefix = "test_crn_"
@@ -230,22 +226,16 @@ def query_clean_crn(
 
 @pytest.fixture(scope="function")
 def query_clean_duns(
-    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> tuple[dict[Source, list[str]], DataFrame]:
+    warehouse_data: list[Source],
+) -> tuple[list[Selector], DataFrame]:
     """Fixture for DUNS data, and the selector used to get it."""
     # Select
-    duns_wh = warehouse_data[1]
-    select_duns = selector(
-        table=str(duns_wh),
-        fields=["duns", "company_name"],
-        engine=duns_wh.database.engine,
+    duns_source = warehouse_data[1]
+    select_duns = select(
+        {duns_source.address.full_name: ["duns", "company_name"]},
+        engine=duns_source.engine,
     )
-    duns = query(
-        selector=select_duns,
-        backend=matchbox_postgres,
-        resolution=None,
-        return_type="pandas",
-    )
+    duns = duns_source.to_pandas(fields=["duns", "company_name"])
 
     # Clean
     col_prefix = "test_duns_"
@@ -261,22 +251,16 @@ def query_clean_duns(
 
 @pytest.fixture(scope="function")
 def query_clean_cdms(
-    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> tuple[dict[Source, list[str]], DataFrame]:
+    warehouse_data: list[Source],
+) -> tuple[list[Selector], DataFrame]:
     """Fixture for CDMS data, and the selector used to get it."""
     # Select
-    cdms_wh = warehouse_data[2]
-    select_cdms = selector(
-        table=str(cdms_wh),
-        fields=["crn", "cdms"],
-        engine=cdms_wh.database.engine,
+    cdms_source = warehouse_data[2]
+    select_cdms = select(
+        {cdms_source.address.full_name: ["crn", "cdms"]},
+        engine=cdms_source.engine,
     )
-    cdms = query(
-        selector=select_cdms,
-        backend=matchbox_postgres,
-        resolution=None,
-        return_type="pandas",
-    )
+    cdms = cdms_source.to_pandas(fields=["crn", "cdms"])
 
     # No cleaning needed, see original data
     return select_cdms, cdms
@@ -284,22 +268,16 @@ def query_clean_cdms(
 
 @pytest.fixture(scope="function")
 def query_clean_crn_deduped(
-    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> tuple[dict[Source, list[str]], DataFrame]:
+    warehouse_data: list[Source],
+) -> tuple[list[Selector], DataFrame]:
     """Fixture for cleaned, deduped CRN data, and the selector used to get it."""
     # Select
-    crn_wh = warehouse_data[0]
-    select_crn = selector(
-        table=str(crn_wh),
-        fields=["crn", "company_name"],
-        engine=crn_wh.database.engine,
+    crn_source = warehouse_data[0]
+    select_crn = select(
+        {crn_source.address.full_name: ["crn", "company_name"]},
+        engine=crn_source.engine,
     )
-    crn = query(
-        selector=select_crn,
-        backend=matchbox_postgres,
-        resolution="naive_test.crn",
-        return_type="pandas",
-    )
+    crn = crn_source.to_pandas(fields=["crn", "company_name"])
 
     # Clean
     col_prefix = "test_crn_"
@@ -315,22 +293,16 @@ def query_clean_crn_deduped(
 
 @pytest.fixture(scope="function")
 def query_clean_duns_deduped(
-    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> tuple[dict[Source, list[str]], DataFrame]:
+    warehouse_data: list[Source],
+) -> tuple[list[Selector], DataFrame]:
     """Fixture for cleaned, deduped DUNS data, and the selector used to get it."""
     # Select
-    duns_wh = warehouse_data[1]
-    select_duns = selector(
-        table=str(duns_wh),
-        fields=["duns", "company_name"],
-        engine=duns_wh.database.engine,
+    duns_source = warehouse_data[1]
+    select_duns = select(
+        {duns_source.address.full_name: ["duns", "company_name"]},
+        engine=duns_source.engine,
     )
-    duns = query(
-        selector=select_duns,
-        backend=matchbox_postgres,
-        resolution="naive_test.duns",
-        return_type="pandas",
-    )
+    duns = duns_source.to_pandas(fields=["duns", "company_name"])
 
     # Clean
     col_prefix = "test_duns_"
@@ -346,22 +318,16 @@ def query_clean_duns_deduped(
 
 @pytest.fixture(scope="function")
 def query_clean_cdms_deduped(
-    matchbox_postgres: MatchboxPostgres, warehouse_data: list[Source]
-) -> tuple[dict[Source, list[str]], DataFrame]:
+    warehouse_data: list[Source],
+) -> tuple[list[Selector], DataFrame]:
     """Fixture for cleaned, deduped CDMS data, and the selector used to get it."""
     # Select
-    cdms_wh = warehouse_data[2]
-    select_cdms = selector(
-        table=str(cdms_wh),
-        fields=["crn", "cdms"],
-        engine=cdms_wh.database.engine,
+    cdms_source = warehouse_data[2]
+    select_cdms = select(
+        {cdms_source.address.full_name: ["crn", "cdms"]},
+        engine=cdms_source.engine,
     )
-    cdms = query(
-        selector=select_cdms,
-        backend=matchbox_postgres,
-        resolution="naive_test.cdms",
-        return_type="pandas",
-    )
+    cdms = cdms_source.to_pandas(fields=["crn", "cdms"])
 
     # No cleaning needed, see original data
     return select_cdms, cdms

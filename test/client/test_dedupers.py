@@ -4,6 +4,7 @@ import pytest
 from pandas import DataFrame
 
 from matchbox import make_model, query
+from matchbox.client.helpers.selector import Selector
 from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
@@ -42,7 +43,7 @@ def test_dedupers(
 
     db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
-    select: dict[Source, list[str]]
+    select: list[Selector]
     df: DataFrame
 
     select, df = request.getfixturevalue(fx_data.fixture)
@@ -115,10 +116,9 @@ def test_dedupers(
     model.truth = 0.0
 
     clusters = query(
-        selector=select,
-        backend=matchbox_postgres,
+        deduper_name,
+        select,
         return_type="pandas",
-        resolution=deduper_name,
     )
 
     assert isinstance(clusters, DataFrame)
