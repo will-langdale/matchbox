@@ -11,9 +11,18 @@ nav:
   - Installation: client/install.md
   - Retrieve: client/query-data.md
   - Link and deduplicate: client/link-data.md
+  - API reference:
+    - Overview: client/api/index.md
+    - Admin: client/api/admin.md
+    - Clean: client/api/clean.md
+    - Helpers: client/api/helpers.md
+    - Models: client/api/models.md
+    - Results: client/api/results.md
+    - Visualisation: client/api/visualisation.md
 - Server:
   - Install: server/install.md
   - Deploy: server/deploy.md
+  - API reference: server/api.md
 - Contributing:
   - Guidelines: contributing.md
 

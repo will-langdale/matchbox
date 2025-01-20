@@ -152,8 +152,8 @@ def make_model(
         description: Description of the model run
         model_class: Either Linker or Deduper class
         model_settings: Configuration settings for the model
-        data: Primary dataset
-        data_source: Source identifier for the primary dataset
+        left_data: Primary dataset
+        left_source: Source identifier for the primary dataset
         right_data: Secondary dataset (only for linking)
         right_source: Source identifier for secondary dataset (only for linking)
         backend: Optional MatchboxDBAdapter instance

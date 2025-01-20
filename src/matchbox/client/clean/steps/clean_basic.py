@@ -94,7 +94,7 @@ def expand_abbreviations(
     Arguments:
         column: the name of the column to clean
         replacements: a dictionary where keys are matches and values are
-        what the replace them with
+            what the replace them with
 
     Returns: string to insert into SQL query
     """
