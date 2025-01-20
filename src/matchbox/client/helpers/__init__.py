@@ -1,6 +1,6 @@
 from matchbox.client.helpers.cleaner import cleaner, cleaners
 from matchbox.client.helpers.comparison import comparison
-from matchbox.client.helpers.selector import selector, selectors
+from matchbox.client.helpers.selector import select
 
 __all__ = (
     # Cleaners
@@ -9,6 +9,5 @@ __all__ = (
     # Comparisons
     "comparison",
     # Selectors
-    "selector",
-    "selectors",
+    "select",
 )
