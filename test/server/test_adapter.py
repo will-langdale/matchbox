@@ -6,7 +6,7 @@ import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
-from matchbox.client.helpers.selector import match, query, selector, selectors
+from matchbox.client.helpers.selector import match, query, select
 from matchbox.client.results import Results
 from matchbox.common.exceptions import (
     MatchboxDataError,
@@ -86,15 +86,15 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
+
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            "naive_test.crn",
+            select_crn,
             return_type="pandas",
         )
 
@@ -110,15 +110,14 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
+
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            "naive_test.crn",
+            select_crn,
             return_type="pandas",
         )
 
@@ -135,15 +134,15 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
+
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            "naive_test.crn",
+            select_crn,
             return_type="pandas",
         )
 
@@ -430,101 +429,17 @@ class TestMatchboxBackend:
 
         assert self.backend.data.count() == unique
 
-    def test_query_warning(self):
-        """Tests querying non-indexed fields warns the user."""
+    def test_select_warning(self):
+        """Tests selecting non-indexed fields warns the user."""
         self.setup_database("index")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["id", "crn"],
-            engine=crn.database.engine,
-        )
+
         with pytest.warns(Warning):
-            query(
-                selector=select_crn,
-                backend=self.backend,
-                resolution=None,
-                return_type="pandas",
-                limit=10,
+            select(
+                {crn.address.full_name: ["id", "crn"]},
+                engine=crn.engine,
             )
-
-    def test_query_single_table(self):
-        """Test querying data from the database."""
-        self.setup_database("index")
-
-        crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["id", "crn"],
-            engine=crn.database.engine,
-        )
-        df_crn_sample = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution=None,
-            return_type="pandas",
-            limit=10,
-        )
-
-        assert isinstance(df_crn_sample, DataFrame)
-        assert df_crn_sample.shape[0] == 10
-
-        df_crn_full = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution=None,
-            return_type="pandas",
-        )
-
-        assert df_crn_full.shape[0] == 3000
-        assert set(df_crn_full.columns) == {
-            "id",
-            "test_crn_id",
-            "test_crn_crn",
-        }
-
-    def test_query_multi_table(self):
-        """Test querying data from multiple tables from the database."""
-        self.setup_database("index")
-
-        crn = self.warehouse_data[0]
-        duns = self.warehouse_data[1]
-
-        select_crn = selector(
-            table=str(crn),
-            fields=["id", "crn"],
-            engine=crn.database.engine,
-        )
-        select_duns = selector(
-            table=str(duns),
-            fields=["id", "duns"],
-            engine=duns.database.engine,
-        )
-        select_crn_duns = selectors(select_crn, select_duns)
-
-        df_crn_duns_full = query(
-            selector=select_crn_duns,
-            backend=self.backend,
-            resolution=None,
-            return_type="pandas",
-        )
-
-        assert df_crn_duns_full.shape[0] == 3500
-        assert (
-            df_crn_duns_full[df_crn_duns_full["test_duns_id"].notnull()].shape[0] == 500
-        )
-        assert (
-            df_crn_duns_full[df_crn_duns_full["test_crn_id"].notnull()].shape[0] == 3000
-        )
-
-        assert set(df_crn_duns_full.columns) == {
-            "id",
-            "test_crn_id",
-            "test_crn_crn",
-            "test_duns_id",
-            "test_duns_duns",
-        }
 
     def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""
@@ -532,16 +447,14 @@ class TestMatchboxBackend:
 
         crn = self.warehouse_data[0]
 
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
 
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            "naive_test.crn",
+            select_crn,
             return_type="pandas",
         )
 
@@ -561,25 +474,22 @@ class TestMatchboxBackend:
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
 
         crn_wh = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn_wh),
-            fields=["crn"],
-            engine=crn_wh.database.engine,
-        )
-
         duns_wh = self.warehouse_data[1]
-        select_duns = selector(
-            table=str(duns_wh),
-            fields=["duns"],
-            engine=duns_wh.database.engine,
+
+        select_crn = select(
+            {crn_wh.address.full_name: ["crn"]},
+            engine=crn_wh.engine,
         )
 
-        select_crn_duns = selectors(select_crn, select_duns)
+        select_duns = select(
+            {duns_wh.address.full_name: ["duns"]},
+            engine=duns_wh.engine,
+        )
 
         crn_duns = query(
-            selector=select_crn_duns,
-            backend=self.backend,
-            resolution=linker_name,
+            linker_name,
+            select_crn,
+            select_duns,
             return_type="pandas",
         )
 
