@@ -10,7 +10,7 @@ from matchbox.client.models.linkers.splinklinker import (
     SplinkLinkerFunction,
     SplinkSettings,
 )
-from matchbox.common.db import Source, SourceWarehouse
+from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable
@@ -31,7 +31,6 @@ def test_linkers(
     matchbox_postgres: MatchboxPostgres,
     db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
     db_add_indexed_data: AddIndexedDataCallable,
-    warehouse: SourceWarehouse,
     warehouse_data: list[Source],
     # Parameterised data classes
     fx_data: LinkTestParams,

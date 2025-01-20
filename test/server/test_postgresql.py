@@ -5,7 +5,7 @@ import pyarrow as pa
 import pytest
 from sqlalchemy import text
 
-from matchbox.common.db import Source
+from matchbox.common.sources import Source
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.benchmark.generate_tables import (
