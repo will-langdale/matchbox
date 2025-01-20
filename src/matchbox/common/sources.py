@@ -4,7 +4,7 @@ from typing import Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -249,3 +249,23 @@ class Source(BaseModel):
                 ),
             }
         )
+
+
+class Match(BaseModel):
+    """A match between primary keys in the Matchbox database."""
+
+    cluster: int | None
+    source: SourceAddress
+    source_id: set[str] = Field(default_factory=set)
+    target: SourceAddress
+    target_id: set[str] = Field(default_factory=set)
+
+    @model_validator(mode="after")
+    def found_or_none(self) -> "Match":
+        if self.target_id and not (self.source_id and self.cluster):
+            raise ValueError(
+                "A match must have sources and a cluster if target was found."
+            )
+        if self.cluster and not self.source_id:
+            raise ValueError("A match must have source if cluster is set.")
+        return self

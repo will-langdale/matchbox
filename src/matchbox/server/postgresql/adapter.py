@@ -6,14 +6,13 @@ from sqlalchemy import and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from matchbox.client.results import Results
-from matchbox.common.db import Match
 from matchbox.common.exceptions import (
     MatchboxDataError,
     ServerResolutionError,
     ServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (

@@ -8,7 +8,6 @@ from pandas import DataFrame
 
 from matchbox.client.helpers.selector import match, query, selector, selectors
 from matchbox.client.results import Results
-from matchbox.common.db import Match
 from matchbox.common.exceptions import (
     MatchboxDataError,
     ServerResolutionError,
@@ -16,7 +15,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
-from matchbox.common.sources import SourceBase, SourceColumn
+from matchbox.common.sources import Match, Source, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -50,13 +49,13 @@ class TestMatchboxBackend:
         request: pytest.FixtureRequest,
         backend_instance: str,
         setup_database: Callable,
-        warehouse_data: list[SourceBase],
+        warehouse_data: list[Source],
     ):
         self.backend: MatchboxDBAdapter = backend_instance
         self.setup_database: SetupDatabaseCallable = lambda level: setup_database(
             self.backend, warehouse_data, level
         )
-        self.warehouse_data: list[SourceBase] = warehouse_data
+        self.warehouse_data: list[Source] = warehouse_data
 
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""

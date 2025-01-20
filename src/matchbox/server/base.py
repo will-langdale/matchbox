@@ -18,9 +18,8 @@ from pyarrow import Table
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from matchbox.common.db import Match
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame

@@ -7,8 +7,7 @@ from pandas import DataFrame
 from pydantic import BaseModel
 from sqlalchemy import Engine
 
-from matchbox.common.db import Match
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
 
