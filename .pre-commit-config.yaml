@@ -12,8 +12,8 @@ repos:
 
     # Check for secrets
     - id: trufflehog
-      name: trufflehog_scan
+      name: TruffleHog
       description: "Scanning local repo using the docker image"
-      entry: bash -c "sudo docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo  --since-commit HEAD --fail"
+      entry: bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo  --since-commit HEAD --fail"
       language: system
       stages: ["pre-commit", "pre-push"]
