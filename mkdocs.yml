@@ -11,32 +11,36 @@ nav:
   - Installation: client/install.md
   - Retrieve: client/query-data.md
   - Link and deduplicate: client/link-data.md
-  - API reference:
-    - Overview: client/api/index.md
-    - Admin: client/api/admin.md
-    - Clean: client/api/clean.md
-    - Helpers: client/api/helpers.md
-    - Models: client/api/models.md
-    - Results: client/api/results.md
-    - Visualisation: client/api/visualisation.md
+  - API: 
+    - Overview: api/client/index.md
 - Server:
   - Install: server/install.md
   - Deploy: server/deploy.md
-  - API reference:
-    - Server: 
-      - Overview: server/api/server/index.md
-      - API: server/api/server/api.md
-      - Backends:
-        - PostgreSQL: server/api/server/backends/postgresql.md
-    - Common: 
-      - Overview: server/api/common/index.md
-      - Database: server/api/common/db.md
-      - Exceptions: server/api/common/exceptions.md
-      - Factories: server/api/common/factories.md
-      - Graph: server/api/common/graph.md
-      - Hashing: server/api/common/hash.md
-      - Logging: server/api/common/logging.md
-      - Transform: server/api/common/transform.md
+  - API: 
+    - Overview: api/server/index.md
+- API reference:
+  - Client:
+    - Overview: api/client/index.md
+    - Admin: api/client/admin.md
+    - Clean: api/client/clean.md
+    - Helpers: api/client/helpers.md
+    - Models: api/client/models.md
+    - Results: api/client/results.md
+    - Visualisation: api/client/visualisation.md
+  - Server: 
+    - Overview: api/server/index.md
+    - API: api/server/api.md
+    - Backends:
+      - PostgreSQL: api/server/backends/postgresql.md
+  - Common: 
+    - Overview: api/common/index.md
+    - Database: api/common/db.md
+    - Exceptions: api/common/exceptions.md
+    - Factories: api/common/factories.md
+    - Graph: api/common/graph.md
+    - Hashing: api/common/hash.md
+    - Logging: api/common/logging.md
+    - Transform: api/common/transform.md
 - Contributing:
   - Guidelines: contributing.md
 

@@ -21,4 +21,5 @@
 * Enrich other services with data generated in yours without giving away any permissioning powers
 * Empower your users to label matched entities and let other services use that information
 
+[:octicons-download-16: Install client](./client/install.md){ .md-button }
 [:octicons-download-16: Install server](./server/install.md){ .md-button }

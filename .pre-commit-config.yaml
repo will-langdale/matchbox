@@ -17,3 +17,11 @@ repos:
       entry: bash -c "trufflehog git file://. --since-commit HEAD --only-verified --fail --no-update"
       language: system
       stages: ["commit", "push"]
+
+    # Verify MkDocs build
+    - id: mkdocs
+      name: mkdocs
+      description: "Verify MkDocs documentation builds without errors"
+      entry: mkdocs build --strict
+      language: system
+      pass_filenames: false
