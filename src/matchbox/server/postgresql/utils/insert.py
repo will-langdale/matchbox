@@ -120,8 +120,8 @@ def insert_dataset(
 
     source_data = {
         "alias": source.alias,
-        "full_name": source.name_address.full_name,
-        "warehouse_hash": source.name_address.warehouse_hash,
+        "full_name": source.address.full_name,
+        "warehouse_hash": source.address.warehouse_hash,
         "id": source.db_pk,
         "column_names": [col.name for col in source.columns],
         "column_aliases": [col.alias for col in source.columns],
@@ -153,8 +153,8 @@ def insert_dataset(
         sources_stmt = sources_stmt.on_conflict_do_update(
             index_elements=["resolution_id"],
             set_={
-                "schema": sources_stmt.excluded.schema,
-                "table": sources_stmt.excluded.table,
+                "full_name": sources_stmt.excluded.full_name,
+                "warehouse_hash": sources_stmt.excluded.warehouse_hash,
                 "id": sources_stmt.excluded.id,
             },
         )

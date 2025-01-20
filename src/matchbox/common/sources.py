@@ -29,7 +29,7 @@ class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
 
     name: str
-    alias: str
+    alias: str = Field(default_factory=lambda data: data["name"])
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
@@ -79,10 +79,10 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
 class Source(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
-    alias: str
     address: SourceAddress
+    alias: str = Field(default_factory=lambda data: data["address"].full_name)
     db_pk: str
-    columns: list[SourceColumn]
+    columns: list[SourceColumn] = []
 
     _engine: Engine
 
@@ -103,7 +103,7 @@ class Source(BaseModel):
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
     def _split_full_name(self) -> tuple[str | None, str]:
-        schema_name_list = self.full_name.replace('"', "").split(".")
+        schema_name_list = self.address.full_name.replace('"', "").split(".")
 
         if len(schema_name_list) == 1:
             db_schema = None
@@ -113,7 +113,7 @@ class Source(BaseModel):
             db_table = schema_name_list[1]
         else:
             raise ValueError(
-                f"Could not identify schema and table in {self.full_name}."
+                f"Could not identify schema and table in {self.address.full_name}."
             )
         return db_schema, db_table
 
@@ -134,7 +134,7 @@ class Source(BaseModel):
         return f"{db_table}_{column}"
 
     @needs_engine
-    def index_columns(self, columns: list[SourceColumn] | None) -> "Source":
+    def index_columns(self, columns: list[SourceColumn] | None = None) -> "Source":
         """Adds columns to usend to Matchbox server, overwriting previous value.
 
         If no columns are specified, all columns from the source table will be used.
@@ -147,16 +147,17 @@ class Source(BaseModel):
         }
 
         if not columns:
-            self._columns = [
-                SourceColumn(literal=col_name, type=str(col_type))
-                for col_name, col_type in remote_columns
+            self.columns = [
+                SourceColumn(name=col_name, type=str(col_type))
+                for col_name, col_type in remote_columns.items()
             ]
         else:
             for col in columns:
-                if col.literal not in remote_columns:
+                if col.name not in remote_columns:
                     raise ValueError(
-                        f"Column {col.literal} not available in {self.full_name}"
+                        f"Column {col.name} not available in {self.address.full_name}"
                     )
+            self.columns = columns
 
         return self
 
@@ -165,7 +166,7 @@ class Source(BaseModel):
         """Returns the dataset as a SQLAlchemy Table object."""
         db_schema, db_table = self._split_full_name()
         metadata = MetaData(schema=db_schema)
-        table = Table(db_table, metadata, autoload_with=self.database.engine)
+        table = Table(db_table, metadata, autoload_with=self.engine)
         return table
 
     def _select(

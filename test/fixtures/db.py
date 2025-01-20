@@ -37,8 +37,8 @@ def db_add_indexed_data() -> AddIndexedDataCallable:
         warehouse_data: list[Source],
     ):
         """Indexes data from the warehouse."""
-        for dataset in warehouse_data:
-            backend.index(dataset=dataset)
+        for source in warehouse_data:
+            backend.index(source=source, data_hashes=source.hash_data())
 
     return _db_add_indexed_data
 
@@ -282,15 +282,15 @@ def warehouse_data(
         )
 
     yield [
-        Source(
-            address=SourceAddress.compose(warehouse_engine, "test.crn"), db_pk="id"
-        ).set_engine(warehouse_engine),
-        Source(
-            address=SourceAddress.compose(warehouse_engine, "test.duns"), db_pk="id"
-        ).set_engine(warehouse_engine),
-        Source(
-            address=SourceAddress.compose(warehouse_engine, "test.cdms"), db_pk="id"
-        ).set_engine(warehouse_engine),
+        Source(address=SourceAddress.compose(warehouse_engine, "test.crn"), db_pk="id")
+        .set_engine(warehouse_engine)
+        .index_columns(),
+        Source(address=SourceAddress.compose(warehouse_engine, "test.duns"), db_pk="id")
+        .set_engine(warehouse_engine)
+        .index_columns(),
+        Source(address=SourceAddress.compose(warehouse_engine, "test.cdms"), db_pk="id")
+        .set_engine(warehouse_engine)
+        .index_columns(),
     ]
 
     # Clean up the warehouse data
