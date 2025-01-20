@@ -80,8 +80,8 @@ async def list_sources():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/sources/{hash}")
-async def get_source(hash: str):
+@app.get("/sources/{address}")
+async def get_source(address: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 

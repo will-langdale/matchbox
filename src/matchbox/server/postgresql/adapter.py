@@ -13,7 +13,7 @@ from matchbox.common.exceptions import (
     ServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Source, SourceNameAddress
+from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (
@@ -248,7 +248,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(
         self,
-        source_address: SourceNameAddress,
+        source_address: SourceAddress,
         resolution_id: int,
         threshold: float | dict[str, float] | None = None,
         limit: int = None,
@@ -326,11 +326,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
-    def get_source(self, source_name_address: SourceNameAddress) -> Source:
+    def get_source(self, address: SourceAddress) -> Source:
         """Get a source from its name address.
 
         Args:
-            source_name_address: The name address for the source
+            address: The name address for the source
 
         Returns:
             A Source object
@@ -340,19 +340,25 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 source := session.query(Sources)
                 .where(
                     and_(
-                        Sources.full_name == source_name_address.full_name,
-                        Sources.warehouse_hash == source_name_address.warehouse_hash,
+                        Sources.full_name == address.full_name,
+                        Sources.warehouse_hash == address.warehouse_hash,
                     )
                 )
                 .first()
             ):
                 return Source(
                     alias=source.alias,
-                    name_address=source_name_address,
+                    address=address,
                     db_pk=source.db_pk,
+                    columns=[
+                        SourceColumn(name, alias)
+                        for name, alias in zip(
+                            source.column_names, source.column_aliases, strict=True
+                        )
+                    ],
                 )
             else:
-                raise ServerSourceError(full_name=source_name_address.full_name)
+                raise ServerSourceError(full_name=address.full_name)
 
     def validate_ids(self, ids: list[int]) -> None:
         """Validates a list of IDs exist in the database.

@@ -1,18 +1,18 @@
 import logging
-import warnings
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import pyarrow as pa
-from pandas import ArrowDtype, DataFrame
+from pandas import DataFrame
 from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, union
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
-from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
+from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
     ServerResolutionError,
     ServerSourceError,
 )
+from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
@@ -31,29 +31,26 @@ T = TypeVar("T")
 logic_logger = logging.getLogger("mb_logic")
 
 
-def key_to_sqlalchemy_label(key: str, source: Source) -> str:
-    """Converts a key to the SQLAlchemy LABEL_STYLE_TABLENAME_PLUS_COL."""
-    return f"{source.db_schema}_{source.db_table}_{key}"
-
-
-def source_to_dataset_resolution(
-    source_full_name: str, session: Session
+def get_dataset_resolution(
+    source_name_address: SourceAddress, session: Session
 ) -> Resolutions:
-    """Converts a common the full name of a source to a Resolutions ORM object."""
-    source_dataset = (
+    """Converts the the named address of source to a Resolutions ORM object."""
+
+    dataset_resolution = (
         session.query(Resolutions)
         .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
         .filter(
-            Sources.full_name == source_full_name,
+            Sources.full_name == source_name_address.full_name,
+            Sources.warehouse_hash == source_name_address.warehouse_hash,
         )
         .first()
     )
-    if source_dataset is None:
+    if dataset_resolution is None:
         raise ServerSourceError(
-            full_name=source_full_name,
+            full_name=source_name_address.full_name,
         )
 
-    return source_dataset
+    return dataset_resolution
 
 
 def _resolve_thresholds(
@@ -270,10 +267,9 @@ def _resolve_cluster_hierarchy(
 
 
 def query(
-    selector: dict[Source, list[str]],
+    source_address: SourceAddress,
+    resolution_id: int,
     engine: Engine,
-    return_type: Literal["pandas", "arrow", "polars"] = "pandas",
-    resolution: str | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
 ) -> DataFrame | pa.Table | PolarsDataFrame:
@@ -297,89 +293,23 @@ def query(
         A table containing the requested data from each table, unioned together,
         with the hash key of each row in Matchbox, in the requested return type
     """
-    tables: list[pa.Table] = []
-
-    if limit:
-        limit_base = limit // len(selector)
-        limit_remainder = limit % len(selector)
 
     with Session(engine) as session:
-        # If a resolution was specified, validate and retrieve it
-        point_of_truth = None
-        if resolution is not None:
-            point_of_truth = (
-                session.query(Resolutions)
-                .filter(Resolutions.name == resolution)
-                .first()
-            )
-            if point_of_truth is None:
-                raise ServerResolutionError(resolution_name=resolution)
+        dataset_resolution = get_dataset_resolution(source_address, session)
 
-        # Process each source dataset
-        for source, fields in selector.items():
-            # Get the dataset resolution
-            dataset_resolution = source_to_dataset_resolution(source, session)
-
-            # Warn if non-indexed fields have been requested
-            not_indexed = set(fields) - set(c.literal.name for c in source.columns)
-            if not_indexed:
-                warnings.warn(
-                    "Found non-indexed fields. Do not use these fields in match jobs:"
-                    f"{', '.join(sorted(not_indexed))}",
-                    stacklevel=2,
-                )
-
-            id_query = _resolve_cluster_hierarchy(
-                dataset_id=dataset_resolution.resolution_id,
-                resolution=point_of_truth if point_of_truth else dataset_resolution,
-                threshold=threshold,
-                engine=engine,
-            )
-
-            # Apply limit if specified
-            if limit:
-                remain = 1 if limit_remainder > 0 else 0
-                if remain:
-                    limit_remainder -= 1
-                id_query = id_query.limit(limit_base + remain)
-
-            # Get cluster assignments
-            mb_ids = sql_to_df(id_query, engine, return_type="arrow")
-
-            # Get source data
-            raw_data = source.to_arrow(
-                fields=set([source.db_pk] + fields),
-                pks=mb_ids["source_pk"].to_pylist(),
-            )
-
-            # Join and select columns
-            joined_table = raw_data.join(
-                right_table=mb_ids,
-                keys=key_to_sqlalchemy_label(source.db_pk, source),
-                right_keys="source_pk",
-                join_type="inner",
-            )
-
-            keep_cols = ["id"] + [key_to_sqlalchemy_label(f, source) for f in fields]
-            match_cols = [col for col in joined_table.column_names if col in keep_cols]
-
-            tables.append(joined_table.select(match_cols))
-
-    # Combine results
-    result = pa.concat_tables(tables, promote_options="default")
-
-    # Return in requested format
-    if return_type == "arrow":
-        return result
-    elif return_type == "pandas":
-        return result.to_pandas(
-            use_threads=True,
-            split_blocks=True,
-            self_destruct=True,
-            types_mapper=ArrowDtype,
+        id_query = _resolve_cluster_hierarchy(
+            dataset_id=dataset_resolution.resolution_id,
+            resolution=resolution_id,
+            threshold=threshold,
+            engine=engine,
         )
-    else:
-        raise ValueError(f"return_type of {return_type} not valid")
+
+        if limit:
+            id_query = id_query.limit(limit)
+
+        mb_ids = sql_to_df(id_query, engine, return_type="arrow")
+
+        return mb_ids
 
 
 def _build_unnested_clusters() -> CTE:
@@ -542,8 +472,8 @@ def _build_hierarchy_down(
 
 def match(
     source_pk: str,
-    source: str,
-    target: str | list[str],
+    source: SourceAddress,
+    target: SourceAddress | list[SourceAddress],
     resolution: str,
     engine: Engine,
     threshold: float | dict[str, float] | None = None,
@@ -560,18 +490,17 @@ def match(
     * Returns the results as Match objects, one per target
     """
     # Split source and target into schema/table
-    targets = [target] if isinstance(target, str) else target
+    targets = [target] if isinstance(target, SourceAddress) else target
 
     with Session(engine) as session:
         # Get source, target and truth resolutions
-        source_resolution = source_to_dataset_resolution(source, session)
+        source_resolution = get_dataset_resolution(source, session)
 
         # Get target resolutions with schema/table info
         target_resolutions = []
         for t in targets:
-            schema, table = get_schema_table_names(t, validate=True)
-            target_resolution = source_to_dataset_resolution(t, session)
-            target_resolutions.append((target_resolution, f"{schema}.{table}"))
+            target_resolution = get_dataset_resolution(t, session)
+            target_resolutions.append((target_resolution, target))
 
         # Get truth resolution
         truth_resolution = (

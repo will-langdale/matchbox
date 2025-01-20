@@ -17,7 +17,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import SourceBase, SourceColumn
-from matchbox.server.base import MatchboxDBAdapter
+from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
 from ..fixtures.models import (
@@ -201,15 +201,15 @@ class TestMatchboxBackend:
         assert len(graph.nodes) == 8
         assert len(graph.edges) == 7
 
-    # def test_get_model(self):
-    #     """Test getting a model from the database."""
-    #     self.setup_database("dedupe")
+    def test_get_model(self):
+        """Test getting a model from the database."""
+        self.setup_database("dedupe")
 
-    #     model = self.backend.get_model(model="naive_test.crn")
-    #     assert isinstance(model, MatchboxModelAdapter)
+        model = self.backend.get_model(model="naive_test.crn")
+        assert isinstance(model, MatchboxModelAdapter)
 
-    #     with pytest.raises(MatchboxResolutionError):
-    #         self.backend.get_model(model="nonexistant")
+        with pytest.raises(ServerResolutionError):
+            self.backend.get_model(model="nonexistant")
 
     def test_get_resolution(self):
         self.setup_database("dedupe")

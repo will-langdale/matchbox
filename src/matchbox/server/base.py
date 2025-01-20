@@ -20,7 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from matchbox.common.db import Match
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Source, SourceNameAddress
+from matchbox.common.sources import Source, SourceAddress
 
 if TYPE_CHECKING:
     from pandas import DataFrame as PandasDataFrame
@@ -254,10 +254,10 @@ class MatchboxDBAdapter(ABC):
     ) -> Match | list[Match]: ...
 
     @abstractmethod
-    def index(self, dataset: Source, data_hashes: Table) -> None: ...
+    def index(self, source: Source, data_hashes: Table) -> None: ...
 
     @abstractmethod
-    def get_source(self, source_name_address: SourceNameAddress) -> Source: ...
+    def get_source(self, address: SourceAddress) -> Source: ...
 
     @abstractmethod
     def validate_ids(self, ids: list[int]) -> bool: ...

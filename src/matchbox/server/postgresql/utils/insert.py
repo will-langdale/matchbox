@@ -103,17 +103,15 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(source: Source, engine: Engine, batch_size: int) -> None:
+def insert_dataset(
+    source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
+) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
 
     db_logger = logging.getLogger("sqlalchemy.engine")
     db_logger.setLevel(logging.WARNING)
 
-    ##################
-    # Insert dataset #
-    ##################
-
-    resolution_hash = source.content_address
+    resolution_hash = source.signature
 
     resolution_data = {
         "resolution_hash": resolution_hash,
@@ -125,13 +123,9 @@ def insert_dataset(source: Source, engine: Engine, batch_size: int) -> None:
         "full_name": source.name_address.full_name,
         "warehouse_hash": source.name_address.warehouse_hash,
         "id": source.db_pk,
-        "indices": {
-            "literal": [c.literal.base64 for c in source.columns],
-            "alias": [c.alias.base64 for c in source.columns],
-        },
+        "column_names": [col.name for col in source.columns],
+        "column_aliases": [col.alias for col in source.columns],
     }
-
-    clusters = source.to_hashlist()
 
     with engine.connect() as conn:
         logic_logger.info(f"Adding {source}")
@@ -179,7 +173,7 @@ def insert_dataset(source: Source, engine: Engine, batch_size: int) -> None:
                     source_data["resolution_id"],
                     clus["source_pk"],
                 )
-                for i, clus in enumerate(clusters)
+                for i, clus in enumerate(data_hashes)
             ],
             table=Clusters,
             conn=conn,
@@ -188,7 +182,9 @@ def insert_dataset(source: Source, engine: Engine, batch_size: int) -> None:
 
         conn.commit()
 
-        logic_logger.info(f"{source} added {len(clusters)} objects to Clusters table")
+        logic_logger.info(
+            f"{source} added {len(data_hashes)} objects to Clusters table"
+        )
 
     logic_logger.info(f"Finished {source}")
 
@@ -294,27 +290,6 @@ def insert_model(
     status = "Inserted new" if not exists else "Updated existing"
     logic_logger.info(f"[{model}] {status} model with ID {resolution_id}")
     logic_logger.info(f"[{model}] Done!")
-
-
-def _map_ids(
-    array: pa.Array,
-    lookup: pa.Table,
-    source: str,
-    target: str,
-) -> pa.Array:
-    """Maps values in an array via a lookup.
-
-    Args:
-        array: Array of values to map
-        lookup: Table of values to map to
-        source: Name of the column to map from
-        target: Name of the column to map to
-
-    Returns:
-        Array of mapped values
-    """
-    indices = pc.index_in(array, lookup[source])
-    return pc.take(lookup[target], indices)
 
 
 def _get_resolution_related_clusters(resolution_id: int) -> Select:
