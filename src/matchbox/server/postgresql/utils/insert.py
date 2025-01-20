@@ -173,7 +173,7 @@ def insert_dataset(
                     source_data["resolution_id"],
                     clus["source_pk"],
                 )
-                for i, clus in enumerate(data_hashes)
+                for i, clus in enumerate(data_hashes.to_pylist())
             ],
             table=Clusters,
             conn=conn,

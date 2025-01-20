@@ -172,11 +172,15 @@ class Source(BaseModel):
     def _select(
         self,
         fields: list[str] | None,
+        include_pk_column: bool = True,
         pks: list[T] | None = None,
         limit: int | None = None,
     ) -> Select:
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
         table = self.to_table()
+
+        if include_pk_column and self.db_pk not in fields:
+            fields.append(self.db_pk)
 
         def _get_column(col_name: str) -> ColumnElement:
             """Helper to get a column with proper casting and labeling for PKs"""
@@ -209,9 +213,12 @@ class Source(BaseModel):
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
+        include_pk_column: bool = True,
     ) -> pa.Table:
         """Returns the dataset as a PyArrow Table."""
-        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        stmt = self._select(
+            fields=fields, pks=pks, limit=limit, include_pk_column=include_pk_column
+        )
         return sql_to_df(stmt, self._engine, return_type="arrow")
 
     @needs_engine
@@ -220,9 +227,12 @@ class Source(BaseModel):
         fields: list[str] | None,
         pks: list[T] | None = None,
         limit: int | None = None,
+        include_pk_column: bool = True,
     ) -> DataFrame:
         """Returns the dataset as a pandas DataFrame."""
-        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        stmt = self._select(
+            fields=fields, pks=pks, limit=limit, include_pk_column=include_pk_column
+        )
         return sql_to_df(stmt, self._engine, return_type="pandas")
 
     @needs_engine

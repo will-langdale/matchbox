@@ -348,9 +348,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 return Source(
                     alias=source.alias,
                     address=address,
-                    db_pk=source.db_pk,
+                    db_pk=source.id,
                     columns=[
-                        SourceColumn(name, alias)
+                        SourceColumn(name=name, alias=alias)
                         for name, alias in zip(
                             source.column_names, source.column_aliases, strict=True
                         )

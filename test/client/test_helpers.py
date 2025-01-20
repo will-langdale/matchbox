@@ -40,7 +40,7 @@ def test_process(
     db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
 
     crn_source = warehouse_data[0]
-    crn = crn_source.to_pandas(fields=["crm", "company_name"])
+    crn = crn_source.to_pandas(fields=["crn", "company_name"])
 
     cleaner_name = cleaner(
         function=company_name,

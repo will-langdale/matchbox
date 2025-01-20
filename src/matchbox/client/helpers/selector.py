@@ -48,7 +48,7 @@ def select(
                 "You are selecting columns that are not indexed in Matchbox",
                 stacklevel=2,
             )
-        selectors.append(Selector(source, fields))
+        selectors.append(Selector(source=source, fields=fields))
 
 
 @inject_backend
@@ -103,7 +103,7 @@ def query(
         )
 
         raw_data = selector.source.to_arrow(
-            fields=set([selector.source.db_pk] + selector.fields),
+            fields=set(selector.fields),
             pks=mb_ids["source_pk"].to_pylist(),
         )
 
