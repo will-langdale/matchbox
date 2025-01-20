@@ -33,8 +33,7 @@ def select(
     selectors = []
     for full_name, fields in selection.items():
         source_address = SourceAddress.compose(engine, full_name)
-        source = backend.get_source(source_address)
-        source.set_engine(engine)
+        source = backend.get_source(source_address).set_engine(engine)
 
         warehouse_cols = set(source.to_table().columns.keys())
         selected_cols = set(fields)

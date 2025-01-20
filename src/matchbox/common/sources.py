@@ -90,9 +90,9 @@ class Source(BaseModel):
     def engine(self) -> Engine | None:
         return self._engine
 
-    @engine.setter
     def set_engine(self, engine: Engine):
         self._engine = engine
+        return self
 
     @property
     def signature(self) -> bytes:
