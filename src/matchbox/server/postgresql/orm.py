@@ -10,7 +10,7 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB, TEXT
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, TEXT
 from sqlalchemy.orm import Session, mapped_column, relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -186,7 +186,8 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     full_name = mapped_column(TEXT, nullable=False)
     warehouse_hash = mapped_column(BYTEA, nullable=False)
     id = mapped_column(TEXT, nullable=False)
-    indices = mapped_column(JSONB, nullable=False)
+    column_names = mapped_column(ARRAY(TEXT), nullable=False)
+    column_aliases = mapped_column(ARRAY(TEXT), nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")

@@ -4,51 +4,23 @@ from warnings import warn
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy import Engine
 
 from matchbox.common.db import Match
-from matchbox.common.sources import SourceNameAddress
+from matchbox.common.sources import Source, SourceAddress
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
 
 class Selector(BaseModel):
-    source_name_address: SourceNameAddress
+    source: Source
     fields: list[str]
-    engine: Engine
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    @classmethod
-    @inject_backend
-    def verify(
-        cls,
-        backend: MatchboxDBAdapter,
-        full_name: str,
-        fields: list[str],
-        engine: Engine,
-    ):
-        source_address = SourceNameAddress.compose(engine, full_name)
-        source = backend.get_source(source_address)
-
-        warehouse_cols = set(source.to_table().columns.keys())
-        selected_cols = set(fields)
-        if not selected_cols <= warehouse_cols:
-            raise ValueError(
-                f"{selected_cols - warehouse_cols} not found in {source_address}"
-            )
-
-        indexed_cols = set(col.literal for col in source.columns)
-        if not selected_cols <= indexed_cols:
-            warn(
-                "You are selecting columns that are not indexed in Matchbox",
-                stacklevel=2,
-            )
-
-        return Selector(source_address, fields, engine)
 
 
-def select(selection: dict[str, list[str]], engine: Engine) -> list[Selector]:
+@inject_backend
+def select(
+    backend: MatchboxDBAdapter, selection: dict[str, list[str]], engine: Engine
+) -> list[Selector]:
     """
     Builds and verifies a list of selectors from one engine.
 
@@ -59,9 +31,26 @@ def select(selection: dict[str, list[str]], engine: Engine) -> list[Selector]:
     Returns:
         A list of Selector objects
     """
-    return [
-        Selector.verify(engine, full_name, fields) for full_name, fields in selection
-    ]
+    selectors = []
+    for full_name, fields in selection.items():
+        source_address = SourceAddress.compose(engine, full_name)
+        source = backend.get_source(source_address)
+        source.set_engine(engine)
+
+        warehouse_cols = set(source.to_table().columns.keys())
+        selected_cols = set(fields)
+        if not selected_cols <= warehouse_cols:
+            raise ValueError(
+                f"{selected_cols - warehouse_cols} not found in {source_address}"
+            )
+
+        indexed_cols = set(col.name for col in source.columns)
+        if not selected_cols <= indexed_cols:
+            warn(
+                "You are selecting columns that are not indexed in Matchbox",
+                stacklevel=2,
+            )
+        selectors.append(Selector(source, fields))
 
 
 @inject_backend
@@ -109,30 +98,26 @@ def query(
     for selector, sub_limit in zip(selectors, sub_limits, strict=True):
         # Get ids from matchbox
         mb_ids = backend.query(
-            source_address=selector.source_name_address,
+            source_address=selector.source.address,
             resolution_id=resolution_id,
             threshold=threshold,
             limit=sub_limit,
         )
 
-        # Get source data
-        source = backend.get_source(selector.source_name_address)
-        source.engine = selector.engine
-
-        raw_data = source.to_arrow(
-            fields=set([source.db_pk] + selector.fields),
+        raw_data = selector.source.to_arrow(
+            fields=set([selector.source.db_pk] + selector.fields),
             pks=mb_ids["source_pk"].to_pylist(),
         )
 
         # Join and select columns
         joined_table = raw_data.join(
             right_table=mb_ids,
-            keys=source.format_column(source.db_pk),
+            keys=selector.source.format_column(selector.source.db_pk),
             right_keys="source_pk",
             join_type="inner",
         )
 
-        keep_cols = ["id"] + [source.format_column(f) for f in selector.fields]
+        keep_cols = ["id"] + [selector.source.format_column(f) for f in selector.fields]
         match_cols = [col for col in joined_table.column_names if col in keep_cols]
 
         tables.append(joined_table.select(match_cols))

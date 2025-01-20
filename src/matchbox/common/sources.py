@@ -4,7 +4,7 @@ from typing import Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, Field
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -20,93 +20,29 @@ from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import SourceEngineError
-from matchbox.common.hash import HASH_FUNC, hash_data, hash_to_base64
+from matchbox.common.hash import HASH_FUNC, hash_data
 
 T = TypeVar("T")
-
-
-class SourceColumnName(BaseModel):
-    """A column name in the Matchbox database."""
-
-    name: str
-
-    @property
-    def hash(self) -> bytes:
-        """Generate a unique hash based on the column name."""
-        return HASH_FUNC(self.name.encode("utf-8")).digest()
-
-    @property
-    def base64(self) -> str:
-        """Generate a base64 encoded hash based on the column name."""
-        return hash_to_base64(self.hash)
 
 
 class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    literal: SourceColumnName = Field(
-        description="The literal name of the column in the database."
-    )
-    alias: SourceColumnName = Field(
-        default_factory=lambda data: SourceColumnName(name=data["literal"].name),
-        description="The alias to use when hashing the dataset in Matchbox.",
-    )
+    name: str
+    alias: str
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
 
-    def __eq__(self, other: object) -> bool:
-        """Compare SourceColumn with another SourceColumn or bytes object.
 
-        Two SourceColumns are equal if:
-
-        * Their literal names match, or
-        * Their alias names match, or
-        * The hash of either their literal or alias matches the other object's
-        corresponding hash
-
-        A SourceColumn is equal to a bytes object if:
-
-        * The hash of either its literal or alias matches the bytes object
-
-        Args:
-            other: Another SourceColumn or a bytes object to compare against
-
-        Returns:
-            bool: True if the objects are considered equal, False otherwise
-        """
-        if isinstance(other, SourceColumn):
-            if self.literal == other.literal or self.alias == other.alias:
-                return True
-
-            self_hashes = {self.literal.hash, self.alias.hash}
-            other_hashes = {other.literal.hash, other.alias.hash}
-
-            return bool(self_hashes & other_hashes)
-
-        if isinstance(other, bytes):
-            return other in {self.literal.hash, self.alias.hash}
-
-        return NotImplemented
-
-    @field_validator("literal", "alias", mode="before")
-    def string_to_name(cls: "SourceColumn", value: str) -> SourceColumnName:
-        if isinstance(value, str):
-            return SourceColumnName(name=value)
-        else:
-            raise ValueError("Column name must be a string.")
-
-
-class SourceNameAddress(BaseModel):
+class SourceAddress(BaseModel):
     full_name: str
     warehouse_hash: bytes
 
     @classmethod
-    def compose(cls, engine: Engine, full_name: str) -> "SourceNameAddress":
+    def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
         """
-        Generate a SourceNameAddress from a SQLAlchemy Engine and full source name.
+        Generate a SourceAddress from a SQLAlchemy Engine and full source name.
         """
         url = engine.url
         components = {
@@ -121,7 +57,7 @@ class SourceNameAddress(BaseModel):
         stable_str = json.dumps(components, sort_keys=True).encode()
 
         hash = HASH_FUNC(stable_str).digest()
-        return SourceNameAddress(full_name=full_name, warehouse_hash=hash)
+        return SourceAddress(full_name=full_name, warehouse_hash=hash)
 
 
 P = ParamSpec("P")
@@ -144,18 +80,11 @@ class Source(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
     alias: str
-    name_address: SourceNameAddress
+    address: SourceAddress
     db_pk: str
+    columns: list[SourceColumn]
 
     _engine: Engine
-    _columns: list[SourceColumn] = None
-
-    @computed_field
-    def hashed_columns(self) -> list[tuple[str, str]]:
-        """Returns the hashes for the index columns, their literal version and alias"""
-        if not self._columns:
-            return []
-        return [(c.alias.base64, c.literal.base64) for c in self._columns]
 
     @property
     def engine(self) -> Engine | None:
@@ -165,7 +94,15 @@ class Source(BaseModel):
     def set_engine(self, engine: Engine):
         self._engine = engine
 
-    def split_full_name(self) -> tuple[str | None, str]:
+    @property
+    def signature(self) -> bytes:
+        """Generate a unique hash based on the table's metadata."""
+        schema_representation = f"{self.alias}: " + ",".join(
+            f"{col.alias}:{col.type}" for col in self.columns
+        )
+        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
+
+    def _split_full_name(self) -> tuple[str | None, str]:
         schema_name_list = self.full_name.replace('"', "").split(".")
 
         if len(schema_name_list) == 1:
@@ -180,14 +117,6 @@ class Source(BaseModel):
             )
         return db_schema, db_table
 
-    @property
-    def content_address(self) -> bytes:
-        """Generate a unique hash based on the table's alias and shape."""
-        schema_representation = f"{self.alias}: " + ",".join(
-            f"{col.alias.name}:{col.type}" for col in self.columns
-        )
-        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
-
     def format_column(self, column: str) -> str:
         """
         Outputs a full SQLAlchemy column representation.
@@ -199,7 +128,7 @@ class Source(BaseModel):
             A string representing the table name and column
         """
 
-        db_schema, db_table = self.split_full_name()
+        db_schema, db_table = self._split_full_name()
         if db_schema:
             return f"{db_schema}_{db_table}_{column}"
         return f"{db_table}_{column}"
@@ -234,7 +163,7 @@ class Source(BaseModel):
     @needs_engine
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
-        db_schema, db_table = self.split_full_name()
+        db_schema, db_table = self._split_full_name()
         metadata = MetaData(schema=db_schema)
         table = Table(db_table, metadata, autoload_with=self.database.engine)
         return table
@@ -296,11 +225,11 @@ class Source(BaseModel):
         return sql_to_df(stmt, self._engine, return_type="pandas")
 
     @needs_engine
-    def to_hashlist(self) -> pa.Table:
+    def hash_data(self) -> pa.Table:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
 
         source_table = self.to_table()
-        cols_to_index = tuple([col.literal.name for col in self.columns])
+        cols_to_index = tuple([col.name for col in self.columns])
 
         slct_stmt = select(
             func.concat(*source_table.c[cols_to_index]).label("raw"),
