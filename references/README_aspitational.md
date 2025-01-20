@@ -238,7 +238,7 @@ ch_dh_selector
 
 This is just a fancy way to format dictionaries. You can write them out manually if you prefer.
 
-```console
+```shell
 foo@bar:~$
 {
     "companieshouse.companies": [
@@ -540,7 +540,7 @@ all_comparisons
 
 Again, this is just a fancy way to format dictionaries. You can write them out manually if you prefer.
 
-```console
+```shell
 foo@bar:~$
 {
     "comparisons": [
@@ -743,7 +743,7 @@ report.data(
 )
 ```
 
-```console
+```shell
 foo@bar:~$
 Field 
 data.data_hub_statistics
@@ -763,7 +763,7 @@ import matchbox.report
 report.fields()
 ```
 
-```console
+```shell
 foo@bar:~$
 Field           Source                         Coverage    Accuracy
 -------------------------------------------------------------------
@@ -790,7 +790,7 @@ import matchbox.report
 report.linkers(select=ch_dh_selector)
 ```
 
-```console
+```shell
 foo@bar:~$
 Table                      Field          Link run              Match %ge   AOC
 --------------------------------------------------------------------------------
@@ -811,7 +811,7 @@ report.cleaners(link_run="n3_cms_dun_and_bradstreet", field="data_hub_id")
 report.cleaners(dedupe_run="n4_naive_hmrc_importers", field="data_hub_id")
 ```
 
-```console
+```shell
 foo@bar:~$
 In n3_cms_dun_and_bradstreet, data_hub_id was cleaned with the following functions:
 
@@ -840,7 +840,7 @@ import matchbox.report
 report.linkers(linker="cms")
 ```
 
-```console
+```shell
 foo@bar:~$
 The Company Matching Service linker requires the following objects:
 
@@ -861,7 +861,7 @@ import matchbox.report
 report.linkers(linker="splink")
 ```
 
-```console
+```shell
 foo@bar:~$
 The Splink linker requires the following objects:
 
@@ -904,7 +904,7 @@ Let's take a look and see how our `data_hub_statistics_deduper` did.
 data_hub_statistics_deduper.report()
 ```
 
-```console
+```shell
 foo@bar:~$
 Deduplication run              Dedupe %ge   Entities   AOC
 ----------------------------------------------------------
@@ -944,7 +944,7 @@ Let's take a look and see how our `data_hub_statistics_linker` did.
 data_hub_statistics_linker.report()
 ```
 
-```console
+```shell
 foo@bar:~$
 Link run                   Match %ge   AOC
 ------------------------------------------
@@ -1050,7 +1050,7 @@ data_hub_statistics_linker = CMSLinker.load(path="myfiles/dh_stats.pickle")
 
 You can run your script from the command line, letting it know exactly where you want to save your new clusters:
 
-```console
+```shell
 foo@bar:~$ python myfiles/dh_stats.py --sql_out=_user_eaf4fd9a.my_clusters --overwrite --dedupe-threshold=0.99 --link_threshold=0.95
 ```
 

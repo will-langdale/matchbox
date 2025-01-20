@@ -1,13 +1,3 @@
----
-layout: sub-navigation
-title: Retrieve
-description: Query linked data, or make lookups between datasets
-sectionKey: Client
-eleventyNavigation:
-  parent: Client
-  order: 0
----
-
 ## Match
 
 Given a primary key and a source dataset, retrieves all primary keys that share its cluster in both the source and target datasets. Useful for making ad-hoc queries about specific items of data.
@@ -27,7 +17,7 @@ mb.match(
 )
 ```
 
-```console
+```shell
 [
     {
         "cluster": 2354,
@@ -65,7 +55,7 @@ mb.query(
 )
 ```
 
-```console
+```shell
 id      dbt_companieshouse_company_name         hmrc_exporters_year     hmrc_exporters_commodity_codes
 122     Acme Ltd.                               2023                    ['85034', '85035']
 122     Acme Ltd.                               2024                    ['72142', '72143']
