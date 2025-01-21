@@ -134,16 +134,11 @@ def insert_dataset(
         next_cluster_id = Clusters.next_id()
         resolution_data["resolution_id"] = Resolutions.next_id()
         source_data["resolution_id"] = resolution_data["resolution_id"]
+        resolution_data["name"] = source_data["alias"]
 
         # Upsert into Resolutions table
         resolution_stmt = insert(Resolutions).values([resolution_data])
-        resolution_stmt = resolution_stmt.on_conflict_do_update(
-            index_elements=["resolution_hash"],
-            set_={
-                "name": resolution_stmt.excluded.name,
-                "type": resolution_stmt.excluded.type,
-            },
-        )
+        resolution_stmt = resolution_stmt.on_conflict_do_nothing()
         conn.execute(resolution_stmt)
 
         logic_logger.info(f"{source} added to Resolutions table")

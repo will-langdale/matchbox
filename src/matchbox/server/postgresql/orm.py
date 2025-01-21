@@ -56,7 +56,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     resolution_id = mapped_column(BIGINT, primary_key=True)
     resolution_hash = mapped_column(BYTEA, nullable=False)
     type = mapped_column(TEXT, nullable=False)
-    name = mapped_column(TEXT)
+    name = mapped_column(TEXT, nullable=False)
     description = mapped_column(TEXT)
     truth = mapped_column(FLOAT)
 
@@ -78,10 +78,6 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         CheckConstraint(
             "type IN ('model', 'dataset', 'human')",
             name="resolution_type_constraints",
-        ),
-        CheckConstraint(
-            "name IS NOT NULL OR type = 'dataset'",
-            name="conditional_nullable_name_constraints",
         ),
         UniqueConstraint("resolution_hash", name="resolutions_hash_key"),
         UniqueConstraint("name", name="resolutions_name_key"),
