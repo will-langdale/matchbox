@@ -125,6 +125,7 @@ def insert_dataset(
         "id": source.db_pk,
         "column_names": [col.name for col in source.columns],
         "column_aliases": [col.alias for col in source.columns],
+        "column_types": [col.type for col in source.columns],
     }
 
     with engine.connect() as conn:

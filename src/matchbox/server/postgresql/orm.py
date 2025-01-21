@@ -184,6 +184,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     id = mapped_column(TEXT, nullable=False)
     column_names = mapped_column(ARRAY(TEXT), nullable=False)
     column_aliases = mapped_column(ARRAY(TEXT), nullable=False)
+    column_types = mapped_column(ARRAY(TEXT), nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")

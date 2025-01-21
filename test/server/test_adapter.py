@@ -1,4 +1,3 @@
-from collections import defaultdict
 from typing import Callable
 
 import pyarrow.compute as pc
@@ -15,7 +14,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
-from matchbox.common.sources import Match, Source, SourceColumn
+from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -93,8 +92,8 @@ class TestMatchboxBackend:
         )
 
         df_crn = query(
-            "naive_test.crn",
             select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -116,8 +115,8 @@ class TestMatchboxBackend:
         )
 
         df_crn = query(
-            "naive_test.crn",
             select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -141,8 +140,8 @@ class TestMatchboxBackend:
         )
 
         df_crn = query(
-            "naive_test.crn",
             select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -156,32 +155,21 @@ class TestMatchboxBackend:
 
         assert self.backend.cluster_id_to_hash(ids=[-6]) == {-6: None}
 
-    def test_get_dataset(self):
+    def test_get_source(self):
         """Test querying data from the database."""
         self.setup_database("index")
 
         crn = self.warehouse_data[0]
 
-        crn_retrieved = self.backend.get_dataset(
-            db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
-        )
+        crn_retrieved = self.backend.get_source(crn.address)
 
         assert crn.columns == crn_retrieved.columns
 
-        cols: defaultdict[str, list[SourceColumn]] = defaultdict(list)
-
-        # Indexing isn't used in the custom equality check
-        for col in crn.columns + crn_retrieved.columns:
-            cols[col.literal.name].append(col)
-
-        for c1, c2 in cols.values():
-            assert c1.indexed == c2.indexed
-
         with pytest.raises(ServerSourceError):
-            self.backend.get_dataset(
-                db_schema="nonexistant",
-                db_table="nonexistant",
-                engine=crn.database.engine,
+            self.backend.get_source(
+                SourceAddress(
+                    full_name="foo", warehouse_hash=bytes("bar".encode("ascii"))
+                )
             )
 
     def test_get_resolution_graph(self):
@@ -453,8 +441,8 @@ class TestMatchboxBackend:
         )
 
         df_crn = query(
-            "naive_test.crn",
             select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -487,9 +475,9 @@ class TestMatchboxBackend:
         )
 
         crn_duns = query(
-            linker_name,
             select_crn,
             select_duns,
+            resolution_name=linker_name,
             return_type="pandas",
         )
 
