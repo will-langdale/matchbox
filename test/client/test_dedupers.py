@@ -116,8 +116,8 @@ def test_dedupers(
     model.truth = 0.0
 
     clusters = query(
-        deduper_name,
         select,
+        resolution_name=deduper_name,
         return_type="pandas",
     )
 

@@ -182,9 +182,9 @@ def test_linkers(
     model.truth = 0.0
 
     clusters = query(
-        linker_name,
         select_l,
         select_r,
+        resolution_name=linker_name,
         return_type="pandas",
     )
 

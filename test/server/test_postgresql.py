@@ -101,10 +101,10 @@ def test_benchmark_query_generation(
     engine = MBDB.get_engine()
     point_of_truth = parameters["point_of_truth"]
     idx = parameters["source_index"]
-    dataset_name = f"{warehouse_data[idx].db_schema}.{warehouse_data[idx].db_table}"
 
     sql_query = compile_query_sql(
-        point_of_truth=point_of_truth, dataset_name=dataset_name
+        point_of_truth=point_of_truth,
+        source_address=warehouse_data[idx].address,
     )
 
     assert isinstance(sql_query, str)
