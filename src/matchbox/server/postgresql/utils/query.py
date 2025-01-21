@@ -2,7 +2,6 @@ import logging
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import pyarrow as pa
-from pandas import DataFrame
 from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, union
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
@@ -269,7 +268,7 @@ def query(
     resolution_id: int | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
-) -> DataFrame | pa.Table | PolarsDataFrame:
+) -> pa.Table:
     """Queries Matchbox and the Source warehouse to retrieve linked data.
 
     Takes the dictionaries of tables and fields outputted by selectors and
@@ -287,7 +286,7 @@ def query(
 
     Returns:
         A table containing the requested data from each table, unioned together,
-        with the hash key of each row in Matchbox, in the requested return type
+        with the hash key of each row in Matchbox
     """
     with Session(engine) as session:
         dataset_resolution = get_dataset_resolution(source_address, session)

@@ -65,10 +65,13 @@ def query(
 
     Args:
         backend: the backend to query
-        selector: the tables and fields to query
+        selectors: each selector is a list of `Selectors` as output by `select()`
+            This allows to query sources coming from different engines
+        resolution_name (optional): the name of the resolution point to query
+            It can only be `None` when querying from a single source, in which case the
+            dataset resolution for that source will be used
         return_type: the form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
-        resolution (optional): the resolution to use for filtering results
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
             If a float, uses that threshold for the specified resolution, and the

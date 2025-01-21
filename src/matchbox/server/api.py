@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.sources import SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 dotenv_path = find_dotenv(usecwd=True)
@@ -81,7 +82,7 @@ async def list_sources():
 
 
 @app.get("/sources/{address}")
-async def get_source(address: str):
+async def get_source(address: SourceAddress):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 

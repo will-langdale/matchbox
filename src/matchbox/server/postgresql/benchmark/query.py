@@ -15,8 +15,8 @@ def compile_query_sql(point_of_truth: str, source_address: SourceAddress) -> str
     """Compiles a the SQL for query() based on a single point of truth and dataset.
 
     Args:
-        point_of_truth (string): The name of the resolution to use, like "linker_1"
-        dataset_name (string): The name of the dataset to retrieve, like "dbt.companies"
+        point_of_truth: The name of the resolution to use, like "linker_1"
+        source_address: The address of the source to retrieve
 
     Returns:
         A compiled PostgreSQL query, including semicolon, ready to run on Matchbox

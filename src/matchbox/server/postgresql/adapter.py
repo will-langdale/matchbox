@@ -247,14 +247,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
         resolution_id: int | None = None,
         threshold: float | dict[str, float] | None = None,
         limit: int | None = None,
-    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
+    ) -> ArrowTable:
         """Queries the database from an optional point of truth.
 
         Args:
-            selector: the tables and fields to query
-            return_type: the form to return data in, one of "pandas" or "arrow"
-                Defaults to pandas for ease of use
-            resolution (optional): the resolution to use for filtering results
+            source_address: the `SourceAddress` object identifying the source to query
+            resolution_id (optional): the resolution to use for filtering results
+                If not specified, will use the dataset resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold
                 If a float, uses that threshold for the specified model, and the
@@ -265,7 +264,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             limit (optional): the number to use in a limit clause. Useful for testing
 
         Returns:
-            Data in the requested return type
+            The resulting matchbox IDs in Arrow format
         """
         return query(
             engine=MBDB.get_engine(),
@@ -313,6 +312,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         Args:
             source: The source dataset to index.
+            data_hashes: The Arrow table with the hash of each data row
         """
         insert_dataset(
             source=source,
@@ -476,7 +476,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Get a resolution ID from its name.
 
         Args:
-            model: The name of the model to get.
+            resolution_name: The name of the resolution to get.
 
         Returns:
             The resolution ID
