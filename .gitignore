@@ -18,6 +18,11 @@ data/
 .tmp/
 notebooks/tmp*
 
+# 11ty/documentation
+docs/_site/
+docs/.cache/
+docs/node_modules/
+
 
 ##########################
 # Boilerplate .gitignore #

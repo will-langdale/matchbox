@@ -20,3 +20,7 @@ scan:
 test:
     docker compose up -d --wait
     uv run pytest
+
+# Run a local documentation development server
+docs:
+    cd docs && npm start
