@@ -1,4 +1,3 @@
-import json
 from itertools import chain
 from pathlib import Path
 from typing import Iterable
@@ -69,28 +68,24 @@ def generate_sources() -> pa.Table:
     """
     sources_resolution_id = [1, 2]
     sources_alias = ["alias1", "alias2"]
-    sources_schema = ["dbt", "dbt"]
-    sources_table = ["companies_house", "hmrc_exporters"]
+    sources_full_names = ["dbt.companies_house", "dbt.hmrc_exporters"]
     sources_id = ["company_number", "id"]
-    sources_indices = [
-        {
-            "literal": ["col1", "col2", "col3"],
-            "alias": ["col1", "col2", "col3"],
-        },
-        {
-            "literal": ["col1", "col2", "col3"],
-            "alias": ["col1", "col2", "col3"],
-        },
-    ]
-    sources_indices = [json.dumps(si) for si in sources_indices]
+
+    column_names = [["col1"], ["col2"]]
+    column_aliases = [["col1"], ["col2"]]
+    column_types = [["TEXT"], ["TEXT"]]
+    warehouse_hashes = [bytes("foo".encode("ascii"))] * 2
+
     return pa.table(
         {
             "resolution_id": pa.array(sources_resolution_id, type=pa.uint64()),
             "alias": pa.array(sources_alias, type=pa.string()),
-            "schema": pa.array(sources_schema, type=pa.string()),
-            "table": pa.array(sources_table, type=pa.string()),
+            "full_name": pa.array(sources_full_names, type=pa.string()),
+            "warehouse_hash": pa.array(warehouse_hashes, type=pa.binary()),
             "id": pa.array(sources_id, type=pa.string()),
-            "indices": pa.array(sources_indices, type=pa.string()),
+            "column_names": pa.array(column_names, type=pa.list_(pa.string())),
+            "column_aliases": pa.array(column_aliases, type=pa.list_(pa.string())),
+            "column_types": pa.array(column_types, type=pa.list_(pa.string())),
         }
     )
 

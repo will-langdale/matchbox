@@ -277,7 +277,7 @@ def query_clean_crn_deduped(
         {crn_source.address.full_name: ["crn", "company_name"]},
         engine=crn_source.engine,
     )
-    crn = query(select_crn, return_type="pandas")
+    crn = query(select_crn, resolution_name="naive_test.crn", return_type="pandas")
 
     # Clean
     col_prefix = "test_crn_"
