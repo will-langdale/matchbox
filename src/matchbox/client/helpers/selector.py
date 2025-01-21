@@ -20,8 +20,7 @@ class Selector(BaseModel):
 def select(
     backend: MatchboxDBAdapter, selection: dict[str, list[str]], engine: Engine
 ) -> list[Selector]:
-    """
-    Builds and verifies a list of selectors from one engine.
+    """Builds and verifies a list of selectors from one engine.
 
     Args:
         selection: a dict where full source names are mapped to lists of fields

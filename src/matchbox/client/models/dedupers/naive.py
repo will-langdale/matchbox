@@ -8,9 +8,7 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 
 
 class NaiveSettings(DeduperSettings):
-    """
-    A data class to enforce the Naive deduper's settings dictionary shape
-    """
+    """A data class to enforce the Naive deduper's settings dictionary shape"""
 
     unique_fields: List[str] = Field(
         description="A list of columns that will form a unique, deduplicated record"

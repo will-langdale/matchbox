@@ -35,7 +35,6 @@ def get_dataset_resolution(
     source_name_address: SourceAddress, session: Session
 ) -> Resolutions:
     """Converts the the named address of source to a Resolutions ORM object."""
-
     dataset_resolution = (
         session.query(Resolutions)
         .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
@@ -59,8 +58,7 @@ def _resolve_thresholds(
     threshold: float | dict[str, float] | None,
     session: Session,
 ) -> dict[int, float]:
-    """
-    Resolves final thresholds for each resolution in the lineage based on user input.
+    """Resolves final thresholds for each resolution in the lineage based on user input.
 
     Args:
         lineage_truths: Dict from with resolution hash -> cached truth
@@ -150,8 +148,7 @@ def _resolve_cluster_hierarchy(
     engine: Engine,
     threshold: float | dict[str, float] | None = None,
 ) -> Select:
-    """
-    Resolves the final cluster assignments for all records in a dataset.
+    """Resolves the final cluster assignments for all records in a dataset.
 
     Args:
         dataset_id: ID of the dataset to query
@@ -273,8 +270,7 @@ def query(
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
 ) -> DataFrame | pa.Table | PolarsDataFrame:
-    """
-    Queries Matchbox and the Source warehouse to retrieve linked data.
+    """Queries Matchbox and the Source warehouse to retrieve linked data.
 
     Takes the dictionaries of tables and fields outputted by selectors and
     queries database for them. If a "point of truth" resolution is supplied, will
@@ -293,7 +289,6 @@ def query(
         A table containing the requested data from each table, unioned together,
         with the hash key of each row in Matchbox, in the requested return type
     """
-
     with Session(engine) as session:
         dataset_resolution = get_dataset_resolution(source_address, session)
 
@@ -358,8 +353,7 @@ def _find_source_cluster(
 def _build_hierarchy_up(
     source_cluster: Select, valid_clusters: CTE | None = None
 ) -> CTE:
-    """
-    Build recursive CTE that finds all parent clusters.
+    """Build recursive CTE that finds all parent clusters.
 
     Args:
         source_cluster: Subquery that finds starting cluster
@@ -417,8 +411,7 @@ def _find_highest_parent(hierarchy_up: CTE) -> Select:
 def _build_hierarchy_down(
     highest_parent: Select, unnested_clusters: CTE, valid_clusters: CTE | None = None
 ) -> CTE:
-    """
-    Build recursive CTE that finds all child clusters and their IDs.
+    """Build recursive CTE that finds all child clusters and their IDs.
 
     Args:
         highest_parent: Subquery that finds top cluster

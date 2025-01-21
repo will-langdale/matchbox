@@ -4,8 +4,7 @@ from sqlglot.errors import ParseError
 
 
 def comparison(sql_condition: str, dialect: str = "postgres") -> str:
-    """
-    Validates any number of SQL conditions and returns as valid dialect SQL
+    """Validates any number of SQL conditions and returns as valid dialect SQL
     appropriate for a WHERE clause.
 
     Requires all column references be explicitly declared as from "l" and

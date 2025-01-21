@@ -33,8 +33,7 @@ def prep_for_hash(item: HashableItem) -> bytes:
 
 
 def hash_data(data: HashableItem) -> bytes:
-    """
-    Hash the given data using the globally defined hash function.
+    """Hash the given data using the globally defined hash function.
     This function ties into the existing hashing utilities.
     """
     return HASH_FUNC(prep_for_hash(data)).digest()
@@ -107,16 +106,15 @@ class IntMap:
         self.salt: int = salt
 
     def _salt_id(self, i: int) -> int:
-        """
-        Use Cantor pairing function on the salt and a negative int ID, and minus it.
-        """
+        """Use Cantor pairing function on the salt and a negative int ID.
+
+        It negates the Cantor pairing function to always return a negative integer."""
         if i >= 0:
             raise ValueError("ID must be a negative integer")
         return -int(0.5 * (self.salt - i) * (self.salt - i + 1) - i)
 
     def index(self, *values: int) -> int:
-        """
-        Args:
+        """Args:
             values: the integers in the set you want to index
 
         Returns:
@@ -133,8 +131,7 @@ class IntMap:
         return salted_id
 
     def has_mapping(self, *values: int) -> bool:
-        """
-        Args:
+        """Args:
             values: the integers in the set you want to index
 
         Returns:

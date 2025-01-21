@@ -9,9 +9,7 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
 
 class DeterministicSettings(LinkerSettings):
-    """
-    A data class to enforce the Deterministic linker's settings dictionary shape
-    """
+    """A data class to enforce the Deterministic linker's settings dictionary shape"""
 
     comparisons: str = Field(
         description="""

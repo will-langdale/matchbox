@@ -107,7 +107,6 @@ def insert_dataset(
     source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
 ) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
-
     db_logger = logging.getLogger("sqlalchemy.engine")
     db_logger.setLevel(logging.WARNING)
 
@@ -192,8 +191,7 @@ def insert_model(
     description: str,
     engine: Engine,
 ) -> None:
-    """
-    Writes a model to Matchbox with a default truth value of 1.0.
+    """Writes a model to Matchbox with a default truth value of 1.0.
 
     Args:
         model: Name of the new model
@@ -248,8 +246,11 @@ def insert_model(
         if not exists:
 
             def _create_closure_entries(parent_resolution: Resolutions) -> None:
-                """Create closure entries for the new model, i.e. mappings between
-                nodes and any of their direct or indirect parents"""
+                """Create closure entries for the new model.
+
+                This is made up of mappings between nodes and any of their direct or
+                indirect parents.
+                """
                 session.add(
                     ResolutionFrom(
                         parent=parent_resolution.resolution_id,
@@ -289,8 +290,7 @@ def insert_model(
 
 
 def _get_resolution_related_clusters(resolution_id: int) -> Select:
-    """
-    Get cluster hashes and IDs for a resolution, its parents, and siblings.
+    """Get cluster hashes and IDs for a resolution, its parents, and siblings.
 
     * When a parent is a dataset, retrieves the data via the Sources table.
     * When a parent is a model, retrieves the data via the Probabilities table.
@@ -445,8 +445,7 @@ def insert_results(
     results: Results,
     batch_size: int,
 ) -> None:
-    """
-    Writes a Results object to Matchbox.
+    """Writes a Results object to Matchbox.
 
     The PostgreSQL backend stores clusters in a hierarchical structure, where
     each component references its parent component at a higher threshold.

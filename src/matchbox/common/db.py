@@ -51,8 +51,7 @@ def sql_to_df(
 def sql_to_df(
     stmt: Select, engine: Engine, return_type: ReturnTypeStr = "pandas"
 ) -> pa.Table | DataFrame | PolarsDataFrame:
-    """
-    Executes the given SQLAlchemy statement using connectorx.
+    """Executes the given SQLAlchemy statement using connectorx.
 
     Args:
         stmt (Select): A SQLAlchemy Select statement to be executed.

@@ -144,8 +144,7 @@ def make_model(
     right_data: DataFrame | None = None,
     right_source: str | None = None,
 ) -> Model:
-    """
-    Create a unified model instance for either linking or deduping operations.
+    """Create a unified model instance for either linking or deduping operations.
 
     Args:
         model_name: Your unique identifier for the model

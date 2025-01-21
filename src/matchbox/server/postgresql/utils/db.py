@@ -71,7 +71,7 @@ def sqa_profiled():
 
 
 def batched(iterable: Iterable, n: int) -> Iterable:
-    "Batch data into lists of length n. The last batch may be shorter."
+    """Batch data into lists of length n. The last batch may be shorter."""
     it = iter(iterable)
     while True:
         batch = list(islice(it, n))

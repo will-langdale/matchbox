@@ -41,9 +41,7 @@ class SourceAddress(BaseModel):
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
-        """
-        Generate a SourceAddress from a SQLAlchemy Engine and full source name.
-        """
+        """Generate a SourceAddress from a SQLAlchemy Engine and full source name."""
         url = engine.url
         components = {
             "dialect": url.get_dialect().name,
@@ -118,8 +116,7 @@ class Source(BaseModel):
         return db_schema, db_table
 
     def format_column(self, column: str) -> str:
-        """
-        Outputs a full SQLAlchemy column representation.
+        """Outputs a full SQLAlchemy column representation.
 
         Args:
             column: the name of the column
@@ -127,7 +124,6 @@ class Source(BaseModel):
         Returns:
             A string representing the table name and column
         """
-
         db_schema, db_table = self._split_full_name()
         if db_schema:
             return f"{db_schema}_{db_table}_{column}"
@@ -139,7 +135,6 @@ class Source(BaseModel):
 
         If no columns are specified, all columns from the source table will be used.
         """
-
         table = self.to_table()
 
         remote_columns = {
@@ -238,7 +233,6 @@ class Source(BaseModel):
     @needs_engine
     def hash_data(self) -> pa.Table:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
-
         source_table = self.to_table()
         cols_to_index = tuple([col.name for col in self.columns])
 

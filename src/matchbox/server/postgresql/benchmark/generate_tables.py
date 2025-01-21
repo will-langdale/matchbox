@@ -60,8 +60,7 @@ def _hash_list_int(li: list[int]) -> list[bytes]:
 
 
 def generate_sources() -> pa.Table:
-    """
-    Generate sources table.
+    """Generate sources table.
 
     Returns:
         PyArrow sources table
@@ -91,8 +90,7 @@ def generate_sources() -> pa.Table:
 
 
 def generate_resolutions() -> pa.Table:
-    """
-    Generate resolutions table.
+    """Generate resolutions table.
 
     Returns:
         PyArrow resolutions table
@@ -118,8 +116,7 @@ def generate_resolutions() -> pa.Table:
 
 
 def generate_resolution_from() -> pa.Table:
-    """
-    Generate resolution_from table.
+    """Generate resolution_from table.
 
     Returns:
         PyArrow resolution_from table
@@ -141,8 +138,7 @@ def generate_resolution_from() -> pa.Table:
 
 
 def generate_cluster_source(range_left: int, range_right: int) -> pa.Table:
-    """
-    Generate cluster table containing rows for source rows.
+    """Generate cluster table containing rows for source rows.
 
     Args:
         range_left: first ID to generate
@@ -176,8 +172,7 @@ def generate_result_tables(
     prob_min: float = 0.6,
     prob_max: float = 1,
 ) -> tuple[list[int], pa.Table, pa.Table, pa.Table, int]:
-    """
-    Generate probabilities, contains and clusters tables.
+    """Generate probabilities, contains and clusters tables.
 
     Args:
         left_ids: list of IDs for rows to dedupe, or for left rows to link
@@ -326,8 +321,7 @@ def generate_all_tables(
     link_components: int,
     link_len: int,
 ) -> dict[str, pa.Table]:
-    """
-    Make all 6 backend tables. It will create two sources, one deduper for each,
+    """Make all 6 backend tables. It will create two sources, one deduper for each,
     and one linker from each deduper.
 
     Args:

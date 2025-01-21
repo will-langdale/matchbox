@@ -39,11 +39,9 @@ class WeightedComparison(BaseModel):
 
 
 class WeightedDeterministicSettings(LinkerSettings):
-    """
-    A data class to enforce the Weighted linker's settings dictionary shape.
+    """A data class to enforce the Weighted linker's settings dictionary shape.
 
     Example:
-
         >>> {
         ...     left_id: "hash",
         ...     right_id: "hash",

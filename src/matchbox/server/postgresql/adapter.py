@@ -161,8 +161,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def ancestors(self) -> dict[str, float | None]:
-        """
-        Gets the current truth values of all ancestors.
+        """Gets the current truth values of all ancestors.
         Returns a dict mapping model names to their current truth thresholds.
 
         Unlike ancestors_cache which returns cached values, this property returns
@@ -177,8 +176,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def ancestors_cache(self) -> dict[str, float]:
-        """
-        Gets the cached ancestor thresholds, converting hashes to model names.
+        """Gets the cached ancestor thresholds, converting hashes to model names.
 
         Returns a dictionary mapping model names to their truth thresholds.
 
@@ -199,13 +197,11 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @ancestors_cache.setter
     def ancestors_cache(self, new_values: dict[str, float]) -> None:
-        """
-        Updates the cached ancestor thresholds.
+        """Updates the cached ancestor thresholds.
 
         Args:
             new_values: Dictionary mapping model names to their truth thresholds
         """
-
         with Session(MBDB.get_engine()) as session:
             model_names = list(new_values.keys())
             name_to_id = dict(
@@ -546,7 +542,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 When deduplicating, this is None
             description: A description of the model
 
-        Raises
+        Raises:
             MatchboxDataError if, for a linker, the source models weren't found in
                 the database
         """
