@@ -487,12 +487,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """
         with Session(MBDB.get_engine()) as session:
             if (
-                resolution_id := session.query(Resolutions)
+                resolution_id := session.query(Resolutions.resolution_id)
                 .filter_by(name=resolution_name)
                 .first()
-                .resolution_id
             ):
-                return resolution_id
+                return resolution_id[0]
             else:
                 raise ServerResolutionError(resolution_name=resolution_name)
 

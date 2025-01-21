@@ -158,7 +158,7 @@ def revolution_inc(
 @pytest.fixture(scope="session")
 def winner_inc(
     crn_companies: DataFrame, duns_companies: DataFrame, cdms_companies: DataFrame
-) -> dict[str, str]:
+) -> dict[str, list[str]]:
     """
     Winner Inc. as it exists across all three datasets.
 

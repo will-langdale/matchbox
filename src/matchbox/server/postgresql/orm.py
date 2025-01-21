@@ -4,6 +4,7 @@ from sqlalchemy import (
     INTEGER,
     SMALLINT,
     CheckConstraint,
+    Column,
     ForeignKey,
     Index,
     UniqueConstraint,
@@ -11,7 +12,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, TEXT
-from sqlalchemy.orm import Session, mapped_column, relationship
+from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.db import MBDB
@@ -24,18 +25,18 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "resolution_from"
 
     # Columns
-    parent = mapped_column(
+    parent = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    child = mapped_column(
+    child = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    level = mapped_column(INTEGER, nullable=False)
-    truth_cache = mapped_column(FLOAT, nullable=True)
+    level = Column(INTEGER, nullable=False)
+    truth_cache = Column(FLOAT, nullable=True)
 
     # Constraints
     __table_args__ = (
@@ -53,12 +54,12 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "resolutions"
 
     # Columns
-    resolution_id = mapped_column(BIGINT, primary_key=True)
-    resolution_hash = mapped_column(BYTEA, nullable=False)
-    type = mapped_column(TEXT, nullable=False)
-    name = mapped_column(TEXT, nullable=False)
-    description = mapped_column(TEXT)
-    truth = mapped_column(FLOAT)
+    resolution_id = Column(BIGINT, primary_key=True)
+    resolution_hash = Column(BYTEA, nullable=False)
+    type = Column(TEXT, nullable=False)
+    name = Column(TEXT, nullable=False)
+    description = Column(TEXT)
+    truth = Column(FLOAT)
 
     # Relationships
     source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
@@ -173,18 +174,18 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
-    resolution_id = mapped_column(
+    resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    alias = mapped_column(TEXT, nullable=False)
-    full_name = mapped_column(TEXT, nullable=False)
-    warehouse_hash = mapped_column(BYTEA, nullable=False)
-    id = mapped_column(TEXT, nullable=False)
-    column_names = mapped_column(ARRAY(TEXT), nullable=False)
-    column_aliases = mapped_column(ARRAY(TEXT), nullable=False)
-    column_types = mapped_column(ARRAY(TEXT), nullable=False)
+    alias = Column(TEXT, nullable=False)
+    full_name = Column(TEXT, nullable=False)
+    warehouse_hash = Column(BYTEA, nullable=False)
+    id = Column(TEXT, nullable=False)
+    column_names = Column(ARRAY(TEXT), nullable=False)
+    column_aliases = Column(ARRAY(TEXT), nullable=False)
+    column_types = Column(ARRAY(TEXT), nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")
@@ -209,10 +210,10 @@ class Contains(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "contains"
 
     # Columns
-    parent = mapped_column(
+    parent = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
-    child = mapped_column(
+    child = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
 
@@ -230,13 +231,13 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "clusters"
 
     # Columns
-    cluster_id = mapped_column(BIGINT, primary_key=True)
-    cluster_hash = mapped_column(BYTEA, nullable=False)
-    dataset = mapped_column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
+    cluster_id = Column(BIGINT, primary_key=True)
+    cluster_hash = Column(BYTEA, nullable=False)
+    dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
     # Uses array as source data may have identical rows. We can't control this
     # Must be indexed or PostgreSQL incorrectly tries to use nested joins
     # when retrieving small datasets in query() -- extremely slow
-    source_pk = mapped_column(ARRAY(TEXT), index=True, nullable=True)
+    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="clusters")
@@ -273,15 +274,15 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "probabilities"
 
     # Columns
-    resolution = mapped_column(
+    resolution = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    cluster = mapped_column(
+    cluster = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
-    probability = mapped_column(SMALLINT, nullable=False)
+    probability = Column(SMALLINT, nullable=False)
 
     # Relationships
     proposed_by = relationship("Resolutions", back_populates="probabilities")

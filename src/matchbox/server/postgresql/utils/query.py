@@ -558,12 +558,12 @@ def match(
         # Group matches by dataset
         cluster = None
         matches_by_dataset: dict[int, set] = {}
-        for cluster_id, dataset_id, id in matches:
+        for cluster_id, dataset_id, id_in_source in matches:
             if cluster is None:
                 cluster = cluster_id
             if dataset_id not in matches_by_dataset:
                 matches_by_dataset[dataset_id] = set()
-            matches_by_dataset[dataset_id].add(id)
+            matches_by_dataset[dataset_id].add(id_in_source)
 
         result = []
         for target_resolution, target_name in target_resolutions:
@@ -580,4 +580,4 @@ def match(
             )
             result.append(match_obj)
 
-        return result[0] if isinstance(target, str) else result
+        return result[0] if isinstance(target, SourceAddress) else result

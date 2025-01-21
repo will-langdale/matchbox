@@ -197,13 +197,13 @@ class TestMatchboxBackend:
         with pytest.raises(ServerResolutionError):
             self.backend.get_model(model="nonexistant")
 
-    def test_get_resolution(self):
+    def test_get_resolution_id(self):
         self.setup_database("dedupe")
-        resolution_id = self.backend.get_model(model="naive_test.crn")
+        resolution_id = self.backend.get_resolution_id("naive_test.crn")
         assert isinstance(resolution_id, int)
 
         with pytest.raises(ServerResolutionError):
-            self.backend.get_resolution(resolution_name="nonexistent")
+            self.backend.get_resolution_id("nonexistent")
 
     def test_delete_model(self):
         """
@@ -266,10 +266,10 @@ class TestMatchboxBackend:
         models_count = self.backend.models.count()
 
         self.backend.insert_model(
-            "dedupe_1", left=str(crn), description="Test deduper 1"
+            "dedupe_1", left=crn.alias, description="Test deduper 1"
         )
         self.backend.insert_model(
-            "dedupe_2", left=str(duns), description="Test deduper 1"
+            "dedupe_2", left=duns.alias, description="Test deduper 1"
         )
 
         assert self.backend.models.count() == models_count + 2
@@ -488,7 +488,7 @@ class TestMatchboxBackend:
             "test_crn_crn",
             "test_duns_duns",
         }
-        assert crn_duns.id.nunique() == 1000
+        assert crn_duns["id"].nunique() == 1000
 
     def test_match_one_to_many(self, revolution_inc: dict[str, list[str]]):
         """Test that matching data works when the target has many IDs."""
@@ -501,14 +501,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk=revolution_inc["duns"][0],
-            source=str(duns_wh),
-            target=str(crn_wh),
+            source=duns_wh.address,
+            target=crn_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(duns_wh)
-        assert res.target == str(crn_wh)
+        assert res.source == duns_wh.address
+        assert res.target == crn_wh.address
         assert res.cluster is not None
         assert res.source_id == set(revolution_inc["duns"])
         assert res.target_id == set(revolution_inc["crn"])
@@ -524,14 +524,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk=revolution_inc["crn"][0],
-            source=str(crn_wh),
-            target=str(duns_wh),
+            source=crn_wh.address,
+            target=duns_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(crn_wh)
-        assert res.target == str(duns_wh)
+        assert res.source == crn_wh.address
+        assert res.target == duns_wh.address
         assert res.cluster is not None
         assert res.source_id == set(revolution_inc["crn"])
         assert res.target_id == set(revolution_inc["duns"])
@@ -547,14 +547,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk=winner_inc["crn"][0],
-            source=str(crn_wh),
-            target=str(duns_wh),
+            source=crn_wh.address,
+            target=duns_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(crn_wh)
-        assert res.target == str(duns_wh)
+        assert res.source == crn_wh.address
+        assert res.target == duns_wh.address
         assert res.cluster is not None
         assert res.source_id == set(winner_inc["crn"])
         assert res.target_id == set() == set(winner_inc["duns"])
@@ -570,14 +570,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk="foo",
-            source=str(crn_wh),
-            target=str(duns_wh),
+            source=crn_wh.address,
+            target=duns_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(crn_wh)
-        assert res.target == str(duns_wh)
+        assert res.source == crn_wh.address
+        assert res.target == duns_wh.address
         assert res.cluster is None
         assert res.source_id == set()
         assert res.target_id == set()
