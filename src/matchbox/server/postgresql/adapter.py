@@ -357,7 +357,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     ],
                 )
             else:
-                raise MatchboxServerSourceError(address=source.address)
+                raise MatchboxServerSourceError(address=str(address))
 
     def validate_ids(self, ids: list[int]) -> None:
         """Validates a list of IDs exist in the database.

@@ -445,6 +445,37 @@ class TestMatchboxBackend:
                 engine=crn.engine,
             )
 
+    def test_query_only_source(self):
+        """Test querying data from a link point of truth."""
+        self.setup_database("index")
+
+        crn_wh = self.warehouse_data[0]
+
+        select_crn = select(
+            {crn_wh.address.full_name: ["crn"]},
+            engine=crn_wh.engine,
+        )
+
+        df_crn_sample = query(
+            select_crn,
+            return_type="pandas",
+            limit=10,
+        )
+
+        assert isinstance(df_crn_sample, DataFrame)
+        assert df_crn_sample.shape[0] == 10
+
+        df_crn_full = query(
+            select_crn,
+            return_type="pandas",
+        )
+
+        assert df_crn_full.shape[0] == 3000
+        assert set(df_crn_full.columns) == {
+            "id",
+            "test_crn_crn",
+        }
+
     def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""
         self.setup_database("dedupe")

@@ -1,7 +1,5 @@
 from typing import Any
 
-from matchbox.common.sources import SourceAddress
-
 
 class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
@@ -11,7 +9,7 @@ class MatchboxSourceColumnError(Exception):
     """Source columns diverge with the warehouse"""
 
 
-class SourceEngineError(Exception):
+class MatchboxSourceEngineError(Exception):
     """Engine must be available in Source"""
 
 
@@ -34,14 +32,12 @@ class MatchboxServerSourceError(Exception):
     def __init__(
         self,
         message: str = None,
-        address: SourceAddress | None = None,
+        address: str | None = None,
     ):
         if message is None:
             message = "Source not found on matchbox."
             if address:
-                message = (
-                    f"Source ({address.full_name, address.warehouse_hash}) not found."
-                )
+                message = f"Source ({address}) not found."
 
         super().__init__(message)
         self.address = address

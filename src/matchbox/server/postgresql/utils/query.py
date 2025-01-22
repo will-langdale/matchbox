@@ -45,7 +45,7 @@ def get_dataset_resolution(
     )
     if dataset_resolution is None:
         raise MatchboxServerSourceError(
-            address=source_name_address,
+            address=str(source_name_address),
         )
 
     return dataset_resolution

@@ -19,7 +19,10 @@ from sqlalchemy import (
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.exceptions import MatchboxSourceColumnError, SourceEngineError
+from matchbox.common.exceptions import (
+    MatchboxSourceColumnError,
+    MatchboxSourceEngineError,
+)
 from matchbox.common.hash import HASH_FUNC, hash_data
 
 T = TypeVar("T")
@@ -66,7 +69,7 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.engine:
-            raise SourceEngineError
+            raise MatchboxSourceEngineError
         return func(self, *args, **kwargs)
 
     return wrapper
