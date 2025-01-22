@@ -12,7 +12,10 @@ from matchbox.server.postgresql.benchmark.generate_tables import (
     generate_all_tables,
     generate_result_tables,
 )
-from matchbox.server.postgresql.benchmark.query import compile_query_sql
+from matchbox.server.postgresql.benchmark.query import (
+    compile_match_sql,
+    compile_query_sql,
+)
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
@@ -116,6 +119,37 @@ def test_benchmark_query_generation(
 
     assert df.id.nunique() == parameters["unique_ids"]
     assert df.pk.nunique() == parameters["unique_pks"]
+
+
+def test_benchmark_match_query_generation(
+    setup_database: SetupDatabaseCallable,
+    matchbox_postgres: MatchboxPostgres,
+    warehouse_data: list[Source],
+    revolution_inc: dict[str, list[str]],
+):
+    setup_database(matchbox_postgres, warehouse_data, "link")
+
+    engine = MBDB.get_engine()
+    source_name = f"{warehouse_data[1].db_schema}.{warehouse_data[1].db_table}"  # DUNS
+    source_pks = revolution_inc["duns"]
+    target_pks = revolution_inc["crn"]
+
+    sql_match = compile_match_sql(
+        source_pk=source_pks[0],
+        source_name=source_name,
+        point_of_truth="deterministic_naive_test.crn_naive_test.duns",
+    )
+
+    assert isinstance(sql_match, str)
+
+    with engine.connect() as conn:
+        res = conn.execute(text(sql_match)).all()
+
+    df = pd.DataFrame(res, columns=["cluster", "dataset", "source_pk"]).dropna()
+
+    assert df.cluster.nunique() == 1
+    assert df.dataset.nunique() == 2
+    assert set(df.source_pk) == set(source_pks + target_pks)
 
 
 @pytest.mark.parametrize(
