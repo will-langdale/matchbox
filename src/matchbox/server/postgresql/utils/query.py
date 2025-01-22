@@ -8,8 +8,8 @@ from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
-    ServerResolutionError,
-    ServerSourceError,
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
@@ -44,8 +44,8 @@ def get_dataset_resolution(
         .first()
     )
     if dataset_resolution is None:
-        raise ServerSourceError(
-            full_name=source_name_address.full_name,
+        raise MatchboxServerSourceError(
+            address=source_name_address,
         )
 
     return dataset_resolution
@@ -162,14 +162,16 @@ def _resolve_cluster_hierarchy(
     with Session(engine) as session:
         dataset_resolution = session.get(Resolutions, dataset_id)
         if dataset_resolution is None:
-            raise ServerSourceError()
+            raise MatchboxServerSourceError()
 
         try:
             lineage_truths = resolution.get_lineage_to_dataset(
                 dataset=dataset_resolution
             )
         except ValueError as e:
-            raise ServerResolutionError(f"Invalid resolution lineage: {str(e)}") from e
+            raise MatchboxServerResolutionError(
+                f"Invalid resolution lineage: {str(e)}"
+            ) from e
 
         thresholds = _resolve_thresholds(
             lineage_truths=lineage_truths,
@@ -298,7 +300,7 @@ def query(
                 .first()
             )
             if resolution is None:
-                raise ServerResolutionError(resolution_name=resolution)
+                raise MatchboxServerResolutionError(resolution_name=resolution)
         else:
             resolution = dataset_resolution
         if not resolution_id:
@@ -512,7 +514,7 @@ def match(
             session.query(Resolutions).filter(Resolutions.name == resolution).first()
         )
         if truth_resolution is None:
-            raise ServerResolutionError(resolution_name=resolution)
+            raise MatchboxServerResolutionError(resolution_name=resolution)
 
         # Get resolution lineage and resolve thresholds
         lineage_truths = truth_resolution.get_lineage()

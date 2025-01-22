@@ -156,6 +156,11 @@ def test_query_threshold():
     pass
 
 
+def test_index():
+    # TODO
+    pass
+
+
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_match_calls_backend(get_backend: Mock):
     mock_backend = Mock()

@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from matchbox.client.results import Results
 from matchbox.common.exceptions import (
     MatchboxDataError,
-    ServerResolutionError,
-    ServerSourceError,
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
@@ -331,8 +331,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
             A Source object
         """
         with Session(MBDB.get_engine()) as session:
-            if (
-                source := session.query(Sources)
+            source = (
+                session.query(Sources)
                 .where(
                     and_(
                         Sources.full_name == address.full_name,
@@ -340,7 +340,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     )
                 )
                 .first()
-            ):
+            )
+            if source:
                 return Source(
                     alias=source.alias,
                     address=address,
@@ -356,7 +357,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     ],
                 )
             else:
-                raise ServerSourceError(full_name=address.full_name)
+                raise MatchboxServerSourceError(address=source.address)
 
     def validate_ids(self, ids: list[int]) -> None:
         """Validates a list of IDs exist in the database.
@@ -470,7 +471,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             if resolution := session.query(Resolutions).filter_by(name=model).first():
                 return MatchboxPostgresModel(resolution=resolution, backend=self)
             else:
-                raise ServerResolutionError(resolution_name=model)
+                raise MatchboxServerResolutionError(resolution_name=model)
 
     def get_resolution_id(self, resolution_name: str) -> int:
         """Get a resolution ID from its name.
@@ -482,14 +483,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
             The resolution ID
         """
         with Session(MBDB.get_engine()) as session:
-            if (
-                resolution_id := session.query(Resolutions.resolution_id)
+            resolution_id = (
+                session.query(Resolutions.resolution_id)
                 .filter_by(name=resolution_name)
                 .first()
-            ):
+            )
+            if resolution_id:
                 return resolution_id[0]
             else:
-                raise ServerResolutionError(resolution_name=resolution_name)
+                raise MatchboxServerResolutionError(resolution_name=resolution_name)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -527,7 +529,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                         "If you're sure you want to continue, rerun with certain=True"
                     )
             else:
-                raise ServerResolutionError(resolution_name=model)
+                raise MatchboxServerResolutionError(resolution_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -551,7 +553,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.query(Resolutions).filter(Resolutions.name == left).first()
             )
             if not left_resolution:
-                raise ServerResolutionError(resolution_name=left)
+                raise MatchboxServerResolutionError(resolution_name=left)
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
@@ -560,7 +562,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     session.query(Resolutions).filter(Resolutions.name == right).first()
                 )
                 if not right_resolution:
-                    raise ServerResolutionError(resolution_name=right)
+                    raise MatchboxServerResolutionError(resolution_name=right)
 
         insert_model(
             model=model,

@@ -23,6 +23,8 @@ from matchbox.common.exceptions import MatchboxSourceColumnError, SourceEngineEr
 from matchbox.common.hash import HASH_FUNC, hash_data
 
 T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class SourceColumn(BaseModel):
@@ -56,10 +58,6 @@ class SourceAddress(BaseModel):
 
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
-
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:

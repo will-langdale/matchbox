@@ -156,7 +156,7 @@ def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
             df = table_arrow.to_pandas()
             # Pandas' `to_sql` dislikes arrays
             array_cols = ["source_pk", "column_types", "column_aliases", "column_names"]
-            active_array_cols = set(df.columns).intersection(array_cols)
+            active_array_cols = set(df.columns.tolist()).intersection(array_cols)
             for col in active_array_cols:
                 df[col] = df[col].apply(array_encode)
             # Pandas' `to_sql` dislikes large unsigned ints

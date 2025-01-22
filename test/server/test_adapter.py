@@ -9,8 +9,8 @@ from matchbox.client.helpers.selector import match, query, select
 from matchbox.client.results import Results
 from matchbox.common.exceptions import (
     MatchboxDataError,
-    ServerResolutionError,
-    ServerSourceError,
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
@@ -165,7 +165,7 @@ class TestMatchboxBackend:
         # TODO: need to check the whole source object
         assert crn.columns == crn_retrieved.columns
 
-        with pytest.raises(ServerSourceError):
+        with pytest.raises(MatchboxServerSourceError):
             self.backend.get_source(
                 SourceAddress(
                     full_name="foo", warehouse_hash=bytes("bar".encode("ascii"))
@@ -194,7 +194,7 @@ class TestMatchboxBackend:
         model = self.backend.get_model(model="naive_test.crn")
         assert isinstance(model, MatchboxModelAdapter)
 
-        with pytest.raises(ServerResolutionError):
+        with pytest.raises(MatchboxServerResolutionError):
             self.backend.get_model(model="nonexistant")
 
     def test_get_resolution_id(self):
@@ -202,7 +202,7 @@ class TestMatchboxBackend:
         resolution_id = self.backend.get_resolution_id("naive_test.crn")
         assert isinstance(resolution_id, int)
 
-        with pytest.raises(ServerResolutionError):
+        with pytest.raises(MatchboxServerResolutionError):
             self.backend.get_resolution_id("nonexistent")
 
     def test_delete_model(self):

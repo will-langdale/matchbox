@@ -10,7 +10,7 @@ from matchbox.client.results import (
     ModelType,
     Results,
 )
-from matchbox.common.exceptions import ServerResolutionError
+from matchbox.common.exceptions import MatchboxServerResolutionError
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import MatchboxModelAdapter
 
@@ -51,17 +51,17 @@ class Model:
     def _connect(self) -> None:
         """Establish connection to the model in the backend database."""
         if not self._backend:
-            raise ServerResolutionError("No backend configured for this model")
+            raise MatchboxServerResolutionError("No backend configured for this model")
 
         try:
             self._model = self._backend.get_model(self.metadata.name)
         except Exception as e:
-            raise ServerResolutionError from e
+            raise MatchboxServerResolutionError from e
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
         if not self._backend:
-            raise ServerResolutionError("No backend configured for this model")
+            raise MatchboxServerResolutionError("No backend configured for this model")
 
         self._backend.insert_model(
             model=self.metadata.name,
@@ -117,7 +117,9 @@ class Model:
         """Execute the model pipeline and return results."""
         if self.metadata.type == ModelType.LINKER:
             if self.right_data is None:
-                raise ServerResolutionError("Right dataset required for linking")
+                raise MatchboxServerResolutionError(
+                    "Right dataset required for linking"
+                )
 
             results = self.model_instance.link(
                 left=self.left_data, right=self.right_data

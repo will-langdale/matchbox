@@ -236,11 +236,11 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        selector: dict[str, list[str]],
-        resolution: str | None = None,
+        source_address: SourceAddress,
+        resolution_id: int | None = None,
         threshold: float | dict[str, float] | None = None,
         limit: int = None,
-    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
+    ) -> ArrowTable: ...
 
     @abstractmethod
     def match(

@@ -1,5 +1,7 @@
 from typing import Any
 
+from matchbox.common.sources import SourceAddress
+
 
 class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
@@ -13,7 +15,7 @@ class SourceEngineError(Exception):
     """Engine must be available in Source"""
 
 
-class ServerResolutionError(Exception):
+class MatchboxServerResolutionError(Exception):
     """Resolution not found."""
 
     def __init__(self, message: str = None, resolution_name: str = None):
@@ -26,21 +28,23 @@ class ServerResolutionError(Exception):
         self.resolution_name = resolution_name
 
 
-class ServerSourceError(Exception):
+class MatchboxServerSourceError(Exception):
     """Source not found on the server."""
 
     def __init__(
         self,
         message: str = None,
-        full_name: str | None = None,
+        address: SourceAddress | None = None,
     ):
         if message is None:
             message = "Source not found on matchbox."
-            if full_name is not None:
-                message = f"Source {full_name} not found."
+            if address:
+                message = (
+                    f"Source ({address.full_name, address.warehouse_hash}) not found."
+                )
 
         super().__init__(message)
-        self.full_name = full_name
+        self.address = address
 
 
 class MatchboxDataError(Exception):
