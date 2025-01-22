@@ -162,7 +162,7 @@ class TestMatchboxBackend:
         crn = self.warehouse_data[0]
 
         crn_retrieved = self.backend.get_source(crn.address)
-
+        # TODO: need to check the whole source object
         assert crn.columns == crn_retrieved.columns
 
         with pytest.raises(ServerSourceError):
@@ -416,6 +416,22 @@ class TestMatchboxBackend:
         )
 
         assert self.backend.data.count() == unique
+
+    def test_index_new_source(self):
+        # TODO
+        pass
+
+    def test_index_duplicate_source(self):
+        # TODO
+        pass
+
+    def test_index_duplicate_clusters(self):
+        # TODO
+        pass
+
+    def test_index_same_resolution(self):
+        # TODO
+        pass
 
     def test_select_warning(self):
         """Tests selecting non-indexed fields warns the user."""

@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.exceptions import SourceEngineError
+from matchbox.common.exceptions import MatchboxSourceColumnError, SourceEngineError
 from matchbox.common.hash import HASH_FUNC, hash_data
 
 T = TypeVar("T")
@@ -82,21 +82,34 @@ class Source(BaseModel):
     db_pk: str
     columns: list[SourceColumn] = []
 
-    _engine: Engine
+    _engine: Engine | None = None
 
     @property
     def engine(self) -> Engine | None:
         return self._engine
 
     def set_engine(self, engine: Engine):
+        """Adds engine, and use it to validate current columns"""
         self._engine = engine
+        remote_columns = self._get_remote_columns()
+        for col in self.columns:
+            if col.name not in remote_columns:
+                raise MatchboxSourceColumnError(
+                    f"Column {col.name} not available in {self.address.full_name}"
+                )
+            actual_type = str(remote_columns[col.name])
+            if actual_type != col.type:
+                raise MatchboxSourceColumnError(
+                    f"Type {actual_type} != {col.type} for {col.name}"
+                )
         return self
 
     @property
     def signature(self) -> bytes:
         """Generate a unique hash based on the table's metadata."""
+        sorted_columns = sorted(self.columns, key=lambda c: c.alias)
         schema_representation = f"{self.alias}: " + ",".join(
-            f"{col.alias}:{col.type}" for col in self.columns
+            f"{col.alias}:{col.type}" for col in sorted_columns
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
@@ -130,29 +143,20 @@ class Source(BaseModel):
         return f"{db_table}_{column}"
 
     @needs_engine
-    def index_columns(self, columns: list[SourceColumn] | None = None) -> "Source":
-        """Adds columns to usend to Matchbox server, overwriting previous value.
-
-        If no columns are specified, all columns from the source table will be used.
-        """
+    def _get_remote_columns(self) -> dict[str, str]:
         table = self.to_table()
-
-        remote_columns = {
+        return {
             col.name: col.type for col in table.columns if col.name not in self.db_pk
         }
 
-        if not columns:
-            self.columns = [
-                SourceColumn(name=col_name, type=str(col_type))
-                for col_name, col_type in remote_columns.items()
-            ]
-        else:
-            for col in columns:
-                if col.name not in remote_columns:
-                    raise ValueError(
-                        f"Column {col.name} not available in {self.address.full_name}"
-                    )
-            self.columns = columns
+    @needs_engine
+    def default_columns(self) -> "Source":
+        """Overwrites columns with all non-primary keys from source warehouse."""
+        remote_columns = self._get_remote_columns()
+        self.columns = [
+            SourceColumn(name=col_name, type=str(col_type))
+            for col_name, col_type in remote_columns.items()
+        ]
 
         return self
 
@@ -166,13 +170,16 @@ class Source(BaseModel):
 
     def _select(
         self,
-        fields: list[str] | None,
+        fields: list[str] | None = None,
         include_pk_column: bool = True,
         pks: list[T] | None = None,
         limit: int | None = None,
     ) -> Select:
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
         table = self.to_table()
+
+        if not fields:
+            fields = [col.name for col in self.columns]
 
         if include_pk_column and self.db_pk not in fields:
             fields.append(self.db_pk)
@@ -219,7 +226,7 @@ class Source(BaseModel):
     @needs_engine
     def to_pandas(
         self,
-        fields: list[str] | None,
+        fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
         include_pk_column: bool = True,

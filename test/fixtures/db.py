@@ -284,13 +284,13 @@ def warehouse_data(
     yield [
         Source(address=SourceAddress.compose(warehouse_engine, "test.crn"), db_pk="id")
         .set_engine(warehouse_engine)
-        .index_columns(),
+        .default_columns(),
         Source(address=SourceAddress.compose(warehouse_engine, "test.duns"), db_pk="id")
         .set_engine(warehouse_engine)
-        .index_columns(),
+        .default_columns(),
         Source(address=SourceAddress.compose(warehouse_engine, "test.cdms"), db_pk="id")
         .set_engine(warehouse_engine)
-        .index_columns(),
+        .default_columns(),
     ]
 
     # Clean up the warehouse data

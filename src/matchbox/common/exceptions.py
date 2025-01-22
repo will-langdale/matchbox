@@ -5,8 +5,12 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
+class MatchboxSourceColumnError(Exception):
+    """Source columns diverge with the warehouse"""
+
+
 class SourceEngineError(Exception):
-    """Engine must be available"""
+    """Engine must be available in Source"""
 
 
 class ServerResolutionError(Exception):
