@@ -277,6 +277,7 @@ def test_source_to_table(warehouse_engine: Engine):
 
 
 def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
+    """Tests `.to_arrow()` and `.to_pandas()` methods with various parameters"""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
         df.to_sql(

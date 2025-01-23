@@ -153,10 +153,12 @@ def test_query_no_resolution_fail():
 
 
 def test_query_no_resolution_ok_various_params():
+    """Tests that we can avoid passing resolution name, with a variety of parameters."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
+        # Mock backend's `get_resolution` and `query`
         mock_backend = Mock()
 
         get_resolution_id = Mock(return_value=42)
@@ -172,6 +174,7 @@ def test_query_no_resolution_ok_various_params():
 
         get_backend.return_value = mock_backend
 
+        # Mock `Source.to_arrow`
         to_arrow.return_value = pa.Table.from_pandas(
             DataFrame(
                 [
@@ -181,6 +184,7 @@ def test_query_no_resolution_ok_various_params():
             )
         )
 
+        # Well-formed selector for these mocks
         sels = [
             Selector(
                 source=Source(
@@ -224,10 +228,12 @@ def test_query_no_resolution_ok_various_params():
 
 
 def test_query_multiple_sources_with_limits():
+    """Tests that we can query multiple sources and distribute the limit among them"""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
+        # Mock backend's `get_resolution` and `query`
         mock_backend = Mock()
 
         get_resolution_id = Mock(return_value=42)
@@ -235,7 +241,6 @@ def test_query_multiple_sources_with_limits():
 
         query_mock = Mock(
             side_effect=[
-                # First call
                 pa.Table.from_arrays(
                     [pa.array([0, 1]), pa.array([10, 11])],
                     names=["source_pk", "final_parent"],
@@ -245,12 +250,13 @@ def test_query_multiple_sources_with_limits():
                     names=["source_pk", "final_parent"],
                 ),
             ]
-            * 2  # Two calls to `query()`
+            * 2  # 2 calls to `query()` in this test, each querying server twice
         )
         mock_backend.query = query_mock
 
         get_backend.return_value = mock_backend
 
+        # Mock `Source.to_arrow`
         to_arrow.side_effect = [
             pa.Table.from_pandas(
                 DataFrame(
@@ -268,8 +274,9 @@ def test_query_multiple_sources_with_limits():
                     ]
                 )
             ),
-        ] * 2  # Two calls to `query()`
+        ] * 2  # 2 calls to `query()` in this test, each dealing with 2 sources
 
+        # Well-formed select from these mocks
         sels = [
             Selector(
                 source=Source(
@@ -290,6 +297,7 @@ def test_query_multiple_sources_with_limits():
             ),
         ]
 
+        # Validate results
         results = query(sels, resolution_name="link", limit=7)
         assert len(results) == 4
         assert {"foo_a", "foo_b", "foo2_c"} == set(results.columns)
