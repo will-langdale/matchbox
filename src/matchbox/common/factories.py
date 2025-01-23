@@ -10,8 +10,7 @@ from matchbox.common.transform import graph_results
 
 
 def verify_components(all_nodes: list[Any], table: pa.Table) -> dict:
-    """
-    Fast verification of connected components using rustworkx.
+    """Fast verification of connected components using rustworkx.
 
     Args:
         all_nodes: list of identities of inputs being matched
@@ -35,8 +34,8 @@ def verify_components(all_nodes: list[Any], table: pa.Table) -> dict:
 
 
 def _min_edges_component(left: int, right: int, deduplicate: bool) -> int:
-    """
-    Calculate min edges for component to be connected.
+    """Calculate min edges for component to be connected.
+
     Does so by assuming a spanning tree.
 
     Args:
@@ -54,8 +53,7 @@ def _min_edges_component(left: int, right: int, deduplicate: bool) -> int:
 
 
 def _max_edges_component(left: int, right: int, deduplicate: bool) -> int:
-    """
-    Calculate max edges for component to be avoid duplication.
+    """Calculate max edges for component to be avoid duplication.
     Considers complete graph for deduping, and complete bipartite graph for linking.
 
     Args:
@@ -75,8 +73,7 @@ def _max_edges_component(left: int, right: int, deduplicate: bool) -> int:
 def calculate_min_max_edges(
     left_nodes: int, right_nodes: int, num_components: int, deduplicate: bool
 ) -> tuple[int, int]:
-    """
-    Calculate min and max edges for a graph.
+    """Calculate min and max edges for a graph.
 
     Args:
         left_nodes: number of nodes in left source
@@ -128,8 +125,7 @@ def generate_dummy_probabilities(
     num_components: int,
     total_rows: int,
 ) -> pa.Table:
-    """
-    Generate dummy Arrow probabilities data with guaranteed isolated components.
+    """Generate dummy Arrow probabilities data with guaranteed isolated components.
 
     Args:
         left_values: List of integers to use for left column

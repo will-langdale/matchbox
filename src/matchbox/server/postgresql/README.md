@@ -16,10 +16,12 @@ erDiagram
     Sources {
         bigint resolution_id PK,FK
         string alias
-        string schema
-        string table
+        string full_name
+        bytes warehouse_hash
         string id
-        jsonb indices
+        array[string] column_names
+        array[string] column_aliases
+        array[string] column_types
     }
     Clusters {
         bigint cluster_id PK,FK

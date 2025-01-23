@@ -1,16 +1,9 @@
 import base64
 import hashlib
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TypeVar
 from uuid import UUID
 
 from pandas import DataFrame, Series
-from sqlalchemy import String, func, select
-from sqlalchemy.orm import Session
-
-if TYPE_CHECKING:
-    from matchbox.common.db import Source
-else:
-    Source = Any
 
 T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
@@ -20,34 +13,6 @@ HASH_FUNC = hashlib.sha256
 
 def hash_to_base64(hash: bytes) -> str:
     return base64.b64encode(hash).decode("utf-8")
-
-
-def dataset_to_hashlist(dataset: Source) -> list[dict[str, Any]]:
-    """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
-    with Session(dataset.database.engine) as warehouse_session:
-        source_table = dataset.to_table()
-        cols_to_index = tuple(
-            [col.literal.name for col in dataset.db_columns if col.indexed]
-        )
-
-        slct_stmt = select(
-            func.concat(*source_table.c[cols_to_index]).label("raw"),
-            func.array_agg(source_table.c[dataset.db_pk].cast(String)).label(
-                "source_pk"
-            ),
-        ).group_by(*source_table.c[cols_to_index])
-
-        raw_result = warehouse_session.execute(slct_stmt)
-
-        to_insert = [
-            {
-                "hash": hash_data(data.raw),
-                "source_pk": data.source_pk,
-            }
-            for data in raw_result.all()
-        ]
-
-    return to_insert
 
 
 def prep_for_hash(item: HashableItem) -> bytes:
@@ -68,8 +33,7 @@ def prep_for_hash(item: HashableItem) -> bytes:
 
 
 def hash_data(data: HashableItem) -> bytes:
-    """
-    Hash the given data using the globally defined hash function.
+    """Hash the given data using the globally defined hash function.
     This function ties into the existing hashing utilities.
     """
     return HASH_FUNC(prep_for_hash(data)).digest()
@@ -142,16 +106,15 @@ class IntMap:
         self.salt: int = salt
 
     def _salt_id(self, i: int) -> int:
-        """
-        Use Cantor pairing function on the salt and a negative int ID, and minus it.
-        """
+        """Use Cantor pairing function on the salt and a negative int ID.
+
+        It negates the Cantor pairing function to always return a negative integer."""
         if i >= 0:
             raise ValueError("ID must be a negative integer")
         return -int(0.5 * (self.salt - i) * (self.salt - i + 1) - i)
 
     def index(self, *values: int) -> int:
-        """
-        Args:
+        """Args:
             values: the integers in the set you want to index
 
         Returns:
@@ -168,8 +131,7 @@ class IntMap:
         return salted_id
 
     def has_mapping(self, *values: int) -> bool:
-        """
-        Args:
+        """Args:
             values: the integers in the set you want to index
 
         Returns:

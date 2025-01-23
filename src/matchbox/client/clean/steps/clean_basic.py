@@ -16,9 +16,7 @@ def remove_whitespace(column: str) -> str:
 
 
 def punctuation_to_spaces(column: str) -> str:
-    """
-    Removes all punctuation and replaces with spaces.
-    """
+    """Removes all punctuation and replaces with spaces."""
     return f"""
         regexp_replace(
             {column},
@@ -30,10 +28,7 @@ def punctuation_to_spaces(column: str) -> str:
 
 
 def periods_to_nothing(column: str) -> str:
-    """
-    Removes periods and replaces with nothing (U.K. -> UK)
-    """
-
+    """Removes periods and replaces with nothing (U.K. -> UK)"""
     return f"""
         regexp_replace(
             {column},
@@ -45,14 +40,12 @@ def periods_to_nothing(column: str) -> str:
 
 
 def clean_punctuation(column: str) -> str:
-    """
-    Set to lower case, remove punctuation
+    """Set to lower case, remove punctuation
     and replace multiple spaces with single space.
     Finally, trim leading and trailing spaces.
     Args: column -- the name of the column to clean
     Returns: string to insert into SQL query
     """
-
     return rf"""
     trim(
         regexp_replace(
@@ -66,8 +59,7 @@ def clean_punctuation(column: str) -> str:
 
 
 def clean_punctuation_except_hyphens(column: str) -> str:
-    """
-    Revove all punctuation and spaces except hyphens, trim.
+    """Revove all punctuation and spaces except hyphens, trim.
     Useful for cleaning reference numbers.
     """
     return f"""
@@ -85,8 +77,7 @@ def clean_punctuation_except_hyphens(column: str) -> str:
 def expand_abbreviations(
     column: str, replacements: Dict[str, str] = ABBREVIATIONS
 ) -> str:
-    """
-    Expand abbreviations passed as a dictionary where the keys are matches
+    """Expand abbreviations passed as a dictionary where the keys are matches
     and the values are what to replace them with.
 
     Matches only when term is surrounded by regex word boundaries.
@@ -123,13 +114,11 @@ def expand_abbreviations(
 
 
 def tokenise(column: str) -> str:
-    """
-    Split the text in column into an array
+    """Split the text in column into an array
     using any char that is _not_ alphanumeric, as delimeter
     Args: column -- the name of the column to tokenise
     Returns: string to insert into SQL query
     """
-
     return f"""
     regexp_split_to_array(
         trim({column}),
@@ -139,12 +128,10 @@ def tokenise(column: str) -> str:
 
 
 def dedupe_and_sort(column: str) -> str:
-    """
-    De-duplicate an array of tokens and sort alphabetically
+    """De-duplicate an array of tokens and sort alphabetically
     Args: column -- the name of the column to deduplicate (must contain an array)
     Returns: string to insert into SQL query
     """
-
     return f"""
     array(
         select distinct unnest(
@@ -156,8 +143,7 @@ def dedupe_and_sort(column: str) -> str:
 
 
 def remove_notnumbers_leadingzeroes(column: str) -> str:
-    """
-    Remove any char that is not a number, then remove all leading zeroes
+    """Remove any char that is not a number, then remove all leading zeroes
     Args: column -- the name of the column to treat
     Returns: string to insert into SQL query
     """
@@ -194,8 +180,7 @@ def array_intersect(column: str, terms_to_keep: List[str]) -> str:
 
 
 def remove_stopwords(column: str, stopwords: List[str] = STOPWORDS) -> str:
-    """
-    A thin optinionated wrapper for array_except to clean the
+    """A thin optinionated wrapper for array_except to clean the
     global stopwords list.
     """
     return f"""
@@ -247,8 +232,7 @@ def get_postcode_area(column: str) -> str:
 
 
 def get_low_freq_char_sig(column: str) -> str:
-    """
-    Removes letters with a frequency of 5% or higher, and spaces
+    """Removes letters with a frequency of 5% or higher, and spaces
     https://en.wikipedia.org/wiki/Letter_frequency
     """
     return f"""
@@ -262,8 +246,7 @@ def get_low_freq_char_sig(column: str) -> str:
 
 
 def filter_cdms_number(column: str) -> str:
-    """
-    Returns a CASE WHEN filter on the specified column that will
+    """Returns a CASE WHEN filter on the specified column that will
     match only CDMS numbers. Must be either:
 
     * 6 or 12 digits long
@@ -288,8 +271,7 @@ def filter_cdms_number(column: str) -> str:
 
 
 def filter_company_number(column: str) -> str:
-    """
-    Returns a CASE WHEN filter on the specified column that will
+    """Returns a CASE WHEN filter on the specified column that will
     match only Companies House numbers, CRNs.
 
     Uses regex derived from:
@@ -310,8 +292,7 @@ def filter_company_number(column: str) -> str:
 
 
 def filter_duns_number(column: str) -> str:
-    """
-    Returns a CASE WHEN filter on the specified column that will
+    """Returns a CASE WHEN filter on the specified column that will
     match only a Dun & Bradstreet DUNS number. Must be both:
 
     * 9 characters
@@ -331,23 +312,17 @@ def filter_duns_number(column: str) -> str:
 
 
 def to_upper(column: str) -> str:
-    """
-    All characters to uppercase
-    """
+    """All characters to uppercase"""
     return f"upper({column})"
 
 
 def to_lower(column: str) -> str:
-    """
-    All characters to lowercase
-    """
+    """All characters to lowercase"""
     return f"lower({column})"
 
 
 def get_digits_only(column: str) -> str:
-    """
-    Extract digits only, including nonconsecutive
-    """
+    """Extract digits only, including nonconsecutive"""
     return rf"""
         nullif(
             list_aggregate(

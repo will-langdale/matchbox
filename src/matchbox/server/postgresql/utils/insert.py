@@ -4,14 +4,15 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.client.results import Results
-from matchbox.common.db import Source, sql_to_df
+from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import dataset_to_hashlist, hash_values
+from matchbox.common.hash import hash_values
+from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -24,7 +25,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest
+from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
 
 logic_logger = logging.getLogger("mb_logic")
 
@@ -102,95 +103,108 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(dataset: Source, engine: Engine, batch_size: int) -> None:
+def insert_dataset(
+    source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
+) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
-
     db_logger = logging.getLogger("sqlalchemy.engine")
     db_logger.setLevel(logging.WARNING)
 
-    ##################
-    # Insert dataset #
-    ##################
-
-    resolution_hash = dataset.to_hash()
+    resolution_hash = source.signature
 
     resolution_data = {
         "resolution_hash": resolution_hash,
         "type": ResolutionNodeType.DATASET.value,
-        "name": f"{dataset.db_schema}.{dataset.db_table}",
     }
 
     source_data = {
-        "alias": dataset.alias,
-        "schema": dataset.db_schema,
-        "table": dataset.db_table,
-        "id": dataset.db_pk,
-        "indices": {
-            "literal": [c.literal.base64 for c in dataset.db_columns if c.indexed],
-            "alias": [c.alias.base64 for c in dataset.db_columns if c.indexed],
-        },
+        "alias": source.alias,
+        "full_name": source.address.full_name,
+        "warehouse_hash": source.address.warehouse_hash,
+        "id": source.db_pk,
+        "column_names": [col.name for col in source.columns],
+        "column_aliases": [col.alias for col in source.columns],
+        "column_types": [col.type for col in source.columns],
     }
 
-    clusters = dataset_to_hashlist(dataset=dataset)
-
     with engine.connect() as conn:
-        logic_logger.info(f"Adding {dataset}")
+        logic_logger.info(f"Adding {source}")
 
         # Generate existing max primary key values
         next_cluster_id = Clusters.next_id()
-        resolution_data["resolution_id"] = Resolutions.next_id()
+        with Session(engine) as session:
+            resolution_id = (
+                session.query(Resolutions.resolution_id)
+                .filter_by(name=source.alias)
+                .scalar()
+            )
+
+        resolution_data["resolution_id"] = resolution_id or Resolutions.next_id()
         source_data["resolution_id"] = resolution_data["resolution_id"]
+        resolution_data["name"] = source_data["alias"]
 
         # Upsert into Resolutions table
         resolution_stmt = insert(Resolutions).values([resolution_data])
-        resolution_stmt = resolution_stmt.on_conflict_do_update(
-            index_elements=["resolution_hash"],
-            set_={
-                "name": resolution_stmt.excluded.name,
-                "type": resolution_stmt.excluded.type,
-            },
-        )
+        resolution_stmt = resolution_stmt.on_conflict_do_nothing()
         conn.execute(resolution_stmt)
 
-        logic_logger.info(f"{dataset} added to Resolutions table")
+        logic_logger.info(f"{source} added to Resolutions table")
 
         # Upsert into Sources table
         sources_stmt = insert(Sources).values([source_data])
-        sources_stmt = sources_stmt.on_conflict_do_update(
-            index_elements=["resolution_id"],
-            set_={
-                "schema": sources_stmt.excluded.schema,
-                "table": sources_stmt.excluded.table,
-                "id": sources_stmt.excluded.id,
-            },
-        )
+        sources_stmt = sources_stmt.on_conflict_do_nothing()
         conn.execute(sources_stmt)
 
         conn.commit()
 
-        logic_logger.info(f"{dataset} added to Sources table")
+        logic_logger.info(f"{source} added to Sources table")
 
-        # Upsert into Clusters table
-        batch_ingest(
-            records=[
-                (
-                    next_cluster_id + i,
-                    clus["hash"],
-                    source_data["resolution_id"],
-                    clus["source_pk"],
-                )
-                for i, clus in enumerate(clusters)
-            ],
-            table=Clusters,
-            conn=conn,
-            batch_size=batch_size,
+        existing_hashes_statement = (
+            select(Clusters.cluster_hash)
+            .join(Sources)
+            .join(Resolutions)
+            .where(
+                Resolutions.resolution_hash == hash_to_hex_decode(source.signature),
+            )
+        )
+        existing_hashes = sql_to_df(
+            stmt=existing_hashes_statement,
+            engine=engine,
+            return_type="arrow",
+        )["cluster_hash"]
+
+        if existing_hashes:
+            data_hashes = pc.filter(
+                data_hashes,
+                pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
+            )
+        try:
+            # Upsert into Clusters table
+            batch_ingest(
+                records=[
+                    (
+                        next_cluster_id + i,
+                        clus["hash"],
+                        source_data["resolution_id"],
+                        clus["source_pk"],
+                    )
+                    for i, clus in enumerate(data_hashes.to_pylist())
+                ],
+                table=Clusters,
+                conn=conn,
+                batch_size=batch_size,
+            )
+
+            conn.commit()
+        except IntegrityError as e:
+            # Some edge cases, defined in tests, are not implemented yet
+            raise NotImplementedError from e
+
+        logic_logger.info(
+            f"{source} added {len(data_hashes)} objects to Clusters table"
         )
 
-        conn.commit()
-
-        logic_logger.info(f"{dataset} added {len(clusters)} objects to Clusters table")
-
-    logic_logger.info(f"Finished {dataset}")
+    logic_logger.info(f"Finished {source}")
 
 
 def insert_model(
@@ -200,8 +214,7 @@ def insert_model(
     description: str,
     engine: Engine,
 ) -> None:
-    """
-    Writes a model to Matchbox with a default truth value of 1.0.
+    """Writes a model to Matchbox with a default truth value of 1.0.
 
     Args:
         model: Name of the new model
@@ -211,10 +224,10 @@ def insert_model(
         engine: SQLAlchemy engine instance
 
     Raises:
-        MatchboxResolutionError if the specified parent models don't exist.
+        MatchboxServerResolutionError if the specified parent models don't exist.
 
     Raises:
-        MatchboxResolutionError if the specified model doesn't exist.
+        MatchboxServerResolutionError if the specified model doesn't exist.
     """
     logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
@@ -256,8 +269,11 @@ def insert_model(
         if not exists:
 
             def _create_closure_entries(parent_resolution: Resolutions) -> None:
-                """Create closure entries for the new model, i.e. mappings between
-                nodes and any of their direct or indirect parents"""
+                """Create closure entries for the new model.
+
+                This is made up of mappings between nodes and any of their direct or
+                indirect parents.
+                """
                 session.add(
                     ResolutionFrom(
                         parent=parent_resolution.resolution_id,
@@ -296,30 +312,8 @@ def insert_model(
     logic_logger.info(f"[{model}] Done!")
 
 
-def _map_ids(
-    array: pa.Array,
-    lookup: pa.Table,
-    source: str,
-    target: str,
-) -> pa.Array:
-    """Maps values in an array via a lookup.
-
-    Args:
-        array: Array of values to map
-        lookup: Table of values to map to
-        source: Name of the column to map from
-        target: Name of the column to map to
-
-    Returns:
-        Array of mapped values
-    """
-    indices = pc.index_in(array, lookup[source])
-    return pc.take(lookup[target], indices)
-
-
 def _get_resolution_related_clusters(resolution_id: int) -> Select:
-    """
-    Get cluster hashes and IDs for a resolution, its parents, and siblings.
+    """Get cluster hashes and IDs for a resolution, its parents, and siblings.
 
     * When a parent is a dataset, retrieves the data via the Sources table.
     * When a parent is a model, retrieves the data via the Probabilities table.
@@ -474,8 +468,7 @@ def insert_results(
     results: Results,
     batch_size: int,
 ) -> None:
-    """
-    Writes a Results object to Matchbox.
+    """Writes a Results object to Matchbox.
 
     The PostgreSQL backend stores clusters in a hierarchical structure, where
     each component references its parent component at a higher threshold.
@@ -492,7 +485,7 @@ def insert_results(
         batch_size: Number of records to insert in each batch
 
     Raises:
-        MatchboxResolutionError if the specified model doesn't exist.
+        MatchboxServerResolutionError if the specified model doesn't exist.
     """
     logic_logger.info(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"

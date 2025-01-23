@@ -10,7 +10,7 @@ from matchbox.client.results import (
     ModelType,
     Results,
 )
-from matchbox.common.exceptions import MatchboxResolutionError
+from matchbox.common.exceptions import MatchboxServerResolutionError
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import MatchboxModelAdapter
 
@@ -51,17 +51,17 @@ class Model:
     def _connect(self) -> None:
         """Establish connection to the model in the backend database."""
         if not self._backend:
-            raise MatchboxResolutionError("No backend configured for this model")
+            raise MatchboxServerResolutionError("No backend configured for this model")
 
         try:
             self._model = self._backend.get_model(self.metadata.name)
         except Exception as e:
-            raise MatchboxResolutionError from e
+            raise MatchboxServerResolutionError from e
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
         if not self._backend:
-            raise MatchboxResolutionError("No backend configured for this model")
+            raise MatchboxServerResolutionError("No backend configured for this model")
 
         self._backend.insert_model(
             model=self.metadata.name,
@@ -117,7 +117,9 @@ class Model:
         """Execute the model pipeline and return results."""
         if self.metadata.type == ModelType.LINKER:
             if self.right_data is None:
-                raise MatchboxResolutionError("Right dataset required for linking")
+                raise MatchboxServerResolutionError(
+                    "Right dataset required for linking"
+                )
 
             results = self.model_instance.link(
                 left=self.left_data, right=self.right_data
@@ -144,8 +146,7 @@ def make_model(
     right_data: DataFrame | None = None,
     right_source: str | None = None,
 ) -> Model:
-    """
-    Create a unified model instance for either linking or deduping operations.
+    """Create a unified model instance for either linking or deduping operations.
 
     Args:
         model_name: Your unique identifier for the model
