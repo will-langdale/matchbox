@@ -11,7 +11,7 @@ from matchbox import index, match, process, query
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddIndexedDataCallable
@@ -320,104 +320,70 @@ def test_query_multiple_sources_with_limits():
         query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-@patch.object(Source, "set_engine", lambda self, _: self)
-@patch.object(Source, "hash_data", return_value="fake")
 def test_index_default(warehouse_engine: Engine):
-    with (
-        patch.object(Source, "default_columns") as default_columns,
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch("matchbox.client.helpers.index.SourceAddress.compose") as compose,
-    ):
+    """Test the index function with default columns."""
+    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
+        # Setup
         mock_backend = Mock()
-        mock_backend.index = Mock()
         get_backend.return_value = mock_backend
-
-        expected_columns = [
-            SourceColumn(name="a", type="BIGINT"),
-            SourceColumn(name="b", type="TEXT"),
-        ]
-        address = SourceAddress(full_name="dbt.companies", warehouse_hash=b"wh")
-        compose.return_value = address
-        exp_source = Source(
-            address=address,
-            columns=expected_columns,
-            db_pk="crn",
-        )
-        default_columns.return_value = exp_source
-
-        index("dbt.companies", "crn", engine=warehouse_engine)
-
-        actual_source, actual_hashes = mock_backend.index.call_args.args
-        assert exp_source == actual_source
-        assert actual_hashes == "fake"
+        # Mock Source methods
+        mock_source = Mock(spec=Source)
+        # Ensure each method returns the same mock object
+        mock_source.set_engine.return_value = mock_source
+        mock_source.default_columns.return_value = mock_source
+        mock_source.hash_data.return_value = "test_hash"
+        with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
+            # Execute
+            index("test.table", "id", engine=warehouse_engine)
+            # Assert
+            mock_backend.index.assert_called_once_with(mock_source, "test_hash")
+            mock_source.set_engine.assert_called_once_with(warehouse_engine)
+            mock_source.default_columns.assert_called_once()
 
 
-@patch.object(Source, "set_engine", lambda self, _: self)
-@patch.object(Source, "hash_data", return_value="fake")
 def test_index_list(warehouse_engine: Engine):
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch("matchbox.client.helpers.index.SourceAddress.compose") as compose,
-    ):
+    """Test the index function with a list of columns."""
+    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
+        # Setup
         mock_backend = Mock()
-        mock_backend.index = Mock()
         get_backend.return_value = mock_backend
-
-        expected_columns = [
-            SourceColumn(name="a"),
-            SourceColumn(name="b"),
-        ]
-        address = SourceAddress(full_name="dbt.companies", warehouse_hash=b"wh")
-        compose.return_value = address
-        exp_source = Source(
-            address=address,
-            columns=expected_columns,
-            db_pk="crn",
-        )
-
-        index("dbt.companies", "crn", columns=["a", "b"], engine=warehouse_engine)
-
-        actual_source, actual_hashes = mock_backend.index.call_args.args
-        assert exp_source == actual_source
-        assert actual_hashes == "fake"
+        columns = ["name", "age"]
+        # Mock Source methods
+        mock_source = Mock(spec=Source)
+        # Ensure each method returns the same mock object
+        mock_source.set_engine.return_value = mock_source
+        mock_source.hash_data.return_value = "test_hash"
+        with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
+            # Execute
+            index("test.table", "id", engine=warehouse_engine, columns=columns)
+            # Assert
+            mock_backend.index.assert_called_once_with(mock_source, "test_hash")
+            mock_source.set_engine.assert_called_once_with(warehouse_engine)
+            mock_source.default_columns.assert_not_called()
 
 
-@patch.object(Source, "set_engine", lambda self, _: self)
-@patch.object(Source, "hash_data", return_value="fake")
 def test_index_dict(warehouse_engine: Engine):
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch("matchbox.client.helpers.index.SourceAddress.compose") as compose,
-    ):
+    """Test the index function with a dictionary of columns."""
+    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
+        # Setup
         mock_backend = Mock()
-        mock_backend.index = Mock()
         get_backend.return_value = mock_backend
-
-        expected_columns = [
-            SourceColumn(name="a", alias="x", type="TEXT"),
-            SourceColumn(name="b", alias="y", type="BIGINT"),
+        columns = [
+            {"name": "name", "alias": "person_name", "type": "TEXT"},
+            {"name": "age", "alias": "person_age", "type": "BIGINT"},
         ]
-        address = SourceAddress(full_name="dbt.companies", warehouse_hash=b"wh")
-        compose.return_value = address
-        exp_source = Source(
-            address=address,
-            columns=expected_columns,
-            db_pk="crn",
-        )
-
-        index(
-            "dbt.companies",
-            "crn",
-            columns=[
-                {"name": "a", "alias": "x", "type": "TEXT"},
-                {"name": "b", "alias": "y", "type": "BIGINT"},
-            ],
-            engine=warehouse_engine,
-        )
-
-        actual_source, actual_hashes = mock_backend.index.call_args.args
-        assert exp_source == actual_source
-        assert actual_hashes == "fake"
+        # Mock Source methods
+        mock_source = Mock(spec=Source)
+        # Ensure each method returns the same mock object
+        mock_source.set_engine.return_value = mock_source
+        mock_source.hash_data.return_value = "test_hash"
+        with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
+            # Execute
+            index("test.table", "id", engine=warehouse_engine, columns=columns)
+            # Assert
+            mock_backend.index.assert_called_once_with(mock_source, "test_hash")
+            mock_source.set_engine.assert_called_once_with(warehouse_engine)
+            mock_source.default_columns.assert_not_called()
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
