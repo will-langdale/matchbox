@@ -25,7 +25,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest
+from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
 
 logic_logger = logging.getLogger("mb_logic")
 
@@ -136,10 +136,8 @@ def insert_dataset(
             resolution_id = (
                 session.query(Resolutions.resolution_id)
                 .filter_by(name=source.alias)
-                .first()
+                .scalar()
             )
-            if resolution_id:
-                resolution_id = resolution_id[0]
 
         resolution_data["resolution_id"] = resolution_id or Resolutions.next_id()
         source_data["resolution_id"] = resolution_data["resolution_id"]
@@ -161,19 +159,21 @@ def insert_dataset(
 
         logic_logger.info(f"{source} added to Sources table")
 
-        with Session(engine) as session:
-            existing_hashes = (
-                session.query(Clusters.cluster_hash)
-                .join(Sources)
-                .join(Resolutions)
-                .filter(
-                    Resolutions.resolution_hash == source.signature,
-                )
-                .all()
+        existing_hashes_statement = (
+            select(Clusters.cluster_hash)
+            .join(Sources)
+            .join(Resolutions)
+            .where(
+                Resolutions.resolution_hash == hash_to_hex_decode(source.signature),
             )
+        )
+        existing_hashes = sql_to_df(
+            stmt=existing_hashes_statement,
+            engine=engine,
+            return_type="arrow",
+        )["cluster_hash"]
 
         if existing_hashes:
-            existing_hashes = pa.array([r[0] for r in existing_hashes])
             data_hashes = pc.filter(
                 data_hashes,
                 pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),

@@ -6,7 +6,7 @@ from itertools import islice
 from typing import Any, Callable, Iterable
 
 from pg_bulk_ingest import Delete, Upsert, ingest
-from sqlalchemy import Engine, Index, MetaData, Table
+from sqlalchemy import Engine, Index, MetaData, Table, func
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
@@ -129,6 +129,11 @@ def isolate_table(table: DeclarativeMeta) -> tuple[MetaData, Table]:
         )
 
     return isolated_metadata, isolated_table
+
+
+def hash_to_hex_decode(hash: bytes) -> bytes:
+    """A workround for PostgreSQL so we can compile the query and use ConnectorX."""
+    return func.decode(hash.hex(), "hex")
 
 
 def batch_ingest(
