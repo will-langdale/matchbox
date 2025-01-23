@@ -1,16 +1,17 @@
 import logging
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
+import pyarrow as pa
 import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 from sqlalchemy import Engine
 
-from matchbox import match, process, query
+from matchbox import index, match, process, query
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
-from matchbox.client.helpers.selector import Match
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.client.helpers.selector import Match, Selector
+from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server.postgresql import MatchboxPostgres
 
 from ..fixtures.db import AddIndexedDataCallable
@@ -126,39 +127,289 @@ def test_select_missing_columns(get_backend: Mock, warehouse_engine: Engine):
         select({"test.foo": ["a", "c"]}, warehouse_engine)
 
 
-def test_query_no_resolution():
-    # TODO
-    pass
+def test_query_no_resolution_fail():
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash="bar",
+                ),
+                db_pk="i",
+            ),
+            fields=["a", "b"],
+        ),
+        Selector(
+            source=Source(
+                address=SourceAddress(full_name="foo2", warehouse_hash="bar2"),
+                db_pk="j",
+            ),
+            fields=["x", "y"],
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="resolution name"):
+        query(sels)
 
 
-def test_query_limit():
-    # TODO
-    pass
+def test_query_no_resolution_ok_various_params():
+    with (
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch.object(Source, "to_arrow") as to_arrow,
+    ):
+        mock_backend = Mock()
+
+        get_resolution_id = Mock(return_value=42)
+        mock_backend.get_resolution_id = get_resolution_id
+
+        query_mock = Mock(
+            return_value=pa.Table.from_arrays(
+                [pa.array([0, 1]), pa.array([10, 11])],
+                names=["source_pk", "final_parent"],
+            )
+        )
+        mock_backend.query = query_mock
+
+        get_backend.return_value = mock_backend
+
+        to_arrow.return_value = pa.Table.from_pandas(
+            DataFrame(
+                [
+                    {"foo_pk": 0, "foo_a": 1, "foo_b": "2"},
+                    {"foo_pk": 1, "foo_a": 10, "foo_b": "20"},
+                ]
+            )
+        )
+
+        sels = [
+            Selector(
+                source=Source(
+                    address=SourceAddress(
+                        full_name="foo",
+                        warehouse_hash="bar",
+                    ),
+                    db_pk="pk",
+                ),
+                fields=["a", "b"],
+            )
+        ]
+
+        # Tests with no optional params
+        results = query(sels)
+        assert len(results) == 2
+        assert {"foo_a", "foo_b"} == set(results.columns)
+
+        get_resolution_id.assert_not_called()
+        query_mock.assert_called_once_with(
+            source_address=sels[0].source.address,
+            resolution_id=None,
+            threshold=None,
+            limit=None,
+        )
+        to_arrow.assert_called_once()
+        assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
+        assert set(to_arrow.call_args.kwargs["pks"]) == {0, 1}
+
+        # Tests with optional params
+        results = query(sels, return_type="arrow", threshold=0.5, limit=2).to_pandas()
+        assert len(results) == 2
+        assert {"foo_a", "foo_b"} == set(results.columns)
+
+        query_mock.assert_called_with(
+            source_address=sels[0].source.address,
+            resolution_id=None,
+            threshold=0.5,
+            limit=2,
+        )
 
 
-def test_query_multiple_sources():
-    # TODO
-    pass
+def test_query_multiple_sources_with_limits():
+    with (
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch.object(Source, "to_arrow") as to_arrow,
+    ):
+        mock_backend = Mock()
+
+        get_resolution_id = Mock(return_value=42)
+        mock_backend.get_resolution_id = get_resolution_id
+
+        query_mock = Mock(
+            side_effect=[
+                # First call
+                pa.Table.from_arrays(
+                    [pa.array([0, 1]), pa.array([10, 11])],
+                    names=["source_pk", "final_parent"],
+                ),
+                pa.Table.from_arrays(
+                    [pa.array([2, 3]), pa.array([10, 11])],
+                    names=["source_pk", "final_parent"],
+                ),
+            ]
+            * 2  # Two calls to `query()`
+        )
+        mock_backend.query = query_mock
+
+        get_backend.return_value = mock_backend
+
+        to_arrow.side_effect = [
+            pa.Table.from_pandas(
+                DataFrame(
+                    [
+                        {"foo_pk": 0, "foo_a": 1, "foo_b": "2"},
+                        {"foo_pk": 1, "foo_a": 10, "foo_b": "20"},
+                    ]
+                )
+            ),
+            pa.Table.from_pandas(
+                DataFrame(
+                    [
+                        {"foo2_pk": 2, "foo2_c": "val"},
+                        {"foo2_pk": 3, "foo2_c": "val"},
+                    ]
+                )
+            ),
+        ] * 2  # Two calls to `query()`
+
+        sels = [
+            Selector(
+                source=Source(
+                    address=SourceAddress(
+                        full_name="foo",
+                        warehouse_hash="bar",
+                    ),
+                    db_pk="pk",
+                ),
+                fields=["a", "b"],
+            ),
+            Selector(
+                source=Source(
+                    address=SourceAddress(full_name="foo2", warehouse_hash="bar2"),
+                    db_pk="pk",
+                ),
+                fields=["c"],
+            ),
+        ]
+
+        results = query(sels, resolution_name="link", limit=7)
+        assert len(results) == 4
+        assert {"foo_a", "foo_b", "foo2_c"} == set(results.columns)
+
+        get_resolution_id.assert_called_with("link")
+        assert query_mock.call_args_list[0] == call(
+            source_address=sels[0].source.address,
+            resolution_id=42,
+            threshold=None,
+            limit=4,
+        )
+        assert query_mock.call_args_list[1] == call(
+            source_address=sels[1].source.address,
+            resolution_id=42,
+            threshold=None,
+            limit=3,
+        )
+
+        # It also works with the selectors specified separately
+        query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-def test_query_multiple_engines():
-    # TODO
-    pass
+@patch.object(Source, "set_engine", lambda self, _: self)
+@patch.object(Source, "hash_data", return_value="fake")
+def test_index_default(warehouse_engine: Engine):
+    with (
+        patch.object(Source, "default_columns") as default_columns,
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch("matchbox.client.helpers.index.SourceAddress.compose") as compose,
+    ):
+        mock_backend = Mock()
+        mock_backend.index = Mock()
+        get_backend.return_value = mock_backend
+
+        expected_columns = [
+            SourceColumn(name="a", type="BIGINT"),
+            SourceColumn(name="b", type="TEXT"),
+        ]
+        address = SourceAddress(full_name="dbt.companies", warehouse_hash=b"wh")
+        compose.return_value = address
+        exp_source = Source(
+            address=address,
+            columns=expected_columns,
+            db_pk="crn",
+        )
+        default_columns.return_value = exp_source
+
+        index("dbt.companies", "crn", engine=warehouse_engine)
+
+        actual_source, actual_hashes = mock_backend.index.call_args.args
+        assert exp_source == actual_source
+        assert actual_hashes == "fake"
 
 
-def test_query_return_type():
-    # TODO
-    pass
+@patch.object(Source, "set_engine", lambda self, _: self)
+@patch.object(Source, "hash_data", return_value="fake")
+def test_index_list(warehouse_engine: Engine):
+    with (
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch("matchbox.client.helpers.index.SourceAddress.compose") as compose,
+    ):
+        mock_backend = Mock()
+        mock_backend.index = Mock()
+        get_backend.return_value = mock_backend
+
+        expected_columns = [
+            SourceColumn(name="a"),
+            SourceColumn(name="b"),
+        ]
+        address = SourceAddress(full_name="dbt.companies", warehouse_hash=b"wh")
+        compose.return_value = address
+        exp_source = Source(
+            address=address,
+            columns=expected_columns,
+            db_pk="crn",
+        )
+
+        index("dbt.companies", "crn", columns=["a", "b"], engine=warehouse_engine)
+
+        actual_source, actual_hashes = mock_backend.index.call_args.args
+        assert exp_source == actual_source
+        assert actual_hashes == "fake"
 
 
-def test_query_threshold():
-    # TODO
-    pass
+@patch.object(Source, "set_engine", lambda self, _: self)
+@patch.object(Source, "hash_data", return_value="fake")
+def test_index_dict(warehouse_engine: Engine):
+    with (
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch("matchbox.client.helpers.index.SourceAddress.compose") as compose,
+    ):
+        mock_backend = Mock()
+        mock_backend.index = Mock()
+        get_backend.return_value = mock_backend
 
+        expected_columns = [
+            SourceColumn(name="a", alias="x", type="TEXT"),
+            SourceColumn(name="b", alias="y", type="BIGINT"),
+        ]
+        address = SourceAddress(full_name="dbt.companies", warehouse_hash=b"wh")
+        compose.return_value = address
+        exp_source = Source(
+            address=address,
+            columns=expected_columns,
+            db_pk="crn",
+        )
 
-def test_index():
-    # TODO
-    pass
+        index(
+            "dbt.companies",
+            "crn",
+            columns=[
+                {"name": "a", "alias": "x", "type": "TEXT"},
+                {"name": "b", "alias": "y", "type": "BIGINT"},
+            ],
+            engine=warehouse_engine,
+        )
+
+        actual_source, actual_hashes = mock_backend.index.call_args.args
+        assert exp_source == actual_source
+        assert actual_hashes == "fake"
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")

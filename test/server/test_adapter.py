@@ -162,8 +162,8 @@ class TestMatchboxBackend:
         crn = self.warehouse_data[0]
 
         crn_retrieved = self.backend.get_source(crn.address)
-        # TODO: need to check the whole source object
-        assert crn.columns == crn_retrieved.columns
+        # Equality between the two is False because one lacks the Engine
+        assert crn.model_dump() == crn_retrieved.model_dump()
 
         with pytest.raises(MatchboxServerSourceError):
             self.backend.get_source(

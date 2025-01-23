@@ -306,18 +306,79 @@ def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
     assert_frame_equal(
         df_prefixed, source.to_arrow().to_pandas(), check_like=True, check_dtype=False
     )
-    # TODO: this test needs to be completed
-    # source.to_arrow().to_pandas()
-    # For each of arrow and pandas:
-    # works with default arguments
-    # works with fields and pks
-    # works with fields and turns off PK
-    # works with limit
+
+    assert_frame_equal(
+        df_prefixed.iloc[:1],
+        source.to_pandas(limit=1),
+        check_like=True,
+        check_dtype=False,
+    )
+    assert_frame_equal(
+        df_prefixed.iloc[:1],
+        source.to_arrow(limit=1).to_pandas(),
+        check_like=True,
+        check_dtype=False,
+    )
+
+    assert_frame_equal(
+        df_prefixed[["test_foo_pk", "test_foo_a"]],
+        source.to_pandas(fields=["a"]),
+        check_like=True,
+        check_dtype=False,
+    )
+    assert_frame_equal(
+        df_prefixed[["test_foo_pk", "test_foo_a"]],
+        source.to_arrow(fields=["a"]).to_pandas(),
+        check_like=True,
+        check_dtype=False,
+    )
+
+    assert_frame_equal(
+        df_prefixed[["test_foo_a"]],
+        source.to_pandas(fields=["a"], include_pk_column=False),
+        check_like=True,
+        check_dtype=False,
+    )
+    assert_frame_equal(
+        df_prefixed[["test_foo_a"]],
+        source.to_arrow(fields=["a"], include_pk_column=False).to_pandas(),
+        check_like=True,
+        check_dtype=False,
+    )
 
 
-def test_source_hash_data():
-    # TODO
-    pass
+def test_source_hash_data(warehouse_engine: Engine):
+    df = pd.DataFrame(
+        [
+            {"pk": 0, "a": 1, "b": "2"},
+            {"pk": 1, "a": 1, "b": "2"},
+            {"pk": 2, "a": 10, "b": "20"},
+        ]
+    )
+    with warehouse_engine.connect() as conn:
+        df.to_sql(
+            name="foo",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+
+    source = (
+        Source(
+            address=SourceAddress.compose(
+                engine=warehouse_engine, full_name="test.foo"
+            ),
+            db_pk="pk",
+        )
+        .set_engine(warehouse_engine)
+        .default_columns()
+    )
+
+    res = source.hash_data().to_pandas()
+    assert len(res) == 2
+    assert len(res.source_pk.iloc[0]) == 2
+    assert len(res.source_pk.iloc[1]) == 1
 
 
 def test_match_validates():
