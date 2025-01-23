@@ -9,6 +9,7 @@ from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 
 def test_source_address_compose():
+    """Correct addresses are generated from engines and table names"""
     pg = create_engine("postgresql://user:fakepass@host:1234/db")  # trufflehog:ignore
     pg_host = create_engine(
         "postgresql://user:fakepass@host2:1234/db"  # trufflehog:ignore
@@ -67,6 +68,7 @@ def test_source_address_compose():
 
 
 def test_source_set_engine(warehouse_engine: Engine):
+    """Engine can be set on Source"""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
         df.to_sql(
@@ -109,6 +111,7 @@ def test_source_set_engine(warehouse_engine: Engine):
 
 
 def test_source_signature():
+    """Source signatures are generated correctly"""
     # Column order doesn't matter
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"bar1"),
@@ -217,6 +220,7 @@ def test_source_signature():
 
 
 def test_source_format_columns():
+    """Column names can get a standard prefix from a table name"""
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="i"
     )
@@ -230,6 +234,7 @@ def test_source_format_columns():
 
 
 def test_source_default_columns(warehouse_engine: Engine):
+    """Default columns from the warehouse can be assigned to a Source."""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     expected_columns = [
         SourceColumn(name="a", type="BIGINT"),
@@ -258,6 +263,7 @@ def test_source_default_columns(warehouse_engine: Engine):
 
 
 def test_source_to_table(warehouse_engine: Engine):
+    """Convert Source to SQLAlchemy Table."""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
         df.to_sql(
@@ -277,7 +283,7 @@ def test_source_to_table(warehouse_engine: Engine):
 
 
 def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
-    """Tests `.to_arrow()` and `.to_pandas()` methods with various parameters"""
+    """Convert Source to Arrow table or Pandas dataframe with options."""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
         df.to_sql(
@@ -301,6 +307,7 @@ def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
 
     df["pk"] = df["pk"].astype(str)
     df_prefixed = df.add_prefix("test_foo_")
+    # No parameters
     assert_frame_equal(
         df_prefixed, source.to_pandas(), check_like=True, check_dtype=False
     )
@@ -308,6 +315,7 @@ def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
         df_prefixed, source.to_arrow().to_pandas(), check_like=True, check_dtype=False
     )
 
+    # Limit parameter
     assert_frame_equal(
         df_prefixed.iloc[:1],
         source.to_pandas(limit=1),
@@ -321,6 +329,7 @@ def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
         check_dtype=False,
     )
 
+    # Fields parameter
     assert_frame_equal(
         df_prefixed[["test_foo_pk", "test_foo_a"]],
         source.to_pandas(fields=["a"]),
@@ -334,21 +343,9 @@ def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
         check_dtype=False,
     )
 
-    assert_frame_equal(
-        df_prefixed[["test_foo_a"]],
-        source.to_pandas(fields=["a"], include_pk_column=False),
-        check_like=True,
-        check_dtype=False,
-    )
-    assert_frame_equal(
-        df_prefixed[["test_foo_a"]],
-        source.to_arrow(fields=["a"], include_pk_column=False).to_pandas(),
-        check_like=True,
-        check_dtype=False,
-    )
-
 
 def test_source_hash_data(warehouse_engine: Engine):
+    """A Source can output hashed versions of its rows."""
     df = pd.DataFrame(
         [
             {"pk": 0, "a": 1, "b": "2"},
@@ -383,6 +380,7 @@ def test_source_hash_data(warehouse_engine: Engine):
 
 
 def test_match_validates():
+    """Match objects are validated when they're instantiated."""
     Match(
         cluster=1,
         source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),

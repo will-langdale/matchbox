@@ -172,7 +172,6 @@ class Source(BaseModel):
     def _select(
         self,
         fields: list[str] | None = None,
-        include_pk_column: bool = True,
         pks: list[T] | None = None,
         limit: int | None = None,
     ) -> Select:
@@ -182,7 +181,7 @@ class Source(BaseModel):
         if not fields:
             fields = [col.name for col in self.columns]
 
-        if include_pk_column and self.db_pk not in fields:
+        if self.db_pk not in fields:
             fields.append(self.db_pk)
 
         def _get_column(col_name: str) -> ColumnElement:
@@ -216,12 +215,9 @@ class Source(BaseModel):
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
-        include_pk_column: bool = True,
     ) -> pa.Table:
         """Returns the dataset as a PyArrow Table."""
-        stmt = self._select(
-            fields=fields, pks=pks, limit=limit, include_pk_column=include_pk_column
-        )
+        stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(stmt, self._engine, return_type="arrow")
 
     @needs_engine
@@ -230,12 +226,9 @@ class Source(BaseModel):
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
-        include_pk_column: bool = True,
     ) -> DataFrame:
         """Returns the dataset as a pandas DataFrame."""
-        stmt = self._select(
-            fields=fields, pks=pks, limit=limit, include_pk_column=include_pk_column
-        )
+        stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(stmt, self._engine, return_type="pandas")
 
     @needs_engine

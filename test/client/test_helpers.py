@@ -77,6 +77,7 @@ def test_comparisons():
 
 
 def test_select_non_indexed_columns(warehouse_engine: Engine):
+    """Selecting columns not declared to backend generates warning."""
     with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
         source = Source(
             address=SourceAddress.compose(
@@ -105,6 +106,7 @@ def test_select_non_indexed_columns(warehouse_engine: Engine):
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_select_missing_columns(get_backend: Mock, warehouse_engine: Engine):
+    """Selecting columns not in the warehouse errors."""
     source = Source(
         address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
         db_pk="pk",
@@ -128,6 +130,7 @@ def test_select_missing_columns(get_backend: Mock, warehouse_engine: Engine):
 
 
 def test_query_no_resolution_fail():
+    """Querying with multiple selectors and no resolution is not allowed."""
     sels = [
         Selector(
             source=Source(
@@ -228,7 +231,7 @@ def test_query_no_resolution_ok_various_params():
 
 
 def test_query_multiple_sources_with_limits():
-    """Tests that we can query multiple sources and distribute the limit among them"""
+    """Tests that we can query multiple sources and distribute the limit among them."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
         patch.object(Source, "to_arrow") as to_arrow,
@@ -388,6 +391,7 @@ def test_index_dict(warehouse_engine: Engine):
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_match_calls_backend(get_backend: Mock):
+    """The client can perform the right call for matching."""
     mock_backend = Mock()
     mock_backend.match = Mock(
         return_value=Match(
