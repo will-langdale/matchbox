@@ -193,9 +193,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint(
-            "alias", "full_name", "warehouse_hash", name="unique_alias_name_address"
-        ),
+        UniqueConstraint("full_name", "warehouse_hash", name="unique_source_address"),
     )
 
     @classmethod

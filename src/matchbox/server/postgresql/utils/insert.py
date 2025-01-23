@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
@@ -132,7 +132,16 @@ def insert_dataset(
 
         # Generate existing max primary key values
         next_cluster_id = Clusters.next_id()
-        resolution_data["resolution_id"] = Resolutions.next_id()
+        with Session(engine) as session:
+            resolution_id = (
+                session.query(Resolutions.resolution_id)
+                .filter_by(name=source.alias)
+                .first()
+            )
+            if resolution_id:
+                resolution_id = resolution_id[0]
+
+        resolution_data["resolution_id"] = resolution_id or Resolutions.next_id()
         source_data["resolution_id"] = resolution_data["resolution_id"]
         resolution_data["name"] = source_data["alias"]
 
@@ -145,37 +154,51 @@ def insert_dataset(
 
         # Upsert into Sources table
         sources_stmt = insert(Sources).values([source_data])
-        sources_stmt = sources_stmt.on_conflict_do_update(
-            index_elements=["resolution_id"],
-            set_={
-                "full_name": sources_stmt.excluded.full_name,
-                "warehouse_hash": sources_stmt.excluded.warehouse_hash,
-                "id": sources_stmt.excluded.id,
-            },
-        )
+        sources_stmt = sources_stmt.on_conflict_do_nothing()
         conn.execute(sources_stmt)
 
         conn.commit()
 
         logic_logger.info(f"{source} added to Sources table")
 
-        # Upsert into Clusters table
-        batch_ingest(
-            records=[
-                (
-                    next_cluster_id + i,
-                    clus["hash"],
-                    source_data["resolution_id"],
-                    clus["source_pk"],
+        with Session(engine) as session:
+            existing_hashes = (
+                session.query(Clusters.cluster_hash)
+                .join(Sources)
+                .join(Resolutions)
+                .filter(
+                    Resolutions.resolution_hash == source.signature,
                 )
-                for i, clus in enumerate(data_hashes.to_pylist())
-            ],
-            table=Clusters,
-            conn=conn,
-            batch_size=batch_size,
-        )
+                .all()
+            )
 
-        conn.commit()
+        if existing_hashes:
+            existing_hashes = pa.array([r[0] for r in existing_hashes])
+            data_hashes = pc.filter(
+                data_hashes,
+                pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
+            )
+        try:
+            # Upsert into Clusters table
+            batch_ingest(
+                records=[
+                    (
+                        next_cluster_id + i,
+                        clus["hash"],
+                        source_data["resolution_id"],
+                        clus["source_pk"],
+                    )
+                    for i, clus in enumerate(data_hashes.to_pylist())
+                ],
+                table=Clusters,
+                conn=conn,
+                batch_size=batch_size,
+            )
+
+            conn.commit()
+        except IntegrityError as e:
+            # Some edge cases, defined in tests, are not implemented yet
+            raise NotImplementedError from e
 
         logic_logger.info(
             f"{source} added {len(data_hashes)} objects to Clusters table"

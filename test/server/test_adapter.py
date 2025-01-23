@@ -1,5 +1,6 @@
 from typing import Callable
 
+import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 from dotenv import find_dotenv, load_dotenv
@@ -14,7 +15,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -418,20 +419,104 @@ class TestMatchboxBackend:
         assert self.backend.data.count() == unique
 
     def test_index_new_source(self):
-        # TODO
-        pass
+        address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
+        source = Source(
+            address=address,
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
 
-    def test_index_duplicate_source(self):
-        # TODO
-        pass
+        assert self.backend.clusters.count() == 0
+
+        self.backend.index(source, data_hashes)
+
+        assert self.backend.get_source(address) == source
+        assert self.backend.get_resolution_id("foo")
+        assert self.backend.data.count() == 2
+        # I can add it again with no consequences
+        self.backend.index(source, data_hashes)
+        assert self.backend.data.count() == 2
+        assert self.backend.source_resolutions.count() == 1
 
     def test_index_duplicate_clusters(self):
-        # TODO
-        pass
+        address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
+        source = Source(
+            address=address,
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes1 = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+        data_hashes2 = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"], ["3"]]),
+                "hash": pa.array([b"1", b"2", b"3"]),
+            }
+        )
+
+        assert self.backend.data.count() == 0
+        self.backend.index(source, data_hashes1)
+        assert self.backend.data.count() == 2
+        self.backend.index(source, data_hashes2)
+        assert self.backend.data.count() == 3
+        assert self.backend.source_resolutions.count() == 1
 
     def test_index_same_resolution(self):
-        # TODO
-        pass
+        source1 = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        source2 = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+
+        self.backend.index(source1, data_hashes)
+        self.backend.index(source2, data_hashes)
+
+        assert self.backend.data.count() == 2
+        assert self.backend.source_resolutions.count() == 1
+
+    def test_index_different_resolution_same_hashes(self):
+        source1 = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        source2 = Source(
+            address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+
+        self.backend.index(source1, data_hashes)
+        # TODO: this will now error, and it shouldn't
+        with pytest.raises(NotImplementedError):
+            self.backend.index(source2, data_hashes)
 
     def test_select_warning(self):
         """Tests selecting non-indexed fields warns the user."""

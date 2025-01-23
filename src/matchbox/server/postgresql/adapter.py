@@ -235,6 +235,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         self.datasets = Sources
         self.models = FilteredResolutions(datasets=False, humans=False, models=True)
+        self.source_resolutions = FilteredResolutions(
+            datasets=True, humans=False, models=False
+        )
         self.data = FilteredClusters(has_dataset=True)
         self.clusters = FilteredClusters(has_dataset=False)
         self.merges = Contains
