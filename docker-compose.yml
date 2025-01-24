@@ -24,6 +24,8 @@ services:
   api:
     build:
       context: .
+      args:
+        ENV_FILE: dev_docker.env
       dockerfile: src/matchbox/server/Dockerfile
     ports:
       - "8000:8000"
