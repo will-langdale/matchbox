@@ -5,7 +5,7 @@ import pyarrow as pa
 import pytest
 from sqlalchemy import text
 
-from matchbox.common.db import Source
+from matchbox.common.sources import Source
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.benchmark.generate_tables import (
@@ -104,10 +104,10 @@ def test_benchmark_query_generation(
     engine = MBDB.get_engine()
     point_of_truth = parameters["point_of_truth"]
     idx = parameters["source_index"]
-    dataset_name = f"{warehouse_data[idx].db_schema}.{warehouse_data[idx].db_table}"
 
     sql_query = compile_query_sql(
-        point_of_truth=point_of_truth, dataset_name=dataset_name
+        point_of_truth=point_of_truth,
+        source_address=warehouse_data[idx].address,
     )
 
     assert isinstance(sql_query, str)
@@ -130,13 +130,12 @@ def test_benchmark_match_query_generation(
     setup_database(matchbox_postgres, warehouse_data, "link")
 
     engine = MBDB.get_engine()
-    source_name = f"{warehouse_data[1].db_schema}.{warehouse_data[1].db_table}"  # DUNS
     source_pks = revolution_inc["duns"]
     target_pks = revolution_inc["crn"]
 
     sql_match = compile_match_sql(
         source_pk=source_pks[0],
-        source_name=source_name,
+        source_name=warehouse_data[1].address.full_name,  # DUNS
         point_of_truth="deterministic_naive_test.crn_naive_test.duns",
     )
 
@@ -189,8 +188,10 @@ def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
         for table_name, table_arrow in results.items():
             df = table_arrow.to_pandas()
             # Pandas' `to_sql` dislikes arrays
-            if "source_pk" in df.columns:
-                df["source_pk"] = df["source_pk"].apply(array_encode)
+            array_cols = ["source_pk", "column_types", "column_aliases", "column_names"]
+            active_array_cols = set(df.columns.tolist()).intersection(array_cols)
+            for col in active_array_cols:
+                df[col] = df[col].apply(array_encode)
             # Pandas' `to_sql` dislikes large unsigned ints
             for c in df.columns:
                 if df[c].dtype == "uint64":

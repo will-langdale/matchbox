@@ -1,9 +1,3 @@
----
-layout: sub-navigation
-title: Matchbox client
-sectionKey: Client
----
-
 Matchbox is a tool to make record matching iterative, collaborative and measurable.
 
 It allows you to connect datasets using your organisation's best possible intelligence, and makes querying connected datasets quicker than a left join.

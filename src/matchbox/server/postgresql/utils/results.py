@@ -77,8 +77,7 @@ def _get_source_info(engine: Engine, resolution_id: int) -> SourceInfo:
 
 
 def get_model_results(engine: Engine, resolution: Resolutions) -> Results:
-    """
-    Recover the model's pairwise probabilities and return as Results.
+    """Recover the model's pairwise probabilities and return as Results.
 
     For each probability this model assigned:
     - Get its two immediate children

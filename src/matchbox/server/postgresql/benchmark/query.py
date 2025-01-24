@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from matchbox.common.db import get_schema_table_names
+from matchbox.common.sources import SourceAddress
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Resolutions,
@@ -9,23 +9,20 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.query import (
     _build_match_query,
     _resolve_cluster_hierarchy,
-    source_to_dataset_resolution,
 )
 
 
-def compile_query_sql(point_of_truth: str, dataset_name: str) -> str:
+def compile_query_sql(point_of_truth: str, source_address: SourceAddress) -> str:
     """Compiles a the SQL for query() based on a single point of truth and dataset.
 
     Args:
-        point_of_truth (string): The name of the resolution to use, like "linker_1"
-        dataset_name (string): The name of the dataset to retrieve, like "dbt.companies"
+        point_of_truth: The name of the resolution to use, like "linker_1"
+        source_address: The address of the source to retrieve
 
     Returns:
         A compiled PostgreSQL query, including semicolon, ready to run on Matchbox
     """
     engine = MBDB.get_engine()
-
-    source_schema, source_table = get_schema_table_names(dataset_name)
 
     with Session(engine) as session:
         point_of_truth_resolution = (
@@ -37,8 +34,8 @@ def compile_query_sql(point_of_truth: str, dataset_name: str) -> str:
             session.query(Resolutions.resolution_id)
             .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
             .filter(
-                Sources.schema == source_schema,
-                Sources.table == source_table,
+                Sources.full_name == source_address.full_name,
+                Sources.warehouse_hash == source_address.warehouse_hash,
             )
             .scalar()
         )
@@ -75,13 +72,13 @@ def compile_match_sql(source_pk: str, source_name: str, point_of_truth: str) -> 
     engine = MBDB.get_engine()
 
     with Session(engine) as session:
-        source_resolution_id = source_to_dataset_resolution(
-            source_name, session
-        ).resolution_id
+        dataset_resolution = (
+            session.query(Resolutions).filter(Resolutions.name == source_name).first()
+        )
 
         match_query = _build_match_query(
             source_pk=source_pk,
-            source_resolution_id=source_resolution_id,
+            source_resolution_id=dataset_resolution.resolution_id,
             resolution=point_of_truth,
             session=session,
             threshold=None,
