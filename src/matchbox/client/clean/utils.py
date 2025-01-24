@@ -40,7 +40,7 @@ def cleaning_function(*functions: Callable) -> Callable:
 
     Arguments:
         functions: a list of functions appropriate for a select statement.
-        See clean_basic for some examples
+            See clean_basic for some examples
     """
 
     def cleaning_method(df: DataFrame, column: str) -> DataFrame:

@@ -74,4 +74,4 @@ With the truth threshold set to `1.0` by default, deterministic methodologies ar
 
 ## Development
 
-See our full development guide and coding standards in [CONTRIBUTING.md](./docs/src/contributing.md)
+See our full development guide and coding standards in [CONTRIBUTING.md](./docs/contributing.md)

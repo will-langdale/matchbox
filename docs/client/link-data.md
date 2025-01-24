@@ -1,13 +1,3 @@
----
-layout: sub-navigation
-title: Link and deduplicate
-description: Perform linking and deduplication of your data
-sectionKey: Client
-eleventyNavigation:
-  parent: Client
-  order: 1
----
-
 You have a dataset you want to link to your organisation's broader network of data.
 
 Your high level process will be:

@@ -23,4 +23,4 @@ test:
 
 # Run a local documentation development server
 docs:
-    cd docs && npm start
+    uv run mkdocs serve

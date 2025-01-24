@@ -366,7 +366,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Validates a list of IDs exist in the database.
 
         Args:
-            hashes: A list of IDs to validate.
+            ids: A list of IDs to validate.
 
         Raises:
             MatchboxDataError: If some items don't exist in the target table.
@@ -548,7 +548,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             description: A description of the model
 
         Raises:
-            MatchboxDataError if, for a linker, the source models weren't found in
+            MatchboxDataError: If, for a linker, the source models weren't found in
                 the database
         """
         with Session(MBDB.get_engine()) as session:
