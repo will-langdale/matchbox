@@ -6,9 +6,7 @@ from matchbox.common.graph import ResolutionGraph
 
 
 def url(path: str) -> str:
-    """
-    Return path prefixed by API root, determined from environment
-    """
+    """Return path prefixed by API root, determined from environment"""
     api_root = getenv("API__ROOT")
     if api_root is None:
         raise RuntimeError("API__ROOT needs to be defined in the environment")

@@ -26,8 +26,7 @@ def to_clusters(
     dtype: pa.DataType = pa.binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
-    """
-    Converts probabilities into a list of connected components formed at each threshold.
+    """Converts probabilities into connected components formed at each threshold.
 
     Args:
         results: Arrow table with columns ['left_id', 'right_id', 'probability']
@@ -94,13 +93,13 @@ def to_clusters(
 def graph_results(
     probabilities: pa.Table, all_nodes: Iterable[int] | None = None
 ) -> tuple[rx.PyDiGraph, np.ndarray, np.ndarray]:
-    """
-    Convert probability table to graph representation.
+    """Convert probability table to graph representation.
 
     Args:
         probabilities: PyArrow table with 'left', 'right' columns
         all_nodes: superset of node identities figuring in probabilities table.
             Used to optionally add isolated nodes to the graph.
+
     Returns:
         A tuple containing:
         - Rustwork directed graph
@@ -138,8 +137,7 @@ def graph_results(
 
 
 def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
-    """
-    Takes an Arrow table of probabilities and adds a component column.
+    """Takes an Arrow table of probabilities and adds a component column.
 
     Expects an Arrow table of column, left, right, probability.
 
@@ -170,8 +168,7 @@ def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
 
 
 class DisjointSet(Generic[T]):
-    """
-    Disjoint set forest with "path compression" and "union by rank" heuristics.
+    """Disjoint set forest with "path compression" and "union by rank" heuristics.
 
     This follows implementation from Cormen, Thomas H., et al. Introduction to
     algorithms. MIT press, 2022
@@ -219,8 +216,7 @@ def component_to_hierarchy(
     dtype: pa.DataType = pa.binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
-    """
-    Convert pairwise probabilities into a hierarchical representation.
+    """Convert pairwise probabilities into a hierarchical representation.
 
     Assumes data is pre-sorted by probability descending.
 
@@ -294,8 +290,7 @@ def to_hierarchical_clusters(
     timeout: int = 300,
     min_rows_per_worker: int = 1000,
 ) -> pa.Table:
-    """
-    Converts a table of pairwise probabilities into a table of hierarchical clusters.
+    """Converts a table of pairwise probabilities into a table of hierarchical clusters.
 
     Args:
         probabilities: Arrow table with columns ['component', 'left', 'right',

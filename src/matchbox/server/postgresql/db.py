@@ -46,7 +46,6 @@ class MatchboxDatabase:
 
     def connect(self):
         """Connect to the database."""
-
         if not self.engine:
             connection_string = (
                 f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
@@ -60,21 +59,18 @@ class MatchboxDatabase:
 
     def get_engine(self) -> Engine:
         """Get the database engine."""
-
         if not self.engine:
             self.connect()
         return self.engine
 
     def get_session(self):
         """Get a new session."""
-
         if not self.SessionLocal:
             self.connect()
         return self.SessionLocal()
 
     def create_database(self):
         """Create the database."""
-
         self.connect()
         with self.engine.connect() as conn:
             conn.execute(
@@ -88,7 +84,6 @@ class MatchboxDatabase:
 
     def clear_database(self):
         """Clear the database."""
-
         self.connect()
         with self.engine.connect() as conn:
             conn.execute(

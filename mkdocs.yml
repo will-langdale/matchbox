@@ -21,7 +21,6 @@ nav:
 - API reference:
   - Client:
     - Overview: api/client/index.md
-    - Admin: api/client/admin.md
     - Clean: api/client/clean.md
     - Helpers: api/client/helpers.md
     - Models: api/client/models.md
@@ -102,20 +101,20 @@ markdown_extensions:
       permalink: true
 
 plugins:
-  - search
   - autorefs
+  - search
   - mkdocstrings:
       default_handler: python
       handlers:
         python:
           import:
-          - url: https://docs.python.org/3.11/objects.inv
-            domains: [std, py]
+          - https://docs.python.org/3/objects.inv
           - https://typing-extensions.readthedocs.io/en/latest/objects.inv
           paths: [src]
           options:
             docstring_options:
               ignore_init_summary: true
+            preload_modules: [matchbox]
             docstring_style: google
             docstring_section_style: list
             heading_level: 2

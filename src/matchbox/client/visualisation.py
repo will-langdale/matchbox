@@ -7,9 +7,7 @@ from matchbox.common.graph import ResolutionNodeType
 
 
 def draw_resolution_graph() -> Figure:
-    """
-    Draws the resolution graph.
-    """
+    """Draws the resolution graph."""
     G: rx.PyDiGraph = get_resolution_graph().to_rx()
 
     node_indices = G.node_indices()

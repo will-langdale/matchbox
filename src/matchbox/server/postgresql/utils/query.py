@@ -1,18 +1,17 @@
 import logging
-import warnings
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import pyarrow as pa
-from pandas import ArrowDtype, DataFrame
 from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, union
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
-from matchbox.common.db import Match, Source, get_schema_table_names, sql_to_df
+from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
-    MatchboxDatasetError,
-    MatchboxResolutionError,
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
+from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
     Clusters,
     Contains,
@@ -31,34 +30,25 @@ T = TypeVar("T")
 logic_logger = logging.getLogger("mb_logic")
 
 
-def key_to_sqlalchemy_label(key: str, source: Source) -> str:
-    """Converts a key to the SQLAlchemy LABEL_STYLE_TABLENAME_PLUS_COL."""
-    return f"{source.db_schema}_{source.db_table}_{key}"
-
-
-def source_to_dataset_resolution(source: Source | str, session: Session) -> Resolutions:
-    """Converts a common Source object to a Resolutions ORM object."""
-    if isinstance(source, str):
-        source_schema, source_table = get_schema_table_names(source, validate=True)
-    else:
-        source_schema, source_table = source.db_schema, source.db_table
-
-    source_dataset = (
+def get_dataset_resolution(
+    source_name_address: SourceAddress, session: Session
+) -> Resolutions:
+    """Converts the the named address of source to a Resolutions ORM object."""
+    dataset_resolution = (
         session.query(Resolutions)
         .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
         .filter(
-            Sources.schema == source_schema,
-            Sources.table == source_table,
+            Sources.full_name == source_name_address.full_name,
+            Sources.warehouse_hash == source_name_address.warehouse_hash,
         )
         .first()
     )
-    if source_dataset is None:
-        raise MatchboxDatasetError(
-            db_schema=source_schema,
-            db_table=source_table,
+    if dataset_resolution is None:
+        raise MatchboxServerSourceError(
+            address=str(source_name_address),
         )
 
-    return source_dataset
+    return dataset_resolution
 
 
 def _resolve_thresholds(
@@ -67,8 +57,7 @@ def _resolve_thresholds(
     threshold: float | dict[str, float] | None,
     session: Session,
 ) -> dict[int, float]:
-    """
-    Resolves final thresholds for each resolution in the lineage based on user input.
+    """Resolves final thresholds for each resolution in the lineage based on user input.
 
     Args:
         lineage_truths: Dict from with resolution hash -> cached truth
@@ -158,8 +147,7 @@ def _resolve_cluster_hierarchy(
     engine: Engine,
     threshold: float | dict[str, float] | None = None,
 ) -> Select:
-    """
-    Resolves the final cluster assignments for all records in a dataset.
+    """Resolves the final cluster assignments for all records in a dataset.
 
     Args:
         dataset_id: ID of the dataset to query
@@ -174,14 +162,14 @@ def _resolve_cluster_hierarchy(
     with Session(engine) as session:
         dataset_resolution = session.get(Resolutions, dataset_id)
         if dataset_resolution is None:
-            raise MatchboxDatasetError("Dataset not found")
+            raise MatchboxServerSourceError()
 
         try:
             lineage_truths = resolution.get_lineage_to_dataset(
                 dataset=dataset_resolution
             )
         except ValueError as e:
-            raise MatchboxResolutionError(
+            raise MatchboxServerResolutionError(
                 f"Invalid resolution lineage: {str(e)}"
             ) from e
 
@@ -277,15 +265,13 @@ def _resolve_cluster_hierarchy(
 
 
 def query(
-    selector: dict[Source, list[str]],
     engine: Engine,
-    return_type: Literal["pandas", "arrow", "polars"] = "pandas",
-    resolution: str | None = None,
+    source_address: SourceAddress,
+    resolution_id: int | None = None,
     threshold: float | dict[str, float] | None = None,
     limit: int = None,
-) -> DataFrame | pa.Table | PolarsDataFrame:
-    """
-    Queries Matchbox and the Source warehouse to retrieve linked data.
+) -> pa.Table:
+    """Queries Matchbox and the Source warehouse to retrieve linked data.
 
     Takes the dictionaries of tables and fields outputted by selectors and
     queries database for them. If a "point of truth" resolution is supplied, will
@@ -302,93 +288,37 @@ def query(
 
     Returns:
         A table containing the requested data from each table, unioned together,
-        with the hash key of each row in Matchbox, in the requested return type
+        with the hash key of each row in Matchbox
     """
-    tables: list[pa.Table] = []
-
-    if limit:
-        limit_base = limit // len(selector)
-        limit_remainder = limit % len(selector)
-
     with Session(engine) as session:
-        # If a resolution was specified, validate and retrieve it
-        point_of_truth = None
-        if resolution is not None:
-            point_of_truth = (
+        dataset_resolution = get_dataset_resolution(source_address, session)
+
+        if resolution_id:
+            resolution = (
                 session.query(Resolutions)
-                .filter(Resolutions.name == resolution)
+                .filter(Resolutions.resolution_id == resolution_id)
                 .first()
             )
-            if point_of_truth is None:
-                raise MatchboxResolutionError(resolution_name=resolution)
+            if resolution is None:
+                raise MatchboxServerResolutionError(resolution_name=resolution)
+        else:
+            resolution = dataset_resolution
+        if not resolution_id:
+            resolution_id = dataset_resolution.resolution_id
 
-        # Process each source dataset
-        for source, fields in selector.items():
-            # Get the dataset resolution
-            dataset_resolution = source_to_dataset_resolution(source, session)
-
-            # Warn if non-indexed fields have been requested
-            not_indexed = set(fields) - set(
-                c.literal.name for c in source.db_columns if c.indexed
-            )
-            if not_indexed:
-                warnings.warn(
-                    "Found non-indexed fields. Do not use these fields in match jobs:"
-                    f"{', '.join(sorted(not_indexed))}",
-                    stacklevel=2,
-                )
-
-            id_query = _resolve_cluster_hierarchy(
-                dataset_id=dataset_resolution.resolution_id,
-                resolution=point_of_truth if point_of_truth else dataset_resolution,
-                threshold=threshold,
-                engine=engine,
-            )
-
-            # Apply limit if specified
-            if limit:
-                remain = 1 if limit_remainder > 0 else 0
-                if remain:
-                    limit_remainder -= 1
-                id_query = id_query.limit(limit_base + remain)
-
-            # Get cluster assignments
-            mb_ids = sql_to_df(id_query, engine, return_type="arrow")
-
-            # Get source data
-            raw_data = source.to_arrow(
-                fields=set([source.db_pk] + fields),
-                pks=mb_ids["source_pk"].to_pylist(),
-            )
-
-            # Join and select columns
-            joined_table = raw_data.join(
-                right_table=mb_ids,
-                keys=key_to_sqlalchemy_label(source.db_pk, source),
-                right_keys="source_pk",
-                join_type="inner",
-            )
-
-            keep_cols = ["id"] + [key_to_sqlalchemy_label(f, source) for f in fields]
-            match_cols = [col for col in joined_table.column_names if col in keep_cols]
-
-            tables.append(joined_table.select(match_cols))
-
-    # Combine results
-    result = pa.concat_tables(tables, promote_options="default")
-
-    # Return in requested format
-    if return_type == "arrow":
-        return result
-    elif return_type == "pandas":
-        return result.to_pandas(
-            use_threads=True,
-            split_blocks=True,
-            self_destruct=True,
-            types_mapper=ArrowDtype,
+        id_query = _resolve_cluster_hierarchy(
+            dataset_id=dataset_resolution.resolution_id,
+            resolution=resolution,
+            threshold=threshold,
+            engine=engine,
         )
-    else:
-        raise ValueError(f"return_type of {return_type} not valid")
+
+        if limit:
+            id_query = id_query.limit(limit)
+
+        mb_ids = sql_to_df(id_query, engine, return_type="arrow")
+
+        return mb_ids
 
 
 def _build_unnested_clusters() -> CTE:
@@ -424,8 +354,7 @@ def _find_source_cluster(
 def _build_hierarchy_up(
     source_cluster: Select, valid_clusters: CTE | None = None
 ) -> CTE:
-    """
-    Build recursive CTE that finds all parent clusters.
+    """Build recursive CTE that finds all parent clusters.
 
     Args:
         source_cluster: Subquery that finds starting cluster
@@ -483,8 +412,7 @@ def _find_highest_parent(hierarchy_up: CTE) -> Select:
 def _build_hierarchy_down(
     highest_parent: Select, unnested_clusters: CTE, valid_clusters: CTE | None = None
 ) -> CTE:
-    """
-    Build recursive CTE that finds all child clusters and their IDs.
+    """Build recursive CTE that finds all child clusters and their IDs.
 
     Args:
         highest_parent: Subquery that finds top cluster
@@ -551,8 +479,8 @@ def _build_hierarchy_down(
 
 def match(
     source_pk: str,
-    source: str,
-    target: str | list[str],
+    source: SourceAddress,
+    target: SourceAddress | list[SourceAddress],
     resolution: str,
     engine: Engine,
     threshold: float | dict[str, float] | None = None,
@@ -569,25 +497,24 @@ def match(
     * Returns the results as Match objects, one per target
     """
     # Split source and target into schema/table
-    targets = [target] if isinstance(target, str) else target
+    targets = [target] if isinstance(target, SourceAddress) else target
 
     with Session(engine) as session:
         # Get source, target and truth resolutions
-        source_resolution = source_to_dataset_resolution(source, session)
+        source_resolution = get_dataset_resolution(source, session)
 
         # Get target resolutions with schema/table info
         target_resolutions = []
         for t in targets:
-            schema, table = get_schema_table_names(t, validate=True)
-            target_resolution = source_to_dataset_resolution(t, session)
-            target_resolutions.append((target_resolution, f"{schema}.{table}"))
+            target_resolution = get_dataset_resolution(t, session)
+            target_resolutions.append((target_resolution, target))
 
         # Get truth resolution
         truth_resolution = (
             session.query(Resolutions).filter(Resolutions.name == resolution).first()
         )
         if truth_resolution is None:
-            raise MatchboxResolutionError(resolution_name=resolution)
+            raise MatchboxServerResolutionError(resolution_name=resolution)
 
         # Get resolution lineage and resolve thresholds
         lineage_truths = truth_resolution.get_lineage()
@@ -625,12 +552,12 @@ def match(
         # Group matches by dataset
         cluster = None
         matches_by_dataset: dict[int, set] = {}
-        for cluster_id, dataset_id, id in matches:
+        for cluster_id, dataset_id, id_in_source in matches:
             if cluster is None:
                 cluster = cluster_id
             if dataset_id not in matches_by_dataset:
                 matches_by_dataset[dataset_id] = set()
-            matches_by_dataset[dataset_id].add(id)
+            matches_by_dataset[dataset_id].add(id_in_source)
 
         result = []
         for target_resolution, target_name in target_resolutions:
@@ -647,4 +574,4 @@ def match(
             )
             result.append(match_obj)
 
-        return result[0] if isinstance(target, str) else result
+        return result[0] if isinstance(target, SourceAddress) else result

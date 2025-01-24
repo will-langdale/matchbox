@@ -11,7 +11,7 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB, TEXT
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, TEXT
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -180,10 +180,12 @@ class Sources(CountMixin, MBDB.MatchboxBase):
         primary_key=True,
     )
     alias = Column(TEXT, nullable=False)
-    schema = Column(TEXT, nullable=False)
-    table = Column(TEXT, nullable=False)
+    full_name = Column(TEXT, nullable=False)
+    warehouse_hash = Column(BYTEA, nullable=False)
     id = Column(TEXT, nullable=False)
-    indices = Column(JSONB, nullable=False)
+    column_names = Column(ARRAY(TEXT), nullable=False)
+    column_aliases = Column(ARRAY(TEXT), nullable=False)
+    column_types = Column(ARRAY(TEXT), nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")
@@ -191,7 +193,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("alias", "schema", "table", name="unique_alias_schema_table"),
+        UniqueConstraint("full_name", "warehouse_hash", name="unique_source_address"),
     )
 
     @classmethod

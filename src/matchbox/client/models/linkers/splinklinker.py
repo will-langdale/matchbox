@@ -46,9 +46,7 @@ class SplinkLinkerFunction(BaseModel):
 
 
 class SplinkSettings(LinkerSettings):
-    """
-    A data class to enforce the Splink linker's settings dictionary shape.
-    """
+    """A data class to enforce the Splink linker's settings dictionary shape."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

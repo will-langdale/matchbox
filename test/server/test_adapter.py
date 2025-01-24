@@ -1,21 +1,21 @@
-from collections import defaultdict
 from typing import Callable
 
+import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
-from matchbox.client.helpers.selector import match, query, selector, selectors
+from matchbox.client.helpers.selector import match, query, select
 from matchbox.client.results import Results
-from matchbox.common.db import Match, Source, SourceColumn
 from matchbox.common.exceptions import (
     MatchboxDataError,
-    MatchboxDatasetError,
-    MatchboxResolutionError,
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
+from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -86,15 +86,15 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
+
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -110,15 +110,14 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
+
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -135,15 +134,15 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
+
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -157,32 +156,21 @@ class TestMatchboxBackend:
 
         assert self.backend.cluster_id_to_hash(ids=[-6]) == {-6: None}
 
-    def test_get_dataset(self):
+    def test_get_source(self):
         """Test querying data from the database."""
         self.setup_database("index")
 
         crn = self.warehouse_data[0]
 
-        crn_retrieved = self.backend.get_dataset(
-            db_schema=crn.db_schema, db_table=crn.db_table, engine=crn.database.engine
-        )
+        crn_retrieved = self.backend.get_source(crn.address)
+        # Equality between the two is False because one lacks the Engine
+        assert crn.model_dump() == crn_retrieved.model_dump()
 
-        assert crn.db_columns == crn_retrieved.db_columns
-
-        cols: defaultdict[str, list[SourceColumn]] = defaultdict(list)
-
-        # Indexing isn't used in the custom equality check
-        for col in crn.db_columns + crn_retrieved.db_columns:
-            cols[col.literal.name].append(col)
-
-        for c1, c2 in cols.values():
-            assert c1.indexed == c2.indexed
-
-        with pytest.raises(MatchboxDatasetError):
-            self.backend.get_dataset(
-                db_schema="nonexistant",
-                db_table="nonexistant",
-                engine=crn.database.engine,
+        with pytest.raises(MatchboxServerSourceError):
+            self.backend.get_source(
+                SourceAddress(
+                    full_name="foo", warehouse_hash=bytes("bar".encode("ascii"))
+                )
             )
 
     def test_get_resolution_graph(self):
@@ -207,8 +195,16 @@ class TestMatchboxBackend:
         model = self.backend.get_model(model="naive_test.crn")
         assert isinstance(model, MatchboxModelAdapter)
 
-        with pytest.raises(MatchboxResolutionError):
+        with pytest.raises(MatchboxServerResolutionError):
             self.backend.get_model(model="nonexistant")
+
+    def test_get_resolution_id(self):
+        self.setup_database("dedupe")
+        resolution_id = self.backend.get_resolution_id("naive_test.crn")
+        assert isinstance(resolution_id, int)
+
+        with pytest.raises(MatchboxServerResolutionError):
+            self.backend.get_resolution_id("nonexistent")
 
     def test_delete_model(self):
         """
@@ -271,10 +267,10 @@ class TestMatchboxBackend:
         models_count = self.backend.models.count()
 
         self.backend.insert_model(
-            "dedupe_1", left=str(crn), description="Test deduper 1"
+            "dedupe_1", left=crn.alias, description="Test deduper 1"
         )
         self.backend.insert_model(
-            "dedupe_2", left=str(duns), description="Test deduper 1"
+            "dedupe_2", left=duns.alias, description="Test deduper 1"
         )
 
         assert self.backend.models.count() == models_count + 2
@@ -422,39 +418,131 @@ class TestMatchboxBackend:
 
         assert self.backend.data.count() == unique
 
-    def test_query_warning(self):
-        """Tests querying non-indexed fields warns the user."""
+    def test_index_new_source(self):
+        address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
+        source = Source(
+            address=address,
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+
+        assert self.backend.clusters.count() == 0
+
+        self.backend.index(source, data_hashes)
+
+        assert self.backend.get_source(address) == source
+        assert self.backend.get_resolution_id("foo")
+        assert self.backend.data.count() == 2
+        # I can add it again with no consequences
+        self.backend.index(source, data_hashes)
+        assert self.backend.data.count() == 2
+        assert self.backend.source_resolutions.count() == 1
+
+    def test_index_duplicate_clusters(self):
+        address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
+        source = Source(
+            address=address,
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes1 = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+        data_hashes2 = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"], ["3"]]),
+                "hash": pa.array([b"1", b"2", b"3"]),
+            }
+        )
+
+        assert self.backend.data.count() == 0
+        self.backend.index(source, data_hashes1)
+        assert self.backend.data.count() == 2
+        self.backend.index(source, data_hashes2)
+        assert self.backend.data.count() == 3
+        assert self.backend.source_resolutions.count() == 1
+
+    def test_index_same_resolution(self):
+        source1 = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        source2 = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+
+        self.backend.index(source1, data_hashes)
+        self.backend.index(source2, data_hashes)
+
+        assert self.backend.data.count() == 2
+        assert self.backend.source_resolutions.count() == 1
+
+    def test_index_different_resolution_same_hashes(self):
+        source1 = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        source2 = Source(
+            address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
+            db_pk="pk",
+            columns=[SourceColumn(name="a", type="TEXT")],
+        )
+        data_hashes = pa.table(
+            {
+                "source_pk": pa.array([["1"], ["2"]]),
+                "hash": pa.array([b"1", b"2"]),
+            }
+        )
+
+        self.backend.index(source1, data_hashes)
+        # TODO: this will now error, and it shouldn't
+        with pytest.raises(NotImplementedError):
+            self.backend.index(source2, data_hashes)
+
+    def test_select_warning(self):
+        """Tests selecting non-indexed fields warns the user."""
         self.setup_database("index")
 
         crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["id", "crn"],
-            engine=crn.database.engine,
-        )
+
         with pytest.warns(Warning):
-            query(
-                selector=select_crn,
-                backend=self.backend,
-                resolution=None,
-                return_type="pandas",
-                limit=10,
+            select(
+                {crn.address.full_name: ["id", "crn"]},
+                engine=crn.engine,
             )
 
-    def test_query_single_table(self):
-        """Test querying data from the database."""
+    def test_query_only_source(self):
+        """Test querying data from a link point of truth."""
         self.setup_database("index")
 
-        crn = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn),
-            fields=["id", "crn"],
-            engine=crn.database.engine,
+        crn_wh = self.warehouse_data[0]
+
+        select_crn = select(
+            {crn_wh.address.full_name: ["crn"]},
+            engine=crn_wh.engine,
         )
+
         df_crn_sample = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution=None,
+            select_crn,
             return_type="pandas",
             limit=10,
         )
@@ -463,59 +551,14 @@ class TestMatchboxBackend:
         assert df_crn_sample.shape[0] == 10
 
         df_crn_full = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution=None,
+            select_crn,
             return_type="pandas",
         )
 
         assert df_crn_full.shape[0] == 3000
         assert set(df_crn_full.columns) == {
             "id",
-            "test_crn_id",
             "test_crn_crn",
-        }
-
-    def test_query_multi_table(self):
-        """Test querying data from multiple tables from the database."""
-        self.setup_database("index")
-
-        crn = self.warehouse_data[0]
-        duns = self.warehouse_data[1]
-
-        select_crn = selector(
-            table=str(crn),
-            fields=["id", "crn"],
-            engine=crn.database.engine,
-        )
-        select_duns = selector(
-            table=str(duns),
-            fields=["id", "duns"],
-            engine=duns.database.engine,
-        )
-        select_crn_duns = selectors(select_crn, select_duns)
-
-        df_crn_duns_full = query(
-            selector=select_crn_duns,
-            backend=self.backend,
-            resolution=None,
-            return_type="pandas",
-        )
-
-        assert df_crn_duns_full.shape[0] == 3500
-        assert (
-            df_crn_duns_full[df_crn_duns_full["test_duns_id"].notnull()].shape[0] == 500
-        )
-        assert (
-            df_crn_duns_full[df_crn_duns_full["test_crn_id"].notnull()].shape[0] == 3000
-        )
-
-        assert set(df_crn_duns_full.columns) == {
-            "id",
-            "test_crn_id",
-            "test_crn_crn",
-            "test_duns_id",
-            "test_duns_duns",
         }
 
     def test_query_with_dedupe_model(self):
@@ -524,16 +567,14 @@ class TestMatchboxBackend:
 
         crn = self.warehouse_data[0]
 
-        select_crn = selector(
-            table=str(crn),
-            fields=["company_name", "crn"],
-            engine=crn.database.engine,
+        select_crn = select(
+            {crn.address.full_name: ["company_name", "crn"]},
+            engine=crn.engine,
         )
 
         df_crn = query(
-            selector=select_crn,
-            backend=self.backend,
-            resolution="naive_test.crn",
+            select_crn,
+            resolution_name="naive_test.crn",
             return_type="pandas",
         )
 
@@ -553,25 +594,22 @@ class TestMatchboxBackend:
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
 
         crn_wh = self.warehouse_data[0]
-        select_crn = selector(
-            table=str(crn_wh),
-            fields=["crn"],
-            engine=crn_wh.database.engine,
-        )
-
         duns_wh = self.warehouse_data[1]
-        select_duns = selector(
-            table=str(duns_wh),
-            fields=["duns"],
-            engine=duns_wh.database.engine,
+
+        select_crn = select(
+            {crn_wh.address.full_name: ["crn"]},
+            engine=crn_wh.engine,
         )
 
-        select_crn_duns = selectors(select_crn, select_duns)
+        select_duns = select(
+            {duns_wh.address.full_name: ["duns"]},
+            engine=duns_wh.engine,
+        )
 
         crn_duns = query(
-            selector=select_crn_duns,
-            backend=self.backend,
-            resolution=linker_name,
+            select_crn,
+            select_duns,
+            resolution_name=linker_name,
             return_type="pandas",
         )
 
@@ -582,7 +620,7 @@ class TestMatchboxBackend:
             "test_crn_crn",
             "test_duns_duns",
         }
-        assert crn_duns.id.nunique() == 1000
+        assert crn_duns["id"].nunique() == 1000
 
     def test_match_one_to_many(self, revolution_inc: dict[str, list[str]]):
         """Test that matching data works when the target has many IDs."""
@@ -595,14 +633,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk=revolution_inc["duns"][0],
-            source=str(duns_wh),
-            target=str(crn_wh),
+            source=duns_wh.address,
+            target=crn_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(duns_wh)
-        assert res.target == str(crn_wh)
+        assert res.source == duns_wh.address
+        assert res.target == crn_wh.address
         assert res.cluster is not None
         assert res.source_id == set(revolution_inc["duns"])
         assert res.target_id == set(revolution_inc["crn"])
@@ -618,14 +656,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk=revolution_inc["crn"][0],
-            source=str(crn_wh),
-            target=str(duns_wh),
+            source=crn_wh.address,
+            target=duns_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(crn_wh)
-        assert res.target == str(duns_wh)
+        assert res.source == crn_wh.address
+        assert res.target == duns_wh.address
         assert res.cluster is not None
         assert res.source_id == set(revolution_inc["crn"])
         assert res.target_id == set(revolution_inc["duns"])
@@ -641,14 +679,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk=winner_inc["crn"][0],
-            source=str(crn_wh),
-            target=str(duns_wh),
+            source=crn_wh.address,
+            target=duns_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(crn_wh)
-        assert res.target == str(duns_wh)
+        assert res.source == crn_wh.address
+        assert res.target == duns_wh.address
         assert res.cluster is not None
         assert res.source_id == set(winner_inc["crn"])
         assert res.target_id == set() == set(winner_inc["duns"])
@@ -664,14 +702,14 @@ class TestMatchboxBackend:
         res = match(
             backend=self.backend,
             source_pk="foo",
-            source=str(crn_wh),
-            target=str(duns_wh),
+            source=crn_wh.address,
+            target=duns_wh.address,
             resolution=crn_x_duns,
         )
 
         assert isinstance(res, Match)
-        assert res.source == str(crn_wh)
-        assert res.target == str(duns_wh)
+        assert res.source == crn_wh.address
+        assert res.target == duns_wh.address
         assert res.cluster is None
         assert res.source_id == set()
         assert res.target_id == set()
