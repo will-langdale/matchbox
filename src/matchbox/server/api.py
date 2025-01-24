@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, AsyncGenerator
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -14,10 +14,9 @@ load_dotenv(dotenv_path)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     get_backend()
     yield
-    pass
 
 
 app = FastAPI(
