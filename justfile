@@ -14,9 +14,13 @@ format:
 
 # Scan for secrets
 scan:
-    trufflehog git file://. --only-verified
+    bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo"
 
 # Run Python tests
 test:
     docker compose up -d --wait
     uv run pytest
+
+# Run a local documentation development server
+docs:
+    uv run mkdocs serve

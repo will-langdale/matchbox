@@ -79,8 +79,8 @@ class TestMatchboxAPI:
     #     response = client.get("/models")
     #     assert response.status_code == 200
 
-    # def test_get_model():
-    #     response = client.get("/models/test_model")
+    # def test_get_resolution():
+    #     response = client.get("/models/test_resolution")
     #     assert response.status_code == 200
 
     # def test_add_model():

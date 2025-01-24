@@ -7,7 +7,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Literal,
     ParamSpec,
     Protocol,
     TypeVar,
@@ -17,12 +16,12 @@ from typing import (
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import find_dotenv, load_dotenv
+from pyarrow import Table
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import Engine
 
-from matchbox.common.db import Match, Source
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.sources import Match, Source, SourceAddress
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -287,12 +286,11 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        selector: dict[str, list[str]],
-        resolution: str | None = None,
+        source_address: SourceAddress,
+        resolution_id: int | None = None,
         threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "arrow", "polars"] | None = None,
         limit: int = None,
-    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame: ...
+    ) -> ArrowTable: ...
 
     @abstractmethod
     def match(
@@ -305,7 +303,10 @@ class MatchboxDBAdapter(ABC):
     ) -> Match | list[Match]: ...
 
     @abstractmethod
-    def index(self, dataset: Source) -> None: ...
+    def index(self, source: Source, data_hashes: Table) -> None: ...
+
+    @abstractmethod
+    def get_source(self, address: SourceAddress) -> Source: ...
 
     @abstractmethod
     def validate_ids(self, ids: list[int]) -> bool: ...
@@ -317,13 +318,13 @@ class MatchboxDBAdapter(ABC):
     def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]: ...
 
     @abstractmethod
-    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source: ...
-
-    @abstractmethod
     def get_resolution_graph(self) -> ResolutionGraph: ...
 
     @abstractmethod
     def get_model(self, model: str) -> MatchboxModelAdapter: ...
+
+    @abstractmethod
+    def get_resolution_id(self, resolution_name: str) -> int: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...

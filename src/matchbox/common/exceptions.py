@@ -5,11 +5,15 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
-class MatchboxValidatonError(Exception):
-    """Validation of data failed."""
+class MatchboxSourceColumnError(Exception):
+    """Source columns diverge with the warehouse"""
 
 
-class MatchboxResolutionError(Exception):
+class MatchboxSourceEngineError(Exception):
+    """Engine must be available in Source"""
+
+
+class MatchboxServerResolutionError(Exception):
     """Resolution not found."""
 
     def __init__(self, message: str = None, resolution_name: str = None):
@@ -22,23 +26,21 @@ class MatchboxResolutionError(Exception):
         self.resolution_name = resolution_name
 
 
-class MatchboxDatasetError(Exception):
-    """Dataset not found."""
+class MatchboxServerSourceError(Exception):
+    """Source not found on the server."""
 
     def __init__(
         self,
         message: str = None,
-        db_schema: str | None = None,
-        db_table: str | None = None,
+        address: str | None = None,
     ):
         if message is None:
-            message = "Dataset not found."
-            if db_table is not None:
-                message = f"Dataset {db_schema or ''}.{db_table} not found."
+            message = "Source not found on matchbox."
+            if address:
+                message = f"Source ({address}) not found."
 
         super().__init__(message)
-        self.db_schema = db_schema
-        self.db_table = db_table
+        self.address = address
 
 
 class MatchboxDataError(Exception):

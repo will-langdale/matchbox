@@ -6,9 +6,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class LinkerSettings(BaseModel):
-    """
-    A data class to enforce basic settings dictionary shapes
-    """
+    """A data class to enforce basic settings dictionary shapes"""
 
     left_id: str = Field(description="The unique ID column in the left dataset")
     right_id: str = Field(description="The unique ID column in the right dataset")

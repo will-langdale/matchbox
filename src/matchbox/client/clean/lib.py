@@ -12,8 +12,7 @@ def company_name(
     column_secondary: str = None,
     stopwords: str = cu.STOPWORDS,
 ) -> DataFrame:
-    """
-    Lower case, remove punctuation & tokenise the company name into an array.
+    """Lower case, remove punctuation & tokenise the company name into an array.
     Extract tokens into: 'unusual' and 'stopwords'. Dedupe. Sort alphabetically.
     Untokenise the unusual words back to a string.
 
@@ -26,7 +25,6 @@ def company_name(
     Returns:
         dataframe: the same as went in, but cleaned
     """
-
     remove_stopwords = partial(steps.remove_stopwords, stopwords=stopwords)
 
     clean_primary = cu.cleaning_function(
@@ -48,8 +46,7 @@ def company_name(
 
 
 def company_number(df: DataFrame, column: str) -> DataFrame:
-    """
-    Remove non-numbers, and then leading zeroes.
+    """Remove non-numbers, and then leading zeroes.
 
     Args:
         df: a dataframe
@@ -57,7 +54,6 @@ def company_number(df: DataFrame, column: str) -> DataFrame:
     Returns:
         dataframe: the same as went in, but cleaned
     """
-
     clean_number = cu.cleaning_function(steps.remove_notnumbers_leadingzeroes)
 
     df = clean_number(df, column)
@@ -66,8 +62,7 @@ def company_number(df: DataFrame, column: str) -> DataFrame:
 
 
 def postcode(df: DataFrame, column: str) -> DataFrame:
-    """
-    Removes all punctuation, converts to upper, removes all spaces.
+    """Removes all punctuation, converts to upper, removes all spaces.
 
     Args:
         df: a dataframe
@@ -76,7 +71,6 @@ def postcode(df: DataFrame, column: str) -> DataFrame:
         dataframe: the same as went in, but cleaned
 
     """
-
     clean_postcode = cu.cleaning_function(
         steps.punctuation_to_spaces, steps.to_upper, steps.remove_whitespace
     )
@@ -87,8 +81,7 @@ def postcode(df: DataFrame, column: str) -> DataFrame:
 
 
 def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
-    """
-    Extracts postcode area from a postcode
+    """Extracts postcode area from a postcode
 
     Args:
         df: a dataframe
@@ -96,7 +89,6 @@ def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
     Returns:
         dataframe: the same as went in, but cleaned
     """
-
     extract_area = cu.cleaning_function(steps.get_postcode_area)
 
     df = extract_area(df, column)
@@ -107,8 +99,7 @@ def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
 def extract_company_number_to_new(
     df: DataFrame, column: str, new_column: str
 ) -> DataFrame:
-    """
-    Detects the Companies House CRN in a column and moves it to a new column.
+    """Detects the Companies House CRN in a column and moves it to a new column.
 
     Args:
         df: a dataframe
@@ -117,7 +108,6 @@ def extract_company_number_to_new(
     Returns:
         dataframe: the same as went in with a new column for CRNs
     """
-
     clean_crn = cu.cleaning_function(
         steps.clean_punctuation_except_hyphens,
         steps.to_upper,
@@ -134,8 +124,7 @@ def extract_company_number_to_new(
 def extract_duns_number_to_new(
     df: DataFrame, column: str, new_column: str
 ) -> DataFrame:
-    """
-    Detects the Dun & Bradstreet DUNS nuber in a column and moves it to
+    """Detects the Dun & Bradstreet DUNS nuber in a column and moves it to
     a new column.
 
     Args:
@@ -145,7 +134,6 @@ def extract_duns_number_to_new(
     Returns:
         dataframe: the same as went in with a new column for DUNs numbers
     """
-
     clean_duns = cu.cleaning_function(
         steps.clean_punctuation_except_hyphens, steps.to_upper, steps.filter_duns_number
     )
@@ -160,8 +148,7 @@ def extract_duns_number_to_new(
 def extract_cdms_number_to_new(
     df: DataFrame, column: str, new_column: str
 ) -> DataFrame:
-    """
-    Detects the CDMS nuber in a column and moves it to a new column.
+    """Detects the CDMS nuber in a column and moves it to a new column.
 
     Args:
         df: a dataframe
@@ -170,7 +157,6 @@ def extract_cdms_number_to_new(
     Returns:
         dataframe: the same as went in with a new column for CDMS numbers
     """
-
     clean_cdms = cu.cleaning_function(
         steps.clean_punctuation_except_hyphens, steps.to_upper, steps.filter_cdms_number
     )
@@ -183,8 +169,7 @@ def extract_cdms_number_to_new(
 
 
 def drop(df: DataFrame, column: str) -> DataFrame:
-    """
-    Drops the column from the dataframe.
+    """Drops the column from the dataframe.
 
     Args:
         df: a dataframe

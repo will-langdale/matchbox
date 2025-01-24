@@ -7,10 +7,11 @@ from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from moto import mock_aws
 from pandas import DataFrame
+from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
 from matchbox import make_model
-from matchbox.common.db import Source, SourceWarehouse
+from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 
@@ -44,8 +45,8 @@ def db_add_indexed_data() -> AddIndexedDataCallable:
         warehouse_data: list[Source],
     ):
         """Indexes data from the warehouse."""
-        for dataset in warehouse_data:
-            backend.index(dataset=dataset)
+        for source in warehouse_data:
+            backend.index(source=source, data_hashes=source.hash_data())
 
     return _db_add_indexed_data
 
@@ -230,30 +231,25 @@ def setup_database(
 
 
 @pytest.fixture(scope="session")
-def warehouse() -> SourceWarehouse:
-    """Create a connection to the test warehouse database."""
-    warehouse = SourceWarehouse(
-        alias="test_warehouse",
-        db_type="postgresql",
-        user="warehouse_user",
-        password="warehouse_password",
-        host="localhost",
-        database="warehouse",
-        port=7654,
-    )
-    assert warehouse.engine
-    return warehouse
+def warehouse_engine() -> Engine:
+    """Creates an engine for the test warehouse database"""
+    user = "warehouse_user"
+    password = "warehouse_password"
+    host = "localhost"
+    database = "warehouse"
+    port = 7654
+    return create_engine(f"postgresql://{user}:{password}@{host}:{port}/{database}")
 
 
 @pytest.fixture(scope="session")
 def warehouse_data(
-    warehouse: SourceWarehouse,
+    warehouse_engine: Engine,
     crn_companies: DataFrame,
     duns_companies: DataFrame,
     cdms_companies: DataFrame,
 ) -> Generator[list[Source], None, None]:
     """Inserts data into the warehouse database for testing."""
-    with warehouse.engine.connect() as conn:
+    with warehouse_engine.connect() as conn:
         conn.execute(sqltext("drop schema if exists test cascade;"))
         conn.execute(sqltext("create schema test;"))
         crn_companies.to_sql(
@@ -279,7 +275,7 @@ def warehouse_data(
         )
         conn.commit()
 
-    with warehouse.engine.connect() as conn:
+    with warehouse_engine.connect() as conn:
         assert (
             conn.execute(sqltext("select count(*) from test.crn;")).scalar()
             == crn_companies.shape[0]
@@ -294,13 +290,19 @@ def warehouse_data(
         )
 
     yield [
-        Source(database=warehouse, db_pk="id", db_schema="test", db_table="crn"),
-        Source(database=warehouse, db_pk="id", db_schema="test", db_table="duns"),
-        Source(database=warehouse, db_pk="id", db_schema="test", db_table="cdms"),
+        Source(address=SourceAddress.compose(warehouse_engine, "test.crn"), db_pk="id")
+        .set_engine(warehouse_engine)
+        .default_columns(),
+        Source(address=SourceAddress.compose(warehouse_engine, "test.duns"), db_pk="id")
+        .set_engine(warehouse_engine)
+        .default_columns(),
+        Source(address=SourceAddress.compose(warehouse_engine, "test.cdms"), db_pk="id")
+        .set_engine(warehouse_engine)
+        .default_columns(),
     ]
 
     # Clean up the warehouse data
-    with warehouse.engine.connect() as conn:
+    with warehouse_engine.connect() as conn:
         conn.execute(sqltext("drop table if exists test.crn;"))
         conn.execute(sqltext("drop table if exists test.duns;"))
         conn.execute(sqltext("drop table if exists test.cdms;"))

@@ -18,6 +18,8 @@ data/
 .tmp/
 notebooks/tmp*
 
+# Documentation
+site/
 
 ##########################
 # Boilerplate .gitignore #

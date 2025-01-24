@@ -13,7 +13,15 @@ repos:
     # Check for secrets
     - id: trufflehog
       name: TruffleHog
-      description: Detect secrets in your data.
-      entry: bash -c "trufflehog git file://. --since-commit HEAD --only-verified --fail"
+      description: "Detect secrets in your data."
+      entry: bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo  --since-commit HEAD --fail"
       language: system
-      stages: ["commit", "push"]
+      stages: ["pre-commit", "pre-push"]
+
+    # Verify MkDocs build
+    - id: mkdocs
+      name: mkdocs
+      description: "Verify MkDocs documentation builds without errors"
+      entry: mkdocs build --strict
+      language: system
+      pass_filenames: false

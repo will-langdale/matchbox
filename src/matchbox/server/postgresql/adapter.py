@@ -1,18 +1,18 @@
-import base64
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
+from pyarrow import Table
 from pydantic import BaseModel
-from sqlalchemy import Engine, and_, bindparam, delete, func, or_, select
+from sqlalchemy import and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from matchbox.client.results import Results
-from matchbox.common.db import Match, Source, SourceWarehouse
 from matchbox.common.exceptions import (
     MatchboxDataError,
-    MatchboxDatasetError,
-    MatchboxResolutionError,
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
+from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 from matchbox.server.postgresql.db import MBDB, MatchboxPostgresSettings
 from matchbox.server.postgresql.orm import (
@@ -161,8 +161,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def ancestors(self) -> dict[str, float | None]:
-        """
-        Gets the current truth values of all ancestors.
+        """Gets the current truth values of all ancestors.
         Returns a dict mapping model names to their current truth thresholds.
 
         Unlike ancestors_cache which returns cached values, this property returns
@@ -177,8 +176,7 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @property
     def ancestors_cache(self) -> dict[str, float]:
-        """
-        Gets the cached ancestor thresholds, converting hashes to model names.
+        """Gets the cached ancestor thresholds, converting hashes to model names.
 
         Returns a dictionary mapping model names to their truth thresholds.
 
@@ -199,13 +197,11 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
     @ancestors_cache.setter
     def ancestors_cache(self, new_values: dict[str, float]) -> None:
-        """
-        Updates the cached ancestor thresholds.
+        """Updates the cached ancestor thresholds.
 
         Args:
             new_values: Dictionary mapping model names to their truth thresholds
         """
-
         with Session(MBDB.get_engine()) as session:
             model_names = list(new_values.keys())
             name_to_id = dict(
@@ -228,16 +224,6 @@ class MatchboxPostgresModel(MatchboxModelAdapter):
 
             session.commit()
 
-    @classmethod
-    def get_model(
-        cls, model_name: str, backend: "MatchboxPostgres"
-    ) -> "MatchboxPostgresModel":
-        with Session(MBDB.get_engine()) as session:
-            if model := session.query(Resolutions).filter_by(name=model_name).first():
-                return cls(model, backend=backend)
-            else:
-                raise MatchboxResolutionError(resolution_name=model_name)
-
 
 class MatchboxPostgres(MatchboxDBAdapter):
     """A PostgreSQL adapter for Matchbox."""
@@ -249,6 +235,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         self.datasets = Sources
         self.models = FilteredResolutions(datasets=False, humans=False, models=True)
+        self.source_resolutions = FilteredResolutions(
+            datasets=True, humans=False, models=False
+        )
         self.data = FilteredClusters(has_dataset=True)
         self.clusters = FilteredClusters(has_dataset=False)
         self.merges = Contains
@@ -257,19 +246,17 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(
         self,
-        selector: dict[str, list[str]],
-        resolution: str | None = None,
+        source_address: SourceAddress,
+        resolution_id: int | None = None,
         threshold: float | dict[str, float] | None = None,
-        return_type: Literal["pandas", "arrow", "polars"] | None = None,
-        limit: int = None,
-    ) -> PandasDataFrame | ArrowTable | PolarsDataFrame:
+        limit: int | None = None,
+    ) -> ArrowTable:
         """Queries the database from an optional point of truth.
 
         Args:
-            selector: the tables and fields to query
-            return_type: the form to return data in, one of "pandas" or "arrow"
-                Defaults to pandas for ease of use
-            resolution (optional): the resolution to use for filtering results
+            source_address: the `SourceAddress` object identifying the source to query
+            resolution_id (optional): the resolution to use for filtering results
+                If not specified, will use the dataset resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold
                 If a float, uses that threshold for the specified model, and the
@@ -280,13 +267,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
             limit (optional): the number to use in a limit clause. Useful for testing
 
         Returns:
-            Data in the requested return type
+            The resulting matchbox IDs in Arrow format
         """
         return query(
-            selector=selector,
             engine=MBDB.get_engine(),
-            return_type=return_type if return_type else "pandas",
-            resolution=resolution,
+            source_address=source_address,
+            resolution_id=resolution_id,
             threshold=threshold,
             limit=limit,
         )
@@ -324,24 +310,63 @@ class MatchboxPostgres(MatchboxDBAdapter):
             threshold=threshold,
         )
 
-    def index(self, dataset: Source) -> None:
-        """Indexes a data from your data warehouse within Matchbox.
+    def index(self, source: Source, data_hashes: Table) -> None:
+        """Indexes to Matchbox a source dataset in your warehouse.
 
         Args:
-            dataset: The dataset to index.
-            engine: The SQLAlchemy engine of your data warehouse.
+            source: The source dataset to index.
+            data_hashes: The Arrow table with the hash of each data row
         """
         insert_dataset(
-            dataset=dataset,
+            source=source,
+            data_hashes=data_hashes,
             engine=MBDB.get_engine(),
             batch_size=self.settings.batch_size,
         )
+
+    def get_source(self, address: SourceAddress) -> Source:
+        """Get a source from its name address.
+
+        Args:
+            address: The name address for the source
+
+        Returns:
+            A Source object
+        """
+        with Session(MBDB.get_engine()) as session:
+            source = (
+                session.query(Sources)
+                .where(
+                    and_(
+                        Sources.full_name == address.full_name,
+                        Sources.warehouse_hash == address.warehouse_hash,
+                    )
+                )
+                .first()
+            )
+            if source:
+                return Source(
+                    alias=source.alias,
+                    address=address,
+                    db_pk=source.id,
+                    columns=[
+                        SourceColumn(name=name, alias=alias, type=type_)
+                        for name, alias, type_ in zip(
+                            source.column_names,
+                            source.column_aliases,
+                            source.column_types,
+                            strict=True,
+                        )
+                    ],
+                )
+            else:
+                raise MatchboxServerSourceError(address=str(address))
 
     def validate_ids(self, ids: list[int]) -> None:
         """Validates a list of IDs exist in the database.
 
         Args:
-            hashes: A list of IDs to validate.
+            ids: A list of IDs to validate.
 
         Raises:
             MatchboxDataError: If some items don't exist in the target table.
@@ -435,37 +460,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
             item.cluster_id: item.cluster_hash for item in data_inner_join
         }
 
-    def get_dataset(self, db_schema: str, db_table: str, engine: Engine) -> Source:
-        """Get a source dataset from the database.
-
-        Args:
-            db_schema: The schema of the dataset.
-            db_table: The table of the dataset.
-            engine: The engine to use to connect to your data warehouse.
-        """
-        with Session(MBDB.get_engine()) as session:
-            dataset = (
-                session.query(Sources)
-                .filter_by(schema=db_schema, table=db_table)
-                .first()
-            )
-            if dataset:
-                dataset_indices: dict[str, bytes] = {}
-                for index_type, index_b64_list in dataset.indices.items():
-                    dataset_indices[index_type] = [
-                        base64.b64decode(b64.encode("utf-8")) for b64 in index_b64_list
-                    ]
-                return Source(
-                    alias=dataset.alias,
-                    db_schema=dataset.schema,
-                    db_table=dataset.table,
-                    db_pk=dataset.id,
-                    db_columns=dataset_indices,
-                    database=SourceWarehouse.from_engine(engine),
-                )
-            else:
-                raise MatchboxDatasetError(db_schema=db_schema, db_table=db_table)
-
     def get_resolution_graph(self) -> ResolutionGraph:
         """Get the full resolution graph."""
         return get_resolution_graph(engine=MBDB.get_engine())
@@ -480,7 +474,27 @@ class MatchboxPostgres(MatchboxDBAdapter):
             if resolution := session.query(Resolutions).filter_by(name=model).first():
                 return MatchboxPostgresModel(resolution=resolution, backend=self)
             else:
-                raise MatchboxResolutionError(resolution_name=model)
+                raise MatchboxServerResolutionError(resolution_name=model)
+
+    def get_resolution_id(self, resolution_name: str) -> int:
+        """Get a resolution ID from its name.
+
+        Args:
+            resolution_name: The name of the resolution to get.
+
+        Returns:
+            The resolution ID
+        """
+        with Session(MBDB.get_engine()) as session:
+            resolution_id = (
+                session.query(Resolutions.resolution_id)
+                .filter_by(name=resolution_name)
+                .first()
+            )
+            if resolution_id:
+                return resolution_id[0]
+            else:
+                raise MatchboxServerResolutionError(resolution_name=resolution_name)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -518,7 +532,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                         "If you're sure you want to continue, rerun with certain=True"
                     )
             else:
-                raise MatchboxResolutionError(resolution_name=model)
+                raise MatchboxServerResolutionError(resolution_name=model)
 
     def insert_model(
         self, model: str, left: str, description: str, right: str | None = None
@@ -533,8 +547,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 When deduplicating, this is None
             description: A description of the model
 
-        Raises
-            MatchboxDataError if, for a linker, the source models weren't found in
+        Raises:
+            MatchboxDataError: If, for a linker, the source models weren't found in
                 the database
         """
         with Session(MBDB.get_engine()) as session:
@@ -542,7 +556,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.query(Resolutions).filter(Resolutions.name == left).first()
             )
             if not left_resolution:
-                raise MatchboxResolutionError(resolution_name=left)
+                raise MatchboxServerResolutionError(resolution_name=left)
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
@@ -551,7 +565,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     session.query(Resolutions).filter(Resolutions.name == right).first()
                 )
                 if not right_resolution:
-                    raise MatchboxResolutionError(resolution_name=right)
+                    raise MatchboxServerResolutionError(resolution_name=right)
 
         insert_model(
             model=model,
