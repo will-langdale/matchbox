@@ -2,6 +2,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 from sqlalchemy import text
 
@@ -184,6 +185,11 @@ def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
         results = generate_all_tables(20, 5, 25, 5, 25)
 
         assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
+        assert set(pc.unique(results["clusters"]["dataset"]).to_pylist()) == {
+            1,
+            2,
+            None,
+        }
 
         for table_name, table_arrow in results.items():
             df = table_arrow.to_pandas()
