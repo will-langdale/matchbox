@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from enum import StrEnum
 from typing import Annotated
 
@@ -12,9 +13,17 @@ dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    get_backend()
+    yield
+    pass
+
+
 app = FastAPI(
     title="matchbox API",
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 

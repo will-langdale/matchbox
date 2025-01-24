@@ -17,7 +17,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --all-extras --no-install-project --no-dev
 
-COPY ./environments/dev_docker.env /code/.env
+ARG ENV_FILE
+COPY ./environments/$ENV_FILE /code/.env
 COPY ./uv.lock /code/uv.lock
 COPY ./pyproject.toml /code/pyproject.toml
 COPY ./src/matchbox /code/src/matchbox
