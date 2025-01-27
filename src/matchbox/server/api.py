@@ -66,7 +66,7 @@ async def table_to_s3(
     await file.seek(0)
 
     try:
-        table = pq.read_table(file.file, num_rows=100)
+        table = pq.read_table(file.file)
 
         if not table.schema.equals(expected_schema):
             raise MatchboxServerFileError(
