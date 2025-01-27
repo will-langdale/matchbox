@@ -56,14 +56,13 @@ async def table_to_s3(
 
     Raises:
         MatchboxServerFileError: If the file is not a valid Parquet file or the schema
+            does not match the expected schema.
 
     Returns:
         The key of the uploaded file.
     """
     upload_id = str(uuid4())
     key = f"{upload_id}.parquet"
-
-    await file.seek(0)
 
     try:
         table = pq.read_table(file.file)
