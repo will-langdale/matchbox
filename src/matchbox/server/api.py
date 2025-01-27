@@ -12,6 +12,7 @@ from matchbox.common.dtos import (
     HealthCheck,
     ModelResultsType,
 )
+from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
@@ -34,22 +35,47 @@ def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
 
 
-async def table_to_s3(client: S3Client, bucket: str, file: UploadFile) -> str:
-    """Upload a PyArrow Table to S3 and return the key."""
+async def table_to_s3(
+    client: S3Client, bucket: str, file: UploadFile, expected_schema: pa.Schema
+) -> str:
+    """Upload a PyArrow Table to S3 and return the key.
+
+    Args:
+        client: The S3 client to use.
+        bucket: The S3 bucket to upload to.
+        file: The file to upload.
+        expected_schema: The schema that the file should match.
+
+    Raises:
+        MatchboxServerFileError: If the file is not a valid Parquet file or the schema
+
+    Returns:
+        The key of the uploaded file.
+    """
     upload_id = str(uuid4())
+    key = f"{upload_id}.parquet"
 
-    file_bytes = await file.read()
-    reader = pa.BufferReader(file_bytes)
-    table = pa.ipc.open_file(reader).read_all()
+    await file.seek(0)
 
-    sink = pa.BufferOutputStream()
-    pq.write_table(table, sink)
+    try:
+        table = pq.read_table(file.file, num_rows=100)
 
-    client.put_object(
-        Bucket=bucket,
-        Key=f"{upload_id}.parquet",
-        Body=sink.getvalue().to_pybytes(),
-    )
+        if not table.schema.equals(expected_schema):
+            raise MatchboxServerFileError(
+                message=(
+                    "Schema mismatch. "
+                    "Expected:\n{expected_schema}\nGot:\n{table.schema}"
+                )
+            )
+
+        await file.seek(0)
+
+        client.put_object(Bucket=bucket, Key=key, Body=file.file)
+
+    except Exception as e:
+        if isinstance(e, MatchboxServerFileError):
+            raise
+        raise MatchboxServerFileError(message=f"Invalid Parquet file: {str(e)}") from e
 
     return upload_id
 

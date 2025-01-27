@@ -4,11 +4,13 @@ from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pandas import DataFrame
 
+from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
 from matchbox.server import app
 from matchbox.server.api import s3_to_recordbatch, table_to_s3
@@ -147,20 +149,20 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
         CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
     )
 
+    # Test 1: Upload a parquet file
     # Create a mock UploadFile
     all_companies["id"] = all_companies["id"].astype(str)
     table = pa.Table.from_pandas(all_companies)
     sink = pa.BufferOutputStream()
-    writer = pa.ipc.new_file(sink, table.schema)
-    writer.write_table(table)
-    writer.close()
+    pq.write_table(table, sink)
     file_content = sink.getvalue().to_pybytes()
 
-    file = UploadFile(filename="test.parquet", file=io.BytesIO(file_content))
+    parquet_file = UploadFile(filename="test.parquet", file=io.BytesIO(file_content))
 
     # Call the function
-    upload_id = await table_to_s3(client=s3, bucket="test-bucket", file=file)
-
+    upload_id = await table_to_s3(
+        client=s3, bucket="test-bucket", file=parquet_file, expected_schema=table.schema
+    )
     # Validate response
     assert UUID(upload_id, version=4)
 
@@ -174,3 +176,24 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
     )
 
     assert response_table.equals(table)
+
+    # Test 2: Upload a non-parquet file
+    text_file = UploadFile(filename="test.txt", file=io.BytesIO(b"test"))
+
+    with pytest.raises(MatchboxServerFileError):
+        await table_to_s3(
+            client=s3,
+            bucket="test-bucket",
+            file=text_file,
+            expected_schema=table.schema,
+        )
+
+    # Test 3: Upload a parquet file with a different schema
+    corrupted_schema = table.schema.remove(0)
+    with pytest.raises(MatchboxServerFileError):
+        await table_to_s3(
+            client=s3,
+            bucket="test-bucket",
+            file=parquet_file,
+            expected_schema=corrupted_schema,
+        )

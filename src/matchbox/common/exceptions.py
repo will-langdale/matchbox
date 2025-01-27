@@ -13,10 +13,23 @@ class MatchboxSourceEngineError(Exception):
     """Engine must be available in Source"""
 
 
+class MatchboxServerFileError(Exception):
+    """There was a problem with file transfer."""
+
+    def __init__(self, message: str | None = None, file: str | None = None):
+        if message is None:
+            message = "There was a problem with file transfer."
+            if file is not None:
+                message = f"There was a problem with file transfer: {file}."
+
+        super().__init__(message)
+        self.file = file
+
+
 class MatchboxServerResolutionError(Exception):
     """Resolution not found."""
 
-    def __init__(self, message: str = None, resolution_name: str = None):
+    def __init__(self, message: str | None = None, resolution_name: str | None = None):
         if message is None:
             message = "Resolution not found."
             if resolution_name is not None:
@@ -48,8 +61,8 @@ class MatchboxDataError(Exception):
 
     def __init__(
         self,
-        message: str = None,
-        table: str = None,
+        message: str | None = None,
+        table: str | None = None,
         data: Any | None = None,
     ):
         if message is None:
@@ -69,8 +82,8 @@ class MatchboxSourceTableError(Exception):
 
     def __init__(
         self,
-        message: str = None,
-        table_name: str = None,
+        message: str | None = None,
+        table_name: str | None = None,
     ):
         if message is None:
             message = "Table doesn't exist in wider database."
