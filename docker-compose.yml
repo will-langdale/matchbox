@@ -1,6 +1,6 @@
 services:
   warehouse:
-    image: postgres:14
+    image: postgres:17
     restart: always
     environment:
       POSTGRES_USER: warehouse_user
@@ -11,7 +11,7 @@ services:
     volumes:
       - warehouse_data:/var/lib/postgresql/data
   matchbox-postgres:
-    image: postgres:14
+    image: postgres:17
     restart: always
     environment:
       POSTGRES_USER: matchbox_user
@@ -21,6 +21,23 @@ services:
       - "5432:5432"
     volumes:
       - matchbox_data:/var/lib/postgresql/data
+  matchbox-storage:
+    image: minio/minio:latest
+    restart: always
+    volumes:
+      - matchbox_store:/data
+    command: server --console-address ":9001" /data
+    ports:
+      - "${MB__DATASTORE_PORT:-9000}:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MB__DATASTORE__ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${MB__DATASTORE__SECRET_ACCESS_KEY}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
   api:
     build:
       context: .
@@ -31,6 +48,7 @@ services:
       - "8000:8000"
     depends_on:
       - matchbox-postgres
+      - matchbox-storage
     
     develop:
       # https://docs.docker.com/compose/file-watch/#compose-watch-versus-bind-mounts
@@ -47,3 +65,4 @@ services:
 volumes:
   warehouse_data:
   matchbox_data:
+  matchbox_store:

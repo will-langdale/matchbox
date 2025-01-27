@@ -1,15 +1,18 @@
-from typing import Callable, Generator, Literal
+import os
+from typing import TYPE_CHECKING, Any, Callable, Generator, Literal
 
+import boto3
 import pytest
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
+from moto import mock_aws
 from pandas import DataFrame
 from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
 from matchbox import make_model
 from matchbox.common.sources import Source, SourceAddress
-from matchbox.server.base import MatchboxDBAdapter
+from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 
 from .models import (
@@ -21,6 +24,11 @@ from .models import (
     link_data_test_params,
     link_model_test_params,
 )
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+else:
+    S3Client = Any
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -305,7 +313,22 @@ def warehouse_data(
 
 
 @pytest.fixture(scope="session")
-def matchbox_settings() -> MatchboxPostgresSettings:
+def matchbox_datastore() -> MatchboxDatastoreSettings:
+    """Settings for the Matchbox datastore."""
+    return MatchboxDatastoreSettings(
+        host="localhost",
+        port=9000,
+        access_key_id="access_key_id",
+        secret_access_key="secret_access_key",
+        default_region="eu-west-2",
+        cache_bucket_name="cache",
+    )
+
+
+@pytest.fixture(scope="session")
+def matchbox_settings(
+    matchbox_datastore: MatchboxDatastoreSettings,
+) -> MatchboxPostgresSettings:
     """Settings for the Matchbox database."""
     return MatchboxPostgresSettings(
         batch_size=250_000,
@@ -317,6 +340,7 @@ def matchbox_settings() -> MatchboxPostgresSettings:
             "database": "matchbox",
             "db_schema": "mb",
         },
+        datastore=matchbox_datastore,
     )
 
 
@@ -335,3 +359,23 @@ def matchbox_postgres(
 
     # Clean up the Matchbox database after each test
     adapter.clear(certain=True)
+
+
+# Mock AWS fixtures
+
+
+@pytest.fixture(scope="function")
+def aws_credentials() -> None:
+    """Mocked AWS Credentials for moto."""
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECURITY_TOKEN"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ["AWS_DEFAULT_REGION"] = "eu-west-2"
+
+
+@pytest.fixture(scope="function")
+def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
+    """Return a mocked S3 client."""
+    with mock_aws():
+        yield boto3.client("s3", region_name="eu-west-2")

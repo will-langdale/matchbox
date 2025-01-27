@@ -1,13 +1,26 @@
 from contextlib import asynccontextmanager
-from enum import StrEnum
-from typing import Annotated, AsyncGenerator
+from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
+from uuid import uuid4
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 
+from matchbox.common.dtos import (
+    BackendEntityType,
+    CountResult,
+    HealthCheck,
+    ModelResultsType,
+)
+from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+else:
+    S3Client = Any
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
@@ -26,40 +39,70 @@ app = FastAPI(
 )
 
 
-class BackendEntityType(StrEnum):
-    DATASETS = "datasets"
-    MODELS = "models"
-    DATA = "data"
-    CLUSTERS = "clusters"
-    CREATES = "creates"
-    MERGES = "merges"
-    PROPOSES = "proposes"
-
-
-class ModelResultsType(StrEnum):
-    PROBABILITIES = "probabilities"
-    CLUSTERS = "clusters"
-
-
-class HealthCheck(BaseModel):
-    """Response model to validate and return when performing a health check."""
-
-    status: str = "OK"
-
-
-class CountResult(BaseModel):
-    """Response model for count results"""
-
-    entities: dict[BackendEntityType, int]
-
-
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
 
 
+async def table_to_s3(
+    client: S3Client, bucket: str, file: UploadFile, expected_schema: pa.Schema
+) -> str:
+    """Upload a PyArrow Table to S3 and return the key.
+
+    Args:
+        client: The S3 client to use.
+        bucket: The S3 bucket to upload to.
+        file: The file to upload.
+        expected_schema: The schema that the file should match.
+
+    Raises:
+        MatchboxServerFileError: If the file is not a valid Parquet file or the schema
+            does not match the expected schema.
+
+    Returns:
+        The key of the uploaded file.
+    """
+    upload_id = str(uuid4())
+    key = f"{upload_id}.parquet"
+
+    try:
+        table = pq.read_table(file.file)
+
+        if not table.schema.equals(expected_schema):
+            raise MatchboxServerFileError(
+                message=(
+                    "Schema mismatch. "
+                    "Expected:\n{expected_schema}\nGot:\n{table.schema}"
+                )
+            )
+
+        await file.seek(0)
+
+        client.put_object(Bucket=bucket, Key=key, Body=file.file)
+
+    except Exception as e:
+        if isinstance(e, MatchboxServerFileError):
+            raise
+        raise MatchboxServerFileError(message=f"Invalid Parquet file: {str(e)}") from e
+
+    return upload_id
+
+
+async def s3_to_recordbatch(
+    client: S3Client, bucket: str, key: str, batch_size: int = 1000
+) -> AsyncGenerator[pa.RecordBatch, None]:
+    """Download a PyArrow Table from S3 and stream it as RecordBatches."""
+    response = client.get_object(Bucket=bucket, Key=key)
+    buffer = pa.BufferReader(response["Body"].read())
+
+    parquet_file = pq.ParquetFile(buffer)
+
+    for batch in parquet_file.iter_batches(batch_size=batch_size):
+        yield batch
+
+
 @app.get("/health")
 async def healthcheck() -> HealthCheck:
-    """ """
+    """Perform a health check and return the status."""
     return HealthCheck(status="OK")
 
 
