@@ -30,7 +30,7 @@ T = TypeVar("T")
 logic_logger = logging.getLogger("mb_logic")
 
 
-def get_dataset_resolution(
+def _get_dataset_resolution(
     source_name_address: SourceAddress, session: Session
 ) -> Resolutions:
     """Converts the the named address of source to a Resolutions ORM object."""
@@ -291,7 +291,7 @@ def query(
         with the hash key of each row in Matchbox
     """
     with Session(engine) as session:
-        dataset_resolution = get_dataset_resolution(source_address, session)
+        dataset_resolution = _get_dataset_resolution(source_address, session)
 
         if resolution_id:
             resolution = (
@@ -477,6 +477,68 @@ def _build_hierarchy_down(
     return hierarchy_down.union_all(recursive)
 
 
+def _get_target_resolutions(
+    target: SourceAddress | list[SourceAddress], session: Session
+) -> list[tuple[Resolutions, str]]:
+    """Get target resolutions with schema/table info."""
+    targets = [target] if isinstance(target, SourceAddress) else target
+    target_resolutions = []
+
+    for t in targets:
+        target_resolution = _get_dataset_resolution(t, session)
+        target_resolutions.append((target_resolution, target))
+
+    return target_resolutions
+
+
+def _build_match_query(
+    source_pk: str,
+    source_resolution_id: int,
+    resolution: str,
+    session: Session,
+    threshold: float | dict[str, float] | None = None,
+) -> Select:
+    """Builds the SQL query that powers the match function."""
+    # Get truth resolution
+    truth_resolution = (
+        session.query(Resolutions).filter(Resolutions.name == resolution).first()
+    )
+    if truth_resolution is None:
+        raise MatchboxServerResolutionError(resolution_name=resolution)
+
+    # Get resolution lineage and resolve thresholds
+    lineage_truths = truth_resolution.get_lineage()
+    thresholds = _resolve_thresholds(
+        lineage_truths=lineage_truths,
+        resolution=truth_resolution,
+        threshold=threshold,
+        session=session,
+    )
+
+    # Get valid clusters across all resolutions
+    valid_clusters = _union_valid_clusters(thresholds)
+
+    # Build the query components
+    unnested = _build_unnested_clusters()
+    source_cluster = _find_source_cluster(unnested, source_resolution_id, source_pk)
+    hierarchy_up = _build_hierarchy_up(source_cluster, valid_clusters)
+    highest = _find_highest_parent(hierarchy_up)
+    hierarchy_down = _build_hierarchy_down(highest, unnested, valid_clusters)
+
+    # Get all matched IDs
+    final_stmt = (
+        select(
+            hierarchy_down.c.parent.label("cluster"),
+            hierarchy_down.c.dataset,
+            hierarchy_down.c.source_pk,
+        )
+        .distinct()
+        .select_from(hierarchy_down)
+    )
+
+    return final_stmt
+
+
 def match(
     source_pk: str,
     source: SourceAddress,
@@ -496,60 +558,23 @@ def match(
         * Retrieves all other IDs in the cluster in the target dataset
     * Returns the results as Match objects, one per target
     """
-    # Split source and target into schema/table
-    targets = [target] if isinstance(target, SourceAddress) else target
-
     with Session(engine) as session:
-        # Get source, target and truth resolutions
-        source_resolution = get_dataset_resolution(source, session)
+        # Get all matches for source_pk in all possible targets
+        dataset_resolution = _get_dataset_resolution(source, session)
 
-        # Get target resolutions with schema/table info
-        target_resolutions = []
-        for t in targets:
-            target_resolution = get_dataset_resolution(t, session)
-            target_resolutions.append((target_resolution, target))
-
-        # Get truth resolution
-        truth_resolution = (
-            session.query(Resolutions).filter(Resolutions.name == resolution).first()
-        )
-        if truth_resolution is None:
-            raise MatchboxServerResolutionError(resolution_name=resolution)
-
-        # Get resolution lineage and resolve thresholds
-        lineage_truths = truth_resolution.get_lineage()
-        thresholds = _resolve_thresholds(
-            lineage_truths=lineage_truths,
-            resolution=truth_resolution,
-            threshold=threshold,
+        match_stmt = _build_match_query(
+            source_pk=source_pk,
+            source_resolution_id=dataset_resolution.resolution_id,
+            resolution=resolution,
             session=session,
+            threshold=threshold,
         )
 
-        # Get valid clusters across all resolutions
-        valid_clusters = _union_valid_clusters(thresholds)
+        matches = session.execute(match_stmt).all()
 
-        # Build the query components
-        unnested = _build_unnested_clusters()
-        source_cluster = _find_source_cluster(
-            unnested, source_resolution.resolution_id, source_pk
-        )
-        hierarchy_up = _build_hierarchy_up(source_cluster, valid_clusters)
-        highest = _find_highest_parent(hierarchy_up)
-        hierarchy_down = _build_hierarchy_down(highest, unnested, valid_clusters)
+        # Return matches in target resolutions only
+        target_resolutions = _get_target_resolutions(target, session)
 
-        # Get all matched IDs
-        final_stmt = (
-            select(
-                hierarchy_down.c.parent.label("cluster"),
-                hierarchy_down.c.dataset,
-                hierarchy_down.c.source_pk,
-            )
-            .distinct()
-            .select_from(hierarchy_down)
-        )
-        matches = session.execute(final_stmt).all()
-
-        # Group matches by dataset
         cluster = None
         matches_by_dataset: dict[int, set] = {}
         for cluster_id, dataset_id, id_in_source in matches:
@@ -565,7 +590,7 @@ def match(
                 cluster=cluster,
                 source=source,
                 source_id=matches_by_dataset.get(
-                    source_resolution.resolution_id, set()
+                    dataset_resolution.resolution_id, set()
                 ),
                 target=target_name,
                 target_id=matches_by_dataset.get(

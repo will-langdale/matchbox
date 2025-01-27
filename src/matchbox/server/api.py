@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 from uuid import uuid4
 
@@ -25,9 +26,16 @@ dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    get_backend()
+    yield
+
+
 app = FastAPI(
     title="matchbox API",
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 

@@ -137,7 +137,9 @@ def generate_resolution_from() -> pa.Table:
     )
 
 
-def generate_cluster_source(range_left: int, range_right: int) -> pa.Table:
+def generate_cluster_source(
+    range_left: int, range_right: int, resolution_source: int
+) -> pa.Table:
     """Generate cluster table containing rows for source rows.
 
     Args:
@@ -156,7 +158,7 @@ def generate_cluster_source(range_left: int, range_right: int) -> pa.Table:
         {
             "cluster_id": pa.array(source, type=pa.uint64()),
             "cluster_hash": pa.array(_hash_list_int(source), type=pa.binary()),
-            "dataset": pa.array([1] * len(source), type=pa.uint64()),
+            "dataset": pa.array([resolution_source] * len(source), type=pa.uint64()),
             "source_pk": pa.array(create_source_pk(source), type=pa.list_(pa.string())),
         }
     )
@@ -337,8 +339,12 @@ def generate_all_tables(
     resolution_from = generate_resolution_from()
     sources = generate_sources()
 
-    clusters_source1 = generate_cluster_source(0, source_len)
-    clusters_source2 = generate_cluster_source(source_len, source_len * 2)
+    clusters_source1 = generate_cluster_source(
+        range_left=0, range_right=source_len, resolution_source=1
+    )
+    clusters_source2 = generate_cluster_source(
+        range_left=source_len, range_right=source_len * 2, resolution_source=2
+    )
 
     (
         top_clusters1,
@@ -381,8 +387,10 @@ def generate_all_tables(
 
     probabilities = pa.concat_tables(
         [probabilities_dedupe1, probabilities_dedupe2, probabilities_link]
-    )
-    contains = pa.concat_tables([contains_dedupe1, contains_dedupe2, contains_link])
+    ).combine_chunks()
+    contains = pa.concat_tables(
+        [contains_dedupe1, contains_dedupe2, contains_link]
+    ).combine_chunks()
     clusters = pa.concat_tables(
         [
             clusters_source1,
@@ -391,7 +399,7 @@ def generate_all_tables(
             clusters_dedupe2,
             clusters_link,
         ]
-    )
+    ).combine_chunks()
 
     # Order matters
     return {

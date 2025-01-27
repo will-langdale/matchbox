@@ -2,6 +2,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 from sqlalchemy import text
 
@@ -12,7 +13,10 @@ from matchbox.server.postgresql.benchmark.generate_tables import (
     generate_all_tables,
     generate_result_tables,
 )
-from matchbox.server.postgresql.benchmark.query import compile_query_sql
+from matchbox.server.postgresql.benchmark.query import (
+    compile_match_sql,
+    compile_query_sql,
+)
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
@@ -118,6 +122,36 @@ def test_benchmark_query_generation(
     assert df.pk.nunique() == parameters["unique_pks"]
 
 
+def test_benchmark_match_query_generation(
+    setup_database: SetupDatabaseCallable,
+    matchbox_postgres: MatchboxPostgres,
+    warehouse_data: list[Source],
+    revolution_inc: dict[str, list[str]],
+):
+    setup_database(matchbox_postgres, warehouse_data, "link")
+
+    engine = MBDB.get_engine()
+    source_pks = revolution_inc["duns"]
+    target_pks = revolution_inc["crn"]
+
+    sql_match = compile_match_sql(
+        source_pk=source_pks[0],
+        source_name=warehouse_data[1].address.full_name,  # DUNS
+        point_of_truth="deterministic_naive_test.crn_naive_test.duns",
+    )
+
+    assert isinstance(sql_match, str)
+
+    with engine.connect() as conn:
+        res = conn.execute(text(sql_match)).all()
+
+    df = pd.DataFrame(res, columns=["cluster", "dataset", "source_pk"]).dropna()
+
+    assert df.cluster.nunique() == 1
+    assert df.dataset.nunique() == 2
+    assert set(df.source_pk) == set(source_pks + target_pks)
+
+
 @pytest.mark.parametrize(
     ("left_ids", "right_ids", "next_id", "n_components", "n_probs"),
     (
@@ -151,6 +185,11 @@ def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
         results = generate_all_tables(20, 5, 25, 5, 25)
 
         assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
+        assert set(pc.unique(results["clusters"]["dataset"]).to_pylist()) == {
+            1,
+            2,
+            None,
+        }
 
         for table_name, table_arrow in results.items():
             df = table_arrow.to_pandas()
