@@ -1,17 +1,21 @@
 from contextlib import asynccontextmanager
+from io import BytesIO
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 from uuid import uuid4
 
 import pyarrow as pa
+import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from matchbox.common.dtos import (
     BackendEntityType,
     CountResult,
     HealthCheck,
     ModelResultsType,
+    QueryParams,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
@@ -197,8 +201,25 @@ async def set_ancestors_cache(name: str):
 
 
 @app.get("/query")
-async def query():
-    raise HTTPException(status_code=501, detail="Not implemented")
+async def query(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    query_params: QueryParams,
+):
+    res = backend.query(
+        source_address=query_params.source_address,
+        resolution_id=query_params.resolution_id,
+        threshold=query_params.threshold,
+        limit=query_params.limit,
+    )
+
+    sink = BytesIO()
+    with ipc.new_file(sink, res.schema) as writer:
+        for batch in res.to_batches():
+            writer.write(batch)
+    sink.seek(0)
+
+    pybytes = sink.getvalue().to_pybytes()
+    return Response(content=pybytes, media_type="application/vnd.apache.arrow.stream")
 
 
 @app.get("/match")

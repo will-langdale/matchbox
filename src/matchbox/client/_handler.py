@@ -1,8 +1,11 @@
+from io import BytesIO
 from os import getenv
 
 import httpx
 
+from matchbox.common.dtos import QueryParams
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.sources import SourceAddress
 
 
 def url(path: str) -> str:
@@ -14,6 +17,23 @@ def url(path: str) -> str:
     return api_root + path
 
 
-def get_resolution_graph() -> str:
+def get_resolution_graph() -> ResolutionGraph:
     res = httpx.get(url("/report/resolutions")).json()
     return ResolutionGraph.model_validate(res)
+
+
+def query(
+    source_address: SourceAddress,
+    resolution_id: int | None = None,
+    threshold: int | None = None,
+    limit: int | None = None,
+) -> BytesIO:
+    qp = QueryParams(
+        source_address=source_address,
+        resolution_id=resolution_id,
+        threshold=threshold,
+        limit=limit,
+    ).model_dump_json()
+
+    res = httpx.get(url("/query/"), json=qp)
+    return BytesIO(res.content)
