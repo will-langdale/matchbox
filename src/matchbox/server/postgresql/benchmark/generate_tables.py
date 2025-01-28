@@ -10,6 +10,7 @@ import pyarrow.parquet as pq
 
 from matchbox.common.factories import generate_dummy_probabilities
 from matchbox.common.hash import HASH_FUNC, hash_data, hash_values
+from matchbox.common.logging import get_console
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -372,6 +373,9 @@ def generate_all_tables(
     Returns:
         A dictionary where keys are table names and values are PyArrow tables
     """
+    console = get_console()
+
+    console.log("Generating sources")
     resolutions = generate_resolutions(dataset_start_id)
     resolution_from = generate_resolution_from(dataset_start_id)
     sources = generate_sources(dataset_start_id)
@@ -391,6 +395,7 @@ def generate_all_tables(
 
     initial_next_id = cluster_start_id + (source_len * 2)
 
+    console.log("Generating the deduplication tables")
     (
         top_clusters1,
         probabilities_dedupe1,
@@ -421,13 +426,16 @@ def generate_all_tables(
         n_probs=dedupe_len,
     )
 
-    _, probabilities_link, contains_link, clusters_link, _ = generate_result_tables(
-        left_ids=top_clusters1,
-        right_ids=top_clusters2,
-        resolution_id=dataset_start_id + 4,
-        next_id=next_id2,
-        n_components=link_components,
-        n_probs=link_len,
+    console.log("Generating the link tables")
+    _, probabilities_link, contains_link, clusters_link, final_next_id = (
+        generate_result_tables(
+            left_ids=top_clusters1,
+            right_ids=top_clusters2,
+            resolution_id=dataset_start_id + 4,
+            next_id=next_id2,
+            n_components=link_components,
+            n_probs=link_len,
+        )
     )
 
     probabilities = pa.concat_tables(
@@ -445,6 +453,10 @@ def generate_all_tables(
             clusters_link,
         ]
     ).combine_chunks()
+
+    console.log("Generation complete.")
+    console.log(f"Next dataset id: {dataset_start_id + 5}")
+    console.log(f"Next cluster id: {final_next_id}")
 
     # Order matters
     return {
@@ -501,6 +513,8 @@ def main(
         generate_tables.py -s s -o data/v4 -d 1 -c 0
         ```
     """
+    console = get_console()
+
     if not output_dir:
         output_dir = Path.cwd() / "data" / "all_tables"
     if settings not in PRESETS:
@@ -525,8 +539,12 @@ def main(
 
     output_dir /= settings
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    console.log("Writing to disk")
     for name, table in all_tables.items():
         pq.write_table(table, output_dir / f"{name}.parquet")
+
+    console.log("Complete")
 
 
 if __name__ == "__main__":
