@@ -12,9 +12,11 @@ from matchbox.common.dtos import (
     CountResult,
     HealthCheck,
     ModelResultsType,
+    SourceStatus,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.sources import Source
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -126,6 +128,32 @@ async def clear_backend():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
+@app.post("/sources")
+async def add_source(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    source: Source,
+    data: UploadFile,
+):
+    """Add a source to the backend."""
+    # TODO: https://stackoverflow.com/questions/65504438/how-to-add-both-file-and-json-body-in-a-fastapi-post-request
+    client = backend.settings.datastore.get_client()
+    schema = pa.schema([("source_pk", pa.list_(pa.string())), ("hash", pa.binary())])
+    upload_id = await table_to_s3(
+        client=client, bucket="test-bucket", file=data, expected_schema=schema
+    )
+    data_hashes = pa.Table.from_batches(
+        [
+            batch
+            async for batch in s3_to_recordbatch(
+                client=client, bucket="test-bucket", key=f"{upload_id}.parquet"
+            )
+        ]
+    )
+    backend.index(source=source, data_hashes=data_hashes)
+
+    return SourceStatus(status="ready")
+
+
 @app.get("/sources")
 async def list_sources():
     raise HTTPException(status_code=501, detail="Not implemented")
@@ -133,11 +161,6 @@ async def list_sources():
 
 @app.get("/sources/{address}")
 async def get_source(address: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
-
-
-@app.post("/sources/{hash}")
-async def add_source(hash: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 

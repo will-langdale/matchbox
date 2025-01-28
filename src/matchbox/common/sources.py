@@ -1,10 +1,17 @@
 import json
+from base64 import b64decode, b64encode
 from functools import wraps
 from typing import Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -61,6 +68,18 @@ class SourceAddress(BaseModel):
 
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
+
+    @field_serializer("warehouse_hash")
+    def serialize_hash(self, hash: bytes, _info):
+        return b64encode(hash).decode()
+
+    @field_validator("warehouse_hash", mode="before")
+    @classmethod
+    def deserialize_hash(cls, v):
+        try:
+            return b64decode(v)
+        except Exception:
+            return v
 
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
