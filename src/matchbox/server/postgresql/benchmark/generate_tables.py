@@ -461,7 +461,7 @@ def generate_all_tables(
 @click.option("-s", "--settings", type=str, required=True, help="Settings dict to use.")
 @click.option(
     "-o",
-    "--output_dir",
+    "--output-dir",
     type=click.Path(exists=True, path_type=Path),
     help="Directory to save parquets to.",
 )
@@ -475,7 +475,32 @@ def generate_all_tables(
     default=1,
     help="Starting ID for dataset resolution IDs",
 )
-def main(settings, output_dir, cluster_start_id, dataset_start_id):
+def main(
+    settings: str,
+    output_dir: Path,
+    cluster_start_id: int,
+    dataset_start_id: int,
+) -> None:
+    """Command line tool for generating data.
+
+    Args:
+        settings: The key of the settings dictionary to use
+        output_dir: Where to save the output files
+        cluster_start_id: The first integer to use for clusters
+        dataset_start_id: The first integer to use for datasets
+
+    Examples:
+        ```shell
+        generate_tables.py \
+            --settings xl \
+            --output-dir data/v4 \
+            --dataset-start-id 6742 \
+            --cluster-start-id 7
+        ```
+        ```shell
+        generate_tables.py -s s -o data/v4 -d 1 -c 0
+        ```
+    """
     if not output_dir:
         output_dir = Path.cwd() / "data" / "all_tables"
     if settings not in PRESETS:
