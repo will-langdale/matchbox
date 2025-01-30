@@ -132,7 +132,7 @@ class TestMatchboxAPI:
                 return_value=pa.Table.from_pylist(
                     [
                         {"cluster_id": 1, "source_pk": "a"},
-                        {"cluster_id": 2, "sdource_pk": "b"},
+                        {"cluster_id": 2, "source_pk": "b"},
                     ],
                     schema=schemas.MB_IDS,
                 )
