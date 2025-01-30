@@ -28,3 +28,9 @@ class CountResult(BaseModel):
     """Response model for count results"""
 
     entities: dict[BackendEntityType, int]
+
+
+class ErrorMessage(BaseModel):
+    """Generic API error message"""
+
+    details: str

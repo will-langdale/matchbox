@@ -7,11 +7,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from matchbox.common.dtos import (
     BackendEntityType,
     CountResult,
+    ErrorMessage,
     HealthCheck,
     ModelResultsType,
 )
@@ -202,7 +203,7 @@ async def set_ancestors_cache(name: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/query")
+@app.get("/query", responses={404: {"model": ErrorMessage}})
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     full_name: str,
@@ -220,7 +221,9 @@ async def query(
             limit=limit,
         )
     except MatchboxServerResolutionError as e:
-        raise HTTPException(status_code=404, detail=f"{str(e)}") from e
+        return JSONResponse(
+            status_code=404, content=ErrorMessage(details=f"{str(e)}").model_dump()
+        )
 
     sink = BytesIO()
     pq.write_table(res, sink)
