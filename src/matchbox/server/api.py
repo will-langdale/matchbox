@@ -75,7 +75,7 @@ async def table_to_s3(
             raise MatchboxServerFileError(
                 message=(
                     "Schema mismatch. "
-                    "Expected:\n{expected_schema}\nGot:\n{table.schema}"
+                    f"Expected:\n{expected_schema}\nGot:\n{table.schema}"
                 )
             )
 
@@ -213,13 +213,15 @@ async def query(
     )
 
     sink = BytesIO()
+    pq.write_table(res, sink)
+    sink.seek(0)
     with ipc.new_file(sink, res.schema) as writer:
         for batch in res.to_batches():
             writer.write(batch)
     sink.seek(0)
 
     pybytes = sink.getvalue().to_pybytes()
-    return Response(content=pybytes, media_type="application/vnd.apache.arrow.stream")
+    return Response(content=pybytes, media_type="application/octet-stream")
 
 
 @app.get("/match")

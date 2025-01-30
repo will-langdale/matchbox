@@ -2,8 +2,11 @@ from io import BytesIO
 from os import getenv
 
 import httpx
+from pyarrow.parquet import read_table
 
+from matchbox.common import schemas
 from matchbox.common.dtos import QueryParams
+from matchbox.common.exceptions import MatchboxClientFileError
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import SourceAddress
 
@@ -36,4 +39,14 @@ def query(
     ).model_dump_json()
 
     res = httpx.get(url("/query/"), json=qp)
-    return BytesIO(res.content)
+    buffer = BytesIO(res.content)
+    table = read_table(buffer)
+
+    if not table.schema.equals(schemas.MB_IDS):
+        raise MatchboxClientFileError(
+            message=(
+                f"Schema mismatch. Expected:\n{schemas.MB_IDS}\nGot:\n{table.schema}"
+            )
+        )
+
+    return table

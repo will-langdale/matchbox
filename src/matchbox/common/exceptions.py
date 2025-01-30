@@ -1,6 +1,16 @@
 from typing import Any
 
 
+class MatchboxClientFileError(Exception):
+    """There was a problem with file download."""
+
+    def __init__(self, message: str | None = None):
+        if message is None:
+            message = "There was a problem with file download."
+
+        super().__init__(message)
+
+
 class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
@@ -14,16 +24,13 @@ class MatchboxSourceEngineError(Exception):
 
 
 class MatchboxServerFileError(Exception):
-    """There was a problem with file transfer."""
+    """There was a problem with file upload."""
 
-    def __init__(self, message: str | None = None, file: str | None = None):
+    def __init__(self, message: str | None = None):
         if message is None:
-            message = "There was a problem with file transfer."
-            if file is not None:
-                message = f"There was a problem with file transfer: {file}."
+            message = "There was a problem with file upload."
 
         super().__init__(message)
-        self.file = file
 
 
 class MatchboxServerResolutionError(Exception):
