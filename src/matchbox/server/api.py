@@ -32,6 +32,14 @@ else:
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
+ERROR_SIGNATURE = {
+    "content": {
+        "application/json": {
+            "example": ErrorMessage(details="error details").model_dump()
+        }
+    }
+}
+
 
 class ParquetResponse(Response):
     media_type = "application/octet-stream"
@@ -210,7 +218,7 @@ async def set_ancestors_cache(name: str):
 @app.get(
     "/query",
     response_class=ParquetResponse,
-    responses={404: {"model": ErrorMessage}},
+    responses={404: ERROR_SIGNATURE},
 )
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
