@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 from uuid import uuid4
 
 import pyarrow as pa
-import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
@@ -15,10 +14,10 @@ from matchbox.common.dtos import (
     CountResult,
     HealthCheck,
     ModelResultsType,
-    QueryParams,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.sources import SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -203,25 +202,26 @@ async def set_ancestors_cache(name: str):
 @app.get("/query")
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-    query_params: QueryParams,
+    full_name: str,
+    warehouse_hash: bytes,
+    resolution_id: int | None = None,
+    threshold: float | None = None,
+    limit: int | None = None,
 ):
+    source_address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash)
     res = backend.query(
-        source_address=query_params.source_address,
-        resolution_id=query_params.resolution_id,
-        threshold=query_params.threshold,
-        limit=query_params.limit,
+        source_address=source_address,
+        resolution_id=resolution_id,
+        threshold=threshold,
+        limit=limit,
     )
 
     sink = BytesIO()
     pq.write_table(res, sink)
     sink.seek(0)
-    with ipc.new_file(sink, res.schema) as writer:
-        for batch in res.to_batches():
-            writer.write(batch)
-    sink.seek(0)
 
-    pybytes = sink.getvalue().to_pybytes()
-    return Response(content=pybytes, media_type="application/octet-stream")
+    pybytes = sink.getvalue()
+    return Response(pybytes, media_type="application/octet-stream")
 
 
 @app.get("/match")

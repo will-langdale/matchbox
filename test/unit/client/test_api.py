@@ -1,4 +1,4 @@
-import io
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -10,6 +10,7 @@ from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pandas import DataFrame
 
+from matchbox.common import schemas
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.graph import ResolutionGraph
 from matchbox.server import app
@@ -121,9 +122,35 @@ class TestMatchboxAPI:
     #     response = client.post("/models/test_model/ancestors_cache")
     #     assert response.status_code == 200
 
-    # def test_query():
-    #     response = client.get("/query")
-    #     assert response.status_code == 200
+    def test_query(self):
+        with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
+            # Mock backend
+            mock_backend = Mock()
+            mock_backend.models.count = Mock(return_value=20)
+
+            mock_backend.query = Mock(
+                return_value=pa.Table.from_pylist(
+                    [
+                        {"cluster_id": 1, "source_pk": "a"},
+                        {"cluster_id": 2, "sdource_pk": "b"},
+                    ],
+                    schema=schemas.MB_IDS,
+                )
+            )
+            get_backend.return_value = mock_backend
+
+            # Hit endpoint
+            response = client.get(
+                "/query", params={"full_name": "foo", "warehouse_hash": b"bar"}
+            )
+
+            # Process response
+            buffer = BytesIO(response.content)
+            table = pq.read_table(buffer)
+
+            # Check response
+            assert response.status_code == 200
+            assert table.schema.equals(schemas.MB_IDS)
 
     # def test_validate_ids():
     #     response = client.get("/validate/id")
@@ -157,7 +184,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
     pq.write_table(table, sink)
     file_content = sink.getvalue().to_pybytes()
 
-    parquet_file = UploadFile(filename="test.parquet", file=io.BytesIO(file_content))
+    parquet_file = UploadFile(filename="test.parquet", file=BytesIO(file_content))
 
     # Call the function
     upload_id = await table_to_s3(
@@ -178,7 +205,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
     assert response_table.equals(table)
 
     # Test 2: Upload a non-parquet file
-    text_file = UploadFile(filename="test.txt", file=io.BytesIO(b"test"))
+    text_file = UploadFile(filename="test.txt", file=BytesIO(b"test"))
 
     with pytest.raises(MatchboxServerFileError):
         await table_to_s3(

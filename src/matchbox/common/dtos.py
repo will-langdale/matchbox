@@ -2,8 +2,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
-from matchbox.common.sources import SourceAddress
-
 
 class BackendEntityType(StrEnum):
     DATASETS = "datasets"
@@ -30,12 +28,3 @@ class CountResult(BaseModel):
     """Response model for count results"""
 
     entities: dict[BackendEntityType, int]
-
-
-class QueryParams:
-    model_config = {"extra": "forbid"}
-
-    source_address: SourceAddress
-    resolution_id: int | None = None
-    threshold: float | None = None
-    limit: int | None = None
