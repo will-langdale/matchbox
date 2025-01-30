@@ -15,7 +15,10 @@ from matchbox.common.dtos import (
     HealthCheck,
     ModelResultsType,
 )
-from matchbox.common.exceptions import MatchboxServerFileError
+from matchbox.common.exceptions import (
+    MatchboxServerFileError,
+    MatchboxServerResolutionError,
+)
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
@@ -209,12 +212,15 @@ async def query(
     limit: int | None = None,
 ):
     source_address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash)
-    res = backend.query(
-        source_address=source_address,
-        resolution_id=resolution_id,
-        threshold=threshold,
-        limit=limit,
-    )
+    try:
+        res = backend.query(
+            source_address=source_address,
+            resolution_id=resolution_id,
+            threshold=threshold,
+            limit=limit,
+        )
+    except MatchboxServerResolutionError as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}") from e
 
     sink = BytesIO()
     pq.write_table(res, sink)

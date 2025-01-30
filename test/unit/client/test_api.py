@@ -11,7 +11,10 @@ from fastapi.testclient import TestClient
 from pandas import DataFrame
 
 from matchbox.common import schemas
-from matchbox.common.exceptions import MatchboxServerFileError
+from matchbox.common.exceptions import (
+    MatchboxServerFileError,
+    MatchboxServerResolutionError,
+)
 from matchbox.common.graph import ResolutionGraph
 from matchbox.server import app
 from matchbox.server.api import s3_to_recordbatch, table_to_s3
@@ -126,8 +129,6 @@ class TestMatchboxAPI:
         with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
             # Mock backend
             mock_backend = Mock()
-            mock_backend.models.count = Mock(return_value=20)
-
             mock_backend.query = Mock(
                 return_value=pa.Table.from_pylist(
                     [
@@ -151,6 +152,21 @@ class TestMatchboxAPI:
             # Check response
             assert response.status_code == 200
             assert table.schema.equals(schemas.MB_IDS)
+
+    def test_query_404(self):
+        with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
+            # Mock backend
+            mock_backend = Mock()
+            mock_backend.query = Mock(side_effect=MatchboxServerResolutionError())
+            get_backend.return_value = mock_backend
+
+            # Hit endpoint
+            response = client.get(
+                "/query", params={"full_name": "foo", "warehouse_hash": b"bar"}
+            )
+
+            # Check response
+            assert response.status_code == 404
 
     # def test_validate_ids():
     #     response = client.get("/validate/id")
