@@ -11,10 +11,8 @@ from matchbox import index, match, process, query
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
+from matchbox.common import schemas
 from matchbox.common.sources import Source, SourceAddress
-from matchbox.server.postgresql import MatchboxPostgres
-
-from ..fixtures.db import AddIndexedDataCallable
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -33,22 +31,9 @@ def test_cleaners():
 
 
 def test_process(
-    matchbox_postgres: MatchboxPostgres,
-    db_add_indexed_data: AddIndexedDataCallable,
     warehouse_data: list[Source],
 ):
-    # Setup
-    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
-
-    crn_source = warehouse_data[0]
-
-    crn = query(
-        select(
-            {crn_source.address.full_name: ["crn", "company_name"]},
-            engine=crn_source.engine,
-        ),
-        return_type="pandas",
-    )
+    crn = warehouse_data[0]
 
     cleaner_name = cleaner(
         function=company_name,
@@ -159,30 +144,30 @@ def test_query_no_resolution_ok_various_params():
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch("matchbox.client._handler.query") as mock_query,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
-        # Mock backend's `get_resolution` and `query`
+        # Mock backend
         mock_backend = Mock()
-
         get_resolution_id = Mock(return_value=42)
         mock_backend.get_resolution_id = get_resolution_id
-
-        query_mock = Mock(
-            return_value=pa.Table.from_arrays(
-                [pa.array([0, 1]), pa.array([10, 11])],
-                names=["source_pk", "final_parent"],
-            )
-        )
-        mock_backend.query = query_mock
-
         get_backend.return_value = mock_backend
+
+        # Mock handler
+        mock_query.return_value = pa.Table.from_pylist(
+            [
+                {"cluster_id": 1, "source_pk": "0"},
+                {"cluster_id": 2, "source_pk": "1"},
+            ],
+            schema=schemas.MB_IDS,
+        )
 
         # Mock `Source.to_arrow`
         to_arrow.return_value = pa.Table.from_pandas(
             DataFrame(
                 [
-                    {"foo_pk": 0, "foo_a": 1, "foo_b": "2"},
-                    {"foo_pk": 1, "foo_a": 10, "foo_b": "20"},
+                    {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
+                    {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
                 ]
             )
         )
@@ -207,7 +192,7 @@ def test_query_no_resolution_ok_various_params():
         assert {"foo_a", "foo_b"} == set(results.columns)
 
         get_resolution_id.assert_not_called()
-        query_mock.assert_called_once_with(
+        mock_query.assert_called_once_with(
             source_address=sels[0].source.address,
             resolution_id=None,
             threshold=None,
@@ -215,14 +200,14 @@ def test_query_no_resolution_ok_various_params():
         )
         to_arrow.assert_called_once()
         assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
-        assert set(to_arrow.call_args.kwargs["pks"]) == {0, 1}
+        assert set(to_arrow.call_args.kwargs["pks"]) == {"0", "1"}
 
         # Tests with optional params
         results = query(sels, return_type="arrow", threshold=0.5, limit=2).to_pandas()
         assert len(results) == 2
         assert {"foo_a", "foo_b"} == set(results.columns)
 
-        query_mock.assert_called_with(
+        mock_query.assert_called_with(
             source_address=sels[0].source.address,
             resolution_id=None,
             threshold=0.5,
@@ -234,46 +219,48 @@ def test_query_multiple_sources_with_limits():
     """Tests that we can query multiple sources and distribute the limit among them."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        patch("matchbox.client._handler.query") as mock_query,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
-        # Mock backend's `get_resolution` and `query`
+        # Mock backend
         mock_backend = Mock()
-
         get_resolution_id = Mock(return_value=42)
         mock_backend.get_resolution_id = get_resolution_id
-
-        query_mock = Mock(
-            side_effect=[
-                pa.Table.from_arrays(
-                    [pa.array([0, 1]), pa.array([10, 11])],
-                    names=["source_pk", "final_parent"],
-                ),
-                pa.Table.from_arrays(
-                    [pa.array([2, 3]), pa.array([10, 11])],
-                    names=["source_pk", "final_parent"],
-                ),
-            ]
-            * 2  # 2 calls to `query()` in this test, each querying server twice
-        )
-        mock_backend.query = query_mock
-
         get_backend.return_value = mock_backend
+
+        # Mock handler
+        mock_query.side_effect = [
+            pa.Table.from_pylist(
+                [
+                    {"cluster_id": 1, "source_pk": "0"},
+                    {"cluster_id": 2, "source_pk": "1"},
+                ],
+                schema=schemas.MB_IDS,
+            ),
+            pa.Table.from_pylist(
+                [
+                    {"cluster_id": 1, "source_pk": "2"},
+                    {"cluster_id": 2, "source_pk": "3"},
+                ],
+                schema=schemas.MB_IDS,
+            ),
+        ] * 2  # 2 calls to `query()` in this test, each querying server twice
 
         # Mock `Source.to_arrow`
         to_arrow.side_effect = [
             pa.Table.from_pandas(
                 DataFrame(
                     [
-                        {"foo_pk": 0, "foo_a": 1, "foo_b": "2"},
-                        {"foo_pk": 1, "foo_a": 10, "foo_b": "20"},
+                        {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
+                        {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
                     ]
                 )
             ),
             pa.Table.from_pandas(
                 DataFrame(
                     [
-                        {"foo2_pk": 2, "foo2_c": "val"},
-                        {"foo2_pk": 3, "foo2_c": "val"},
+                        {"foo2_pk": "2", "foo2_c": "val"},
+                        {"foo2_pk": "3", "foo2_c": "val"},
                     ]
                 )
             ),
@@ -306,13 +293,13 @@ def test_query_multiple_sources_with_limits():
         assert {"foo_a", "foo_b", "foo2_c"} == set(results.columns)
 
         get_resolution_id.assert_called_with("link")
-        assert query_mock.call_args_list[0] == call(
+        assert mock_query.call_args_list[0] == call(
             source_address=sels[0].source.address,
             resolution_id=42,
             threshold=None,
             limit=4,
         )
-        assert query_mock.call_args_list[1] == call(
+        assert mock_query.call_args_list[1] == call(
             source_address=sels[1].source.address,
             resolution_id=42,
             threshold=None,
