@@ -33,6 +33,10 @@ dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
 
+class ParquetResponse(Response):
+    media_type = "application/octet-stream"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     get_backend()
@@ -203,7 +207,11 @@ async def set_ancestors_cache(name: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/query", responses={404: {"model": ErrorMessage}})
+@app.get(
+    "/query",
+    response_class=ParquetResponse,
+    responses={404: {"model": ErrorMessage}},
+)
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     full_name: str,
@@ -230,7 +238,7 @@ async def query(
     sink.seek(0)
 
     pybytes = sink.getvalue()
-    return Response(pybytes, media_type="application/octet-stream")
+    return ParquetResponse(pybytes, media_type="application/octet-stream")
 
 
 @app.get("/match")
