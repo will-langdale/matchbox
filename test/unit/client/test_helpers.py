@@ -38,7 +38,7 @@ def test_cleaners():
 def test_process(
     warehouse_data: list[Source],
 ):
-    crn = warehouse_data[0]
+    crn = warehouse_data[0].to_arrow()
 
     cleaner_name = cleaner(
         function=company_name,
