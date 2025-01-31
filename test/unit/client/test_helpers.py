@@ -165,8 +165,8 @@ def test_query_no_resolution_ok_various_params():
                 content=table_to_buffer(
                     pa.Table.from_pylist(
                         [
-                            {"cluster_id": 1, "source_pk": "0"},
-                            {"cluster_id": 2, "source_pk": "1"},
+                            {"source_pk": "0", "id": 1},
+                            {"source_pk": "1", "id": 2},
                         ],
                         schema=SCHEMA_MB_IDS,
                     )
@@ -250,8 +250,8 @@ def test_query_multiple_sources_with_limits():
                     content=table_to_buffer(
                         pa.Table.from_pylist(
                             [
-                                {"cluster_id": 1, "source_pk": "0"},
-                                {"cluster_id": 2, "source_pk": "1"},
+                                {"source_pk": "0", "id": 1},
+                                {"source_pk": "1", "id": 2},
                             ],
                             schema=SCHEMA_MB_IDS,
                         )
@@ -262,8 +262,8 @@ def test_query_multiple_sources_with_limits():
                     content=table_to_buffer(
                         pa.Table.from_pylist(
                             [
-                                {"cluster_id": 1, "source_pk": "2"},
-                                {"cluster_id": 2, "source_pk": "3"},
+                                {"source_pk": "2", "id": 1},
+                                {"source_pk": "3", "id": 2},
                             ],
                             schema=SCHEMA_MB_IDS,
                         )

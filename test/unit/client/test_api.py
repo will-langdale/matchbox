@@ -132,8 +132,8 @@ class TestMatchboxAPI:
             mock_backend.query = Mock(
                 return_value=pa.Table.from_pylist(
                     [
-                        {"cluster_id": 1, "source_pk": "a"},
-                        {"cluster_id": 2, "source_pk": "b"},
+                        {"source_pk": "a", "id": 1},
+                        {"source_pk": "b", "id": 2},
                     ],
                     schema=SCHEMA_MB_IDS,
                 )

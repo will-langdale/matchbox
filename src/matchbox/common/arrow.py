@@ -3,7 +3,7 @@ from io import BytesIO
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-SCHEMA_MB_IDS = pa.schema([("source_pk", pa.string()), ("cluster_id", pa.int64())])
+SCHEMA_MB_IDS = pa.schema([("id", pa.int64()), ("source_pk", pa.string())])
 
 
 def table_to_buffer(table: pa.Table) -> BytesIO:
