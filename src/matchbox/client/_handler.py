@@ -4,9 +4,11 @@ from os import getenv
 import httpx
 from pyarrow.parquet import read_table
 
-from matchbox.common import schemas
-from matchbox.common.dtos import QueryParams
-from matchbox.common.exceptions import MatchboxClientFileError
+from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.exceptions import (
+    MatchboxClientFileError,
+    MatchboxServerResolutionError,
+)
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import SourceAddress
 
@@ -31,21 +33,27 @@ def query(
     threshold: int | None = None,
     limit: int | None = None,
 ) -> BytesIO:
-    qp = QueryParams(
-        source_address=source_address,
-        resolution_id=resolution_id,
-        threshold=threshold,
-        limit=limit,
-    ).model_dump_json()
+    res = httpx.get(
+        url("/query"),
+        params={
+            "full_name": source_address.full_name,
+            "warehouse_hash": source_address.warehouse_hash,
+            "resolution_id": resolution_id,
+            "threshold": threshold,
+            "limit": limit,
+        },
+    )
 
-    res = httpx.get(url("/query/"), json=qp)
+    if res.status_code == 404:
+        raise MatchboxServerResolutionError(res.json().detail)
+
     buffer = BytesIO(res.content)
     table = read_table(buffer)
 
-    if not table.schema.equals(schemas.MB_IDS):
+    if not table.schema.equals(SCHEMA_MB_IDS):
         raise MatchboxClientFileError(
             message=(
-                f"Schema mismatch. Expected:\n{schemas.MB_IDS}\nGot:\n{table.schema}"
+                f"Schema mismatch. Expected:\n{SCHEMA_MB_IDS}\nGot:\n{table.schema}"
             )
         )
 
