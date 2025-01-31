@@ -10,7 +10,7 @@ from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pandas import DataFrame
 
-from matchbox.common import schemas
+from matchbox.common.arrow import SCHEMA_MB_IDS
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxServerResolutionError,
@@ -135,7 +135,7 @@ class TestMatchboxAPI:
                         {"cluster_id": 1, "source_pk": "a"},
                         {"cluster_id": 2, "source_pk": "b"},
                     ],
-                    schema=schemas.MB_IDS,
+                    schema=SCHEMA_MB_IDS,
                 )
             )
             get_backend.return_value = mock_backend
@@ -151,7 +151,7 @@ class TestMatchboxAPI:
 
             # Check response
             assert response.status_code == 200
-            assert table.schema.equals(schemas.MB_IDS)
+            assert table.schema.equals(SCHEMA_MB_IDS)
 
     def test_query_404(self):
         with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:

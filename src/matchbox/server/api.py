@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from io import BytesIO
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 from uuid import uuid4
 
@@ -9,6 +8,7 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendEntityType,
     CountResult,
@@ -241,12 +241,8 @@ async def query(
             status_code=404, content=ErrorMessage(details=f"{str(e)}").model_dump()
         )
 
-    sink = BytesIO()
-    pq.write_table(res, sink)
-    sink.seek(0)
-
-    pybytes = sink.getvalue()
-    return ParquetResponse(pybytes, media_type="application/octet-stream")
+    buffer = table_to_buffer(res)
+    return ParquetResponse(buffer.getvalue(), media_type="application/octet-stream")
 
 
 @app.get("/match")
