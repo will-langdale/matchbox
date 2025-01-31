@@ -1,17 +1,20 @@
 import logging
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
+import respx
 from dotenv import find_dotenv, load_dotenv
+from httpx import Response
 from pandas import DataFrame
 from sqlalchemy import Engine
 
 from matchbox import index, match, process, query
+from matchbox.client._handler import url
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
-from matchbox.common import schemas
+from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.sources import Source, SourceAddress
 
 dotenv_path = find_dotenv()
@@ -144,22 +147,29 @@ def test_query_no_resolution_ok_various_params():
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch("matchbox.client._handler.query") as mock_query,
         patch.object(Source, "to_arrow") as to_arrow,
+        respx.mock,
     ):
-        # Mock backend
+        # Mock backend (temporary)
         mock_backend = Mock()
         get_resolution_id = Mock(return_value=42)
         mock_backend.get_resolution_id = get_resolution_id
         get_backend.return_value = mock_backend
 
-        # Mock handler
-        mock_query.return_value = pa.Table.from_pylist(
-            [
-                {"cluster_id": 1, "source_pk": "0"},
-                {"cluster_id": 2, "source_pk": "1"},
-            ],
-            schema=schemas.MB_IDS,
+        # Mock API
+        query_route = respx.get(url("/query")).mock(
+            return_value=Response(
+                200,
+                content=table_to_buffer(
+                    pa.Table.from_pylist(
+                        [
+                            {"cluster_id": 1, "source_pk": "0"},
+                            {"cluster_id": 2, "source_pk": "1"},
+                        ],
+                        schema=SCHEMA_MB_IDS,
+                    )
+                ).read(),
+            )
         )
 
         # Mock `Source.to_arrow`
@@ -192,12 +202,13 @@ def test_query_no_resolution_ok_various_params():
         assert {"foo_a", "foo_b"} == set(results.columns)
 
         get_resolution_id.assert_not_called()
-        mock_query.assert_called_once_with(
-            source_address=sels[0].source.address,
-            resolution_id=None,
-            threshold=None,
-            limit=None,
-        )
+        assert dict(query_route.calls.last.request.url.params) == {
+            "full_name": sels[0].source.address.full_name,
+            "warehouse_hash": str(sels[0].source.address.warehouse_hash),
+            "resolution_id": "",
+            "threshold": "",
+            "limit": "",
+        }
         to_arrow.assert_called_once()
         assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
         assert set(to_arrow.call_args.kwargs["pks"]) == {"0", "1"}
@@ -207,44 +218,58 @@ def test_query_no_resolution_ok_various_params():
         assert len(results) == 2
         assert {"foo_a", "foo_b"} == set(results.columns)
 
-        mock_query.assert_called_with(
-            source_address=sels[0].source.address,
-            resolution_id=None,
-            threshold=0.5,
-            limit=2,
-        )
+        assert dict(query_route.calls.last.request.url.params) == {
+            "full_name": sels[0].source.address.full_name,
+            "warehouse_hash": str(sels[0].source.address.warehouse_hash),
+            "resolution_id": "",
+            "threshold": "0.5",
+            "limit": "2",
+        }
 
 
 def test_query_multiple_sources_with_limits():
     """Tests that we can query multiple sources and distribute the limit among them."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch("matchbox.client._handler.query") as mock_query,
+        respx.mock,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
-        # Mock backend
+        # Mock backend (temporary)
         mock_backend = Mock()
         get_resolution_id = Mock(return_value=42)
         mock_backend.get_resolution_id = get_resolution_id
         get_backend.return_value = mock_backend
 
-        # Mock handler
-        mock_query.side_effect = [
-            pa.Table.from_pylist(
-                [
-                    {"cluster_id": 1, "source_pk": "0"},
-                    {"cluster_id": 2, "source_pk": "1"},
-                ],
-                schema=schemas.MB_IDS,
-            ),
-            pa.Table.from_pylist(
-                [
-                    {"cluster_id": 1, "source_pk": "2"},
-                    {"cluster_id": 2, "source_pk": "3"},
-                ],
-                schema=schemas.MB_IDS,
-            ),
-        ] * 2  # 2 calls to `query()` in this test, each querying server twice
+        # Mock API
+        query_route = respx.get(url("/query")).mock(
+            side_effect=[
+                Response(
+                    200,
+                    content=table_to_buffer(
+                        pa.Table.from_pylist(
+                            [
+                                {"cluster_id": 1, "source_pk": "0"},
+                                {"cluster_id": 2, "source_pk": "1"},
+                            ],
+                            schema=SCHEMA_MB_IDS,
+                        )
+                    ).read(),
+                ),
+                Response(
+                    200,
+                    content=table_to_buffer(
+                        pa.Table.from_pylist(
+                            [
+                                {"cluster_id": 1, "source_pk": "2"},
+                                {"cluster_id": 2, "source_pk": "3"},
+                            ],
+                            schema=SCHEMA_MB_IDS,
+                        )
+                    ).read(),
+                ),
+            ]
+            * 2  # 2 calls to `query()` in this test, each querying server twice
+        )
 
         # Mock `Source.to_arrow`
         to_arrow.side_effect = [
@@ -293,18 +318,20 @@ def test_query_multiple_sources_with_limits():
         assert {"foo_a", "foo_b", "foo2_c"} == set(results.columns)
 
         get_resolution_id.assert_called_with("link")
-        assert mock_query.call_args_list[0] == call(
-            source_address=sels[0].source.address,
-            resolution_id=42,
-            threshold=None,
-            limit=4,
-        )
-        assert mock_query.call_args_list[1] == call(
-            source_address=sels[1].source.address,
-            resolution_id=42,
-            threshold=None,
-            limit=3,
-        )
+        assert dict(query_route.calls[-2].request.url.params) == {
+            "full_name": sels[0].source.address.full_name,
+            "warehouse_hash": str(sels[0].source.address.warehouse_hash),
+            "resolution_id": "42",
+            "threshold": "",
+            "limit": "4",
+        }
+        assert dict(query_route.calls[-1].request.url.params) == {
+            "full_name": sels[1].source.address.full_name,
+            "warehouse_hash": str(sels[1].source.address.warehouse_hash),
+            "resolution_id": "42",
+            "threshold": "",
+            "limit": "3",
+        }
 
         # It also works with the selectors specified separately
         query([sels[0]], [sels[1]], resolution_name="link", limit=7)
