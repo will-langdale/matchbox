@@ -15,6 +15,7 @@ from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.dtos import ErrorMessage
 from matchbox.common.exceptions import MatchboxServerResolutionError
 from matchbox.common.sources import Source, SourceAddress
 
@@ -351,7 +352,9 @@ def test_query_404():
 
         # Mock API
         respx.get(url("/query")).mock(
-            return_value=Response(404, json={"details": "Resolution 42 not found"})
+            return_value=Response(
+                404, json=ErrorMessage(details="Resolution 42 not found").model_dump()
+            )
         )
 
         # Well-formed selector for these mocks
