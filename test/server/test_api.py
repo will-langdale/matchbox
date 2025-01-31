@@ -14,6 +14,7 @@ from matchbox.common.arrow import SCHEMA_MB_IDS
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
@@ -158,11 +159,30 @@ class TestMatchboxAPI:
             assert response.status_code == 200
             assert table.schema.equals(SCHEMA_MB_IDS)
 
-    def test_query_404(self):
+    def test_query_404_resolution(self):
         with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
             # Mock backend
             mock_backend = Mock()
             mock_backend.query = Mock(side_effect=MatchboxServerResolutionError())
+            get_backend.return_value = mock_backend
+
+            # Hit endpoint
+            response = client.get(
+                "/query",
+                params={
+                    "full_name": "foo",
+                    "warehouse_hash_b64": hash_to_base64(b"bar"),
+                },
+            )
+
+            # Check response
+            assert response.status_code == 404
+
+    def test_query_404_source(self):
+        with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
+            # Mock backend
+            mock_backend = Mock()
+            mock_backend.query = Mock(side_effect=MatchboxServerSourceError())
             get_backend.return_value = mock_backend
 
             # Hit endpoint

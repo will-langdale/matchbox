@@ -16,7 +16,10 @@ from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import BackendRetrievableType, NotFoundError
-from matchbox.common.exceptions import MatchboxServerResolutionError
+from matchbox.common.exceptions import (
+    MatchboxServerResolutionError,
+    MatchboxServerSourceError,
+)
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress
 
@@ -334,7 +337,7 @@ def test_query_multiple_sources_with_limits():
         query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-def test_query_404():
+def test_query_404_resolution():
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
         respx.mock,
@@ -372,6 +375,47 @@ def test_query_404():
 
         # Tests with no optional params
         with pytest.raises(MatchboxServerResolutionError, match="42"):
+            query(sels)
+
+
+def test_query_404_source():
+    with (
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        respx.mock,
+    ):
+        # Mock backend (temporary)
+        mock_backend = Mock()
+        get_resolution_id = Mock(return_value=42)
+        mock_backend.get_resolution_id = get_resolution_id
+        get_backend.return_value = mock_backend
+
+        # Mock API
+        respx.get(url("/query")).mock(
+            return_value=Response(
+                404,
+                json=NotFoundError(
+                    details="Resolution 42 not found",
+                    entity=BackendRetrievableType.SOURCE,
+                ).model_dump(),
+            )
+        )
+
+        # Well-formed selector for these mocks
+        sels = [
+            Selector(
+                source=Source(
+                    address=SourceAddress(
+                        full_name="foo",
+                        warehouse_hash="bar",
+                    ),
+                    db_pk="pk",
+                ),
+                fields=["a", "b"],
+            )
+        ]
+
+        # Tests with no optional params
+        with pytest.raises(MatchboxServerSourceError, match="42"):
             query(sels)
 
 
