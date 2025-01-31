@@ -45,7 +45,7 @@ def query(
     )
 
     if res.status_code == 404:
-        raise MatchboxServerResolutionError(res.json().detail)
+        raise MatchboxServerResolutionError(res.json()["details"])
 
     buffer = BytesIO(res.content)
     table = read_table(buffer)

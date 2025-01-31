@@ -15,6 +15,7 @@ from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.exceptions import MatchboxServerResolutionError
 from matchbox.common.sources import Source, SourceAddress
 
 dotenv_path = find_dotenv()
@@ -335,6 +336,41 @@ def test_query_multiple_sources_with_limits():
 
         # It also works with the selectors specified separately
         query([sels[0]], [sels[1]], resolution_name="link", limit=7)
+
+
+def test_query_404():
+    with (
+        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
+        respx.mock,
+    ):
+        # Mock backend (temporary)
+        mock_backend = Mock()
+        get_resolution_id = Mock(return_value=42)
+        mock_backend.get_resolution_id = get_resolution_id
+        get_backend.return_value = mock_backend
+
+        # Mock API
+        respx.get(url("/query")).mock(
+            return_value=Response(404, json={"details": "Resolution 42 not found"})
+        )
+
+        # Well-formed selector for these mocks
+        sels = [
+            Selector(
+                source=Source(
+                    address=SourceAddress(
+                        full_name="foo",
+                        warehouse_hash="bar",
+                    ),
+                    db_pk="pk",
+                ),
+                fields=["a", "b"],
+            )
+        ]
+
+        # Tests with no optional params
+        with pytest.raises(MatchboxServerResolutionError, match="42"):
+            query(sels)
 
 
 def test_index_default(warehouse_engine: Engine):
