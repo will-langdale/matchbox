@@ -6,9 +6,11 @@ import httpx
 from pyarrow.parquet import read_table
 
 from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.dtos import BackendRetrievableType, NotFoundError
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
     MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
@@ -67,7 +69,13 @@ def query(
     )
 
     if res.status_code == 404:
-        raise MatchboxServerResolutionError(res.json()["details"])
+        error = NotFoundError.model_validate(res.json())
+        if error.entity == BackendRetrievableType.SOURCE:
+            raise MatchboxServerSourceError(error.details)
+        if error.entity == BackendRetrievableType.RESOLUTION:
+            raise MatchboxServerResolutionError(error.details)
+        else:
+            raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     buffer = BytesIO(res.content)
     table = read_table(buffer)

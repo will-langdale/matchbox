@@ -10,15 +10,17 @@ from fastapi.responses import JSONResponse, Response
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
-    BackendEntityType,
+    BackendCountableType,
+    BackendRetrievableType,
     CountResult,
-    ErrorMessage,
     HealthCheck,
     ModelResultsType,
+    NotFoundError,
 )
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxServerResolutionError,
+    MatchboxServerSourceError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import base64_to_hash
@@ -33,10 +35,12 @@ else:
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
-ERROR_SIGNATURE = {
+NOT_FOUND_RESPONSE = {
     "content": {
         "application/json": {
-            "example": ErrorMessage(details="error details").model_dump()
+            "example": NotFoundError(
+                details="error details", entity=BackendRetrievableType.RESOLUTION
+            ).model_dump()
         }
     }
 }
@@ -129,15 +133,15 @@ async def healthcheck() -> HealthCheck:
 @app.get("/testing/count")
 async def count_backend_items(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-    entity: BackendEntityType | None = None,
+    entity: BackendCountableType | None = None,
 ) -> CountResult:
-    def get_count(e: BackendEntityType) -> int:
+    def get_count(e: BackendCountableType) -> int:
         return getattr(backend, str(e)).count()
 
     if entity is not None:
         return CountResult(entities={str(entity): get_count(entity)})
     else:
-        res = {str(e): get_count(e) for e in BackendEntityType}
+        res = {str(e): get_count(e) for e in BackendCountableType}
         return CountResult(entities=res)
 
 
@@ -219,7 +223,7 @@ async def set_ancestors_cache(name: str):
 @app.get(
     "/query",
     response_class=ParquetResponse,
-    responses={404: ERROR_SIGNATURE},
+    responses={404: NOT_FOUND_RESPONSE},
 )
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -240,7 +244,17 @@ async def query(
         )
     except MatchboxServerResolutionError as e:
         return JSONResponse(
-            status_code=404, content=ErrorMessage(details=f"{str(e)}").model_dump()
+            status_code=404,
+            content=NotFoundError(
+                details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        )
+    except MatchboxServerSourceError as e:
+        return JSONResponse(
+            status_code=404,
+            content=NotFoundError(
+                details=f"{str(e)}", entity=BackendRetrievableType.SOURCE
+            ).model_dump(),
         )
 
     buffer = table_to_buffer(res)
