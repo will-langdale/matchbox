@@ -17,6 +17,7 @@ from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import ErrorMessage
 from matchbox.common.exceptions import MatchboxServerResolutionError
+from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress
 
 dotenv_path = find_dotenv()
@@ -190,7 +191,7 @@ def test_query_no_resolution_ok_various_params():
                 source=Source(
                     address=SourceAddress(
                         full_name="foo",
-                        warehouse_hash="bar",
+                        warehouse_hash=b"bar",
                     ),
                     db_pk="pk",
                 ),
@@ -201,15 +202,12 @@ def test_query_no_resolution_ok_various_params():
         # Tests with no optional params
         results = query(sels)
         assert len(results) == 2
-        assert {"foo_a", "foo_b"} == set(results.columns)
+        assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
         get_resolution_id.assert_not_called()
         assert dict(query_route.calls.last.request.url.params) == {
             "full_name": sels[0].source.address.full_name,
-            "warehouse_hash": str(sels[0].source.address.warehouse_hash),
-            "resolution_id": "",
-            "threshold": "",
-            "limit": "",
+            "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
         }
         to_arrow.assert_called_once()
         assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
@@ -218,12 +216,11 @@ def test_query_no_resolution_ok_various_params():
         # Tests with optional params
         results = query(sels, return_type="arrow", threshold=0.5, limit=2).to_pandas()
         assert len(results) == 2
-        assert {"foo_a", "foo_b"} == set(results.columns)
+        assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
         assert dict(query_route.calls.last.request.url.params) == {
             "full_name": sels[0].source.address.full_name,
-            "warehouse_hash": str(sels[0].source.address.warehouse_hash),
-            "resolution_id": "",
+            "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
             "threshold": "0.5",
             "limit": "2",
         }
@@ -317,21 +314,19 @@ def test_query_multiple_sources_with_limits():
         # Validate results
         results = query(sels, resolution_name="link", limit=7)
         assert len(results) == 4
-        assert {"foo_a", "foo_b", "foo2_c"} == set(results.columns)
+        assert {"foo_a", "foo_b", "foo2_c", "id"} == set(results.columns)
 
         get_resolution_id.assert_called_with("link")
         assert dict(query_route.calls[-2].request.url.params) == {
             "full_name": sels[0].source.address.full_name,
-            "warehouse_hash": str(sels[0].source.address.warehouse_hash),
+            "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
             "resolution_id": "42",
-            "threshold": "",
             "limit": "4",
         }
         assert dict(query_route.calls[-1].request.url.params) == {
             "full_name": sels[1].source.address.full_name,
-            "warehouse_hash": str(sels[1].source.address.warehouse_hash),
+            "warehouse_hash_b64": hash_to_base64(sels[1].source.address.warehouse_hash),
             "resolution_id": "42",
-            "threshold": "",
             "limit": "3",
         }
 

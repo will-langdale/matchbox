@@ -21,6 +21,7 @@ from matchbox.common.exceptions import (
     MatchboxServerResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.hash import base64_to_hash
 from matchbox.common.sources import SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
@@ -223,11 +224,12 @@ async def set_ancestors_cache(name: str):
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     full_name: str,
-    warehouse_hash: bytes,
+    warehouse_hash_b64: str,
     resolution_id: int | None = None,
     threshold: float | None = None,
     limit: int | None = None,
 ):
+    warehouse_hash = base64_to_hash(warehouse_hash_b64)
     source_address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash)
     try:
         res = backend.query(

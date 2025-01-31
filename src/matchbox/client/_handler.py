@@ -1,5 +1,6 @@
 from io import BytesIO
 from os import getenv
+from typing import Any
 
 import httpx
 from pyarrow.parquet import read_table
@@ -10,6 +11,7 @@ from matchbox.common.exceptions import (
     MatchboxServerResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import SourceAddress
 
 
@@ -20,6 +22,23 @@ def url(path: str) -> str:
         raise RuntimeError("API__ROOT needs to be defined in the environment")
 
     return api_root + path
+
+
+def query_params(params: dict[str, Any]) -> dict[str, Any]:
+    def process_val(v):
+        if isinstance(v, str):
+            return v
+        elif isinstance(v, int):
+            return str(v)
+        elif isinstance(v, float):
+            return str(v)
+        elif isinstance(v, bytes):
+            return hash_to_base64(v)
+
+        raise ValueError(f"It was not possible to parse {v} as an URL parameter")
+
+    non_null = {k: v for k, v in params.items() if v}
+    return {k: process_val(v) for k, v in non_null.items()}
 
 
 def get_resolution_graph() -> ResolutionGraph:
@@ -35,13 +54,16 @@ def query(
 ) -> BytesIO:
     res = httpx.get(
         url("/query"),
-        params={
-            "full_name": source_address.full_name,
-            "warehouse_hash": source_address.warehouse_hash,
-            "resolution_id": resolution_id,
-            "threshold": threshold,
-            "limit": limit,
-        },
+        params=query_params(
+            {
+                "full_name": source_address.full_name,
+                # Converted to b64 by `query_params()`
+                "warehouse_hash_b64": source_address.warehouse_hash,
+                "resolution_id": resolution_id,
+                "threshold": threshold,
+                "limit": limit,
+            }
+        ),
     )
 
     if res.status_code == 404:

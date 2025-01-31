@@ -16,6 +16,7 @@ from matchbox.common.exceptions import (
     MatchboxServerResolutionError,
 )
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.hash import hash_to_base64
 from matchbox.server import app
 from matchbox.server.api import s3_to_recordbatch, table_to_s3
 
@@ -142,7 +143,11 @@ class TestMatchboxAPI:
 
             # Hit endpoint
             response = client.get(
-                "/query", params={"full_name": "foo", "warehouse_hash": b"bar"}
+                "/query",
+                params={
+                    "full_name": "foo",
+                    "warehouse_hash_b64": hash_to_base64(b"bar"),
+                },
             )
 
             # Process response
@@ -162,7 +167,11 @@ class TestMatchboxAPI:
 
             # Hit endpoint
             response = client.get(
-                "/query", params={"full_name": "foo", "warehouse_hash": b"bar"}
+                "/query",
+                params={
+                    "full_name": "foo",
+                    "warehouse_hash_b64": hash_to_base64(b"bar"),
+                },
             )
 
             # Check response
