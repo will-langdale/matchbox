@@ -258,7 +258,7 @@ async def query(
         )
 
     buffer = table_to_buffer(res)
-    return ParquetResponse(buffer.getvalue(), media_type="application/octet-stream")
+    return ParquetResponse(buffer.getvalue())
 
 
 @app.get("/match")
