@@ -17,8 +17,8 @@ from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import BackendRetrievableType, NotFoundError
 from matchbox.common.exceptions import (
-    MatchboxServerResolutionError,
-    MatchboxServerSourceError,
+    MatchboxResolutionNotFoundError,
+    MatchboxSourceNotFoundError,
 )
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress
@@ -374,7 +374,7 @@ def test_query_404_resolution():
         ]
 
         # Tests with no optional params
-        with pytest.raises(MatchboxServerResolutionError, match="42"):
+        with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
             query(sels)
 
 
@@ -415,7 +415,7 @@ def test_query_404_source():
         ]
 
         # Tests with no optional params
-        with pytest.raises(MatchboxServerSourceError, match="42"):
+        with pytest.raises(MatchboxSourceNotFoundError, match="42"):
             query(sels)
 
 

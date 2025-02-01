@@ -18,9 +18,9 @@ from matchbox.common.dtos import (
     NotFoundError,
 )
 from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
-    MatchboxServerResolutionError,
-    MatchboxServerSourceError,
+    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import base64_to_hash
@@ -242,14 +242,14 @@ async def query(
             threshold=threshold,
             limit=limit,
         )
-    except MatchboxServerResolutionError as e:
+    except MatchboxResolutionNotFoundError as e:
         return JSONResponse(
             status_code=404,
             content=NotFoundError(
                 details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
         )
-    except MatchboxServerSourceError as e:
+    except MatchboxSourceNotFoundError as e:
         return JSONResponse(
             status_code=404,
             content=NotFoundError(

@@ -12,9 +12,9 @@ from pandas import DataFrame
 
 from matchbox.common.arrow import SCHEMA_MB_IDS
 from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
-    MatchboxServerResolutionError,
-    MatchboxServerSourceError,
+    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
@@ -163,7 +163,7 @@ class TestMatchboxAPI:
         with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
             # Mock backend
             mock_backend = Mock()
-            mock_backend.query = Mock(side_effect=MatchboxServerResolutionError())
+            mock_backend.query = Mock(side_effect=MatchboxResolutionNotFoundError())
             get_backend.return_value = mock_backend
 
             # Hit endpoint
@@ -182,7 +182,7 @@ class TestMatchboxAPI:
         with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
             # Mock backend
             mock_backend = Mock()
-            mock_backend.query = Mock(side_effect=MatchboxServerSourceError())
+            mock_backend.query = Mock(side_effect=MatchboxSourceNotFoundError())
             get_backend.return_value = mock_backend
 
             # Hit endpoint
