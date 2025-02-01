@@ -1,6 +1,5 @@
 from io import BytesIO
 from os import getenv
-from typing import Any
 
 import httpx
 from pyarrow.parquet import read_table
@@ -9,8 +8,10 @@ from matchbox.common.arrow import SCHEMA_MB_IDS
 from matchbox.common.dtos import BackendRetrievableType, NotFoundError
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
-    MatchboxServerResolutionError,
-    MatchboxServerSourceError,
+    MatchboxResolutionNotFoundError,
+    MatchboxSourceNotFoundError,
+    MatchboxUnhandledServerResponse,
+    MatchboxUnparsedClientRequest,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
@@ -26,7 +27,9 @@ def url(path: str) -> str:
     return api_root + path
 
 
-def query_params(params: dict[str, Any]) -> dict[str, Any]:
+def url_params(params: dict[str, str | int | float | bytes]) -> dict[str, str]:
+    """Prepares a dictionary of parameters to be encoded in a URL"""
+
     def process_val(v):
         if isinstance(v, str):
             return v
@@ -43,9 +46,28 @@ def query_params(params: dict[str, Any]) -> dict[str, Any]:
     return {k: process_val(v) for k, v in non_null.items()}
 
 
+def handle_http_code(res: httpx.Response) -> httpx.Response:
+    if res.status_code == 200:
+        return res
+
+    if res.status_code == 404:
+        error = NotFoundError.model_validate(res.json())
+        if error.entity == BackendRetrievableType.SOURCE:
+            raise MatchboxSourceNotFoundError(error.details)
+        if error.entity == BackendRetrievableType.RESOLUTION:
+            raise MatchboxResolutionNotFoundError(error.details)
+        else:
+            raise RuntimeError(f"Unexpected 404 error: {error.details}")
+
+    if res.status_code == 422:
+        raise MatchboxUnparsedClientRequest(res.content)
+
+    raise MatchboxUnhandledServerResponse(res.content)
+
+
 def get_resolution_graph() -> ResolutionGraph:
-    res = httpx.get(url("/report/resolutions")).json()
-    return ResolutionGraph.model_validate(res)
+    res = handle_http_code(httpx.get(url("/report/resolutions")))
+    return ResolutionGraph.model_validate(res.json())
 
 
 def query(
@@ -54,28 +76,21 @@ def query(
     threshold: int | None = None,
     limit: int | None = None,
 ) -> BytesIO:
-    res = httpx.get(
-        url("/query"),
-        params=query_params(
-            {
-                "full_name": source_address.full_name,
-                # Converted to b64 by `query_params()`
-                "warehouse_hash_b64": source_address.warehouse_hash,
-                "resolution_id": resolution_id,
-                "threshold": threshold,
-                "limit": limit,
-            }
-        ),
+    res = handle_http_code(
+        httpx.get(
+            url("/query"),
+            params=url_params(
+                {
+                    "full_name": source_address.full_name,
+                    # Converted to b64 by `url_params()`
+                    "warehouse_hash_b64": source_address.warehouse_hash,
+                    "resolution_id": resolution_id,
+                    "threshold": threshold,
+                    "limit": limit,
+                }
+            ),
+        )
     )
-
-    if res.status_code == 404:
-        error = NotFoundError.model_validate(res.json())
-        if error.entity == BackendRetrievableType.SOURCE:
-            raise MatchboxServerSourceError(error.details)
-        if error.entity == BackendRetrievableType.RESOLUTION:
-            raise MatchboxServerResolutionError(error.details)
-        else:
-            raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     buffer = BytesIO(res.content)
     table = read_table(buffer)

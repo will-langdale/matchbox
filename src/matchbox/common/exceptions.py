@@ -1,13 +1,32 @@
 from typing import Any
 
-
 # -- Client-side API exceptions --
+
+
 class MatchboxUnparsedClientRequest(Exception):
     """The API could not parse the content of the client request"""
 
+    def __init__(
+        self,
+        message: str | None = None,
+    ):
+        if message is None:
+            message = "The API could not parse the content of the client request"
+
+        super().__init__(message)
+
 
 class MatchboxUnhandledServerResponse(Exception):
-    """The API sent a response we were not expecting"""
+    """The API sent an unexpected response"""
+
+    def __init__(
+        self,
+        message: str | None = None,
+    ):
+        if message is None:
+            message = "The API sent an unexpected response"
+
+        super().__init__(message)
 
 
 # -- Source exceptions --
