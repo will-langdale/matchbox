@@ -70,32 +70,30 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
-def test_select_non_indexed_columns(warehouse_engine: Engine):
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
-    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
-        source = Source(
-            address=SourceAddress.compose(
-                engine=warehouse_engine, full_name="test.foo"
-            ),
-            db_pk="pk",
+    source = Source(
+        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
+        db_pk="pk",
+    )
+
+    mock_backend = Mock()
+    mock_backend.get_source = Mock(return_value=source)
+    get_backend.return_value = mock_backend
+
+    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
+    with warehouse_engine.connect() as conn:
+        df.to_sql(
+            name="foo",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
         )
 
-        mock_backend = Mock()
-        mock_backend.get_source = Mock(return_value=source)
-        get_backend.return_value = mock_backend
-
-        df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-        with warehouse_engine.connect() as conn:
-            df.to_sql(
-                name="foo",
-                con=conn,
-                schema="test",
-                if_exists="replace",
-                index=False,
-            )
-
-        with pytest.warns(Warning):
-            select({"test.foo": ["a", "b"]}, warehouse_engine)
+    with pytest.warns(Warning):
+        select({"test.foo": ["a", "b"]}, warehouse_engine)
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -149,12 +147,12 @@ def test_query_no_resolution_fail():
         query(sels)
 
 
+@respx.mock
 def test_query_no_resolution_ok_various_params():
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
         patch.object(Source, "to_arrow") as to_arrow,
-        respx.mock,
     ):
         # Mock backend (temporary)
         mock_backend = Mock()
@@ -229,11 +227,11 @@ def test_query_no_resolution_ok_various_params():
         }
 
 
+@respx.mock
 def test_query_multiple_sources_with_limits():
     """Tests that we can query multiple sources and distribute the limit among them."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        respx.mock,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
         # Mock backend (temporary)
@@ -337,152 +335,148 @@ def test_query_multiple_sources_with_limits():
         query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-def test_query_404_resolution():
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        respx.mock,
-    ):
-        # Mock backend (temporary)
-        mock_backend = Mock()
-        get_resolution_id = Mock(return_value=42)
-        mock_backend.get_resolution_id = get_resolution_id
-        get_backend.return_value = mock_backend
+@respx.mock
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_query_404_resolution(get_backend: Mock):
+    # Mock backend (temporary)
+    mock_backend = Mock()
+    get_resolution_id = Mock(return_value=42)
+    mock_backend.get_resolution_id = get_resolution_id
+    get_backend.return_value = mock_backend
 
-        # Mock API
-        respx.get(url("/query")).mock(
-            return_value=Response(
-                404,
-                json=NotFoundError(
-                    details="Resolution 42 not found",
-                    entity=BackendRetrievableType.RESOLUTION,
-                ).model_dump(),
-            )
+    # Mock API
+    respx.get(url("/query")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Resolution 42 not found",
+                entity=BackendRetrievableType.RESOLUTION,
+            ).model_dump(),
         )
+    )
 
-        # Well-formed selector for these mocks
-        sels = [
-            Selector(
-                source=Source(
-                    address=SourceAddress(
-                        full_name="foo",
-                        warehouse_hash="bar",
-                    ),
-                    db_pk="pk",
+    # Well-formed selector for these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash="bar",
                 ),
-                fields=["a", "b"],
-            )
-        ]
-
-        # Tests with no optional params
-        with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-            query(sels)
-
-
-def test_query_404_source():
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        respx.mock,
-    ):
-        # Mock backend (temporary)
-        mock_backend = Mock()
-        get_resolution_id = Mock(return_value=42)
-        mock_backend.get_resolution_id = get_resolution_id
-        get_backend.return_value = mock_backend
-
-        # Mock API
-        respx.get(url("/query")).mock(
-            return_value=Response(
-                404,
-                json=NotFoundError(
-                    details="Resolution 42 not found",
-                    entity=BackendRetrievableType.SOURCE,
-                ).model_dump(),
-            )
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
         )
+    ]
 
-        # Well-formed selector for these mocks
-        sels = [
-            Selector(
-                source=Source(
-                    address=SourceAddress(
-                        full_name="foo",
-                        warehouse_hash="bar",
-                    ),
-                    db_pk="pk",
+    # Tests with no optional params
+    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+        query(sels)
+
+
+@respx.mock
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_query_404_source(get_backend: Mock):
+    # Mock backend (temporary)
+    mock_backend = Mock()
+    get_resolution_id = Mock(return_value=42)
+    mock_backend.get_resolution_id = get_resolution_id
+    get_backend.return_value = mock_backend
+
+    # Mock API
+    respx.get(url("/query")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Resolution 42 not found",
+                entity=BackendRetrievableType.SOURCE,
+            ).model_dump(),
+        )
+    )
+
+    # Well-formed selector for these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash="bar",
                 ),
-                fields=["a", "b"],
-            )
-        ]
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
 
-        # Tests with no optional params
-        with pytest.raises(MatchboxSourceNotFoundError, match="42"):
-            query(sels)
+    # Tests with no optional params
+    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+        query(sels)
 
 
-def test_index_default(warehouse_engine: Engine):
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_index_default(get_backend: Mock, warehouse_engine: Engine):
     """Test the index function with default columns."""
-    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
-        # Setup
-        mock_backend = Mock()
-        get_backend.return_value = mock_backend
-        # Mock Source methods
-        mock_source = Mock(spec=Source)
-        # Ensure each method returns the same mock object
-        mock_source.set_engine.return_value = mock_source
-        mock_source.default_columns.return_value = mock_source
-        mock_source.hash_data.return_value = "test_hash"
-        with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
-            # Execute
-            index("test.table", "id", engine=warehouse_engine)
-            # Assert
-            mock_backend.index.assert_called_once_with(mock_source, "test_hash")
-            mock_source.set_engine.assert_called_once_with(warehouse_engine)
-            mock_source.default_columns.assert_called_once()
+    # Setup
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+    # Mock Source methods
+    mock_source = Mock(spec=Source)
+    # Ensure each method returns the same mock object
+    mock_source.set_engine.return_value = mock_source
+    mock_source.default_columns.return_value = mock_source
+    mock_source.hash_data.return_value = "test_hash"
+    with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
+        # Execute
+        index("test.table", "id", engine=warehouse_engine)
+        # Assert
+        mock_backend.index.assert_called_once_with(mock_source, "test_hash")
+        mock_source.set_engine.assert_called_once_with(warehouse_engine)
+        mock_source.default_columns.assert_called_once()
 
 
-def test_index_list(warehouse_engine: Engine):
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_index_list(get_backend: Mock, warehouse_engine: Engine):
     """Test the index function with a list of columns."""
-    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
-        # Setup
-        mock_backend = Mock()
-        get_backend.return_value = mock_backend
-        columns = ["name", "age"]
-        # Mock Source methods
-        mock_source = Mock(spec=Source)
-        # Ensure each method returns the same mock object
-        mock_source.set_engine.return_value = mock_source
-        mock_source.hash_data.return_value = "test_hash"
-        with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
-            # Execute
-            index("test.table", "id", engine=warehouse_engine, columns=columns)
-            # Assert
-            mock_backend.index.assert_called_once_with(mock_source, "test_hash")
-            mock_source.set_engine.assert_called_once_with(warehouse_engine)
-            mock_source.default_columns.assert_not_called()
+    # Setup
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+    columns = ["name", "age"]
+    # Mock Source methods
+    mock_source = Mock(spec=Source)
+    # Ensure each method returns the same mock object
+    mock_source.set_engine.return_value = mock_source
+    mock_source.hash_data.return_value = "test_hash"
+    with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
+        # Execute
+        index("test.table", "id", engine=warehouse_engine, columns=columns)
+        # Assert
+        mock_backend.index.assert_called_once_with(mock_source, "test_hash")
+        mock_source.set_engine.assert_called_once_with(warehouse_engine)
+        mock_source.default_columns.assert_not_called()
 
 
-def test_index_dict(warehouse_engine: Engine):
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_index_dict(get_backend: Mock, warehouse_engine: Engine):
     """Test the index function with a dictionary of columns."""
-    with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
-        # Setup
-        mock_backend = Mock()
-        get_backend.return_value = mock_backend
-        columns = [
-            {"name": "name", "alias": "person_name", "type": "TEXT"},
-            {"name": "age", "alias": "person_age", "type": "BIGINT"},
-        ]
-        # Mock Source methods
-        mock_source = Mock(spec=Source)
-        # Ensure each method returns the same mock object
-        mock_source.set_engine.return_value = mock_source
-        mock_source.hash_data.return_value = "test_hash"
-        with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
-            # Execute
-            index("test.table", "id", engine=warehouse_engine, columns=columns)
-            # Assert
-            mock_backend.index.assert_called_once_with(mock_source, "test_hash")
-            mock_source.set_engine.assert_called_once_with(warehouse_engine)
-            mock_source.default_columns.assert_not_called()
+    # Setup
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+    columns = [
+        {"name": "name", "alias": "person_name", "type": "TEXT"},
+        {"name": "age", "alias": "person_age", "type": "BIGINT"},
+    ]
+    # Mock Source methods
+    mock_source = Mock(spec=Source)
+    # Ensure each method returns the same mock object
+    mock_source.set_engine.return_value = mock_source
+    mock_source.hash_data.return_value = "test_hash"
+    with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
+        # Execute
+        index("test.table", "id", engine=warehouse_engine, columns=columns)
+        # Assert
+        mock_backend.index.assert_called_once_with(mock_source, "test_hash")
+        mock_source.set_engine.assert_called_once_with(warehouse_engine)
+        mock_source.default_columns.assert_not_called()
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")

@@ -40,3 +40,15 @@ class NotFoundError(BaseModel):
 
     details: str
     entity: BackendRetrievableType
+
+    @classmethod
+    def example_response_body(cls):
+        return {
+            "content": {
+                "application/json": {
+                    "example": cls(
+                        details="details", entity=BackendRetrievableType.SOURCE
+                    ).model_dump()
+                }
+            }
+        }
