@@ -7,6 +7,7 @@ import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
@@ -35,16 +36,6 @@ else:
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
 
-NOT_FOUND_RESPONSE = {
-    "content": {
-        "application/json": {
-            "example": NotFoundError(
-                details="error details", entity=BackendRetrievableType.RESOLUTION
-            ).model_dump()
-        }
-    }
-}
-
 
 class ParquetResponse(Response):
     media_type = "application/octet-stream"
@@ -61,6 +52,12 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    """Overwrite the default JSON schema for an `HTTPException`"""
+    return JSONResponse(content=exc.detail, status_code=exc.status_code)
 
 
 def get_backend() -> MatchboxDBAdapter:
@@ -223,7 +220,7 @@ async def set_ancestors_cache(name: str):
 @app.get(
     "/query",
     response_class=ParquetResponse,
-    responses={404: NOT_FOUND_RESPONSE},
+    responses={404: NotFoundError.example_response_body()},
 )
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -243,19 +240,19 @@ async def query(
             limit=limit,
         )
     except MatchboxResolutionNotFoundError as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=404,
-            content=NotFoundError(
+            detail=NotFoundError(
                 details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
-        )
+        ) from e
     except MatchboxSourceNotFoundError as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=404,
-            content=NotFoundError(
+            detail=NotFoundError(
                 details=f"{str(e)}", entity=BackendRetrievableType.SOURCE
             ).model_dump(),
-        )
+        ) from e
 
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
