@@ -229,11 +229,11 @@ def test_query_no_resolution_ok_various_params():
         }
 
 
+@respx.mock
 def test_query_multiple_sources_with_limits():
     """Tests that we can query multiple sources and distribute the limit among them."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        respx.mock,
         patch.object(Source, "to_arrow") as to_arrow,
     ):
         # Mock backend (temporary)
@@ -337,86 +337,82 @@ def test_query_multiple_sources_with_limits():
         query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-def test_query_404_resolution():
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        respx.mock,
-    ):
-        # Mock backend (temporary)
-        mock_backend = Mock()
-        get_resolution_id = Mock(return_value=42)
-        mock_backend.get_resolution_id = get_resolution_id
-        get_backend.return_value = mock_backend
+@respx.mock
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_query_404_resolution(get_backend: Mock):
+    # Mock backend (temporary)
+    mock_backend = Mock()
+    get_resolution_id = Mock(return_value=42)
+    mock_backend.get_resolution_id = get_resolution_id
+    get_backend.return_value = mock_backend
 
-        # Mock API
-        respx.get(url("/query")).mock(
-            return_value=Response(
-                404,
-                json=NotFoundError(
-                    details="Resolution 42 not found",
-                    entity=BackendRetrievableType.RESOLUTION,
-                ).model_dump(),
-            )
+    # Mock API
+    respx.get(url("/query")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Resolution 42 not found",
+                entity=BackendRetrievableType.RESOLUTION,
+            ).model_dump(),
         )
+    )
 
-        # Well-formed selector for these mocks
-        sels = [
-            Selector(
-                source=Source(
-                    address=SourceAddress(
-                        full_name="foo",
-                        warehouse_hash="bar",
-                    ),
-                    db_pk="pk",
+    # Well-formed selector for these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash="bar",
                 ),
-                fields=["a", "b"],
-            )
-        ]
-
-        # Tests with no optional params
-        with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-            query(sels)
-
-
-def test_query_404_source():
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        respx.mock,
-    ):
-        # Mock backend (temporary)
-        mock_backend = Mock()
-        get_resolution_id = Mock(return_value=42)
-        mock_backend.get_resolution_id = get_resolution_id
-        get_backend.return_value = mock_backend
-
-        # Mock API
-        respx.get(url("/query")).mock(
-            return_value=Response(
-                404,
-                json=NotFoundError(
-                    details="Resolution 42 not found",
-                    entity=BackendRetrievableType.SOURCE,
-                ).model_dump(),
-            )
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
         )
+    ]
 
-        # Well-formed selector for these mocks
-        sels = [
-            Selector(
-                source=Source(
-                    address=SourceAddress(
-                        full_name="foo",
-                        warehouse_hash="bar",
-                    ),
-                    db_pk="pk",
+    # Tests with no optional params
+    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+        query(sels)
+
+
+@respx.mock
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_query_404_source(get_backend: Mock):
+    # Mock backend (temporary)
+    mock_backend = Mock()
+    get_resolution_id = Mock(return_value=42)
+    mock_backend.get_resolution_id = get_resolution_id
+    get_backend.return_value = mock_backend
+
+    # Mock API
+    respx.get(url("/query")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Resolution 42 not found",
+                entity=BackendRetrievableType.SOURCE,
+            ).model_dump(),
+        )
+    )
+
+    # Well-formed selector for these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash="bar",
                 ),
-                fields=["a", "b"],
-            )
-        ]
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
 
-        # Tests with no optional params
-        with pytest.raises(MatchboxSourceNotFoundError, match="42"):
-            query(sels)
+    # Tests with no optional params
+    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+        query(sels)
 
 
 def test_index_default(warehouse_engine: Engine):
