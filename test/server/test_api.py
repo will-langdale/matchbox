@@ -127,37 +127,37 @@ class TestMatchboxAPI:
     #     response = client.post("/models/test_model/ancestors_cache")
     #     assert response.status_code == 200
 
-    def test_query(self):
-        with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:
-            # Mock backend
-            mock_backend = Mock()
-            mock_backend.query = Mock(
-                return_value=pa.Table.from_pylist(
-                    [
-                        {"source_pk": "a", "id": 1},
-                        {"source_pk": "b", "id": 2},
-                    ],
-                    schema=SCHEMA_MB_IDS,
-                )
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_query(self, get_backend: Mock):
+        # Mock backend
+        mock_backend = Mock()
+        mock_backend.query = Mock(
+            return_value=pa.Table.from_pylist(
+                [
+                    {"source_pk": "a", "id": 1},
+                    {"source_pk": "b", "id": 2},
+                ],
+                schema=SCHEMA_MB_IDS,
             )
-            get_backend.return_value = mock_backend
+        )
+        get_backend.return_value = mock_backend
 
-            # Hit endpoint
-            response = client.get(
-                "/query",
-                params={
-                    "full_name": "foo",
-                    "warehouse_hash_b64": hash_to_base64(b"bar"),
-                },
-            )
+        # Hit endpoint
+        response = client.get(
+            "/query",
+            params={
+                "full_name": "foo",
+                "warehouse_hash_b64": hash_to_base64(b"bar"),
+            },
+        )
 
-            # Process response
-            buffer = BytesIO(response.content)
-            table = pq.read_table(buffer)
+        # Process response
+        buffer = BytesIO(response.content)
+        table = pq.read_table(buffer)
 
-            # Check response
-            assert response.status_code == 200
-            assert table.schema.equals(SCHEMA_MB_IDS)
+        # Check response
+        assert response.status_code == 200
+        assert table.schema.equals(SCHEMA_MB_IDS)
 
     def test_query_404_resolution(self):
         with patch("matchbox.server.base.BackendManager.get_backend") as get_backend:

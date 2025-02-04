@@ -149,12 +149,12 @@ def test_query_no_resolution_fail():
         query(sels)
 
 
+@respx.mock
 def test_query_no_resolution_ok_various_params():
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
     with (
         patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
         patch.object(Source, "to_arrow") as to_arrow,
-        respx.mock,
     ):
         # Mock backend (temporary)
         mock_backend = Mock()
