@@ -8,8 +8,8 @@ from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
-    MatchboxServerResolutionError,
-    MatchboxServerSourceError,
+    MatchboxResolutionNotFoundError,
+    MatchboxSourceNotFoundError,
 )
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
@@ -44,7 +44,7 @@ def _get_dataset_resolution(
         .first()
     )
     if dataset_resolution is None:
-        raise MatchboxServerSourceError(
+        raise MatchboxSourceNotFoundError(
             address=str(source_name_address),
         )
 
@@ -162,14 +162,14 @@ def _resolve_cluster_hierarchy(
     with Session(engine) as session:
         dataset_resolution = session.get(Resolutions, dataset_id)
         if dataset_resolution is None:
-            raise MatchboxServerSourceError()
+            raise MatchboxSourceNotFoundError()
 
         try:
             lineage_truths = resolution.get_lineage_to_dataset(
                 dataset=dataset_resolution
             )
         except ValueError as e:
-            raise MatchboxServerResolutionError(
+            raise MatchboxResolutionNotFoundError(
                 f"Invalid resolution lineage: {str(e)}"
             ) from e
 
@@ -300,7 +300,7 @@ def query(
                 .first()
             )
             if resolution is None:
-                raise MatchboxServerResolutionError(resolution_name=resolution)
+                raise MatchboxResolutionNotFoundError(resolution_name=resolution)
         else:
             resolution = dataset_resolution
         if not resolution_id:
@@ -504,7 +504,7 @@ def _build_match_query(
         session.query(Resolutions).filter(Resolutions.name == resolution).first()
     )
     if truth_resolution is None:
-        raise MatchboxServerResolutionError(resolution_name=resolution)
+        raise MatchboxResolutionNotFoundError(resolution_name=resolution)
 
     # Get resolution lineage and resolve thresholds
     lineage_truths = truth_resolution.get_lineage()

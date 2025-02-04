@@ -3,7 +3,7 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 
-class BackendEntityType(StrEnum):
+class BackendCountableType(StrEnum):
     DATASETS = "datasets"
     MODELS = "models"
     DATA = "data"
@@ -18,6 +18,11 @@ class ModelResultsType(StrEnum):
     CLUSTERS = "clusters"
 
 
+class BackendRetrievableType(StrEnum):
+    SOURCE = "source"
+    RESOLUTION = "resolution"
+
+
 class HealthCheck(BaseModel):
     """Response model to validate and return when performing a health check."""
 
@@ -27,4 +32,23 @@ class HealthCheck(BaseModel):
 class CountResult(BaseModel):
     """Response model for count results"""
 
-    entities: dict[BackendEntityType, int]
+    entities: dict[BackendCountableType, int]
+
+
+class NotFoundError(BaseModel):
+    """API error for a 404 status code"""
+
+    details: str
+    entity: BackendRetrievableType
+
+    @classmethod
+    def example_response_body(cls):
+        return {
+            "content": {
+                "application/json": {
+                    "example": cls(
+                        details="details", entity=BackendRetrievableType.SOURCE
+                    ).model_dump()
+                }
+            }
+        }

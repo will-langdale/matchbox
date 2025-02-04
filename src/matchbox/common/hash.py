@@ -15,6 +15,10 @@ def hash_to_base64(hash: bytes) -> str:
     return base64.b64encode(hash).decode("utf-8")
 
 
+def base64_to_hash(b64: str) -> bytes:
+    return base64.b64decode(b64)
+
+
 def prep_for_hash(item: HashableItem) -> bytes:
     """Encodes strings so they can be hashed, otherwises, passes through."""
     if isinstance(item, bytes):

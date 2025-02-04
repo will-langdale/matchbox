@@ -7,6 +7,7 @@ from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel
 from sqlalchemy import Engine
 
+from matchbox.client import _handler
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
@@ -112,7 +113,7 @@ def query(
     tables = []
     for selector, sub_limit in zip(selectors, sub_limits, strict=True):
         # Get ids from matchbox
-        mb_ids = backend.query(
+        mb_ids = _handler.query(
             source_address=selector.source.address,
             resolution_id=resolution_id,
             threshold=threshold,
