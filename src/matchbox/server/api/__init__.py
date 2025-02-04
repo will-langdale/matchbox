@@ -17,7 +17,7 @@ from matchbox.common.dtos import (
     HealthCheck,
     ModelResultsType,
     NotFoundError,
-    SourceStatus,
+    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
@@ -27,6 +27,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import base64_to_hash
 from matchbox.common.sources import Source, SourceAddress
+from matchbox.server.api.cache import MetadataStore
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -47,6 +48,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     get_backend()
     yield
 
+
+metadata_store = MetadataStore(expiry_minutes=30)
 
 app = FastAPI(
     title="matchbox API",
@@ -149,18 +152,33 @@ async def clear_backend():
 
 
 @app.post("/sources")
-async def add_source(
-    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-    source: Source,
-    data: UploadFile,
-):
+async def add_source(source: Source):
     """Add a source to the backend."""
-    # TODO: https://stackoverflow.com/questions/65504438/how-to-add-both-file-and-json-body-in-a-fastapi-post-request
+    upload_id = metadata_store.cache_source(metadata=source)
+    return UploadStatus(id=upload_id, status="awaiting_upload")
+
+
+@app.post("/upload/{upload_id}")
+async def upload_file(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    upload_id: str,
+    file: UploadFile,
+):
+    """Upload file and process based on metadata type"""
+    source = metadata_store.get(cache_id=upload_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Upload ID not found or expired")
+
+    # Upload to S3
     client = backend.settings.datastore.get_client()
-    schema = pa.schema([("source_pk", pa.list_(pa.string())), ("hash", pa.binary())])
     upload_id = await table_to_s3(
-        client=client, bucket="test-bucket", file=data, expected_schema=schema
+        client=client,
+        bucket="test-bucket",
+        file=file,
+        expected_schema=source.upload_schema.value,
     )
+
+    # Read from S3
     data_hashes = pa.Table.from_batches(
         [
             batch
@@ -169,9 +187,14 @@ async def add_source(
             )
         ]
     )
+
+    # Index
     backend.index(source=source, data_hashes=data_hashes)
 
-    return SourceStatus(status="ready")
+    # Clean up
+    metadata_store.remove(upload_id)
+
+    return UploadStatus(status="ready")
 
 
 @app.get("/sources")

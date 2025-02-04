@@ -8,7 +8,7 @@ from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.common.arrow import SCHEMA_MB_IDS
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError, SourceStatus
+from matchbox.common.dtos import BackendRetrievableType, NotFoundError, UploadStatus
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
     MatchboxResolutionNotFoundError,
@@ -73,26 +73,28 @@ def get_resolution_graph() -> ResolutionGraph:
     return ResolutionGraph.model_validate(res.json())
 
 
-def index(source: Source, data_hashes: Table) -> SourceStatus:
+def index(source: Source, data_hashes: Table) -> UploadStatus:
     """Index a Source in Matchbox."""
     # Write Table to a buffer
     buffer = io.BytesIO()
     pq.write_table(data_hashes, buffer)
     buffer.seek(0)
 
-    # Post
-    res = httpx.post(
-        url("/index"),
-        data={
-            "source": source.model_dump_json(),
-        },
-        files={
-            "data": ("data.parquet", buffer, "application/x-parquet"),
-        },
-    )
-    res.raise_for_status()
+    # Upload metadata
+    metadata_res = handle_http_code(httpx.post(url("/index"), json=source))
+    upload_id = UploadStatus(**metadata_res)
 
-    return SourceStatus(**res)
+    # Upload data
+    upload_res = handle_http_code(
+        httpx.post(
+            url("/upload"),
+            files={
+                "file": (f"{upload_id}.parquet", buffer, "application/octet-stream")
+            },
+        )
+    )
+
+    return UploadStatus(**upload_res)
 
 
 def query(

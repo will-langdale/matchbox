@@ -36,10 +36,11 @@ class CountResult(BaseModel):
     entities: dict[BackendCountableType, int]
 
 
-class SourceStatus(BaseModel):
-    """Response model for Source status"""
+class UploadStatus(BaseModel):
+    """Response model for any file upload processes, like Source or Model results."""
 
-    status: Literal["ready", "indexing", "failed"]
+    id: str | None
+    status: Literal["ready", "awaiting_upload", "processing", "failed"]
 
 
 class NotFoundError(BaseModel):
