@@ -170,7 +170,21 @@ def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_p
     assert len(top_clusters) == n_components
 
 
-def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
+@pytest.mark.parametrize(
+    ("cluster_start_id", "dataset_start_id", "expected_datasets"),
+    [
+        (0, 1, {1, 2, None}),  # Original test case
+        (1000, 1, {1, 2, None}),  # Different cluster start
+        (0, 3, {3, 4, None}),  # Different dataset start
+        (86475, 3, {3, 4, None}),  # Both different
+    ],
+)
+def test_benchmark_generate_tables_parameterized(
+    matchbox_postgres: MatchboxDBAdapter,
+    cluster_start_id: int,
+    dataset_start_id: int,
+    expected_datasets: set,
+):
     schema = MBDB.MatchboxBase.metadata.schema
     matchbox_postgres.clear(certain=True)
 
@@ -182,15 +196,44 @@ def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
         return "{" + list_rep + "}"
 
     with MBDB.get_engine().connect() as con:
-        results = generate_all_tables(20, 5, 25, 5, 25)
+        results = generate_all_tables(
+            source_len=20,
+            dedupe_components=5,
+            dedupe_len=25,
+            link_components=5,
+            link_len=25,
+            cluster_start_id=cluster_start_id,
+            dataset_start_id=dataset_start_id,
+        )
 
+        # Test number of tables
         assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
-        assert set(pc.unique(results["clusters"]["dataset"]).to_pylist()) == {
-            1,
-            2,
-            None,
-        }
 
+        # Test dataset IDs
+        assert (
+            set(pc.unique(results["clusters"]["dataset"]).to_pylist())
+            == expected_datasets
+        )
+
+        # Test cluster IDs start correctly
+        min_cluster_id = min(results["clusters"]["cluster_id"].to_pylist())
+        assert min_cluster_id == cluster_start_id
+
+        # Test resolution IDs in sources
+        source_resolution_ids = set(results["sources"]["resolution_id"].to_pylist())
+        assert source_resolution_ids == {dataset_start_id, dataset_start_id + 1}
+
+        # Test resolution IDs in resolutions
+        resolution_ids = set(results["resolutions"]["resolution_id"].to_pylist())
+        expected_resolution_ids = set(
+            range(
+                dataset_start_id,
+                dataset_start_id + 5,  # We expect 5 resolutions
+            )
+        )
+        assert resolution_ids == expected_resolution_ids
+
+        # Write to database
         for table_name, table_arrow in results.items():
             df = table_arrow.to_pandas()
             # Pandas' `to_sql` dislikes arrays
@@ -205,3 +248,20 @@ def test_benchmark_generate_tables(matchbox_postgres: MatchboxDBAdapter):
             df.to_sql(
                 name=table_name, con=con, schema=schema, index=False, if_exists="append"
             )
+
+        # Verify relationships in resolution_from table match dataset_start_id
+        resolution_from = results["resolution_from"]
+        parent_ids = set(resolution_from["parent"].to_pylist())
+        child_ids = set(resolution_from["child"].to_pylist())
+        all_ids = parent_ids.union(child_ids)
+        assert min(all_ids) >= dataset_start_id
+        assert max(all_ids) < dataset_start_id + 5  # We expect 5 resolutions
+
+        # Verify probabilities reference correct resolution IDs
+        prob_resolution_ids = set(results["probabilities"]["resolution"].to_pylist())
+        expected_model_ids = {
+            dataset_start_id + 2,  # dedupe1
+            dataset_start_id + 3,  # dedupe2
+            dataset_start_id + 4,  # link
+        }
+        assert prob_resolution_ids == expected_model_ids

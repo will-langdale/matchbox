@@ -1,4 +1,4 @@
-import io
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -11,8 +11,14 @@ from fastapi.testclient import TestClient
 from pandas import DataFrame
 from sqlalchemy import Engine
 
-from matchbox.common.exceptions import MatchboxServerFileError
+from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
+    MatchboxServerFileError,
+    MatchboxSourceNotFoundError,
+)
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server import app
 from matchbox.server.api import s3_to_recordbatch, table_to_s3
@@ -91,7 +97,7 @@ def test_add_source(s3: S3Client, warehouse_engine: Engine):
             "hash": [[b"hash1", b"hash2"], [b"hash3", b"hash4"]],
         }
     )
-    hashes_buffer = io.BytesIO()
+    hashes_buffer = BytesIO()
     pa.parquet.write_table(hashes_table, hashes_buffer)
     hashes_buffer.seek(0)
 
@@ -121,66 +127,131 @@ def test_add_source(s3: S3Client, warehouse_engine: Engine):
         assert response.json() == {"status": "ready"}
         mock_backend.index.assert_called_once()
 
+    # def test_list_sources():
+    #     response = client.get("/sources")
+    #     assert response.status_code == 200
 
-# def test_list_sources():
-#     response = client.get("/sources")
-#     assert response.status_code == 200
+    # def test_get_source():
+    #     response = client.get("/sources/test_source")
+    #     assert response.status_code == 200
 
-# def test_get_source():
-#     response = client.get("/sources/test_source")
-#     assert response.status_code == 200
+    # def test_list_models():
+    #     response = client.get("/models")
+    #     assert response.status_code == 200
 
-# def test_list_models():
-#     response = client.get("/models")
-#     assert response.status_code == 200
+    # def test_get_resolution():
+    #     response = client.get("/models/test_resolution")
+    #     assert response.status_code == 200
 
-# def test_get_resolution():
-#     response = client.get("/models/test_resolution")
-#     assert response.status_code == 200
+    # def test_add_model():
+    #     response = client.post("/models")
+    #     assert response.status_code == 200
 
-# def test_add_model():
-#     response = client.post("/models")
-#     assert response.status_code == 200
+    # def test_delete_model():
+    #     response = client.delete("/models/test_model")
+    #     assert response.status_code == 200
 
-# def test_delete_model():
-#     response = client.delete("/models/test_model")
-#     assert response.status_code == 200
+    # def test_get_results():
+    #     response = client.get("/models/test_model/results")
+    #     assert response.status_code == 200
 
-# def test_get_results():
-#     response = client.get("/models/test_model/results")
-#     assert response.status_code == 200
+    # def test_set_results():
+    #     response = client.post("/models/test_model/results")
+    #     assert response.status_code == 200
 
-# def test_set_results():
-#     response = client.post("/models/test_model/results")
-#     assert response.status_code == 200
+    # def test_get_truth():
+    #     response = client.get("/models/test_model/truth")
+    #     assert response.status_code == 200
 
-# def test_get_truth():
-#     response = client.get("/models/test_model/truth")
-#     assert response.status_code == 200
+    # def test_set_truth():
+    #     response = client.post("/models/test_model/truth")
+    #     assert response.status_code == 200
 
-# def test_set_truth():
-#     response = client.post("/models/test_model/truth")
-#     assert response.status_code == 200
+    # def test_get_ancestors():
+    #     response = client.get("/models/test_model/ancestors")
+    #     assert response.status_code == 200
 
-# def test_get_ancestors():
-#     response = client.get("/models/test_model/ancestors")
-#     assert response.status_code == 200
+    # def test_get_ancestors_cache():
+    #     response = client.get("/models/test_model/ancestors_cache")
+    #     assert response.status_code == 200
 
-# def test_get_ancestors_cache():
-#     response = client.get("/models/test_model/ancestors_cache")
-#     assert response.status_code == 200
+    # def test_set_ancestors_cache():
+    #     response = client.post("/models/test_model/ancestors_cache")
+    #     assert response.status_code == 200
 
-# def test_set_ancestors_cache():
-#     response = client.post("/models/test_model/ancestors_cache")
-#     assert response.status_code == 200
+    # def test_query():
+    #     response = client.get("/query")
+    #     assert response.status_code == 200
 
-# def test_query():
-#     response = client.get("/query")
-#     assert response.status_code == 200
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_query(self, get_backend: Mock):
+        # Mock backend
+        mock_backend = Mock()
+        mock_backend.query = Mock(
+            return_value=pa.Table.from_pylist(
+                [
+                    {"source_pk": "a", "id": 1},
+                    {"source_pk": "b", "id": 2},
+                ],
+                schema=SCHEMA_MB_IDS,
+            )
+        )
+        get_backend.return_value = mock_backend
 
-# def test_validate_ids():
-#     response = client.get("/validate/id")
-#     assert response.status_code == 200
+        # Hit endpoint
+        response = client.get(
+            "/query",
+            params={
+                "full_name": "foo",
+                "warehouse_hash_b64": hash_to_base64(b"bar"),
+            },
+        )
+
+        # Process response
+        buffer = BytesIO(response.content)
+        table = pq.read_table(buffer)
+
+        # Check response
+        assert response.status_code == 200
+        assert table.schema.equals(SCHEMA_MB_IDS)
+
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_query_404_resolution(self, get_backend: Mock):
+        # Mock backend
+        mock_backend = Mock()
+        mock_backend.query = Mock(side_effect=MatchboxResolutionNotFoundError())
+        get_backend.return_value = mock_backend
+
+        # Hit endpoint
+        response = client.get(
+            "/query",
+            params={
+                "full_name": "foo",
+                "warehouse_hash_b64": hash_to_base64(b"bar"),
+            },
+        )
+
+        # Check response
+        assert response.status_code == 404
+
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_query_404_source(self, get_backend: Mock):
+        # Mock backend
+        mock_backend = Mock()
+        mock_backend.query = Mock(side_effect=MatchboxSourceNotFoundError())
+        get_backend.return_value = mock_backend
+
+        # Hit endpoint
+        response = client.get(
+            "/query",
+            params={
+                "full_name": "foo",
+                "warehouse_hash_b64": hash_to_base64(b"bar"),
+            },
+        )
+
+        # Check response
+        assert response.status_code == 404
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -214,7 +285,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
     pq.write_table(table, sink)
     file_content = sink.getvalue().to_pybytes()
 
-    parquet_file = UploadFile(filename="test.parquet", file=io.BytesIO(file_content))
+    parquet_file = UploadFile(filename="test.parquet", file=BytesIO(file_content))
 
     # Call the function
     upload_id = await table_to_s3(
@@ -235,7 +306,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
     assert response_table.equals(table)
 
     # Test 2: Upload a non-parquet file
-    text_file = UploadFile(filename="test.txt", file=io.BytesIO(b"test"))
+    text_file = UploadFile(filename="test.txt", file=BytesIO(b"test"))
 
     with pytest.raises(MatchboxServerFileError):
         await table_to_s3(

@@ -9,9 +9,9 @@ from pandas import DataFrame
 from matchbox.client.helpers.selector import match, query, select
 from matchbox.client.results import Results
 from matchbox.common.exceptions import (
-    MatchboxDataError,
-    MatchboxServerResolutionError,
-    MatchboxServerSourceError,
+    MatchboxDataNotFound,
+    MatchboxResolutionNotFoundError,
+    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
@@ -102,7 +102,7 @@ class TestMatchboxBackend:
         assert len(ids) > 0
         self.backend.validate_ids(ids=ids)
 
-        with pytest.raises(MatchboxDataError):
+        with pytest.raises(MatchboxDataNotFound):
             self.backend.validate_ids(ids=[-6])
 
     def test_validate_hashes(self):
@@ -126,7 +126,7 @@ class TestMatchboxBackend:
         assert len(hashes) > 0
         self.backend.validate_hashes(hashes=hashes)
 
-        with pytest.raises(MatchboxDataError):
+        with pytest.raises(MatchboxDataNotFound):
             self.backend.validate_hashes(hashes=[HASH_FUNC(b"nonexistent").digest()])
 
     def test_cluster_id_to_hash(self):
@@ -166,7 +166,7 @@ class TestMatchboxBackend:
         # Equality between the two is False because one lacks the Engine
         assert crn.model_dump() == crn_retrieved.model_dump()
 
-        with pytest.raises(MatchboxServerSourceError):
+        with pytest.raises(MatchboxSourceNotFoundError):
             self.backend.get_source(
                 SourceAddress(
                     full_name="foo", warehouse_hash=bytes("bar".encode("ascii"))
@@ -195,7 +195,7 @@ class TestMatchboxBackend:
         model = self.backend.get_model(model="naive_test.crn")
         assert isinstance(model, MatchboxModelAdapter)
 
-        with pytest.raises(MatchboxServerResolutionError):
+        with pytest.raises(MatchboxResolutionNotFoundError):
             self.backend.get_model(model="nonexistant")
 
     def test_get_resolution_id(self):
@@ -203,7 +203,7 @@ class TestMatchboxBackend:
         resolution_id = self.backend.get_resolution_id("naive_test.crn")
         assert isinstance(resolution_id, int)
 
-        with pytest.raises(MatchboxServerResolutionError):
+        with pytest.raises(MatchboxResolutionNotFoundError):
             self.backend.get_resolution_id("nonexistent")
 
     def test_delete_model(self):

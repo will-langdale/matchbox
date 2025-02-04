@@ -1,8 +1,35 @@
 from typing import Any
 
+# -- Client-side API exceptions --
 
-class MatchboxConnectionError(Exception):
-    """Connection to Matchbox's backend database failed."""
+
+class MatchboxUnparsedClientRequest(Exception):
+    """The API could not parse the content of the client request"""
+
+    def __init__(
+        self,
+        message: str | None = None,
+    ):
+        if message is None:
+            message = "The API could not parse the content of the client request"
+
+        super().__init__(message)
+
+
+class MatchboxUnhandledServerResponse(Exception):
+    """The API sent an unexpected response"""
+
+    def __init__(
+        self,
+        message: str | None = None,
+    ):
+        if message is None:
+            message = "The API sent an unexpected response"
+
+        super().__init__(message)
+
+
+# -- Source exceptions --
 
 
 class MatchboxSourceColumnError(Exception):
@@ -13,20 +40,37 @@ class MatchboxSourceEngineError(Exception):
     """Engine must be available in Source"""
 
 
-class MatchboxServerFileError(Exception):
-    """There was a problem with file transfer."""
+class MatchboxSourceTableError(Exception):
+    """Tables not found in your source data warehouse."""
 
-    def __init__(self, message: str | None = None, file: str | None = None):
+    def __init__(
+        self,
+        message: str | None = None,
+        table_name: str | None = None,
+    ):
         if message is None:
-            message = "There was a problem with file transfer."
-            if file is not None:
-                message = f"There was a problem with file transfer: {file}."
+            message = "Table doesn't exist in your source data warehouse."
+            if table_name is not None:
+                message += f"\nTable name: {table_name}"
 
         super().__init__(message)
-        self.file = file
+        self.table_name = table_name
 
 
-class MatchboxServerResolutionError(Exception):
+class MatchboxServerFileError(Exception):
+    """There was a problem with file upload."""
+
+    def __init__(self, message: str | None = None):
+        if message is None:
+            message = "There was a problem with file upload."
+
+        super().__init__(message)
+
+
+# -- Resource not found on server exceptions --
+
+
+class MatchboxResolutionNotFoundError(Exception):
     """Resolution not found."""
 
     def __init__(self, message: str | None = None, resolution_name: str | None = None):
@@ -39,7 +83,7 @@ class MatchboxServerResolutionError(Exception):
         self.resolution_name = resolution_name
 
 
-class MatchboxServerSourceError(Exception):
+class MatchboxSourceNotFoundError(Exception):
     """Source not found on the server."""
 
     def __init__(
@@ -56,7 +100,7 @@ class MatchboxServerSourceError(Exception):
         self.address = address
 
 
-class MatchboxDataError(Exception):
+class MatchboxDataNotFound(Exception):
     """Data doesn't exist in the Matchbox source table."""
 
     def __init__(
@@ -77,18 +121,18 @@ class MatchboxDataError(Exception):
         self.data = data
 
 
-class MatchboxSourceTableError(Exception):
-    """Tables not found in wider database, outside of the framework."""
+# -- Server-side API exceptions --
 
-    def __init__(
-        self,
-        message: str | None = None,
-        table_name: str | None = None,
-    ):
+
+class MatchboxClientFileError(Exception):
+    """There was a problem with file download."""
+
+    def __init__(self, message: str | None = None):
         if message is None:
-            message = "Table doesn't exist in wider database."
-            if table_name is not None:
-                message += f"\nTable name: {table_name}"
+            message = "There was a problem with file download."
 
         super().__init__(message)
-        self.table_name = table_name
+
+
+class MatchboxConnectionError(Exception):
+    """Connection to Matchbox's backend database failed."""
