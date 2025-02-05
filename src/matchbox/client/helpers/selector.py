@@ -14,19 +14,18 @@ from matchbox.server import MatchboxDBAdapter, inject_backend
 
 class Selector(BaseModel):
     source: Source
-    fields: list[str]
+    fields: list[str] | None = None
 
 
 @inject_backend
-def select(
+def select_fields(
     backend: MatchboxDBAdapter, selection: dict[str, list[str]], engine: Engine
-) -> list[Selector]:
-    """Builds and verifies a list of selectors from one engine.
+):
+    """From one engine, builds and verifies a list of selectors with column names.
 
     Args:
         selection: a dict where full source names are mapped to lists of fields
-        engine: the engine to connect to a data warehouse
-
+        engine: the engine to connect to the data warehouse hosting the source
     Returns:
         A list of Selector objects
     """
@@ -50,9 +49,31 @@ def select(
             )
         selectors.append(Selector(source=source, fields=fields))
 
+
+@inject_backend
+def select(
+    backend: MatchboxDBAdapter,
+    *selection: str,
+    engine: Engine,
+) -> list[Selector]:
+    """From one engine, builds and verifies a list of selectors without column names.
+
+    Args:
+        selection: each is a full source name to select
+        engine: the engine to connect to the data warehouse hosting the source
+    Returns:
+        A list of Selector objects
+    """
+    selectors = []
+    for full_name in selection:
+        source_address = SourceAddress.compose(engine, full_name)
+        source = backend.get_source(source_address).set_engine(engine)
+        selectors.append(Selector(source=source))
+
     return selectors
 
 
+@inject_backend
 @inject_backend
 def query(
     backend: MatchboxDBAdapter,
@@ -66,7 +87,7 @@ def query(
 
     Args:
         backend: the backend to query
-        selectors: each selector is a list of `Selectors` as output by `select()`
+        selectors: each selector is the output of `select()` or `select_fields()`
             This allows to query sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
             It can only be `None` when querying from a single source, in which case the
@@ -155,20 +176,20 @@ def query(
 @inject_backend
 def match(
     backend: MatchboxDBAdapter,
+    *targets: list[Selector],
+    source: list[Selector],
     source_pk: str,
-    source: str,
-    target: str | list[str],
-    resolution: str,
+    resolution_name: str,
     threshold: int | None = None,
 ) -> Match | list[Match]:
     """Matches IDs against the selected backend.
 
     Args:
-        backend: the backend to query
+        targets: each target is the output of `select()`
+            This allows to match against sources coming from different engines
+        source: The output of using `select()` on a single source.
         source_pk: The primary key to match from the source.
-        source: The name of the source dataset.
-        target: The name of the target dataset(s).
-        resolution: the resolution to use for filtering results
+        resolution_name: the resolution name to use for filtering results
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
@@ -177,10 +198,16 @@ def match(
             by resolution name and valued by the threshold to use for that resolution.
             Will use these threshold values instead of the cached thresholds
     """
-    return backend.match(
+    if len(source) > 1:
+        raise ValueError("Only one source can be matched at one time")
+    targets = list(itertools.chain(*targets))
+
+    resolution_id = backend.get_resolution_id(resolution_name)
+
+    return _handler.match(
+        targets=targets,
+        source=source[0],
         source_pk=source_pk,
-        source=source,
-        target=target,
-        resolution=resolution,
+        resolution_id=resolution_id,
         threshold=threshold,
     )
