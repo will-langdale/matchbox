@@ -188,6 +188,13 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         )
 
 
+def test_source_factory_default():
+    """Test that source_factory generates a dummy source with default parameters."""
+    source = source_factory()
+
+    assert source.data.metrics.n_true_entities == 10
+
+
 def test_source_factory_metrics_match_data_basic():
     """Test that the metrics match the actual data content for a simple case."""
     features = [

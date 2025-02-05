@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from math import comb
+from unittest.mock import Mock, create_autospec
 from uuid import uuid4
 
 import pandas as pd
 import pyarrow as pa
 from faker import Faker
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import create_engine
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
@@ -72,7 +73,8 @@ class FeatureConfig(BaseModel):
 
     name: str
     base_generator: str
-    variations: list[VariationRule]
+    parameters: dict = Field(default_factory=dict)
+    variations: list[VariationRule] = Field(default_factory=list)
 
 
 class SourceMetrics(BaseModel):
@@ -116,6 +118,19 @@ class SourceDummy(BaseModel):
     features: list[FeatureConfig]
     data: SourceGeneratedData
 
+    def to_mock(self) -> Mock:
+        """Create a mock Source object that mimics this dummy source's behavior."""
+        mock_source = create_autospec(self.source)
+
+        mock_source.set_engine.return_value = mock_source
+        mock_source.default_columns.return_value = mock_source
+        mock_source.hash_data.return_value = self.data.data_hashes
+
+        mock_source.model_dump.side_effect = self.source.model_dump
+        mock_source.model_dump_json.side_effect = self.source.model_dump_json
+
+        return mock_source
+
 
 class SourceDataGenerator:
     """Generates dummy data for a Source."""
@@ -138,7 +153,8 @@ class SourceDataGenerator:
         for _ in range(n_true_entities):
             # Generate base values -- the raw row
             base_values = {
-                f.name: getattr(self.faker, f.base_generator)() for f in features
+                f.name: getattr(self.faker, f.base_generator)(**f.parameters)
+                for f in features
             }
 
             raw_data["pk"].append(str(uuid4()))
@@ -191,26 +207,56 @@ class SourceDataGenerator:
 
 
 def source_factory(
-    n_true_entities: int, repetition: int, features: list[FeatureConfig], seed: int = 42
+    features: list[FeatureConfig] | list[dict] | None = None,
+    full_name: str | None = None,
+    engine: Engine | None = None,
+    n_true_entities: int = 10,
+    repetition: int = 1,
+    seed: int = 42,
 ) -> SourceDummy:
     """Generate a complete dummy source.
 
     Args:
+        features: List of FeatureConfigs, used to generate features with variations
+        full_name: Full name of the source, like "dbt.companies_house".
+        engine: SQLAlchemy engine to use for the source.
         n_true_entities: Number of true entities to generate.
         repetition: Number of times to repeat the data.
-        features: List of FeatureConfigs, used to generate features with variations
         seed: Random seed for data generation.
 
     Returns:
         SourceDummy: Complete dummy source with generated data.
     """
     generator = SourceDataGenerator(seed)
-    generated_data = generator.generate_data(n_true_entities, features, repetition)
+
+    if features is None:
+        features = [
+            FeatureConfig(
+                name="company_name",
+                base_generator="company",
+            ),
+            FeatureConfig(
+                name="crn",
+                base_generator="bothify",
+                parameters={"text": "???-###-???-###"},
+            ),
+        ]
+
+    if full_name is None:
+        full_name = generator.faker.word()
+
+    if engine is None:
+        engine = create_engine("sqlite:///:memory:")
+
+    if features and isinstance(features[0], dict):
+        features = [FeatureConfig.model_validate(feature) for feature in features]
+
+    generated_data = generator.generate_data(
+        n_true_entities=n_true_entities, features=features, repetition=repetition
+    )
 
     source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
+        address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
         columns=[
             SourceColumn(name=feature.name, alias=feature.name) for feature in features

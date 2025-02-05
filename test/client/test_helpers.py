@@ -7,7 +7,7 @@ import respx
 from dotenv import find_dotenv, load_dotenv
 from httpx import Response
 from pandas import DataFrame
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine
 
 from matchbox import index, match, process, query
 from matchbox.client._handler import url
@@ -15,11 +15,17 @@ from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError
+from matchbox.common.dtos import (
+    BackendRetrievableType,
+    BackendUploadType,
+    NotFoundError,
+    UploadStatus,
+)
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.factories.sources import source_factory
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress
 
@@ -477,6 +483,49 @@ def test_index_dict(get_backend: Mock, warehouse_engine: Engine):
         mock_backend.index.assert_called_once_with(mock_source, "test_hash")
         mock_source.set_engine.assert_called_once_with(warehouse_engine)
         mock_source.default_columns.assert_not_called()
+
+
+@respx.mock
+@patch("matchbox.client.helpers.index.Source")
+def test_index_success(mock_source: Mock):
+    """Test successful indexing flow through the API."""
+    engine = create_engine("sqlite:///:memory:")
+
+    # Mock Source
+    source = source_factory(
+        features=[{"name": "company_name", "base_generator": "company"}], engine=engine
+    )
+    mock_source.return_value = source.to_mock()
+
+    # Mock the initial source metadata upload
+    source_route = respx.post(url("/sources")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id",
+                status="awaiting_upload",
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+    )
+
+    # Mock the data upload
+    upload_route = respx.post(url("/upload/test-upload-id")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id", status="complete", entity=BackendUploadType.INDEX
+            ).model_dump(),
+        )
+    )
+
+    # Call the index function
+    index(source.source.address.full_name, source.source.db_pk, engine=engine)
+
+    # Verify the API calls
+    assert source_route.called
+    assert upload_route.called
+    mock_source.assert_called_once()
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")

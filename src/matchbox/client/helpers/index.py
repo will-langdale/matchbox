@@ -1,5 +1,6 @@
 from sqlalchemy import Engine
 
+from matchbox.client import _handler
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server import inject_backend
 
@@ -59,4 +60,4 @@ def index(
     if not columns:
         source = source.default_columns()
 
-    backend.index(source, source.hash_data())
+    _handler.index(source, source.hash_data())

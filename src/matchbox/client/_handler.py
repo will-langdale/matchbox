@@ -86,20 +86,22 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
-    metadata_res = handle_http_code(httpx.post(url("/index"), json=source))
-    upload_id = UploadStatus(metadata_res.json())
+    metadata_res = handle_http_code(
+        httpx.post(url("/sources"), json=source.model_dump())
+    )
+    upload = UploadStatus.model_validate(metadata_res.json())
 
     # Upload data
     upload_res = handle_http_code(
         httpx.post(
-            url("/upload"),
+            url(f"/upload/{upload.id}"),
             files={
-                "file": (f"{upload_id}.parquet", buffer, "application/octet-stream")
+                "file": (f"{upload.id}.parquet", buffer, "application/octet-stream")
             },
         )
     )
 
-    return UploadStatus(upload_res.json())
+    return UploadStatus.model_validate(upload_res.json())
 
 
 def query(
