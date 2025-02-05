@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import pyarrow as pa
 import pyarrow.parquet as pq
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import create_engine
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import UploadStatus
@@ -78,7 +78,7 @@ def test_count_backend_item(get_backend: MatchboxDBAdapter):
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
-def test_add_source(get_backend: Mock, warehouse_engine: Engine):
+def test_add_source(get_backend: Mock):
     """Test the source addition endpoint."""
     # Setup
     mock_backend = Mock()
@@ -86,7 +86,9 @@ def test_add_source(get_backend: Mock, warehouse_engine: Engine):
     get_backend.return_value = mock_backend
 
     source = Source(
-        address=SourceAddress.compose(full_name="test.source", engine=warehouse_engine),
+        address=SourceAddress.compose(
+            full_name="test.source", engine=create_engine("sqlite:///:memory:")
+        ),
         db_pk="pk",
         columns=[SourceColumn(name="company_name", alias="name")],
     )
@@ -104,9 +106,7 @@ def test_add_source(get_backend: Mock, warehouse_engine: Engine):
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store.get")
-def test_source_upload(
-    metadata_store_get: Mock, get_backend: Mock, s3: S3Client, warehouse_engine: Engine
-):
+def test_source_upload(metadata_store_get: Mock, get_backend: Mock, s3: S3Client):
     """Test uploading a file, happy path."""
     # Setup
     mock_backend = Mock()
@@ -120,7 +120,9 @@ def test_source_upload(
     )
 
     source = Source(
-        address=SourceAddress.compose(full_name="test.source", engine=warehouse_engine),
+        address=SourceAddress.compose(
+            full_name="test.source", engine=create_engine("sqlite:///:memory:")
+        ),
         db_pk="pk",
         columns=[SourceColumn(name="company_name", alias="name")],
     )
@@ -165,7 +167,7 @@ def test_source_upload(
 @patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store.get")
 def test_source_upload_wrong_or_expired_id(
-    metadata_store_get: Mock, get_backend: Mock, s3: S3Client, warehouse_engine: Engine
+    metadata_store_get: Mock, get_backend: Mock, s3: S3Client
 ):
     """Test uploading a file, incorrect or expired ID."""
     # Setup
@@ -215,7 +217,7 @@ def test_source_upload_wrong_or_expired_id(
 @patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store.get")
 def test_source_upload_wrong_schema(
-    metadata_store_get: Mock, get_backend: Mock, s3: S3Client, warehouse_engine: Engine
+    metadata_store_get: Mock, get_backend: Mock, s3: S3Client
 ):
     """Test uploading a file, file has wrong schema."""
     # Setup
@@ -230,7 +232,9 @@ def test_source_upload_wrong_schema(
     )
 
     source = Source(
-        address=SourceAddress.compose(full_name="test.source", engine=warehouse_engine),
+        address=SourceAddress.compose(
+            full_name="test.source", engine=create_engine("sqlite:///:memory:")
+        ),
         db_pk="pk",
         columns=[SourceColumn(name="company_name", alias="name")],
     )
