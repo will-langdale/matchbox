@@ -2,7 +2,6 @@ from datetime import datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock, patch
-from uuid import UUID
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -12,7 +11,7 @@ from fastapi.testclient import TestClient
 from pandas import DataFrame
 from sqlalchemy import Engine
 
-from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
@@ -22,8 +21,8 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server import app
-from matchbox.server.api import s3_to_recordbatch, table_to_s3
 from matchbox.server.api.cache import MetadataCacheEntry, MetadataSchema
+from matchbox.server.api.routes import s3_to_recordbatch, table_to_s3
 from matchbox.server.base import MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -107,7 +106,7 @@ def test_add_source(get_backend: Mock, warehouse_engine: Engine):
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
-@patch("matchbox.server.api.metadata_store.get")
+@patch("matchbox.server.api.routes.metadata_store.get")
 def test_source_upload(
     metadata_store_get: Mock, get_backend: Mock, s3: S3Client, warehouse_engine: Engine
 ):
@@ -115,8 +114,13 @@ def test_source_upload(
     # Setup
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
     mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
 
     source = Source(
         address=SourceAddress.compose(full_name="test.source", engine=warehouse_engine),
@@ -141,21 +145,22 @@ def test_source_upload(
         },
         schema=MetadataSchema.source.value,
     )
-    hashes_buffer = BytesIO()
-    pa.parquet.write_table(hashes_table, hashes_buffer)
-    hashes_buffer.seek(0)
 
     # Make request
     response = client.post(
         "/upload/foo",
         files={
-            "file": ("hashes.parquet", hashes_buffer, "application/octet-stream"),
+            "file": (
+                "hashes.parquet",
+                table_to_buffer(hashes_table),
+                "application/octet-stream",
+            ),
         },
     )
 
     # Validate response
     assert response.status_code == 200, response.json()
-    assert response.json() == {"status": "ready"}
+    assert response.json()["status"] == "complete"
     mock_backend.index.assert_called_once()
 
 
@@ -338,17 +343,22 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
     parquet_file = UploadFile(filename="test.parquet", file=BytesIO(file_content))
 
     # Call the function
+    key = "foo.parquet"
     upload_id = await table_to_s3(
-        client=s3, bucket="test-bucket", file=parquet_file, expected_schema=table.schema
+        client=s3,
+        bucket="test-bucket",
+        key=key,
+        file=parquet_file,
+        expected_schema=table.schema,
     )
     # Validate response
-    assert UUID(upload_id, version=4)
+    assert key == upload_id
 
     response_table = pa.Table.from_batches(
         [
             batch
             async for batch in s3_to_recordbatch(
-                client=s3, bucket="test-bucket", key=f"{upload_id}.parquet"
+                client=s3, bucket="test-bucket", key=upload_id
             )
         ]
     )
@@ -362,6 +372,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
         await table_to_s3(
             client=s3,
             bucket="test-bucket",
+            key=key,
             file=text_file,
             expected_schema=table.schema,
         )
@@ -372,6 +383,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
         await table_to_s3(
             client=s3,
             bucket="test-bucket",
+            key=key,
             file=parquet_file,
             expected_schema=corrupted_schema,
         )

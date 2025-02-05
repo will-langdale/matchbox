@@ -24,6 +24,11 @@ class BackendRetrievableType(StrEnum):
     RESOLUTION = "resolution"
 
 
+class BackendUploadType(StrEnum):
+    INDEX = "index"
+    RESULTS = "results"
+
+
 class HealthCheck(BaseModel):
     """Response model to validate and return when performing a health check."""
 
@@ -39,8 +44,10 @@ class CountResult(BaseModel):
 class UploadStatus(BaseModel):
     """Response model for any file upload processes, like Source or Model results."""
 
-    id: str | None
-    status: Literal["ready", "awaiting_upload", "processing", "failed"]
+    id: str | None = None
+    status: Literal["ready", "awaiting_upload", "processing", "complete", "failed"]
+    details: str | None = None
+    entity: BackendUploadType
 
 
 class NotFoundError(BaseModel):

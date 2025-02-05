@@ -4,12 +4,12 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.arrow import SCHEMA_MB_HASHED
+from matchbox.common.arrow import SCHEMA_SOURCE_HASHES
 from matchbox.common.sources import Source
 
 
 class MetadataSchema(Enum):
-    source = SCHEMA_MB_HASHED
+    source = SCHEMA_SOURCE_HASHES
 
 
 class MetadataCacheEntry(BaseModel):

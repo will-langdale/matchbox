@@ -1,4 +1,4 @@
-from matchbox.server.api import app
+from matchbox.server.api.routes import app
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxSettings,

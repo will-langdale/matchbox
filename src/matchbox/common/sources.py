@@ -1,5 +1,4 @@
 import json
-from base64 import b64decode, b64encode
 from functools import wraps
 from typing import Callable, ParamSpec, TypeVar
 
@@ -30,7 +29,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
 )
-from matchbox.common.hash import HASH_FUNC, hash_data
+from matchbox.common.hash import HASH_FUNC, base64_to_hash, hash_data, hash_to_base64
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -71,13 +70,13 @@ class SourceAddress(BaseModel):
 
     @field_serializer("warehouse_hash")
     def serialize_hash(self, hash: bytes, _info):
-        return b64encode(hash).decode()
+        return hash_to_base64(hash)
 
     @field_validator("warehouse_hash", mode="before")
     @classmethod
     def deserialize_hash(cls, v):
         try:
-            return b64decode(v)
+            return base64_to_hash(v)
         except Exception:
             return v
 

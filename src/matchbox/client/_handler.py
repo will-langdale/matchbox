@@ -1,17 +1,16 @@
-import io
 from io import BytesIO
 from os import getenv
 
 import httpx
-import pyarrow.parquet as pq
 from pyarrow import Table
 from pyarrow.parquet import read_table
 
-from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import BackendRetrievableType, NotFoundError, UploadStatus
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
     MatchboxResolutionNotFoundError,
+    MatchboxServerFileError,
     MatchboxSourceNotFoundError,
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
@@ -22,7 +21,7 @@ from matchbox.common.sources import Source, SourceAddress
 
 
 def url(path: str) -> str:
-    """Return path prefixed by API root, determined from environment"""
+    """Return path prefixed by API root, determined from environment."""
     api_root = getenv("MB__API_ROOT")
     if api_root is None:
         raise RuntimeError("MB__API_ROOT needs to be defined in the environment")
@@ -31,7 +30,7 @@ def url(path: str) -> str:
 
 
 def url_params(params: dict[str, str | int | float | bytes]) -> dict[str, str]:
-    """Prepares a dictionary of parameters to be encoded in a URL"""
+    """Prepares a dictionary of parameters to be encoded in a URL."""
 
     def process_val(v):
         if isinstance(v, str):
@@ -50,6 +49,7 @@ def url_params(params: dict[str, str | int | float | bytes]) -> dict[str, str]:
 
 
 def handle_http_code(res: httpx.Response) -> httpx.Response:
+    """Handle HTTP status codes and raise appropriate exceptions."""
     if res.status_code == 200:
         return res
 
@@ -63,26 +63,28 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     if res.status_code == 422:
-        raise MatchboxUnparsedClientRequest(res.content)
+        if UploadStatus.model_validate_json(res.content, strict=False):
+            error = UploadStatus.model_validate(res.json())
+            raise MatchboxServerFileError(error.details)
+        else:
+            raise MatchboxUnparsedClientRequest(res.content)
 
     raise MatchboxUnhandledServerResponse(res.content)
 
 
 def get_resolution_graph() -> ResolutionGraph:
+    """Get the resolution graph from Matchbox."""
     res = handle_http_code(httpx.get(url("/report/resolutions")))
     return ResolutionGraph.model_validate(res.json())
 
 
 def index(source: Source, data_hashes: Table) -> UploadStatus:
     """Index a Source in Matchbox."""
-    # Write Table to a buffer
-    buffer = io.BytesIO()
-    pq.write_table(data_hashes, buffer)
-    buffer.seek(0)
+    buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
     metadata_res = handle_http_code(httpx.post(url("/index"), json=source))
-    upload_id = UploadStatus(**metadata_res)
+    upload_id = UploadStatus(**metadata_res.json())
 
     # Upload data
     upload_res = handle_http_code(
@@ -94,7 +96,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
         )
     )
 
-    return UploadStatus(**upload_res)
+    return UploadStatus(**upload_res.json())
 
 
 def query(
