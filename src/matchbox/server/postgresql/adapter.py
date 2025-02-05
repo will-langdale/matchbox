@@ -248,7 +248,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self,
         source_address: SourceAddress,
         resolution_id: int | None = None,
-        threshold: float | dict[str, float] | None = None,
+        threshold: float | None = None,
         limit: int | None = None,
     ) -> ArrowTable:
         """Queries the database from an optional point of truth.
@@ -261,9 +261,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 If None, uses the models' default threshold
                 If a float, uses that threshold for the specified model, and the
                 model's cached thresholds for its ancestors
-                If a dictionary, expects a shape similar to model.ancestors, keyed
-                by model name and valued by the threshold to use for that model. Will
-                use these threshold values instead of the cached thresholds
             limit (optional): the number to use in a limit clause. Useful for testing
 
         Returns:
@@ -283,7 +280,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         source: str,
         target: str | list[str],
         resolution: str,
-        threshold: float | dict[str, float] | None = None,
+        threshold: float | None = None,
     ) -> Match | list[Match]:
         """Matches an ID in a source dataset and returns the keys in the targets.
 
@@ -296,9 +293,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 If None, uses the resolutions' default threshold
                 If a float, uses that threshold for the specified resolution, and the
                 resolution's cached thresholds for its ancestors
-                If a dictionary, expects a shape similar to resolution.ancestors, keyed
-                by resolution name and valued by the threshold to use for that
-                resolution.
                 Will use these threshold values instead of the cached thresholds
         """
         return match(

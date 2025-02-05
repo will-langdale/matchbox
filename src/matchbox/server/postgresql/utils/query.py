@@ -54,15 +54,14 @@ def _get_dataset_resolution(
 def _resolve_thresholds(
     lineage_truths: dict[str, float],
     resolution: Resolutions,
-    threshold: float | dict[str, float] | None,
-    session: Session,
+    threshold: float | None,
 ) -> dict[int, float]:
     """Resolves final thresholds for each resolution in the lineage based on user input.
 
     Args:
         lineage_truths: Dict from with resolution hash -> cached truth
         resolution: The target resolution being used for clustering
-        threshold: User-supplied threshold value or dict
+        threshold: User-supplied threshold value
         session: SQLAlchemy session
 
     Returns:
@@ -84,15 +83,6 @@ def _resolve_thresholds(
                 threshold
                 if resolution_id == resolution.resolution_id
                 else default_truth
-            )
-        elif isinstance(threshold, dict):
-            resolution_obj = (
-                session.query(Resolutions)
-                .filter(Resolutions.resolution_id == resolution_id)
-                .first()
-            )
-            resolved_thresholds[resolution_id] = threshold.get(
-                resolution_obj.name, default_truth
             )
         else:
             raise ValueError(f"Invalid threshold type: {type(threshold)}")
@@ -145,7 +135,7 @@ def _resolve_cluster_hierarchy(
     dataset_id: int,
     resolution: Resolutions,
     engine: Engine,
-    threshold: float | dict[str, float] | None = None,
+    threshold: float | None = None,
 ) -> Select:
     """Resolves the final cluster assignments for all records in a dataset.
 
@@ -153,7 +143,7 @@ def _resolve_cluster_hierarchy(
         dataset_id: ID of the dataset to query
         resolution: Resolution object representing the point of truth
         engine: Engine for database connection
-        threshold: Optional threshold value or dict of resolution_name -> threshold
+        threshold: Optional threshold value
 
     Returns:
         SQLAlchemy Select statement that will resolve to (hash, id) pairs, where
@@ -177,7 +167,6 @@ def _resolve_cluster_hierarchy(
             lineage_truths=lineage_truths,
             resolution=resolution,
             threshold=threshold,
-            session=session,
         )
 
         # Get clusters valid across all resolutions in lineage
@@ -268,7 +257,7 @@ def query(
     engine: Engine,
     source_address: SourceAddress,
     resolution_id: int | None = None,
-    threshold: float | dict[str, float] | None = None,
+    threshold: float | None = None,
     limit: int = None,
 ) -> pa.Table:
     """Queries Matchbox and the Source warehouse to retrieve linked data.
@@ -496,7 +485,7 @@ def _build_match_query(
     source_resolution_id: int,
     resolution: str,
     session: Session,
-    threshold: float | dict[str, float] | None = None,
+    threshold: float | None = None,
 ) -> Select:
     """Builds the SQL query that powers the match function."""
     # Get truth resolution
@@ -512,7 +501,6 @@ def _build_match_query(
         lineage_truths=lineage_truths,
         resolution=truth_resolution,
         threshold=threshold,
-        session=session,
     )
 
     # Get valid clusters across all resolutions
@@ -545,7 +533,7 @@ def match(
     target: SourceAddress | list[SourceAddress],
     resolution: str,
     engine: Engine,
-    threshold: float | dict[str, float] | None = None,
+    threshold: float | None = None,
 ) -> Match | list[Match]:
     """Matches an ID in a source dataset and returns the keys in the targets.
 

@@ -288,7 +288,7 @@ class MatchboxDBAdapter(ABC):
         self,
         source_address: SourceAddress,
         resolution_id: int | None = None,
-        threshold: float | dict[str, float] | None = None,
+        threshold: float | None = None,
         limit: int = None,
     ) -> ArrowTable: ...
 
@@ -299,7 +299,7 @@ class MatchboxDBAdapter(ABC):
         source: str,
         target: str | list[str],
         resolution: str,
-        threshold: float | dict[str, float] | None = None,
+        threshold: float | None = None,
     ) -> Match | list[Match]: ...
 
     @abstractmethod
