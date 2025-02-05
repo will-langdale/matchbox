@@ -215,14 +215,14 @@ def test_query_no_resolution_ok_various_params():
         assert set(to_arrow.call_args.kwargs["pks"]) == {"0", "1"}
 
         # Tests with optional params
-        results = query(sels, return_type="arrow", threshold=0.5, limit=2).to_pandas()
+        results = query(sels, return_type="arrow", threshold=50, limit=2).to_pandas()
         assert len(results) == 2
         assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
         assert dict(query_route.calls.last.request.url.params) == {
             "full_name": sels[0].source.address.full_name,
             "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
-            "threshold": "0.5",
+            "threshold": "50",
             "limit": "2",
         }
 

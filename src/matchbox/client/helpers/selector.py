@@ -59,7 +59,7 @@ def query(
     *selectors: list[Selector],
     resolution_name: str | None = None,
     return_type: Literal["pandas", "arrow"] = "pandas",
-    threshold: float | None = None,
+    threshold: int | None = None,
     limit: int | None = None,
 ) -> DataFrame | pa.Table:
     """Runs queries against the selected backend.
@@ -75,7 +75,7 @@ def query(
             Defaults to pandas for ease of use
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
-            If a float, uses that threshold for the specified resolution, and the
+            If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
         limit (optional): the number to use in a limit clause. Useful for testing
 
@@ -159,7 +159,7 @@ def match(
     source: str,
     target: str | list[str],
     resolution: str,
-    threshold: float | None = None,
+    threshold: int | None = None,
 ) -> Match | list[Match]:
     """Matches IDs against the selected backend.
 
@@ -171,7 +171,7 @@ def match(
         resolution: the resolution to use for filtering results
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
-            If a float, uses that threshold for the specified resolution, and the
+            If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
             If a dictionary, expects a shape similar to resolution.ancestors, keyed
             by resolution name and valued by the threshold to use for that resolution.

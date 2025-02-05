@@ -227,7 +227,7 @@ async def query(
     full_name: str,
     warehouse_hash_b64: str,
     resolution_id: int | None = None,
-    threshold: float | None = None,
+    threshold: int | None = None,
     limit: int | None = None,
 ):
     warehouse_hash = base64_to_hash(warehouse_hash_b64)
