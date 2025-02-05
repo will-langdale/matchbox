@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -27,6 +26,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import base64_to_hash
 from matchbox.common.sources import Source, SourceAddress
+from matchbox.server.api.arrow import s3_to_recordbatch, table_to_s3
 from matchbox.server.api.cache import MetadataStore
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
@@ -66,65 +66,6 @@ async def http_exception_handler(request, exc):
 
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
-
-
-async def table_to_s3(
-    client: S3Client,
-    bucket: str,
-    key: str,
-    file: UploadFile,
-    expected_schema: pa.Schema,
-) -> str:
-    """Upload a PyArrow Table to S3 and return the key.
-
-    Args:
-        client: The S3 client to use.
-        bucket: The S3 bucket to upload to.
-        key: The key to upload to.
-        file: The file to upload.
-        expected_schema: The schema that the file should match.
-
-    Raises:
-        MatchboxServerFileError: If the file is not a valid Parquet file or the schema
-            does not match the expected schema.
-
-    Returns:
-        The key of the uploaded file.
-    """
-    try:
-        table = pq.read_table(file.file)
-
-        if not table.schema.equals(expected_schema):
-            raise MatchboxServerFileError(
-                message=(
-                    "Schema mismatch. "
-                    f"Expected:\n{expected_schema}\nGot:\n{table.schema}"
-                )
-            )
-
-        await file.seek(0)
-
-        client.put_object(Bucket=bucket, Key=key, Body=file.file)
-
-    except Exception as e:
-        if isinstance(e, MatchboxServerFileError):
-            raise
-        raise MatchboxServerFileError(message=f"Invalid Parquet file: {str(e)}") from e
-
-    return key
-
-
-async def s3_to_recordbatch(
-    client: S3Client, bucket: str, key: str, batch_size: int = 1000
-) -> AsyncGenerator[pa.RecordBatch, None]:
-    """Download a PyArrow Table from S3 and stream it as RecordBatches."""
-    response = client.get_object(Bucket=bucket, Key=key)
-    buffer = pa.BufferReader(response["Body"].read())
-
-    parquet_file = pq.ParquetFile(buffer)
-
-    for batch in parquet_file.iter_batches(batch_size=batch_size):
-        yield batch
 
 
 @app.get("/health")
@@ -171,7 +112,15 @@ async def upload_file(
     """Upload file and process based on metadata type"""
     source = metadata_store.get(cache_id=upload_id)
     if not source:
-        raise HTTPException(status_code=404, detail="Upload ID not found or expired")
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                status="failed",
+                details="Upload ID not found or expired.",
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
 
     # Upload to S3
     client = backend.settings.datastore.get_client()

@@ -54,7 +54,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
         return res
 
     if res.status_code == 404:
-        error = NotFoundError.model_validate(res.json())
+        error = NotFoundError(**res.json())
         if error.entity == BackendRetrievableType.SOURCE:
             raise MatchboxSourceNotFoundError(error.details)
         if error.entity == BackendRetrievableType.RESOLUTION:
@@ -84,7 +84,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
 
     # Upload metadata
     metadata_res = handle_http_code(httpx.post(url("/index"), json=source))
-    upload_id = UploadStatus(**metadata_res.json())
+    upload_id = UploadStatus(metadata_res.json())
 
     # Upload data
     upload_res = handle_http_code(
@@ -96,7 +96,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
         )
     )
 
-    return UploadStatus(**upload_res.json())
+    return UploadStatus(upload_res.json())
 
 
 def query(

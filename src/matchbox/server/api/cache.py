@@ -47,7 +47,7 @@ class MetadataStore:
         cache_id = str(uuid.uuid4())
         self._store[cache_id] = MetadataCacheEntry(
             metadata=metadata,
-            upload_schema=MetadataSchema.source,
+            upload_schema=MetadataSchema.index,
             timestamp=datetime.now(),
         )
         return cache_id
