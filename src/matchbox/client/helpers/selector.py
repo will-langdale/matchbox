@@ -65,6 +65,8 @@ def select(
                         stacklevel=2,
                     )
                 selectors.append(Selector(source=source, fields=fields))
+        else:
+            raise ValueError("Selection specified in incorrect format")
 
     return selectors
 
@@ -82,7 +84,7 @@ def query(
 
     Args:
         backend: the backend to query
-        selectors: each selector is the output of `select()` or `select_fields()`
+        selectors: each selector is the output of `select()`
             This allows to query sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
             It can only be `None` when querying from a single source, in which case the
