@@ -130,7 +130,7 @@ def test_source_upload(
 
     metadata_store_get.return_value = MetadataCacheEntry(
         metadata=source,
-        upload_schema=MetadataSchema.source,
+        upload_schema=MetadataSchema.index,
         timestamp=datetime.now(),
     )
 
@@ -143,7 +143,7 @@ def test_source_upload(
             ],
             "hash": [b"hash1", b"hash2"],
         },
-        schema=MetadataSchema.source.value,
+        schema=MetadataSchema.index.value,
     )
 
     # Make request
@@ -165,7 +165,7 @@ def test_source_upload(
 
 
 def test_source_upload_wrong_id():
-    """Test uploading a file, write ID."""
+    """Test uploading a file, incorrect ID."""
     pass
 
 
@@ -174,9 +174,63 @@ def test_source_upload_id_expired():
     pass
 
 
-def test_source_upload_wrong_schema():
+@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.metadata_store.get")
+def test_source_upload_wrong_schema(
+    metadata_store_get: Mock, get_backend: Mock, s3: S3Client, warehouse_engine: Engine
+):
     """Test uploading a file, file has wrong schema."""
-    pass
+    # Setup
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.index = Mock(return_value=None)
+    get_backend.return_value = mock_backend
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    source = Source(
+        address=SourceAddress.compose(full_name="test.source", engine=warehouse_engine),
+        db_pk="pk",
+        columns=[SourceColumn(name="company_name", alias="name")],
+    )
+
+    metadata_store_get.return_value = MetadataCacheEntry(
+        metadata=source,
+        upload_schema=MetadataSchema.results,  # Wrong schema
+        timestamp=datetime.now(),
+    )
+
+    # Build call
+    hashes_table = pa.Table.from_pydict(
+        {
+            "source_pk": [
+                ["short", "medium_id"],
+                ["very_long_identifier", "id"],
+            ],
+            "hash": [b"hash1", b"hash2"],
+        },
+        schema=MetadataSchema.index.value,
+    )
+
+    # Make request
+    response = client.post(
+        "/upload/foo",
+        files={
+            "file": (
+                "hashes.parquet",
+                table_to_buffer(hashes_table),
+                "application/octet-stream",
+            ),
+        },
+    )
+
+    # Validate response
+    assert response.status_code == 400, response.json()
+    assert response.json()["status"] == "failed"
+    mock_backend.index.assert_not_called()
 
 
 # def test_list_sources():

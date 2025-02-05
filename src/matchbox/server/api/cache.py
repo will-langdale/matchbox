@@ -4,12 +4,13 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.arrow import SCHEMA_SOURCE_HASHES
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.sources import Source
 
 
 class MetadataSchema(Enum):
-    source = SCHEMA_SOURCE_HASHES
+    index = SCHEMA_INDEX
+    results = SCHEMA_RESULTS
 
 
 class MetadataCacheEntry(BaseModel):
