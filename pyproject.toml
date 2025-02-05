@@ -36,6 +36,7 @@ server = [
 [dependency-groups]
 dev = [
     "docker>=7.1.0",
+    "faker>=35.2.0",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",
     "mkdocs>=1.6.1",

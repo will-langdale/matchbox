@@ -53,6 +53,13 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     if res.status_code == 200:
         return res
 
+    if res.status_code == 400:
+        if UploadStatus.model_validate_json(res.content, strict=False):
+            error = UploadStatus.model_validate(res.json())
+            raise MatchboxServerFileError(error.details)
+        else:
+            raise RuntimeError(f"Unexpected 400 error: {res.content}")
+
     if res.status_code == 404:
         error = NotFoundError(**res.json())
         if error.entity == BackendRetrievableType.SOURCE:
@@ -63,11 +70,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     if res.status_code == 422:
-        if UploadStatus.model_validate_json(res.content, strict=False):
-            error = UploadStatus.model_validate(res.json())
-            raise MatchboxServerFileError(error.details)
-        else:
-            raise MatchboxUnparsedClientRequest(res.content)
+        raise MatchboxUnparsedClientRequest(res.content)
 
     raise MatchboxUnhandledServerResponse(res.content)
 
