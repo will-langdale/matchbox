@@ -21,7 +21,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -71,6 +71,52 @@ def test_comparisons():
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
+def test_select_mixed_style(get_backend: Mock, warehouse_engine: Engine):
+    """We can select select specific columns from some of the sources"""
+    # Set up mocks and test data
+    source1 = Source(
+        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
+        db_pk="pk",
+        columns=[SourceColumn(name="a", type="BIGINT")],
+    )
+    source2 = Source(
+        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.bar"),
+        db_pk="pk",
+    )
+
+    mock_backend = Mock()
+    mock_backend.get_source = Mock(side_effect=[source1, source2])
+    get_backend.return_value = mock_backend
+
+    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
+    with warehouse_engine.connect() as conn:
+        df.to_sql(
+            name="foo",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+
+        df.to_sql(
+            name="bar",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+
+    # Select sources
+    selection = select({"test.foo": ["a"]}, "test.bar", engine=warehouse_engine)
+
+    # Check they contain what we expect
+    assert selection[0].fields == ["a"]
+    assert not selection[1].fields
+    assert selection[0].source == source1
+    assert selection[1].source == source2
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
 def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
     source = Source(
@@ -93,7 +139,7 @@ def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine)
         )
 
     with pytest.warns(Warning):
-        select({"test.foo": ["a", "b"]}, warehouse_engine)
+        select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -118,7 +164,7 @@ def test_select_missing_columns(get_backend: Mock, warehouse_engine: Engine):
             index=False,
         )
     with pytest.raises(ValueError):
-        select({"test.foo": ["a", "c"]}, warehouse_engine)
+        select({"test.foo": ["a", "c"]}, engine=warehouse_engine)
 
 
 def test_query_no_resolution_fail():
@@ -301,7 +347,6 @@ def test_query_multiple_sources_with_limits():
                     ),
                     db_pk="pk",
                 ),
-                fields=["a", "b"],
             ),
             Selector(
                 source=Source(
@@ -315,7 +360,16 @@ def test_query_multiple_sources_with_limits():
         # Validate results
         results = query(sels, resolution_name="link", limit=7)
         assert len(results) == 4
-        assert {"foo_a", "foo_b", "foo2_c", "id"} == set(results.columns)
+        assert {
+            # All columns automatically selected for `foo`
+            "foo_pk",
+            "foo_a",
+            "foo_b",
+            # Only one column selected for `foo2`
+            "foo2_c",
+            # The id always comes back
+            "id",
+        } == set(results.columns)
 
         get_resolution_id.assert_called_with("link")
         assert dict(query_route.calls[-2].request.url.params) == {

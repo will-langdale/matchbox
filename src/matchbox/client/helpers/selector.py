@@ -18,62 +18,57 @@ class Selector(BaseModel):
 
 
 @inject_backend
-def select_fields(
-    backend: MatchboxDBAdapter, selection: dict[str, list[str]], engine: Engine
-):
-    """From one engine, builds and verifies a list of selectors with column names.
-
-    Args:
-        selection: a dict where full source names are mapped to lists of fields
-        engine: the engine to connect to the data warehouse hosting the source
-    Returns:
-        A list of Selector objects
-    """
-    selectors = []
-    for full_name, fields in selection.items():
-        source_address = SourceAddress.compose(engine, full_name)
-        source = backend.get_source(source_address).set_engine(engine)
-
-        warehouse_cols = set(source.to_table().columns.keys())
-        selected_cols = set(fields)
-        if not selected_cols <= warehouse_cols:
-            raise ValueError(
-                f"{selected_cols - warehouse_cols} not found in {source_address}"
-            )
-
-        indexed_cols = set(col.name for col in source.columns)
-        if not selected_cols <= indexed_cols:
-            warn(
-                "You are selecting columns that are not indexed in Matchbox",
-                stacklevel=2,
-            )
-        selectors.append(Selector(source=source, fields=fields))
-
-
-@inject_backend
 def select(
     backend: MatchboxDBAdapter,
-    *selection: str,
+    *selection: str | dict[str, str],
     engine: Engine,
 ) -> list[Selector]:
-    """From one engine, builds and verifies a list of selectors without column names.
+    """From one engine, builds and verifies a list of selectors.
 
     Args:
-        selection: each is a full source name to select
+        selection: full source names and optionally a subset of columns to select
         engine: the engine to connect to the data warehouse hosting the source
     Returns:
         A list of Selector objects
+
+    Examples:
+        ```python
+        select("companies_house", "hmrc_exporters", engine=engine)
+        ```
+
+        ```python
+        select({"companies_house": ["crn"], "hmrc_exporters": ["name"]}, engine=engine)
+        ```
     """
     selectors = []
-    for full_name in selection:
-        source_address = SourceAddress.compose(engine, full_name)
-        source = backend.get_source(source_address).set_engine(engine)
-        selectors.append(Selector(source=source))
+    for s in selection:
+        if isinstance(s, str):
+            source_address = SourceAddress.compose(engine, s)
+            source = backend.get_source(source_address).set_engine(engine)
+            selectors.append(Selector(source=source))
+        elif isinstance(s, dict):
+            for full_name, fields in s.items():
+                source_address = SourceAddress.compose(engine, full_name)
+                source = backend.get_source(source_address).set_engine(engine)
+
+                warehouse_cols = set(source.to_table().columns.keys())
+                selected_cols = set(fields)
+                if not selected_cols <= warehouse_cols:
+                    raise ValueError(
+                        f"{selected_cols - warehouse_cols} not in {source_address}"
+                    )
+
+                indexed_cols = set(col.name for col in source.columns)
+                if not selected_cols <= indexed_cols:
+                    warn(
+                        "You are selecting columns that are not indexed in Matchbox",
+                        stacklevel=2,
+                    )
+                selectors.append(Selector(source=source, fields=fields))
 
     return selectors
 
 
-@inject_backend
 @inject_backend
 def query(
     backend: MatchboxDBAdapter,
@@ -102,6 +97,21 @@ def query(
 
     Returns:
         Data in the requested return type
+
+    Examples:
+        ```python
+        query(
+            select({"companies_house": ["crn", "name"]}, engine=engine),
+        )
+        ```
+
+        ```python
+        query(
+            select("companies_house", engine=engine1),
+            select("datahub_companies", engine=engine2),
+            resolution_name="last_linker",
+        )
+        ```
     """
     if not selectors:
         raise ValueError("At least one selector must be specified")
@@ -137,9 +147,11 @@ def query(
             threshold=threshold,
             limit=sub_limit,
         )
-
+        fields = None
+        if selector.fields:
+            fields = list(set(selector.fields))
         raw_data = selector.source.to_arrow(
-            fields=list(set(selector.fields)),
+            fields=fields,
             pks=mb_ids["source_pk"].to_pylist(),
         )
 
@@ -151,10 +163,14 @@ def query(
             join_type="inner",
         )
 
-        keep_cols = ["id"] + [selector.source.format_column(f) for f in selector.fields]
-        match_cols = [col for col in joined_table.column_names if col in keep_cols]
-
-        tables.append(joined_table.select(match_cols))
+        if selector.fields:
+            keep_cols = ["id"] + [
+                selector.source.format_column(f) for f in selector.fields
+            ]
+            match_cols = [col for col in joined_table.column_names if col in keep_cols]
+            tables.append(joined_table.select(match_cols))
+        else:
+            tables.append(joined_table)
 
     # Combine results
     result = pa.concat_tables(tables, promote_options="default")
