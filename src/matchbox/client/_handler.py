@@ -15,7 +15,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import SourceAddress
+from matchbox.common.sources import Match, SourceAddress
 
 
 def url(path: str) -> str:
@@ -27,23 +27,32 @@ def url(path: str) -> str:
     return api_root + path
 
 
-def url_params(params: dict[str, str | int | float | bytes]) -> dict[str, str]:
+_BASE_PARAM_TYPES = str | int | float | bytes
+
+
+def encode_param_value(
+    v: _BASE_PARAM_TYPES | list[_BASE_PARAM_TYPES],
+) -> str | list[str]:
+    if isinstance(v, list):
+        return [encode_param_value(item) for item in v]
+    if isinstance(v, str):
+        return v
+    elif isinstance(v, int):
+        return str(v)
+    elif isinstance(v, float):
+        return str(v)
+    elif isinstance(v, bytes):
+        return hash_to_base64(v)
+    raise ValueError(f"It was not possible to parse {v} as an URL parameter")
+
+
+def url_params(
+    params: dict[str, _BASE_PARAM_TYPES | list[_BASE_PARAM_TYPES]],
+) -> dict[str, str]:
     """Prepares a dictionary of parameters to be encoded in a URL"""
 
-    def process_val(v):
-        if isinstance(v, str):
-            return v
-        elif isinstance(v, int):
-            return str(v)
-        elif isinstance(v, float):
-            return str(v)
-        elif isinstance(v, bytes):
-            return hash_to_base64(v)
-
-        raise ValueError(f"It was not possible to parse {v} as an URL parameter")
-
     non_null = {k: v for k, v in params.items() if v}
-    return {k: process_val(v) for k, v in non_null.items()}
+    return {k: encode_param_value(v) for k, v in non_null.items()}
 
 
 def handle_http_code(res: httpx.Response) -> httpx.Response:
@@ -103,3 +112,35 @@ def query(
         )
 
     return table
+
+
+def match(
+    targets: list[SourceAddress],
+    source: SourceAddress,
+    source_pk: str,
+    resolution_id: int,
+    threshold: int | None = None,
+) -> Match:
+    target_full_names = [t.full_name for t in targets]
+    target_warehouse_hashes = [t.warehouse_hash for t in targets]
+
+    res = handle_http_code(
+        httpx.get(
+            url("/match"),
+            params=url_params(
+                {
+                    "target_full_names": target_full_names,
+                    # Converted to b64 by `url_params()`
+                    "target_warehouse_hashes_b64": target_warehouse_hashes,
+                    "source_full_name": source.full_name,
+                    # Converted to b64 by `url_params()`
+                    "source_warehouse_hash_b64": source.warehouse_hash,
+                    "source_pk": source_pk,
+                    "resolution_id": resolution_id,
+                    "threshold": threshold,
+                }
+            ),
+        )
+    )
+
+    return Match.model_validate(res.json())

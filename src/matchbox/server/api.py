@@ -25,7 +25,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import base64_to_hash
-from matchbox.common.sources import SourceAddress
+from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -258,9 +258,54 @@ async def query(
     return ParquetResponse(buffer.getvalue())
 
 
-@app.get("/match")
-async def match():
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/match",
+    response_class=Match,
+    responses={404: NotFoundError.example_response_body()},
+)
+async def match(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    target_full_names: list[str],
+    target_warehouse_hashes_b64: list[str],
+    source_full_name: str,
+    source_warehouse_hash_b64: str,
+    source_pk: str,
+    resolution_id: int,
+    threshold: int | None = None,
+):
+    targets = [
+        SourceAddress(full_name=n, warehouse_hash=w)
+        for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)
+    ]
+    source_warehouse_hash = base64_to_hash(source_warehouse_hash_b64)
+    source = SourceAddress(
+        full_name=source_full_name, warehouse_hash=source_warehouse_hash
+    )
+    try:
+        res = backend.match(
+            source_pk=source_pk,
+            source=source,
+            targets=targets,
+            resolution_id=resolution_id,
+            threshold=threshold,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except MatchboxSourceNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=f"{str(e)}", entity=BackendRetrievableType.SOURCE
+            ).model_dump(),
+        ) from e
+
+    buffer = table_to_buffer(res)
+    return ParquetResponse(buffer.getvalue())
 
 
 @app.get("/validate/hash")
