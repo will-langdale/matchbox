@@ -255,7 +255,7 @@ def _resolve_cluster_hierarchy(
 def query(
     engine: Engine,
     source_address: SourceAddress,
-    resolution_id: int | None = None,
+    resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int = None,
 ) -> pa.Table:
@@ -281,18 +281,16 @@ def query(
     with Session(engine) as session:
         dataset_resolution = _get_dataset_resolution(source_address, session)
 
-        if resolution_id:
+        if resolution_name:
             resolution = (
                 session.query(Resolutions)
-                .filter(Resolutions.resolution_id == resolution_id)
+                .filter(Resolutions.name == resolution_name)
                 .first()
             )
             if resolution is None:
-                raise MatchboxResolutionNotFoundError(resolution_name=resolution)
+                raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
         else:
             resolution = dataset_resolution
-        if not resolution_id:
-            resolution_id = dataset_resolution.resolution_id
 
         id_query = _resolve_cluster_hierarchy(
             dataset_id=dataset_resolution.resolution_id,

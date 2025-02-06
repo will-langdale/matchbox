@@ -81,7 +81,7 @@ def get_resolution_graph() -> ResolutionGraph:
 
 def query(
     source_address: SourceAddress,
-    resolution_id: int | None = None,
+    resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> BytesIO:
@@ -93,7 +93,7 @@ def query(
                     "full_name": source_address.full_name,
                     # Converted to b64 by `url_params()`
                     "warehouse_hash_b64": source_address.warehouse_hash,
-                    "resolution_id": resolution_id,
+                    "resolution_name": resolution_name,
                     "threshold": threshold,
                     "limit": limit,
                 }

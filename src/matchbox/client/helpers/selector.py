@@ -71,9 +71,7 @@ def select(
     return selectors
 
 
-@inject_backend
 def query(
-    backend: MatchboxDBAdapter,
     *selectors: list[Selector],
     resolution_name: str | None = None,
     return_type: Literal["pandas", "arrow"] = "pandas",
@@ -83,7 +81,6 @@ def query(
     """Runs queries against the selected backend.
 
     Args:
-        backend: the backend to query
         selectors: each selector is the output of `select()`
             This allows to query sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
@@ -121,13 +118,10 @@ def query(
     selectors = list(itertools.chain(*selectors))
 
     if not resolution_name:
-        resolution_id = None
         if len(selectors) > 1:
             raise ValueError(
                 "A resolution name must be specified if querying more than one source"
             )
-    else:
-        resolution_id = backend.get_resolution_id(resolution_name)
 
     # Divide the limit among selectors
     if limit:
@@ -145,7 +139,7 @@ def query(
         # Get ids from matchbox
         mb_ids = _handler.query(
             source_address=selector.source.address,
-            resolution_id=resolution_id,
+            resolution_name=resolution_name,
             threshold=threshold,
             limit=sub_limit,
         )

@@ -287,7 +287,7 @@ class MatchboxDBAdapter(ABC):
     def query(
         self,
         source_address: SourceAddress,
-        resolution_id: int | None = None,
+        resolution_name: str | None = None,
         threshold: int | None = None,
         limit: int = None,
     ) -> ArrowTable: ...
@@ -322,9 +322,6 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def get_model(self, model: str) -> MatchboxModelAdapter: ...
-
-    @abstractmethod
-    def get_resolution_id(self, resolution_name: str) -> int: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...

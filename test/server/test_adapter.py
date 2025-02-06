@@ -198,14 +198,6 @@ class TestMatchboxBackend:
         with pytest.raises(MatchboxResolutionNotFoundError):
             self.backend.get_model(model="nonexistant")
 
-    def test_get_resolution_id(self):
-        self.setup_database("dedupe")
-        resolution_id = self.backend.get_resolution_id("naive_test.crn")
-        assert isinstance(resolution_id, int)
-
-        with pytest.raises(MatchboxResolutionNotFoundError):
-            self.backend.get_resolution_id("nonexistent")
-
     def test_delete_model(self):
         """
         Tests the deletion of:
@@ -437,7 +429,6 @@ class TestMatchboxBackend:
         self.backend.index(source, data_hashes)
 
         assert self.backend.get_source(address) == source
-        assert self.backend.get_resolution_id("foo")
         assert self.backend.data.count() == 2
         # I can add it again with no consequences
         self.backend.index(source, data_hashes)

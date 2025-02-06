@@ -225,7 +225,7 @@ async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     full_name: str,
     warehouse_hash_b64: str,
-    resolution_id: int | None = None,
+    resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ):
@@ -235,7 +235,7 @@ async def query(
     try:
         res = backend.query(
             source_address=source_address,
-            resolution_id=resolution_id,
+            resolution_name=resolution_name,
             threshold=threshold,
             limit=limit,
         )
