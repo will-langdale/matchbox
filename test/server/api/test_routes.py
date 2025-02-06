@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.dtos import UploadStatus
+from matchbox.common.dtos import BackendUploadType, UploadStatus
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
@@ -130,6 +130,7 @@ def test_source_upload(metadata_store_get: Mock, get_backend: Mock, s3: S3Client
     metadata_store_get.return_value = MetadataCacheEntry(
         metadata=source,
         upload_schema=MetadataSchema.index,
+        upload_type=BackendUploadType.INDEX,
         timestamp=datetime.now(),
     )
 
@@ -242,6 +243,7 @@ def test_source_upload_wrong_schema(
     metadata_store_get.return_value = MetadataCacheEntry(
         metadata=source,
         upload_schema=MetadataSchema.results,  # Wrong schema
+        upload_type=BackendUploadType.RESULTS,
         timestamp=datetime.now(),
     )
 
