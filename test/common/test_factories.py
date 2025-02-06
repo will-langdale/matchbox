@@ -1,13 +1,20 @@
+from math import comb
 from typing import Any
 
 import numpy as np
 import pyarrow.compute as pc
 import pytest
 
-from matchbox.common.factories import (
+from matchbox.common.factories.results import (
     calculate_min_max_edges,
     generate_dummy_probabilities,
     verify_components,
+)
+from matchbox.common.factories.sources import (
+    FeatureConfig,
+    ReplaceRule,
+    SuffixRule,
+    source_factory,
 )
 
 
@@ -179,3 +186,166 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
             num_components=parameters["num_components"],
             total_rows=parameters["total_rows"],
         )
+
+
+def test_source_factory_default():
+    """Test that source_factory generates a dummy source with default parameters."""
+    source = source_factory()
+
+    assert source.data.metrics.n_true_entities == 10
+
+
+def test_source_factory_metrics_match_data_basic():
+    """Test that the metrics match the actual data content for a simple case."""
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[
+                SuffixRule(suffix=" Inc"),
+                SuffixRule(suffix=" Ltd"),
+            ],
+        ),
+    ]
+
+    n_true_entities = 5
+    dummy_source = source_factory(
+        n_true_entities=n_true_entities, repetition=1, features=features, seed=42
+    )
+
+    # Check true entities count
+    unique_base_values = len(
+        set(
+            dummy_source.data.data.to_pandas()
+            .assign(
+                company_name=lambda x: x["company_name"]
+                .str.replace(" Inc", "")
+                .str.replace(" Ltd", "")
+            )
+            .groupby("pk")["company_name"]
+            .first()
+        )
+    )
+    assert unique_base_values == n_true_entities
+
+    # Check variations per entity
+    variations_per_entity = len(features[0].variations) + 1  # +1 for base value
+    assert dummy_source.data.metrics.n_unique_rows == variations_per_entity
+
+    # Verify total rows
+    expected_total_rows = n_true_entities * variations_per_entity
+    actual_total_rows = len(dummy_source.data.data)
+    assert actual_total_rows == expected_total_rows
+
+    # Verify potential pairs calculation
+    expected_pairs = comb(variations_per_entity, 2) * n_true_entities
+    assert dummy_source.data.metrics.n_potential_pairs == expected_pairs
+
+
+def test_source_factory_metrics_with_repetition():
+    """Test that repetition properly multiplies the data with correct metrics."""
+    features = [
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+            variations=[ReplaceRule(old="@", new="+test@")],
+        ),
+    ]
+
+    n_true_entities = 3
+    repetition = 2
+    dummy_source = source_factory(
+        n_true_entities=n_true_entities,
+        repetition=repetition,
+        features=features,
+        seed=42,
+    )
+
+    # Base metrics should not be affected by repetition
+    assert dummy_source.data.metrics.n_true_entities == n_true_entities
+    assert dummy_source.data.metrics.n_unique_rows == 2  # base + 1 variation
+
+    # But total rows should be multiplied
+    expected_total_rows = (
+        n_true_entities * 2 * repetition
+    )  # 2 rows per entity * repetition
+    actual_total_rows = len(dummy_source.data.data)
+    assert actual_total_rows == expected_total_rows
+
+
+def test_source_factory_metrics_with_multiple_features():
+    """Test that metrics are correct when multiple features have multiple variations."""
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[
+                SuffixRule(suffix=" Inc"),
+                SuffixRule(suffix=" Ltd"),
+            ],
+        ),
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+            variations=[ReplaceRule(old="@", new="+test@")],
+        ),
+    ]
+
+    n_true_entities = 4
+    dummy_source = source_factory(
+        n_true_entities=n_true_entities, repetition=1, features=features, seed=42
+    )
+
+    # Should use max variations across features
+    max_variations = max(len(f.variations) for f in features)
+    expected_rows_per_entity = max_variations + 1  # +1 for base value
+
+    assert dummy_source.data.metrics.n_unique_rows == expected_rows_per_entity
+    assert len(dummy_source.data.data) == n_true_entities * expected_rows_per_entity
+
+
+def test_source_factory_data_hashes_integrity():
+    """Test that data_hashes correctly identifies identical rows."""
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[SuffixRule(suffix=" Inc")],
+        ),
+    ]
+
+    n_true_entities = 3
+    repetition = 2
+    dummy_source = source_factory(
+        n_true_entities=n_true_entities,
+        repetition=repetition,
+        features=features,
+        seed=42,
+    )
+
+    # Convert to pandas for easier analysis
+    hashes_df = dummy_source.data.data_hashes.to_pandas()
+    data_df = dummy_source.data.data.to_pandas()
+
+    # For each hash group, verify that the corresponding rows are identical
+    for _, group in hashes_df.groupby("hash"):
+        pks = group["source_pk"].explode()
+        rows = data_df[data_df["pk"].isin(pks)]
+
+        # All rows in the same hash group should have identical feature values
+        for feature in features:
+            assert len(rows[feature.name].unique()) == 1
+
+    # Due to repetition=2, each unique row should appear
+    # in exactly one hash group with two PKs
+    assert all(
+        len(group["source_pk"].explode()) == repetition
+        for _, group in hashes_df.groupby("hash")
+    )
+
+    # Total number of hash groups should equal
+    # number of unique rows * number of true entities
+    expected_hash_groups = n_true_entities * (
+        len(features[0].variations) + 1
+    )  # +1 for base value
+    assert len(hashes_df["hash"].unique()) == expected_hash_groups

@@ -6,7 +6,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
-from matchbox.common.factories import generate_dummy_probabilities
+from matchbox.common.factories.results import generate_dummy_probabilities
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     component_to_hierarchy,
