@@ -62,7 +62,6 @@ def _resolve_thresholds(
         lineage_truths: Dict from with resolution hash -> cached truth
         resolution: The target resolution being used for clustering
         threshold: User-supplied threshold value
-        session: SQLAlchemy session
 
     Returns:
         Dict mapping resolution hash to their final threshold values

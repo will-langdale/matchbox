@@ -206,15 +206,12 @@ def match(
         targets: each target is the output of `select()`
             This allows to match against sources coming from different engines
         source: The output of using `select()` on a single source.
-        source_pk: The primary key to match from the source.
+        source_pk: The primary key value to match from the source.
         resolution_name: the resolution name to use for filtering results
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
-            If a dictionary, expects a shape similar to resolution.ancestors, keyed
-            by resolution name and valued by the threshold to use for that resolution.
-            Will use these threshold values instead of the cached thresholds
     """
     if len(source) > 1:
         raise ValueError("Only one source can be matched at one time")
