@@ -24,7 +24,6 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.hash import base64_to_hash
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
@@ -230,8 +229,9 @@ async def query(
     threshold: int | None = None,
     limit: int | None = None,
 ):
-    warehouse_hash = base64_to_hash(warehouse_hash_b64)
-    source_address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash)
+    source_address = SourceAddress(
+        full_name=full_name, warehouse_hash=warehouse_hash_b64
+    )
     try:
         res = backend.query(
             source_address=source_address,
@@ -276,9 +276,8 @@ async def match(
         SourceAddress(full_name=n, warehouse_hash=w)
         for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)
     ]
-    source_warehouse_hash = base64_to_hash(source_warehouse_hash_b64)
     source = SourceAddress(
-        full_name=source_full_name, warehouse_hash=source_warehouse_hash
+        full_name=source_full_name, warehouse_hash=source_warehouse_hash_b64
     )
     try:
         res = backend.match(

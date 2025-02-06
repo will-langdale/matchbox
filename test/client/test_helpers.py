@@ -174,7 +174,7 @@ def test_query_no_resolution_fail():
             source=Source(
                 address=SourceAddress(
                     full_name="foo",
-                    warehouse_hash="bar",
+                    warehouse_hash=b"bar",
                 ),
                 db_pk="i",
             ),
@@ -343,14 +343,14 @@ def test_query_multiple_sources_with_limits():
                 source=Source(
                     address=SourceAddress(
                         full_name="foo",
-                        warehouse_hash="bar",
+                        warehouse_hash=b"bar",
                     ),
                     db_pk="pk",
                 ),
             ),
             Selector(
                 source=Source(
-                    address=SourceAddress(full_name="foo2", warehouse_hash="bar2"),
+                    address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
                     db_pk="pk",
                 ),
                 fields=["c"],
@@ -415,7 +415,7 @@ def test_query_404_resolution(get_backend: Mock):
             source=Source(
                 address=SourceAddress(
                     full_name="foo",
-                    warehouse_hash="bar",
+                    warehouse_hash=b"bar",
                 ),
                 db_pk="pk",
             ),
@@ -454,7 +454,7 @@ def test_query_404_source(get_backend: Mock):
             source=Source(
                 address=SourceAddress(
                     full_name="foo",
-                    warehouse_hash="bar",
+                    warehouse_hash=b"bar",
                 ),
                 db_pk="pk",
             ),

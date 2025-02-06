@@ -466,15 +466,13 @@ def _build_hierarchy_down(
 
 
 def _get_target_resolutions(
-    target: SourceAddress | list[SourceAddress], session: Session
+    targets: list[SourceAddress], session: Session
 ) -> list[tuple[Resolutions, str]]:
-    """Get target resolutions with schema/table info."""
-    targets = [target] if isinstance(target, SourceAddress) else target
+    """Get target resolutions with source address."""
     target_resolutions = []
-
     for t in targets:
         target_resolution = _get_dataset_resolution(t, session)
-        target_resolutions.append((target_resolution, target))
+        target_resolutions.append((target_resolution, t))
 
     return target_resolutions
 
@@ -482,17 +480,17 @@ def _get_target_resolutions(
 def _build_match_query(
     source_pk: str,
     source_resolution_id: int,
-    resolution: str,
+    resolution_name: str,
     session: Session,
     threshold: int | None = None,
 ) -> Select:
     """Builds the SQL query that powers the match function."""
     # Get truth resolution
     truth_resolution = (
-        session.query(Resolutions).filter(Resolutions.name == resolution).first()
+        session.query(Resolutions).filter(Resolutions.name == resolution_name).first()
     )
     if truth_resolution is None:
-        raise MatchboxResolutionNotFoundError(resolution_name=resolution)
+        raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
 
     # Get resolution lineage and resolve thresholds
     lineage_truths = truth_resolution.get_lineage()
@@ -527,13 +525,13 @@ def _build_match_query(
 
 
 def match(
+    engine: Engine,
     source_pk: str,
     source: SourceAddress,
-    target: SourceAddress | list[SourceAddress],
-    resolution: str,
-    engine: Engine,
+    targets: list[SourceAddress],
+    resolution_name: str,
     threshold: int | None = None,
-) -> Match | list[Match]:
+) -> list[Match]:
     """Matches an ID in a source dataset and returns the keys in the targets.
 
     To accomplish this, the function:
@@ -552,7 +550,7 @@ def match(
         match_stmt = _build_match_query(
             source_pk=source_pk,
             source_resolution_id=dataset_resolution.resolution_id,
-            resolution=resolution,
+            resolution_name=resolution_name,
             session=session,
             threshold=threshold,
         )
@@ -560,7 +558,7 @@ def match(
         matches = session.execute(match_stmt).all()
 
         # Return matches in target resolutions only
-        target_resolutions = _get_target_resolutions(target, session)
+        target_resolutions = _get_target_resolutions(targets, session)
 
         cluster = None
         matches_by_dataset: dict[int, set] = {}
@@ -572,18 +570,18 @@ def match(
             matches_by_dataset[dataset_id].add(id_in_source)
 
         result = []
-        for target_resolution, target_name in target_resolutions:
+        for target_resolution, target_address in target_resolutions:
             match_obj = Match(
                 cluster=cluster,
                 source=source,
                 source_id=matches_by_dataset.get(
                     dataset_resolution.resolution_id, set()
                 ),
-                target=target_name,
+                target=target_address,
                 target_id=matches_by_dataset.get(
                     target_resolution.resolution_id, set()
                 ),
             )
             result.append(match_obj)
 
-        return result[0] if isinstance(target, SourceAddress) else result
+        return result

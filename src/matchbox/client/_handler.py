@@ -118,7 +118,7 @@ def match(
     targets: list[SourceAddress],
     source: SourceAddress,
     source_pk: str,
-    resolution_id: int,
+    resolution_name: str,
     threshold: int | None = None,
 ) -> Match:
     target_full_names = [t.full_name for t in targets]
@@ -136,11 +136,11 @@ def match(
                     # Converted to b64 by `url_params()`
                     "source_warehouse_hash_b64": source.warehouse_hash,
                     "source_pk": source_pk,
-                    "resolution_id": resolution_id,
+                    "resolution_name": resolution_name,
                     "threshold": threshold,
                 }
             ),
         )
     )
 
-    return Match.model_validate(res.json())
+    return [Match.model_validate(m) for m in res.json()]

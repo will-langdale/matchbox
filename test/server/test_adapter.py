@@ -5,6 +5,7 @@ import pyarrow.compute as pc
 import pytest
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
+from sqlalchemy import Engine
 
 from matchbox.client.helpers.selector import match, query, select
 from matchbox.client.results import Results
@@ -46,7 +47,6 @@ class TestMatchboxBackend:
     @pytest.fixture(autouse=True)
     def setup(
         self,
-        request: pytest.FixtureRequest,
         backend_instance: str,
         setup_database: Callable,
         warehouse_data: list[Source],
@@ -622,7 +622,9 @@ class TestMatchboxBackend:
         }
         assert crn_duns["id"].nunique() == 1000
 
-    def test_match_one_to_many(self, revolution_inc: dict[str, list[str]]):
+    def test_match_one_to_many(
+        self, revolution_inc: dict[str, list[str]], warehouse_engine: Engine
+    ):
         """Test that matching data works when the target has many IDs."""
         self.setup_database("link")
 
@@ -631,21 +633,23 @@ class TestMatchboxBackend:
         duns_wh = self.warehouse_data[1]
 
         res = match(
-            backend=self.backend,
+            select(crn_wh.address.full_name, engine=warehouse_engine),
+            source=select(duns_wh.address.full_name, engine=warehouse_engine),
             source_pk=revolution_inc["duns"][0],
-            source=duns_wh.address,
-            target=crn_wh.address,
-            resolution=crn_x_duns,
+            resolution_name=crn_x_duns,
         )
 
-        assert isinstance(res, Match)
-        assert res.source == duns_wh.address
-        assert res.target == crn_wh.address
-        assert res.cluster is not None
-        assert res.source_id == set(revolution_inc["duns"])
-        assert res.target_id == set(revolution_inc["crn"])
+        assert len(res) == 1
+        assert isinstance(res[0], Match)
+        assert res[0].source == duns_wh.address
+        assert res[0].target == crn_wh.address
+        assert res[0].cluster is not None
+        assert res[0].source_id == set(revolution_inc["duns"])
+        assert res[0].target_id == set(revolution_inc["crn"])
 
-    def test_match_many_to_one(self, revolution_inc: dict[str, list[str]]):
+    def test_match_many_to_one(
+        self, revolution_inc: dict[str, list[str]], warehouse_engine: Engine
+    ):
         """Test that matching data works when the source has more possible IDs."""
         self.setup_database("link")
 
@@ -654,21 +658,23 @@ class TestMatchboxBackend:
         duns_wh = self.warehouse_data[1]
 
         res = match(
-            backend=self.backend,
+            select(duns_wh.address.full_name, engine=warehouse_engine),
+            source=select(crn_wh.address.full_name, engine=warehouse_engine),
             source_pk=revolution_inc["crn"][0],
-            source=crn_wh.address,
-            target=duns_wh.address,
-            resolution=crn_x_duns,
+            resolution_name=crn_x_duns,
         )
 
-        assert isinstance(res, Match)
-        assert res.source == crn_wh.address
-        assert res.target == duns_wh.address
-        assert res.cluster is not None
-        assert res.source_id == set(revolution_inc["crn"])
-        assert res.target_id == set(revolution_inc["duns"])
+        assert len(res) == 1
+        assert isinstance(res[0], Match)
+        assert res[0].source == crn_wh.address
+        assert res[0].target == duns_wh.address
+        assert res[0].cluster is not None
+        assert res[0].source_id == set(revolution_inc["crn"])
+        assert res[0].target_id == set(revolution_inc["duns"])
 
-    def test_match_one_to_none(self, winner_inc: dict[str, list[str]]):
+    def test_match_one_to_none(
+        self, winner_inc: dict[str, list[str]], warehouse_engine: Engine
+    ):
         """Test that matching data work when the target has no IDs."""
         self.setup_database("link")
 
@@ -677,21 +683,21 @@ class TestMatchboxBackend:
         duns_wh = self.warehouse_data[1]
 
         res = match(
-            backend=self.backend,
+            select(duns_wh.address.full_name, engine=warehouse_engine),
+            source=select(crn_wh.address.full_name, engine=warehouse_engine),
             source_pk=winner_inc["crn"][0],
-            source=crn_wh.address,
-            target=duns_wh.address,
-            resolution=crn_x_duns,
+            resolution_name=crn_x_duns,
         )
 
-        assert isinstance(res, Match)
-        assert res.source == crn_wh.address
-        assert res.target == duns_wh.address
-        assert res.cluster is not None
-        assert res.source_id == set(winner_inc["crn"])
-        assert res.target_id == set() == set(winner_inc["duns"])
+        assert len(res) == 1
+        assert isinstance(res[0], Match)
+        assert res[0].source == crn_wh.address
+        assert res[0].target == duns_wh.address
+        assert res[0].cluster is not None
+        assert res[0].source_id == set(winner_inc["crn"])
+        assert res[0].target_id == set() == set(winner_inc["duns"])
 
-    def test_match_none_to_none(self):
+    def test_match_none_to_none(self, warehouse_engine: Engine):
         """Test that matching data work when the supplied key doesn't exist."""
         self.setup_database("link")
 
@@ -700,19 +706,19 @@ class TestMatchboxBackend:
         duns_wh = self.warehouse_data[1]
 
         res = match(
-            backend=self.backend,
+            select(duns_wh.address.full_name, engine=warehouse_engine),
+            source=select(crn_wh.address.full_name, engine=warehouse_engine),
             source_pk="foo",
-            source=crn_wh.address,
-            target=duns_wh.address,
-            resolution=crn_x_duns,
+            resolution_name=crn_x_duns,
         )
 
-        assert isinstance(res, Match)
-        assert res.source == crn_wh.address
-        assert res.target == duns_wh.address
-        assert res.cluster is None
-        assert res.source_id == set()
-        assert res.target_id == set()
+        assert len(res) == 1
+        assert isinstance(res[0], Match)
+        assert res[0].source == crn_wh.address
+        assert res[0].target == duns_wh.address
+        assert res[0].cluster is None
+        assert res[0].source_id == set()
+        assert res[0].target_id == set()
 
     def test_clear(self):
         """Test clearing the database."""

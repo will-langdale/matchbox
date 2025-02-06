@@ -297,10 +297,10 @@ class MatchboxDBAdapter(ABC):
         self,
         source_pk: str,
         source: str,
-        target: str | list[str],
-        resolution: str,
+        targets: list[str],
+        resolution_name: str,
         threshold: int | None = None,
-    ) -> Match | list[Match]: ...
+    ) -> list[Match]: ...
 
     @abstractmethod
     def index(self, source: Source, data_hashes: Table) -> None: ...

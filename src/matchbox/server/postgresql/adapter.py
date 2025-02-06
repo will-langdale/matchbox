@@ -278,17 +278,17 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self,
         source_pk: str,
         source: str,
-        target: str | list[str],
-        resolution: str,
+        targets: list[str],
+        resolution_name: str,
         threshold: int | None = None,
-    ) -> Match | list[Match]:
+    ) -> list[Match]:
         """Matches an ID in a source dataset and returns the keys in the targets.
 
         Args:
             source_pk: The primary key to match from the source.
-            source: The name of the source dataset.
-            target: The name of the target dataset(s).
-            resolution: The name of the resolution to use for matching.
+            source: The address of the source dataset.
+            targets: The addresses of the target datasets.
+            resolution_name: The name of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold
                 If an integer, uses that threshold for the specified resolution, and the
@@ -296,11 +296,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 Will use these threshold values instead of the cached thresholds
         """
         return match(
+            engine=MBDB.get_engine(),
             source_pk=source_pk,
             source=source,
-            target=target,
-            resolution=resolution,
-            engine=MBDB.get_engine(),
+            targets=targets,
+            resolution_name=resolution_name,
             threshold=threshold,
         )
 

@@ -191,15 +191,13 @@ def query(
         raise ValueError(f"return_type of {return_type} not valid")
 
 
-@inject_backend
 def match(
-    backend: MatchboxDBAdapter,
     *targets: list[Selector],
     source: list[Selector],
     source_pk: str,
     resolution_name: str,
     threshold: int | None = None,
-) -> Match | list[Match]:
+) -> list[Match]:
     """Matches IDs against the selected backend.
 
     Args:
@@ -215,14 +213,15 @@ def match(
     """
     if len(source) > 1:
         raise ValueError("Only one source can be matched at one time")
-    targets = list(itertools.chain(*targets))
+    source = source[0].source.address
 
-    resolution_id = backend.get_resolution_id(resolution_name)
+    targets = list(itertools.chain(*targets))
+    targets = [t.source.address for t in targets]
 
     return _handler.match(
         targets=targets,
-        source=source[0],
+        source=source,
         source_pk=source_pk,
-        resolution_id=resolution_id,
+        resolution_name=resolution_name,
         threshold=threshold,
     )
