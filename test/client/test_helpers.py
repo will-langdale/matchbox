@@ -182,7 +182,7 @@ def test_query_no_resolution_fail():
         ),
         Selector(
             source=Source(
-                address=SourceAddress(full_name="foo2", warehouse_hash="bar2"),
+                address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
                 db_pk="j",
             ),
             fields=["x", "y"],
@@ -423,7 +423,7 @@ def test_query_404_resolution(get_backend: Mock):
         )
     ]
 
-    # Tests with no optional params
+    # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         query(sels)
 
@@ -442,7 +442,7 @@ def test_query_404_source(get_backend: Mock):
         return_value=Response(
             404,
             json=NotFoundError(
-                details="Resolution 42 not found",
+                details="Source 42 not found",
                 entity=BackendRetrievableType.SOURCE,
             ).model_dump(),
         )
@@ -462,7 +462,7 @@ def test_query_404_source(get_backend: Mock):
         )
     ]
 
-    # Tests with no optional params
+    # Test with no optional params
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
         query(sels)
 
@@ -533,20 +533,191 @@ def test_index_dict(get_backend: Mock, warehouse_engine: Engine):
         mock_source.default_columns.assert_not_called()
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_match_calls_backend(get_backend: Mock):
+@respx.mock
+def test_match_ok():
     """The client can perform the right call for matching."""
-    mock_backend = Mock()
-    mock_backend.match = Mock(
-        return_value=Match(
-            cluster=1,
-            source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
-            source_id={"a"},
-            target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
-            target_id={"b"},
+    # Set up mocks
+    mock_match1 = Match(
+        cluster=1,
+        source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+        source_id={"a"},
+        target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
+        target_id={"b"},
+    )
+    mock_match2 = Match(
+        cluster=1,
+        source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+        source_id={"a"},
+        target=SourceAddress(full_name="test.target2", warehouse_hash=b"bar"),
+        target_id={"b"},
+    )
+    # The standard JSON serialiser does not handle Pydantic objects
+    serialised_matches = (
+        f"[{mock_match1.model_dump_json()}, {mock_match2.model_dump_json()}]"
+    )
+
+    match_route = respx.get(url("/match")).mock(
+        return_value=Response(200, content=serialised_matches)
+    )
+
+    # Use match function
+    source = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.source",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+    target1 = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target1",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    target2 = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target2",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    res = match(
+        target1,
+        target2,
+        source=source,
+        source_pk="pk1",
+        resolution_name="foo",
+    )
+
+    # Verify results
+    assert len(res) == 2
+    assert isinstance(res[0], Match)
+    param_set = sorted(match_route.calls.last.request.url.params.multi_items())
+    assert param_set == sorted(
+        [
+            ("target_full_names", "test.target1"),
+            ("target_full_names", "test.target2"),
+            ("target_warehouse_hashes_b64", hash_to_base64(b"bar")),
+            ("target_warehouse_hashes_b64", hash_to_base64(b"bar")),
+            ("source_full_name", "test.source"),
+            ("source_warehouse_hash_b64", hash_to_base64(b"bar")),
+            ("source_pk", "pk1"),
+            ("resolution_name", "foo"),
+        ]
+    )
+
+
+@respx.mock
+def test_match_404_resolution():
+    """The client can handle a resolution not found error."""
+    # Set up mocks
+    respx.get(url("/match")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Resolution 42 not found",
+                entity=BackendRetrievableType.RESOLUTION,
+            ).model_dump(),
         )
     )
-    get_backend.return_value = mock_backend
 
-    res = match("pk1", "test.source", "test.target", resolution="foo")
-    assert isinstance(res, Match)
+    # Use match function
+    source = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.source",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+    target = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target1",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+        match(
+            target,
+            source=source,
+            source_pk="pk1",
+            resolution_name="foo",
+        )
+
+
+@respx.mock
+def test_match_404_source():
+    """The client can handle a source not found error."""
+    # Set up mocks
+    respx.get(url("/match")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Source 42 not found",
+                entity=BackendRetrievableType.SOURCE,
+            ).model_dump(),
+        )
+    )
+
+    # Use match function
+    source = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.source",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+    target = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target1",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+        match(
+            target,
+            source=source,
+            source_pk="pk1",
+            resolution_name="foo",
+        )
