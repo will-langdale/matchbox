@@ -5,7 +5,7 @@ from uuid import uuid4
 import pyarrow as pa
 import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -243,14 +243,14 @@ async def query(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=f"{str(e)}", entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendRetrievableType.SOURCE
             ).model_dump(),
         ) from e
 
@@ -260,19 +260,18 @@ async def query(
 
 @app.get(
     "/match",
-    response_class=Match,
     responses={404: NotFoundError.example_response_body()},
 )
 async def match(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-    target_full_names: list[str],
-    target_warehouse_hashes_b64: list[str],
+    target_full_names: Annotated[list[str], Query()],
+    target_warehouse_hashes_b64: Annotated[list[str], Query()],
     source_full_name: str,
     source_warehouse_hash_b64: str,
     source_pk: str,
-    resolution_id: int,
+    resolution_name: str,
     threshold: int | None = None,
-):
+) -> list[Match]:
     targets = [
         SourceAddress(full_name=n, warehouse_hash=w)
         for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)
@@ -286,26 +285,25 @@ async def match(
             source_pk=source_pk,
             source=source,
             targets=targets,
-            resolution_id=resolution_id,
+            resolution_name=resolution_name,
             threshold=threshold,
         )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=f"{str(e)}", entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendRetrievableType.SOURCE
             ).model_dump(),
         ) from e
 
-    buffer = table_to_buffer(res)
-    return ParquetResponse(buffer.getvalue())
+    return res
 
 
 @app.get("/validate/hash")

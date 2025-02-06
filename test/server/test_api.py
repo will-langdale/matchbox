@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pandas import DataFrame
 
 from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.dtos import BackendRetrievableType
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
@@ -18,6 +19,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
+from matchbox.common.sources import Match, SourceAddress
 from matchbox.server import app
 from matchbox.server.api import s3_to_recordbatch, table_to_s3
 
@@ -177,6 +179,7 @@ class TestMatchboxAPI:
 
         # Check response
         assert response.status_code == 404
+        assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
 
     @patch("matchbox.server.base.BackendManager.get_backend")
     def test_query_404_source(self, get_backend: Mock):
@@ -196,6 +199,89 @@ class TestMatchboxAPI:
 
         # Check response
         assert response.status_code == 404
+        assert response.json()["entity"] == BackendRetrievableType.SOURCE
+
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_match(self, get_backend: Mock):
+        # Mock backend
+        mock_matches = [
+            Match(
+                cluster=1,
+                source=SourceAddress(full_name="foo", warehouse_hash=b"foo"),
+                source_id={"1"},
+                target=SourceAddress(full_name="bar", warehouse_hash=b"bar"),
+                target_id={"a"},
+            )
+        ]
+        mock_backend = Mock()
+        mock_backend.match = Mock(return_value=mock_matches)
+        get_backend.return_value = mock_backend
+
+        # Hit endpoint
+        response = client.get(
+            "/match",
+            params={
+                "target_full_names": ["foo"],
+                "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
+                "source_full_name": "bar",
+                "source_warehouse_hash_b64": hash_to_base64(b"bar"),
+                "source_pk": 1,
+                "resolution_name": "res",
+                "threshold": 50,
+            },
+        )
+
+        # Check response
+        assert response.status_code == 200
+        [Match.model_validate(m) for m in response.json()]
+
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_match_404_resolution(self, get_backend: Mock):
+        # Mock backend
+        mock_backend = Mock()
+        mock_backend.match = Mock(side_effect=MatchboxResolutionNotFoundError())
+        get_backend.return_value = mock_backend
+
+        # Hit endpoint
+        response = client.get(
+            "/match",
+            params={
+                "target_full_names": ["foo"],
+                "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
+                "source_full_name": "bar",
+                "source_warehouse_hash_b64": hash_to_base64(b"bar"),
+                "source_pk": 1,
+                "resolution_name": "res",
+            },
+        )
+
+        # Check response
+        assert response.status_code == 404
+        assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_match_404_source(self, get_backend: Mock):
+        # Mock backend
+        mock_backend = Mock()
+        mock_backend.match = Mock(side_effect=MatchboxSourceNotFoundError())
+        get_backend.return_value = mock_backend
+
+        # Hit endpoint
+        response = client.get(
+            "/match",
+            params={
+                "target_full_names": ["foo"],
+                "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
+                "source_full_name": "bar",
+                "source_warehouse_hash_b64": hash_to_base64(b"bar"),
+                "source_pk": 1,
+                "resolution_name": "res",
+            },
+        )
+
+        # Check response
+        assert response.status_code == 404
+        assert response.json()["entity"] == BackendRetrievableType.SOURCE
 
     # def test_validate_ids():
     #     response = client.get("/validate/id")
