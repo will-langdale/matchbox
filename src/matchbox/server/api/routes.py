@@ -109,7 +109,14 @@ async def upload_file(
     upload_id: str,
     file: UploadFile,
 ):
-    """Upload file and process based on metadata type"""
+    """Upload file and process based on metadata type.
+
+    Raises HTTP 400 if:
+
+    * Upload ID not found or expired.
+    * Uploaded data doesn't match the metadata schema
+    * Uploaded metadata is of a type not handled by this endpoint
+    """
     source_cache = metadata_store.get(cache_id=upload_id)
     if not source_cache:
         raise HTTPException(
@@ -141,7 +148,7 @@ async def upload_file(
                 id=upload_id,
                 status="failed",
                 details=f"{str(e)}",
-                entity=BackendUploadType.INDEX,
+                entity=source_cache.upload_type,
             ).model_dump(),
         ) from e
 
@@ -159,7 +166,9 @@ async def upload_file(
     # Clean up
     metadata_store.remove(upload_id)
 
-    return UploadStatus(id=upload_id, status="complete", entity=BackendUploadType.INDEX)
+    return UploadStatus(
+        id=upload_id, status="complete", entity=source_cache.upload_type
+    )
 
 
 @app.get("/sources")

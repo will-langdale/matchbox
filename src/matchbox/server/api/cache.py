@@ -5,6 +5,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+from matchbox.common.dtos import BackendUploadType
 from matchbox.common.sources import Source
 
 
@@ -18,6 +19,7 @@ class MetadataCacheEntry(BaseModel):
 
     metadata: Source
     upload_schema: MetadataSchema
+    upload_type: BackendUploadType
     timestamp: datetime
 
 
@@ -48,6 +50,7 @@ class MetadataStore:
         self._store[cache_id] = MetadataCacheEntry(
             metadata=metadata,
             upload_schema=MetadataSchema.index,
+            upload_type=BackendUploadType.INDEX,
             timestamp=datetime.now(),
         )
         return cache_id
