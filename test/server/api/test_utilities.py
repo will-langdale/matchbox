@@ -10,12 +10,13 @@ from fastapi import UploadFile
 from pandas import DataFrame
 from sqlalchemy import create_engine
 
+from matchbox.common.dtos import BackendUploadType
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.server.api.arrow import s3_to_recordbatch, table_to_s3
 from matchbox.server.api.cache import MetadataSchema, MetadataStore
-from matchbox.server.api.routes import s3_to_recordbatch, table_to_s3
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -109,12 +110,17 @@ def test_basic_cache_and_retrieve():
     assert entry is not None
     assert entry.metadata == source
     assert entry.upload_schema == MetadataSchema.index
-    assert isinstance(entry.timestamp, datetime)
+    assert isinstance(entry.update_timestamp, datetime)
+
+    # Verify initial status
+    assert entry.status.status == "awaiting_upload"
+    assert entry.status.entity == BackendUploadType.INDEX
+    assert entry.status.id == cache_id
 
 
 @patch("matchbox.server.api.cache.datetime")
 def test_expiration(mock_datetime: Mock):
-    """Test that entries expire correctly."""
+    """Test that entries expire correctly after period of inactivity."""
     store = MetadataStore(expiry_minutes=30)
     source = Source(
         address=SourceAddress.compose(
@@ -132,8 +138,16 @@ def test_expiration(mock_datetime: Mock):
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 29)
     assert store.get(cache_id) is not None
 
-    # Should be expired after 31 minutes
-    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 31)
+    # Status update should refresh timestamp
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 30)
+    store.update_status(cache_id, "processing")
+
+    # Should still be valid 29 minutes after status update
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 59)
+    assert store.get(cache_id) is not None
+
+    # Should expire 31 minutes after status update
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 13, 30)
     assert store.get(cache_id) is None
 
 
@@ -154,15 +168,19 @@ def test_cleanup(mock_datetime: Mock):
     id1 = store.cache_source(source)
     id2 = store.cache_source(source)
 
-    # Move time forward past expiration
+    # Update status of one entry
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 15)
+    store.update_status(id2, "processing")
+
+    # Move time forward past expiration for first entry but not second
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 31)
 
     # Adding a new entry should trigger cleanup
     id3 = store.cache_source(source)
 
-    # First two should be gone, new one should exist
+    # First should be gone, second should exist due to status update
     assert store.get(id1) is None
-    assert store.get(id2) is None
+    assert store.get(id2) is not None
     assert store.get(id3) is not None
 
 
@@ -184,3 +202,64 @@ def test_remove():
 
     # Try removing non-existent entry
     assert store.remove("nonexistent") is False
+
+
+def test_status_management():
+    """Test status update functionality."""
+    store = MetadataStore()
+    source = Source(
+        address=SourceAddress.compose(
+            full_name="test.source", engine=create_engine("sqlite:///:memory:")
+        ),
+        db_pk="pk",
+        columns=[SourceColumn(name="col1")],
+    )
+
+    # Create entry and verify initial status
+    cache_id = store.cache_source(source)
+    entry = store.get(cache_id)
+    assert entry.status.status == "awaiting_upload"
+
+    # Update status
+    assert store.update_status(cache_id, "processing") is True
+    entry = store.get(cache_id)
+    assert entry.status.status == "processing"
+
+    # Update with details
+    assert store.update_status(cache_id, "failed", "Error details") is True
+    entry = store.get(cache_id)
+    assert entry.status.status == "failed"
+    assert entry.status.details == "Error details"
+
+    # Try updating non-existent entry
+    assert store.update_status("nonexistent", "processing") is False
+
+
+@patch("matchbox.server.api.cache.datetime")
+def test_timestamp_updates(mock_datetime: Mock):
+    """Test that timestamps update correctly on different operations."""
+    store = MetadataStore()
+    source = Source(
+        address=SourceAddress.compose(
+            full_name="test.source", engine=create_engine("sqlite:///:memory:")
+        ),
+        db_pk="pk",
+        columns=[SourceColumn(name="col1")],
+    )
+
+    # Initial creation
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
+    cache_id = store.cache_source(source)
+    entry = store.get(cache_id)
+    assert entry.update_timestamp == datetime(2024, 1, 1, 12, 0)
+
+    # Status update
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 15)
+    store.update_status(cache_id, "processing")
+    entry = store.get(cache_id)
+    assert entry.update_timestamp == datetime(2024, 1, 1, 12, 15)
+
+    # Get operation
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 30)
+    entry = store.get(cache_id)
+    assert entry.update_timestamp == datetime(2024, 1, 1, 12, 30)

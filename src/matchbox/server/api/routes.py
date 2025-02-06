@@ -1,9 +1,8 @@
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
-import pyarrow as pa
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -26,8 +25,8 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import base64_to_hash
 from matchbox.common.sources import Source, SourceAddress
-from matchbox.server.api.arrow import s3_to_recordbatch, table_to_s3
-from matchbox.server.api.cache import MetadataStore
+from matchbox.server.api.arrow import table_to_s3
+from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -106,17 +105,23 @@ async def add_source(source: Source):
 @app.post("/upload/{upload_id}")
 async def upload_file(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    background_tasks: BackgroundTasks,
     upload_id: str,
-    file: UploadFile,
-):
+    file: UploadFile | None = None,
+) -> UploadStatus:
     """Upload file and process based on metadata type.
 
-    Raises HTTP 400 if:
+    The file is uploaded to S3 and then processed in a background task.
+    Status can be checked by calling this endpoint again with the same ID.
 
-    * Upload ID not found or expired.
+    Raises HTTP 400 if:
+    * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
     * Uploaded data doesn't match the metadata schema
     * Uploaded metadata is of a type not handled by this endpoint
+
+    Can be called without file upload to check task status.
     """
+    # Get and validate cache entry
     source_cache = metadata_store.get(cache_id=upload_id)
     if not source_cache:
         raise HTTPException(
@@ -124,17 +129,25 @@ async def upload_file(
             detail=UploadStatus(
                 id=upload_id,
                 status="failed",
-                details="Upload ID not found or expired.",
+                details=(
+                    "Upload ID not found or expired. Entries expire after 30 minutes "
+                    "of inactivity, including failed processes."
+                ),
                 entity=BackendUploadType.INDEX,
             ).model_dump(),
         )
+
+    # If already processing, return current status
+    if source_cache.status.status in ["processing", "complete"] and not file:
+        return source_cache.status
 
     # Upload to S3
     client = backend.settings.datastore.get_client()
     bucket = backend.settings.datastore.cache_bucket_name
     key = f"{upload_id}.parquet"
+
     try:
-        upload_id = await table_to_s3(
+        await table_to_s3(
             client=client,
             bucket=bucket,
             key=key,
@@ -142,33 +155,25 @@ async def upload_file(
             expected_schema=source_cache.upload_schema.value,
         )
     except MatchboxServerFileError as e:
+        metadata_store.update_status(upload_id, "failed", details=str(e))
         raise HTTPException(
             status_code=400,
-            detail=UploadStatus(
-                id=upload_id,
-                status="failed",
-                details=f"{str(e)}",
-                entity=source_cache.upload_type,
-            ).model_dump(),
+            detail=source_cache.status.model_dump(),
         ) from e
 
-    # Read from S3
-    data_hashes = pa.Table.from_batches(
-        [
-            batch
-            async for batch in s3_to_recordbatch(client=client, bucket=bucket, key=key)
-        ]
+    # Start background processing
+    background_tasks.add_task(
+        process_upload,
+        backend=backend,
+        upload_id=upload_id,
+        bucket=bucket,
+        key=key,
+        metadata_store=metadata_store,
     )
 
-    # Index
-    backend.index(source=source_cache.metadata, data_hashes=data_hashes)
-
-    # Clean up
-    metadata_store.remove(upload_id)
-
-    return UploadStatus(
-        id=upload_id, status="complete", entity=source_cache.upload_type
-    )
+    # Update and return status
+    metadata_store.update_status(upload_id, "processing")
+    return metadata_store.get(upload_id).status
 
 
 @app.get("/sources")

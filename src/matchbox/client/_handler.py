@@ -1,3 +1,4 @@
+import time
 from io import BytesIO
 from os import getenv
 
@@ -101,7 +102,18 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
         )
     )
 
-    return UploadStatus.model_validate(upload_res.json())
+    # Poll until complete with retry/timeout configuration
+    status = UploadStatus.model_validate(upload_res.json())
+    while status.status not in ["complete", "failed"]:
+        status_res = handle_http_code(httpx.post(url(f"/upload/{upload.id}")))
+        status = UploadStatus.model_validate(status_res.json())
+
+        if status.status == "failed":
+            raise MatchboxServerFileError(status.details)
+
+        time.sleep(2)
+
+    return status
 
 
 def query(

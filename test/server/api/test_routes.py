@@ -1,24 +1,22 @@
-from datetime import datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.dtos import BackendUploadType, UploadStatus
+from matchbox.common.dtos import UploadStatus
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server import app
-from matchbox.server.api.cache import MetadataCacheEntry, MetadataSchema
+from matchbox.server.api.cache import MetadataStore
 from matchbox.server.base import MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -85,16 +83,10 @@ def test_add_source(get_backend: Mock):
     mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
 
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="company_name", alias="name")],
-    )
+    dummy_source = source_factory()
 
     # Make request
-    response = client.post("/sources", json=source.model_dump())
+    response = client.post("/sources", json=dummy_source.source.model_dump())
 
     # Validate response
     assert UploadStatus.model_validate(response.json())
@@ -105,8 +97,11 @@ def test_add_source(get_backend: Mock):
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
-@patch("matchbox.server.api.routes.metadata_store.get")
-def test_source_upload(metadata_store_get: Mock, get_backend: Mock, s3: S3Client):
+@patch("matchbox.server.api.routes.metadata_store")
+@patch("matchbox.server.api.routes.BackgroundTasks.add_task")
+def test_source_upload(
+    mock_add_task: Mock, metadata_store: Mock, get_backend: Mock, s3: S3Client
+):
     """Test uploading a file, happy path."""
     # Setup
     mock_backend = Mock()
@@ -119,40 +114,21 @@ def test_source_upload(metadata_store_get: Mock, get_backend: Mock, s3: S3Client
         CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
     )
 
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="company_name", alias="name")],
-    )
+    dummy_source = source_factory()
 
-    metadata_store_get.return_value = MetadataCacheEntry(
-        metadata=source,
-        upload_schema=MetadataSchema.index,
-        upload_type=BackendUploadType.INDEX,
-        timestamp=datetime.now(),
-    )
+    # Mock the metadata store
+    store = MetadataStore()
+    update_id = store.cache_source(dummy_source.source)
+    metadata_store.get.side_effect = store.get
+    metadata_store.update_status.side_effect = store.update_status
 
-    # Build call
-    hashes_table = pa.Table.from_pydict(
-        {
-            "source_pk": [
-                ["short", "medium_id"],
-                ["very_long_identifier", "id"],
-            ],
-            "hash": [b"hash1", b"hash2"],
-        },
-        schema=MetadataSchema.index.value,
-    )
-
-    # Make request
+    # Make request with mocked background task
     response = client.post(
-        "/upload/foo",
+        f"/upload/{update_id}",
         files={
             "file": (
                 "hashes.parquet",
-                table_to_buffer(hashes_table),
+                table_to_buffer(dummy_source.data.data_hashes),
                 "application/octet-stream",
             ),
         },
@@ -161,121 +137,74 @@ def test_source_upload(metadata_store_get: Mock, get_backend: Mock, s3: S3Client
     # Validate response
     assert UploadStatus.model_validate(response.json())
     assert response.status_code == 200, response.json()
-    assert response.json()["status"] == "complete"
-    mock_backend.index.assert_called_once()
+    assert response.json()["status"] == "processing"
+    metadata_store.update_status.assert_called_with(update_id, "processing")
+    mock_backend.index.assert_not_called()  # Index happens in background
+    mock_add_task.assert_called_once()  # Verify background task was queued
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
-@patch("matchbox.server.api.routes.metadata_store.get")
-def test_source_upload_wrong_or_expired_id(
-    metadata_store_get: Mock, get_backend: Mock, s3: S3Client
-):
-    """Test uploading a file, incorrect or expired ID."""
-    # Setup
-    mock_backend = Mock()
-    mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.index = Mock(return_value=None)
-    get_backend.return_value = mock_backend
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
+@patch("matchbox.server.api.routes.metadata_store")
+def test_source_upload_status_check(metadata_store: Mock, _: Mock):
+    """Test checking status of an upload in progress."""
+    # Setup store with a processing entry
+    store = MetadataStore()
+    dummy_source = source_factory()
+    update_id = store.cache_source(dummy_source.source)
+    store.update_status(update_id, "processing")
 
-    metadata_store_get.return_value = None
+    metadata_store.get.side_effect = store.get
+    metadata_store.update_status.side_effect = store.update_status
 
-    # Build call
-    hashes_table = pa.Table.from_pydict(
-        {
-            "source_pk": [
-                ["short", "medium_id"],
-                ["very_long_identifier", "id"],
-            ],
-            "hash": [b"hash1", b"hash2"],
-        },
-        schema=MetadataSchema.index.value,
-    )
+    # Check status
+    response = client.post(f"/upload/{update_id}")
 
-    # Make request
-    response = client.post(
-        "/upload/foo",
-        files={
-            "file": (
-                "hashes.parquet",
-                table_to_buffer(hashes_table),
-                "application/octet-stream",
-            ),
-        },
-    )
-
-    # Validate response
-    assert UploadStatus.model_validate(response.json())
-    assert response.status_code == 400, response.json()
-    assert response.json()["status"] == "failed"
-    mock_backend.index.assert_not_called()
+    # Should return current status without starting new upload
+    assert response.status_code == 200
+    assert response.json()["status"] == "processing"
+    metadata_store.update_status.assert_not_called()
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
-@patch("matchbox.server.api.routes.metadata_store.get")
+@patch("matchbox.server.api.routes.metadata_store")
+@patch("matchbox.server.api.routes.BackgroundTasks.add_task")
 def test_source_upload_wrong_schema(
-    metadata_store_get: Mock, get_backend: Mock, s3: S3Client
+    mock_add_task: Mock, metadata_store: Mock, get_backend: Mock, s3: S3Client
 ):
-    """Test uploading a file, file has wrong schema."""
+    """Test uploading a file with wrong schema."""
     # Setup
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
 
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="company_name", alias="name")],
-    )
+    # Create source with results schema instead of index
+    dummy_source = source_factory()
 
-    metadata_store_get.return_value = MetadataCacheEntry(
-        metadata=source,
-        upload_schema=MetadataSchema.results,  # Wrong schema
-        upload_type=BackendUploadType.RESULTS,
-        timestamp=datetime.now(),
-    )
+    # Setup store
+    store = MetadataStore()
+    update_id = store.cache_source(dummy_source.source)
+    metadata_store.get.side_effect = store.get
+    metadata_store.update_status.side_effect = store.update_status
 
-    # Build call
-    hashes_table = pa.Table.from_pydict(
-        {
-            "source_pk": [
-                ["short", "medium_id"],
-                ["very_long_identifier", "id"],
-            ],
-            "hash": [b"hash1", b"hash2"],
-        },
-        schema=MetadataSchema.index.value,
-    )
-
-    # Make request
+    # Make request with actual data instead of the hashes -- wrong schema
     response = client.post(
-        "/upload/foo",
+        f"/upload/{update_id}",
         files={
             "file": (
                 "hashes.parquet",
-                table_to_buffer(hashes_table),
+                table_to_buffer(dummy_source.data.data),
                 "application/octet-stream",
             ),
         },
     )
 
-    # Validate response
-    assert UploadStatus.model_validate(response.json())
-    assert response.status_code == 400, response.json()
+    # Should fail before background task starts
+    assert response.status_code == 400
     assert response.json()["status"] == "failed"
-    mock_backend.index.assert_not_called()
+    assert "schema mismatch" in response.json()["details"].lower()
+    metadata_store.update_status.assert_called_with(update_id, "failed", details=ANY)
+    mock_add_task.assert_not_called()  # Background task should not be queued
 
 
 # def test_list_sources():
