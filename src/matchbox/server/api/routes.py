@@ -110,8 +110,8 @@ async def upload_file(
     file: UploadFile,
 ):
     """Upload file and process based on metadata type"""
-    source = metadata_store.get(cache_id=upload_id)
-    if not source:
+    source_cache = metadata_store.get(cache_id=upload_id)
+    if not source_cache:
         raise HTTPException(
             status_code=400,
             detail=UploadStatus(
@@ -132,7 +132,7 @@ async def upload_file(
             bucket=bucket,
             key=key,
             file=file,
-            expected_schema=source.upload_schema.value,
+            expected_schema=source_cache.upload_schema.value,
         )
     except MatchboxServerFileError as e:
         raise HTTPException(
@@ -154,7 +154,7 @@ async def upload_file(
     )
 
     # Index
-    backend.index(source=source, data_hashes=data_hashes)
+    backend.index(source=source_cache.metadata, data_hashes=data_hashes)
 
     # Clean up
     metadata_store.remove(upload_id)

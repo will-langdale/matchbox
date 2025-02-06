@@ -520,7 +520,11 @@ def test_index_success(mock_source: Mock):
     )
 
     # Call the index function
-    index(source.source.address.full_name, source.source.db_pk, engine=engine)
+    index(
+        full_name=source.source.address.full_name,
+        db_pk=source.source.db_pk,
+        engine=engine,
+    )
 
     # Verify the API calls
     assert source_route.called

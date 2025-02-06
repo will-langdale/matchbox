@@ -10,7 +10,7 @@ from pandas import DataFrame
 from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
-from matchbox import make_model
+from matchbox import index, make_model
 from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
@@ -46,7 +46,12 @@ def db_add_indexed_data() -> AddIndexedDataCallable:
     ):
         """Indexes data from the warehouse."""
         for source in warehouse_data:
-            backend.index(source=source, data_hashes=source.hash_data())
+            index(
+                full_name=source.address.full_name,
+                db_pk=source.db_pk,
+                engine=source.engine,
+                columns=[c.model_dump() for c in source.columns],
+            )
 
     return _db_add_indexed_data
 
