@@ -114,7 +114,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
     # Poll until complete with retry/timeout configuration
     status = UploadStatus.model_validate(upload_res.json())
     while status.status not in ["complete", "failed"]:
-        status_res = handle_http_code(httpx.post(url(f"/upload/{upload.id}/status")))
+        status_res = handle_http_code(httpx.get(url(f"/upload/{upload.id}/status")))
         status = UploadStatus.model_validate(status_res.json())
 
         if status.status == "failed":

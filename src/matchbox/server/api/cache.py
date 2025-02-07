@@ -2,7 +2,6 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import AsyncGenerator
 
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
@@ -116,7 +115,7 @@ class MetadataStore:
 @asynccontextmanager
 async def heartbeat(
     metadata_store: MetadataStore, upload_id: str, interval_seconds: int = 300
-) -> AsyncGenerator[None, None]:
+):
     """
     Context manager that updates status with a heartbeat while the main operation runs.
 
@@ -169,7 +168,7 @@ async def process_upload(
                 )
             ]
         )
-        with heartbeat(metadata_store, upload_id):
+        async with heartbeat(metadata_store, upload_id):
             backend.index(
                 source=metadata_store.get(upload_id).metadata, data_hashes=data_hashes
             )
