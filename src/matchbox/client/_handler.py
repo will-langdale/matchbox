@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from io import BytesIO
 from os import getenv
 
@@ -27,28 +28,27 @@ def url(path: str) -> str:
     return api_root + path
 
 
-_BASE_PARAM_TYPES = str | int | float | bytes
+URLEncodeHandledType = str | int | float | bytes
 
 
 def encode_param_value(
-    v: _BASE_PARAM_TYPES | list[_BASE_PARAM_TYPES],
+    v: URLEncodeHandledType | Iterable[URLEncodeHandledType],
 ) -> str | list[str]:
-    if isinstance(v, list):
-        return [encode_param_value(item) for item in v]
     if isinstance(v, str):
         return v
-    elif isinstance(v, int):
-        return str(v)
-    elif isinstance(v, float):
+    elif isinstance(v, (int, float)):
         return str(v)
     elif isinstance(v, bytes):
         return hash_to_base64(v)
+    # Needs to be at the end, so we don't apply it to e.g. strings
+    if isinstance(v, Iterable):
+        return [encode_param_value(item) for item in v]
     raise ValueError(f"It was not possible to parse {v} as an URL parameter")
 
 
 def url_params(
-    params: dict[str, _BASE_PARAM_TYPES | list[_BASE_PARAM_TYPES]],
-) -> dict[str, str]:
+    params: dict[str, URLEncodeHandledType | Iterable[URLEncodeHandledType]],
+) -> dict[str, str | list[str]]:
     """Prepares a dictionary of parameters to be encoded in a URL"""
 
     non_null = {k: v for k, v in params.items() if v}

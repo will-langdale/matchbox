@@ -214,13 +214,11 @@ def test_query_no_resolution_ok_various_params(to_arrow: Mock):
     )
 
     # Mock `Source.to_arrow`
-    to_arrow.return_value = pa.Table.from_pandas(
-        DataFrame(
-            [
-                {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
-                {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
-            ]
-        )
+    to_arrow.return_value = pa.Table.from_pylist(
+        [
+            {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
+            {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
+        ]
     )
 
     # Well-formed selector for these mocks
@@ -300,21 +298,17 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock):
 
     # Mock `Source.to_arrow`
     to_arrow.side_effect = [
-        pa.Table.from_pandas(
-            DataFrame(
-                [
-                    {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
-                    {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
-                ]
-            )
+        pa.Table.from_pylist(
+            [
+                {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
+                {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
+            ]
         ),
-        pa.Table.from_pandas(
-            DataFrame(
-                [
-                    {"foo2_pk": "2", "foo2_c": "val"},
-                    {"foo2_pk": "3", "foo2_c": "val"},
-                ]
-            )
+        pa.Table.from_pylist(
+            [
+                {"foo2_pk": "2", "foo2_c": "val"},
+                {"foo2_pk": "3", "foo2_c": "val"},
+            ]
         ),
     ] * 2  # 2 calls to `query()` in this test, each dealing with 2 sources
 

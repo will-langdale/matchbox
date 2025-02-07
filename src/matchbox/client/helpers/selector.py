@@ -82,7 +82,7 @@ def query(
 
     Args:
         selectors: each selector is the output of `select()`
-            This allows to query sources coming from different engines
+            This allows querying sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
             It can only be `None` when querying from a single source, in which case the
             dataset resolution for that source will be used
@@ -117,11 +117,10 @@ def query(
 
     selectors = list(itertools.chain(*selectors))
 
-    if not resolution_name:
-        if len(selectors) > 1:
-            raise ValueError(
-                "A resolution name must be specified if querying more than one source"
-            )
+    if not resolution_name and len(selectors) > 1:
+        raise ValueError(
+            "A resolution name must be specified if querying more than one source"
+        )
 
     # Divide the limit among selectors
     if limit:
@@ -196,7 +195,7 @@ def match(
 
     Args:
         targets: each target is the output of `select()`
-            This allows to match against sources coming from different engines
+            This allows matching against sources coming from different engines
         source: The output of using `select()` on a single source.
         source_pk: The primary key value to match from the source.
         resolution_name: the resolution name to use for filtering results

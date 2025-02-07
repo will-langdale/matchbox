@@ -296,8 +296,8 @@ class MatchboxDBAdapter(ABC):
     def match(
         self,
         source_pk: str,
-        source: str,
-        targets: list[str],
+        source: SourceAddress,
+        targets: list[SourceAddress],
         resolution_name: str,
         threshold: int | None = None,
     ) -> list[Match]: ...
