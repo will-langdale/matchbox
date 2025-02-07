@@ -24,7 +24,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -151,9 +151,25 @@ async def list_sources():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/sources/{address}")
-async def get_source(address: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/sources/{warehouse_hash_b64}/{full_name}",
+    responses={404: NotFoundError.response_schema()},
+)
+async def get_source(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    warehouse_hash_b64: str,
+    full_name: str,
+) -> Source:
+    address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
+    try:
+        return backend.get_source(address)
+    except MatchboxSourceNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.SOURCE
+            ).model_dump(),
+        ) from e
 
 
 @app.post("/sources/{hash}")

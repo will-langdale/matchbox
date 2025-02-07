@@ -19,7 +19,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server import app
 from matchbox.server.api import s3_to_recordbatch, table_to_s3
 
@@ -77,9 +77,28 @@ class TestMatchboxAPI:
     #     response = client.get("/sources")
     #     assert response.status_code == 200
 
-    # def test_get_source():
-    #     response = client.get("/sources/test_source")
-    #     assert response.status_code == 200
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_get_source(self, get_backend):
+        dummy_source = Source(
+            address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="pk"
+        )
+        mock_backend = Mock()
+        mock_backend.get_source = Mock(return_value=dummy_source)
+        get_backend.return_value = mock_backend
+
+        response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
+        assert response.status_code == 200
+        assert Source.model_validate(response.json())
+
+    @patch("matchbox.server.base.BackendManager.get_backend")
+    def test_get_source_404(self, get_backend):
+        mock_backend = Mock()
+        mock_backend.get_source = Mock(side_effect=MatchboxSourceNotFoundError)
+        get_backend.return_value = mock_backend
+
+        response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
+        assert response.status_code == 404
+        assert response.json()["entity"] == BackendRetrievableType.SOURCE
 
     # def test_add_source():
     #     response = client.post("/sources")
