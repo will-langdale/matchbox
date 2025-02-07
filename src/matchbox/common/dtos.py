@@ -42,13 +42,14 @@ class NotFoundError(BaseModel):
     entity: BackendRetrievableType
 
     @classmethod
-    def example_response_body(cls):
+    def response_schema(cls):
         return {
             "content": {
                 "application/json": {
                     "example": cls(
                         details="details", entity=BackendRetrievableType.SOURCE
-                    ).model_dump()
+                    ).model_dump(),
+                    "schema": cls.model_json_schema(),
                 }
             }
         }

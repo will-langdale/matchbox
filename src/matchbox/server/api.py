@@ -219,7 +219,7 @@ async def set_ancestors_cache(name: str):
 @app.get(
     "/query",
     response_class=ParquetResponse,
-    responses={404: NotFoundError.example_response_body()},
+    responses={404: NotFoundError.response_schema()},
 )
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -260,7 +260,7 @@ async def query(
 
 @app.get(
     "/match",
-    responses={404: NotFoundError.example_response_body()},
+    responses={404: NotFoundError.response_schema()},
 )
 async def match(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
