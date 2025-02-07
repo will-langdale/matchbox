@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
 from dotenv import find_dotenv, load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -23,8 +23,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.hash import base64_to_hash
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
@@ -250,16 +249,17 @@ async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     full_name: str,
     warehouse_hash_b64: str,
-    resolution_id: int | None = None,
-    threshold: float | None = None,
+    resolution_name: str | None = None,
+    threshold: int | None = None,
     limit: int | None = None,
 ):
-    warehouse_hash = base64_to_hash(warehouse_hash_b64)
-    source_address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash)
+    source_address = SourceAddress(
+        full_name=full_name, warehouse_hash=warehouse_hash_b64
+    )
     try:
         res = backend.query(
             source_address=source_address,
-            resolution_id=resolution_id,
+            resolution_name=resolution_name,
             threshold=threshold,
             limit=limit,
         )
@@ -267,14 +267,14 @@ async def query(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=f"{str(e)}", entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=f"{str(e)}", entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendRetrievableType.SOURCE
             ).model_dump(),
         ) from e
 
@@ -282,9 +282,51 @@ async def query(
     return ParquetResponse(buffer.getvalue())
 
 
-@app.get("/match")
-async def match():
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/match",
+    responses={404: NotFoundError.example_response_body()},
+)
+async def match(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    target_full_names: Annotated[list[str], Query()],
+    target_warehouse_hashes_b64: Annotated[list[str], Query()],
+    source_full_name: str,
+    source_warehouse_hash_b64: str,
+    source_pk: str,
+    resolution_name: str,
+    threshold: int | None = None,
+) -> list[Match]:
+    targets = [
+        SourceAddress(full_name=n, warehouse_hash=w)
+        for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)
+    ]
+    source = SourceAddress(
+        full_name=source_full_name, warehouse_hash=source_warehouse_hash_b64
+    )
+    try:
+        res = backend.match(
+            source_pk=source_pk,
+            source=source,
+            targets=targets,
+            resolution_name=resolution_name,
+            threshold=threshold,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except MatchboxSourceNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.SOURCE
+            ).model_dump(),
+        ) from e
+
+    return res
 
 
 @app.get("/validate/hash")

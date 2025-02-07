@@ -128,7 +128,7 @@ def test_source_upload(
         files={
             "file": (
                 "hashes.parquet",
-                table_to_buffer(dummy_source.data.data_hashes),
+                table_to_buffer(dummy_source.data_hashes),
                 "application/octet-stream",
             ),
         },
@@ -193,7 +193,7 @@ def test_source_upload_wrong_schema(
         files={
             "file": (
                 "hashes.parquet",
-                table_to_buffer(dummy_source.data.data),
+                table_to_buffer(dummy_source.data),
                 "application/octet-stream",
             ),
         },

@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 import pyarrow.compute as pc
 import pytest
+from sqlalchemy import create_engine
 
 from matchbox.common.factories.results import (
     calculate_min_max_edges,
@@ -16,6 +17,7 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     source_factory,
 )
+from matchbox.common.sources import SourceAddress
 
 
 @pytest.mark.parametrize(
@@ -192,7 +194,7 @@ def test_source_factory_default():
     """Test that source_factory generates a dummy source with default parameters."""
     source = source_factory()
 
-    assert source.data.metrics.n_true_entities == 10
+    assert source.metrics.n_true_entities == 10
 
 
 def test_source_factory_metrics_match_data_basic():
@@ -216,7 +218,7 @@ def test_source_factory_metrics_match_data_basic():
     # Check true entities count
     unique_base_values = len(
         set(
-            dummy_source.data.data.to_pandas()
+            dummy_source.data.to_pandas()
             .assign(
                 company_name=lambda x: x["company_name"]
                 .str.replace(" Inc", "")
@@ -230,16 +232,16 @@ def test_source_factory_metrics_match_data_basic():
 
     # Check variations per entity
     variations_per_entity = len(features[0].variations) + 1  # +1 for base value
-    assert dummy_source.data.metrics.n_unique_rows == variations_per_entity
+    assert dummy_source.metrics.n_unique_rows == variations_per_entity
 
     # Verify total rows
     expected_total_rows = n_true_entities * variations_per_entity
-    actual_total_rows = len(dummy_source.data.data)
+    actual_total_rows = len(dummy_source.data)
     assert actual_total_rows == expected_total_rows
 
     # Verify potential pairs calculation
     expected_pairs = comb(variations_per_entity, 2) * n_true_entities
-    assert dummy_source.data.metrics.n_potential_pairs == expected_pairs
+    assert dummy_source.metrics.n_potential_pairs == expected_pairs
 
 
 def test_source_factory_metrics_with_repetition():
@@ -262,14 +264,14 @@ def test_source_factory_metrics_with_repetition():
     )
 
     # Base metrics should not be affected by repetition
-    assert dummy_source.data.metrics.n_true_entities == n_true_entities
-    assert dummy_source.data.metrics.n_unique_rows == 2  # base + 1 variation
+    assert dummy_source.metrics.n_true_entities == n_true_entities
+    assert dummy_source.metrics.n_unique_rows == 2  # base + 1 variation
 
     # But total rows should be multiplied
     expected_total_rows = (
         n_true_entities * 2 * repetition
     )  # 2 rows per entity * repetition
-    actual_total_rows = len(dummy_source.data.data)
+    actual_total_rows = len(dummy_source.data)
     assert actual_total_rows == expected_total_rows
 
 
@@ -300,8 +302,8 @@ def test_source_factory_metrics_with_multiple_features():
     max_variations = max(len(f.variations) for f in features)
     expected_rows_per_entity = max_variations + 1  # +1 for base value
 
-    assert dummy_source.data.metrics.n_unique_rows == expected_rows_per_entity
-    assert len(dummy_source.data.data) == n_true_entities * expected_rows_per_entity
+    assert dummy_source.metrics.n_unique_rows == expected_rows_per_entity
+    assert len(dummy_source.data) == n_true_entities * expected_rows_per_entity
 
 
 def test_source_factory_data_hashes_integrity():
@@ -324,8 +326,8 @@ def test_source_factory_data_hashes_integrity():
     )
 
     # Convert to pandas for easier analysis
-    hashes_df = dummy_source.data.data_hashes.to_pandas()
-    data_df = dummy_source.data.data.to_pandas()
+    hashes_df = dummy_source.data_hashes.to_pandas()
+    data_df = dummy_source.data.to_pandas()
 
     # For each hash group, verify that the corresponding rows are identical
     for _, group in hashes_df.groupby("hash"):
@@ -349,3 +351,106 @@ def test_source_factory_data_hashes_integrity():
         len(features[0].variations) + 1
     )  # +1 for base value
     assert len(hashes_df["hash"].unique()) == expected_hash_groups
+
+
+def test_source_dummy_to_mock():
+    """Test that SourceDummy.to_mock() creates a correctly configured mock."""
+    # Create a source dummy with some test data
+    features = [
+        FeatureConfig(
+            name="test_field",
+            base_generator="word",
+            variations=[SuffixRule(suffix="_variant")],
+        )
+    ]
+
+    dummy_source = source_factory(
+        features=features, full_name="test.source", n_true_entities=2, seed=42
+    )
+
+    # Create the mock
+    mock_source = dummy_source.to_mock()
+
+    # Test that method calls are tracked
+    mock_source.set_engine("test_engine")
+    mock_source.default_columns()
+    mock_source.hash_data()
+
+    mock_source.set_engine.assert_called_once_with("test_engine")
+    mock_source.default_columns.assert_called_once()
+    mock_source.hash_data.assert_called_once()
+
+    # Test method return valuse
+    assert mock_source.set_engine("test_engine") == mock_source
+    assert mock_source.default_columns() == mock_source
+    assert mock_source.hash_data() == dummy_source.data_hashes
+
+    # Test model dump methods
+    original_dump = dummy_source.source.model_dump()
+    mock_dump = mock_source.model_dump()
+    assert mock_dump == original_dump
+
+    original_json = dummy_source.source.model_dump_json()
+    mock_json = mock_source.model_dump_json()
+    assert mock_json == original_json
+
+    # Verify side effect functions were set correctly
+    mock_source.model_dump.assert_called_once()
+    mock_source.model_dump_json.assert_called_once()
+
+    # Test that to_table contains the correct data
+    assert mock_source.to_table == dummy_source.data
+    # Verify the number of rows matches what we expect from metrics
+    assert (
+        mock_source.to_table.shape[0]
+        == dummy_source.metrics.n_true_entities * dummy_source.metrics.n_unique_rows
+    )
+
+
+def test_source_factory_mock_properties():
+    """Test that source properties set in source_factory match generated Source."""
+    # Create source with specific features and name
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[SuffixRule(suffix=" Ltd")],
+        ),
+        FeatureConfig(
+            name="registration_id",
+            base_generator="numerify",
+            parameters={"text": "######"},
+        ),
+    ]
+
+    full_name = "companies"
+    engine = create_engine("sqlite:///:memory:")
+
+    dummy_source = source_factory(
+        features=features, full_name=full_name, engine=engine
+    ).source
+
+    # Check source address properties
+    assert dummy_source.address.full_name == full_name
+
+    # Warehouse hash should be consistent for same engine config
+    expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
+    assert dummy_source.address.warehouse_hash == expected_address.warehouse_hash
+
+    # Check column configuration
+    assert len(dummy_source.columns) == len(features)
+    for feature, column in zip(features, dummy_source.columns, strict=False):
+        assert column.name == feature.name
+        assert column.alias == feature.name
+        assert column.type is None
+
+    # Check default alias (should match full_name) and default pk
+    assert dummy_source.alias == full_name
+    assert dummy_source.db_pk == "pk"
+
+    # Verify source properties are preserved through model_dump
+    dump = dummy_source.model_dump()
+    assert dump["address"]["full_name"] == full_name
+    assert dump["columns"] == [
+        {"name": f.name, "alias": f.name, "type": None} for f in features
+    ]

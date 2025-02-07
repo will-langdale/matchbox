@@ -7,8 +7,8 @@ from pandas import DataFrame
 from pydantic import (
     BaseModel,
     Field,
-    field_serializer,
-    field_validator,
+    PlainSerializer,
+    PlainValidator,
     model_validator,
 )
 from sqlalchemy import (
@@ -23,6 +23,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.sql.selectable import Select
+from typing_extensions import Annotated
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
@@ -46,9 +47,24 @@ class SourceColumn(BaseModel):
     )
 
 
+def b64_bytes_validator(val: bytes | str) -> bytes:
+    if isinstance(val, bytes):
+        return val
+    elif isinstance(val, str):
+        return base64_to_hash(val)
+    raise ValueError(f"Value {val} could not be converted to bytes")
+
+
+SerialisableBytes = Annotated[
+    bytes,
+    PlainValidator(b64_bytes_validator),
+    PlainSerializer(lambda v: hash_to_base64(v)),
+]
+
+
 class SourceAddress(BaseModel):
     full_name: str
-    warehouse_hash: bytes
+    warehouse_hash: SerialisableBytes
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
@@ -67,18 +83,6 @@ class SourceAddress(BaseModel):
 
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
-
-    @field_serializer("warehouse_hash")
-    def serialize_hash(self, hash: bytes, _info):
-        return hash_to_base64(hash)
-
-    @field_validator("warehouse_hash", mode="before")
-    @classmethod
-    def deserialize_hash(cls, v):
-        try:
-            return base64_to_hash(v)
-        except Exception:
-            return v
 
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:

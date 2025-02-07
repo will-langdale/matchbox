@@ -78,7 +78,40 @@ class FeatureConfig(BaseModel):
 
 
 class SourceMetrics(BaseModel):
-    """Metrics about the generated data."""
+    """Metrics about the generated data.
+
+    The metrics represent:
+
+    * `n_true_entities`: The number of true entities generated.
+    * `n_unique_rows`: The number of unique rows generated. Can also be
+        thought of as the drop count after dropping all duplicates.
+    * `n_potential_pairs`: The number of potential pairs that can be compared
+        for deduplication.
+
+    For example, in the following table:
+
+    ```markdown
+    | id | company_name |
+    |----|--------------|
+    | 1  | alpha        |
+    | 2  | alpha ltd    |
+    | 3  | alpha        |
+    | 4  | alpha ltd    |
+    | 5  | beta         |
+    | 6  | beta ltd     |
+    | 7  | beta         |
+    | 8  | beta ltd     |
+    ```
+
+    * `n_true_entities` = 2
+    * `n_unique_rows` = 4
+    * `n_potential_pairs` = 12
+
+    The potential pairs formula multiplies (`n_unique_rows` choose 2) by
+    `n_true_entities` because we need to compare each unique variation with every
+    other variation for each true entity in the dataset. This accounts for the fact
+    that each unique row appears `n_true_entities` times in the full dataset.
+    """
 
     n_true_entities: int
     n_unique_rows: int
@@ -99,16 +132,6 @@ class SourceMetrics(BaseModel):
         )
 
 
-class SourceGeneratedData(BaseModel):
-    """Contains the generated data and its properties."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    data: pa.Table
-    data_hashes: pa.Table
-    metrics: SourceMetrics
-
-
 class SourceDummy(BaseModel):
     """Complete representation of a generated dummy Source."""
 
@@ -116,7 +139,9 @@ class SourceDummy(BaseModel):
 
     source: Source
     features: list[FeatureConfig]
-    data: SourceGeneratedData
+    data: pa.Table
+    data_hashes: pa.Table
+    metrics: SourceMetrics
 
     def to_mock(self) -> Mock:
         """Create a mock Source object that mimics this dummy source's behavior."""
@@ -124,7 +149,8 @@ class SourceDummy(BaseModel):
 
         mock_source.set_engine.return_value = mock_source
         mock_source.default_columns.return_value = mock_source
-        mock_source.hash_data.return_value = self.data.data_hashes
+        mock_source.hash_data.return_value = self.data_hashes
+        mock_source.to_table = self.data
 
         mock_source.model_dump.side_effect = self.source.model_dump
         mock_source.model_dump_json.side_effect = self.source.model_dump_json
@@ -141,8 +167,15 @@ class SourceDataGenerator:
 
     def generate_data(
         self, n_true_entities: int, features: list[FeatureConfig], repetition: int
-    ) -> SourceGeneratedData:
-        """Generate raw data as PyArrow tables."""
+    ) -> tuple[pa.Table, pa.Table, SourceMetrics]:
+        """Generate raw data as PyArrow tables.
+
+        Returns:
+            A tuple of:
+            * The raw data
+            * The data hashes
+            * The metrics that go with this data
+        """
         max_variations = max(len(f.variations) for f in features)
 
         raw_data = {"pk": []}
@@ -199,11 +232,7 @@ class SourceDataGenerator:
             n_true_entities=n_true_entities, max_variations_per_entity=max_variations
         )
 
-        return SourceGeneratedData(
-            data=pa.Table.from_pandas(df),
-            data_hashes=data_hashes,
-            metrics=metrics,
-        )
+        return pa.Table.from_pandas(df), data_hashes, metrics
 
 
 def source_factory(
@@ -251,20 +280,20 @@ def source_factory(
     if features and isinstance(features[0], dict):
         features = [FeatureConfig.model_validate(feature) for feature in features]
 
-    generated_data = generator.generate_data(
+    data, data_hashes, metrics = generator.generate_data(
         n_true_entities=n_true_entities, features=features, repetition=repetition
     )
 
     source = Source(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
-        columns=[
-            SourceColumn(name=feature.name, alias=feature.name) for feature in features
-        ],
+        columns=[SourceColumn(name=feature.name) for feature in features],
     )
 
     return SourceDummy(
         source=source,
         features=features,
-        data=generated_data,
+        data=data,
+        data_hashes=data_hashes,
+        metrics=metrics,
     )
