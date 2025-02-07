@@ -71,7 +71,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise RuntimeError(f"Unexpected 400 error: {res.content}")
 
     if res.status_code == 404:
-        error = NotFoundError(**res.json())
+        error = NotFoundError.model_validate(res.json())
         if error.entity == BackendRetrievableType.SOURCE:
             raise MatchboxSourceNotFoundError(error.details)
         if error.entity == BackendRetrievableType.RESOLUTION:

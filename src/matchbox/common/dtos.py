@@ -77,7 +77,8 @@ class UploadStatus(BaseModel):
                                 entity=BackendUploadType.INDEX,
                             ).model_dump(),
                         },
-                    }
+                    },
+                    "schema": cls.model_json_schema(),
                 }
             }
         }
