@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 import pyarrow.compute as pc
 import pytest
+from sqlalchemy import create_engine
 
 from matchbox.common.factories.results import (
     calculate_min_max_edges,
@@ -16,6 +17,7 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     source_factory,
 )
+from matchbox.common.sources import SourceAddress
 
 
 @pytest.mark.parametrize(
@@ -403,3 +405,52 @@ def test_source_dummy_to_mock():
         mock_source.to_table.shape[0]
         == dummy_source.metrics.n_true_entities * dummy_source.metrics.n_unique_rows
     )
+
+
+def test_source_factory_mock_properties():
+    """Test that source properties set in source_factory match generated Source."""
+    # Create source with specific features and name
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[SuffixRule(suffix=" Ltd")],
+        ),
+        FeatureConfig(
+            name="registration_id",
+            base_generator="numerify",
+            parameters={"text": "######"},
+        ),
+    ]
+
+    full_name = "companies"
+    engine = create_engine("sqlite:///:memory:")
+
+    dummy_source = source_factory(
+        features=features, full_name=full_name, engine=engine
+    ).source
+
+    # Check source address properties
+    assert dummy_source.address.full_name == full_name
+
+    # Warehouse hash should be consistent for same engine config
+    expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
+    assert dummy_source.address.warehouse_hash == expected_address.warehouse_hash
+
+    # Check column configuration
+    assert len(dummy_source.columns) == len(features)
+    for feature, column in zip(features, dummy_source.columns, strict=False):
+        assert column.name == feature.name
+        assert column.alias == feature.name
+        assert column.type is None
+
+    # Check default alias (should match full_name) and default pk
+    assert dummy_source.alias == full_name
+    assert dummy_source.db_pk == "pk"
+
+    # Verify source properties are preserved through model_dump
+    dump = dummy_source.model_dump()
+    assert dump["address"]["full_name"] == full_name
+    assert dump["columns"] == [
+        {"name": f.name, "alias": f.name, "type": None} for f in features
+    ]
