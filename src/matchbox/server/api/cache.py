@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from typing import AsyncGenerator
 
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
@@ -90,14 +91,18 @@ class MetadataStore:
     def update_status(
         self, cache_id: str, status: str, details: str | None = None
     ) -> bool:
-        """Update the status of an entry. Returns False if entry not found."""
+        """Update the status of an entry.
+
+        Raises:
+            KeyError: If entry not found.
+        """
         if entry := self._store.get(cache_id):
             entry.status.status = status
             if details is not None:
                 entry.status.details = details
             entry.update_timestamp = datetime.now()
             return True
-        return False
+        raise KeyError(f"Cache entry {cache_id} not found.")
 
     def remove(self, cache_id: str) -> bool:
         """Remove an entry from the store."""
@@ -111,7 +116,7 @@ class MetadataStore:
 @asynccontextmanager
 async def heartbeat(
     metadata_store: MetadataStore, upload_id: str, interval_seconds: int = 300
-):
+) -> AsyncGenerator[None, None]:
     """
     Context manager that updates status with a heartbeat while the main operation runs.
 

@@ -202,7 +202,8 @@ async def test_status_management():
     assert entry.status.details == "Error details"
 
     # Try updating non-existent entry
-    assert store.update_status("nonexistent", "processing") is False
+    with pytest.raises(KeyError):
+        store.update_status("nonexistent", "processing")
 
 
 @pytest.mark.asyncio
