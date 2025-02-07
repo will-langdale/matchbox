@@ -133,12 +133,11 @@ async def upload_file(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
                     "of inactivity, including failed processes."
                 ),
-                entity=BackendUploadType.INDEX,
             ).model_dump(),
         )
 
-    # Check if already processing"
-    if source_cache.status.status in ["queued", "processing", "complete"]:
+    # Check if already processing
+    if source_cache.status.status != "awaiting_upload":
         raise HTTPException(
             status_code=400,
             detail=source_cache.status.model_dump(),

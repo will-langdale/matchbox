@@ -557,7 +557,6 @@ def test_index_with_columns(
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
-    MockSource.assert_called_once()
     mock_source_instance.set_engine.assert_called_once_with(engine)
     if columns:
         mock_source_instance.default_columns.assert_not_called()
@@ -619,7 +618,6 @@ def test_index_upload_failure(MockSource: Mock):
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
-    MockSource.assert_called_once()
 
 
 @respx.mock

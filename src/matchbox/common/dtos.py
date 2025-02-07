@@ -58,7 +58,7 @@ class UploadStatus(BaseModel):
         "ready", "awaiting_upload", "queued", "processing", "complete", "failed"
     ]
     details: str | None = None
-    entity: BackendUploadType
+    entity: BackendUploadType | None = None
 
     @classmethod
     def example_400_response_body(cls) -> dict:

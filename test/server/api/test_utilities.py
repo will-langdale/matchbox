@@ -306,13 +306,11 @@ async def test_heartbeat_handles_removed_entry():
     # Create entry
     upload_id = store.cache_source(source)
 
-    async with heartbeat(store, upload_id, interval_seconds=0.1):
-        # Remove the entry while heartbeat is running
-        store.remove(upload_id)
-        await asyncio.sleep(0.15)
-
-        # Verify entry remains removed
-        assert store.get(upload_id) is None
+    with pytest.raises(KeyError):
+        # Remove entry while heartbeat is running
+        async with heartbeat(store, upload_id, interval_seconds=0.1):
+            store.remove(upload_id)
+            await asyncio.sleep(0.15)  # Wait for next heartbeat attempt
 
 
 @pytest.mark.asyncio
