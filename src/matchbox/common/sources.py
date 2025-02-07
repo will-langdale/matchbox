@@ -4,7 +4,7 @@ from typing import Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, model_validator
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -17,13 +17,14 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.sql.selectable import Select
+from typing_extensions import Annotated
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
 )
-from matchbox.common.hash import HASH_FUNC, hash_data
+from matchbox.common.hash import HASH_FUNC, base64_to_hash, hash_data, hash_to_base64
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -40,9 +41,24 @@ class SourceColumn(BaseModel):
     )
 
 
+def b64_bytes_validator(val: bytes | str) -> bytes:
+    if isinstance(val, bytes):
+        return val
+    elif isinstance(val, str):
+        return base64_to_hash(val)
+    raise ValueError(f"Value {val} could not be converted to bytes")
+
+
+SerialisableBytes = Annotated[
+    bytes,
+    PlainValidator(b64_bytes_validator),
+    PlainSerializer(lambda v: hash_to_base64(v)),
+]
+
+
 class SourceAddress(BaseModel):
     full_name: str
-    warehouse_hash: bytes
+    warehouse_hash: SerialisableBytes
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":

@@ -287,8 +287,8 @@ class MatchboxDBAdapter(ABC):
     def query(
         self,
         source_address: SourceAddress,
-        resolution_id: int | None = None,
-        threshold: float | dict[str, float] | None = None,
+        resolution_name: str | None = None,
+        threshold: int | None = None,
         limit: int = None,
     ) -> ArrowTable: ...
 
@@ -296,11 +296,11 @@ class MatchboxDBAdapter(ABC):
     def match(
         self,
         source_pk: str,
-        source: str,
-        target: str | list[str],
-        resolution: str,
-        threshold: float | dict[str, float] | None = None,
-    ) -> Match | list[Match]: ...
+        source: SourceAddress,
+        targets: list[SourceAddress],
+        resolution_name: str,
+        threshold: int | None = None,
+    ) -> list[Match]: ...
 
     @abstractmethod
     def index(self, source: Source, data_hashes: Table) -> None: ...
@@ -322,9 +322,6 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def get_model(self, model: str) -> MatchboxModelAdapter: ...
-
-    @abstractmethod
-    def get_resolution_id(self, resolution_name: str) -> int: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...
