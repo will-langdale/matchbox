@@ -349,3 +349,57 @@ def test_source_factory_data_hashes_integrity():
         len(features[0].variations) + 1
     )  # +1 for base value
     assert len(hashes_df["hash"].unique()) == expected_hash_groups
+
+
+def test_source_dummy_to_mock():
+    """Test that SourceDummy.to_mock() creates a correctly configured mock."""
+    # Create a source dummy with some test data
+    features = [
+        FeatureConfig(
+            name="test_field",
+            base_generator="word",
+            variations=[SuffixRule(suffix="_variant")],
+        )
+    ]
+
+    dummy_source = source_factory(
+        features=features, full_name="test.source", n_true_entities=2, seed=42
+    )
+
+    # Create the mock
+    mock_source = dummy_source.to_mock()
+
+    # Test that method calls are tracked
+    mock_source.set_engine("test_engine")
+    mock_source.default_columns()
+    mock_source.hash_data()
+
+    mock_source.set_engine.assert_called_once_with("test_engine")
+    mock_source.default_columns.assert_called_once()
+    mock_source.hash_data.assert_called_once()
+
+    # Test method return valuse
+    assert mock_source.set_engine("test_engine") == mock_source
+    assert mock_source.default_columns() == mock_source
+    assert mock_source.hash_data() == dummy_source.data_hashes
+
+    # Test model dump methods
+    # original_dump = dummy_source.source.model_dump()
+    # mock_dump = mock_source.model_dump()
+    # assert mock_dump == original_dump
+
+    # original_json = dummy_source.source.model_dump_json()
+    # mock_json = mock_source.model_dump_json()
+    # assert mock_json == original_json
+
+    # Verify side effect functions were set correctly
+    # mock_source.model_dump.assert_called_once()
+    # mock_source.model_dump_json.assert_called_once()
+
+    # Test that to_table contains the correct data
+    assert mock_source.to_table == dummy_source.data
+    # Verify the number of rows matches what we expect from metrics
+    assert (
+        mock_source.to_table.shape[0]
+        == dummy_source.metrics.n_true_entities * dummy_source.metrics.n_unique_rows
+    )

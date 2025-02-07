@@ -117,6 +117,7 @@ class SourceDummy(BaseModel):
         mock_source.set_engine.return_value = mock_source
         mock_source.default_columns.return_value = mock_source
         mock_source.hash_data.return_value = self.data_hashes
+        mock_source.to_table = self.data
 
         mock_source.model_dump.side_effect = self.source.model_dump
         mock_source.model_dump_json.side_effect = self.source.model_dump_json
@@ -253,9 +254,7 @@ def source_factory(
     source = Source(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
-        columns=[
-            SourceColumn(name=feature.name, alias=feature.name) for feature in features
-        ],
+        columns=[SourceColumn(name=feature.name) for feature in features],
     )
 
     return SourceDummy(
