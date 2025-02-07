@@ -153,7 +153,7 @@ async def upload_file(
             bucket=bucket,
             key=key,
             file=file,
-            expected_schema=source_cache.upload_schema.value,
+            expected_schema=source_cache.upload_type.schema,
         )
     except MatchboxServerFileError as e:
         metadata_store.update_status(upload_id, "failed", details=str(e))

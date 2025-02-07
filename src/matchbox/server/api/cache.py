@@ -1,11 +1,9 @@
 import uuid
 from datetime import datetime, timedelta
-from enum import Enum
 
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.dtos import (
     BackendUploadType,
     UploadStatus,
@@ -15,16 +13,10 @@ from matchbox.server.api.arrow import s3_to_recordbatch
 from matchbox.server.base import MatchboxDBAdapter
 
 
-class MetadataSchema(Enum):
-    index = SCHEMA_INDEX
-    results = SCHEMA_RESULTS
-
-
 class MetadataCacheEntry(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     metadata: Source
-    upload_schema: MetadataSchema
     upload_type: BackendUploadType
     update_timestamp: datetime
     status: UploadStatus
@@ -66,7 +58,6 @@ class MetadataStore:
 
         self._store[cache_id] = MetadataCacheEntry(
             metadata=metadata,
-            upload_schema=MetadataSchema.index,
             upload_type=BackendUploadType.INDEX,
             update_timestamp=datetime.now(),
             status=UploadStatus(

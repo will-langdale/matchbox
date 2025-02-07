@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+
 
 class BackendCountableType(StrEnum):
     DATASETS = "datasets"
@@ -27,6 +29,13 @@ class BackendRetrievableType(StrEnum):
 class BackendUploadType(StrEnum):
     INDEX = "index"
     RESULTS = "results"
+
+    @property
+    def schema(self):
+        return {
+            BackendUploadType.INDEX: SCHEMA_INDEX,
+            BackendUploadType.RESULTS: SCHEMA_RESULTS,
+        }[self]
 
 
 class HealthCheck(BaseModel):

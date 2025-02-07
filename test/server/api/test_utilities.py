@@ -16,7 +16,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 from matchbox.server.api.arrow import s3_to_recordbatch, table_to_s3
-from matchbox.server.api.cache import MetadataSchema, MetadataStore
+from matchbox.server.api.cache import MetadataStore
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -109,7 +109,7 @@ def test_basic_cache_and_retrieve():
     entry = store.get(cache_id)
     assert entry is not None
     assert entry.metadata == source
-    assert entry.upload_schema == MetadataSchema.index
+    assert entry.upload_type.schema == BackendUploadType.INDEX.schema
     assert isinstance(entry.update_timestamp, datetime)
 
     # Verify initial status
