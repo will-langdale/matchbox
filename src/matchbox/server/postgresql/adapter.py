@@ -247,23 +247,20 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def query(
         self,
         source_address: SourceAddress,
-        resolution_id: int | None = None,
-        threshold: float | dict[str, float] | None = None,
+        resolution_name: str | None = None,
+        threshold: int | None = None,
         limit: int | None = None,
     ) -> ArrowTable:
         """Queries the database from an optional point of truth.
 
         Args:
             source_address: the `SourceAddress` object identifying the source to query
-            resolution_id (optional): the resolution to use for filtering results
+            resolution_name (optional): the resolution to use for filtering results
                 If not specified, will use the dataset resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold
-                If a float, uses that threshold for the specified model, and the
+                If an integer, uses that threshold for the specified model, and the
                 model's cached thresholds for its ancestors
-                If a dictionary, expects a shape similar to model.ancestors, keyed
-                by model name and valued by the threshold to use for that model. Will
-                use these threshold values instead of the cached thresholds
             limit (optional): the number to use in a limit clause. Useful for testing
 
         Returns:
@@ -272,7 +269,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         return query(
             engine=MBDB.get_engine(),
             source_address=source_address,
-            resolution_id=resolution_id,
+            resolution_name=resolution_name,
             threshold=threshold,
             limit=limit,
         )
@@ -280,33 +277,30 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def match(
         self,
         source_pk: str,
-        source: str,
-        target: str | list[str],
-        resolution: str,
-        threshold: float | dict[str, float] | None = None,
-    ) -> Match | list[Match]:
+        source: SourceAddress,
+        targets: list[SourceAddress],
+        resolution_name: str,
+        threshold: int | None = None,
+    ) -> list[Match]:
         """Matches an ID in a source dataset and returns the keys in the targets.
 
         Args:
             source_pk: The primary key to match from the source.
-            source: The name of the source dataset.
-            target: The name of the target dataset(s).
-            resolution: The name of the resolution to use for matching.
+            source: The address of the source dataset.
+            targets: The addresses of the target datasets.
+            resolution_name: The name of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold
-                If a float, uses that threshold for the specified resolution, and the
+                If an integer, uses that threshold for the specified resolution, and the
                 resolution's cached thresholds for its ancestors
-                If a dictionary, expects a shape similar to resolution.ancestors, keyed
-                by resolution name and valued by the threshold to use for that
-                resolution.
                 Will use these threshold values instead of the cached thresholds
         """
         return match(
+            engine=MBDB.get_engine(),
             source_pk=source_pk,
             source=source,
-            target=target,
-            resolution=resolution,
-            engine=MBDB.get_engine(),
+            targets=targets,
+            resolution_name=resolution_name,
             threshold=threshold,
         )
 
@@ -475,26 +469,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 return MatchboxPostgresModel(resolution=resolution, backend=self)
             else:
                 raise MatchboxResolutionNotFoundError(resolution_name=model)
-
-    def get_resolution_id(self, resolution_name: str) -> int:
-        """Get a resolution ID from its name.
-
-        Args:
-            resolution_name: The name of the resolution to get.
-
-        Returns:
-            The resolution ID
-        """
-        with Session(MBDB.get_engine()) as session:
-            resolution_id = (
-                session.query(Resolutions.resolution_id)
-                .filter_by(name=resolution_name)
-                .first()
-            )
-            if resolution_id:
-                return resolution_id[0]
-            else:
-                raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.

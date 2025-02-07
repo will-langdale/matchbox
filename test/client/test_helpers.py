@@ -21,7 +21,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -71,6 +71,52 @@ def test_comparisons():
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
+def test_select_mixed_style(get_backend: Mock, warehouse_engine: Engine):
+    """We can select select specific columns from some of the sources"""
+    # Set up mocks and test data
+    source1 = Source(
+        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
+        db_pk="pk",
+        columns=[SourceColumn(name="a", type="BIGINT")],
+    )
+    source2 = Source(
+        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.bar"),
+        db_pk="pk",
+    )
+
+    mock_backend = Mock()
+    mock_backend.get_source = Mock(side_effect=[source1, source2])
+    get_backend.return_value = mock_backend
+
+    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
+    with warehouse_engine.connect() as conn:
+        df.to_sql(
+            name="foo",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+
+        df.to_sql(
+            name="bar",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+
+    # Select sources
+    selection = select({"test.foo": ["a"]}, "test.bar", engine=warehouse_engine)
+
+    # Check they contain what we expect
+    assert selection[0].fields == ["a"]
+    assert not selection[1].fields
+    assert selection[0].source == source1
+    assert selection[1].source == source2
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
 def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
     source = Source(
@@ -93,7 +139,7 @@ def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine)
         )
 
     with pytest.warns(Warning):
-        select({"test.foo": ["a", "b"]}, warehouse_engine)
+        select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -118,7 +164,7 @@ def test_select_missing_columns(get_backend: Mock, warehouse_engine: Engine):
             index=False,
         )
     with pytest.raises(ValueError):
-        select({"test.foo": ["a", "c"]}, warehouse_engine)
+        select({"test.foo": ["a", "c"]}, engine=warehouse_engine)
 
 
 def test_query_no_resolution_fail():
@@ -128,7 +174,7 @@ def test_query_no_resolution_fail():
             source=Source(
                 address=SourceAddress(
                     full_name="foo",
-                    warehouse_hash="bar",
+                    warehouse_hash=b"bar",
                 ),
                 db_pk="i",
             ),
@@ -136,7 +182,7 @@ def test_query_no_resolution_fail():
         ),
         Selector(
             source=Source(
-                address=SourceAddress(full_name="foo2", warehouse_hash="bar2"),
+                address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
                 db_pk="j",
             ),
             fields=["x", "y"],
@@ -148,21 +194,81 @@ def test_query_no_resolution_fail():
 
 
 @respx.mock
-def test_query_no_resolution_ok_various_params():
+@patch.object(Source, "to_arrow")
+def test_query_no_resolution_ok_various_params(to_arrow: Mock):
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch.object(Source, "to_arrow") as to_arrow,
-    ):
-        # Mock backend (temporary)
-        mock_backend = Mock()
-        get_resolution_id = Mock(return_value=42)
-        mock_backend.get_resolution_id = get_resolution_id
-        get_backend.return_value = mock_backend
+    # Mock API
+    query_route = respx.get(url("/query")).mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [
+                        {"source_pk": "0", "id": 1},
+                        {"source_pk": "1", "id": 2},
+                    ],
+                    schema=SCHEMA_MB_IDS,
+                )
+            ).read(),
+        )
+    )
 
-        # Mock API
-        query_route = respx.get(url("/query")).mock(
-            return_value=Response(
+    # Mock `Source.to_arrow`
+    to_arrow.return_value = pa.Table.from_pylist(
+        [
+            {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
+            {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
+        ]
+    )
+
+    # Well-formed selector for these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    # Tests with no optional params
+    results = query(sels)
+    assert len(results) == 2
+    assert {"foo_a", "foo_b", "id"} == set(results.columns)
+
+    assert dict(query_route.calls.last.request.url.params) == {
+        "full_name": sels[0].source.address.full_name,
+        "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
+    }
+    to_arrow.assert_called_once()
+    assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
+    assert set(to_arrow.call_args.kwargs["pks"]) == {"0", "1"}
+
+    # Tests with optional params
+    results = query(sels, return_type="arrow", threshold=50, limit=2).to_pandas()
+    assert len(results) == 2
+    assert {"foo_a", "foo_b", "id"} == set(results.columns)
+
+    assert dict(query_route.calls.last.request.url.params) == {
+        "full_name": sels[0].source.address.full_name,
+        "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
+        "threshold": "50",
+        "limit": "2",
+    }
+
+
+@respx.mock
+@patch.object(Source, "to_arrow")
+def test_query_multiple_sources_with_limits(to_arrow: Mock):
+    """Tests that we can query multiple sources and distribute the limit among them."""
+    # Mock API
+    query_route = respx.get(url("/query")).mock(
+        side_effect=[
+            Response(
                 200,
                 content=table_to_buffer(
                     pa.Table.from_pylist(
@@ -173,177 +279,92 @@ def test_query_no_resolution_ok_various_params():
                         schema=SCHEMA_MB_IDS,
                     )
                 ).read(),
-            )
-        )
-
-        # Mock `Source.to_arrow`
-        to_arrow.return_value = pa.Table.from_pandas(
-            DataFrame(
-                [
-                    {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
-                    {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
-                ]
-            )
-        )
-
-        # Well-formed selector for these mocks
-        sels = [
-            Selector(
-                source=Source(
-                    address=SourceAddress(
-                        full_name="foo",
-                        warehouse_hash=b"bar",
-                    ),
-                    db_pk="pk",
-                ),
-                fields=["a", "b"],
-            )
+            ),
+            Response(
+                200,
+                content=table_to_buffer(
+                    pa.Table.from_pylist(
+                        [
+                            {"source_pk": "2", "id": 1},
+                            {"source_pk": "3", "id": 2},
+                        ],
+                        schema=SCHEMA_MB_IDS,
+                    )
+                ).read(),
+            ),
         ]
+        * 2  # 2 calls to `query()` in this test, each querying server twice
+    )
 
-        # Tests with no optional params
-        results = query(sels)
-        assert len(results) == 2
-        assert {"foo_a", "foo_b", "id"} == set(results.columns)
-
-        get_resolution_id.assert_not_called()
-        assert dict(query_route.calls.last.request.url.params) == {
-            "full_name": sels[0].source.address.full_name,
-            "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
-        }
-        to_arrow.assert_called_once()
-        assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
-        assert set(to_arrow.call_args.kwargs["pks"]) == {"0", "1"}
-
-        # Tests with optional params
-        results = query(sels, return_type="arrow", threshold=0.5, limit=2).to_pandas()
-        assert len(results) == 2
-        assert {"foo_a", "foo_b", "id"} == set(results.columns)
-
-        assert dict(query_route.calls.last.request.url.params) == {
-            "full_name": sels[0].source.address.full_name,
-            "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
-            "threshold": "0.5",
-            "limit": "2",
-        }
-
-
-@respx.mock
-def test_query_multiple_sources_with_limits():
-    """Tests that we can query multiple sources and distribute the limit among them."""
-    with (
-        patch("matchbox.server.base.BackendManager.get_backend") as get_backend,
-        patch.object(Source, "to_arrow") as to_arrow,
-    ):
-        # Mock backend (temporary)
-        mock_backend = Mock()
-        get_resolution_id = Mock(return_value=42)
-        mock_backend.get_resolution_id = get_resolution_id
-        get_backend.return_value = mock_backend
-
-        # Mock API
-        query_route = respx.get(url("/query")).mock(
-            side_effect=[
-                Response(
-                    200,
-                    content=table_to_buffer(
-                        pa.Table.from_pylist(
-                            [
-                                {"source_pk": "0", "id": 1},
-                                {"source_pk": "1", "id": 2},
-                            ],
-                            schema=SCHEMA_MB_IDS,
-                        )
-                    ).read(),
-                ),
-                Response(
-                    200,
-                    content=table_to_buffer(
-                        pa.Table.from_pylist(
-                            [
-                                {"source_pk": "2", "id": 1},
-                                {"source_pk": "3", "id": 2},
-                            ],
-                            schema=SCHEMA_MB_IDS,
-                        )
-                    ).read(),
-                ),
+    # Mock `Source.to_arrow`
+    to_arrow.side_effect = [
+        pa.Table.from_pylist(
+            [
+                {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
+                {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
             ]
-            * 2  # 2 calls to `query()` in this test, each querying server twice
-        )
+        ),
+        pa.Table.from_pylist(
+            [
+                {"foo2_pk": "2", "foo2_c": "val"},
+                {"foo2_pk": "3", "foo2_c": "val"},
+            ]
+        ),
+    ] * 2  # 2 calls to `query()` in this test, each dealing with 2 sources
 
-        # Mock `Source.to_arrow`
-        to_arrow.side_effect = [
-            pa.Table.from_pandas(
-                DataFrame(
-                    [
-                        {"foo_pk": "0", "foo_a": 1, "foo_b": "2"},
-                        {"foo_pk": "1", "foo_a": 10, "foo_b": "20"},
-                    ]
-                )
-            ),
-            pa.Table.from_pandas(
-                DataFrame(
-                    [
-                        {"foo2_pk": "2", "foo2_c": "val"},
-                        {"foo2_pk": "3", "foo2_c": "val"},
-                    ]
-                )
-            ),
-        ] * 2  # 2 calls to `query()` in this test, each dealing with 2 sources
-
-        # Well-formed select from these mocks
-        sels = [
-            Selector(
-                source=Source(
-                    address=SourceAddress(
-                        full_name="foo",
-                        warehouse_hash="bar",
-                    ),
-                    db_pk="pk",
+    # Well-formed select from these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="foo",
+                    warehouse_hash=b"bar",
                 ),
-                fields=["a", "b"],
+                db_pk="pk",
             ),
-            Selector(
-                source=Source(
-                    address=SourceAddress(full_name="foo2", warehouse_hash="bar2"),
-                    db_pk="pk",
-                ),
-                fields=["c"],
+        ),
+        Selector(
+            source=Source(
+                address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
+                db_pk="pk",
             ),
-        ]
+            fields=["c"],
+        ),
+    ]
 
-        # Validate results
-        results = query(sels, resolution_name="link", limit=7)
-        assert len(results) == 4
-        assert {"foo_a", "foo_b", "foo2_c", "id"} == set(results.columns)
+    # Validate results
+    results = query(sels, resolution_name="link", limit=7)
+    assert len(results) == 4
+    assert {
+        # All columns automatically selected for `foo`
+        "foo_pk",
+        "foo_a",
+        "foo_b",
+        # Only one column selected for `foo2`
+        "foo2_c",
+        # The id always comes back
+        "id",
+    } == set(results.columns)
 
-        get_resolution_id.assert_called_with("link")
-        assert dict(query_route.calls[-2].request.url.params) == {
-            "full_name": sels[0].source.address.full_name,
-            "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
-            "resolution_id": "42",
-            "limit": "4",
-        }
-        assert dict(query_route.calls[-1].request.url.params) == {
-            "full_name": sels[1].source.address.full_name,
-            "warehouse_hash_b64": hash_to_base64(sels[1].source.address.warehouse_hash),
-            "resolution_id": "42",
-            "limit": "3",
-        }
+    assert dict(query_route.calls[-2].request.url.params) == {
+        "full_name": sels[0].source.address.full_name,
+        "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
+        "resolution_name": "link",
+        "limit": "4",
+    }
+    assert dict(query_route.calls[-1].request.url.params) == {
+        "full_name": sels[1].source.address.full_name,
+        "warehouse_hash_b64": hash_to_base64(sels[1].source.address.warehouse_hash),
+        "resolution_name": "link",
+        "limit": "3",
+    }
 
-        # It also works with the selectors specified separately
-        query([sels[0]], [sels[1]], resolution_name="link", limit=7)
+    # It also works with the selectors specified separately
+    query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
 @respx.mock
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_query_404_resolution(get_backend: Mock):
-    # Mock backend (temporary)
-    mock_backend = Mock()
-    get_resolution_id = Mock(return_value=42)
-    mock_backend.get_resolution_id = get_resolution_id
-    get_backend.return_value = mock_backend
-
+def test_query_404_resolution():
     # Mock API
     respx.get(url("/query")).mock(
         return_value=Response(
@@ -361,7 +382,7 @@ def test_query_404_resolution(get_backend: Mock):
             source=Source(
                 address=SourceAddress(
                     full_name="foo",
-                    warehouse_hash="bar",
+                    warehouse_hash=b"bar",
                 ),
                 db_pk="pk",
             ),
@@ -369,26 +390,19 @@ def test_query_404_resolution(get_backend: Mock):
         )
     ]
 
-    # Tests with no optional params
+    # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         query(sels)
 
 
 @respx.mock
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_query_404_source(get_backend: Mock):
-    # Mock backend (temporary)
-    mock_backend = Mock()
-    get_resolution_id = Mock(return_value=42)
-    mock_backend.get_resolution_id = get_resolution_id
-    get_backend.return_value = mock_backend
-
+def test_query_404_source():
     # Mock API
     respx.get(url("/query")).mock(
         return_value=Response(
             404,
             json=NotFoundError(
-                details="Resolution 42 not found",
+                details="Source 42 not found",
                 entity=BackendRetrievableType.SOURCE,
             ).model_dump(),
         )
@@ -400,7 +414,7 @@ def test_query_404_source(get_backend: Mock):
             source=Source(
                 address=SourceAddress(
                     full_name="foo",
-                    warehouse_hash="bar",
+                    warehouse_hash=b"bar",
                 ),
                 db_pk="pk",
             ),
@@ -408,7 +422,7 @@ def test_query_404_source(get_backend: Mock):
         )
     ]
 
-    # Tests with no optional params
+    # Test with no optional params
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
         query(sels)
 
@@ -479,20 +493,191 @@ def test_index_dict(get_backend: Mock, warehouse_engine: Engine):
         mock_source.default_columns.assert_not_called()
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_match_calls_backend(get_backend: Mock):
+@respx.mock
+def test_match_ok():
     """The client can perform the right call for matching."""
-    mock_backend = Mock()
-    mock_backend.match = Mock(
-        return_value=Match(
-            cluster=1,
-            source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
-            source_id={"a"},
-            target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
-            target_id={"b"},
+    # Set up mocks
+    mock_match1 = Match(
+        cluster=1,
+        source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+        source_id={"a"},
+        target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
+        target_id={"b"},
+    )
+    mock_match2 = Match(
+        cluster=1,
+        source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+        source_id={"a"},
+        target=SourceAddress(full_name="test.target2", warehouse_hash=b"bar"),
+        target_id={"b"},
+    )
+    # The standard JSON serialiser does not handle Pydantic objects
+    serialised_matches = (
+        f"[{mock_match1.model_dump_json()}, {mock_match2.model_dump_json()}]"
+    )
+
+    match_route = respx.get(url("/match")).mock(
+        return_value=Response(200, content=serialised_matches)
+    )
+
+    # Use match function
+    source = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.source",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+    target1 = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target1",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    target2 = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target2",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    res = match(
+        target1,
+        target2,
+        source=source,
+        source_pk="pk1",
+        resolution_name="foo",
+    )
+
+    # Verify results
+    assert len(res) == 2
+    assert isinstance(res[0], Match)
+    param_set = sorted(match_route.calls.last.request.url.params.multi_items())
+    assert param_set == sorted(
+        [
+            ("target_full_names", "test.target1"),
+            ("target_full_names", "test.target2"),
+            ("target_warehouse_hashes_b64", hash_to_base64(b"bar")),
+            ("target_warehouse_hashes_b64", hash_to_base64(b"bar")),
+            ("source_full_name", "test.source"),
+            ("source_warehouse_hash_b64", hash_to_base64(b"bar")),
+            ("source_pk", "pk1"),
+            ("resolution_name", "foo"),
+        ]
+    )
+
+
+@respx.mock
+def test_match_404_resolution():
+    """The client can handle a resolution not found error."""
+    # Set up mocks
+    respx.get(url("/match")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Resolution 42 not found",
+                entity=BackendRetrievableType.RESOLUTION,
+            ).model_dump(),
         )
     )
-    get_backend.return_value = mock_backend
 
-    res = match("pk1", "test.source", "test.target", resolution="foo")
-    assert isinstance(res, Match)
+    # Use match function
+    source = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.source",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+    target = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target1",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+        match(
+            target,
+            source=source,
+            source_pk="pk1",
+            resolution_name="foo",
+        )
+
+
+@respx.mock
+def test_match_404_source():
+    """The client can handle a source not found error."""
+    # Set up mocks
+    respx.get(url("/match")).mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Source 42 not found",
+                entity=BackendRetrievableType.SOURCE,
+            ).model_dump(),
+        )
+    )
+
+    # Use match function
+    source = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.source",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+    target = [
+        Selector(
+            source=Source(
+                address=SourceAddress(
+                    full_name="test.target1",
+                    warehouse_hash=b"bar",
+                ),
+                db_pk="pk",
+            ),
+            fields=["a", "b"],
+        )
+    ]
+
+    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+        match(
+            target,
+            source=source,
+            source_pk="pk1",
+            resolution_name="foo",
+        )

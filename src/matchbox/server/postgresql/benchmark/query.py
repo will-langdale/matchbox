@@ -79,7 +79,7 @@ def compile_match_sql(source_pk: str, source_name: str, point_of_truth: str) -> 
         match_query = _build_match_query(
             source_pk=source_pk,
             source_resolution_id=dataset_resolution.resolution_id,
-            resolution=point_of_truth,
+            resolution_name=point_of_truth,
             session=session,
             threshold=None,
         )

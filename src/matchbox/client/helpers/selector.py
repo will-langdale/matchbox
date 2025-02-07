@@ -14,60 +14,75 @@ from matchbox.server import MatchboxDBAdapter, inject_backend
 
 class Selector(BaseModel):
     source: Source
-    fields: list[str]
+    fields: list[str] | None = None
 
 
 @inject_backend
 def select(
-    backend: MatchboxDBAdapter, selection: dict[str, list[str]], engine: Engine
+    backend: MatchboxDBAdapter,
+    *selection: str | dict[str, str],
+    engine: Engine,
 ) -> list[Selector]:
-    """Builds and verifies a list of selectors from one engine.
+    """From one engine, builds and verifies a list of selectors.
 
     Args:
-        selection: a dict where full source names are mapped to lists of fields
-        engine: the engine to connect to a data warehouse
-
+        selection: full source names and optionally a subset of columns to select
+        engine: the engine to connect to the data warehouse hosting the source
     Returns:
         A list of Selector objects
+
+    Examples:
+        ```python
+        select("companies_house", "hmrc_exporters", engine=engine)
+        ```
+
+        ```python
+        select({"companies_house": ["crn"], "hmrc_exporters": ["name"]}, engine=engine)
+        ```
     """
     selectors = []
-    for full_name, fields in selection.items():
-        source_address = SourceAddress.compose(engine, full_name)
-        source = backend.get_source(source_address).set_engine(engine)
+    for s in selection:
+        if isinstance(s, str):
+            source_address = SourceAddress.compose(engine, s)
+            source = backend.get_source(source_address).set_engine(engine)
+            selectors.append(Selector(source=source))
+        elif isinstance(s, dict):
+            for full_name, fields in s.items():
+                source_address = SourceAddress.compose(engine, full_name)
+                source = backend.get_source(source_address).set_engine(engine)
 
-        warehouse_cols = set(source.to_table().columns.keys())
-        selected_cols = set(fields)
-        if not selected_cols <= warehouse_cols:
-            raise ValueError(
-                f"{selected_cols - warehouse_cols} not found in {source_address}"
-            )
+                warehouse_cols = set(source.to_table().columns.keys())
+                selected_cols = set(fields)
+                if not selected_cols <= warehouse_cols:
+                    raise ValueError(
+                        f"{selected_cols - warehouse_cols} not in {source_address}"
+                    )
 
-        indexed_cols = set(col.name for col in source.columns)
-        if not selected_cols <= indexed_cols:
-            warn(
-                "You are selecting columns that are not indexed in Matchbox",
-                stacklevel=2,
-            )
-        selectors.append(Selector(source=source, fields=fields))
+                indexed_cols = set(col.name for col in source.columns)
+                if not selected_cols <= indexed_cols:
+                    warn(
+                        "You are selecting columns that are not indexed in Matchbox",
+                        stacklevel=2,
+                    )
+                selectors.append(Selector(source=source, fields=fields))
+        else:
+            raise ValueError("Selection specified in incorrect format")
 
     return selectors
 
 
-@inject_backend
 def query(
-    backend: MatchboxDBAdapter,
     *selectors: list[Selector],
     resolution_name: str | None = None,
     return_type: Literal["pandas", "arrow"] = "pandas",
-    threshold: float | dict[str, float] | None = None,
+    threshold: int | None = None,
     limit: int | None = None,
 ) -> DataFrame | pa.Table:
     """Runs queries against the selected backend.
 
     Args:
-        backend: the backend to query
-        selectors: each selector is a list of `Selectors` as output by `select()`
-            This allows to query sources coming from different engines
+        selectors: each selector is the output of `select()`
+            This allows querying sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
             It can only be `None` when querying from a single source, in which case the
             dataset resolution for that source will be used
@@ -75,29 +90,37 @@ def query(
             Defaults to pandas for ease of use
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
-            If a float, uses that threshold for the specified resolution, and the
+            If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
-            If a dictionary, expects a shape similar to resolution.ancestors, keyed
-            by resolution name and valued by the threshold to use for that resolution.
-            Will use these threshold values instead of the cached thresholds
         limit (optional): the number to use in a limit clause. Useful for testing
 
     Returns:
         Data in the requested return type
+
+    Examples:
+        ```python
+        query(
+            select({"companies_house": ["crn", "name"]}, engine=engine),
+        )
+        ```
+
+        ```python
+        query(
+            select("companies_house", engine=engine1),
+            select("datahub_companies", engine=engine2),
+            resolution_name="last_linker",
+        )
+        ```
     """
     if not selectors:
         raise ValueError("At least one selector must be specified")
 
     selectors = list(itertools.chain(*selectors))
 
-    if not resolution_name:
-        resolution_id = None
-        if len(selectors) > 1:
-            raise ValueError(
-                "A resolution name must be specified if querying more than one source"
-            )
-    else:
-        resolution_id = backend.get_resolution_id(resolution_name)
+    if not resolution_name and len(selectors) > 1:
+        raise ValueError(
+            "A resolution name must be specified if querying more than one source"
+        )
 
     # Divide the limit among selectors
     if limit:
@@ -115,13 +138,15 @@ def query(
         # Get ids from matchbox
         mb_ids = _handler.query(
             source_address=selector.source.address,
-            resolution_id=resolution_id,
+            resolution_name=resolution_name,
             threshold=threshold,
             limit=sub_limit,
         )
-
+        fields = None
+        if selector.fields:
+            fields = list(set(selector.fields))
         raw_data = selector.source.to_arrow(
-            fields=list(set(selector.fields)),
+            fields=fields,
             pks=mb_ids["source_pk"].to_pylist(),
         )
 
@@ -133,10 +158,14 @@ def query(
             join_type="inner",
         )
 
-        keep_cols = ["id"] + [selector.source.format_column(f) for f in selector.fields]
-        match_cols = [col for col in joined_table.column_names if col in keep_cols]
-
-        tables.append(joined_table.select(match_cols))
+        if selector.fields:
+            keep_cols = ["id"] + [
+                selector.source.format_column(f) for f in selector.fields
+            ]
+            match_cols = [col for col in joined_table.column_names if col in keep_cols]
+            tables.append(joined_table.select(match_cols))
+        else:
+            tables.append(joined_table)
 
     # Combine results
     result = pa.concat_tables(tables, promote_options="default")
@@ -155,35 +184,37 @@ def query(
         raise ValueError(f"return_type of {return_type} not valid")
 
 
-@inject_backend
 def match(
-    backend: MatchboxDBAdapter,
+    *targets: list[Selector],
+    source: list[Selector],
     source_pk: str,
-    source: str,
-    target: str | list[str],
-    resolution: str,
-    threshold: float | dict[str, float] | None = None,
-) -> Match | list[Match]:
+    resolution_name: str,
+    threshold: int | None = None,
+) -> list[Match]:
     """Matches IDs against the selected backend.
 
     Args:
-        backend: the backend to query
-        source_pk: The primary key to match from the source.
-        source: The name of the source dataset.
-        target: The name of the target dataset(s).
-        resolution: the resolution to use for filtering results
+        targets: each target is the output of `select()`
+            This allows matching against sources coming from different engines
+        source: The output of using `select()` on a single source.
+        source_pk: The primary key value to match from the source.
+        resolution_name: the resolution name to use for filtering results
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
-            If a float, uses that threshold for the specified resolution, and the
+            If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
-            If a dictionary, expects a shape similar to resolution.ancestors, keyed
-            by resolution name and valued by the threshold to use for that resolution.
-            Will use these threshold values instead of the cached thresholds
     """
-    return backend.match(
-        source_pk=source_pk,
+    if len(source) > 1:
+        raise ValueError("Only one source can be matched at one time")
+    source = source[0].source.address
+
+    targets = list(itertools.chain(*targets))
+    targets = [t.source.address for t in targets]
+
+    return _handler.match(
+        targets=targets,
         source=source,
-        target=target,
-        resolution=resolution,
+        source_pk=source_pk,
+        resolution_name=resolution_name,
         threshold=threshold,
     )
