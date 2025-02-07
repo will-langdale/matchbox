@@ -1,4 +1,6 @@
+import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 import pyarrow as pa
@@ -106,6 +108,42 @@ class MetadataStore:
         return False
 
 
+@asynccontextmanager
+async def heartbeat(
+    metadata_store: MetadataStore, upload_id: str, interval_seconds: int = 300
+):
+    """
+    Context manager that updates status with a heartbeat while the main operation runs.
+
+    Args:
+        metadata_store: Store for updating status
+        upload_id: ID of the upload being processed
+        interval_seconds: How often to send heartbeat (default 5 minutes)
+    """
+    heartbeat_task = None
+
+    async def _heartbeat():
+        while True:
+            await asyncio.sleep(interval_seconds)
+            timestamp = datetime.now().isoformat()
+            metadata_store.update_status(
+                cache_id=upload_id,
+                status="processing",
+                details=f"Still processing... Last heartbeat: {timestamp}",
+            )
+
+    try:
+        heartbeat_task = asyncio.create_task(_heartbeat())
+        yield
+    finally:
+        if heartbeat_task:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+
 async def process_upload(
     backend: MatchboxDBAdapter,
     upload_id: str,
@@ -114,6 +152,7 @@ async def process_upload(
     metadata_store: MetadataStore,
 ) -> None:
     """Background task to process uploaded file."""
+    metadata_store.update_status(upload_id, "processing")
     client = backend.settings.datastore.get_client()
 
     try:
@@ -125,12 +164,10 @@ async def process_upload(
                 )
             ]
         )
-
-        metadata_store.update_status(upload_id, "processing")
-
-        backend.index(
-            source=metadata_store.get(upload_id).metadata, data_hashes=data_hashes
-        )
+        with heartbeat(metadata_store, upload_id):
+            backend.index(
+                source=metadata_store.get(upload_id).metadata, data_hashes=data_hashes
+            )
 
         metadata_store.update_status(upload_id, "complete")
 

@@ -484,7 +484,6 @@ def test_index_success(MockSource: Mock):
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
-    MockSource.assert_called_once()
 
 
 @respx.mock

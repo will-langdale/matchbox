@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
@@ -8,15 +9,12 @@ import pyarrow.parquet as pq
 import pytest
 from fastapi import UploadFile
 from pandas import DataFrame
-from sqlalchemy import create_engine
 
 from matchbox.common.dtos import BackendUploadType
-from matchbox.common.exceptions import (
-    MatchboxServerFileError,
-)
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.exceptions import MatchboxServerFileError
+from matchbox.common.factories.sources import source_factory
 from matchbox.server.api.arrow import s3_to_recordbatch, table_to_s3
-from matchbox.server.api.cache import MetadataStore
+from matchbox.server.api.cache import MetadataStore, heartbeat
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -93,13 +91,7 @@ async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
 def test_basic_cache_and_retrieve():
     """Test basic caching and retrieval functionality."""
     store = MetadataStore()
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="col1")],
-    )
+    source = source_factory().source
 
     # Cache the source
     cache_id = store.cache_source(source)
@@ -122,13 +114,7 @@ def test_basic_cache_and_retrieve():
 def test_expiration(mock_datetime: Mock):
     """Test that entries expire correctly after period of inactivity."""
     store = MetadataStore(expiry_minutes=30)
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="col1")],
-    )
+    source = source_factory().source
 
     # Cache the source
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
@@ -151,17 +137,12 @@ def test_expiration(mock_datetime: Mock):
     assert store.get(cache_id) is None
 
 
+@pytest.mark.asyncio
 @patch("matchbox.server.api.cache.datetime")
-def test_cleanup(mock_datetime: Mock):
+async def test_cleanup(mock_datetime: Mock):
     """Test that cleanup removes expired entries."""
     store = MetadataStore(expiry_minutes=30)
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="col1")],
-    )
+    source = source_factory().source
 
     # Create two entries
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
@@ -187,13 +168,7 @@ def test_cleanup(mock_datetime: Mock):
 def test_remove():
     """Test manual removal of cache entries."""
     store = MetadataStore()
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="col1")],
-    )
+    source = source_factory().source
 
     # Cache and remove
     cache_id = store.cache_source(source)
@@ -204,16 +179,11 @@ def test_remove():
     assert store.remove("nonexistent") is False
 
 
-def test_status_management():
+@pytest.mark.asyncio
+async def test_status_management():
     """Test status update functionality."""
     store = MetadataStore()
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="col1")],
-    )
+    source = source_factory().source
 
     # Create entry and verify initial status
     cache_id = store.cache_source(source)
@@ -235,17 +205,12 @@ def test_status_management():
     assert store.update_status("nonexistent", "processing") is False
 
 
+@pytest.mark.asyncio
 @patch("matchbox.server.api.cache.datetime")
-def test_timestamp_updates(mock_datetime: Mock):
+async def test_timestamp_updates(mock_datetime: Mock):
     """Test that timestamps update correctly on different operations."""
     store = MetadataStore()
-    source = Source(
-        address=SourceAddress.compose(
-            full_name="test.source", engine=create_engine("sqlite:///:memory:")
-        ),
-        db_pk="pk",
-        columns=[SourceColumn(name="col1")],
-    )
+    source = source_factory().source
 
     # Initial creation
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
@@ -263,3 +228,113 @@ def test_timestamp_updates(mock_datetime: Mock):
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 30)
     entry = store.get(cache_id)
     assert entry.update_timestamp == datetime(2024, 1, 1, 12, 30)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_updates_status():
+    """Test that heartbeat updates status periodically."""
+    store = MetadataStore()
+    source = source_factory().source
+
+    # Create initial entry
+    upload_id = store.cache_source(source)
+
+    async with heartbeat(store, upload_id, interval_seconds=0.1):
+        # Wait long enough for at least one heartbeat
+        await asyncio.sleep(0.15)
+
+    # Verify the status was updated with heartbeat details
+    entry = store.get(upload_id)
+    assert entry.status.status == "processing"
+    assert "Still processing... Last heartbeat:" in entry.status.details
+
+
+@pytest.mark.asyncio
+@patch("matchbox.server.api.cache.datetime")
+async def test_heartbeat_timestamp_updates(mock_datetime: Mock):
+    """Test that heartbeat updates timestamps correctly."""
+    store = MetadataStore()
+    source = source_factory().source
+
+    # Create initial entry
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
+    upload_id = store.cache_source(source)
+
+    # Start heartbeat and advance time
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 5)
+    async with heartbeat(store, upload_id, interval_seconds=0.1):
+        await asyncio.sleep(0.15)
+
+        entry = store.get(upload_id)
+        assert entry.update_timestamp == datetime(2024, 1, 1, 12, 5)
+        assert "Last heartbeat:" in entry.status.details
+
+
+@pytest.mark.asyncio
+@patch("matchbox.server.api.cache.datetime")
+async def test_heartbeat_with_expiry(mock_datetime: Mock):
+    """Test heartbeat behavior with cache expiry."""
+    store = MetadataStore(expiry_minutes=30)
+    source = source_factory().source
+
+    # Create entry
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
+    upload_id = store.cache_source(source)
+
+    # Start heartbeat and let it update
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 25)
+    async with heartbeat(store, upload_id, interval_seconds=0.1):
+        await asyncio.sleep(0.15)
+
+        # Entry should still exist and have updated timestamp
+        entry = store.get(upload_id)
+        assert entry is not None
+        assert entry.update_timestamp == datetime(2024, 1, 1, 12, 25)
+
+    # Move past expiry time
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 13, 0)
+    assert store.get(upload_id) is None
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_handles_removed_entry():
+    """Test heartbeat behavior when entry is removed during processing."""
+    store = MetadataStore()
+    source = source_factory().source
+
+    # Create entry
+    upload_id = store.cache_source(source)
+
+    async with heartbeat(store, upload_id, interval_seconds=0.1):
+        # Remove the entry while heartbeat is running
+        store.remove(upload_id)
+        await asyncio.sleep(0.15)
+
+        # Verify entry remains removed
+        assert store.get(upload_id) is None
+
+
+@pytest.mark.asyncio
+async def test_multiple_heartbeats():
+    """Test multiple concurrent heartbeats on different entries."""
+    store = MetadataStore()
+    source = source_factory().source
+
+    # Create two entries
+    id1 = store.cache_source(source)
+    id2 = store.cache_source(source)
+
+    async def run_heartbeat(upload_id):
+        async with heartbeat(store, upload_id, interval_seconds=0.1):
+            await asyncio.sleep(0.15)
+
+    # Run heartbeats concurrently
+    await asyncio.gather(run_heartbeat(id1), run_heartbeat(id2))
+
+    # Verify both entries were updated
+    entry1 = store.get(id1)
+    entry2 = store.get(id2)
+    assert entry1.status.status == "processing"
+    assert entry2.status.status == "processing"
+    assert "Last heartbeat:" in entry1.status.details
+    assert "Last heartbeat:" in entry2.status.details
