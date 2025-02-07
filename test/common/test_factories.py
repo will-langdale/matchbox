@@ -192,7 +192,7 @@ def test_source_factory_default():
     """Test that source_factory generates a dummy source with default parameters."""
     source = source_factory()
 
-    assert source.data.metrics.n_true_entities == 10
+    assert source.metrics.n_true_entities == 10
 
 
 def test_source_factory_metrics_match_data_basic():
@@ -216,7 +216,7 @@ def test_source_factory_metrics_match_data_basic():
     # Check true entities count
     unique_base_values = len(
         set(
-            dummy_source.data.data.to_pandas()
+            dummy_source.data.to_pandas()
             .assign(
                 company_name=lambda x: x["company_name"]
                 .str.replace(" Inc", "")
@@ -230,16 +230,16 @@ def test_source_factory_metrics_match_data_basic():
 
     # Check variations per entity
     variations_per_entity = len(features[0].variations) + 1  # +1 for base value
-    assert dummy_source.data.metrics.n_unique_rows == variations_per_entity
+    assert dummy_source.metrics.n_unique_rows == variations_per_entity
 
     # Verify total rows
     expected_total_rows = n_true_entities * variations_per_entity
-    actual_total_rows = len(dummy_source.data.data)
+    actual_total_rows = len(dummy_source.data)
     assert actual_total_rows == expected_total_rows
 
     # Verify potential pairs calculation
     expected_pairs = comb(variations_per_entity, 2) * n_true_entities
-    assert dummy_source.data.metrics.n_potential_pairs == expected_pairs
+    assert dummy_source.metrics.n_potential_pairs == expected_pairs
 
 
 def test_source_factory_metrics_with_repetition():
@@ -262,14 +262,14 @@ def test_source_factory_metrics_with_repetition():
     )
 
     # Base metrics should not be affected by repetition
-    assert dummy_source.data.metrics.n_true_entities == n_true_entities
-    assert dummy_source.data.metrics.n_unique_rows == 2  # base + 1 variation
+    assert dummy_source.metrics.n_true_entities == n_true_entities
+    assert dummy_source.metrics.n_unique_rows == 2  # base + 1 variation
 
     # But total rows should be multiplied
     expected_total_rows = (
         n_true_entities * 2 * repetition
     )  # 2 rows per entity * repetition
-    actual_total_rows = len(dummy_source.data.data)
+    actual_total_rows = len(dummy_source.data)
     assert actual_total_rows == expected_total_rows
 
 
@@ -300,8 +300,8 @@ def test_source_factory_metrics_with_multiple_features():
     max_variations = max(len(f.variations) for f in features)
     expected_rows_per_entity = max_variations + 1  # +1 for base value
 
-    assert dummy_source.data.metrics.n_unique_rows == expected_rows_per_entity
-    assert len(dummy_source.data.data) == n_true_entities * expected_rows_per_entity
+    assert dummy_source.metrics.n_unique_rows == expected_rows_per_entity
+    assert len(dummy_source.data) == n_true_entities * expected_rows_per_entity
 
 
 def test_source_factory_data_hashes_integrity():
@@ -324,8 +324,8 @@ def test_source_factory_data_hashes_integrity():
     )
 
     # Convert to pandas for easier analysis
-    hashes_df = dummy_source.data.data_hashes.to_pandas()
-    data_df = dummy_source.data.data.to_pandas()
+    hashes_df = dummy_source.data_hashes.to_pandas()
+    data_df = dummy_source.data.to_pandas()
 
     # For each hash group, verify that the corresponding rows are identical
     for _, group in hashes_df.groupby("hash"):

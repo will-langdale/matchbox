@@ -99,16 +99,6 @@ class SourceMetrics(BaseModel):
         )
 
 
-class SourceGeneratedData(BaseModel):
-    """Contains the generated data and its properties."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    data: pa.Table
-    data_hashes: pa.Table
-    metrics: SourceMetrics
-
-
 class SourceDummy(BaseModel):
     """Complete representation of a generated dummy Source."""
 
@@ -116,7 +106,9 @@ class SourceDummy(BaseModel):
 
     source: Source
     features: list[FeatureConfig]
-    data: SourceGeneratedData
+    data: pa.Table
+    data_hashes: pa.Table
+    metrics: SourceMetrics
 
     def to_mock(self) -> Mock:
         """Create a mock Source object that mimics this dummy source's behavior."""
@@ -124,7 +116,7 @@ class SourceDummy(BaseModel):
 
         mock_source.set_engine.return_value = mock_source
         mock_source.default_columns.return_value = mock_source
-        mock_source.hash_data.return_value = self.data.data_hashes
+        mock_source.hash_data.return_value = self.data_hashes
 
         mock_source.model_dump.side_effect = self.source.model_dump
         mock_source.model_dump_json.side_effect = self.source.model_dump_json
@@ -141,8 +133,15 @@ class SourceDataGenerator:
 
     def generate_data(
         self, n_true_entities: int, features: list[FeatureConfig], repetition: int
-    ) -> SourceGeneratedData:
-        """Generate raw data as PyArrow tables."""
+    ) -> tuple[pa.Table, pa.Table, SourceMetrics]:
+        """Generate raw data as PyArrow tables.
+
+        Returns:
+            A tuple of:
+            * The raw data
+            * The data hashes
+            * The metrics that go with this data
+        """
         max_variations = max(len(f.variations) for f in features)
 
         raw_data = {"pk": []}
@@ -199,11 +198,7 @@ class SourceDataGenerator:
             n_true_entities=n_true_entities, max_variations_per_entity=max_variations
         )
 
-        return SourceGeneratedData(
-            data=pa.Table.from_pandas(df),
-            data_hashes=data_hashes,
-            metrics=metrics,
-        )
+        return pa.Table.from_pandas(df), data_hashes, metrics
 
 
 def source_factory(
@@ -251,7 +246,7 @@ def source_factory(
     if features and isinstance(features[0], dict):
         features = [FeatureConfig.model_validate(feature) for feature in features]
 
-    generated_data = generator.generate_data(
+    data, data_hashes, metrics = generator.generate_data(
         n_true_entities=n_true_entities, features=features, repetition=repetition
     )
 
@@ -266,5 +261,7 @@ def source_factory(
     return SourceDummy(
         source=source,
         features=features,
-        data=generated_data,
+        data=data,
+        data_hashes=data_hashes,
+        metrics=metrics,
     )
