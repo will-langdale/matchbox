@@ -1,6 +1,6 @@
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
-from unittest.mock import ANY, Mock, patch
+from unittest.mock import ANY, Mock, call, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -137,16 +137,19 @@ def test_source_upload(
     # Validate response
     assert UploadStatus.model_validate(response.json())
     assert response.status_code == 200, response.json()
-    assert response.json()["status"] == "processing"
-    metadata_store.update_status.assert_called_with(update_id, "processing")
+    assert response.json()["status"] == "queued"  # Updated to check for queued status
+    # Check both status updates were called in correct order
+    assert metadata_store.update_status.call_args_list == [
+        call(update_id, "queued"),
+    ]
     mock_backend.index.assert_not_called()  # Index happens in background
     mock_add_task.assert_called_once()  # Verify background task was queued
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store")
-def test_source_upload_status_check(metadata_store: Mock, _: Mock):
-    """Test checking status of an upload in progress."""
+def test_upload_status_check(metadata_store: Mock, get_backend: Mock):
+    """Test checking status of an upload using the status endpoint."""
     # Setup store with a processing entry
     store = MetadataStore()
     dummy_source = source_factory()
@@ -156,13 +159,59 @@ def test_source_upload_status_check(metadata_store: Mock, _: Mock):
     metadata_store.get.side_effect = store.get
     metadata_store.update_status.side_effect = store.update_status
 
-    # Check status
-    response = client.post(f"/upload/{update_id}")
+    # Check status using GET endpoint
+    response = client.get(f"/upload/{update_id}/status")
 
-    # Should return current status without starting new upload
+    # Should return current status
     assert response.status_code == 200
     assert response.json()["status"] == "processing"
     metadata_store.update_status.assert_not_called()
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.metadata_store")
+def test_upload_already_processing(metadata_store: Mock, get_backend: Mock):
+    """Test attempting to upload when status is already processing."""
+    # Setup store with a processing entry
+    store = MetadataStore()
+    dummy_source = source_factory()
+    update_id = store.cache_source(dummy_source.source)
+    store.update_status(update_id, "processing")
+
+    metadata_store.get.side_effect = store.get
+
+    # Attempt upload
+    response = client.post(
+        f"/upload/{update_id}",
+        files={"file": ("test.parquet", b"dummy data", "application/octet-stream")},
+    )
+
+    # Should return 400 with current status
+    assert response.status_code == 400
+    assert response.json()["status"] == "processing"
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.metadata_store")
+def test_upload_already_queued(metadata_store: Mock, get_backend: Mock):
+    """Test attempting to upload when status is already queued."""
+    # Setup store with a queued entry
+    store = MetadataStore()
+    dummy_source = source_factory()
+    update_id = store.cache_source(dummy_source.source)
+    store.update_status(update_id, "queued")
+
+    metadata_store.get.side_effect = store.get
+
+    # Attempt upload
+    response = client.post(
+        f"/upload/{update_id}",
+        files={"file": ("test.parquet", b"dummy data", "application/octet-stream")},
+    )
+
+    # Should return 400 with current status
+    assert response.status_code == 400
+    assert response.json()["status"] == "queued"
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -205,6 +254,19 @@ def test_source_upload_wrong_schema(
     assert "schema mismatch" in response.json()["details"].lower()
     metadata_store.update_status.assert_called_with(update_id, "failed", details=ANY)
     mock_add_task.assert_not_called()  # Background task should not be queued
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.metadata_store")
+def test_status_check_not_found(metadata_store: Mock, get_backend: Mock):
+    """Test checking status for non-existent upload ID."""
+    metadata_store.get.return_value = None
+
+    response = client.get("/upload/nonexistent-id/status")
+
+    assert response.status_code == 400
+    assert response.json()["status"] == "failed"
+    assert "not found or expired" in response.json()["details"].lower()
 
 
 # def test_list_sources():

@@ -109,18 +109,17 @@ async def upload_file(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     background_tasks: BackgroundTasks,
     upload_id: str,
-    file: UploadFile | None = None,
+    file: UploadFile,
 ) -> UploadStatus:
-    """Upload file and process based on metadata type.
+    """Upload and process a file based on metadata type.
 
     The file is uploaded to S3 and then processed in a background task.
-    Status can be checked by calling this endpoint again with the same ID.
+    Status can be checked using the /upload/{upload_id}/status endpoint.
 
     Raises HTTP 400 if:
     * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
+    * Upload is already being processed
     * Uploaded data doesn't match the metadata schema
-
-    Can be called without file upload to check task status.
     """
     # Get and validate cache entry
     source_cache = metadata_store.get(cache_id=upload_id)
@@ -138,9 +137,12 @@ async def upload_file(
             ).model_dump(),
         )
 
-    # If already processing, return current status
-    if source_cache.status.status in ["processing", "complete"] and not file:
-        return source_cache.status
+    # Check if already processing"
+    if source_cache.status.status in ["queued", "processing", "complete"]:
+        raise HTTPException(
+            status_code=400,
+            detail=source_cache.status.model_dump(),
+        )
 
     # Upload to S3
     client = backend.settings.datastore.get_client()
@@ -162,6 +164,8 @@ async def upload_file(
             detail=source_cache.status.model_dump(),
         ) from e
 
+    metadata_store.update_status(upload_id, "queued")
+
     # Start background processing
     background_tasks.add_task(
         process_upload,
@@ -172,9 +176,39 @@ async def upload_file(
         metadata_store=metadata_store,
     )
 
-    # Update and return status
-    metadata_store.update_status(upload_id, "processing")
     return metadata_store.get(upload_id).status
+
+
+@app.get(
+    "/upload/{upload_id}/status",
+    responses={400: UploadStatus.example_400_response_body()},
+)
+async def get_upload_status(
+    upload_id: str,
+) -> UploadStatus:
+    """Get the status of an upload process.
+
+    Returns the current status of the upload and processing task.
+
+    Raises HTTP 400 if:
+    * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
+    """
+    source_cache = metadata_store.get(cache_id=upload_id)
+    if not source_cache:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                status="failed",
+                details=(
+                    "Upload ID not found or expired. Entries expire after 30 minutes "
+                    "of inactivity, including failed processes."
+                ),
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+
+    return source_cache.status
 
 
 @app.get("/sources")

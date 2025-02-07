@@ -54,7 +54,9 @@ class UploadStatus(BaseModel):
     """Response model for any file upload processes, like Source or Model results."""
 
     id: str | None = None
-    status: Literal["ready", "awaiting_upload", "processing", "complete", "failed"]
+    status: Literal[
+        "ready", "awaiting_upload", "queued", "processing", "complete", "failed"
+    ]
     details: str | None = None
     entity: BackendUploadType
 
