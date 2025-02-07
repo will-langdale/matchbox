@@ -78,7 +78,40 @@ class FeatureConfig(BaseModel):
 
 
 class SourceMetrics(BaseModel):
-    """Metrics about the generated data."""
+    """Metrics about the generated data.
+
+    The metrics represent:
+
+    * `n_true_entities`: The number of true entities generated.
+    * `n_unique_rows`: The number of unique rows generated. Can also be
+        thought of as the drop count after dropping all duplicates.
+    * `n_potential_pairs`: The number of potential pairs that can be compared
+        for deduplication.
+
+    For example, in the following table:
+
+    ```markdown
+    | id | company_name |
+    |----|--------------|
+    | 1  | alpha        |
+    | 2  | alpha ltd    |
+    | 3  | alpha        |
+    | 4  | alpha ltd    |
+    | 5  | beta         |
+    | 6  | beta ltd     |
+    | 7  | beta         |
+    | 8  | beta ltd     |
+    ```
+
+    * `n_true_entities` = 2
+    * `n_unique_rows` = 4
+    * `n_potential_pairs` = 12
+
+    The potential pairs formula multiplies (`n_unique_rows` choose 2) by
+    `n_true_entities` because we need to compare each unique variation with every
+    other variation for each true entity in the dataset. This accounts for the fact
+    that each unique row appears `n_true_entities` times in the full dataset.
+    """
 
     n_true_entities: int
     n_unique_rows: int
