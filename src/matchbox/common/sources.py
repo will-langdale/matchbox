@@ -267,7 +267,11 @@ class Source(BaseModel):
             {
                 "source_pk": grouped_keys,
                 "hash": pa.array(
-                    [hash_data(d) for d in grouped_data.to_pylist()], type=pa.binary()
+                    [
+                        hash_data(" ".join([d, self.signature.hex()]))
+                        for d in grouped_data.to_pylist()
+                    ],
+                    type=pa.binary(),
                 ),
             }
         )
