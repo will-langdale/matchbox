@@ -49,6 +49,39 @@ class UploadStatus(BaseModel):
     details: str | None = None
     entity: BackendUploadType
 
+    @classmethod
+    def example_400_response_body(cls) -> dict:
+        return {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "expired_id": {
+                            "summary": "Upload ID expired",
+                            "value": cls(
+                                id="example_id",
+                                status="failed",
+                                details=(
+                                    "Upload ID not found or expired. Entries expire "
+                                    "after 30 minutes of inactivity, including "
+                                    "failed processes."
+                                ),
+                                entity=BackendUploadType.INDEX,
+                            ).model_dump(),
+                        },
+                        "schema_mismatch": {
+                            "summary": "Schema validation error",
+                            "value": cls(
+                                id="example_id",
+                                status="failed",
+                                details="Schema mismatch. Expected: ... Got: ...",
+                                entity=BackendUploadType.INDEX,
+                            ).model_dump(),
+                        },
+                    }
+                }
+            }
+        }
+
 
 class NotFoundError(BaseModel):
     """API error for a 404 status code"""
@@ -57,7 +90,7 @@ class NotFoundError(BaseModel):
     entity: BackendRetrievableType
 
     @classmethod
-    def example_response_body(cls):
+    def example_response_body(cls) -> dict:
         return {
             "content": {
                 "application/json": {

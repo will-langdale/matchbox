@@ -101,7 +101,10 @@ async def add_source(source: Source):
     )
 
 
-@app.post("/upload/{upload_id}")
+@app.post(
+    "/upload/{upload_id}",
+    responses={400: UploadStatus.example_400_response_body()},
+)
 async def upload_file(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     background_tasks: BackgroundTasks,
@@ -116,7 +119,6 @@ async def upload_file(
     Raises HTTP 400 if:
     * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
     * Uploaded data doesn't match the metadata schema
-    * Uploaded metadata is of a type not handled by this endpoint
 
     Can be called without file upload to check task status.
     """

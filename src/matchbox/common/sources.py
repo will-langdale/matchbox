@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     PlainValidator,
+    WithJsonSchema,
     model_validator,
 )
 from sqlalchemy import (
@@ -59,6 +60,9 @@ SerialisableBytes = Annotated[
     bytes,
     PlainValidator(b64_bytes_validator),
     PlainSerializer(lambda v: hash_to_base64(v)),
+    WithJsonSchema(
+        {"type": "string", "format": "base64", "description": "Base64 encoded bytes"}
+    ),
 ]
 
 
