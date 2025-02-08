@@ -9,7 +9,6 @@ from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.common.sources import Match, Source, SourceAddress
-from matchbox.server import MatchboxDBAdapter, inject_backend
 
 
 class Selector(BaseModel):
@@ -17,9 +16,7 @@ class Selector(BaseModel):
     fields: list[str] | None = None
 
 
-@inject_backend
 def select(
-    backend: MatchboxDBAdapter,
     *selection: str | dict[str, str],
     engine: Engine,
 ) -> list[Selector]:
@@ -44,12 +41,12 @@ def select(
     for s in selection:
         if isinstance(s, str):
             source_address = SourceAddress.compose(engine, s)
-            source = backend.get_source(source_address).set_engine(engine)
+            source = _handler.get_source(source_address).set_engine(engine)
             selectors.append(Selector(source=source))
         elif isinstance(s, dict):
             for full_name, fields in s.items():
                 source_address = SourceAddress.compose(engine, full_name)
-                source = backend.get_source(source_address).set_engine(engine)
+                source = _handler.get_source(source_address).set_engine(engine)
 
                 warehouse_cols = set(source.to_table().columns.keys())
                 selected_cols = set(fields)

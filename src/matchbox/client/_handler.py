@@ -16,7 +16,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 
 
 def url(path: str) -> str:
@@ -77,6 +77,14 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 def get_resolution_graph() -> ResolutionGraph:
     res = handle_http_code(httpx.get(url("/report/resolutions")))
     return ResolutionGraph.model_validate(res.json())
+
+
+def get_source(address: SourceAddress) -> Source:
+    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+    res = handle_http_code(
+        httpx.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
+    )
+    return Source.model_validate(res.json())
 
 
 def query(
