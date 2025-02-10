@@ -8,7 +8,6 @@ from pandas import DataFrame
 from sqlalchemy import Engine
 
 from matchbox.client.helpers.selector import match, query, select
-from matchbox.client.results import Results
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxResolutionNotFoundError,
@@ -16,6 +15,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
+from matchbox.common.results import Results
 from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
 from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
 

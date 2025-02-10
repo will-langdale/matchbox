@@ -5,6 +5,7 @@ from pandas import DataFrame
 
 from matchbox import make_model, query
 from matchbox.client.helpers.selector import Selector
+from matchbox.client.results import results_to_matchbox
 from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
@@ -108,7 +109,7 @@ def test_dedupers(
 
     # 4. Probabilities and clusters are inserted correctly
 
-    results.to_matchbox(backend=matchbox_postgres)
+    results_to_matchbox(results=results)
 
     model = matchbox_postgres.get_model(model=deduper_name)
     assert model.results.probabilities.shape[0] == fx_data.tgt_prob_n

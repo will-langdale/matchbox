@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -8,7 +9,6 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
-from matchbox.client.results import Results
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_values
@@ -26,6 +26,12 @@ from matchbox.server.postgresql.orm import (
     Sources,
 )
 from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
+
+if TYPE_CHECKING:
+    from matchbox.common.results import Results
+
+else:
+    Results = Any
 
 logic_logger = logging.getLogger("mb_logic")
 

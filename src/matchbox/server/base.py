@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame
     from pyarrow import Table as ArrowTable
 
-    from matchbox.client.results import Results
+    from matchbox.common.results import Results
 else:
     S3Client = Any
     PandasDataFrame = Any
