@@ -10,7 +10,6 @@ from matchbox.client.models.linkers.splinklinker import (
     SplinkLinkerFunction,
     SplinkSettings,
 )
-from matchbox.client.results import results_to_matchbox
 from matchbox.common.sources import Source
 from matchbox.server.postgresql import MatchboxPostgres
 
@@ -175,7 +174,7 @@ def test_linkers(
 
     # 4. Probabilities and clusters are inserted correctly
 
-    results_to_matchbox(results=results)
+    results.to_matchbox(backend=matchbox_postgres)
 
     model = matchbox_postgres.get_model(model=linker_name)
     assert model.results.probabilities.shape[0] == fx_data.tgt_prob_n

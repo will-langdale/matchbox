@@ -11,7 +11,6 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
 from matchbox import index, make_model
-from matchbox.client.results import results_to_matchbox
 from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
@@ -104,7 +103,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                 )
 
                 results = model.run()
-                results_to_matchbox(results=results)
+                results.to_matchbox(backend=backend)
                 model.truth = 0.0
 
     return _db_add_dedupe_models_and_data
@@ -174,7 +173,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                 )
 
                 results = model.run()
-                results_to_matchbox(results=results)
+                results.to_matchbox(backend=backend)
                 model.truth = 0.0
 
     return _db_add_link_models_and_data
