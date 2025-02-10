@@ -143,10 +143,10 @@ def test_linkers(
 
     assert isinstance(clusters_with_source, DataFrame)
     for field_l, field_r in zip(fields_l, fields_r, strict=True):
-        # When we enrich the ClusterResults in a deduplication job, every child
+        # When we enrich results clusters in a deduplication job, every child
         # id will match something in the source data, because we're only using
         # one dataset. NaNs are therefore impossible.
-        # When we enrich the ClusterResults in a link job, some child ids
+        # When we enrich results clusters in a link job, some child ids
         # will match something in the left data, and others in the right data.
         # NaNs are therefore guaranteed.
         # We therefore coalesce by parent to unique joined values, which
@@ -176,10 +176,10 @@ def test_linkers(
 
     results.to_matchbox(backend=matchbox_postgres)
 
-    model = matchbox_postgres.get_model(model=linker_name)
-    assert model.results.probabilities.shape[0] == fx_data.tgt_prob_n
+    retrieved_results = matchbox_postgres.get_model_results(model=linker_name)
+    assert retrieved_results.shape[0] == fx_data.tgt_prob_n
 
-    model.truth = 0.0
+    matchbox_postgres.set_model_truth(model=linker_name, truth=0.0)
 
     clusters = query(
         select_l,

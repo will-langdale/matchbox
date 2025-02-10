@@ -20,23 +20,14 @@ from pyarrow import Table
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from matchbox.common.dtos import ModelMetadata
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match, Source, SourceAddress
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
-    from pandas import DataFrame as PandasDataFrame
-    from polars import DataFrame as PolarsDataFrame
-    from pyarrow import Table as ArrowTable
-
-    from matchbox.client.results import Results
 else:
     S3Client = Any
-    PandasDataFrame = Any
-    PolarsDataFrame = Any
-    ArrowTable = Any
-
-    Results = Any
 
 
 dotenv_path = find_dotenv(usecwd=True)
@@ -229,49 +220,6 @@ class ListableAndCountable(Countable, Listable):
     pass
 
 
-class MatchboxModelAdapter(ABC):
-    """An abstract base class for Matchbox model adapters.
-
-    Must be able to recover probabilities and clusters from the database,
-    but ultimately doesn't care how they're stored.
-
-    Creates these with the pairwise probabilities and the connected components
-    of those pairs calculated at every threshold.
-    """
-
-    id: int
-    hash: bytes
-    name: str
-
-    @property
-    @abstractmethod
-    def results(self) -> Results: ...
-
-    @results.setter
-    @abstractmethod
-    def results(self, results: Results) -> None: ...
-
-    @property
-    @abstractmethod
-    def truth(self) -> float: ...
-
-    @truth.setter
-    @abstractmethod
-    def truth(self, truth: float) -> None: ...
-
-    @property
-    @abstractmethod
-    def ancestors(self) -> dict[str, float]: ...
-
-    @property
-    @abstractmethod
-    def ancestors_cache(self) -> dict[str, float]: ...
-
-    @ancestors_cache.setter
-    @abstractmethod
-    def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None: ...
-
-
 class MatchboxDBAdapter(ABC):
     """An abstract base class for Matchbox database adapters."""
 
@@ -292,7 +240,7 @@ class MatchboxDBAdapter(ABC):
         resolution_name: str | None = None,
         threshold: int | None = None,
         limit: int = None,
-    ) -> ArrowTable: ...
+    ) -> Table: ...
 
     @abstractmethod
     def match(
@@ -323,13 +271,37 @@ class MatchboxDBAdapter(ABC):
     def get_resolution_graph(self) -> ResolutionGraph: ...
 
     @abstractmethod
-    def get_model(self, model: str) -> MatchboxModelAdapter: ...
+    def clear(self, certain: bool) -> None: ...
+
+    # Model methods
+    @abstractmethod
+    def insert_model(self, model: ModelMetadata) -> None: ...
+
+    @abstractmethod
+    def get_model(self, model: str) -> ModelMetadata: ...
+
+    @abstractmethod
+    def set_model_results(self, model: str, results: Table) -> None: ...
+
+    @abstractmethod
+    def get_model_results(self, model: str) -> Table: ...
+
+    @abstractmethod
+    def set_model_truth(self, model: str, truth: float) -> None: ...
+
+    @abstractmethod
+    def get_model_truth(self, model: str) -> float: ...
+
+    @abstractmethod
+    def get_model_ancestors(self, model: str) -> dict[str, float]: ...
+
+    @abstractmethod
+    def set_model_ancestors_cache(
+        self, model: str, ancestors_cache: dict[str, float]
+    ) -> None: ...
+
+    @abstractmethod
+    def get_model_ancestors_cache(self, model: str) -> dict[str, float]: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...
-
-    @abstractmethod
-    def insert_model(self, model: str) -> None: ...
-
-    @abstractmethod
-    def clear(self, certain: bool) -> None: ...
