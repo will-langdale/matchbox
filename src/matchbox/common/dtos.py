@@ -61,7 +61,7 @@ class UploadStatus(BaseModel):
     entity: BackendUploadType | None = None
 
     @classmethod
-    def example_400_response_body(cls) -> dict:
+    def status_400_response_schema(cls) -> dict:
         return {
             "content": {
                 "application/json": {
