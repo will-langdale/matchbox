@@ -1194,6 +1194,7 @@ dev = [
 typing = [
     { name = "boto3-stubs", extra = ["s3"] },
     { name = "polars" },
+    { name = "pyarrow-stubs" },
 ]
 
 [package.metadata]
@@ -1244,6 +1245,7 @@ dev = [
 typing = [
     { name = "boto3-stubs", extras = ["s3"], specifier = ">=1.35.99" },
     { name = "polars", specifier = ">=1.11.0" },
+    { name = "pyarrow-stubs", specifier = ">=17.16" },
 ]
 
 [[package]]
@@ -1865,6 +1867,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/05/46/2c9870f50a495c72e2b8982ae29a9b1680707ea936edc0de444cec48f875/pyarrow-19.0.0-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a22a4bc0937856263df8b94f2f2781b33dd7f876f787ed746608e06902d691a5", size = 42163133 },
     { url = "https://files.pythonhosted.org/packages/7b/2f/437922b902549228fb15814e8a26105bff2787ece466a8d886eb6699efad/pyarrow-19.0.0-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:5e8a28b918e2e878c918f6d89137386c06fe577cd08d73a6be8dafb317dc2d73", size = 40452210 },
     { url = "https://files.pythonhosted.org/packages/36/ef/1d7975053af9d106da973bac142d0d4da71b7550a3576cc3e0b3f444d21a/pyarrow-19.0.0-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:29cd86c8001a94f768f79440bf83fee23963af5e7bc68ce3a7e5f120e17edf89", size = 42077618 },
+]
+
+[[package]]
+name = "pyarrow-stubs"
+version = "17.16"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyarrow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/20/1f/cb97ce441ecf64e93f703e8d6da4cab6a086bfb422c3180dff1bab4d14bc/pyarrow_stubs-17.16.tar.gz", hash = "sha256:ab74652db59855a09d5de7009f57d079f4fb318650ff767ec91841f3d2fa550c", size = 83462 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/99/3944ec099bb60cc11bf138dec98d1d42a3dc3f6afda42896b09461e0efb7/pyarrow_stubs-17.16-py3-none-any.whl", hash = "sha256:76eebeb2433fe93754c74a252e976b4e76a182f8f054748872aa3a98d347621d", size = 79881 },
 ]
 
 [[package]]
