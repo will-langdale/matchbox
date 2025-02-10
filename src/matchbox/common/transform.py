@@ -96,28 +96,28 @@ def graph_results(
     """Convert probability table to graph representation.
 
     Args:
-        probabilities: PyArrow table with 'left', 'right' columns
+        probabilities: PyArrow table with 'left_id', 'right_id' columns
         all_nodes: superset of node identities figuring in probabilities table.
             Used to optionally add isolated nodes to the graph.
 
     Returns:
         A tuple containing:
         - Rustwork directed graph
-        - A list mapping the 'left' probabilities column to node indices in the graph
-        - A list mapping the 'right' probabilities column to node indices in the graph
+        - A list mapping the 'left_id' probabilities to node indices in the graph
+        - A list mapping the 'right_id' probabilities to node indices in the graph
     """
     # Create index to use in graph
     unique = pc.unique(
         pa.concat_arrays(
             [
-                probabilities["left"].combine_chunks(),
-                probabilities["right"].combine_chunks(),
+                probabilities["left_id"].combine_chunks(),
+                probabilities["right_id"].combine_chunks(),
             ]
         )
     )
 
-    left_indices = pc.index_in(probabilities["left"], unique).to_numpy()
-    right_indices = pc.index_in(probabilities["right"], unique).to_numpy()
+    left_indices = pc.index_in(probabilities["left_id"], unique).to_numpy()
+    right_indices = pc.index_in(probabilities["right_id"], unique).to_numpy()
 
     # Create and process graph
     n_nodes = len(unique)
@@ -139,7 +139,7 @@ def graph_results(
 def attach_components_to_probabilities(probabilities: pa.Table) -> pa.Table:
     """Takes an Arrow table of probabilities and adds a component column.
 
-    Expects an Arrow table of column, left, right, probability.
+    Expects an Arrow table of column left_id, right_id, probability.
 
     Returns a table with an additional column, component.
     """
@@ -239,7 +239,7 @@ def component_to_hierarchy(
     for batch in table.to_batches():
         d = batch.to_pydict()
         for left, right, p in zip(
-            d["left"], d["right"], d["probability"], strict=False
+            d["left_id"], d["right_id"], d["probability"], strict=False
         ):
             table_by_p[p].append([left, right])
 

@@ -63,8 +63,8 @@ def test_attach_components_to_probabilities(parameters: dict[str, Any]):
 def test_empty_attach_components_to_probabilities():
     probabilities = pa.table(
         {
-            "left": [],
-            "right": [],
+            "left_id": [],
+            "right_id": [],
             "probability": [],
         }
     )
@@ -80,8 +80,8 @@ def test_empty_attach_components_to_probabilities():
         # Test case 1: Equal probabilities
         (
             {
-                "left": ["a", "b", "c"],
-                "right": ["b", "c", "d"],
+                "left_id": ["a", "b", "c"],
+                "right_id": ["b", "c", "d"],
                 "probability": [100, 100, 100],
             },
             {
@@ -99,8 +99,8 @@ def test_empty_attach_components_to_probabilities():
         # Test case 2: Asymmetric probabilities
         (
             {
-                "left": ["w", "x", "y"],
-                "right": ["x", "y", "z"],
+                "left_id": ["w", "x", "y"],
+                "right_id": ["x", "y", "z"],
                 "probability": [90, 85, 80],
             },
             {
@@ -119,8 +119,8 @@ def test_empty_attach_components_to_probabilities():
         # Test case 3: Single two-item component
         (
             {
-                "left": ["x"],
-                "right": ["y"],
+                "left_id": ["x"],
+                "right_id": ["y"],
                 "probability": [90],
             },
             {
@@ -132,8 +132,8 @@ def test_empty_attach_components_to_probabilities():
         # at a successive threshold
         (
             {
-                "left": ["x", "y", "a"],
-                "right": ["y", "z", "b"],
+                "left_id": ["x", "y", "a"],
+                "right_id": ["y", "z", "b"],
                 "probability": [90, 90, 85],
             },
             {
@@ -158,8 +158,8 @@ def test_component_to_hierarchy(
         .cast(
             pa.schema(
                 [
-                    ("left", pa.string()),
-                    ("right", pa.string()),
+                    ("left_id", pa.string()),
+                    ("right_id", pa.string()),
                     ("probability", pa.uint8()),
                 ]
             )
@@ -210,8 +210,8 @@ def test_component_to_hierarchy(
         (
             {
                 "component": [1, 1, 1],
-                "left": ["a", "b", "c"],
-                "right": ["b", "c", "d"],
+                "left_id": ["a", "b", "c"],
+                "right_id": ["b", "c", "d"],
                 "probability": [90, 85, 80],
             },
             {
@@ -231,8 +231,8 @@ def test_component_to_hierarchy(
         (
             {
                 "component": [1, 1, 2, 2],
-                "left": ["a", "b", "x", "y"],
-                "right": ["b", "c", "y", "z"],
+                "left_id": ["a", "b", "x", "y"],
+                "right_id": ["b", "c", "y", "z"],
                 "probability": [90, 85, 95, 92],
             },
             {
@@ -260,8 +260,8 @@ def test_hierarchical_clusters(input_data, expected_hierarchy):
         schema=pa.schema(
             [
                 ("component", pa.uint64()),
-                ("left", pa.string()),
-                ("right", pa.string()),
+                ("left_id", pa.string()),
+                ("right_id", pa.string()),
                 ("probability", pa.uint8()),
             ]
         ),

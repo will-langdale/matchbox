@@ -140,7 +140,7 @@ def generate_dummy_probabilities(
         total_rows: Total number of rows to generate
 
     Returns:
-        PyArrow Table with 'left', 'right', and 'probability' columns
+        PyArrow Table with 'left_id', 'right_id', and 'probability' columns
     """
     # Validate inputs
     deduplicate = False
@@ -294,7 +294,8 @@ def generate_dummy_probabilities(
     prob_array = pa.array(probs, type=pa.uint8())
 
     return pa.table(
-        [left_array, right_array, prob_array], names=["left", "right", "probability"]
+        [left_array, right_array, prob_array],
+        names=["left_id", "right_id", "probability"],
     )
 
 

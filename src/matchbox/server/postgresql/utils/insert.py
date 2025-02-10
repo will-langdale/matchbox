@@ -405,8 +405,8 @@ def _results_to_insert_tables(
     probs_with_ccs = attach_components_to_probabilities(
         pa.table(
             {
-                "left": hm.get_hashes(results.probabilities["left_id"]),
-                "right": hm.get_hashes(results.probabilities["right_id"]),
+                "left_id": hm.get_hashes(results.probabilities["left_id"]),
+                "right_id": hm.get_hashes(results.probabilities["right_id"]),
                 "probability": results.probabilities["probability"],
             }
         )

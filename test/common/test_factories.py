@@ -6,7 +6,7 @@ import pyarrow.compute as pc
 import pytest
 from sqlalchemy import create_engine
 
-from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.dtos import ModelType
 from matchbox.common.factories.models import (
     calculate_min_max_edges,
@@ -129,8 +129,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         total_rows=total_rows,
     )
     report = verify_components(table=probabilities, all_nodes=rand_vals)
-    p_left = probabilities["left"].to_pylist()
-    p_right = probabilities["right"].to_pylist()
+    p_left = probabilities["left_id"].to_pylist()
+    p_right = probabilities["right_id"].to_pylist()
 
     assert report["num_components"] == n_components
 
@@ -198,7 +198,7 @@ def test_source_factory_default():
     source = source_factory()
 
     assert source.metrics.n_true_entities == 10
-    assert source.data.schema.equals(SCHEMA_INDEX)
+    assert source.data_hashes.schema.equals(SCHEMA_INDEX)
 
 
 def test_source_factory_metrics_match_data_basic():
@@ -470,9 +470,7 @@ def test_model_factory_default():
 
     # Check that probabilities table was generated correctly
     assert len(model.data) > 0
-    assert all(
-        col in model.data.column_names for col in ["left", "right", "probability"]
-    )
+    assert model.data.schema.equals(SCHEMA_RESULTS)
 
 
 def test_model_factory_with_custom_params():
@@ -514,8 +512,8 @@ def test_model_factory_different_types(model_type: str, should_have_right_source
 
     if model_type == ModelType.LINKER:
         # Check that left and right values are in different ranges
-        left_vals = model.data.column("left").to_pylist()
-        right_vals = model.data.column("right").to_pylist()
+        left_vals = model.data.column("left_id").to_pylist()
+        right_vals = model.data.column("right_id").to_pylist()
         assert all(lv < rv for lv, rv in zip(left_vals, right_vals, strict=False))
 
 
