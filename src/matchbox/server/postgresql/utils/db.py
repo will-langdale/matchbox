@@ -229,7 +229,6 @@ def _create_adbc_table_constraints(db_schema:str, sufix:str, conn:Connection) ->
     return True
 
 def _adbc_insert_data(clusters:pa.Table, contains:pa.Table, probabilities:pa.Table, suffix:str, alchemy_conn:Connection, resolution_id:int) -> bool:
-    # TODO: try except proper exception type from adbc
     with adbc_driver_postgresql.dbapi.connect(POSTGRESQL_URI) as conn:
         try:
             _run_query(f"CREATE TABLE clusters_{suffix} AS SELECT * FROM clusters", alchemy_conn)
