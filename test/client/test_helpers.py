@@ -7,7 +7,7 @@ import respx
 from dotenv import find_dotenv, load_dotenv
 from httpx import Response
 from pandas import DataFrame
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine
 
 from matchbox import index, match, process, query
 from matchbox.client._handler import url
@@ -15,11 +15,18 @@ from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError
+from matchbox.common.dtos import (
+    BackendRetrievableType,
+    BackendUploadType,
+    NotFoundError,
+    UploadStatus,
+)
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
+    MatchboxServerFileError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.factories.sources import source_factory
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
@@ -432,70 +439,190 @@ def test_query_404_source():
         query(sels)
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_index_default(get_backend: Mock, warehouse_engine: Engine):
-    """Test the index function with default columns."""
-    # Setup
-    mock_backend = Mock()
-    get_backend.return_value = mock_backend
-    # Mock Source methods
-    mock_source = Mock(spec=Source)
-    # Ensure each method returns the same mock object
-    mock_source.set_engine.return_value = mock_source
-    mock_source.default_columns.return_value = mock_source
-    mock_source.hash_data.return_value = "test_hash"
-    with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
-        # Execute
-        index("test.table", "id", engine=warehouse_engine)
-        # Assert
-        mock_backend.index.assert_called_once_with(mock_source, "test_hash")
-        mock_source.set_engine.assert_called_once_with(warehouse_engine)
-        mock_source.default_columns.assert_called_once()
+@respx.mock
+@patch("matchbox.client.helpers.index.Source")
+def test_index_success(MockSource: Mock):
+    """Test successful indexing flow through the API."""
+    engine = create_engine("sqlite:///:memory:")
+
+    # Mock Source
+    source = source_factory(
+        features=[{"name": "company_name", "base_generator": "company"}], engine=engine
+    )
+    mock_source_instance = source.to_mock()
+    MockSource.return_value = mock_source_instance
+
+    # Mock the initial source metadata upload
+    source_route = respx.post(url("/sources")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id",
+                status="awaiting_upload",
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+    )
+
+    # Mock the data upload
+    upload_route = respx.post(url("/upload/test-upload-id")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id", status="complete", entity=BackendUploadType.INDEX
+            ).model_dump(),
+        )
+    )
+
+    # Call the index function
+    index(
+        full_name=source.source.address.full_name,
+        db_pk=source.source.db_pk,
+        engine=engine,
+    )
+
+    # Verify the API calls
+    source_call = Source.model_validate_json(
+        source_route.calls.last.request.content.decode("utf-8")
+    )
+    assert source_call == source.source
+    assert "test-upload-id" in upload_route.calls.last.request.url.path
+    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
+    assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_index_list(get_backend: Mock, warehouse_engine: Engine):
-    """Test the index function with a list of columns."""
-    # Setup
-    mock_backend = Mock()
-    get_backend.return_value = mock_backend
-    columns = ["name", "age"]
-    # Mock Source methods
-    mock_source = Mock(spec=Source)
-    # Ensure each method returns the same mock object
-    mock_source.set_engine.return_value = mock_source
-    mock_source.hash_data.return_value = "test_hash"
-    with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
-        # Execute
-        index("test.table", "id", engine=warehouse_engine, columns=columns)
-        # Assert
-        mock_backend.index.assert_called_once_with(mock_source, "test_hash")
-        mock_source.set_engine.assert_called_once_with(warehouse_engine)
-        mock_source.default_columns.assert_not_called()
+@respx.mock
+@patch("matchbox.client.helpers.index.Source")
+@pytest.mark.parametrize(
+    "columns",
+    [
+        pytest.param(["name", "age"], id="string_columns"),
+        pytest.param(
+            [
+                {"name": "name", "alias": "person_name", "type": "TEXT"},
+                {"name": "age", "alias": "person_age", "type": "BIGINT"},
+            ],
+            id="dict_columns",
+        ),
+        pytest.param(None, id="default_columns"),
+    ],
+)
+def test_index_with_columns(
+    MockSource: Mock, columns: list[str] | list[dict[str, str]]
+):
+    """Test indexing with different column definition formats."""
+    engine = create_engine("sqlite:///:memory:")
+
+    # Create source dummy and mock
+    source = source_factory(
+        features=[
+            {"name": "name", "base_generator": "name"},
+            {"name": "age", "base_generator": "random_int"},
+        ],
+        engine=engine,
+    )
+    mock_source_instance = source.to_mock()
+    MockSource.return_value = mock_source_instance
+
+    # Mock the API endpoints
+    source_route = respx.post(url("/sources")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id",
+                status="awaiting_upload",
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+    )
+
+    upload_route = respx.post(url("/upload/test-upload-id")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id", status="complete", entity=BackendUploadType.INDEX
+            ).model_dump(),
+        )
+    )
+
+    # Call index with column definition
+    index(
+        full_name=source.source.address.full_name,
+        db_pk=source.source.db_pk,
+        engine=engine,
+        columns=columns,
+    )
+
+    # Verify API calls and source creation
+    assert source_route.called
+    source_call = Source.model_validate_json(
+        source_route.calls.last.request.content.decode("utf-8")
+    )
+    assert source_call == source.source
+    assert "test-upload-id" in upload_route.calls.last.request.url.path
+    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
+    assert b"PAR1" in upload_route.calls.last.request.content
+    mock_source_instance.set_engine.assert_called_once_with(engine)
+    if columns:
+        mock_source_instance.default_columns.assert_not_called()
+    else:
+        mock_source_instance.default_columns.assert_called_once()
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_index_dict(get_backend: Mock, warehouse_engine: Engine):
-    """Test the index function with a dictionary of columns."""
-    # Setup
-    mock_backend = Mock()
-    get_backend.return_value = mock_backend
-    columns = [
-        {"name": "name", "alias": "person_name", "type": "TEXT"},
-        {"name": "age", "alias": "person_age", "type": "BIGINT"},
-    ]
-    # Mock Source methods
-    mock_source = Mock(spec=Source)
-    # Ensure each method returns the same mock object
-    mock_source.set_engine.return_value = mock_source
-    mock_source.hash_data.return_value = "test_hash"
-    with patch("matchbox.client.helpers.index.Source", return_value=mock_source):
-        # Execute
-        index("test.table", "id", engine=warehouse_engine, columns=columns)
-        # Assert
-        mock_backend.index.assert_called_once_with(mock_source, "test_hash")
-        mock_source.set_engine.assert_called_once_with(warehouse_engine)
-        mock_source.default_columns.assert_not_called()
+@respx.mock
+@patch("matchbox.client.helpers.index.Source")
+def test_index_upload_failure(MockSource: Mock):
+    """Test handling of upload failures."""
+    engine = create_engine("sqlite:///:memory:")
+
+    # Mock Source
+    source = source_factory(
+        features=[{"name": "company_name", "base_generator": "company"}], engine=engine
+    )
+    mock_source_instance = source.to_mock()
+    MockSource.return_value = mock_source_instance
+
+    # Mock successful source creation
+    source_route = respx.post(url("/sources")).mock(
+        return_value=Response(
+            200,
+            json=UploadStatus(
+                id="test-upload-id",
+                status="awaiting_upload",
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+    )
+
+    # Mock failed upload
+    upload_route = respx.post(url("/upload/test-upload-id")).mock(
+        return_value=Response(
+            400,
+            json=UploadStatus(
+                id="test-upload-id",
+                status="failed",
+                details="Invalid schema",
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+    )
+
+    # Verify the error is propagated
+    with pytest.raises(MatchboxServerFileError):
+        index(
+            full_name=source.source.address.full_name,
+            db_pk=source.source.db_pk,
+            engine=engine,
+        )
+
+    # Verify API calls
+    source_call = Source.model_validate_json(
+        source_route.calls.last.request.content.decode("utf-8")
+    )
+    assert source_call == source.source
+    assert "test-upload-id" in upload_route.calls.last.request.url.path
+    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
+    assert b"PAR1" in upload_route.calls.last.request.content
 
 
 @respx.mock

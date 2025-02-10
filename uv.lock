@@ -567,6 +567,19 @@ wheels = [
 ]
 
 [[package]]
+name = "faker"
+version = "35.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/d9/c5bc5edaeea1a3a5da6e7f93a5c0bdd49e0740d8c4a1e7ea9515fd4da2ed/faker-35.2.0.tar.gz", hash = "sha256:28c24061780f83b45d9cb15a72b8f143b09d276c9ff52eb557744b7a89e8ba19", size = 1874908 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/db/bab82efcf241dabc93ad65cebaf0f2332cb2827b55a5d3a6ef1d52fa2c29/Faker-35.2.0-py3-none-any.whl", hash = "sha256:609abe555761ff31b0e5e16f958696e9b65c9224a7ac612ac96bfc2b8f09fe35", size = 1917786 },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.115.7"
 source = { registry = "https://pypi.org/simple" }
@@ -1160,6 +1173,7 @@ server = [
 [package.dev-dependencies]
 dev = [
     { name = "docker" },
+    { name = "faker" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
     { name = "mkdocs" },
@@ -1209,6 +1223,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "docker", specifier = ">=7.1.0" },
+    { name = "faker", specifier = ">=35.2.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "ipywidgets", specifier = ">=8.1.5" },
     { name = "mkdocs", specifier = ">=1.6.1" },

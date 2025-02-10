@@ -1,7 +1,7 @@
 from sqlalchemy import Engine
 
+from matchbox.client import _handler
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
-from matchbox.server import inject_backend
 
 
 def _process_columns(
@@ -19,15 +19,19 @@ def _process_columns(
     ]
 
 
-@inject_backend
 def index(
-    backend,
     full_name: str,
     db_pk: str,
     engine: Engine,
     columns: list[str] | list[dict[str, dict[str, str]]] | None = None,
 ) -> None:
     """Indexes data in Matchbox.
+
+    Args:
+        full_name: the full name of the source
+        db_pk: the primary key of the source
+        engine: the engine to connect to a data warehouse
+        columns: the columns to index
 
     Examples:
         ```python
@@ -41,10 +45,10 @@ def index(
             "mb.test_cl2",
             "id",
             engine=engine,
-            columns={
-                "name": {"name": "name", "alias": "person_name", "type": "TEXT"},
-                "age": {"name": "age", "alias": "person_age", "type": "BIGINT"},
-            }
+            columns=[
+                {"name": "name", "alias": "person_name", "type": "TEXT"},
+                {"name": "age", "alias": "person_age", "type": "BIGINT"},
+            ]
         )
         ```
     """
@@ -59,4 +63,4 @@ def index(
     if not columns:
         source = source.default_columns()
 
-    backend.index(source, source.hash_data())
+    _handler.index(source=source, data_hashes=source.hash_data())

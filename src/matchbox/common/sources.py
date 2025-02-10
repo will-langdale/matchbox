@@ -60,7 +60,9 @@ SerialisableBytes = Annotated[
     bytes,
     PlainValidator(b64_bytes_validator),
     PlainSerializer(lambda v: hash_to_base64(v)),
-    WithJsonSchema({"type": "string"}),
+    WithJsonSchema(
+        {"type": "string", "format": "base64", "description": "Base64 encoded bytes"}
+    ),
 ]
 
 

@@ -97,6 +97,8 @@ class MatchboxDatastoreSettings(BaseSettings):
             else:
                 raise e
 
+        return client
+
 
 class MatchboxSettings(BaseSettings):
     """Settings for the Matchbox application."""
