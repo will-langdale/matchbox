@@ -4,7 +4,14 @@ from typing import Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
-from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PlainSerializer,
+    PlainValidator,
+    WithJsonSchema,
+    model_validator,
+)
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -53,6 +60,9 @@ SerialisableBytes = Annotated[
     bytes,
     PlainValidator(b64_bytes_validator),
     PlainSerializer(lambda v: hash_to_base64(v)),
+    WithJsonSchema(
+        {"type": "string", "format": "base64", "description": "Base64 encoded bytes"}
+    ),
 ]
 
 

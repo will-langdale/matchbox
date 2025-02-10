@@ -1,11 +1,8 @@
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
-from uuid import uuid4
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 from dotenv import find_dotenv, load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -13,10 +10,12 @@ from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
     BackendRetrievableType,
+    BackendUploadType,
     CountResult,
     HealthCheck,
     ModelResultsType,
     NotFoundError,
+    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
@@ -24,7 +23,9 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.server.api.arrow import table_to_s3
+from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -46,6 +47,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
+metadata_store = MetadataStore(expiry_minutes=30)
+
 app = FastAPI(
     title="matchbox API",
     version="0.2.0",
@@ -61,63 +64,6 @@ async def http_exception_handler(request, exc):
 
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
-
-
-async def table_to_s3(
-    client: S3Client, bucket: str, file: UploadFile, expected_schema: pa.Schema
-) -> str:
-    """Upload a PyArrow Table to S3 and return the key.
-
-    Args:
-        client: The S3 client to use.
-        bucket: The S3 bucket to upload to.
-        file: The file to upload.
-        expected_schema: The schema that the file should match.
-
-    Raises:
-        MatchboxServerFileError: If the file is not a valid Parquet file or the schema
-            does not match the expected schema.
-
-    Returns:
-        The key of the uploaded file.
-    """
-    upload_id = str(uuid4())
-    key = f"{upload_id}.parquet"
-
-    try:
-        table = pq.read_table(file.file)
-
-        if not table.schema.equals(expected_schema):
-            raise MatchboxServerFileError(
-                message=(
-                    "Schema mismatch. "
-                    f"Expected:\n{expected_schema}\nGot:\n{table.schema}"
-                )
-            )
-
-        await file.seek(0)
-
-        client.put_object(Bucket=bucket, Key=key, Body=file.file)
-
-    except Exception as e:
-        if isinstance(e, MatchboxServerFileError):
-            raise
-        raise MatchboxServerFileError(message=f"Invalid Parquet file: {str(e)}") from e
-
-    return upload_id
-
-
-async def s3_to_recordbatch(
-    client: S3Client, bucket: str, key: str, batch_size: int = 1000
-) -> AsyncGenerator[pa.RecordBatch, None]:
-    """Download a PyArrow Table from S3 and stream it as RecordBatches."""
-    response = client.get_object(Bucket=bucket, Key=key)
-    buffer = pa.BufferReader(response["Body"].read())
-
-    parquet_file = pq.ParquetFile(buffer)
-
-    for batch in parquet_file.iter_batches(batch_size=batch_size):
-        yield batch
 
 
 @app.get("/health")
@@ -146,6 +92,122 @@ async def clear_backend():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
+@app.post("/sources")
+async def add_source(source: Source):
+    """Add a source to the backend."""
+    upload_id = metadata_store.cache_source(metadata=source)
+    return metadata_store.get(cache_id=upload_id).status
+
+
+@app.post(
+    "/upload/{upload_id}",
+    responses={400: UploadStatus.example_400_response_body()},
+)
+async def upload_file(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    background_tasks: BackgroundTasks,
+    upload_id: str,
+    file: UploadFile,
+) -> UploadStatus:
+    """Upload and process a file based on metadata type.
+
+    The file is uploaded to S3 and then processed in a background task.
+    Status can be checked using the /upload/{upload_id}/status endpoint.
+
+    Raises HTTP 400 if:
+    * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
+    * Upload is already being processed
+    * Uploaded data doesn't match the metadata schema
+    """
+    # Get and validate cache entry
+    source_cache = metadata_store.get(cache_id=upload_id)
+    if not source_cache:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                status="failed",
+                details=(
+                    "Upload ID not found or expired. Entries expire after 30 minutes "
+                    "of inactivity, including failed processes."
+                ),
+            ).model_dump(),
+        )
+
+    # Check if already processing
+    if source_cache.status.status != "awaiting_upload":
+        raise HTTPException(
+            status_code=400,
+            detail=source_cache.status.model_dump(),
+        )
+
+    # Upload to S3
+    client = backend.settings.datastore.get_client()
+    bucket = backend.settings.datastore.cache_bucket_name
+    key = f"{upload_id}.parquet"
+
+    try:
+        await table_to_s3(
+            client=client,
+            bucket=bucket,
+            key=key,
+            file=file,
+            expected_schema=source_cache.upload_type.schema,
+        )
+    except MatchboxServerFileError as e:
+        metadata_store.update_status(upload_id, "failed", details=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=source_cache.status.model_dump(),
+        ) from e
+
+    metadata_store.update_status(upload_id, "queued")
+
+    # Start background processing
+    background_tasks.add_task(
+        process_upload,
+        backend=backend,
+        upload_id=upload_id,
+        bucket=bucket,
+        key=key,
+        metadata_store=metadata_store,
+    )
+
+    return metadata_store.get(upload_id).status
+
+
+@app.get(
+    "/upload/{upload_id}/status",
+    responses={400: UploadStatus.example_400_response_body()},
+)
+async def get_upload_status(
+    upload_id: str,
+) -> UploadStatus:
+    """Get the status of an upload process.
+
+    Returns the current status of the upload and processing task.
+
+    Raises HTTP 400 if:
+    * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
+    """
+    source_cache = metadata_store.get(cache_id=upload_id)
+    if not source_cache:
+        raise HTTPException(
+            status_code=400,
+            detail=UploadStatus(
+                id=upload_id,
+                status="failed",
+                details=(
+                    "Upload ID not found or expired. Entries expire after 30 minutes "
+                    "of inactivity, including failed processes."
+                ),
+                entity=BackendUploadType.INDEX,
+            ).model_dump(),
+        )
+
+    return source_cache.status
+
+
 @app.get("/sources")
 async def list_sources():
     raise HTTPException(status_code=501, detail="Not implemented")
@@ -153,11 +215,6 @@ async def list_sources():
 
 @app.get("/sources/{address}")
 async def get_source(address: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
-
-
-@app.post("/sources/{hash}")
-async def add_source(hash: str):
     raise HTTPException(status_code=501, detail="Not implemented")
 
 

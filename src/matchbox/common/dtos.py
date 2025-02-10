@@ -1,6 +1,9 @@
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel
+
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 
 
 class BackendCountableType(StrEnum):
@@ -23,6 +26,18 @@ class BackendRetrievableType(StrEnum):
     RESOLUTION = "resolution"
 
 
+class BackendUploadType(StrEnum):
+    INDEX = "index"
+    RESULTS = "results"
+
+    @property
+    def schema(self):
+        return {
+            BackendUploadType.INDEX: SCHEMA_INDEX,
+            BackendUploadType.RESULTS: SCHEMA_RESULTS,
+        }[self]
+
+
 class HealthCheck(BaseModel):
     """Response model to validate and return when performing a health check."""
 
@@ -35,6 +50,51 @@ class CountResult(BaseModel):
     entities: dict[BackendCountableType, int]
 
 
+class UploadStatus(BaseModel):
+    """Response model for any file upload processes, like Source or Model results."""
+
+    id: str | None = None
+    status: Literal[
+        "ready", "awaiting_upload", "queued", "processing", "complete", "failed"
+    ]
+    details: str | None = None
+    entity: BackendUploadType | None = None
+
+    @classmethod
+    def example_400_response_body(cls) -> dict:
+        return {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "expired_id": {
+                            "summary": "Upload ID expired",
+                            "value": cls(
+                                id="example_id",
+                                status="failed",
+                                details=(
+                                    "Upload ID not found or expired. Entries expire "
+                                    "after 30 minutes of inactivity, including "
+                                    "failed processes."
+                                ),
+                                entity=BackendUploadType.INDEX,
+                            ).model_dump(),
+                        },
+                        "schema_mismatch": {
+                            "summary": "Schema validation error",
+                            "value": cls(
+                                id="example_id",
+                                status="failed",
+                                details="Schema mismatch. Expected: ... Got: ...",
+                                entity=BackendUploadType.INDEX,
+                            ).model_dump(),
+                        },
+                    },
+                    "schema": cls.model_json_schema(),
+                }
+            }
+        }
+
+
 class NotFoundError(BaseModel):
     """API error for a 404 status code"""
 
@@ -42,7 +102,7 @@ class NotFoundError(BaseModel):
     entity: BackendRetrievableType
 
     @classmethod
-    def example_response_body(cls):
+    def example_response_body(cls) -> dict:
         return {
             "content": {
                 "application/json": {
