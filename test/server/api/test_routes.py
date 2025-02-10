@@ -1,9 +1,11 @@
+import asyncio
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from unittest.mock import ANY, Mock, call, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 from fastapi.testclient import TestClient
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
@@ -191,9 +193,8 @@ def test_upload_already_processing(metadata_store: Mock, get_backend: Mock):
     assert response.json()["status"] == "processing"
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store")
-def test_upload_already_queued(metadata_store: Mock, get_backend: Mock):
+def test_upload_already_queued(metadata_store: Mock):
     """Test attempting to upload when status is already queued."""
     # Setup store with a queued entry
     store = MetadataStore()
@@ -256,9 +257,8 @@ def test_source_upload_wrong_schema(
     mock_add_task.assert_not_called()  # Background task should not be queued
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store")
-def test_status_check_not_found(metadata_store: Mock, get_backend: Mock):
+def test_status_check_not_found(metadata_store: Mock):
     """Test checking status for non-existent upload ID."""
     metadata_store.get.return_value = None
 
@@ -267,6 +267,77 @@ def test_status_check_not_found(metadata_store: Mock, get_backend: Mock):
     assert response.status_code == 400
     assert response.json()["status"] == "failed"
     assert "not found or expired" in response.json()["details"].lower()
+
+
+@pytest.mark.asyncio
+@patch("matchbox.server.base.BackendManager.get_backend")
+async def test_complete_upload_process(get_backend: Mock, s3: S3Client):
+    """Test the complete upload process from source creation through processing."""
+    # Setup the backend
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.index = Mock(return_value=None)
+    get_backend.return_value = mock_backend
+
+    # Create test bucket
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Create test data
+    dummy_source = source_factory()
+
+    # Step 1: Add source
+    response = client.post("/sources", json=dummy_source.source.model_dump())
+    assert response.status_code == 200
+    upload_id = response.json()["id"]
+    assert response.json()["status"] == "awaiting_upload"
+
+    # Step 2: Upload file with real background tasks
+    response = client.post(
+        f"/upload/{upload_id}",
+        files={
+            "file": (
+                "hashes.parquet",
+                table_to_buffer(dummy_source.data_hashes),
+                "application/octet-stream",
+            ),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+
+    # Step 3: Poll status until complete or timeout
+    max_attempts = 10
+    current_attempt = 0
+    while current_attempt < max_attempts:
+        response = client.get(f"/upload/{upload_id}/status")
+        assert response.status_code == 200
+
+        status = response.json()["status"]
+        if status == "complete":
+            break
+        elif status == "failed":
+            pytest.fail(f"Upload failed: {response.json().get('details')}")
+        elif status in ["processing", "queued"]:
+            await asyncio.sleep(0.1)  # Small delay between polls
+        else:
+            pytest.fail(f"Unexpected status: {status}")
+
+        current_attempt += 1
+
+    assert current_attempt < max_attempts, (
+        "Timed out waiting for processing to complete"
+    )
+    assert status == "complete"
+
+    # Verify backend.index was called with correct arguments
+    mock_backend.index.assert_called_once()
+    call_args = mock_backend.index.call_args
+    assert call_args[1]["source"] == dummy_source.source  # Check source matches
+    assert call_args[1]["data_hashes"].equals(dummy_source.data_hashes)  # Check data
 
 
 # def test_list_sources():

@@ -298,7 +298,7 @@ async def test_heartbeat_with_expiry(mock_datetime: Mock):
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_handles_removed_entry():
+async def test_heartbeat_errors_on_removed_entry():
     """Test heartbeat behavior when entry is removed during processing."""
     store = MetadataStore()
     source = source_factory().source

@@ -96,9 +96,7 @@ async def clear_backend():
 async def add_source(source: Source):
     """Add a source to the backend."""
     upload_id = metadata_store.cache_source(metadata=source)
-    return UploadStatus(
-        id=upload_id, status="awaiting_upload", entity=BackendUploadType.INDEX
-    )
+    return metadata_store.get(cache_id=upload_id).status
 
 
 @app.post(
