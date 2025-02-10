@@ -6,7 +6,7 @@ from pathlib import Path
 import pyarrow as pa
 from rich.logging import RichHandler
 
-from matchbox.common.factories.results import generate_dummy_probabilities
+from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import hash_data, hash_values
 from matchbox.common.transform import (
     attach_components_to_probabilities,

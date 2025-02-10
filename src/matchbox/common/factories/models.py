@@ -1,11 +1,14 @@
 from collections import Counter
 from textwrap import dedent
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pyarrow as pa
 import rustworkx as rx
+from faker import Faker
+from pydantic import BaseModel, ConfigDict
 
+from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.transform import graph_results
 
 
@@ -123,7 +126,8 @@ def generate_dummy_probabilities(
     right_values: list[int] | None,
     prob_range: tuple[float, float],
     num_components: int,
-    total_rows: int,
+    total_rows: int | None = None,
+    seed: int = 42,
 ) -> pa.Table:
     """Generate dummy Arrow probabilities data with guaranteed isolated components.
 
@@ -158,9 +162,11 @@ def generate_dummy_probabilities(
 
     mode = "dedupe" if deduplicate else "link"
 
-    if total_rows == 0:
+    if total_rows is None:
+        total_rows = min_possible_edges
+    elif total_rows == 0:
         raise ValueError("At least one edge must be generated")
-    if total_rows < min_possible_edges:
+    elif total_rows < min_possible_edges:
         raise ValueError(
             dedent(f"""
             Cannot generate {total_rows:,} {mode} edges with {num_components:,}
@@ -170,7 +176,7 @@ def generate_dummy_probabilities(
             or increase the total edges requested.
             """)
         )
-    if total_rows > max_possible_edges:
+    elif total_rows > max_possible_edges:
         raise ValueError(
             dedent(f"""
             Cannot generate {total_rows:,} {mode} edges with {num_components:,}
@@ -182,6 +188,9 @@ def generate_dummy_probabilities(
         )
 
     n_extra_edges = total_rows - min_possible_edges
+
+    # Create seeded random number generator
+    rng = np.random.default_rng(seed=seed)
 
     # Convert probability range to integers (60-80 for 0.60-0.80)
     prob_min = int(prob_range[0] * 100)
@@ -260,16 +269,14 @@ def generate_dummy_probabilities(
                 edges_required = max_new_edges
                 n_extra_edges -= max_new_edges
 
-            extra_edges_idx = np.random.choice(
+            extra_edges_idx = rng.choice(
                 len(all_possible_edges), size=edges_required, replace=False
             )
             extra_edges = [
                 e for i, e in enumerate(all_possible_edges) if i in extra_edges_idx
             ]
             component_edges += extra_edges
-        random_probs = np.random.randint(
-            prob_min, prob_max + 1, size=len(component_edges)
-        )
+        random_probs = rng.integers(prob_min, prob_max + 1, size=len(component_edges))
 
         component_edges = [
             (le, ri, pr)
@@ -288,4 +295,75 @@ def generate_dummy_probabilities(
 
     return pa.table(
         [left_array, right_array, prob_array], names=["left", "right", "probability"]
+    )
+
+
+class ModelMetrics(BaseModel):
+    """Metrics for a generated model."""
+
+    n_true_entities: int
+
+
+class ModelDummy(BaseModel):
+    """Complete representation of a generated dummy Model."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    model: ModelMetadata
+    data: pa.Table
+    metrics: ModelMetrics
+
+
+def model_factory(
+    name: str | None = None,
+    description: str | None = None,
+    type: Literal["deduper", "linker"] | None = None,
+    n_true_entities: int = 10,
+    prob_range: tuple[float, float] = (0.8, 1.0),
+    seed: int = 42,
+) -> ModelDummy:
+    """Generate a complete dummy model.
+
+    Args:
+        name: Name of the model
+        description: Description of the model
+        type: Type of the model, one of 'deduper' or 'linker'
+        n_true_entities: Number of true entities to generate
+        prob_range: Range of probabilities to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        SourceModel: A dummy model with generated data
+    """
+    generator = Faker()
+    generator.seed_instance(seed)
+
+    type = ModelType(type.lower() if type else "deduper")
+
+    model = ModelMetadata(
+        name=name or generator.word(),
+        description=description or generator.sentence(),
+        type=type,
+        left_source=generator.word(),
+        right_source=generator.word() if type == ModelType.LINKER else None,
+    )
+
+    left_values = range(n_true_entities)
+    right_values = None
+
+    if not type or ModelType.LINKER:
+        right_values = range(n_true_entities, n_true_entities * 2)
+
+    probabilities = generate_dummy_probabilities(
+        left_values=left_values,
+        right_values=right_values,
+        prob_range=prob_range,
+        num_components=n_true_entities,
+        seed=seed,
+    )
+
+    return ModelDummy(
+        model=model,
+        data=probabilities,
+        metrics=ModelMetrics(n_true_entities=n_true_entities),
     )

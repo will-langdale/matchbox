@@ -5,11 +5,8 @@ from pandas import DataFrame
 
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
-from matchbox.client.results import (
-    ModelMetadata,
-    ModelType,
-    Results,
-)
+from matchbox.client.results import Results
+from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.server import MatchboxDBAdapter, inject_backend
 from matchbox.server.base import MatchboxModelAdapter

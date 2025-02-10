@@ -3,8 +3,9 @@ from typing import NamedTuple
 from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
-from matchbox.client.results import ModelMetadata, ModelType, Results
+from matchbox.client.results import Results
 from matchbox.common.db import sql_to_df
+from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.orm import (
     Contains,

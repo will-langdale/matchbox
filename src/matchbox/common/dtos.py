@@ -38,6 +38,23 @@ class BackendUploadType(StrEnum):
         }[self]
 
 
+class ModelType(StrEnum):
+    """Enumeration of supported model types."""
+
+    LINKER = "linker"
+    DEDUPER = "deduper"
+
+
+class ModelMetadata(BaseModel):
+    """Metadata for a model."""
+
+    name: str
+    description: str
+    type: ModelType
+    left_source: str
+    right_source: str | None = None  # Only used for linker models
+
+
 class HealthCheck(BaseModel):
     """Response model to validate and return when performing a health check."""
 

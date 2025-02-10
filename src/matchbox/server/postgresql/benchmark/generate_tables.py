@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from matchbox.common.factories.results import generate_dummy_probabilities
+from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import HASH_FUNC, hash_data, hash_values
 from matchbox.common.logging import get_console
 from matchbox.common.transform import (
