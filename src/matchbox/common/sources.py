@@ -259,16 +259,18 @@ class Source(BaseModel):
         )
 
         raw_result = sql_to_df(slct_stmt, self._engine, "arrow")
+
         grouped = raw_result.group_by("raw").aggregate([("source_pk", "list")])
-        grouped_data = grouped["raw"]
+        grouped_data = pa.compute.binary_join_element_wise(
+            grouped["raw"], self.signature.hex(), " "
+        )
         grouped_keys = grouped["source_pk_list"]
-        signature_hex = self.signature.hex()
 
         return pa.table(
             {
                 "source_pk": grouped_keys,
                 "hash": pa.array(
-                    [hash_data(d + signature_hex) for d in grouped_data.to_pylist()],
+                    [hash_data(d) for d in grouped_data.to_pylist()],
                     type=pa.binary(),
                 ),
             }
