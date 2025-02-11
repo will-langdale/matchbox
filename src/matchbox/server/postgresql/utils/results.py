@@ -1,10 +1,11 @@
 from typing import NamedTuple
 
+from pyarrow import Table
 from sqlalchemy import Engine, and_, case, func, select
 from sqlalchemy.orm import Session
 
-from matchbox.client.results import ModelMetadata, ModelType, Results
 from matchbox.common.db import sql_to_df
+from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.orm import (
     Contains,
@@ -76,21 +77,8 @@ def _get_source_info(engine: Engine, resolution_id: int) -> SourceInfo:
     )
 
 
-def get_model_results(engine: Engine, resolution: Resolutions) -> Results:
-    """Recover the model's pairwise probabilities and return as Results.
-
-    For each probability this model assigned:
-    - Get its two immediate children
-    - Filter for children that aren't parents of other clusters this model scored
-    - Determine left/right by tracing ancestry to source resolutions using query helpers
-
-    Args:
-        engine: SQLAlchemy engine
-        resolution: Resolution of type model to query
-
-    Returns:
-        Results containing the original pairwise probabilities
-    """
+def get_model_metadata(engine: Engine, resolution: Resolutions) -> ModelMetadata:
+    """Get metadata for a model resolution."""
     if resolution.type != ResolutionNodeType.MODEL:
         raise ValueError("Expected resolution of type model")
 
@@ -104,86 +92,105 @@ def get_model_results(engine: Engine, resolution: Resolutions) -> Results:
             session.get(Resolutions, source_info.right) if source_info.right else None
         )
 
-        metadata = ModelMetadata(
+        return ModelMetadata(
             name=resolution.name,
             description=resolution.description or "",
             type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
-            left_source=left.name,
-            right_source=right.name if source_info.right else None,
+            left_resolution=left.name,
+            right_resolution=right.name if source_info.right else None,
         )
 
-        # First get all clusters this resolution assigned probabilities to
-        resolution_clusters = (
-            select(Probabilities.cluster)
-            .where(Probabilities.resolution == resolution.resolution_id)
-            .cte("resolution_clusters")
+
+def get_model_results(engine: Engine, resolution: Resolutions) -> Table:
+    """Recover the model's pairwise probabilities and return as a PyArrow table.
+
+    For each probability this model assigned:
+    - Get its two immediate children
+    - Filter for children that aren't parents of other clusters this model scored
+    - Determine left/right by tracing ancestry to source resolutions using query helpers
+
+    Args:
+        engine: SQLAlchemy engine
+        resolution: Resolution of type model to query
+
+    Returns:
+        Table containing the original pairwise probabilities
+    """
+    if resolution.type != ResolutionNodeType.MODEL:
+        raise ValueError("Expected resolution of type model")
+
+    source_info: SourceInfo = _get_source_info(
+        engine=engine, resolution_id=resolution.resolution_id
+    )
+
+    # First get all clusters this resolution assigned probabilities to
+    resolution_clusters = (
+        select(Probabilities.cluster)
+        .where(Probabilities.resolution == resolution.resolution_id)
+        .cte("resolution_clusters")
+    )
+
+    # Get clusters that are parents in Contains for resolution's probabilities
+    resolution_parents = (
+        select(Contains.parent)
+        .join(resolution_clusters, Contains.child == resolution_clusters.c.cluster)
+        .cte("resolution_parents")
+    )
+
+    # Get valid pairs (those with exactly 2 children)
+    # where neither child is a parent in the resolution's hierarchy
+    valid_pairs = (
+        select(Contains.parent)
+        .join(
+            Probabilities,
+            and_(
+                Probabilities.cluster == Contains.parent,
+                Probabilities.resolution == resolution.resolution_id,
+            ),
         )
+        .where(~Contains.child.in_(select(resolution_parents)))
+        .group_by(Contains.parent)
+        .having(func.count() == 2)
+        .cte("valid_pairs")
+    )
 
-        # Get clusters that are parents in Contains for resolution's probabilities
-        resolution_parents = (
-            select(Contains.parent)
-            .join(resolution_clusters, Contains.child == resolution_clusters.c.cluster)
-            .cte("resolution_parents")
+    # Join to get children and probabilities
+    pairs = (
+        select(
+            Contains.parent.label("id"),
+            func.array_agg(
+                case(
+                    (
+                        Contains.child.in_(list(source_info.left_ancestors)),
+                        Contains.child,
+                    ),
+                    (
+                        Contains.child.in_(list(source_info.right_ancestors))
+                        if source_info.right_ancestors
+                        else Contains.child.notin_(list(source_info.left_ancestors)),
+                        Contains.child,
+                    ),
+                )
+            ).label("children"),
+            func.min(Probabilities.probability).label("probability"),
         )
-
-        # Get valid pairs (those with exactly 2 children)
-        # where neither child is a parent in the resolution's hierarchy
-        valid_pairs = (
-            select(Contains.parent)
-            .join(
-                Probabilities,
-                and_(
-                    Probabilities.cluster == Contains.parent,
-                    Probabilities.resolution == resolution.resolution_id,
-                ),
-            )
-            .where(~Contains.child.in_(select(resolution_parents)))
-            .group_by(Contains.parent)
-            .having(func.count() == 2)
-            .cte("valid_pairs")
+        .join(valid_pairs, valid_pairs.c.parent == Contains.parent)
+        .join(
+            Probabilities,
+            and_(
+                Probabilities.cluster == Contains.parent,
+                Probabilities.resolution == resolution.resolution_id,
+            ),
         )
+        .group_by(Contains.parent)
+    ).cte("pairs")
 
-        # Join to get children and probabilities
-        pairs = (
-            select(
-                Contains.parent.label("id"),
-                func.array_agg(
-                    case(
-                        (
-                            Contains.child.in_(list(source_info.left_ancestors)),
-                            Contains.child,
-                        ),
-                        (
-                            Contains.child.in_(list(source_info.right_ancestors))
-                            if source_info.right_ancestors
-                            else Contains.child.notin_(
-                                list(source_info.left_ancestors)
-                            ),
-                            Contains.child,
-                        ),
-                    )
-                ).label("children"),
-                func.min(Probabilities.probability).label("probability"),
-            )
-            .join(valid_pairs, valid_pairs.c.parent == Contains.parent)
-            .join(
-                Probabilities,
-                and_(
-                    Probabilities.cluster == Contains.parent,
-                    Probabilities.resolution == resolution.resolution_id,
-                ),
-            )
-            .group_by(Contains.parent)
-        ).cte("pairs")
+    # Final select to properly split out left and right
+    final_select = select(
+        pairs.c.id,
+        pairs.c.children[1].label("left_id"),
+        pairs.c.children[2].label("right_id"),
+        pairs.c.probability,
+    )
 
-        # Final select to properly split out left and right
-        final_select = select(
-            pairs.c.id,
-            pairs.c.children[1].label("left_id"),
-            pairs.c.children[2].label("right_id"),
-            pairs.c.probability,
-        )
-
-        df = sql_to_df(stmt=final_select, engine=engine, return_type="arrow")
-
-        return Results(probabilities=df, metadata=metadata)
+    return sql_to_df(stmt=final_select, engine=engine, return_type="arrow")

@@ -6,9 +6,12 @@ import pyarrow.compute as pc
 import pytest
 from sqlalchemy import create_engine
 
-from matchbox.common.factories.results import (
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+from matchbox.common.dtos import ModelType
+from matchbox.common.factories.models import (
     calculate_min_max_edges,
     generate_dummy_probabilities,
+    model_factory,
     verify_components,
 )
 from matchbox.common.factories.sources import (
@@ -126,8 +129,8 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         total_rows=total_rows,
     )
     report = verify_components(table=probabilities, all_nodes=rand_vals)
-    p_left = probabilities["left"].to_pylist()
-    p_right = probabilities["right"].to_pylist()
+    p_left = probabilities["left_id"].to_pylist()
+    p_right = probabilities["right_id"].to_pylist()
 
     assert report["num_components"] == n_components
 
@@ -195,6 +198,7 @@ def test_source_factory_default():
     source = source_factory()
 
     assert source.metrics.n_true_entities == 10
+    assert source.data_hashes.schema.equals(SCHEMA_INDEX)
 
 
 def test_source_factory_metrics_match_data_basic():
@@ -454,3 +458,87 @@ def test_source_factory_mock_properties():
     assert dump["columns"] == [
         {"name": f.name, "alias": f.name, "type": None} for f in features
     ]
+
+
+def test_model_factory_default():
+    """Test that model_factory generates a dummy model with default parameters."""
+    model = model_factory()
+
+    assert model.metrics.n_true_entities == 10
+    assert model.model.type == ModelType.DEDUPER
+    assert model.model.right_resolution is None
+
+    # Check that probabilities table was generated correctly
+    assert len(model.data) > 0
+    assert model.data.schema.equals(SCHEMA_RESULTS)
+
+
+def test_model_factory_with_custom_params():
+    """Test model_factory with custom parameters."""
+    name = "test_model"
+    description = "test description"
+    n_true_entities = 5
+    prob_range = (0.9, 1.0)
+
+    model = model_factory(
+        name=name,
+        description=description,
+        n_true_entities=n_true_entities,
+        prob_range=prob_range,
+    )
+
+    assert model.model.name == name
+    assert model.model.description == description
+    assert model.metrics.n_true_entities == n_true_entities
+
+    # Check probability range
+    probs = model.data.column("probability").to_pylist()
+    assert all(90 <= p <= 100 for p in probs)
+
+
+@pytest.mark.parametrize(
+    ("model_type"),
+    [
+        pytest.param("deduper", id="deduper"),
+        pytest.param("linker", id="linker"),
+    ],
+)
+def test_model_factory_different_types(model_type: str):
+    """Test model_factory handles different model types correctly."""
+    model = model_factory(model_type=model_type)
+
+    assert model.model.type == model_type
+
+    if model_type == ModelType.LINKER:
+        assert model.model.right_resolution is not None
+
+        # Check that left and right values are in different ranges
+        left_vals = model.data.column("left_id").to_pylist()
+        right_vals = model.data.column("right_id").to_pylist()
+        left_min, left_max = min(left_vals), max(left_vals)
+        right_min, right_max = min(right_vals), max(right_vals)
+        assert (left_min < left_max < right_min < right_max) or (
+            right_min < right_max < left_min < left_max
+        )
+
+
+@pytest.mark.parametrize(
+    ("seed1", "seed2", "should_be_equal"),
+    [
+        pytest.param(42, 42, True, id="same_seeds"),
+        pytest.param(1, 2, False, id="different_seeds"),
+    ],
+)
+def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bool):
+    """Test that model_factory handles seeds correctly for reproducibility."""
+    model1 = model_factory(seed=seed1)
+    model2 = model_factory(seed=seed2)
+
+    if should_be_equal:
+        assert model1.model.name == model2.model.name
+        assert model1.model.description == model2.model.description
+        assert model1.data.equals(model2.data)
+    else:
+        assert model1.model.name != model2.model.name
+        assert model1.model.description != model2.model.description
+        assert not model1.data.equals(model2.data)

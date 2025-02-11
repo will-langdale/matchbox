@@ -99,7 +99,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                     model_class=fx_deduper.cls,
                     model_settings=deduper_settings,
                     left_data=df,
-                    left_source=fx_data.source,
+                    left_resolution=fx_data.source,
                 )
 
                 results = model.run()
@@ -167,9 +167,9 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                     model_class=fx_linker.cls,
                     model_settings=linker_settings,
                     left_data=df_l,
-                    left_source=fx_data.source_l,
+                    left_resolution=fx_data.source_l,
                     right_data=df_r,
-                    right_source=fx_data.source_r,
+                    right_resolution=fx_data.source_r,
                 )
 
                 results = model.run()
