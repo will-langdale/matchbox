@@ -75,7 +75,7 @@ def test_dedupers(
         model_class=fx_deduper.cls,
         model_settings=deduper_settings,
         left_data=df_renamed if fx_deduper.rename_fields else df,
-        left_source=fx_data.source,
+        left_resolution=fx_data.source,
     )
 
     results = model.run()
@@ -110,10 +110,10 @@ def test_dedupers(
 
     results.to_matchbox(backend=matchbox_postgres)
 
-    model = matchbox_postgres.get_model(model=deduper_name)
-    assert model.results.probabilities.shape[0] == fx_data.tgt_prob_n
+    retrieved_results = matchbox_postgres.get_model_results(model=deduper_name)
+    assert retrieved_results.shape[0] == fx_data.tgt_prob_n
 
-    model.truth = 0.0
+    matchbox_postgres.set_model_truth(model=deduper_name, truth=0.0)
 
     clusters = query(
         select,

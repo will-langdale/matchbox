@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
-from matchbox.client.results import Results
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_values
@@ -379,9 +378,9 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
 
 
 def _results_to_insert_tables(
-    resolution: Resolutions, results: Results, engine: Engine
+    resolution: Resolutions, probabilities: pa.Table, engine: Engine
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
-    """Takes Results and returns three Arrow tables that can be inserted exactly.
+    """Takes probabilities and returns three Arrow tables that can be inserted exactly.
 
     Returns:
         A tuple containing:
@@ -405,9 +404,9 @@ def _results_to_insert_tables(
     probs_with_ccs = attach_components_to_probabilities(
         pa.table(
             {
-                "left": hm.get_hashes(results.probabilities["left_id"]),
-                "right": hm.get_hashes(results.probabilities["right_id"]),
-                "probability": results.probabilities["probability"],
+                "left_id": hm.get_hashes(probabilities["left_id"]),
+                "right_id": hm.get_hashes(probabilities["right_id"]),
+                "probability": probabilities["probability"],
             }
         )
     )
@@ -463,10 +462,10 @@ def _results_to_insert_tables(
 def insert_results(
     resolution: Resolutions,
     engine: Engine,
-    results: Results,
+    results: pa.Table,
     batch_size: int,
 ) -> None:
-    """Writes a Results object to Matchbox.
+    """Writes a results table to Matchbox.
 
     The PostgreSQL backend stores clusters in a hierarchical structure, where
     each component references its parent component at a higher threshold.
@@ -479,7 +478,7 @@ def insert_results(
     Args:
         resolution: Resolution of type model to associate results with
         engine: SQLAlchemy engine instance
-        results: A results object
+        results: A PyArrow results table with left_id, right_id, probability
         batch_size: Number of records to insert in each batch
 
     Raises:
@@ -490,7 +489,7 @@ def insert_results(
     )
 
     clusters, contains, probabilities = _results_to_insert_tables(
-        resolution=resolution, results=results, engine=engine
+        resolution=resolution, probabilities=results, engine=engine
     )
 
     with Session(engine) as session:

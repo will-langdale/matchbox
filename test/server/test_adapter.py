@@ -8,7 +8,7 @@ from pandas import DataFrame
 from sqlalchemy import Engine
 
 from matchbox.client.helpers.selector import match, query, select
-from matchbox.client.results import Results
+from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxResolutionNotFoundError,
@@ -17,7 +17,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
-from matchbox.server.base import MatchboxDBAdapter, MatchboxModelAdapter
+from matchbox.server.base import MatchboxDBAdapter
 
 from ..fixtures.db import SetupDatabaseCallable
 from ..fixtures.models import (
@@ -68,18 +68,6 @@ class TestMatchboxBackend:
         assert isinstance(self.backend.creates.count(), int)
         assert isinstance(self.backend.merges.count(), int)
         assert isinstance(self.backend.proposes.count(), int)
-
-    def test_model_properties(self):
-        """Test that model properties obey their protocol restrictions."""
-        self.setup_database("dedupe")
-        naive_crn = self.backend.get_model(model="naive_test.crn")
-        assert naive_crn.id
-        assert naive_crn.hash
-        assert naive_crn.name
-        assert naive_crn.results
-        assert isinstance(naive_crn.truth, float)  # otherwise we assert 0.0
-        assert naive_crn.ancestors
-        assert isinstance(naive_crn.ancestors_cache, dict)  # otherwise we assert {}
 
     def test_validate_ids(self):
         """Test validating data IDs."""
@@ -193,7 +181,7 @@ class TestMatchboxBackend:
         self.setup_database("dedupe")
 
         model = self.backend.get_model(model="naive_test.crn")
-        assert isinstance(model, MatchboxModelAdapter)
+        assert isinstance(model, ModelMetadata)
 
         with pytest.raises(MatchboxResolutionNotFoundError):
             self.backend.get_model(model="nonexistant")
@@ -259,94 +247,103 @@ class TestMatchboxBackend:
         models_count = self.backend.models.count()
 
         self.backend.insert_model(
-            "dedupe_1", left=crn.alias, description="Test deduper 1"
+            model=ModelMetadata(
+                name="dedupe_1",
+                description="Test deduper 1",
+                type=ModelType.DEDUPER,
+                left_resolution=crn.alias,
+            )
         )
         self.backend.insert_model(
-            "dedupe_2", left=duns.alias, description="Test deduper 1"
+            model=ModelMetadata(
+                name="dedupe_2",
+                description="Test deduper 2",
+                type=ModelType.DEDUPER,
+                left_resolution=duns.alias,
+            )
         )
 
         assert self.backend.models.count() == models_count + 2
 
         # Test linker insertion
         self.backend.insert_model(
-            "link_1", left="dedupe_1", right="dedupe_2", description="Test linker 1"
+            model=ModelMetadata(
+                name="link_1",
+                description="Test linker 1",
+                type=ModelType.LINKER,
+                left_resolution="dedupe_1",
+                right_resolution="dedupe_2",
+            )
         )
 
         assert self.backend.models.count() == models_count + 3
 
         # Test model upsert
         self.backend.insert_model(
-            "link_1", left="dedupe_1", right="dedupe_2", description="Test upsert"
+            model=ModelMetadata(
+                name="link_1",
+                description="Test upsert",
+                type=ModelType.LINKER,
+                left_resolution="dedupe_1",
+                right_resolution="dedupe_2",
+            )
         )
 
         assert self.backend.models.count() == models_count + 3
 
     def test_model_results(self):
-        """Test that a model's Results can be set and retrieved."""
+        """Test that a model's results data can be set and retrieved."""
         self.setup_database("dedupe")
-        naive_crn = self.backend.get_model(model="naive_test.crn")
 
         # Retrieve
-        pre_results = naive_crn.results
+        pre_results = self.backend.get_model_results(model="naive_test.crn")
 
-        assert isinstance(pre_results, Results)
-        assert len(pre_results.probabilities) > 0
-        assert pre_results.metadata.name == "naive_test.crn"
+        assert isinstance(pre_results, pa.Table)
+        assert len(pre_results) > 0
 
-        self.backend.validate_ids(ids=pre_results.probabilities["id"].to_pylist())
-        self.backend.validate_ids(ids=pre_results.probabilities["left_id"].to_pylist())
-        self.backend.validate_ids(ids=pre_results.probabilities["right_id"].to_pylist())
+        self.backend.validate_ids(ids=pre_results["id"].to_pylist())
+        self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
+        self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
 
         # Set
-        target_row = pre_results.probabilities.to_pylist()[0]
+        target_row = pre_results.to_pylist()[0]
         target_id = target_row["id"]
         target_left_id = target_row["left_id"]
         target_right_id = target_row["right_id"]
 
-        matches_id_mask = pc.not_equal(pre_results.probabilities["id"], target_id)
-        matches_left_mask = pc.not_equal(
-            pre_results.probabilities["left_id"], target_left_id
-        )
-        matches_right_mask = pc.not_equal(
-            pre_results.probabilities["right_id"], target_right_id
-        )
+        matches_id_mask = pc.not_equal(pre_results["id"], target_id)
+        matches_left_mask = pc.not_equal(pre_results["left_id"], target_left_id)
+        matches_right_mask = pc.not_equal(pre_results["right_id"], target_right_id)
 
         combined_mask = pc.and_(
             pc.and_(matches_id_mask, matches_left_mask), matches_right_mask
         )
-        df_probabilities_truncated = pre_results.probabilities.filter(combined_mask)
+        df_probabilities_truncated = pre_results.filter(combined_mask)
 
-        results = Results(
-            probabilities=df_probabilities_truncated.select(
-                ["left_id", "right_id", "probability"]
-            ),
-            model=pre_results.model,
-            metadata=pre_results.metadata,
+        results = df_probabilities_truncated.select(
+            ["left_id", "right_id", "probability"]
         )
 
-        naive_crn.results = results
+        self.backend.set_model_results(model="naive_test.crn", results=results)
 
         # Retrieve again
-        post_results = naive_crn.results
+        post_results = self.backend.get_model_results(model="naive_test.crn")
 
         # Check difference
-        assert len(pre_results.probabilities) != len(post_results.probabilities)
-
-        # Check similarity
-        assert pre_results.metadata.name == post_results.metadata.name
+        assert len(pre_results) != len(post_results)
 
     def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""
         self.setup_database("dedupe")
-        naive_crn = self.backend.get_model(model="naive_test.crn")
+
         # Retrieve
-        pre_truth = naive_crn.truth
+        pre_truth = self.backend.get_model_truth(model="naive_test.crn")
 
         # Set
-        naive_crn.truth = 0.5
+        self.backend.set_model_truth(model="naive_test.crn", truth=0.5)
 
         # Retrieve again
-        post_truth = naive_crn.truth
+        post_truth = self.backend.get_model_truth(model="naive_test.crn")
 
         # Check difference
         assert pre_truth != post_truth
@@ -355,12 +352,12 @@ class TestMatchboxBackend:
         """Test that a model's ancestors can be retrieved."""
         self.setup_database("link")
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
-        linker = self.backend.get_model(model=linker_name)
+        linker_ancestors = self.backend.get_model_ancestors(model=linker_name)
 
-        assert isinstance(linker.ancestors, dict)
+        assert isinstance(linker_ancestors, dict)
 
         truth_found = False
-        for model, truth in linker.ancestors.items():
+        for model, truth in linker_ancestors.items():
             if isinstance(truth, float):
                 # Not all ancestors have truth values, but one must
                 truth_found = True
@@ -373,17 +370,18 @@ class TestMatchboxBackend:
         """Test that a model's ancestors cache can be set and retrieved."""
         self.setup_database("link")
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
-        linker = self.backend.get_model(model=linker_name)
 
         # Retrieve
-        pre_ancestors_cache = linker.ancestors_cache
+        pre_ancestors_cache = self.backend.get_model_ancestors_cache(model=linker_name)
 
         # Set
         updated_ancestors_cache = {k: 0.5 for k in pre_ancestors_cache.keys()}
-        linker.ancestors_cache = updated_ancestors_cache
+        self.backend.set_model_ancestors_cache(
+            model=linker_name, ancestors_cache=updated_ancestors_cache
+        )
 
         # Retrieve again
-        post_ancestors_cache = linker.ancestors_cache
+        post_ancestors_cache = self.backend.get_model_ancestors_cache(model=linker_name)
 
         # Check difference
         assert pre_ancestors_cache != post_ancestors_cache

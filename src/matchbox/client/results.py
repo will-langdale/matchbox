@@ -1,5 +1,4 @@
 import logging
-from enum import StrEnum
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
@@ -9,12 +8,13 @@ from dotenv import find_dotenv, load_dotenv
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from matchbox.common.dtos import ModelMetadata
 from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
 from matchbox.server.base import MatchboxDBAdapter, inject_backend
 
 if TYPE_CHECKING:
-    from matchbox.client.models.models import Model, ModelMetadata
+    from matchbox.client.models.models import Model
 else:
     Model = Any
 
@@ -26,23 +26,6 @@ logic_logger = logging.getLogger("mb_logic")
 
 dotenv_path = find_dotenv(usecwd=True)
 load_dotenv(dotenv_path)
-
-
-class ModelType(StrEnum):
-    """Enumeration of supported model types."""
-
-    LINKER = "linker"
-    DEDUPER = "deduper"
-
-
-class ModelMetadata(BaseModel):
-    """Metadata for a model."""
-
-    name: str
-    description: str
-    type: ModelType
-    left_source: str
-    right_source: str | None = None  # Only used for linker models
 
 
 def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:
@@ -176,8 +159,8 @@ class Results(BaseModel):
         df = (
             self.probabilities.to_pandas(types_mapper=ArrowDtype)
             .assign(
-                left=self.model.metadata.left_source,
-                right=self.model.metadata.right_source,
+                left=self.model.metadata.left_resolution,
+                right=self.model.metadata.right_resolution,
                 model=self.metadata.name,
             )
             .convert_dtypes(dtype_backend="pyarrow")[

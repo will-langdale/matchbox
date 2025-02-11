@@ -10,6 +10,7 @@ from sqlalchemy import Engine, Index, MetaData, Table, func
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.graph import (
     ResolutionEdge,
     ResolutionGraph,
@@ -22,6 +23,21 @@ from matchbox.server.postgresql.orm import (
 )
 
 # Retrieval
+
+
+def resolve_model_name(model: str, engine: Engine) -> Resolutions:
+    """Resolves a model name to a Resolution object.
+
+    Args:
+        model: The name of the model to resolve.
+
+    Raises:
+        MatchboxResolutionNotFoundError: If the model doesn't exist.
+    """
+    with Session(engine) as session:
+        if resolution := session.query(Resolutions).filter_by(name=model).first():
+            return resolution
+        raise MatchboxResolutionNotFoundError(resolution_name=model)
 
 
 def get_resolution_graph(engine: Engine) -> ResolutionGraph:
