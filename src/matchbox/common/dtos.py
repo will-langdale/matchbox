@@ -78,7 +78,7 @@ class UploadStatus(BaseModel):
     entity: BackendUploadType | None = None
 
     @classmethod
-    def status_400_response_schema(cls) -> dict:
+    def status_400_examples(cls) -> dict:
         return {
             "content": {
                 "application/json": {
@@ -106,7 +106,6 @@ class UploadStatus(BaseModel):
                             ).model_dump(),
                         },
                     },
-                    "schema": cls.model_json_schema(),
                 }
             }
         }
@@ -117,16 +116,3 @@ class NotFoundError(BaseModel):
 
     details: str
     entity: BackendRetrievableType
-
-    @classmethod
-    def response_schema(cls) -> dict:
-        return {
-            "content": {
-                "application/json": {
-                    "example": cls(
-                        details="details", entity=BackendRetrievableType.SOURCE
-                    ).model_dump(),
-                    "schema": cls.model_json_schema(),
-                }
-            }
-        }
