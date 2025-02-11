@@ -517,8 +517,8 @@ def test_model_factory_different_types(model_type: str):
         right_vals = model.data.column("right_id").to_pylist()
         left_min, left_max = min(left_vals), max(left_vals)
         right_min, right_max = min(right_vals), max(right_vals)
-        assert (left_min < left_max <= right_min < right_max) or (
-            right_min < right_max <= left_min < left_max
+        assert (left_min < left_max < right_min < right_max) or (
+            right_min < right_max < left_min < left_max
         )
 
 
