@@ -159,8 +159,8 @@ class Results(BaseModel):
         df = (
             self.probabilities.to_pandas(types_mapper=ArrowDtype)
             .assign(
-                left=self.model.metadata.left_source,
-                right=self.model.metadata.right_source,
+                left=self.model.metadata.left_resolution,
+                right=self.model.metadata.right_resolution,
                 model=self.metadata.name,
             )
             .convert_dtypes(dtype_backend="pyarrow")[

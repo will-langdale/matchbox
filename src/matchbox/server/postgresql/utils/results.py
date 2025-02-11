@@ -96,8 +96,8 @@ def get_model_metadata(engine: Engine, resolution: Resolutions) -> ModelMetadata
             name=resolution.name,
             description=resolution.description or "",
             type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,
-            left_source=left.name,
-            right_source=right.name if source_info.right else None,
+            left_resolution=left.name,
+            right_resolution=right.name if source_info.right else None,
         )
 
 

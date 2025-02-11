@@ -51,8 +51,8 @@ class ModelMetadata(BaseModel):
     name: str
     description: str
     type: ModelType
-    left_source: str
-    right_source: str | None = None  # Only used for linker models
+    left_resolution: str
+    right_resolution: str | None = None  # Only used for linker models
 
 
 class HealthCheck(BaseModel):

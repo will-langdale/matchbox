@@ -318,7 +318,7 @@ class ModelDummy(BaseModel):
 def model_factory(
     name: str | None = None,
     description: str | None = None,
-    type: Literal["deduper", "linker"] | None = None,
+    model_type: Literal["deduper", "linker"] | None = None,
     n_true_entities: int = 10,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
@@ -339,20 +339,20 @@ def model_factory(
     generator = Faker()
     generator.seed_instance(seed)
 
-    type = ModelType(type.lower() if type else "deduper")
+    model_type = ModelType(model_type.lower() if model_type else "deduper")
 
     model = ModelMetadata(
         name=name or generator.word(),
         description=description or generator.sentence(),
-        type=type,
-        left_source=generator.word(),
-        right_source=generator.word() if type == ModelType.LINKER else None,
+        type=model_type,
+        left_resolution=generator.word(),
+        right_resolution=generator.word() if model_type == ModelType.LINKER else None,
     )
 
     left_values = range(n_true_entities)
     right_values = None
 
-    if not type or ModelType.LINKER:
+    if model.type == ModelType.LINKER:
         right_values = range(n_true_entities, n_true_entities * 2)
 
     probabilities = generate_dummy_probabilities(

@@ -109,9 +109,9 @@ def make_model(
     model_class: type[Linker] | type[Deduper],
     model_settings: dict[str, Any],
     left_data: DataFrame,
-    left_source: str,
+    left_resolution: str,
     right_data: DataFrame | None = None,
-    right_source: str | None = None,
+    right_resolution: str | None = None,
 ) -> Model:
     """Create a unified model instance for either linking or deduping operations.
 
@@ -121,9 +121,9 @@ def make_model(
         model_class: Either Linker or Deduper class
         model_settings: Configuration settings for the model
         left_data: Primary dataset
-        left_source: Source identifier for the primary dataset
-        right_data: Secondary dataset (only for linking)
-        right_source: Source identifier for secondary dataset (only for linking)
+        left_resolution: Resolution name for primary model or dataset
+        right_data: Secondary dataset (linking only)
+        right_resolution: Resolution name for secondary model or dataset (linking only)
 
     Returns:
         Model: Configured model instance ready for execution
@@ -132,8 +132,10 @@ def make_model(
         ModelType.LINKER if issubclass(model_class, Linker) else ModelType.DEDUPER
     )
 
-    if model_type == ModelType.LINKER and (right_data is None or right_source is None):
-        raise ValueError("Linking requires both right_data and right_source")
+    if model_type == ModelType.LINKER and (
+        right_data is None or right_resolution is None
+    ):
+        raise ValueError("Linking requires both right_data and right_resolution")
 
     model_instance = model_class.from_settings(**model_settings)
 
@@ -146,8 +148,8 @@ def make_model(
         name=model_name,
         description=description,
         type=model_type.value,
-        left_source=left_source,
-        right_source=right_source,
+        left_resolution=left_resolution,
+        right_resolution=right_resolution,
     )
 
     return Model(

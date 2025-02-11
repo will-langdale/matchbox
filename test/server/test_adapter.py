@@ -251,7 +251,7 @@ class TestMatchboxBackend:
                 name="dedupe_1",
                 description="Test deduper 1",
                 type=ModelType.DEDUPER,
-                left_source=crn.alias,
+                left_resolution=crn.alias,
             )
         )
         self.backend.insert_model(
@@ -259,7 +259,7 @@ class TestMatchboxBackend:
                 name="dedupe_2",
                 description="Test deduper 2",
                 type=ModelType.DEDUPER,
-                left_source=duns.alias,
+                left_resolution=duns.alias,
             )
         )
 
@@ -271,8 +271,8 @@ class TestMatchboxBackend:
                 name="link_1",
                 description="Test linker 1",
                 type=ModelType.LINKER,
-                left_source="dedupe_1",
-                right_source="dedupe_2",
+                left_resolution="dedupe_1",
+                right_resolution="dedupe_2",
             )
         )
 
@@ -284,8 +284,8 @@ class TestMatchboxBackend:
                 name="link_1",
                 description="Test upsert",
                 type=ModelType.LINKER,
-                left_source="dedupe_1",
-                right_source="dedupe_2",
+                left_resolution="dedupe_1",
+                right_resolution="dedupe_2",
             )
         )
 

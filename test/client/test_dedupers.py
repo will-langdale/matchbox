@@ -75,7 +75,7 @@ def test_dedupers(
         model_class=fx_deduper.cls,
         model_settings=deduper_settings,
         left_data=df_renamed if fx_deduper.rename_fields else df,
-        left_source=fx_data.source,
+        left_resolution=fx_data.source,
     )
 
     results = model.run()

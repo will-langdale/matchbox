@@ -372,23 +372,25 @@ class MatchboxPostgres(MatchboxDBAdapter):
         with Session(MBDB.get_engine()) as session:
             left_resolution = (
                 session.query(Resolutions)
-                .filter(Resolutions.name == model.left_source)
+                .filter(Resolutions.name == model.left_resolution)
                 .first()
             )
             if not left_resolution:
-                raise MatchboxResolutionNotFoundError(resolution_name=model.left_source)
+                raise MatchboxResolutionNotFoundError(
+                    resolution_name=model.left_resolution
+                )
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
             if model.type == ModelType.LINKER:
                 right_resolution = (
                     session.query(Resolutions)
-                    .filter(Resolutions.name == model.right_source)
+                    .filter(Resolutions.name == model.right_resolution)
                     .first()
                 )
                 if not right_resolution:
                     raise MatchboxResolutionNotFoundError(
-                        resolution_name=model.right_source
+                        resolution_name=model.right_resolution
                     )
 
         insert_model(
@@ -401,12 +403,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_model(self, model: str) -> ModelMetadata:
         """Get a model from the database."""
-        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return get_model_metadata(engine=MBDB.get_engine(), resolution=resolution)
 
     def set_model_results(self, model: str, results: Table) -> None:
         """Set the results for a model."""
-        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         insert_results(
             results=results,
             resolution=resolution,
@@ -416,18 +418,20 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_model_results(self, model: str) -> Table:
         """Get the results for a model."""
-        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return get_model_results(engine=MBDB.get_engine(), resolution=resolution)
 
     def set_model_truth(self, model: str, truth: float) -> None:
         """Sets the truth threshold for this model, changing the default clusters."""
-        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
-        resolution.truth = truth
-        session.commit()
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        with Session(MBDB.get_engine()) as session:
+            session.add(resolution)
+            resolution.truth = truth
+            session.commit()
 
     def get_model_truth(self, model: str) -> float:
         """Gets the current truth threshold for this model."""
-        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return resolution.truth
 
     def get_model_ancestors(self, model: str) -> dict[str, float]:
@@ -438,7 +442,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         Unlike ancestors_cache which returns cached values, this property returns
         the current truth values of all ancestor models.
         """
-        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return {
             resolution.name: resolution.truth for resolution in resolution.ancestors
         }
@@ -453,27 +457,29 @@ class MatchboxPostgres(MatchboxDBAdapter):
         Args:
             ancestors_cache: Dictionary mapping model names to their truth thresholds
         """
-        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
-        model_names = list(ancestors_cache.keys())
-        name_to_id = dict(
-            session.query(Resolutions.name, Resolutions.resolution_id)
-            .filter(Resolutions.name.in_(model_names))
-            .all()
-        )
-
-        for model_name, truth_value in ancestors_cache.items():
-            parent_id = name_to_id.get(model_name)
-            if parent_id is None:
-                raise ValueError(f"Model '{model_name}' not found in database")
-
-            session.execute(
-                ResolutionFrom.__table__.update()
-                .where(ResolutionFrom.parent == parent_id)
-                .where(ResolutionFrom.child == resolution.resolution_id)
-                .values(truth_cache=truth_value)
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        with Session(MBDB.get_engine()) as session:
+            session.add(resolution)
+            model_names = list(ancestors_cache.keys())
+            name_to_id = dict(
+                session.query(Resolutions.name, Resolutions.resolution_id)
+                .filter(Resolutions.name.in_(model_names))
+                .all()
             )
 
-        session.commit()
+            for model_name, truth_value in ancestors_cache.items():
+                parent_id = name_to_id.get(model_name)
+                if parent_id is None:
+                    raise ValueError(f"Model '{model_name}' not found in database")
+
+                session.execute(
+                    ResolutionFrom.__table__.update()
+                    .where(ResolutionFrom.parent == parent_id)
+                    .where(ResolutionFrom.child == resolution.resolution_id)
+                    .values(truth_cache=truth_value)
+                )
+
+            session.commit()
 
     def get_model_ancestors_cache(self, model: str) -> dict[str, float]:
         """Gets the cached ancestor thresholds, converting hashes to model names.
@@ -483,16 +489,19 @@ class MatchboxPostgres(MatchboxDBAdapter):
         This is required because each point of truth needs to be stable, so we choose
         when to update it, caching the ancestor's values in the model itself.
         """
-        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        with Session(MBDB.get_engine()) as session:
+            session.add(resolution)
+            query = (
+                select(Resolutions.name, ResolutionFrom.truth_cache)
+                .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
+                .where(ResolutionFrom.child == resolution.resolution_id)
+                .where(ResolutionFrom.truth_cache.isnot(None))
+            )
 
-        query = (
-            select(Resolutions.name, ResolutionFrom.truth_cache)
-            .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
-            .where(ResolutionFrom.child == resolution.resolution_id)
-            .where(ResolutionFrom.truth_cache.isnot(None))
-        )
-
-        return {name: truth_cache for name, truth_cache in session.execute(query).all()}
+            return {
+                name: truth_cache for name, truth_cache in session.execute(query).all()
+            }
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
@@ -500,26 +509,28 @@ class MatchboxPostgres(MatchboxDBAdapter):
         Args:
             certain: Whether to delete the model without confirmation.
         """
-        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
-        if certain:
-            delete_stmt = delete(Resolutions).where(
-                Resolutions.resolution_id.in_(
-                    [
-                        resolution.resolution_id,
-                        *(d.resolution_id for d in resolution.descendants),
-                    ]
+        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        with Session(MBDB.get_engine()) as session:
+            session.add(resolution)
+            if certain:
+                delete_stmt = delete(Resolutions).where(
+                    Resolutions.resolution_id.in_(
+                        [
+                            resolution.resolution_id,
+                            *(d.resolution_id for d in resolution.descendants),
+                        ]
+                    )
                 )
-            )
-            session.execute(delete_stmt)
-            session.delete(resolution)
-            session.commit()
-        else:
-            childen = resolution.descendants
-            children_names = ", ".join([r.name for r in childen])
-            raise ValueError(
-                f"This operation will delete the resolutions {children_names}, "
-                "as well as all probabilities they have created. \n\n"
-                "It won't delete validation associated with these "
-                "probabilities. \n\n"
-                "If you're sure you want to continue, rerun with certain=True"
-            )
+                session.execute(delete_stmt)
+                session.delete(resolution)
+                session.commit()
+            else:
+                childen = resolution.descendants
+                children_names = ", ".join([r.name for r in childen])
+                raise ValueError(
+                    f"This operation will delete the resolutions {children_names}, "
+                    "as well as all probabilities they have created. \n\n"
+                    "It won't delete validation associated with these "
+                    "probabilities. \n\n"
+                    "If you're sure you want to continue, rerun with certain=True"
+                )

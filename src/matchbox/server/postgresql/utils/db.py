@@ -25,8 +25,8 @@ from matchbox.server.postgresql.orm import (
 # Retrieval
 
 
-def resolve_model_name(model: str, engine: Engine) -> tuple[Resolutions, Session]:
-    """Resolves a model name to a Resolution object and session.
+def resolve_model_name(model: str, engine: Engine) -> Resolutions:
+    """Resolves a model name to a Resolution object.
 
     Args:
         model: The name of the model to resolve.
@@ -36,7 +36,7 @@ def resolve_model_name(model: str, engine: Engine) -> tuple[Resolutions, Session
     """
     with Session(engine) as session:
         if resolution := session.query(Resolutions).filter_by(name=model).first():
-            return resolution, session
+            return resolution
         raise MatchboxResolutionNotFoundError(resolution_name=model)
 
 

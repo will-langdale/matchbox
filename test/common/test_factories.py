@@ -466,7 +466,7 @@ def test_model_factory_default():
 
     assert model.metrics.n_true_entities == 10
     assert model.model.type == ModelType.DEDUPER
-    assert model.model.right_source is None
+    assert model.model.right_resolution is None
 
     # Check that probabilities table was generated correctly
     assert len(model.data) > 0
@@ -497,24 +497,29 @@ def test_model_factory_with_custom_params():
 
 
 @pytest.mark.parametrize(
-    ("model_type", "should_have_right_source"),
+    ("model_type"),
     [
-        pytest.param("deduper", False, id="deduper"),
-        pytest.param("linker", True, id="linker"),
+        pytest.param("deduper", id="deduper"),
+        pytest.param("linker", id="linker"),
     ],
 )
-def test_model_factory_different_types(model_type: str, should_have_right_source: bool):
+def test_model_factory_different_types(model_type: str):
     """Test model_factory handles different model types correctly."""
-    model = model_factory(type=model_type)
+    model = model_factory(model_type=model_type)
 
     assert model.model.type == model_type
-    assert (model.model.right_source is not None) == should_have_right_source
 
     if model_type == ModelType.LINKER:
+        assert model.model.right_resolution is not None
+
         # Check that left and right values are in different ranges
         left_vals = model.data.column("left_id").to_pylist()
         right_vals = model.data.column("right_id").to_pylist()
-        assert all(lv < rv for lv, rv in zip(left_vals, right_vals, strict=False))
+        left_min, left_max = min(left_vals), max(left_vals)
+        right_min, right_max = min(right_vals), max(right_vals)
+        assert (left_min < left_max <= right_min < right_max) or (
+            right_min < right_max <= left_min < left_max
+        )
 
 
 @pytest.mark.parametrize(
@@ -535,4 +540,5 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
         assert model1.data.equals(model2.data)
     else:
         assert model1.model.name != model2.model.name
+        assert model1.model.description != model2.model.description
         assert not model1.data.equals(model2.data)

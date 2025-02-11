@@ -108,9 +108,9 @@ def test_linkers(
         model_class=fx_linker.cls,
         model_settings=linker_settings,
         left_data=df_l_renamed if fx_linker.rename_fields else df_l,
-        left_source=fx_data.source_l,
+        left_resolution=fx_data.source_l,
         right_data=df_r_renamed if fx_linker.rename_fields else df_r,
-        right_source=fx_data.source_r,
+        right_resolution=fx_data.source_r,
     )
 
     results = model.run()
