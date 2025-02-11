@@ -164,7 +164,8 @@ def generate_dummy_probabilities(
 
     if total_rows is None:
         total_rows = min_possible_edges
-    elif total_rows == 0:
+
+    if total_rows == 0:
         raise ValueError("At least one edge must be generated")
     elif total_rows < min_possible_edges:
         raise ValueError(
@@ -349,11 +350,13 @@ def model_factory(
         right_resolution=generator.word() if model_type == ModelType.LINKER else None,
     )
 
-    left_values = range(n_true_entities)
-    right_values = None
-
     if model.type == ModelType.LINKER:
-        right_values = range(n_true_entities, n_true_entities * 2)
+        left_values = list(range(n_true_entities))
+        right_values = list(range(n_true_entities, n_true_entities * 2))
+    elif model.type == ModelType.DEDUPER:
+        values_count = n_true_entities * 2  # So there's something to dedupe
+        left_values = list(range(values_count))
+        right_values = None
 
     probabilities = generate_dummy_probabilities(
         left_values=left_values,
