@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from matchbox.common.factories.results import generate_dummy_probabilities
+from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import HASH_FUNC, hash_data, hash_values
 from matchbox.common.logging import get_console
 from matchbox.common.transform import (
@@ -230,7 +230,7 @@ def generate_result_tables(
 
     # Create a lookup table for hashes
     all_probs = pa.concat_arrays(
-        [probs["left"].combine_chunks(), probs["right"].combine_chunks()]
+        [probs["left_id"].combine_chunks(), probs["right_id"].combine_chunks()]
     )
 
     lookup = pa.table(
@@ -248,8 +248,8 @@ def generate_result_tables(
     probs_with_ccs = attach_components_to_probabilities(
         pa.table(
             {
-                "left": hm.get_hashes(probs["left"]),
-                "right": hm.get_hashes(probs["right"]),
+                "left_id": hm.get_hashes(probs["left_id"]),
+                "right_id": hm.get_hashes(probs["right_id"]),
                 "probability": probs["probability"],
             }
         )
