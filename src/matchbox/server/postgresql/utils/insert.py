@@ -478,7 +478,7 @@ def insert_results(
     Args:
         resolution: Resolution of type model to associate results with
         engine: SQLAlchemy engine instance
-        results: A PyArrow results table left_id, right_id, probability
+        results: A PyArrow results table with left_id, right_id, probability
         batch_size: Number of records to insert in each batch
 
     Raises:

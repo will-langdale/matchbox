@@ -1,5 +1,4 @@
-from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from pyarrow import Table
 from pydantic import BaseModel
@@ -24,7 +23,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import get_resolution_graph
+from matchbox.server.postgresql.utils.db import get_resolution_graph, resolve_model_name
 from matchbox.server.postgresql.utils.insert import (
     insert_dataset,
     insert_model,
@@ -108,22 +107,6 @@ class FilteredResolutions(BaseModel):
                 query = query.filter(or_(*filter_list))
 
             return query.scalar()
-
-
-def model(func: Callable[P, T]) -> Callable[P, T]:
-    """Decorator that resolves a model name to a Resolution object.
-
-    If the model doesn't exist, raises MatchboxResolutionNotFoundError.
-    """
-
-    @wraps(func)
-    def wrapper(self, model: str, *args, **kwargs) -> T:
-        with Session(MBDB.get_engine()) as session:
-            if resolution := session.query(Resolutions).filter_by(name=model).first():
-                return func(self, resolution, session, *args, **kwargs)
-            raise MatchboxResolutionNotFoundError(resolution_name=model)
-
-    return wrapper
 
 
 class MatchboxPostgres(MatchboxDBAdapter):
@@ -416,16 +399,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
             engine=MBDB.get_engine(),
         )
 
-    @model
-    def get_model(self, resolution: Resolutions, _: Session) -> ModelMetadata:
+    def get_model(self, model: str) -> ModelMetadata:
         """Get a model from the database."""
+        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
         return get_model_metadata(engine=MBDB.get_engine(), resolution=resolution)
 
-    @model
-    def set_model_results(
-        self, resolution: Resolutions, _: Session, results: Table
-    ) -> None:
+    def set_model_results(self, model: str, results: Table) -> None:
         """Set the results for a model."""
+        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
         insert_results(
             results=results,
             resolution=resolution,
@@ -433,28 +414,23 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
-    @model
-    def get_model_results(self, resolution: Resolutions, _: Session) -> Table:
+    def get_model_results(self, model: str) -> Table:
         """Get the results for a model."""
+        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
         return get_model_results(engine=MBDB.get_engine(), resolution=resolution)
 
-    @model
-    def set_model_truth(
-        self, resolution: Resolutions, session: Session, truth: float
-    ) -> None:
+    def set_model_truth(self, model: str, truth: float) -> None:
         """Sets the truth threshold for this model, changing the default clusters."""
+        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
         resolution.truth = truth
         session.commit()
 
-    @model
-    def get_model_truth(self, resolution: Resolutions, _: Session) -> float:
+    def get_model_truth(self, model: str) -> float:
         """Gets the current truth threshold for this model."""
+        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
         return resolution.truth
 
-    @model
-    def get_model_ancestors(
-        self, resolution: Resolutions, _: Session
-    ) -> dict[str, float]:
+    def get_model_ancestors(self, model: str) -> dict[str, float]:
         """Gets the current truth values of all ancestors.
 
         Returns a dict mapping model names to their current truth thresholds.
@@ -462,15 +438,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
         Unlike ancestors_cache which returns cached values, this property returns
         the current truth values of all ancestor models.
         """
+        resolution, _ = resolve_model_name(model=model, engine=MBDB.get_engine())
         return {
             resolution.name: resolution.truth for resolution in resolution.ancestors
         }
 
-    @model
     def set_model_ancestors_cache(
         self,
-        resolution: Resolutions,
-        session: Session,
+        model: str,
         ancestors_cache: dict[str, float],
     ) -> None:
         """Updates the cached ancestor thresholds.
@@ -478,6 +453,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         Args:
             ancestors_cache: Dictionary mapping model names to their truth thresholds
         """
+        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
         model_names = list(ancestors_cache.keys())
         name_to_id = dict(
             session.query(Resolutions.name, Resolutions.resolution_id)
@@ -499,10 +475,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         session.commit()
 
-    @model
-    def get_model_ancestors_cache(
-        self, resolution: Resolutions, session: Session
-    ) -> dict[str, float]:
+    def get_model_ancestors_cache(self, model: str) -> dict[str, float]:
         """Gets the cached ancestor thresholds, converting hashes to model names.
 
         Returns a dictionary mapping model names to their truth thresholds.
@@ -510,6 +483,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         This is required because each point of truth needs to be stable, so we choose
         when to update it, caching the ancestor's values in the model itself.
         """
+        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
+
         query = (
             select(Resolutions.name, ResolutionFrom.truth_cache)
             .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
@@ -519,15 +494,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         return {name: truth_cache for name, truth_cache in session.execute(query).all()}
 
-    @model
-    def delete_model(
-        self, resolution: Resolutions, session: Session, certain: bool = False
-    ) -> None:
+    def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.
 
         Args:
             certain: Whether to delete the model without confirmation.
         """
+        resolution, session = resolve_model_name(model=model, engine=MBDB.get_engine())
         if certain:
             delete_stmt = delete(Resolutions).where(
                 Resolutions.resolution_id.in_(
