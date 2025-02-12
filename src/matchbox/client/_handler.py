@@ -21,17 +21,19 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Match, Source, SourceAddress
 
-if getenv("MB__CLIENT_NO_TIMEOUTS") == "true":
-    CLIENT = httpx.Client(timeout=None)
+if timeout := getenv("MB__CLIENT__TIMEOUT"):
+    CLIENT = httpx.Client(timeout=float(timeout))
 else:
-    CLIENT = httpx.Client(timeout=5.0)
+    CLIENT = httpx.Client(timeout=None)
 
 
 def url(path: str) -> str:
     """Return path prefixed by API root, determined from environment."""
-    api_root = getenv("MB__API_ROOT")
+    api_root = getenv("MB__CLIENT__API_ROOT")
     if api_root is None:
-        raise RuntimeError("MB__API_ROOT needs to be defined in the environment")
+        raise RuntimeError(
+            "MB__CLIENT__API_ROOT needs to be defined in the environment"
+        )
 
     return api_root + path
 

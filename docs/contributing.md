@@ -52,11 +52,10 @@ docker compose up -d --wait
 
 ## Debugging
 
-We have a VSCode default debugging profile called "API debug", which allows to e.g. set breakpoints on the API when running tests. After running this profile, to redirect tests to use the debug endpoint, and disable request timeouts, add this to your `.env` file:
-```
-MB__API_ROOT=http://localhost:8080
-MB__CLIENT_NO_TIMEOUTS=true
-```
+We have a VSCode default debugging profile called "API debug", which allows to e.g. set breakpoints on the API when running tests. After running this profile, change your `.env` file  as follows:
+
+- change the `MB__CLIENT__API_ROOT` variable to redirect tests to use the debug port (8080)
+- disable time-outs by commenting out the `MB__CLIENT__TIMEOUT` variable
 
 ## Standards
 
