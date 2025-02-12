@@ -1,7 +1,8 @@
+from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 
@@ -45,6 +46,15 @@ class ModelType(StrEnum):
     DEDUPER = "deduper"
 
 
+class ModelOperationType(StrEnum):
+    """Enumeration of supported model operations."""
+
+    INSERT = "insert"
+    UPDATE_TRUTH = "update_truth"
+    UPDATE_ANCESTOR_CACHE = "update_ancestor_cache"
+    DELETE = "delete"
+
+
 class ModelMetadata(BaseModel):
     """Metadata for a model."""
 
@@ -53,6 +63,66 @@ class ModelMetadata(BaseModel):
     type: ModelType
     left_resolution: str
     right_resolution: str | None = None  # Only used for linker models
+
+
+class ModelAncestors(BaseModel):
+    """A model's ancestors and their truth values."""
+
+    ancestors: dict[str, float] = Field(
+        ...,
+        description="Mapping of model names to their truth thresholds",
+        examples=[{"model1": 0.75, "model2": 0.85}],
+    )
+
+
+class ModelOperationStatus(BaseModel):
+    """Status response for any model operation."""
+
+    success: bool
+    model_name: str
+    operation: ModelOperationType
+    details: str | None = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+    @classmethod
+    def status_500_examples(cls) -> dict:
+        return {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "unhandled": {
+                            "summary": (
+                                "Unhandled exception encountered while updating the "
+                                "model's truth value."
+                            ),
+                            "value": cls(
+                                success=False,
+                                model_name="example_model",
+                                operation=ModelOperationType.UPDATE_TRUTH,
+                            ).model_dump(),
+                        },
+                        "confirm_delete": {
+                            "summary": "Delete operation requires confirmation. ",
+                            "value": cls(
+                                success=False,
+                                model_name="example_model",
+                                operation=ModelOperationType.DELETE,
+                                details=(
+                                    "This operation will delete the resolutions "
+                                    "deduper_1, deduper_2, linker_1, "
+                                    "as well as all probabilities they have created. "
+                                    "\n\n"
+                                    "It won't delete validation associated with these "
+                                    "probabilities. \n\n"
+                                    "If you're sure you want to continue, rerun with "
+                                    "certain=True"
+                                ),
+                            ).model_dump(),
+                        },
+                    },
+                }
+            }
+        }
 
 
 class HealthCheck(BaseModel):

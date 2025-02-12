@@ -13,7 +13,10 @@ from matchbox.common.dtos import (
     BackendUploadType,
     CountResult,
     HealthCheck,
-    ModelResultsType,
+    ModelAncestors,
+    ModelMetadata,
+    ModelOperationStatus,
+    ModelOperationType,
     NotFoundError,
     UploadStatus,
 )
@@ -51,7 +54,7 @@ metadata_store = MetadataStore(expiry_minutes=30)
 
 app = FastAPI(
     title="matchbox API",
-    version="0.2.0",
+    version="0.2.1",
     lifespan=lifespan,
 )
 
@@ -77,6 +80,8 @@ async def count_backend_items(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     entity: BackendCountableType | None = None,
 ) -> CountResult:
+    """Count the number of various entities in the backend."""
+
     def get_count(e: BackendCountableType) -> int:
         return getattr(backend, str(e)).count()
 
@@ -106,6 +111,7 @@ async def get_source(
     warehouse_hash_b64: str,
     full_name: str,
 ) -> Source:
+    """Get a source from the backend."""
     address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
     try:
         return backend.get_source(address)
@@ -119,8 +125,8 @@ async def get_source(
 
 
 @app.post("/sources")
-async def add_source(source: Source):
-    """Add a source to the backend."""
+async def add_source(source: Source) -> UploadStatus:
+    """Create an upload and insert task for indexed source data."""
     upload_id = metadata_store.cache_source(metadata=source)
     return metadata_store.get(cache_id=upload_id).status
 
@@ -239,59 +245,272 @@ async def list_models():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/resolution/{name}")
-async def get_resolution(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.post("/models")
+async def insert_model(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], model: ModelMetadata
+) -> ModelOperationStatus:
+    """Insert a model into the backend."""
+    try:
+        backend.insert_model(model)
+        return ModelOperationStatus(
+            success=True,
+            model_name=model.name,
+            operation=ModelOperationType.INSERT,
+        )
+    except Exception as e:
+        return ModelOperationStatus(
+            success=False,
+            model_name=model.name,
+            operation=ModelOperationType.INSERT,
+            details=str(e),
+        )
 
 
-@app.post("/models/{name}")
-async def add_model(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/models/{name}",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_model(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
+) -> ModelMetadata:
+    """Get a model from the backend."""
+    try:
+        return backend.get_model(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
-@app.delete("/models/{name}")
-async def delete_model(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.delete(
+    "/models/{name}",
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+)
+async def delete_model(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    name: str,
+    certain: Annotated[
+        bool, Query(description="Confirm deletion of the model")
+    ] = False,
+) -> ModelOperationStatus:
+    """Delete a model from the backend."""
+    try:
+        backend.delete_model(model=name, certain=certain)
+        return ModelOperationStatus(
+            success=True,
+            model_name=name,
+            operation=ModelOperationType.DELETE,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=name,
+                operation=ModelOperationType.DELETE,
+                details=str(e),
+            ).model_dump(),
+        ) from e
 
 
-@app.get("/models/{name}/results")
-async def get_results(name: str, result_type: ModelResultsType | None):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/models/{name}/results",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_results(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
+) -> ParquetResponse:
+    """Download results for a model as a parquet file."""
+    try:
+        res = backend.get_model_results(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+    buffer = table_to_buffer(res)
+    return ParquetResponse(buffer.getvalue())
 
 
-@app.post("/models/{name}/results")
-async def set_results(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.post(
+    "/models/{name}/results",
+    responses={404: {"model": NotFoundError}},
+)
+async def set_results(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
+) -> UploadStatus:
+    """Create an upload task for model results."""
+    try:
+        metadata = backend.get_model(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+    upload_id = metadata_store.cache_model(metadata=metadata)
+    return metadata_store.get(cache_id=upload_id).status
 
 
-@app.get("/models/{name}/truth")
-async def get_truth(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/models/{name}/truth",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_truth(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
+) -> float:
+    """Get truth data for a model."""
+    try:
+        return backend.get_model_truth(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
-@app.post("/models/{name}/truth")
-async def set_truth(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.post(
+    "/models/{name}/truth",
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+)
+async def set_truth(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str, truth: float
+) -> ModelOperationStatus:
+    """Set truth data for a model."""
+    try:
+        backend.set_model_truth(model=name, truth=truth)
+        return ModelOperationStatus(
+            success=True,
+            model_name=name,
+            operation=ModelOperationType.UPDATE_TRUTH,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=name,
+                operation=ModelOperationType.UPDATE_TRUTH,
+                details=str(e),
+            ).model_dump(),
+        ) from e
 
 
-@app.get("/models/{name}/ancestors")
-async def get_ancestors(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/models/{name}/ancestors",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_ancestors(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
+) -> ModelAncestors:
+    try:
+        return backend.get_model_ancestors(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
-@app.get("/models/{name}/ancestors_cache")
-async def get_ancestors_cache(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.get(
+    "/models/{name}/ancestors_cache",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_ancestors_cache(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
+) -> ModelAncestors:
+    try:
+        return backend.get_model_ancestors_cache(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
-@app.post("/models/{name}/ancestors_cache")
-async def set_ancestors_cache(name: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
+@app.post(
+    "/models/{name}/ancestors_cache",
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+)
+async def set_ancestors_cache(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    name: str,
+    ancestors: ModelAncestors,
+):
+    try:
+        backend.set_model_ancestors_cache(model=name, ancestors_cache=ancestors)
+        return ModelOperationStatus(
+            success=True,
+            model_name=name,
+            operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=name,
+                operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+                details=str(e),
+            ).model_dump(),
+        ) from e
 
 
 @app.get(
     "/query",
-    response_class=ParquetResponse,
     responses={404: {"model": NotFoundError}},
 )
 async def query(
@@ -301,7 +520,7 @@ async def query(
     resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
-):
+) -> ParquetResponse:
     source_address = SourceAddress(
         full_name=full_name, warehouse_hash=warehouse_hash_b64
     )
