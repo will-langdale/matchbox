@@ -5,7 +5,7 @@ from pandas import DataFrame
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelAncestors, ModelMetadata, ModelType
+from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.server import MatchboxDBAdapter, inject_backend
 
@@ -64,13 +64,19 @@ class Model:
     @inject_backend
     def ancestors(self, backend: MatchboxDBAdapter) -> dict[str, float]:
         """Retrieve the ancestors of the model."""
-        return backend.get_model_ancestors(model=self.metadata.name).ancestors
+        return {
+            ancestor.name: ancestor.truth
+            for ancestor in backend.get_model_ancestors(model=self.metadata.name)
+        }
 
     @property
     @inject_backend
     def ancestors_cache(self, backend: MatchboxDBAdapter) -> dict[str, float]:
         """Retrieve the ancestors cache of the model."""
-        return backend.get_model_ancestors_cache(model=self.metadata.name).ancestors
+        return {
+            ancestor.name: ancestor.truth
+            for ancestor in backend.get_model_ancestors_cache(model=self.metadata.name)
+        }
 
     @ancestors_cache.setter
     @inject_backend
@@ -80,7 +86,9 @@ class Model:
         """Set the ancestors cache of the model."""
         backend.set_model_ancestors_cache(
             model=self.metadata.name,
-            ancestors_cache=ModelAncestors(ancestors=ancestors_cache),
+            ancestors_cache=[
+                ModelAncestor(name=k, truth=v) for k, v in ancestors_cache
+            ],
         )
 
     def run(self) -> Results:

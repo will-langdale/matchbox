@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from matchbox.common.dtos import ModelAncestors, ModelMetadata, ModelType
+from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxResolutionNotFoundError,
@@ -431,60 +431,61 @@ class MatchboxPostgres(MatchboxDBAdapter):
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return resolution.truth
 
-    def get_model_ancestors(self, model: str) -> ModelAncestors:
+    def get_model_ancestors(self, model: str) -> list[ModelAncestor]:
         """Gets the current truth values of all ancestors.
 
-        Returns a ModelAncestors mapping model names to their current truth thresholds.
+        Returns a list of ModelAncestor objects mapping model names to their current
+        truth thresholds.
 
         Unlike ancestors_cache which returns cached values, this property returns
         the current truth values of all ancestor models.
         """
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        return ModelAncestors(
-            ancestors={
-                resolution.name: resolution.truth for resolution in resolution.ancestors
-            }
-        )
+        return [
+            ModelAncestor(name=resolution.name, truth=resolution.truth)
+            for resolution in resolution.ancestors
+        ]
 
     def set_model_ancestors_cache(
         self,
         model: str,
-        ancestors_cache: ModelAncestors,
+        ancestors_cache: list[ModelAncestor],
     ) -> None:
         """Updates the cached ancestor thresholds.
 
         Args:
-            ancestors_cache: ModelAncestors mapping model names to their truth
-                thresholds
+            ancestors_cache: List of ModelAncestor objects mapping model names to
+                their truth thresholds
         """
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         with Session(MBDB.get_engine()) as session:
             session.add(resolution)
-            model_names = list(ancestors_cache.ancestors.keys())
+            ancestor_names = [ancestor.name for ancestor in ancestors_cache]
             name_to_id = dict(
                 session.query(Resolutions.name, Resolutions.resolution_id)
-                .filter(Resolutions.name.in_(model_names))
+                .filter(Resolutions.name.in_(ancestor_names))
                 .all()
             )
 
-            for model_name, truth_value in ancestors_cache.ancestors.items():
-                parent_id = name_to_id.get(model_name)
+            for ancestor in ancestors_cache:
+                parent_id = name_to_id.get(ancestor.name)
                 if parent_id is None:
-                    raise ValueError(f"Model '{model_name}' not found in database")
+                    raise ValueError(f"Model '{ancestor.name}' not found in database")
 
                 session.execute(
                     ResolutionFrom.__table__.update()
                     .where(ResolutionFrom.parent == parent_id)
                     .where(ResolutionFrom.child == resolution.resolution_id)
-                    .values(truth_cache=truth_value)
+                    .values(truth_cache=ancestor.truth)
                 )
 
             session.commit()
 
-    def get_model_ancestors_cache(self, model: str) -> ModelAncestors:
+    def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]:
         """Gets the cached ancestor thresholds, converting hashes to model names.
 
-        Returns a dictionary mapping model names to their truth thresholds.
+        Returns a list of ModelAncestor objects mapping model names to their cached
+        truth thresholds.
 
         This is required because each point of truth needs to be stable, so we choose
         when to update it, caching the ancestor's values in the model itself.
@@ -499,12 +500,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .where(ResolutionFrom.truth_cache.isnot(None))
             )
 
-            return ModelAncestors(
-                ancestors={
-                    name: truth_cache
-                    for name, truth_cache in session.execute(query).all()
-                }
-            )
+            return [
+                ModelAncestor(name=name, truth=truth)
+                for name, truth in session.execute(query).all()
+            ]
 
     def delete_model(self, model: str, certain: bool = False) -> None:
         """Delete a model from the database.

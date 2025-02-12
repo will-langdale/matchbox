@@ -20,7 +20,7 @@ from pyarrow import Table
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from matchbox.common.dtos import ModelAncestors, ModelMetadata
+from matchbox.common.dtos import ModelAncestor, ModelMetadata
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match, Source, SourceAddress
 
@@ -293,15 +293,15 @@ class MatchboxDBAdapter(ABC):
     def get_model_truth(self, model: str) -> float: ...
 
     @abstractmethod
-    def get_model_ancestors(self, model: str) -> ModelAncestors: ...
+    def get_model_ancestors(self, model: str) -> list[ModelAncestor]: ...
 
     @abstractmethod
     def set_model_ancestors_cache(
-        self, model: str, ancestors_cache: ModelAncestors
+        self, model: str, ancestors_cache: list[ModelAncestor]
     ) -> None: ...
 
     @abstractmethod
-    def get_model_ancestors_cache(self, model: str) -> ModelAncestors: ...
+    def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...

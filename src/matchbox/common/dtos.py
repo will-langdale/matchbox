@@ -65,13 +65,12 @@ class ModelMetadata(BaseModel):
     right_resolution: str | None = None  # Only used for linker models
 
 
-class ModelAncestors(BaseModel):
-    """A model's ancestors and their truth values."""
+class ModelAncestor(BaseModel):
+    """A model's ancestor and its truth value."""
 
-    ancestors: dict[str, float] = Field(
-        ...,
-        description="Mapping of model names to their truth thresholds",
-        examples=[{"model1": 0.75, "model2": 0.85}],
+    name: str = Field(..., description="Name of the ancestor model")
+    truth: float | None = Field(
+        default=None, description="Truth threshold value", ge=0.0, le=1.0
     )
 
 

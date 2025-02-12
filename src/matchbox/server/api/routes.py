@@ -13,7 +13,7 @@ from matchbox.common.dtos import (
     BackendUploadType,
     CountResult,
     HealthCheck,
-    ModelAncestors,
+    ModelAncestor,
     ModelMetadata,
     ModelOperationStatus,
     ModelOperationType,
@@ -438,7 +438,7 @@ async def set_truth(
 )
 async def get_ancestors(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
-) -> ModelAncestors:
+) -> list[ModelAncestor]:
     try:
         return backend.get_model_ancestors(model=name)
     except MatchboxResolutionNotFoundError as e:
@@ -456,7 +456,7 @@ async def get_ancestors(
 )
 async def get_ancestors_cache(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
-) -> ModelAncestors:
+) -> list[ModelAncestor]:
     try:
         return backend.get_model_ancestors_cache(model=name)
     except MatchboxResolutionNotFoundError as e:
@@ -481,7 +481,7 @@ async def get_ancestors_cache(
 async def set_ancestors_cache(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     name: str,
-    ancestors: ModelAncestors,
+    ancestors: list[ModelAncestor],
 ):
     try:
         backend.set_model_ancestors_cache(model=name, ancestors_cache=ancestors)

@@ -8,7 +8,7 @@ from pandas import DataFrame
 from sqlalchemy import Engine
 
 from matchbox.client.helpers.selector import match, query, select
-from matchbox.common.dtos import ModelAncestors, ModelMetadata, ModelType
+from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxResolutionNotFoundError,
@@ -354,15 +354,13 @@ class TestMatchboxBackend:
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
         linker_ancestors = self.backend.get_model_ancestors(model=linker_name)
 
-        assert isinstance(linker_ancestors, ModelAncestors)
+        assert [isinstance(ancestor, ModelAncestor) for ancestor in linker_ancestors]
 
+        # Not all ancestors have truth values, but one must
         truth_found = False
-        for model, truth in linker_ancestors.ancestors.items():
-            if isinstance(truth, float):
-                # Not all ancestors have truth values, but one must
+        for ancestor in linker_ancestors:
+            if isinstance(ancestor.truth, float):
                 truth_found = True
-            assert isinstance(model, str)
-            assert isinstance(truth, (float, type(None)))
 
         assert truth_found
 
@@ -375,9 +373,10 @@ class TestMatchboxBackend:
         pre_ancestors_cache = self.backend.get_model_ancestors_cache(model=linker_name)
 
         # Set
-        updated_ancestors_cache = ModelAncestors(
-            ancestors={k: 0.5 for k in pre_ancestors_cache.ancestors.keys()}
-        )
+        updated_ancestors_cache = [
+            ModelAncestor(name=ancestor.name, truth=0.5)
+            for ancestor in pre_ancestors_cache
+        ]
         self.backend.set_model_ancestors_cache(
             model=linker_name, ancestors_cache=updated_ancestors_cache
         )
