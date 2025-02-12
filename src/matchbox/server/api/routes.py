@@ -2,7 +2,15 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
 from dotenv import find_dotenv, load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Body,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -404,7 +412,7 @@ async def get_truth(
         ) from e
 
 
-@app.post(
+@app.patch(
     "/models/{name}/truth",
     responses={
         404: {"model": NotFoundError},
@@ -415,7 +423,9 @@ async def get_truth(
     },
 )
 async def set_truth(
-    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str, truth: float
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    name: str,
+    truth: Annotated[float, Body()],
 ) -> ModelOperationStatus:
     """Set truth data for a model."""
     try:
@@ -480,7 +490,7 @@ async def get_ancestors_cache(
         ) from e
 
 
-@app.post(
+@app.patch(
     "/models/{name}/ancestors_cache",
     responses={
         404: {"model": NotFoundError},

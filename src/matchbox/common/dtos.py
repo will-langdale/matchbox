@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
@@ -81,7 +80,6 @@ class ModelOperationStatus(BaseModel):
     model_name: str
     operation: ModelOperationType
     details: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.now)
 
     @classmethod
     def status_409_examples(cls) -> dict:
