@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
+    MatchboxConfirmDelete,
     MatchboxDataNotFound,
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
@@ -527,12 +528,5 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.delete(resolution)
                 session.commit()
             else:
-                childen = resolution.descendants
-                children_names = ", ".join([r.name for r in childen])
-                raise ValueError(
-                    f"This operation will delete the resolutions {children_names}, "
-                    "as well as all probabilities they have created. \n\n"
-                    "It won't delete validation associated with these "
-                    "probabilities. \n\n"
-                    "If you're sure you want to continue, rerun with certain=True"
-                )
+                childen = [r.name for r in resolution.descendants]
+                raise MatchboxConfirmDelete(childen)

@@ -21,6 +21,7 @@ from matchbox.common.dtos import (
     UploadStatus,
 )
 from matchbox.common.exceptions import (
+    MatchboxConfirmDelete,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
@@ -245,7 +246,15 @@ async def list_models():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.post("/models")
+@app.post(
+    "/models",
+    responses={
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+)
 async def insert_model(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], model: ModelMetadata
 ) -> ModelOperationStatus:
@@ -258,12 +267,15 @@ async def insert_model(
             operation=ModelOperationType.INSERT,
         )
     except Exception as e:
-        return ModelOperationStatus(
-            success=False,
-            model_name=model.name,
-            operation=ModelOperationType.INSERT,
-            details=str(e),
-        )
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=model.name,
+                operation=ModelOperationType.INSERT,
+                details=str(e),
+            ).model_dump(),
+        ) from e
 
 
 @app.get(
@@ -289,9 +301,9 @@ async def get_model(
     "/models/{name}",
     responses={
         404: {"model": NotFoundError},
-        500: {
+        409: {
             "model": ModelOperationStatus,
-            **ModelOperationStatus.status_500_examples(),
+            **ModelOperationStatus.status_409_examples(),
         },
     },
 )
@@ -317,9 +329,9 @@ async def delete_model(
                 details=str(e), entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
         ) from e
-    except ValueError as e:
+    except MatchboxConfirmDelete as e:
         raise HTTPException(
-            status_code=500,
+            status_code=409,
             detail=ModelOperationStatus(
                 success=False,
                 model_name=name,

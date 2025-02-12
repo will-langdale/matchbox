@@ -84,22 +84,11 @@ class ModelOperationStatus(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
 
     @classmethod
-    def status_500_examples(cls) -> dict:
+    def status_409_examples(cls) -> dict:
         return {
             "content": {
                 "application/json": {
                     "examples": {
-                        "unhandled": {
-                            "summary": (
-                                "Unhandled exception encountered while updating the "
-                                "model's truth value."
-                            ),
-                            "value": cls(
-                                success=False,
-                                model_name="example_model",
-                                operation=ModelOperationType.UPDATE_TRUTH,
-                            ).model_dump(),
-                        },
                         "confirm_delete": {
                             "summary": "Delete operation requires confirmation. ",
                             "value": cls(
@@ -116,6 +105,28 @@ class ModelOperationStatus(BaseModel):
                                     "If you're sure you want to continue, rerun with "
                                     "certain=True"
                                 ),
+                            ).model_dump(),
+                        },
+                    },
+                }
+            }
+        }
+
+    @classmethod
+    def status_500_examples(cls) -> dict:
+        return {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "unhandled": {
+                            "summary": (
+                                "Unhandled exception encountered while updating the "
+                                "model's truth value."
+                            ),
+                            "value": cls(
+                                success=False,
+                                model_name="example_model",
+                                operation=ModelOperationType.UPDATE_TRUTH,
                             ).model_dump(),
                         },
                     },

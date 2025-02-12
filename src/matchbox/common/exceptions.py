@@ -136,3 +136,19 @@ class MatchboxClientFileError(Exception):
 
 class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
+
+
+class MatchboxConfirmDelete(Exception):
+    """Deletion must be confirmed: if certain, rerun with certain=True."""
+
+    def __init__(self, children: list[str]):
+        children_names = ", ".join(children)
+        message = (
+            f"This operation will delete the resolutions {children_names}, "
+            "as well as all probabilities they have created. \n\n"
+            "It won't delete validation associated with these "
+            "probabilities. \n\n"
+            "If you're sure you want to continue, rerun with certain=True. "
+        )
+
+        super().__init__(message)
