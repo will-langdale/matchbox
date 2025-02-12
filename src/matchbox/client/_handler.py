@@ -21,6 +21,11 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Match, Source, SourceAddress
 
+if getenv("MB__CLIENT_NO_TIMEOUTS") == "true":
+    CLIENT = httpx.Client(timeout=None)
+else:
+    CLIENT = httpx.Client(timeout=5.0)
+
 
 def url(path: str) -> str:
     """Return path prefixed by API root, determined from environment."""
@@ -87,14 +92,14 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
 def get_resolution_graph() -> ResolutionGraph:
     """Get the resolution graph from Matchbox."""
-    res = handle_http_code(httpx.get(url("/report/resolutions")))
+    res = handle_http_code(CLIENT.get(url("/report/resolutions")))
     return ResolutionGraph.model_validate(res.json())
 
 
 def get_source(address: SourceAddress) -> Source:
     warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
     res = handle_http_code(
-        httpx.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
+        CLIENT.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
     )
     return Source.model_validate(res.json())
 
@@ -105,13 +110,13 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
 
     # Upload metadata
     metadata_res = handle_http_code(
-        httpx.post(url("/sources"), json=source.model_dump())
+        CLIENT.post(url("/sources"), json=source.model_dump())
     )
     upload = UploadStatus.model_validate(metadata_res.json())
 
     # Upload data
     upload_res = handle_http_code(
-        httpx.post(
+        CLIENT.post(
             url(f"/upload/{upload.id}"),
             files={
                 "file": (f"{upload.id}.parquet", buffer, "application/octet-stream")
@@ -122,7 +127,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
     # Poll until complete with retry/timeout configuration
     status = UploadStatus.model_validate(upload_res.json())
     while status.status not in ["complete", "failed"]:
-        status_res = handle_http_code(httpx.get(url(f"/upload/{upload.id}/status")))
+        status_res = handle_http_code(CLIENT.get(url(f"/upload/{upload.id}/status")))
         status = UploadStatus.model_validate(status_res.json())
 
         if status.status == "failed":
@@ -140,7 +145,7 @@ def query(
     limit: int | None = None,
 ) -> BytesIO:
     res = handle_http_code(
-        httpx.get(
+        CLIENT.get(
             url("/query"),
             params=url_params(
                 {
@@ -179,7 +184,7 @@ def match(
     target_warehouse_hashes = [t.warehouse_hash for t in targets]
 
     res = handle_http_code(
-        httpx.get(
+        CLIENT.get(
             url("/match"),
             params=url_params(
                 {
