@@ -91,6 +91,14 @@ def get_resolution_graph() -> ResolutionGraph:
     return ResolutionGraph.model_validate(res.json())
 
 
+def get_source(address: SourceAddress) -> Source:
+    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+    res = handle_http_code(
+        httpx.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
+    )
+    return Source.model_validate(res.json())
+
+
 def index(source: Source, data_hashes: Table) -> UploadStatus:
     """Index a Source in Matchbox."""
     buffer = table_to_buffer(table=data_hashes)

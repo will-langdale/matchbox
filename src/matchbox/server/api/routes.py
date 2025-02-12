@@ -92,6 +92,32 @@ async def clear_backend():
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
+@app.get("/sources")
+async def list_sources():
+    raise HTTPException(status_code=501, detail="Not implemented")
+
+
+@app.get(
+    "/sources/{warehouse_hash_b64}/{full_name}",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_source(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    warehouse_hash_b64: str,
+    full_name: str,
+) -> Source:
+    address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
+    try:
+        return backend.get_source(address)
+    except MatchboxSourceNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.SOURCE
+            ).model_dump(),
+        ) from e
+
+
 @app.post("/sources")
 async def add_source(source: Source):
     """Add a source to the backend."""
@@ -101,7 +127,7 @@ async def add_source(source: Source):
 
 @app.post(
     "/upload/{upload_id}",
-    responses={400: UploadStatus.example_400_response_body()},
+    responses={400: {"model": UploadStatus, **UploadStatus.status_400_examples()}},
 )
 async def upload_file(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -178,7 +204,7 @@ async def upload_file(
 
 @app.get(
     "/upload/{upload_id}/status",
-    responses={400: UploadStatus.example_400_response_body()},
+    responses={400: {"model": UploadStatus, **UploadStatus.status_400_examples()}},
 )
 async def get_upload_status(
     upload_id: str,
@@ -206,16 +232,6 @@ async def get_upload_status(
         )
 
     return source_cache.status
-
-
-@app.get("/sources")
-async def list_sources():
-    raise HTTPException(status_code=501, detail="Not implemented")
-
-
-@app.get("/sources/{address}")
-async def get_source(address: str):
-    raise HTTPException(status_code=501, detail="Not implemented")
 
 
 @app.get("/models")
@@ -276,7 +292,7 @@ async def set_ancestors_cache(name: str):
 @app.get(
     "/query",
     response_class=ParquetResponse,
-    responses={404: NotFoundError.example_response_body()},
+    responses={404: {"model": NotFoundError}},
 )
 async def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -317,7 +333,7 @@ async def query(
 
 @app.get(
     "/match",
-    responses={404: NotFoundError.example_response_body()},
+    responses={404: {"model": NotFoundError}},
 )
 async def match(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],

@@ -12,11 +12,11 @@ HASH_FUNC = hashlib.sha256
 
 
 def hash_to_base64(hash: bytes) -> str:
-    return base64.b64encode(hash).decode("utf-8")
+    return base64.urlsafe_b64encode(hash).decode("utf-8")
 
 
 def base64_to_hash(b64: str) -> bytes:
-    return base64.b64decode(b64)
+    return base64.urlsafe_b64decode(b64)
 
 
 def prep_for_hash(item: HashableItem) -> bytes:

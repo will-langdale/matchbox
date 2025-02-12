@@ -77,8 +77,8 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_select_mixed_style(get_backend: Mock, warehouse_engine: Engine):
+@respx.mock
+def test_select_mixed_style(warehouse_engine: Engine):
     """We can select select specific columns from some of the sources"""
     # Set up mocks and test data
     source1 = Source(
@@ -91,9 +91,12 @@ def test_select_mixed_style(get_backend: Mock, warehouse_engine: Engine):
         db_pk="pk",
     )
 
-    mock_backend = Mock()
-    mock_backend.get_source = Mock(side_effect=[source1, source2])
-    get_backend.return_value = mock_backend
+    respx.get(
+        url(f"/sources/{hash_to_base64(source1.address.warehouse_hash)}/test.foo")
+    ).mock(return_value=Response(200, content=source1.model_dump_json()))
+    respx.get(
+        url(f"/sources/{hash_to_base64(source2.address.warehouse_hash)}/test.bar")
+    ).mock(return_value=Response(200, content=source2.model_dump_json()))
 
     df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
@@ -119,21 +122,23 @@ def test_select_mixed_style(get_backend: Mock, warehouse_engine: Engine):
     # Check they contain what we expect
     assert selection[0].fields == ["a"]
     assert not selection[1].fields
-    assert selection[0].source == source1
-    assert selection[1].source == source2
+    assert selection[0].source.model_dump() == source1.model_dump()
+    assert selection[1].source.model_dump() == source2.model_dump()
+    # Check the engine is set by the selector
+    assert selection[0].source.engine == warehouse_engine
+    assert selection[1].source.engine == warehouse_engine
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine):
+@respx.mock
+def test_select_non_indexed_columns(warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
     source = Source(
         address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
         db_pk="pk",
     )
-
-    mock_backend = Mock()
-    mock_backend.get_source = Mock(return_value=source)
-    get_backend.return_value = mock_backend
+    respx.get(
+        url(f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.foo")
+    ).mock(return_value=Response(200, content=source.model_dump_json()))
 
     df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
@@ -149,17 +154,17 @@ def test_select_non_indexed_columns(get_backend: Mock, warehouse_engine: Engine)
         select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_select_missing_columns(get_backend: Mock, warehouse_engine: Engine):
+@respx.mock
+def test_select_missing_columns(warehouse_engine: Engine):
     """Selecting columns not in the warehouse errors."""
     source = Source(
         address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
         db_pk="pk",
     )
 
-    mock_backend = Mock()
-    mock_backend.get_source = Mock(return_value=source)
-    get_backend.return_value = mock_backend
+    respx.get(
+        url(f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.foo")
+    ).mock(return_value=Response(200, content=source.model_dump_json()))
 
     df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
