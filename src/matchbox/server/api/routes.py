@@ -307,11 +307,6 @@ async def match(
 # Data management
 
 
-@app.get("/sources")
-async def list_sources():
-    raise HTTPException(status_code=501, detail="Not implemented")
-
-
 @app.post("/sources")
 async def add_source(source: Source) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
@@ -348,17 +343,7 @@ async def get_resolutions(
     return backend.get_resolution_graph()
 
 
-@app.post("/testing/clear")
-async def clear_backend():
-    raise HTTPException(status_code=501, detail="Not implemented")
-
-
 # Model management
-
-
-@app.get("/models")
-async def list_models():
-    raise HTTPException(status_code=501, detail="Not implemented")
 
 
 @app.post(
