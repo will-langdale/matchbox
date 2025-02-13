@@ -382,19 +382,6 @@ async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
 
 # Model endpoints
 
-# @patch("matchbox.server.base.BackendManager.get_backend")
-# def test_list_models(get_backend: Mock):
-#     mock_backend = Mock()
-#     dummy_models = [
-#         model_factory(name="model1", description="test model 1").model,
-#         model_factory(name="model2", description="test model 2").model
-#     ]
-#     mock_backend.list_models = Mock(return_value=dummy_models)
-#     get_backend.return_value = mock_backend
-
-#     response = client.get("/models")
-#     assert response.status_code == 200
-
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_insert_model(get_backend: Mock):
