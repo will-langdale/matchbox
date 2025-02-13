@@ -29,5 +29,13 @@
                 "-o", "/tmp/tmp.prof", "${file}"
             ]
         },
+        {
+            "name": "API debug",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["matchbox.server.api:app","--reload","--port","8080"]
+        }
+        
     ]
 }

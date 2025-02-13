@@ -55,8 +55,8 @@ services:
       watch:
         # Sync the working directory with the `/app` directory in the container
         - action: sync
-          path: ./src/matchbox/server
-          target: /code/src/matchbox/server
+          path: ./src/matchbox
+          target: /code/src/matchbox
 
         # Rebuild the image on changes to the `pyproject.toml`
         - action: rebuild

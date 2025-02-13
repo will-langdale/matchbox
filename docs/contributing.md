@@ -50,6 +50,13 @@ If you're running tests with some other method, such as your IDE or pytest direc
 docker compose up -d --wait
 ```
 
+## Debugging
+
+We have a VSCode default debugging profile called "API debug", which allows to e.g. set breakpoints on the API when running tests. After running this profile, change your `.env` file  as follows:
+
+- Change the `MB__CLIENT__API_ROOT` variable to redirect tests to use the debug port (8080)
+- Disable time-outs by commenting out the `MB__CLIENT__TIMEOUT` variable
+
 ## Standards
 
 ### Code
