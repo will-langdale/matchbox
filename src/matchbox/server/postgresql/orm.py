@@ -22,27 +22,28 @@ from matchbox.server.postgresql.mixin import CountMixin
 class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
     """Resolution lineage closure table with cached truth values."""
 
-    __tablename__ = "resolution_from"
+    def __init__(self, suffix=""):
+        self.__tablename__ = f"resolution_from{suffix}"
 
-    # Columns
-    parent = Column(
-        BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    child = Column(
-        BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    level = Column(INTEGER, nullable=False)
-    truth_cache = Column(FLOAT, nullable=True)
+        # Columns
+        self.parent = Column(
+            BIGINT,
+            ForeignKey(f"resolutions{suffix}.resolution_id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+        self.child = Column(
+            BIGINT,
+            ForeignKey(f"resolutions{suffix}.resolution_id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+        self.level = Column(INTEGER, nullable=False)
+        self.truth_cache = Column(FLOAT, nullable=True)
 
-    # Constraints
-    __table_args__ = (
-        CheckConstraint("parent != child", name="no_self_reference"),
-        CheckConstraint("level > 0", name="positive_level"),
-    )
+        # Constraints
+        self.__table_args__ = (
+            CheckConstraint("parent != child", name="no_self_reference"),
+            CheckConstraint("level > 0", name="positive_level"),
+        )
 
 
 class Resolutions(CountMixin, MBDB.MatchboxBase):
@@ -51,38 +52,39 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     Resolutions produce probabilities or own data in the clusters table.
     """
 
-    __tablename__ = "resolutions"
+    def __init__(self, suffix=""):
+        self.__tablename__ = f"resolutions{suffix}"
 
-    # Columns
-    resolution_id = Column(BIGINT, primary_key=True)
-    resolution_hash = Column(BYTEA, nullable=False)
-    type = Column(TEXT, nullable=False)
-    name = Column(TEXT, nullable=False)
-    description = Column(TEXT)
-    truth = Column(FLOAT)
+        # Columns
+        self.resolution_id = Column(BIGINT, primary_key=True)
+        self.resolution_hash = Column(BYTEA, nullable=False)
+        self.type = Column(TEXT, nullable=False)
+        self.name = Column(TEXT, nullable=False)
+        self.description = Column(TEXT)
+        self.truth = Column(FLOAT)
 
-    # Relationships
-    source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
-    probabilities = relationship(
-        "Probabilities", back_populates="proposed_by", cascade="all, delete-orphan"
-    )
-    children = relationship(
-        "Resolutions",
-        secondary=ResolutionFrom.__table__,
-        primaryjoin="Resolutions.resolution_id == ResolutionFrom.parent",
-        secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
-        backref="parents",
-    )
+        # Relationships
+        self.source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
+        self.probabilities = relationship(
+            "Probabilities", back_populates="proposed_by", cascade="all, delete-orphan"
+        )
+        self.children = relationship(
+            "Resolutions",
+            secondary=ResolutionFrom.__table__,
+            primaryjoin="Resolutions.resolution_id == ResolutionFrom.parent",
+            secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
+            backref="parents",
+        )
 
-    # Constraints
-    __table_args__ = (
-        CheckConstraint(
-            "type IN ('model', 'dataset', 'human')",
-            name="resolution_type_constraints",
-        ),
-        UniqueConstraint("resolution_hash", name="resolutions_hash_key"),
-        UniqueConstraint("name", name="resolutions_name_key"),
-    )
+        # Constraints
+        self.__table_args__ = (
+            CheckConstraint(
+                "type IN ('model', 'dataset', 'human')",
+                name="resolution_type_constraints",
+            ),
+            UniqueConstraint("resolution_hash", name="resolutions_hash_key"),
+            UniqueConstraint("name", name="resolutions_name_key"),
+        )
 
     @property
     def ancestors(self) -> set["Resolutions"]:
@@ -171,30 +173,31 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 class Sources(CountMixin, MBDB.MatchboxBase):
     """Table of sources of data for Matchbox."""
 
-    __tablename__ = "sources"
+    def __init__(self, suffix="", contains_temporary=False):
+        self.__tablename__ = "sources"
 
-    # Columns
-    resolution_id = Column(
-        BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    alias = Column(TEXT, nullable=False)
-    full_name = Column(TEXT, nullable=False)
-    warehouse_hash = Column(BYTEA, nullable=False)
-    id = Column(TEXT, nullable=False)
-    column_names = Column(ARRAY(TEXT), nullable=False)
-    column_aliases = Column(ARRAY(TEXT), nullable=False)
-    column_types = Column(ARRAY(TEXT), nullable=False)
+        # Columns
+        self.resolution_id = Column(
+            BIGINT,
+            ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+        self.alias = Column(TEXT, nullable=False)
+        self.full_name = Column(TEXT, nullable=False)
+        self.warehouse_hash = Column(BYTEA, nullable=False)
+        self.id = Column(TEXT, nullable=False)
+        self.column_names = Column(ARRAY(TEXT), nullable=False)
+        self.column_aliases = Column(ARRAY(TEXT), nullable=False)
+        self.column_types = Column(ARRAY(TEXT), nullable=False)
 
-    # Relationships
-    dataset_resolution = relationship("Resolutions", back_populates="source")
-    clusters = relationship("Clusters", back_populates="source")
+        # Relationships
+        self.dataset_resolution = relationship("Resolutions", back_populates="source")
+        self.clusters = relationship("Clusters", back_populates="source")
 
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint("full_name", "warehouse_hash", name="unique_source_address"),
-    )
+        # Constraints
+        self.__table_args__ = (
+            UniqueConstraint("full_name", "warehouse_hash", name="unique_source_address"),
+        )
 
     @classmethod
     def list(cls) -> list["Sources"]:
@@ -205,56 +208,69 @@ class Sources(CountMixin, MBDB.MatchboxBase):
 class Contains(CountMixin, MBDB.MatchboxBase):
     """Cluster lineage table."""
 
-    __tablename__ = "contains"
+    def __init__(self, suffix="", clusters_temporary=False):
+        self.__tablename__ = f"contains{suffix}"
 
-    # Columns
-    parent = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
-    )
-    child = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
-    )
+        # Columns
+        if clusters_temporary:
+            clusters_name = f"clusters{suffix}"
+        else:
+            clusters_name = "clusters"
 
-    # Constraints and indices
-    __table_args__ = (
-        CheckConstraint("parent != child", name="no_self_containment"),
-        Index("ix_contains_parent_child", "parent", "child"),
-        Index("ix_contains_child_parent", "child", "parent"),
-    )
+        self.parent = Column(
+            BIGINT, ForeignKey(f"{clusters_name}.cluster_id", ondelete="CASCADE"), primary_key=True
+        )
+        self.child = Column(
+            BIGINT, ForeignKey(f"{clusters_name}.cluster_id", ondelete="CASCADE"), primary_key=True
+        )
+
+        # Constraints and indices
+        self.__table_args__ = (
+            CheckConstraint("parent != child", name="no_self_containment"),
+            Index(f"ix_contains_parent_child{suffix}", "parent", "child"),
+            Index(f"ix_contains_child_parent", "child", "parent"),
+        )
 
 
 class Clusters(CountMixin, MBDB.MatchboxBase):
     """Table of indexed data and clusters that match it."""
 
-    __tablename__ = "clusters"
+    def __init__(self, suffix="", contains_temporary=False):
+        self.__tablename__ = f"clusters{suffix}"
 
-    # Columns
-    cluster_id = Column(BIGINT, primary_key=True)
-    cluster_hash = Column(BYTEA, nullable=False)
-    dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
-    # Uses array as source data may have identical rows. We can't control this
-    # Must be indexed or PostgreSQL incorrectly tries to use nested joins
-    # when retrieving small datasets in query() -- extremely slow
-    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
+        # Columns
+        self.cluster_id = Column(BIGINT, primary_key=True)
+        self.cluster_hash = Column(BYTEA, nullable=False)
 
-    # Relationships
-    source = relationship("Sources", back_populates="clusters")
-    probabilities = relationship(
-        "Probabilities", back_populates="proposes", cascade="all, delete-orphan"
-    )
-    children = relationship(
-        "Clusters",
-        secondary=Contains.__table__,
-        primaryjoin="Clusters.cluster_id == Contains.parent",
-        secondaryjoin="Clusters.cluster_id == Contains.child",
-        backref="parents",
-    )
+        self.dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
+        # Uses array as source data may have identical rows. We can't control this
+        # Must be indexed or PostgreSQL incorrectly tries to use nested joins
+        # when retrieving small datasets in query() -- extremely slow
+        self.source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
 
-    # Constraints and indices
-    __table_args__ = (
-        Index("ix_clusters_id_gin", source_pk, postgresql_using="gin"),
-        UniqueConstraint("cluster_hash", name="clusters_hash_key"),
-    )
+        # Relationships
+        self.source = relationship("Sources", back_populates="clusters")
+        self.probabilities = relationship(
+            "Probabilities", back_populates="proposes", cascade="all, delete-orphan"
+        )
+
+        if contains_temporary:
+            contains_name = f"{Contains.__table__}{suffix}"
+        else:
+            contains_name = Contains.__table__
+        self.children = relationship(
+            "Clusters",
+            secondary=contains_name,
+            primaryjoin="Clusters.cluster_id == Contains.parent",
+            secondaryjoin="Clusters.cluster_id == Contains.child",
+            backref="parents",
+        )
+
+        # Constraints and indices
+        self.__table_args__ = (
+            Index(f"ix_clusters_id_gin{suffix}", self.source_pk, postgresql_using="gin"),
+            UniqueConstraint("cluster_hash", name=f"clusters_hash_key{suffix}"),
+        )
 
     @classmethod
     def next_id(cls) -> int:
@@ -269,24 +285,34 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 class Probabilities(CountMixin, MBDB.MatchboxBase):
     """Table of probabilities that a cluster is correct, according to a resolution."""
 
-    __tablename__ = "probabilities"
+    def __init__(self, suffix="", resolutions_temporary=False, clusters_temporary=False):
+        self.__tablename__ = f"probabilities{suffix}"
 
-    # Columns
-    resolution = Column(
-        BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    cluster = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
-    )
-    probability = Column(SMALLINT, nullable=False)
+        # Columns
+        if resolutions_temporary:
+            resolutions_name = f"resolutions{suffix}"
+        else:
+            resolutions_name = "resolutions"
+        if clusters_temporary:
+            clusters_name = f"clusters{suffix}"
+        else:
+            clusters_name = "clusters"
 
-    # Relationships
-    proposed_by = relationship("Resolutions", back_populates="probabilities")
-    proposes = relationship("Clusters", back_populates="probabilities")
+        self.resolution = Column(
+            BIGINT,
+            ForeignKey(f"{resolutions_name}.resolution_id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+        self.cluster = Column(
+            BIGINT, ForeignKey(f"{clusters_name}.cluster_id", ondelete="CASCADE"), primary_key=True
+        )
+        self.probability = Column(SMALLINT, nullable=False)
 
-    # Constraints
-    __table_args__ = (
-        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
-    )
+        # Relationships
+        self.proposed_by = relationship("Resolutions", back_populates="probabilities")
+        self.proposes = relationship("Clusters", back_populates="probabilities")
+
+        # Constraints
+        self.__table_args__ = (
+            CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
+        )

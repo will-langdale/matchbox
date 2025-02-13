@@ -199,23 +199,6 @@ def _create_adbc_table_constraints(db_schema:str, sufix:str, conn:Connection) ->
     Args: db_schema: str, the name of the schema
     """
     # Cluster
-    _run_query(f"ALTER TABLE {db_schema}.clusters_{sufix} ADD PRIMARY KEY (cluster_id)", conn)
-    _run_query(f"""ALTER TABLE {db_schema}.probabilities_{sufix} ADD PRIMARY KEY (resolution, "cluster")""", conn)
-    _run_query(f"CREATE UNIQUE INDEX cluster_hash_index_{sufix} ON {db_schema}.clusters_{sufix} USING btree (cluster_hash)", conn)
-   # _run_query(f"CREATE UNIQUE INDEX clusters_adbc_clusters_is_{sufix} ON {db_schema}.clusters_{sufix} USING btree (cluster_id)", conn)
-    _run_query(f"CREATE INDEX ix_clusters_id_gin_{sufix} ON {db_schema}.clusters_{sufix} USING gin (source_pk)", conn)
-    _run_query(f"CREATE INDEX ix_mb_clusters_source_pk_{sufix} ON {db_schema}.clusters_{sufix} USING btree (source_pk)", conn)
-
-    # Contains
-    _run_query(f"CREATE UNIQUE INDEX ix_contains_child_parent_{sufix} ON {db_schema}.contains_{sufix} USING btree (child, parent)", conn)
-    _run_query(f"CREATE UNIQUE INDEX ix_contains_parent_child_{sufix} ON {db_schema}.contains_{sufix} USING btree (parent, child)", conn)
-
-    # Foreign keys
-    _run_query(f"ALTER TABLE {db_schema}.clusters_{sufix} ADD CONSTRAINT clusters_dataset_fkey FOREIGN KEY (dataset) REFERENCES {db_schema}.sources(resolution_id)", conn)
-    _run_query(f"""ALTER TABLE {db_schema}."contains_{sufix}" ADD CONSTRAINT contains_child_fkey FOREIGN KEY (child) REFERENCES {db_schema}.clusters_{sufix}(cluster_id) ON DELETE CASCADE""", conn)
-    _run_query(f"""ALTER TABLE {db_schema}."contains_{sufix}" ADD CONSTRAINT contains_parent_fkey FOREIGN KEY (parent) REFERENCES {db_schema}.clusters_{sufix}(cluster_id) ON DELETE CASCADE""", conn)
-    _run_query(f"""ALTER TABLE {db_schema}.probabilities_{sufix} ADD CONSTRAINT probabilities_cluster_fkey FOREIGN KEY ("cluster") REFERENCES {db_schema}.clusters_{sufix}(cluster_id) ON DELETE CASCADE""", conn)
-    _run_query(f"ALTER TABLE {db_schema}.probabilities_{sufix} ADD CONSTRAINT probabilities_resolution_fkey FOREIGN KEY (resolution) REFERENCES {db_schema}.resolutions(resolution_id) ON DELETE CASCADE", conn)
 
     _run_queries([
         f"""DROP TABLE IF EXISTS {db_schema}.clusters""",

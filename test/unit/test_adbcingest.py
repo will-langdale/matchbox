@@ -10,9 +10,9 @@ from matchbox.server.postgresql.utils.db import adbc_ingest_data, _adbc_insert_d
 
 class TestAdbcIngestData(unittest.TestCase):
 
-    @patch('my_module._create_adbc_table_constraints')
-    @patch('my_module._adbc_insert_data')
-    @patch('my_module.datetime')
+    @patch('matchbox.server.postgresql.utils.db._create_adbc_table_constraints')
+    @patch('matchbox.server.postgresql.utils.db._adbc_insert_data')
+    @patch('matchbox.server.postgresql.utils.db.datetime')
     def test_adbc_ingest_data(self, mock_datetime, mock_adbc_insert_data, mock_create_adbc_table_constraints):
         # Mock datetime
         mock_datetime.now.return_value.strftime.return_value = "20250101123045"
@@ -39,9 +39,9 @@ class TestAdbcIngestData(unittest.TestCase):
         self.assertFalse(result)
 
 
-@patch('my_module._save_to_postgresql')
-@patch('my_module._run_query')
-@patch('my_module.adbc_driver_postgresql.dbapi.connect')
+@patch('matchbox.server.postgresql.utils.db._save_to_postgresql')
+@patch('matchbox.server.postgresql.utils.db._run_query')
+@patch('matchbox.server.postgresql.utils.db.adbc_driver_postgresql.dbapi.connect')
 def test_adbc_insert_data(self, mock_connect, mock_run_query, mock_save_to_postgresql):
     # Mock the connect method
     mock_conn = mock_connect.return_value.__enter__.return_value
@@ -71,7 +71,7 @@ def test_adbc_insert_data(self, mock_connect, mock_run_query, mock_save_to_postg
     result = _adbc_insert_data(clusters, contains, probabilities, suffix, alchemy_conn, resolution_id)
     self.assertFalse(result)
 
-    @patch('my_module.pa.RecordBatchReader.from_batches')
+    @patch('matchbox.server.postgresql.utils.db.pa.RecordBatchReader.from_batches')
     def test_save_to_postgresql(self, mock_from_batches):
         # Mock the from_batches method
         mock_batch_reader = MagicMock()
@@ -97,7 +97,7 @@ def test_adbc_insert_data(self, mock_connect, mock_run_query, mock_save_to_postg
             db_schema_name=schema,
         )
 
-    @patch('my_module.text')
+    @patch('matchbox.server.postgresql.utils.db.text')
     def test_run_query(self, mock_text):
         # Create mock arguments
         query = "SELECT * FROM test_table"
@@ -110,7 +110,7 @@ def test_adbc_insert_data(self, mock_connect, mock_run_query, mock_save_to_postg
         conn.execute.assert_called_once_with(mock_text(query))
         conn.commit.assert_called_once()
 
-    @patch('my_module.text')
+    @patch('matchbox.server.postgresql.utils.db.text')
     def test_run_queries(self, mock_text):
         # Create mock arguments
         queries = ["SELECT * FROM test_table", "DELETE FROM test_table"]
