@@ -85,52 +85,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     raise MatchboxUnhandledServerResponse(res.content)
 
 
-def get_resolution_graph() -> ResolutionGraph:
-    """Get the resolution graph from Matchbox."""
-    res = handle_http_code(httpx.get(url("/report/resolutions")))
-    return ResolutionGraph.model_validate(res.json())
-
-
-def get_source(address: SourceAddress) -> Source:
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
-    res = handle_http_code(
-        httpx.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
-    )
-    return Source.model_validate(res.json())
-
-
-def index(source: Source, data_hashes: Table) -> UploadStatus:
-    """Index a Source in Matchbox."""
-    buffer = table_to_buffer(table=data_hashes)
-
-    # Upload metadata
-    metadata_res = handle_http_code(
-        httpx.post(url("/sources"), json=source.model_dump())
-    )
-    upload = UploadStatus.model_validate(metadata_res.json())
-
-    # Upload data
-    upload_res = handle_http_code(
-        httpx.post(
-            url(f"/upload/{upload.id}"),
-            files={
-                "file": (f"{upload.id}.parquet", buffer, "application/octet-stream")
-            },
-        )
-    )
-
-    # Poll until complete with retry/timeout configuration
-    status = UploadStatus.model_validate(upload_res.json())
-    while status.status not in ["complete", "failed"]:
-        status_res = handle_http_code(httpx.get(url(f"/upload/{upload.id}/status")))
-        status = UploadStatus.model_validate(status_res.json())
-
-        if status.status == "failed":
-            raise MatchboxServerFileError(status.details)
-
-        time.sleep(2)
-
-    return status
+# Retrieval
 
 
 def query(
@@ -198,3 +153,57 @@ def match(
     )
 
     return [Match.model_validate(m) for m in res.json()]
+
+
+# Data management
+
+
+def index(source: Source, data_hashes: Table) -> UploadStatus:
+    """Index a Source in Matchbox."""
+    buffer = table_to_buffer(table=data_hashes)
+
+    # Upload metadata
+    metadata_res = handle_http_code(
+        httpx.post(url("/sources"), json=source.model_dump())
+    )
+    upload = UploadStatus.model_validate(metadata_res.json())
+
+    # Upload data
+    upload_res = handle_http_code(
+        httpx.post(
+            url(f"/upload/{upload.id}"),
+            files={
+                "file": (f"{upload.id}.parquet", buffer, "application/octet-stream")
+            },
+        )
+    )
+
+    # Poll until complete with retry/timeout configuration
+    status = UploadStatus.model_validate(upload_res.json())
+    while status.status not in ["complete", "failed"]:
+        status_res = handle_http_code(httpx.get(url(f"/upload/{upload.id}/status")))
+        status = UploadStatus.model_validate(status_res.json())
+
+        if status.status == "failed":
+            raise MatchboxServerFileError(status.details)
+
+        time.sleep(2)
+
+    return status
+
+
+def get_source(address: SourceAddress) -> Source:
+    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+    res = handle_http_code(
+        httpx.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
+    )
+    return Source.model_validate(res.json())
+
+
+def get_resolution_graph() -> ResolutionGraph:
+    """Get the resolution graph from Matchbox."""
+    res = handle_http_code(httpx.get(url("/report/resolutions")))
+    return ResolutionGraph.model_validate(res.json())
+
+
+# Model management

@@ -126,6 +126,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self.creates = FilteredProbabilities(over_truth=True)
         self.proposes = FilteredProbabilities()
 
+    # Retrieval
+
     def query(
         self,
         source_address: SourceAddress,
@@ -185,6 +187,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
             resolution_name=resolution_name,
             threshold=threshold,
         )
+
+    # Data management
 
     def index(self, source: Source, data_hashes: Table) -> None:
         """Indexes to Matchbox a source dataset in your warehouse.
@@ -355,7 +359,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 "If you're sure you want to continue, rerun with certain=True"
             )
 
-    # Model methods
+    # Model management
 
     def insert_model(self, model: ModelMetadata) -> None:
         """Writes a model to Matchbox.

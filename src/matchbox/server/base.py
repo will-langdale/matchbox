@@ -233,6 +233,8 @@ class MatchboxDBAdapter(ABC):
     merges: Countable
     proposes: Countable
 
+    # Retrieval
+
     @abstractmethod
     def query(
         self,
@@ -251,6 +253,8 @@ class MatchboxDBAdapter(ABC):
         resolution_name: str,
         threshold: int | None = None,
     ) -> list[Match]: ...
+
+    # Data management
 
     @abstractmethod
     def index(self, source: Source, data_hashes: Table) -> None: ...
@@ -273,7 +277,8 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def clear(self, certain: bool) -> None: ...
 
-    # Model methods
+    # Model management
+
     @abstractmethod
     def insert_model(self, model: ModelMetadata) -> None: ...
 
