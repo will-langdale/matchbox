@@ -103,7 +103,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                 )
 
                 results = model.run()
-                results.to_matchbox(backend=backend)
+                results.to_matchbox()
                 model.truth = 0.0
 
     return _db_add_dedupe_models_and_data
@@ -173,7 +173,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                 )
 
                 results = model.run()
-                results.to_matchbox(backend=backend)
+                results.to_matchbox()
                 model.truth = 0.0
 
     return _db_add_link_models_and_data

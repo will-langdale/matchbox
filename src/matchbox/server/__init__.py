@@ -3,9 +3,8 @@ from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxSettings,
     initialise_matchbox,
-    inject_backend,
 )
 
-__all__ = ["app", "MatchboxDBAdapter", "MatchboxSettings", "inject_backend"]
+__all__ = ["app", "MatchboxDBAdapter", "MatchboxSettings", "initialise_matchbox"]
 
 initialise_matchbox()

@@ -271,7 +271,7 @@ def get_model_results(name: str) -> Table:
 
 def set_model_truth(name: str, truth: float) -> ModelOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
-    res = CLIENT.post(f"/models/{name}/truth", json=truth)
+    res = CLIENT.patch(f"/models/{name}/truth", json=truth)
     return ModelOperationStatus.model_validate(res.json())
 
 

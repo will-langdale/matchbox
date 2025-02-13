@@ -283,8 +283,8 @@ def test_truth_setter(respx_mock: MockRouter):
         right_data=DataFrame(),
     )
 
-    # Mock the POST /models/{name}/truth endpoint
-    route = respx_mock.post(f"/models/{dummy.model.name}/truth").mock(
+    # Mock the PATCH /models/{name}/truth endpoint
+    route = respx_mock.patch(f"/models/{dummy.model.name}/truth").mock(
         return_value=Response(
             200,
             json=ModelOperationStatus(
@@ -314,8 +314,8 @@ def test_truth_setter_validation_error(respx_mock: MockRouter):
         right_data=DataFrame(),
     )
 
-    # Mock the POST endpoint with a validation error
-    route = respx_mock.post(f"/models/{dummy.model.name}/truth").mock(
+    # Mock the PATCH endpoint with a validation error
+    route = respx_mock.patch(f"/models/{dummy.model.name}/truth").mock(
         return_value=Response(422)
     )
 

@@ -41,9 +41,10 @@ class Model:
     @results.setter
     def results(self, results: Results) -> None:
         """Write results associated with the model to the database."""
-        _handler.add_model_results(
-            name=self.metadata.name, results=results.probabilities
-        )
+        if results.probabilities.shape[0] > 0:
+            _handler.add_model_results(
+                name=self.metadata.name, results=results.probabilities
+            )
 
     @property
     def truth(self) -> float:

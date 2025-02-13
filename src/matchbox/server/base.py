@@ -1,16 +1,12 @@
-import inspect
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from functools import wraps
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ParamSpec,
     Protocol,
     TypeVar,
-    cast,
 )
 
 import boto3
@@ -171,35 +167,6 @@ def initialise_matchbox() -> None:
     settings = SettingsClass()
 
     initialise_backend(settings)
-
-
-def inject_backend(func: Callable[..., R]) -> Callable[..., R]:
-    """Decorator to inject the Matchbox backend into functions.
-
-    Used to allow user-facing functions to access the backend without needing to
-    pass it in. The backend is defined by the MB__BACKEND_TYPE environment variable.
-
-    Can be used for both functions and methods.
-
-    If the user specifies a backend, it will be used instead of the injection.
-    """
-
-    @wraps(func)
-    def _inject_backend(
-        *args: P.args, backend: "MatchboxDBAdapter | None" = None, **kwargs: P.kwargs
-    ) -> R:
-        if backend is None:
-            backend = BackendManager.get_backend()
-
-        sig = inspect.signature(func)
-        params = list(sig.parameters.values())
-
-        if params and params[0].name in ("self", "cls"):
-            return cast(R, func(args[0], backend, *args[1:], **kwargs))
-        else:
-            return cast(R, func(backend, *args, **kwargs))
-
-    return cast(Callable[..., R], _inject_backend)
 
 
 class Countable(Protocol):
