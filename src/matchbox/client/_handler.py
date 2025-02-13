@@ -8,7 +8,13 @@ from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError, UploadStatus
+from matchbox.common.dtos import (
+    BackendRetrievableType,
+    ModelMetadata,
+    ModelOperationStatus,
+    NotFoundError,
+    UploadStatus,
+)
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
     MatchboxResolutionNotFoundError,
@@ -20,23 +26,6 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Match, Source, SourceAddress
-
-if timeout := getenv("MB__CLIENT__TIMEOUT"):
-    CLIENT = httpx.Client(timeout=float(timeout))
-else:
-    CLIENT = httpx.Client(timeout=None)
-
-
-def url(path: str) -> str:
-    """Return path prefixed by API root, determined from environment."""
-    api_root = getenv("MB__CLIENT__API_ROOT")
-    if api_root is None:
-        raise RuntimeError(
-            "MB__CLIENT__API_ROOT needs to be defined in the environment"
-        )
-
-    return api_root + path
-
 
 URLEncodeHandledType = str | int | float | bytes
 
@@ -67,6 +56,8 @@ def url_params(
 
 def handle_http_code(res: httpx.Response) -> httpx.Response:
     """Handle HTTP status codes and raise appropriate exceptions."""
+    res.read()
+
     if res.status_code == 200:
         return res
 
@@ -92,6 +83,25 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     raise MatchboxUnhandledServerResponse(res.content)
 
 
+def create_client() -> httpx.Client:
+    """Create an HTTPX client with proper configuration."""
+    api_root = getenv("MB__CLIENT__API_ROOT")
+    timeout = getenv("MB__CLIENT__TIMEOUT")
+    if api_root is None:
+        raise RuntimeError(
+            "MB__CLIENT__API_ROOT needs to be defined in the environment"
+        )
+    if timeout is not None:
+        timeout = float(timeout)
+
+    return httpx.Client(
+        base_url=api_root, timeout=timeout, event_hooks={"response": [handle_http_code]}
+    )
+
+
+CLIENT = create_client()
+
+
 # Retrieval
 
 
@@ -101,20 +111,18 @@ def query(
     threshold: int | None = None,
     limit: int | None = None,
 ) -> BytesIO:
-    res = handle_http_code(
-        CLIENT.get(
-            url("/query"),
-            params=url_params(
-                {
-                    "full_name": source_address.full_name,
-                    # Converted to b64 by `url_params()`
-                    "warehouse_hash_b64": source_address.warehouse_hash,
-                    "resolution_name": resolution_name,
-                    "threshold": threshold,
-                    "limit": limit,
-                }
-            ),
-        )
+    res = CLIENT.get(
+        "/query",
+        params=url_params(
+            {
+                "full_name": source_address.full_name,
+                # Converted to b64 by `url_params()`
+                "warehouse_hash_b64": source_address.warehouse_hash,
+                "resolution_name": resolution_name,
+                "threshold": threshold,
+                "limit": limit,
+            }
+        ),
     )
 
     buffer = BytesIO(res.content)
@@ -140,23 +148,21 @@ def match(
     target_full_names = [t.full_name for t in targets]
     target_warehouse_hashes = [t.warehouse_hash for t in targets]
 
-    res = handle_http_code(
-        CLIENT.get(
-            url("/match"),
-            params=url_params(
-                {
-                    "target_full_names": target_full_names,
-                    # Converted to b64 by `url_params()`
-                    "target_warehouse_hashes_b64": target_warehouse_hashes,
-                    "source_full_name": source.full_name,
-                    # Converted to b64 by `url_params()`
-                    "source_warehouse_hash_b64": source.warehouse_hash,
-                    "source_pk": source_pk,
-                    "resolution_name": resolution_name,
-                    "threshold": threshold,
-                }
-            ),
-        )
+    res = CLIENT.get(
+        "/match",
+        params=url_params(
+            {
+                "target_full_names": target_full_names,
+                # Converted to b64 by `url_params()`
+                "target_warehouse_hashes_b64": target_warehouse_hashes,
+                "source_full_name": source.full_name,
+                # Converted to b64 by `url_params()`
+                "source_warehouse_hash_b64": source.warehouse_hash,
+                "source_pk": source_pk,
+                "resolution_name": resolution_name,
+                "threshold": threshold,
+            }
+        ),
     )
 
     return [Match.model_validate(m) for m in res.json()]
@@ -170,25 +176,20 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
-    metadata_res = handle_http_code(
-        CLIENT.post(url("/sources"), json=source.model_dump())
-    )
+    metadata_res = CLIENT.post("/sources", json=source.model_dump())
+
     upload = UploadStatus.model_validate(metadata_res.json())
 
     # Upload data
-    upload_res = handle_http_code(
-        CLIENT.post(
-            url(f"/upload/{upload.id}"),
-            files={
-                "file": (f"{upload.id}.parquet", buffer, "application/octet-stream")
-            },
-        )
+    upload_res = CLIENT.post(
+        f"/upload/{upload.id}",
+        files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
     )
 
     # Poll until complete with retry/timeout configuration
     status = UploadStatus.model_validate(upload_res.json())
     while status.status not in ["complete", "failed"]:
-        status_res = handle_http_code(CLIENT.get(url(f"/upload/{upload.id}/status")))
+        status_res = CLIENT.get(f"/upload/{upload.id}/status")
         status = UploadStatus.model_validate(status_res.json())
 
         if status.status == "failed":
@@ -201,13 +202,21 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
 
 def get_source(address: SourceAddress) -> Source:
     warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
-    res = handle_http_code(
-        CLIENT.get(url(f"/sources/{warehouse_hash_b64}/{address.full_name}"))
-    )
+    res = CLIENT.get(f"/sources/{warehouse_hash_b64}/{address.full_name}")
+
     return Source.model_validate(res.json())
 
 
 def get_resolution_graph() -> ResolutionGraph:
     """Get the resolution graph from Matchbox."""
-    res = handle_http_code(CLIENT.get(url("/report/resolutions")))
+    res = CLIENT.get("/report/resolutions")
     return ResolutionGraph.model_validate(res.json())
+
+
+# Model management
+
+
+def insert_model(model: ModelMetadata) -> ModelOperationStatus:
+    """Insert a model in Matchbox."""
+    res = CLIENT.post("/models", json=model.model_dump())
+    return ModelOperationStatus.model_validate(res.json())
