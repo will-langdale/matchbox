@@ -1,4 +1,5 @@
 import logging
+from os import getenv
 from unittest.mock import Mock, patch
 
 import pyarrow as pa
@@ -74,7 +75,7 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_select_mixed_style(respx_mock: MockRouter, warehouse_engine: Engine):
     """We can select select specific columns from some of the sources"""
     # Set up mocks and test data
@@ -126,7 +127,7 @@ def test_select_mixed_style(respx_mock: MockRouter, warehouse_engine: Engine):
     assert selection[1].source.engine == warehouse_engine
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_select_non_indexed_columns(respx_mock: MockRouter, warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
     source = Source(
@@ -151,7 +152,7 @@ def test_select_non_indexed_columns(respx_mock: MockRouter, warehouse_engine: En
         select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_select_missing_columns(respx_mock: MockRouter, warehouse_engine: Engine):
     """Selecting columns not in the warehouse errors."""
     source = Source(
@@ -202,7 +203,7 @@ def test_query_no_resolution_fail():
         query(sels)
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch.object(Source, "to_arrow")
 def test_query_no_resolution_ok_various_params(to_arrow: Mock, respx_mock: MockRouter):
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
@@ -270,7 +271,7 @@ def test_query_no_resolution_ok_various_params(to_arrow: Mock, respx_mock: MockR
     }
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch.object(Source, "to_arrow")
 def test_query_multiple_sources_with_limits(to_arrow: Mock, respx_mock: MockRouter):
     """Tests that we can query multiple sources and distribute the limit among them."""
@@ -372,7 +373,7 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, respx_mock: MockRout
     query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_query_404_resolution(respx_mock: MockRouter):
     # Mock API
     respx_mock.get("/query").mock(
@@ -404,7 +405,7 @@ def test_query_404_resolution(respx_mock: MockRouter):
         query(sels)
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_query_404_source(respx_mock: MockRouter):
     # Mock API
     respx_mock.get("/query").mock(
@@ -436,7 +437,7 @@ def test_query_404_source(respx_mock: MockRouter):
         query(sels)
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch("matchbox.client.helpers.index.Source")
 def test_index_success(MockSource: Mock, respx_mock: MockRouter):
     """Test successful indexing flow through the API."""
@@ -488,7 +489,7 @@ def test_index_success(MockSource: Mock, respx_mock: MockRouter):
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch("matchbox.client.helpers.index.Source")
 @pytest.mark.parametrize(
     "columns",
@@ -566,7 +567,7 @@ def test_index_with_columns(
         mock_source_instance.default_columns.assert_called_once()
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch("matchbox.client.helpers.index.Source")
 def test_index_upload_failure(MockSource: Mock, respx_mock: MockRouter):
     """Test handling of upload failures."""
@@ -622,7 +623,7 @@ def test_index_upload_failure(MockSource: Mock, respx_mock: MockRouter):
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_match_ok(respx_mock: MockRouter):
     """The client can perform the right call for matching."""
     # Set up mocks
@@ -714,7 +715,7 @@ def test_match_ok(respx_mock: MockRouter):
     )
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_match_404_resolution(respx_mock: MockRouter):
     """The client can handle a resolution not found error."""
     # Set up mocks
@@ -763,7 +764,7 @@ def test_match_404_resolution(respx_mock: MockRouter):
         )
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_match_404_source(respx_mock: MockRouter):
     """The client can handle a source not found error."""
     # Set up mocks
