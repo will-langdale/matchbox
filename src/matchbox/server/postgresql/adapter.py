@@ -532,5 +532,5 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.delete(resolution)
                 session.commit()
             else:
-                childen = [r.name for r in resolution.descendants]
-                raise MatchboxConfirmDelete(childen)
+                children = [r.name for r in resolution.descendants]
+                raise MatchboxConfirmDelete(childen=children)

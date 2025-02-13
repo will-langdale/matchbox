@@ -469,7 +469,7 @@ async def get_results(
 async def set_truth(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     name: str,
-    truth: Annotated[float, Body()],
+    truth: Annotated[float, Body(ge=0.0, le=1.0)],
 ) -> ModelOperationStatus:
     """Set truth data for a model."""
     try:

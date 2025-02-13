@@ -1,3 +1,5 @@
+from os import getenv
+
 import pytest
 from httpx import Response
 from matplotlib.figure import Figure
@@ -7,7 +9,7 @@ from matchbox.client.visualisation import draw_resolution_graph
 from matchbox.common.graph import ResolutionGraph
 
 
-@pytest.mark.respx(base_url="http://localhost:8000")
+@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 def test_draw_resolution_graph(
     respx_mock: MockRouter, resolution_graph: ResolutionGraph
 ):

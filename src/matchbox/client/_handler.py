@@ -10,6 +10,7 @@ from pyarrow.parquet import read_table
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
+    ModelAncestor,
     ModelMetadata,
     ModelOperationStatus,
     NotFoundError,
@@ -17,6 +18,7 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
+    MatchboxConfirmDelete,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
@@ -76,6 +78,10 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise MatchboxResolutionNotFoundError(error.details)
         else:
             raise RuntimeError(f"Unexpected 404 error: {error.details}")
+
+    if res.status_code == 409:
+        error = ModelOperationStatus.model_validate(res.json())
+        raise MatchboxConfirmDelete(message=error.details)
 
     if res.status_code == 422:
         raise MatchboxUnparsedClientRequest(res.content)
@@ -219,4 +225,85 @@ def get_resolution_graph() -> ResolutionGraph:
 def insert_model(model: ModelMetadata) -> ModelOperationStatus:
     """Insert a model in Matchbox."""
     res = CLIENT.post("/models", json=model.model_dump())
+    return ModelOperationStatus.model_validate(res.json())
+
+
+def get_model(name: str) -> ModelMetadata:
+    res = CLIENT.get(f"/models/{name}")
+    return ModelMetadata.model_validate(res.json())
+
+
+def add_model_results(name: str, results: Table) -> UploadStatus:
+    """Upload model results in Matchbox."""
+    buffer = table_to_buffer(table=results)
+
+    # Initialise upload
+    metadata_res = CLIENT.post(f"/models/{name}/results")
+
+    upload = UploadStatus.model_validate(metadata_res.json())
+
+    # Upload data
+    upload_res = CLIENT.post(
+        f"/upload/{upload.id}",
+        files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
+    )
+
+    # Poll until complete with retry/timeout configuration
+    status = UploadStatus.model_validate(upload_res.json())
+    while status.status not in ["complete", "failed"]:
+        status_res = CLIENT.get(f"/upload/{upload.id}/status")
+        status = UploadStatus.model_validate(status_res.json())
+
+        if status.status == "failed":
+            raise MatchboxServerFileError(status.details)
+
+        time.sleep(2)
+
+    return status
+
+
+def get_model_results(name: str) -> Table:
+    """Get model results from Matchbox."""
+    res = CLIENT.get(f"/models/{name}/results")
+    buffer = BytesIO(res.content)
+    return read_table(buffer)
+
+
+def set_model_truth(name: str, truth: float) -> ModelOperationStatus:
+    """Set the truth threshold for a model in Matchbox."""
+    res = CLIENT.post(f"/models/{name}/truth", json=truth)
+    return ModelOperationStatus.model_validate(res.json())
+
+
+def get_model_truth(name: str) -> float:
+    """Get the truth threshold for a model in Matchbox."""
+    res = CLIENT.get(f"/models/{name}/truth")
+    return res.json()
+
+
+def get_model_ancestors(name: str) -> list[ModelAncestor]:
+    """Get the ancestors of a model in Matchbox."""
+    res = CLIENT.get(f"/models/{name}/ancestors")
+    return [ModelAncestor.model_validate(m) for m in res.json()]
+
+
+def set_model_ancestors_cache(
+    name: str, ancestors: list[ModelAncestor]
+) -> ModelOperationStatus:
+    """Set the ancestors cache for a model in Matchbox."""
+    res = CLIENT.post(
+        f"/models/{name}/ancestors_cache", json=[a.model_dump() for a in ancestors]
+    )
+    return ModelOperationStatus.model_validate(res.json())
+
+
+def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
+    """Get the ancestors cache for a model in Matchbox."""
+    res = CLIENT.get(f"/models/{name}/ancestors_cache")
+    return [ModelAncestor.model_validate(m) for m in res.json()]
+
+
+def delete_model(name: str, certain: bool | None = None) -> ModelOperationStatus:
+    """Delete a model in Matchbox."""
+    res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
     return ModelOperationStatus.model_validate(res.json())

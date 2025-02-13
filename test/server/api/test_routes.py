@@ -641,7 +641,7 @@ def test_delete_model(get_backend: Mock):
 def test_delete_model_needs_confirmation(get_backend: Mock):
     mock_backend = Mock()
     mock_backend.delete_model = Mock(
-        side_effect=MatchboxConfirmDelete(["dedupe1", "dedupe2"])
+        side_effect=MatchboxConfirmDelete(children=["dedupe1", "dedupe2"])
     )
     get_backend.return_value = mock_backend
 
@@ -681,6 +681,19 @@ def test_set_results(get_backend: Mock):
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_results_model_not_found(get_backend: Mock):
+    """Test setting results for a non-existent model."""
+    mock_backend = Mock()
+    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+    get_backend.return_value = mock_backend
+
+    response = client.post("/models/nonexistent-model/results")
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
 def test_get_truth(get_backend: Mock):
     mock_backend = Mock()
     dummy_model = model_factory()
@@ -709,6 +722,22 @@ def test_set_truth(get_backend: Mock):
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_truth_invalid_value(get_backend: Mock):
+    """Test setting an invalid truth value (outside 0-1 range)."""
+    mock_backend = Mock()
+    dummy_model = model_factory()
+    get_backend.return_value = mock_backend
+
+    # Test value > 1
+    response = client.patch(f"/models/{dummy_model.model.name}/truth", json=1.5)
+    assert response.status_code == 422
+
+    # Test value < 0
+    response = client.patch(f"/models/{dummy_model.model.name}/truth", json=-0.5)
+    assert response.status_code == 422
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
 def test_get_ancestors(get_backend: Mock):
     mock_backend = Mock()
     dummy_model = model_factory()
@@ -720,6 +749,50 @@ def test_get_ancestors(get_backend: Mock):
     get_backend.return_value = mock_backend
 
     response = client.get(f"/models/{dummy_model.model.name}/ancestors")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_ancestors_cache(get_backend: Mock):
+    """Test setting the ancestors cache for a model."""
+    mock_backend = Mock()
+    dummy_model = model_factory()
+    get_backend.return_value = mock_backend
+
+    ancestors_data = [
+        ModelAncestor(name="parent_model", truth=0.7),
+        ModelAncestor(name="grandparent_model", truth=0.8),
+    ]
+
+    response = client.patch(
+        f"/models/{dummy_model.model.name}/ancestors_cache",
+        json=[a.model_dump() for a in ancestors_data],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == ModelOperationType.UPDATE_ANCESTOR_CACHE
+    mock_backend.set_model_ancestors_cache.assert_called_once_with(
+        model=dummy_model.model.name, ancestors_cache=ancestors_data
+    )
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_ancestors_cache(get_backend: Mock):
+    """Test retrieving the ancestors cache for a model."""
+    mock_backend = Mock()
+    dummy_model = model_factory()
+    mock_ancestors = [
+        ModelAncestor(name="parent_model", truth=0.7),
+        ModelAncestor(name="grandparent_model", truth=0.8),
+    ]
+    mock_backend.get_model_ancestors_cache = Mock(return_value=mock_ancestors)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/models/{dummy_model.model.name}/ancestors_cache")
 
     assert response.status_code == 200
     assert len(response.json()) == 2

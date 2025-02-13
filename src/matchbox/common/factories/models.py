@@ -1,13 +1,19 @@
 from collections import Counter
 from textwrap import dedent
 from typing import Any, Literal
+from unittest.mock import Mock, PropertyMock, create_autospec
 
 import numpy as np
 import pyarrow as pa
 import rustworkx as rx
 from faker import Faker
+from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict
 
+from matchbox.client.models.dedupers.base import Deduper
+from matchbox.client.models.linkers.base import Linker
+from matchbox.client.models.models import Model
+from matchbox.client.results import Results
 from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.transform import graph_results
 
@@ -314,6 +320,34 @@ class ModelDummy(BaseModel):
     model: ModelMetadata
     data: pa.Table
     metrics: ModelMetrics
+
+    def to_mock(self) -> Mock:
+        """Create a mock Model object that mimics this dummy model's behavior."""
+        mock_model = create_autospec(Model)
+
+        # Set basic attributes
+        mock_model.metadata = self.model
+        mock_model.left_data = DataFrame()  # Default empty DataFrame
+        mock_model.right_data = (
+            DataFrame() if self.model.type == ModelType.LINKER else None
+        )
+
+        # Mock results property
+        mock_results = Results(probabilities=self.data, metadata=self.model)
+        type(mock_model).results = PropertyMock(return_value=mock_results)
+
+        # Mock run method
+        mock_model.run.return_value = mock_results
+
+        # Mock the model instance based on type
+        if self.model.type == ModelType.LINKER:
+            mock_model.model_instance = create_autospec(Linker)
+            mock_model.model_instance.link.return_value = self.data
+        else:
+            mock_model.model_instance = create_autospec(Deduper)
+            mock_model.model_instance.dedupe.return_value = self.data
+
+        return mock_model
 
 
 def model_factory(
