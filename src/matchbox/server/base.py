@@ -7,6 +7,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Optional,
     ParamSpec,
     Protocol,
     TypeVar,
@@ -54,11 +55,11 @@ class MatchboxDatastoreSettings(BaseSettings):
         extra="ignore",
     )
 
-    host: str
-    port: int
-    access_key_id: SecretStr
-    secret_access_key: SecretStr
-    default_region: str
+    host: Optional[str] = None
+    port: Optional[int] = None
+    access_key_id: Optional[SecretStr] = None
+    secret_access_key: Optional[SecretStr] = None
+    default_region: Optional[str] = None
     cache_bucket_name: str
 
     def get_client(self) -> S3Client:
@@ -66,13 +67,21 @@ class MatchboxDatastoreSettings(BaseSettings):
 
         Creates S3 buckets if they don't exist.
         """
-        client = boto3.client(
-            "s3",
-            endpoint_url=f"http://{self.host}:{self.port}",
-            aws_access_key_id=self.access_key_id.get_secret_value(),
-            aws_secret_access_key=self.secret_access_key.get_secret_value(),
-            region_name=self.default_region,
-        )
+
+        kwargs = {
+            "endpoint_url": f"http://{self.host}:{self.port}"
+            if self.host and self.port
+            else None,
+            "aws_access_key_id": self.access_key_id.get_secret_value()
+            if self.access_key_id
+            else None,
+            "aws_secret_access_key": self.secret_access_key.get_secret_value()
+            if self.secret_access_key
+            else None,
+            "region_name": self.default_region,
+        }
+
+        client = boto3.client("s3", **kwargs)
 
         try:
             client.head_bucket(Bucket=self.cache_bucket_name)
