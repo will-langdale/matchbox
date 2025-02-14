@@ -138,7 +138,7 @@ class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
 
-class MatchboxConfirmDelete(Exception):
+class MatchboxDeletionNotConfirmed(Exception):
     """Deletion must be confirmed: if certain, rerun with certain=True."""
 
     def __init__(self, message: str | None = None, children: list[str] | None = None):

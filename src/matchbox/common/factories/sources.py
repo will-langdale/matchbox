@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+from functools import cache, wraps
 from math import comb
+from typing import Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 from uuid import uuid4
 
@@ -12,9 +14,38 @@ from sqlalchemy import Engine, create_engine
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        # Handle features in first positional arg
+        if args and args[0] is not None:
+            if isinstance(args[0][0], dict):
+                args = (tuple(FeatureConfig(**d) for d in args[0]),) + args[1:]
+            else:
+                args = (tuple(args[0]),) + args[1:]
+
+        # Handle features in kwargs
+        if "features" in kwargs and kwargs["features"] is not None:
+            if isinstance(kwargs["features"][0], dict):
+                kwargs["features"] = tuple(
+                    FeatureConfig(**d) for d in kwargs["features"]
+                )
+            else:
+                kwargs["features"] = tuple(kwargs["features"])
+
+        return func(*args, **kwargs)
+
+    return wrapper
+
 
 class VariationRule(BaseModel, ABC):
     """Abstract base class for variation rules."""
+
+    model_config = ConfigDict(frozen=True)
 
     @abstractmethod
     def apply(self, value: str) -> str:
@@ -71,10 +102,12 @@ class ReplaceRule(VariationRule):
 class FeatureConfig(BaseModel):
     """Configuration for generating a feature with variations."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
     base_generator: str
-    parameters: dict = Field(default_factory=dict)
-    variations: list[VariationRule] = Field(default_factory=list)
+    parameters: tuple = Field(default_factory=tuple)
+    variations: tuple[VariationRule, ...] = Field(default_factory=tuple)
 
 
 class SourceMetrics(BaseModel):
@@ -138,7 +171,7 @@ class SourceDummy(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     source: Source
-    features: list[FeatureConfig]
+    features: tuple[FeatureConfig, ...]
     data: pa.Table
     data_hashes: pa.Table
     metrics: SourceMetrics
@@ -166,7 +199,7 @@ class SourceDataGenerator:
         self.faker.seed_instance(seed)
 
     def generate_data(
-        self, n_true_entities: int, features: list[FeatureConfig], repetition: int
+        self, n_true_entities: int, features: tuple[FeatureConfig], repetition: int
     ) -> tuple[pa.Table, pa.Table, SourceMetrics]:
         """Generate raw data as PyArrow tables.
 
@@ -186,7 +219,7 @@ class SourceDataGenerator:
         for _ in range(n_true_entities):
             # Generate base values -- the raw row
             base_values = {
-                f.name: getattr(self.faker, f.base_generator)(**f.parameters)
+                f.name: getattr(self.faker, f.base_generator)(**dict(f.parameters))
                 for f in features
             }
 
@@ -235,6 +268,8 @@ class SourceDataGenerator:
         return pa.Table.from_pandas(df), data_hashes, metrics
 
 
+@make_features_hashable
+@cache
 def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
     full_name: str | None = None,
@@ -259,7 +294,7 @@ def source_factory(
     generator = SourceDataGenerator(seed)
 
     if features is None:
-        features = [
+        features = (
             FeatureConfig(
                 name="company_name",
                 base_generator="company",
@@ -267,18 +302,15 @@ def source_factory(
             FeatureConfig(
                 name="crn",
                 base_generator="bothify",
-                parameters={"text": "???-###-???-###"},
+                parameters=(("text", "???-###-???-###"),),
             ),
-        ]
+        )
 
     if full_name is None:
         full_name = generator.faker.word()
 
     if engine is None:
         engine = create_engine("sqlite:///:memory:")
-
-    if features and isinstance(features[0], dict):
-        features = [FeatureConfig.model_validate(feature) for feature in features]
 
     data, data_hashes, metrics = generator.generate_data(
         n_true_entities=n_true_entities, features=features, repetition=repetition

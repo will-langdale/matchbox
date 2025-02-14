@@ -1,4 +1,5 @@
 from collections import Counter
+from functools import cache
 from textwrap import dedent
 from typing import Any, Literal
 from unittest.mock import Mock, PropertyMock, create_autospec
@@ -317,7 +318,7 @@ class ModelDummy(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    model: ModelMetadata
+    model: Model
     data: pa.Table
     metrics: ModelMetrics
 
@@ -350,6 +351,7 @@ class ModelDummy(BaseModel):
         return mock_model
 
 
+@cache
 def model_factory(
     name: str | None = None,
     description: str | None = None,
@@ -376,7 +378,7 @@ def model_factory(
 
     model_type = ModelType(model_type.lower() if model_type else "deduper")
 
-    model = ModelMetadata(
+    metadata = ModelMetadata(
         name=name or generator.word(),
         description=description or generator.sentence(),
         type=model_type,
@@ -384,13 +386,20 @@ def model_factory(
         right_resolution=generator.word() if model_type == ModelType.LINKER else None,
     )
 
-    if model.type == ModelType.LINKER:
+    if metadata.type == ModelType.LINKER:
         left_values = list(range(n_true_entities))
         right_values = list(range(n_true_entities, n_true_entities * 2))
-    elif model.type == ModelType.DEDUPER:
+    elif metadata.type == ModelType.DEDUPER:
         values_count = n_true_entities * 2  # So there's something to dedupe
         left_values = list(range(values_count))
         right_values = None
+
+    model = Model(
+        metadata=metadata,
+        model_instance=Mock(),
+        left_data=DataFrame({"id": left_values}),
+        right_data=DataFrame({"id": right_values}) if right_values else None,
+    )
 
     probabilities = generate_dummy_probabilities(
         left_values=left_values,

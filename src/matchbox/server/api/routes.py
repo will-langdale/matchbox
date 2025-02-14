@@ -29,7 +29,7 @@ from matchbox.common.dtos import (
     UploadStatus,
 )
 from matchbox.common.exceptions import (
-    MatchboxConfirmDelete,
+    MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
@@ -611,7 +611,7 @@ async def delete_model(
                 details=str(e), entity=BackendRetrievableType.RESOLUTION
             ).model_dump(),
         ) from e
-    except MatchboxConfirmDelete as e:
+    except MatchboxDeletionNotConfirmed as e:
         raise HTTPException(
             status_code=409,
             detail=ModelOperationStatus(

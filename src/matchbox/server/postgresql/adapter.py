@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
-    MatchboxConfirmDelete,
     MatchboxDataNotFound,
+    MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
@@ -533,4 +533,4 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.commit()
             else:
                 children = [r.name for r in resolution.descendants]
-                raise MatchboxConfirmDelete(childen=children)
+                raise MatchboxDeletionNotConfirmed(childen=children)

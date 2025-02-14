@@ -18,7 +18,7 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
-    MatchboxConfirmDelete,
+    MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
@@ -81,7 +81,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
     if res.status_code == 409:
         error = ModelOperationStatus.model_validate(res.json())
-        raise MatchboxConfirmDelete(message=error.details)
+        raise MatchboxDeletionNotConfirmed(message=error.details)
 
     if res.status_code == 422:
         raise MatchboxUnparsedClientRequest(res.content)
@@ -303,7 +303,7 @@ def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
-def delete_model(name: str, certain: bool | None = None) -> ModelOperationStatus:
+def delete_model(name: str, certain: bool | None = False) -> ModelOperationStatus:
     """Delete a model in Matchbox."""
     res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
     return ModelOperationStatus.model_validate(res.json())

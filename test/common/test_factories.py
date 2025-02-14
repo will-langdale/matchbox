@@ -285,15 +285,15 @@ def test_source_factory_metrics_with_multiple_features():
         FeatureConfig(
             name="company_name",
             base_generator="company",
-            variations=[
+            variations=(
                 SuffixRule(suffix=" Inc"),
                 SuffixRule(suffix=" Ltd"),
-            ],
+            ),
         ),
         FeatureConfig(
             name="email",
             base_generator="email",
-            variations=[ReplaceRule(old="@", new="+test@")],
+            variations=(ReplaceRule(old="@", new="+test@"),),
         ),
     ]
 
@@ -418,12 +418,12 @@ def test_source_factory_mock_properties():
         FeatureConfig(
             name="company_name",
             base_generator="company",
-            variations=[SuffixRule(suffix=" Ltd")],
+            variations=(SuffixRule(suffix=" Ltd"),),
         ),
         FeatureConfig(
             name="registration_id",
             base_generator="numerify",
-            parameters={"text": "######"},
+            parameters=(("text", "######"),),
         ),
     ]
 
@@ -462,15 +462,15 @@ def test_source_factory_mock_properties():
 
 def test_model_factory_default():
     """Test that model_factory generates a dummy model with default parameters."""
-    model = model_factory()
+    dummy = model_factory()
 
-    assert model.metrics.n_true_entities == 10
-    assert model.model.type == ModelType.DEDUPER
-    assert model.model.right_resolution is None
+    assert dummy.metrics.n_true_entities == 10
+    assert dummy.model.metadata.type == ModelType.DEDUPER
+    assert dummy.model.metadata.right_resolution is None
 
     # Check that probabilities table was generated correctly
-    assert len(model.data) > 0
-    assert model.data.schema.equals(SCHEMA_RESULTS)
+    assert len(dummy.data) > 0
+    assert dummy.data.schema.equals(SCHEMA_RESULTS)
 
 
 def test_model_factory_with_custom_params():
@@ -480,19 +480,19 @@ def test_model_factory_with_custom_params():
     n_true_entities = 5
     prob_range = (0.9, 1.0)
 
-    model = model_factory(
+    dummy = model_factory(
         name=name,
         description=description,
         n_true_entities=n_true_entities,
         prob_range=prob_range,
     )
 
-    assert model.model.name == name
-    assert model.model.description == description
-    assert model.metrics.n_true_entities == n_true_entities
+    assert dummy.model.metadata.name == name
+    assert dummy.model.metadata.description == description
+    assert dummy.metrics.n_true_entities == n_true_entities
 
     # Check probability range
-    probs = model.data.column("probability").to_pylist()
+    probs = dummy.data.column("probability").to_pylist()
     assert all(90 <= p <= 100 for p in probs)
 
 
@@ -505,16 +505,16 @@ def test_model_factory_with_custom_params():
 )
 def test_model_factory_different_types(model_type: str):
     """Test model_factory handles different model types correctly."""
-    model = model_factory(model_type=model_type)
+    dummy = model_factory(model_type=model_type)
 
-    assert model.model.type == model_type
+    assert dummy.model.metadata.type == model_type
 
     if model_type == ModelType.LINKER:
-        assert model.model.right_resolution is not None
+        assert dummy.model.metadata.right_resolution is not None
 
         # Check that left and right values are in different ranges
-        left_vals = model.data.column("left_id").to_pylist()
-        right_vals = model.data.column("right_id").to_pylist()
+        left_vals = dummy.data.column("left_id").to_pylist()
+        right_vals = dummy.data.column("right_id").to_pylist()
         left_min, left_max = min(left_vals), max(left_vals)
         right_min, right_max = min(right_vals), max(right_vals)
         assert (left_min < left_max < right_min < right_max) or (
@@ -531,14 +531,14 @@ def test_model_factory_different_types(model_type: str):
 )
 def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bool):
     """Test that model_factory handles seeds correctly for reproducibility."""
-    model1 = model_factory(seed=seed1)
-    model2 = model_factory(seed=seed2)
+    dummy1 = model_factory(seed=seed1)
+    dummy2 = model_factory(seed=seed2)
 
     if should_be_equal:
-        assert model1.model.name == model2.model.name
-        assert model1.model.description == model2.model.description
-        assert model1.data.equals(model2.data)
+        assert dummy1.model.metadata.name == dummy2.model.metadata.name
+        assert dummy1.model.metadata.description == dummy2.model.metadata.description
+        assert dummy1.data.equals(dummy2.data)
     else:
-        assert model1.model.name != model2.model.name
-        assert model1.model.description != model2.model.description
-        assert not model1.data.equals(model2.data)
+        assert dummy1.model.metadata.name != dummy2.model.metadata.name
+        assert dummy1.model.metadata.description != dummy2.model.metadata.description
+        assert not dummy1.data.equals(dummy2.data)
