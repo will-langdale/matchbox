@@ -1,5 +1,4 @@
 import logging
-from os import getenv
 from unittest.mock import Mock, patch
 
 import pyarrow as pa
@@ -75,8 +74,7 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_select_mixed_style(respx_mock: MockRouter, warehouse_engine: Engine):
+def test_select_mixed_style(matchbox_api: MockRouter, warehouse_engine: Engine):
     """We can select select specific columns from some of the sources"""
     # Set up mocks and test data
     source1 = Source(
@@ -89,10 +87,10 @@ def test_select_mixed_style(respx_mock: MockRouter, warehouse_engine: Engine):
         db_pk="pk",
     )
 
-    respx_mock.get(
+    matchbox_api.get(
         f"/sources/{hash_to_base64(source1.address.warehouse_hash)}/test.foo"
     ).mock(return_value=Response(200, content=source1.model_dump_json()))
-    respx_mock.get(
+    matchbox_api.get(
         f"/sources/{hash_to_base64(source2.address.warehouse_hash)}/test.bar"
     ).mock(return_value=Response(200, content=source2.model_dump_json()))
 
@@ -127,14 +125,13 @@ def test_select_mixed_style(respx_mock: MockRouter, warehouse_engine: Engine):
     assert selection[1].source.engine == warehouse_engine
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_select_non_indexed_columns(respx_mock: MockRouter, warehouse_engine: Engine):
+def test_select_non_indexed_columns(matchbox_api: MockRouter, warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
     source = Source(
         address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
         db_pk="pk",
     )
-    respx_mock.get(
+    matchbox_api.get(
         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.foo"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
@@ -152,15 +149,14 @@ def test_select_non_indexed_columns(respx_mock: MockRouter, warehouse_engine: En
         select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_select_missing_columns(respx_mock: MockRouter, warehouse_engine: Engine):
+def test_select_missing_columns(matchbox_api: MockRouter, warehouse_engine: Engine):
     """Selecting columns not in the warehouse errors."""
     source = Source(
         address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
         db_pk="pk",
     )
 
-    respx_mock.get(
+    matchbox_api.get(
         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.foo"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
@@ -203,12 +199,13 @@ def test_query_no_resolution_fail():
         query(sels)
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch.object(Source, "to_arrow")
-def test_query_no_resolution_ok_various_params(to_arrow: Mock, respx_mock: MockRouter):
+def test_query_no_resolution_ok_various_params(
+    to_arrow: Mock, matchbox_api: MockRouter
+):
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
     # Mock API
-    query_route = respx_mock.get("/query").mock(
+    query_route = matchbox_api.get("/query").mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -271,12 +268,11 @@ def test_query_no_resolution_ok_various_params(to_arrow: Mock, respx_mock: MockR
     }
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch.object(Source, "to_arrow")
-def test_query_multiple_sources_with_limits(to_arrow: Mock, respx_mock: MockRouter):
+def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRouter):
     """Tests that we can query multiple sources and distribute the limit among them."""
     # Mock API
-    query_route = respx_mock.get("/query").mock(
+    query_route = matchbox_api.get("/query").mock(
         side_effect=[
             Response(
                 200,
@@ -373,10 +369,9 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, respx_mock: MockRout
     query([sels[0]], [sels[1]], resolution_name="link", limit=7)
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_query_404_resolution(respx_mock: MockRouter):
+def test_query_404_resolution(matchbox_api: MockRouter):
     # Mock API
-    respx_mock.get("/query").mock(
+    matchbox_api.get("/query").mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -405,10 +400,9 @@ def test_query_404_resolution(respx_mock: MockRouter):
         query(sels)
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_query_404_source(respx_mock: MockRouter):
+def test_query_404_source(matchbox_api: MockRouter):
     # Mock API
-    respx_mock.get("/query").mock(
+    matchbox_api.get("/query").mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -437,9 +431,8 @@ def test_query_404_source(respx_mock: MockRouter):
         query(sels)
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch("matchbox.client.helpers.index.Source")
-def test_index_success(MockSource: Mock, respx_mock: MockRouter):
+def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
     """Test successful indexing flow through the API."""
     engine = create_engine("sqlite:///:memory:")
 
@@ -451,7 +444,7 @@ def test_index_success(MockSource: Mock, respx_mock: MockRouter):
     MockSource.return_value = mock_source_instance
 
     # Mock the initial source metadata upload
-    source_route = respx_mock.post("/sources").mock(
+    source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -463,7 +456,7 @@ def test_index_success(MockSource: Mock, respx_mock: MockRouter):
     )
 
     # Mock the data upload
-    upload_route = respx_mock.post("/upload/test-upload-id").mock(
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -489,7 +482,6 @@ def test_index_success(MockSource: Mock, respx_mock: MockRouter):
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch("matchbox.client.helpers.index.Source")
 @pytest.mark.parametrize(
     "columns",
@@ -506,7 +498,9 @@ def test_index_success(MockSource: Mock, respx_mock: MockRouter):
     ],
 )
 def test_index_with_columns(
-    MockSource: Mock, respx_mock: MockRouter, columns: list[str] | list[dict[str, str]]
+    MockSource: Mock,
+    matchbox_api: MockRouter,
+    columns: list[str] | list[dict[str, str]],
 ):
     """Test indexing with different column definition formats."""
     engine = create_engine("sqlite:///:memory:")
@@ -523,7 +517,7 @@ def test_index_with_columns(
     MockSource.return_value = mock_source_instance
 
     # Mock the API endpoints
-    source_route = respx_mock.post("/sources").mock(
+    source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -534,7 +528,7 @@ def test_index_with_columns(
         )
     )
 
-    upload_route = respx_mock.post("/upload/test-upload-id").mock(
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -567,9 +561,8 @@ def test_index_with_columns(
         mock_source_instance.default_columns.assert_called_once()
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
 @patch("matchbox.client.helpers.index.Source")
-def test_index_upload_failure(MockSource: Mock, respx_mock: MockRouter):
+def test_index_upload_failure(MockSource: Mock, matchbox_api: MockRouter):
     """Test handling of upload failures."""
     engine = create_engine("sqlite:///:memory:")
 
@@ -581,7 +574,7 @@ def test_index_upload_failure(MockSource: Mock, respx_mock: MockRouter):
     MockSource.return_value = mock_source_instance
 
     # Mock successful source creation
-    source_route = respx_mock.post("/sources").mock(
+    source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -593,7 +586,7 @@ def test_index_upload_failure(MockSource: Mock, respx_mock: MockRouter):
     )
 
     # Mock failed upload
-    upload_route = respx_mock.post("/upload/test-upload-id").mock(
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             400,
             json=UploadStatus(
@@ -623,8 +616,7 @@ def test_index_upload_failure(MockSource: Mock, respx_mock: MockRouter):
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_match_ok(respx_mock: MockRouter):
+def test_match_ok(matchbox_api: MockRouter):
     """The client can perform the right call for matching."""
     # Set up mocks
     mock_match1 = Match(
@@ -646,7 +638,7 @@ def test_match_ok(respx_mock: MockRouter):
         f"[{mock_match1.model_dump_json()}, {mock_match2.model_dump_json()}]"
     )
 
-    match_route = respx_mock.get("/match").mock(
+    match_route = matchbox_api.get("/match").mock(
         return_value=Response(200, content=serialised_matches)
     )
 
@@ -715,11 +707,10 @@ def test_match_ok(respx_mock: MockRouter):
     )
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_match_404_resolution(respx_mock: MockRouter):
+def test_match_404_resolution(matchbox_api: MockRouter):
     """The client can handle a resolution not found error."""
     # Set up mocks
-    respx_mock.get("/match").mock(
+    matchbox_api.get("/match").mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -764,11 +755,10 @@ def test_match_404_resolution(respx_mock: MockRouter):
         )
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_match_404_source(respx_mock: MockRouter):
+def test_match_404_source(matchbox_api: MockRouter):
     """The client can handle a source not found error."""
     # Set up mocks
-    respx_mock.get("/match").mock(
+    matchbox_api.get("/match").mock(
         return_value=Response(
             404,
             json=NotFoundError(

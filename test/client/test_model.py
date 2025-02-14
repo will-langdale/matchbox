@@ -1,5 +1,4 @@
 import json
-from os import getenv
 
 import pytest
 from httpx import Response
@@ -26,14 +25,13 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.models import model_factory
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_insert_model(respx_mock: MockRouter):
+def test_insert_model(matchbox_api: MockRouter):
     """Test inserting a model via the API."""
     # Create test model using factory
     dummy = model_factory(model_type="linker")
 
     # Mock the POST /models endpoint
-    route = respx_mock.post("/models").mock(
+    route = matchbox_api.post("/models").mock(
         return_value=Response(
             200,
             json=ModelOperationStatus(
@@ -55,13 +53,12 @@ def test_insert_model(respx_mock: MockRouter):
     )
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_insert_model_error(respx_mock: MockRouter):
+def test_insert_model_error(matchbox_api: MockRouter):
     """Test handling of model insertion errors."""
     dummy = model_factory(model_type="linker")
 
     # Mock the POST /models endpoint with an error response
-    route = respx_mock.post("/models").mock(
+    route = matchbox_api.post("/models").mock(
         return_value=Response(
             500,
             json=ModelOperationStatus(
@@ -80,13 +77,12 @@ def test_insert_model_error(respx_mock: MockRouter):
     assert route.called
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_results_getter(respx_mock: MockRouter):
+def test_results_getter(matchbox_api: MockRouter):
     """Test getting model results via the API."""
     dummy = model_factory(model_type="linker")
 
     # Mock the GET /models/{name}/results endpoint
-    route = respx_mock.get(f"/models/{dummy.model.metadata.name}/results").mock(
+    route = matchbox_api.get(f"/models/{dummy.model.metadata.name}/results").mock(
         return_value=Response(200, content=table_to_buffer(dummy.data).read())
     )
 
@@ -99,13 +95,12 @@ def test_results_getter(respx_mock: MockRouter):
     assert results.probabilities.schema.equals(SCHEMA_RESULTS)
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_results_getter_not_found(respx_mock: MockRouter):
+def test_results_getter_not_found(matchbox_api: MockRouter):
     """Test getting model results when they don't exist."""
     dummy = model_factory(model_type="linker")
 
     # Mock the GET endpoint with a 404 response
-    route = respx_mock.get(f"/models/{dummy.model.metadata.name}/results").mock(
+    route = matchbox_api.get(f"/models/{dummy.model.metadata.name}/results").mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -121,13 +116,12 @@ def test_results_getter_not_found(respx_mock: MockRouter):
     assert route.called
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_results_setter(respx_mock: MockRouter):
+def test_results_setter(matchbox_api: MockRouter):
     """Test setting model results via the API."""
     dummy = model_factory(model_type="linker")
 
     # Mock the endpoints needed for results upload
-    init_route = respx_mock.post(f"/models/{dummy.model.metadata.name}/results").mock(
+    init_route = matchbox_api.post(f"/models/{dummy.model.metadata.name}/results").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -138,7 +132,7 @@ def test_results_setter(respx_mock: MockRouter):
         )
     )
 
-    upload_route = respx_mock.post("/upload/test-upload-id").mock(
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -149,7 +143,7 @@ def test_results_setter(respx_mock: MockRouter):
         )
     )
 
-    status_route = respx_mock.get("/upload/test-upload-id/status").mock(
+    status_route = matchbox_api.get("/upload/test-upload-id/status").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -173,13 +167,12 @@ def test_results_setter(respx_mock: MockRouter):
     )  # Check for parquet file signature
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_results_setter_upload_failure(respx_mock: MockRouter):
+def test_results_setter_upload_failure(matchbox_api: MockRouter):
     """Test handling of upload failures when setting results."""
     dummy = model_factory(model_type="linker")
 
     # Mock the initial POST endpoint
-    init_route = respx_mock.post(f"/models/{dummy.model.metadata.name}/results").mock(
+    init_route = matchbox_api.post(f"/models/{dummy.model.metadata.name}/results").mock(
         return_value=Response(
             200,
             json=UploadStatus(
@@ -191,7 +184,7 @@ def test_results_setter_upload_failure(respx_mock: MockRouter):
     )
 
     # Mock the upload endpoint with a failure
-    upload_route = respx_mock.post("/upload/test-upload-id").mock(
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             400,
             json=UploadStatus(
@@ -212,13 +205,12 @@ def test_results_setter_upload_failure(respx_mock: MockRouter):
     assert upload_route.called
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_truth_getter(respx_mock: MockRouter):
+def test_truth_getter(matchbox_api: MockRouter):
     """Test getting model truth threshold via the API."""
     dummy = model_factory(model_type="linker")
 
     # Mock the GET /models/{name}/truth endpoint
-    route = respx_mock.get(f"/models/{dummy.model.metadata.name}/truth").mock(
+    route = matchbox_api.get(f"/models/{dummy.model.metadata.name}/truth").mock(
         return_value=Response(200, json=0.9)
     )
 
@@ -230,13 +222,12 @@ def test_truth_getter(respx_mock: MockRouter):
     assert truth == 0.9
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_truth_setter(respx_mock: MockRouter):
+def test_truth_setter(matchbox_api: MockRouter):
     """Test setting model truth threshold via the API."""
     dummy = model_factory(model_type="linker")
 
     # Mock the PATCH /models/{name}/truth endpoint
-    route = respx_mock.patch(f"/models/{dummy.model.metadata.name}/truth").mock(
+    route = matchbox_api.patch(f"/models/{dummy.model.metadata.name}/truth").mock(
         return_value=Response(
             200,
             json=ModelOperationStatus(
@@ -255,13 +246,12 @@ def test_truth_setter(respx_mock: MockRouter):
     assert float(route.calls.last.request.read()) == 0.9
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_truth_setter_validation_error(respx_mock: MockRouter):
+def test_truth_setter_validation_error(matchbox_api: MockRouter):
     """Test setting invalid truth values."""
     dummy = model_factory(model_type="linker")
 
     # Mock the PATCH endpoint with a validation error
-    route = respx_mock.patch(f"/models/{dummy.model.metadata.name}/truth").mock(
+    route = matchbox_api.patch(f"/models/{dummy.model.metadata.name}/truth").mock(
         return_value=Response(422)
     )
 
@@ -272,8 +262,7 @@ def test_truth_setter_validation_error(respx_mock: MockRouter):
     assert route.called
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_ancestors_getter(respx_mock: MockRouter):
+def test_ancestors_getter(matchbox_api: MockRouter):
     """Test getting model ancestors via the API."""
     dummy = model_factory(model_type="linker")
 
@@ -283,7 +272,7 @@ def test_ancestors_getter(respx_mock: MockRouter):
     ]
 
     # Mock the GET /models/{name}/ancestors endpoint
-    route = respx_mock.get(f"/models/{dummy.model.metadata.name}/ancestors").mock(
+    route = matchbox_api.get(f"/models/{dummy.model.metadata.name}/ancestors").mock(
         return_value=Response(200, json=ancestors_data)
     )
 
@@ -295,13 +284,12 @@ def test_ancestors_getter(respx_mock: MockRouter):
     assert ancestors == {"model1": 0.9, "model2": 0.8}
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_ancestors_cache_operations(respx_mock: MockRouter):
+def test_ancestors_cache_operations(matchbox_api: MockRouter):
     """Test getting and setting model ancestors cache via the API."""
     dummy = model_factory(model_type="linker")
 
     # Mock the GET endpoint
-    get_route = respx_mock.get(
+    get_route = matchbox_api.get(
         f"/models/{dummy.model.metadata.name}/ancestors_cache"
     ).mock(
         return_value=Response(
@@ -310,7 +298,7 @@ def test_ancestors_cache_operations(respx_mock: MockRouter):
     )
 
     # Mock the POST endpoint
-    set_route = respx_mock.post(
+    set_route = matchbox_api.post(
         f"/models/{dummy.model.metadata.name}/ancestors_cache"
     ).mock(
         return_value=Response(
@@ -336,13 +324,12 @@ def test_ancestors_cache_operations(respx_mock: MockRouter):
     ]
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_ancestors_cache_set_error(respx_mock: MockRouter):
+def test_ancestors_cache_set_error(matchbox_api: MockRouter):
     """Test error handling when setting ancestors cache."""
     dummy = model_factory(model_type="linker")
 
     # Mock the POST endpoint with an error
-    route = respx_mock.post(
+    route = matchbox_api.post(
         f"/models/{dummy.model.metadata.name}/ancestors_cache"
     ).mock(
         return_value=Response(
@@ -363,14 +350,13 @@ def test_ancestors_cache_set_error(respx_mock: MockRouter):
     assert route.called
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_delete_model(respx_mock: MockRouter):
+def test_delete_model(matchbox_api: MockRouter):
     """Test successfully deleting a model."""
     # Create test model using factory
     dummy = model_factory()
 
     # Mock the DELETE endpoint with success response
-    route = respx_mock.delete(
+    route = matchbox_api.delete(
         f"/models/{dummy.model.metadata.name}", params={"certain": True}
     ).mock(
         return_value=Response(
@@ -392,15 +378,14 @@ def test_delete_model(respx_mock: MockRouter):
     assert route.calls.last.request.url.params["certain"] == "true"
 
 
-@pytest.mark.respx(base_url=getenv("MB__CLIENT__API_ROOT"))
-def test_delete_model_needs_confirmation(respx_mock: MockRouter):
+def test_delete_model_needs_confirmation(matchbox_api: MockRouter):
     """Test attempting to delete a model without confirmation returns 409."""
     # Create test model using factory
     dummy = model_factory()
 
     # Mock the DELETE endpoint with 409 confirmation required response
     error_details = "Cannot delete model with dependent models: dedupe1, dedupe2"
-    route = respx_mock.delete(f"/models/{dummy.model.metadata.name}").mock(
+    route = matchbox_api.delete(f"/models/{dummy.model.metadata.name}").mock(
         return_value=Response(
             409,
             json=ModelOperationStatus(
