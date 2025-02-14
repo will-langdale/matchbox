@@ -458,7 +458,7 @@ def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
     # Mock the data upload
     upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id", status="complete", entity=BackendUploadType.INDEX
             ).model_dump(),
@@ -530,7 +530,7 @@ def test_index_with_columns(
 
     upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id", status="complete", entity=BackendUploadType.INDEX
             ).model_dump(),

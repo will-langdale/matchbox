@@ -193,7 +193,7 @@ def test_upload_status_check(metadata_store: Mock, _: Mock):
     response = client.get(f"/upload/{update_id}/status")
 
     # Should return current status
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert response.json()["status"] == "processing"
     metadata_store.update_status.assert_not_called()
 
@@ -511,7 +511,7 @@ async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
     current_attempt = 0
     while current_attempt < max_attempts:
         response = client.get(f"/upload/{upload_id}/status")
-        assert response.status_code == 200 or response.status_code == 202
+        assert response.status_code == 200
 
         status = response.json()["status"]
         if status == "complete":
@@ -723,7 +723,7 @@ async def test_complete_model_upload_process(
 
     while current_attempt < max_attempts:
         response = client.get(f"/upload/{upload_id}/status")
-        assert response.status_code == 200 or response.status_code == 202
+        assert response.status_code == 200
 
         status = response.json()["status"]
         if status == "complete":

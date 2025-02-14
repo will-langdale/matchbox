@@ -107,7 +107,9 @@ async def count_backend_items(
 
 @app.post(
     "/upload/{upload_id}",
-    responses={400: {"model": UploadStatus, **UploadStatus.status_400_examples()}},
+    responses={
+        400: {"model": UploadStatus, **UploadStatus.status_400_examples()},
+    },
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def upload_file(
@@ -180,16 +182,24 @@ async def upload_file(
         metadata_store=metadata_store,
     )
 
-    return metadata_store.get(upload_id).status
+    source_cache = metadata_store.get(upload_id)
+
+    # Check for error in async task
+    if source_cache.status.status == "failed":
+        raise HTTPException(
+            status_code=400,
+            detail=source_cache.status.model_dump(),
+        )
+    else:
+        return source_cache.status
 
 
 @app.get(
     "/upload/{upload_id}/status",
     responses={
-        200: {"model": UploadStatus},
-        202: {"model": UploadStatus},
         400: {"model": UploadStatus, **UploadStatus.status_400_examples()},
     },
+    status_code=status.HTTP_200_OK,
 )
 async def get_upload_status(
     upload_id: str,
@@ -216,10 +226,7 @@ async def get_upload_status(
             ).model_dump(),
         )
 
-    return JSONResponse(
-        status_code=source_cache.status.get_http_code(),
-        content=source_cache.status.model_dump(),
-    )
+    return source_cache.status
 
 
 # Retrieval
@@ -237,6 +244,7 @@ async def query(
     threshold: int | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
+    """Query Matchbox for matches based on a source address."""
     source_address = SourceAddress(
         full_name=full_name, warehouse_hash=warehouse_hash_b64
     )
@@ -280,6 +288,7 @@ async def match(
     resolution_name: str,
     threshold: int | None = None,
 ) -> list[Match]:
+    """Match a source primary key against a list of target addresses."""
     targets = [
         SourceAddress(full_name=n, warehouse_hash=w)
         for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)

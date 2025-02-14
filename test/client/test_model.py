@@ -83,7 +83,7 @@ def test_results_getter(matchbox_api: MockRouter):
 
     # Mock the GET /models/{name}/results endpoint
     route = matchbox_api.get(f"/models/{dummy.model.metadata.name}/results").mock(
-        return_value=Response(202, content=table_to_buffer(dummy.data).read())
+        return_value=Response(200, content=table_to_buffer(dummy.data).read())
     )
 
     # Get results

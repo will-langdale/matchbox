@@ -160,11 +160,13 @@ class UploadStatus(BaseModel):
         "complete": 200,
         "failed": 400,
         "awaiting_upload": 202,
-        "queued": 202,
-        "processing": 202,
+        "queued": 200,
+        "processing": 200,
     }
 
-    def get_http_code(self) -> int:
+    def get_http_code(self, status: bool) -> int:
+        if self.status == "failed":
+            return 400
         return self._status_code_mapping[self.status]
 
     @classmethod
