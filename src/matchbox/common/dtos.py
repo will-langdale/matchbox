@@ -155,6 +155,18 @@ class UploadStatus(BaseModel):
     details: str | None = None
     entity: BackendUploadType | None = None
 
+    _status_code_mapping = {
+        "ready": 200,
+        "complete": 200,
+        "failed": 400,
+        "awaiting_upload": 202,
+        "queued": 202,
+        "processing": 202,
+    }
+
+    def get_http_code(self) -> int:
+        return self._status_code_mapping[self.status]
+
     @classmethod
     def status_400_examples(cls) -> dict:
         return {

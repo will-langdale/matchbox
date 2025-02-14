@@ -10,6 +10,7 @@ from fastapi import (
     HTTPException,
     Query,
     UploadFile,
+    status,
 )
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -107,6 +108,7 @@ async def count_backend_items(
 @app.post(
     "/upload/{upload_id}",
     responses={400: {"model": UploadStatus, **UploadStatus.status_400_examples()}},
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def upload_file(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -183,7 +185,11 @@ async def upload_file(
 
 @app.get(
     "/upload/{upload_id}/status",
-    responses={400: {"model": UploadStatus, **UploadStatus.status_400_examples()}},
+    responses={
+        200: {"model": UploadStatus},
+        202: {"model": UploadStatus},
+        400: {"model": UploadStatus, **UploadStatus.status_400_examples()},
+    },
 )
 async def get_upload_status(
     upload_id: str,
@@ -210,7 +216,10 @@ async def get_upload_status(
             ).model_dump(),
         )
 
-    return source_cache.status
+    return JSONResponse(
+        status_code=source_cache.status.get_http_code(),
+        content=source_cache.status.model_dump(),
+    )
 
 
 # Retrieval
@@ -307,7 +316,7 @@ async def match(
 # Data management
 
 
-@app.post("/sources")
+@app.post("/sources", status_code=status.HTTP_202_ACCEPTED)
 async def add_source(source: Source) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
     upload_id = metadata_store.cache_source(metadata=source)
@@ -354,6 +363,7 @@ async def get_resolutions(
             **ModelOperationStatus.status_500_examples(),
         },
     },
+    status_code=status.HTTP_201_CREATED,
 )
 async def insert_model(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], model: ModelMetadata
@@ -400,6 +410,7 @@ async def get_model(
 @app.post(
     "/models/{name}/results",
     responses={404: {"model": NotFoundError}},
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def set_results(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str

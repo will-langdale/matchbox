@@ -37,6 +37,9 @@ else:
 client = TestClient(app)
 
 
+# General
+
+
 def test_healthcheck():
     """Test the healthcheck endpoint."""
     response = client.get("/health")
@@ -80,68 +83,10 @@ def test_count_backend_item(get_backend: MatchboxDBAdapter):
     assert response.json() == {"entities": {"models": 20}}
 
 
-# def test_clear_backend():
-#     response = client.post("/testing/clear")
-#     assert response.status_code == 200
-
-# def test_list_sources():
-#     response = client.get("/sources")
-#     assert response.status_code == 200
-
-
-# Source endpoints
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_source(get_backend):
-    dummy_source = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="pk"
-    )
-    mock_backend = Mock()
-    mock_backend.get_source = Mock(return_value=dummy_source)
-    get_backend.return_value = mock_backend
-
-    response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
-    assert response.status_code == 200
-    assert Source.model_validate(response.json())
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_source_404(get_backend):
-    mock_backend = Mock()
-    mock_backend.get_source = Mock(side_effect=MatchboxSourceNotFoundError)
-    get_backend.return_value = mock_backend
-
-    response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendRetrievableType.SOURCE
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_add_source(get_backend: Mock):
-    """Test the source addition endpoint."""
-    # Setup
-    mock_backend = Mock()
-    mock_backend.index = Mock(return_value=None)
-    get_backend.return_value = mock_backend
-
-    dummy_source = source_factory()
-
-    # Make request
-    response = client.post("/sources", json=dummy_source.source.model_dump())
-
-    # Validate response
-    assert UploadStatus.model_validate(response.json())
-    assert response.status_code == 200, response.json()
-    assert response.json()["status"] == "awaiting_upload"
-    assert response.json().get("id") is not None
-    mock_backend.index.assert_not_called()
-
-
 @patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store")
 @patch("matchbox.server.api.routes.BackgroundTasks.add_task")
-def test_source_upload(
+def test_upload(
     mock_add_task: Mock, metadata_store: Mock, get_backend: Mock, s3: S3Client
 ):
     """Test uploading a file, happy path."""
@@ -178,7 +123,7 @@ def test_source_upload(
 
     # Validate response
     assert UploadStatus.model_validate(response.json())
-    assert response.status_code == 200, response.json()
+    assert response.status_code == 202, response.json()
     assert response.json()["status"] == "queued"  # Updated to check for queued status
     # Check both status updates were called in correct order
     assert metadata_store.update_status.call_args_list == [
@@ -186,6 +131,48 @@ def test_source_upload(
     ]
     mock_backend.index.assert_not_called()  # Index happens in background
     mock_add_task.assert_called_once()  # Verify background task was queued
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.metadata_store")
+@patch("matchbox.server.api.routes.BackgroundTasks.add_task")
+def test_upload_wrong_schema(
+    mock_add_task: Mock, metadata_store: Mock, get_backend: Mock, s3: S3Client
+):
+    """Test uploading a file with wrong schema."""
+    # Setup
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    get_backend.return_value = mock_backend
+
+    # Create source with results schema instead of index
+    dummy_source = source_factory()
+
+    # Setup store
+    store = MetadataStore()
+    update_id = store.cache_source(dummy_source.source)
+    metadata_store.get.side_effect = store.get
+    metadata_store.update_status.side_effect = store.update_status
+
+    # Make request with actual data instead of the hashes -- wrong schema
+    response = client.post(
+        f"/upload/{update_id}",
+        files={
+            "file": (
+                "hashes.parquet",
+                table_to_buffer(dummy_source.data),
+                "application/octet-stream",
+            ),
+        },
+    )
+
+    # Should fail before background task starts
+    assert response.status_code == 400
+    assert response.json()["status"] == "failed"
+    assert "schema mismatch" in response.json()["details"].lower()
+    metadata_store.update_status.assert_called_with(update_id, "failed", details=ANY)
+    mock_add_task.assert_not_called()  # Background task should not be queued
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")  # Stops real backend call
@@ -205,7 +192,7 @@ def test_upload_status_check(metadata_store: Mock, _: Mock):
     response = client.get(f"/upload/{update_id}/status")
 
     # Should return current status
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert response.json()["status"] == "processing"
     metadata_store.update_status.assert_not_called()
 
@@ -256,48 +243,6 @@ def test_upload_already_queued(metadata_store: Mock, _: Mock):
     assert response.json()["status"] == "queued"
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
-@patch("matchbox.server.api.routes.metadata_store")
-@patch("matchbox.server.api.routes.BackgroundTasks.add_task")
-def test_source_upload_wrong_schema(
-    mock_add_task: Mock, metadata_store: Mock, get_backend: Mock, s3: S3Client
-):
-    """Test uploading a file with wrong schema."""
-    # Setup
-    mock_backend = Mock()
-    mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    get_backend.return_value = mock_backend
-
-    # Create source with results schema instead of index
-    dummy_source = source_factory()
-
-    # Setup store
-    store = MetadataStore()
-    update_id = store.cache_source(dummy_source.source)
-    metadata_store.get.side_effect = store.get
-    metadata_store.update_status.side_effect = store.update_status
-
-    # Make request with actual data instead of the hashes -- wrong schema
-    response = client.post(
-        f"/upload/{update_id}",
-        files={
-            "file": (
-                "hashes.parquet",
-                table_to_buffer(dummy_source.data),
-                "application/octet-stream",
-            ),
-        },
-    )
-
-    # Should fail before background task starts
-    assert response.status_code == 400
-    assert response.json()["status"] == "failed"
-    assert "schema mismatch" in response.json()["details"].lower()
-    metadata_store.update_status.assert_called_with(update_id, "failed", details=ANY)
-    mock_add_task.assert_not_called()  # Background task should not be queued
-
-
 @patch("matchbox.server.api.routes.metadata_store")
 def test_status_check_not_found(metadata_store: Mock):
     """Test checking status for non-existent upload ID."""
@@ -310,486 +255,7 @@ def test_status_check_not_found(metadata_store: Mock):
     assert "not found or expired" in response.json()["details"].lower()
 
 
-@pytest.mark.asyncio
-@patch("matchbox.server.base.BackendManager.get_backend")
-async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
-    """Test the complete upload process from source creation through processing."""
-    # Setup the backend
-    mock_backend = Mock()
-    mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.index = Mock(return_value=None)
-    get_backend.return_value = mock_backend
-
-    # Create test bucket
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
-
-    # Create test data
-    dummy_source = source_factory()
-
-    # Step 1: Add source
-    response = client.post("/sources", json=dummy_source.source.model_dump())
-    assert response.status_code == 200
-    upload_id = response.json()["id"]
-    assert response.json()["status"] == "awaiting_upload"
-
-    # Step 2: Upload file with real background tasks
-    response = client.post(
-        f"/upload/{upload_id}",
-        files={
-            "file": (
-                "hashes.parquet",
-                table_to_buffer(dummy_source.data_hashes),
-                "application/octet-stream",
-            ),
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["status"] == "queued"
-
-    # Step 3: Poll status until complete or timeout
-    max_attempts = 10
-    current_attempt = 0
-    while current_attempt < max_attempts:
-        response = client.get(f"/upload/{upload_id}/status")
-        assert response.status_code == 200
-
-        status = response.json()["status"]
-        if status == "complete":
-            break
-        elif status == "failed":
-            pytest.fail(f"Upload failed: {response.json().get('details')}")
-        elif status in ["processing", "queued"]:
-            await asyncio.sleep(0.1)  # Small delay between polls
-        else:
-            pytest.fail(f"Unexpected status: {status}")
-
-        current_attempt += 1
-
-    assert current_attempt < max_attempts, (
-        "Timed out waiting for processing to complete"
-    )
-    assert status == "complete"
-
-    # Verify backend.index was called with correct arguments
-    mock_backend.index.assert_called_once()
-    call_args = mock_backend.index.call_args
-    assert call_args[1]["source"] == dummy_source.source  # Check source matches
-    assert call_args[1]["data_hashes"].equals(dummy_source.data_hashes)  # Check data
-
-
-# Model endpoints
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_insert_model(get_backend: Mock):
-    mock_backend = Mock()
-    get_backend.return_value = mock_backend
-
-    dummy = model_factory(name="test_model")
-    response = client.post("/models", json=dummy.model.metadata.model_dump())
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "success": True,
-        "model_name": "test_model",
-        "operation": ModelOperationType.INSERT.value,
-        "details": None,
-    }
-    mock_backend.insert_model.assert_called_once_with(dummy.model.metadata)
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_insert_model_error(get_backend: Mock):
-    mock_backend = Mock()
-    mock_backend.insert_model = Mock(side_effect=Exception("Test error"))
-    get_backend.return_value = mock_backend
-
-    dummy = model_factory()
-    response = client.post("/models", json=dummy.model.metadata.model_dump())
-
-    assert response.status_code == 500
-    assert response.json()["success"] is False
-    assert response.json()["details"] == "Test error"
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_model(get_backend: Mock):
-    mock_backend = Mock()
-    dummy = model_factory(name="test_model", description="test description")
-    mock_backend.get_model = Mock(return_value=dummy.model.metadata)
-    get_backend.return_value = mock_backend
-
-    response = client.get("/models/test_model")
-
-    assert response.status_code == 200
-    assert response.json()["name"] == dummy.model.metadata.name
-    assert response.json()["description"] == dummy.model.metadata.description
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_model_not_found(get_backend: Mock):
-    mock_backend = Mock()
-    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
-    get_backend.return_value = mock_backend
-
-    response = client.get("/models/nonexistent")
-
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
-
-
-@pytest.mark.parametrize("model_type", ["deduper", "linker"])
-@patch("matchbox.server.base.BackendManager.get_backend")
-@patch("matchbox.server.api.routes.metadata_store")
-@patch("matchbox.server.api.routes.BackgroundTasks.add_task")
-def test_model_upload(
-    mock_add_task: Mock,
-    metadata_store: Mock,
-    get_backend: Mock,
-    s3: S3Client,
-    model_type: str,
-):
-    """Test uploading different types of files."""
-    # Setup
-    mock_backend = Mock()
-    mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    get_backend.return_value = mock_backend
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
-
-    # Create test data with specified model type
-    dummy = model_factory(model_type=model_type)
-
-    # Setup metadata store
-    store = MetadataStore()
-    upload_id = store.cache_model(dummy.model.metadata)
-
-    metadata_store.get.side_effect = store.get
-    metadata_store.update_status.side_effect = store.update_status
-
-    # Make request
-    response = client.post(
-        f"/upload/{upload_id}",
-        files={
-            "file": (
-                "data.parquet",
-                table_to_buffer(dummy.data),
-                "application/octet-stream",
-            ),
-        },
-    )
-
-    # Validate response
-    assert response.status_code == 200
-    assert response.json()["status"] == "queued"
-    mock_add_task.assert_called_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("model_type", ["deduper", "linker"])
-@patch("matchbox.server.base.BackendManager.get_backend")
-async def test_complete_model_upload_process(
-    get_backend: Mock, s3: S3Client, model_type: str
-):
-    """Test the complete upload process for models from creation through processing."""
-    # Setup the backend
-    mock_backend = Mock()
-    mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.set_model_results = Mock(return_value=None)
-    get_backend.return_value = mock_backend
-
-    # Create test bucket
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
-
-    # Create test data with specified model type
-    dummy = model_factory(model_type=model_type)
-
-    # Set up the mock to return the actual model metadata and data
-    mock_backend.get_model = Mock(return_value=dummy.model.metadata)
-    mock_backend.get_model_results = Mock(return_value=dummy.data)
-
-    # Step 1: Create model
-    response = client.post("/models", json=dummy.model.metadata.model_dump())
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-    assert response.json()["model_name"] == dummy.model.metadata.name
-
-    # Step 2: Initialize results upload
-    response = client.post(f"/models/{dummy.model.metadata.name}/results")
-    assert response.status_code == 200
-    upload_id = response.json()["id"]
-    assert response.json()["status"] == "awaiting_upload"
-
-    # Step 3: Upload results file with real background tasks
-    response = client.post(
-        f"/upload/{upload_id}",
-        files={
-            "file": (
-                "results.parquet",
-                table_to_buffer(dummy.data),
-                "application/octet-stream",
-            ),
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["status"] == "queued"
-
-    # Step 4: Poll status until complete or timeout
-    max_attempts = 10
-    current_attempt = 0
-    status = None
-
-    while current_attempt < max_attempts:
-        response = client.get(f"/upload/{upload_id}/status")
-        assert response.status_code == 200
-
-        status = response.json()["status"]
-        if status == "complete":
-            break
-        elif status == "failed":
-            pytest.fail(f"Upload failed: {response.json().get('details')}")
-        elif status in ["processing", "queued"]:
-            await asyncio.sleep(0.1)  # Small delay between polls
-        else:
-            pytest.fail(f"Unexpected status: {status}")
-
-        current_attempt += 1
-
-    assert current_attempt < max_attempts, (
-        "Timed out waiting for processing to complete"
-    )
-    assert status == "complete"
-
-    # Step 5: Verify results were stored correctly
-    mock_backend.set_model_results.assert_called_once()
-    call_args = mock_backend.set_model_results.call_args
-    assert (
-        call_args[1]["model"] == dummy.model.metadata.name
-    )  # Check model name matches
-    assert call_args[1]["results"].equals(dummy.data)  # Check results data matches
-
-    # Step 6: Verify we can retrieve the results
-    response = client.get(f"/models/{dummy.model.metadata.name}/results")
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/octet-stream"
-
-    # Step 7: Additional model-specific verifications
-    if model_type == "linker":
-        # For linker models, verify left and right resolutions are set
-        assert dummy.model.metadata.left_resolution is not None
-        assert dummy.model.metadata.right_resolution is not None
-    else:
-        # For deduper models, verify only left resolution is set
-        assert dummy.model.metadata.left_resolution is not None
-        assert dummy.model.metadata.right_resolution is None
-
-    # Verify the model truth can be set and retrieved
-    truth_value = 0.85
-    mock_backend.get_model_truth = Mock(return_value=truth_value)
-
-    response = client.patch(
-        f"/models/{dummy.model.metadata.name}/truth", json=truth_value
-    )
-    assert response.status_code == 200
-
-    response = client.get(f"/models/{dummy.model.metadata.name}/truth")
-    assert response.status_code == 200
-    assert response.json() == truth_value
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_delete_model(get_backend: Mock):
-    mock_backend = Mock()
-    get_backend.return_value = mock_backend
-
-    dummy = model_factory()
-    response = client.delete(
-        f"/models/{dummy.model.metadata.name}", params={"certain": True}
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "success": True,
-        "model_name": dummy.model.metadata.name,
-        "operation": ModelOperationType.DELETE,
-        "details": None,
-    }
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_delete_model_needs_confirmation(get_backend: Mock):
-    mock_backend = Mock()
-    mock_backend.delete_model = Mock(
-        side_effect=MatchboxDeletionNotConfirmed(children=["dedupe1", "dedupe2"])
-    )
-    get_backend.return_value = mock_backend
-
-    dummy = model_factory()
-    response = client.delete(f"/models/{dummy.model.metadata.name}")
-
-    assert response.status_code == 409
-    assert response.json()["success"] is False
-    message = response.json()["details"]
-    assert "dedupe1" in message and "dedupe2" in message
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_results(get_backend: Mock):
-    mock_backend = Mock()
-    dummy = model_factory()
-    mock_backend.get_model_results = Mock(return_value=dummy.data)
-    get_backend.return_value = mock_backend
-
-    response = client.get(f"/models/{dummy.model.metadata.name}/results")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/octet-stream"
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_set_results(get_backend: Mock):
-    mock_backend = Mock()
-    dummy = model_factory()
-    mock_backend.get_model = Mock(return_value=dummy.model.metadata)
-    get_backend.return_value = mock_backend
-
-    response = client.post(f"/models/{dummy.model.metadata.name}/results")
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "awaiting_upload"
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_set_results_model_not_found(get_backend: Mock):
-    """Test setting results for a non-existent model."""
-    mock_backend = Mock()
-    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
-    get_backend.return_value = mock_backend
-
-    response = client.post("/models/nonexistent-model/results")
-
-    assert response.status_code == 404
-    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_truth(get_backend: Mock):
-    mock_backend = Mock()
-    dummy = model_factory()
-    mock_backend.get_model_truth = Mock(return_value=0.95)
-    get_backend.return_value = mock_backend
-
-    response = client.get(f"/models/{dummy.model.metadata.name}/truth")
-
-    assert response.status_code == 200
-    assert response.json() == 0.95
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_set_truth(get_backend: Mock):
-    mock_backend = Mock()
-    dummy = model_factory()
-    get_backend.return_value = mock_backend
-
-    response = client.patch(f"/models/{dummy.model.metadata.name}/truth", json=0.95)
-
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-    mock_backend.set_model_truth.assert_called_once_with(
-        model=dummy.model.metadata.name, truth=0.95
-    )
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_set_truth_invalid_value(get_backend: Mock):
-    """Test setting an invalid truth value (outside 0-1 range)."""
-    mock_backend = Mock()
-    dummy = model_factory()
-    get_backend.return_value = mock_backend
-
-    # Test value > 1
-    response = client.patch(f"/models/{dummy.model.metadata.name}/truth", json=1.5)
-    assert response.status_code == 422
-
-    # Test value < 0
-    response = client.patch(f"/models/{dummy.model.metadata.name}/truth", json=-0.5)
-    assert response.status_code == 422
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_ancestors(get_backend: Mock):
-    mock_backend = Mock()
-    dummy = model_factory()
-    mock_ancestors = [
-        ModelAncestor(name="parent_model", truth=0.7),
-        ModelAncestor(name="grandparent_model", truth=0.97),
-    ]
-    mock_backend.get_model_ancestors = Mock(return_value=mock_ancestors)
-    get_backend.return_value = mock_backend
-
-    response = client.get(f"/models/{dummy.model.metadata.name}/ancestors")
-
-    assert response.status_code == 200
-    assert len(response.json()) == 2
-    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_set_ancestors_cache(get_backend: Mock):
-    """Test setting the ancestors cache for a model."""
-    mock_backend = Mock()
-    dummy = model_factory()
-    get_backend.return_value = mock_backend
-
-    ancestors_data = [
-        ModelAncestor(name="parent_model", truth=0.7),
-        ModelAncestor(name="grandparent_model", truth=0.8),
-    ]
-
-    response = client.patch(
-        f"/models/{dummy.model.metadata.name}/ancestors_cache",
-        json=[a.model_dump() for a in ancestors_data],
-    )
-
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-    assert response.json()["operation"] == ModelOperationType.UPDATE_ANCESTOR_CACHE
-    mock_backend.set_model_ancestors_cache.assert_called_once_with(
-        model=dummy.model.metadata.name, ancestors_cache=ancestors_data
-    )
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_get_ancestors_cache(get_backend: Mock):
-    """Test retrieving the ancestors cache for a model."""
-    mock_backend = Mock()
-    dummy = model_factory()
-    mock_ancestors = [
-        ModelAncestor(name="parent_model", truth=0.7),
-        ModelAncestor(name="grandparent_model", truth=0.8),
-    ]
-    mock_backend.get_model_ancestors_cache = Mock(return_value=mock_ancestors)
-    get_backend.return_value = mock_backend
-
-    response = client.get(f"/models/{dummy.model.metadata.name}/ancestors_cache")
-
-    assert response.status_code == 200
-    assert len(response.json()) == 2
-    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
-
-
-# Query and match endpoints
+# Retrieval
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -950,6 +416,127 @@ def test_match_404_source(get_backend: Mock):
     assert response.json()["entity"] == BackendRetrievableType.SOURCE
 
 
+# Data management
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_source(get_backend):
+    dummy_source = Source(
+        address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="pk"
+    )
+    mock_backend = Mock()
+    mock_backend.get_source = Mock(return_value=dummy_source)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
+    assert response.status_code == 200
+    assert Source.model_validate(response.json())
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_source_404(get_backend):
+    mock_backend = Mock()
+    mock_backend.get_source = Mock(side_effect=MatchboxSourceNotFoundError)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.SOURCE
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_add_source(get_backend: Mock):
+    """Test the source addition endpoint."""
+    # Setup
+    mock_backend = Mock()
+    mock_backend.index = Mock(return_value=None)
+    get_backend.return_value = mock_backend
+
+    dummy_source = source_factory()
+
+    # Make request
+    response = client.post("/sources", json=dummy_source.source.model_dump())
+
+    # Validate response
+    assert UploadStatus.model_validate(response.json())
+    assert response.status_code == 202, response.json()
+    assert response.json()["status"] == "awaiting_upload"
+    assert response.json().get("id") is not None
+    mock_backend.index.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("matchbox.server.base.BackendManager.get_backend")
+async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
+    """Test the complete upload process from source creation through processing."""
+    # Setup the backend
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.index = Mock(return_value=None)
+    get_backend.return_value = mock_backend
+
+    # Create test bucket
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Create test data
+    dummy_source = source_factory()
+
+    # Step 1: Add source
+    response = client.post("/sources", json=dummy_source.source.model_dump())
+    assert response.status_code == 202
+    upload_id = response.json()["id"]
+    assert response.json()["status"] == "awaiting_upload"
+
+    # Step 2: Upload file with real background tasks
+    response = client.post(
+        f"/upload/{upload_id}",
+        files={
+            "file": (
+                "hashes.parquet",
+                table_to_buffer(dummy_source.data_hashes),
+                "application/octet-stream",
+            ),
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+
+    # Step 3: Poll status until complete or timeout
+    max_attempts = 10
+    current_attempt = 0
+    while current_attempt < max_attempts:
+        response = client.get(f"/upload/{upload_id}/status")
+        assert response.status_code == 200 or response.status_code == 202
+
+        status = response.json()["status"]
+        if status == "complete":
+            break
+        elif status == "failed":
+            pytest.fail(f"Upload failed: {response.json().get('details')}")
+        elif status in ["processing", "queued"]:
+            await asyncio.sleep(0.1)  # Small delay between polls
+        else:
+            pytest.fail(f"Unexpected status: {status}")
+
+        current_attempt += 1
+
+    assert current_attempt < max_attempts, (
+        "Timed out waiting for processing to complete"
+    )
+    assert status == "complete"
+    assert response.status_code == 200
+
+    # Verify backend.index was called with correct arguments
+    mock_backend.index.assert_called_once()
+    call_args = mock_backend.index.call_args
+    assert call_args[1]["source"] == dummy_source.source  # Check source matches
+    assert call_args[1]["data_hashes"].equals(dummy_source.data_hashes)  # Check data
+
+
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_get_resolution_graph(
     get_backend: MatchboxDBAdapter, resolution_graph: ResolutionGraph
@@ -962,3 +549,412 @@ def test_get_resolution_graph(
     response = client.get("/report/resolutions")
     assert response.status_code == 200
     assert ResolutionGraph.model_validate(response.json())
+
+
+# Model management
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_insert_model(get_backend: Mock):
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+
+    dummy = model_factory(name="test_model")
+    response = client.post("/models", json=dummy.model.metadata.model_dump())
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "success": True,
+        "model_name": "test_model",
+        "operation": ModelOperationType.INSERT.value,
+        "details": None,
+    }
+    mock_backend.insert_model.assert_called_once_with(dummy.model.metadata)
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_insert_model_error(get_backend: Mock):
+    mock_backend = Mock()
+    mock_backend.insert_model = Mock(side_effect=Exception("Test error"))
+    get_backend.return_value = mock_backend
+
+    dummy = model_factory()
+    response = client.post("/models", json=dummy.model.metadata.model_dump())
+
+    assert response.status_code == 500
+    assert response.json()["success"] is False
+    assert response.json()["details"] == "Test error"
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_model(get_backend: Mock):
+    mock_backend = Mock()
+    dummy = model_factory(name="test_model", description="test description")
+    mock_backend.get_model = Mock(return_value=dummy.model.metadata)
+    get_backend.return_value = mock_backend
+
+    response = client.get("/models/test_model")
+
+    assert response.status_code == 200
+    assert response.json()["name"] == dummy.model.metadata.name
+    assert response.json()["description"] == dummy.model.metadata.description
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_model_not_found(get_backend: Mock):
+    mock_backend = Mock()
+    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+    get_backend.return_value = mock_backend
+
+    response = client.get("/models/nonexistent")
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+
+@pytest.mark.parametrize("model_type", ["deduper", "linker"])
+@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.metadata_store")
+@patch("matchbox.server.api.routes.BackgroundTasks.add_task")
+def test_model_upload(
+    mock_add_task: Mock,
+    metadata_store: Mock,
+    get_backend: Mock,
+    s3: S3Client,
+    model_type: str,
+):
+    """Test uploading different types of files."""
+    # Setup
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    get_backend.return_value = mock_backend
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Create test data with specified model type
+    dummy = model_factory(model_type=model_type)
+
+    # Setup metadata store
+    store = MetadataStore()
+    upload_id = store.cache_model(dummy.model.metadata)
+
+    metadata_store.get.side_effect = store.get
+    metadata_store.update_status.side_effect = store.update_status
+
+    # Make request
+    response = client.post(
+        f"/upload/{upload_id}",
+        files={
+            "file": (
+                "data.parquet",
+                table_to_buffer(dummy.data),
+                "application/octet-stream",
+            ),
+        },
+    )
+
+    # Validate response
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    mock_add_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_type", ["deduper", "linker"])
+@patch("matchbox.server.base.BackendManager.get_backend")
+async def test_complete_model_upload_process(
+    get_backend: Mock, s3: S3Client, model_type: str
+):
+    """Test the complete upload process for models from creation through processing."""
+    # Setup the backend
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.set_model_results = Mock(return_value=None)
+    get_backend.return_value = mock_backend
+
+    # Create test bucket
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Create test data with specified model type
+    dummy = model_factory(model_type=model_type)
+
+    # Set up the mock to return the actual model metadata and data
+    mock_backend.get_model = Mock(return_value=dummy.model.metadata)
+    mock_backend.get_model_results = Mock(return_value=dummy.data)
+
+    # Step 1: Create model
+    response = client.post("/models", json=dummy.model.metadata.model_dump())
+    assert response.status_code == 201
+    assert response.json()["success"] is True
+    assert response.json()["model_name"] == dummy.model.metadata.name
+
+    # Step 2: Initialize results upload
+    response = client.post(f"/models/{dummy.model.metadata.name}/results")
+    assert response.status_code == 202
+    upload_id = response.json()["id"]
+    assert response.json()["status"] == "awaiting_upload"
+
+    # Step 3: Upload results file with real background tasks
+    response = client.post(
+        f"/upload/{upload_id}",
+        files={
+            "file": (
+                "results.parquet",
+                table_to_buffer(dummy.data),
+                "application/octet-stream",
+            ),
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+
+    # Step 4: Poll status until complete or timeout
+    max_attempts = 10
+    current_attempt = 0
+    status = None
+
+    while current_attempt < max_attempts:
+        response = client.get(f"/upload/{upload_id}/status")
+        assert response.status_code == 200 or response.status_code == 202
+
+        status = response.json()["status"]
+        if status == "complete":
+            break
+        elif status == "failed":
+            pytest.fail(f"Upload failed: {response.json().get('details')}")
+        elif status in ["processing", "queued"]:
+            await asyncio.sleep(0.1)  # Small delay between polls
+        else:
+            pytest.fail(f"Unexpected status: {status}")
+
+        current_attempt += 1
+
+    assert current_attempt < max_attempts, (
+        "Timed out waiting for processing to complete"
+    )
+    assert status == "complete"
+    assert response.status_code == 200
+
+    # Step 5: Verify results were stored correctly
+    mock_backend.set_model_results.assert_called_once()
+    call_args = mock_backend.set_model_results.call_args
+    assert (
+        call_args[1]["model"] == dummy.model.metadata.name
+    )  # Check model name matches
+    assert call_args[1]["results"].equals(dummy.data)  # Check results data matches
+
+    # Step 6: Verify we can retrieve the results
+    response = client.get(f"/models/{dummy.model.metadata.name}/results")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+
+    # Step 7: Additional model-specific verifications
+    if model_type == "linker":
+        # For linker models, verify left and right resolutions are set
+        assert dummy.model.metadata.left_resolution is not None
+        assert dummy.model.metadata.right_resolution is not None
+    else:
+        # For deduper models, verify only left resolution is set
+        assert dummy.model.metadata.left_resolution is not None
+        assert dummy.model.metadata.right_resolution is None
+
+    # Verify the model truth can be set and retrieved
+    truth_value = 0.85
+    mock_backend.get_model_truth = Mock(return_value=truth_value)
+
+    response = client.patch(
+        f"/models/{dummy.model.metadata.name}/truth", json=truth_value
+    )
+    assert response.status_code == 200
+
+    response = client.get(f"/models/{dummy.model.metadata.name}/truth")
+    assert response.status_code == 200
+    assert response.json() == truth_value
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_results(get_backend: Mock):
+    mock_backend = Mock()
+    dummy = model_factory()
+    mock_backend.get_model = Mock(return_value=dummy.model.metadata)
+    get_backend.return_value = mock_backend
+
+    response = client.post(f"/models/{dummy.model.metadata.name}/results")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "awaiting_upload"
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_results_model_not_found(get_backend: Mock):
+    """Test setting results for a non-existent model."""
+    mock_backend = Mock()
+    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+    get_backend.return_value = mock_backend
+
+    response = client.post("/models/nonexistent-model/results")
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_results(get_backend: Mock):
+    mock_backend = Mock()
+    dummy = model_factory()
+    mock_backend.get_model_results = Mock(return_value=dummy.data)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/models/{dummy.model.metadata.name}/results")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_truth(get_backend: Mock):
+    mock_backend = Mock()
+    dummy = model_factory()
+    get_backend.return_value = mock_backend
+
+    response = client.patch(f"/models/{dummy.model.metadata.name}/truth", json=0.95)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    mock_backend.set_model_truth.assert_called_once_with(
+        model=dummy.model.metadata.name, truth=0.95
+    )
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_truth_invalid_value(get_backend: Mock):
+    """Test setting an invalid truth value (outside 0-1 range)."""
+    mock_backend = Mock()
+    dummy = model_factory()
+    get_backend.return_value = mock_backend
+
+    # Test value > 1
+    response = client.patch(f"/models/{dummy.model.metadata.name}/truth", json=1.5)
+    assert response.status_code == 422
+
+    # Test value < 0
+    response = client.patch(f"/models/{dummy.model.metadata.name}/truth", json=-0.5)
+    assert response.status_code == 422
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_truth(get_backend: Mock):
+    mock_backend = Mock()
+    dummy = model_factory()
+    mock_backend.get_model_truth = Mock(return_value=0.95)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/models/{dummy.model.metadata.name}/truth")
+
+    assert response.status_code == 200
+    assert response.json() == 0.95
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_ancestors(get_backend: Mock):
+    mock_backend = Mock()
+    dummy = model_factory()
+    mock_ancestors = [
+        ModelAncestor(name="parent_model", truth=0.7),
+        ModelAncestor(name="grandparent_model", truth=0.97),
+    ]
+    mock_backend.get_model_ancestors = Mock(return_value=mock_ancestors)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/models/{dummy.model.metadata.name}/ancestors")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_get_ancestors_cache(get_backend: Mock):
+    """Test retrieving the ancestors cache for a model."""
+    mock_backend = Mock()
+    dummy = model_factory()
+    mock_ancestors = [
+        ModelAncestor(name="parent_model", truth=0.7),
+        ModelAncestor(name="grandparent_model", truth=0.8),
+    ]
+    mock_backend.get_model_ancestors_cache = Mock(return_value=mock_ancestors)
+    get_backend.return_value = mock_backend
+
+    response = client.get(f"/models/{dummy.model.metadata.name}/ancestors_cache")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_set_ancestors_cache(get_backend: Mock):
+    """Test setting the ancestors cache for a model."""
+    mock_backend = Mock()
+    dummy = model_factory()
+    get_backend.return_value = mock_backend
+
+    ancestors_data = [
+        ModelAncestor(name="parent_model", truth=0.7),
+        ModelAncestor(name="grandparent_model", truth=0.8),
+    ]
+
+    response = client.patch(
+        f"/models/{dummy.model.metadata.name}/ancestors_cache",
+        json=[a.model_dump() for a in ancestors_data],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == ModelOperationType.UPDATE_ANCESTOR_CACHE
+    mock_backend.set_model_ancestors_cache.assert_called_once_with(
+        model=dummy.model.metadata.name, ancestors_cache=ancestors_data
+    )
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_delete_model(get_backend: Mock):
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+
+    dummy = model_factory()
+    response = client.delete(
+        f"/models/{dummy.model.metadata.name}", params={"certain": True}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "model_name": dummy.model.metadata.name,
+        "operation": ModelOperationType.DELETE,
+        "details": None,
+    }
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_delete_model_needs_confirmation(get_backend: Mock):
+    mock_backend = Mock()
+    mock_backend.delete_model = Mock(
+        side_effect=MatchboxDeletionNotConfirmed(children=["dedupe1", "dedupe2"])
+    )
+    get_backend.return_value = mock_backend
+
+    dummy = model_factory()
+    response = client.delete(f"/models/{dummy.model.metadata.name}")
+
+    assert response.status_code == 409
+    assert response.json()["success"] is False
+    message = response.json()["details"]
+    assert "dedupe1" in message and "dedupe2" in message
