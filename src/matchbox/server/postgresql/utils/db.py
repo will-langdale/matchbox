@@ -18,6 +18,8 @@ from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 from sqlalchemy.exc import DatabaseError as AlchemyDatabaseError
 
+from matchbox.server.postgresql.db import MBDB
+
 from matchbox.common.graph import (
     ResolutionEdge,
     ResolutionGraph,
@@ -200,7 +202,7 @@ def _create_adbc_table_constraints(db_schema:str, sufix:str, conn:Connection) ->
     """
     # Cluster
 
-    _run_queries([
+    statements = [
         f"""DROP TABLE IF EXISTS {db_schema}.clusters""",
         f"""DROP TABLE IF EXISTS {db_schema}.contains""",
         f"""DROP TABLE IF EXISTS {db_schema}.probabilities""",
@@ -208,7 +210,17 @@ def _create_adbc_table_constraints(db_schema:str, sufix:str, conn:Connection) ->
         f"""ALTER TABLE {db_schema}.clusters_{sufix} RENAME TO clusters""",
         f"""ALTER TABLE {db_schema}.contains_{sufix} RENAME TO contains""",
         f"""ALTER TABLE {db_schema}.probabilities_{sufix} RENAME TO probabilities"""
-    ], conn)
+    ]
+    #start the transaction
+    conn.begin()
+    for query in statements:
+        conn.execute(text(query))
+
+    MBDB.MatchboxBase.metadata.create_all(conn)
+
+    conn.commit()
+
+
     return True
 
 def _adbc_insert_data(clusters:pa.Table, contains:pa.Table, probabilities:pa.Table, suffix:str, alchemy_conn:Connection, resolution_id:int) -> bool:
