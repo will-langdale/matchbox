@@ -4,7 +4,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from sqlalchemy import text
+from sqlalchemy import BIGINT, TEXT, Column, text
+from sqlalchemy.orm import Session
 
 from matchbox.common.sources import Source
 from matchbox.server import MatchboxDBAdapter
@@ -18,6 +19,8 @@ from matchbox.server.postgresql.benchmark.query import (
     compile_query_sql,
 )
 from matchbox.server.postgresql.db import MBDB
+from matchbox.server.postgresql.mixin import CountMixin
+from matchbox.server.postgresql.utils.db import large_ingest
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
 from ..fixtures.db import SetupDatabaseCallable
@@ -265,3 +268,34 @@ def test_benchmark_generate_tables_parameterized(
             dataset_start_id + 4,  # link
         }
         assert prob_resolution_ids == expected_model_ids
+
+
+def test_large_ingest(matchbox_postgres: MatchboxPostgres):
+    with Session(MBDB.get_engine()) as session:
+        # Dummy table to ingest to
+        class DummyTable(CountMixin, MBDB.MatchboxBase):
+            __tablename__ = "dummytable"
+            foo = Column(BIGINT, primary_key=True)
+            bar = Column(TEXT, nullable=False)
+
+        MBDB.MatchboxBase.metadata.create_all(
+            MBDB.get_engine(), tables=[DummyTable.__table__]
+        )
+
+        row1 = DummyTable(foo=1, bar="First dummy row")
+        session.add(row1)
+        session.commit()
+
+    # Dummy data to ingest
+    schema = pa.schema([("foo", pa.int64()), ("bar", pa.string())])
+    data = pa.Table.from_pylist(
+        [
+            {"foo": 10, "bar": "abc"},
+            {"foo": 11, "bar": "def"},
+        ],
+        schema=schema,
+    )
+
+    large_ingest(data, DummyTable)
+
+    assert DummyTable.count() == 3

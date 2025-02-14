@@ -2,11 +2,14 @@ import contextlib
 import cProfile
 import io
 import pstats
+from datetime import datetime
 from itertools import islice
 from typing import Any, Callable, Iterable
 
+import adbc_driver_postgresql.dbapi
+import pyarrow as pa
 from pg_bulk_ingest import Delete, Upsert, ingest
-from sqlalchemy import Engine, Index, MetaData, Table, func
+from sqlalchemy import Engine, Index, MetaData, Table, func, text
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
@@ -17,6 +20,7 @@ from matchbox.common.graph import (
     ResolutionNode,
     ResolutionNodeType,
 )
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     ResolutionFrom,
     Resolutions,
@@ -178,3 +182,52 @@ def batch_ingest(
         upsert=Upsert.IF_PRIMARY_KEY,
         delete=Delete.OFF,
     )
+
+
+def large_ingest(data: pa.Table, table: DeclarativeMeta):
+    """
+    Saves a PyArrow Table to PostgreSQL using ADBC.
+    """
+    with (
+        adbc_driver_postgresql.dbapi.connect(MBDB.connection_string) as conn,
+        conn.cursor() as cursor,
+    ):
+        engine = MBDB.get_engine()
+        # Create temp table
+        # metadata = MBDB.MatchboxBase.metadata
+        suffix = datetime.now().strftime("%Y%m%d%H%M%S")
+        table_name = table.__tablename__
+        temp_table_name = table_name + suffix
+        db_schema = table.__table__.schema
+        # new_columns = (
+        #     Column(column.name, column.type) for column in table.__table__.columns
+        # )
+        # new_table = Table(temp_table_name, metadata, *new_columns)
+        # metadata.create_all(engine, tables=[new_table])
+        with Session(engine) as session:
+            stmt = text(f"""
+                CREATE UNLOGGED TABLE {db_schema}.{temp_table_name}
+                AS SELECT * FROM {db_schema}.{table_name};
+            """)
+            session.execute(stmt)
+            session.commit()
+        # Convert PyArrow Table to Arrow RecordBatchStream for efficient transfer
+        batch_reader = pa.RecordBatchReader.from_batches(data.schema, data.to_batches())
+        cursor.adbc_ingest(
+            table_name=temp_table_name,
+            data=batch_reader,
+            mode="append",
+            db_schema_name=db_schema,
+        )
+        conn.commit()
+
+        # Swap temp and real table
+        stmt = text(f"""
+            DROP TABLE {db_schema}.{table.__tablename__};
+            ALTER TABLE {db_schema}.{temp_table_name}
+                RENAME TO {table.__tablename__};
+        """)
+
+        with Session(engine) as session:
+            session.execute(stmt)
+            session.commit()

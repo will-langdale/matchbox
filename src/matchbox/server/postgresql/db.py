@@ -44,15 +44,20 @@ class MatchboxDatabase:
             metadata=MetaData(schema=settings.postgres.db_schema)
         )
 
+    @property
+    def connection_string(self):
+        return (
+            f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
+            f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
+            f"{self.settings.postgres.database}"
+        )
+
     def connect(self):
         """Connect to the database."""
         if not self.engine:
-            connection_string = (
-                f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
-                f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
-                f"{self.settings.postgres.database}"
+            self.engine = create_engine(
+                url=self.connection_string, logging_name="mb_pg_db"
             )
-            self.engine = create_engine(url=connection_string, logging_name="mb_pg_db")
             self.SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=self.engine
             )
