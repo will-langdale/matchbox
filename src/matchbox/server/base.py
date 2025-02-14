@@ -1,16 +1,12 @@
-import inspect
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from functools import wraps
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ParamSpec,
     Protocol,
     TypeVar,
-    cast,
 )
 
 import boto3
@@ -20,7 +16,7 @@ from pyarrow import Table
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from matchbox.common.dtos import ModelMetadata
+from matchbox.common.dtos import ModelAncestor, ModelMetadata
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match, Source, SourceAddress
 
@@ -54,11 +50,11 @@ class MatchboxDatastoreSettings(BaseSettings):
         extra="ignore",
     )
 
-    host: str
-    port: int
-    access_key_id: SecretStr
-    secret_access_key: SecretStr
-    default_region: str
+    host: str | None = None
+    port: int | None = None
+    access_key_id: SecretStr | None = None
+    secret_access_key: SecretStr | None = None
+    default_region: str | None = None
     cache_bucket_name: str
 
     def get_client(self) -> S3Client:
@@ -66,13 +62,21 @@ class MatchboxDatastoreSettings(BaseSettings):
 
         Creates S3 buckets if they don't exist.
         """
-        client = boto3.client(
-            "s3",
-            endpoint_url=f"http://{self.host}:{self.port}",
-            aws_access_key_id=self.access_key_id.get_secret_value(),
-            aws_secret_access_key=self.secret_access_key.get_secret_value(),
-            region_name=self.default_region,
-        )
+
+        kwargs = {
+            "endpoint_url": f"http://{self.host}:{self.port}"
+            if self.host and self.port
+            else None,
+            "aws_access_key_id": self.access_key_id.get_secret_value()
+            if self.access_key_id
+            else None,
+            "aws_secret_access_key": self.secret_access_key.get_secret_value()
+            if self.secret_access_key
+            else None,
+            "region_name": self.default_region,
+        }
+
+        client = boto3.client("s3", **kwargs)
 
         try:
             client.head_bucket(Bucket=self.cache_bucket_name)
@@ -173,35 +177,6 @@ def initialise_matchbox() -> None:
     initialise_backend(settings)
 
 
-def inject_backend(func: Callable[..., R]) -> Callable[..., R]:
-    """Decorator to inject the Matchbox backend into functions.
-
-    Used to allow user-facing functions to access the backend without needing to
-    pass it in. The backend is defined by the MB__BACKEND_TYPE environment variable.
-
-    Can be used for both functions and methods.
-
-    If the user specifies a backend, it will be used instead of the injection.
-    """
-
-    @wraps(func)
-    def _inject_backend(
-        *args: P.args, backend: "MatchboxDBAdapter | None" = None, **kwargs: P.kwargs
-    ) -> R:
-        if backend is None:
-            backend = BackendManager.get_backend()
-
-        sig = inspect.signature(func)
-        params = list(sig.parameters.values())
-
-        if params and params[0].name in ("self", "cls"):
-            return cast(R, func(args[0], backend, *args[1:], **kwargs))
-        else:
-            return cast(R, func(backend, *args, **kwargs))
-
-    return cast(Callable[..., R], _inject_backend)
-
-
 class Countable(Protocol):
     """A protocol for objects that can be counted."""
 
@@ -233,6 +208,8 @@ class MatchboxDBAdapter(ABC):
     merges: Countable
     proposes: Countable
 
+    # Retrieval
+
     @abstractmethod
     def query(
         self,
@@ -251,6 +228,8 @@ class MatchboxDBAdapter(ABC):
         resolution_name: str,
         threshold: int | None = None,
     ) -> list[Match]: ...
+
+    # Data management
 
     @abstractmethod
     def index(self, source: Source, data_hashes: Table) -> None: ...
@@ -273,7 +252,8 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def clear(self, certain: bool) -> None: ...
 
-    # Model methods
+    # Model management
+
     @abstractmethod
     def insert_model(self, model: ModelMetadata) -> None: ...
 
@@ -293,15 +273,15 @@ class MatchboxDBAdapter(ABC):
     def get_model_truth(self, model: str) -> float: ...
 
     @abstractmethod
-    def get_model_ancestors(self, model: str) -> dict[str, float]: ...
+    def get_model_ancestors(self, model: str) -> list[ModelAncestor]: ...
 
     @abstractmethod
     def set_model_ancestors_cache(
-        self, model: str, ancestors_cache: dict[str, float]
+        self, model: str, ancestors_cache: list[ModelAncestor]
     ) -> None: ...
 
     @abstractmethod
-    def get_model_ancestors_cache(self, model: str) -> dict[str, float]: ...
+    def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]: ...
 
     @abstractmethod
     def delete_model(self, model: str, certain: bool) -> None: ...

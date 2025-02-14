@@ -108,7 +108,7 @@ def test_dedupers(
 
     # 4. Probabilities and clusters are inserted correctly
 
-    results.to_matchbox(backend=matchbox_postgres)
+    results.to_matchbox()
 
     retrieved_results = matchbox_postgres.get_model_results(model=deduper_name)
     assert retrieved_results.shape[0] == fx_data.tgt_prob_n

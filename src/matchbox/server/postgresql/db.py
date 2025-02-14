@@ -98,6 +98,8 @@ class MatchboxDatabase:
             )
             conn.commit()
 
+        self.engine.dispose()
+
         self.create_database()
 
 

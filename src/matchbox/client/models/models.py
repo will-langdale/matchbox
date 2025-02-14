@@ -2,12 +2,12 @@ from typing import Any, ParamSpec, TypeVar
 
 from pandas import DataFrame
 
+from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelMetadata, ModelType
+from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.server import MatchboxDBAdapter, inject_backend
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -28,59 +28,64 @@ class Model:
         self.left_data = left_data
         self.right_data = right_data
 
-    @inject_backend
-    def insert_model(self, backend: MatchboxDBAdapter) -> None:
+    def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        backend.insert_model(model=self.metadata)
+        _handler.insert_model(model=self.metadata)
 
     @property
-    @inject_backend
-    def results(self, backend: MatchboxDBAdapter) -> Results:
+    def results(self) -> Results:
         """Retrieve results associated with the model from the database."""
-        results = backend.get_model_results(model=self.metadata.name)
+        results = _handler.get_model_results(name=self.metadata.name)
         return Results(probabilities=results, metadata=self.metadata)
 
     @results.setter
-    @inject_backend
-    def results(self, backend: MatchboxDBAdapter, results: Results) -> None:
+    def results(self, results: Results) -> None:
         """Write results associated with the model to the database."""
-        backend.set_model_results(
-            model=self.metadata.name, results=results.probabilities
-        )
+        if results.probabilities.shape[0] > 0:
+            _handler.add_model_results(
+                name=self.metadata.name, results=results.probabilities
+            )
 
     @property
-    @inject_backend
-    def truth(self, backend: MatchboxDBAdapter) -> float:
+    def truth(self) -> float:
         """Retrieve the truth threshold for the model."""
-        return backend.get_model_truth(model=self.metadata.name)
+        return _handler.get_model_truth(name=self.metadata.name)
 
     @truth.setter
-    @inject_backend
-    def truth(self, backend: MatchboxDBAdapter, truth: float) -> None:
+    def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        backend.set_model_truth(model=self.metadata.name, truth=truth)
+        _handler.set_model_truth(name=self.metadata.name, truth=truth)
 
     @property
-    @inject_backend
-    def ancestors(self, backend: MatchboxDBAdapter) -> dict[str, float]:
+    def ancestors(self) -> dict[str, float]:
         """Retrieve the ancestors of the model."""
-        return backend.get_model_ancestors(model=self.metadata.name)
+        return {
+            ancestor.name: ancestor.truth
+            for ancestor in _handler.get_model_ancestors(name=self.metadata.name)
+        }
 
     @property
-    @inject_backend
-    def ancestors_cache(self, backend: MatchboxDBAdapter) -> dict[str, float]:
+    def ancestors_cache(self) -> dict[str, float]:
         """Retrieve the ancestors cache of the model."""
-        return backend.get_model_ancestors_cache(model=self.metadata.name)
+        return {
+            ancestor.name: ancestor.truth
+            for ancestor in _handler.get_model_ancestors_cache(name=self.metadata.name)
+        }
 
     @ancestors_cache.setter
-    @inject_backend
-    def ancestors_cache(
-        self, backend: MatchboxDBAdapter, ancestors_cache: dict[str, float]
-    ) -> None:
+    def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None:
         """Set the ancestors cache of the model."""
-        backend.set_model_ancestors_cache(
-            model=self.metadata.name, ancestors_cache=ancestors_cache
+        _handler.set_model_ancestors_cache(
+            name=self.metadata.name,
+            ancestors=[
+                ModelAncestor(name=k, truth=v) for k, v in ancestors_cache.items()
+            ],
         )
+
+    def delete(self, certain: bool = False) -> bool:
+        """Delete the model from the database."""
+        result = _handler.delete_model(name=self.metadata.name, certain=certain)
+        return result.success
 
     def run(self) -> Results:
         """Execute the model pipeline and return results."""

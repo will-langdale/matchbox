@@ -1,12 +1,15 @@
 import os
+from os import getenv
 from typing import TYPE_CHECKING, Any, Callable, Generator, Literal
 
 import boto3
 import pytest
+import respx
 from _pytest.fixtures import FixtureRequest
 from dotenv import find_dotenv, load_dotenv
 from moto import mock_aws
 from pandas import DataFrame
+from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
@@ -103,7 +106,7 @@ def db_add_dedupe_models_and_data() -> AddDedupeModelsAndDataCallable:
                 )
 
                 results = model.run()
-                results.to_matchbox(backend=backend)
+                results.to_matchbox()
                 model.truth = 0.0
 
     return _db_add_dedupe_models_and_data
@@ -173,7 +176,7 @@ def db_add_link_models_and_data() -> AddLinkModelsAndDataCallable:
                 )
 
                 results = model.run()
-                results.to_matchbox(backend=backend)
+                results.to_matchbox()
                 model.truth = 0.0
 
     return _db_add_link_models_and_data
@@ -384,3 +387,14 @@ def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
     """Return a mocked S3 client."""
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
+
+
+# Mock API
+
+
+@pytest.fixture(scope="function")
+def matchbox_api() -> Generator[MockRouter, None, None]:
+    with respx.mock(
+        base_url=getenv("MB__CLIENT__API_ROOT"), assert_all_called=True
+    ) as respx_mock:
+        yield respx_mock
