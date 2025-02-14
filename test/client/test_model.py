@@ -33,7 +33,7 @@ def test_insert_model(matchbox_api: MockRouter):
     # Mock the POST /models endpoint
     route = matchbox_api.post("/models").mock(
         return_value=Response(
-            200,
+            201,
             json=ModelOperationStatus(
                 success=True,
                 model_name=dummy.model.metadata.name,
@@ -83,7 +83,7 @@ def test_results_getter(matchbox_api: MockRouter):
 
     # Mock the GET /models/{name}/results endpoint
     route = matchbox_api.get(f"/models/{dummy.model.metadata.name}/results").mock(
-        return_value=Response(200, content=table_to_buffer(dummy.data).read())
+        return_value=Response(202, content=table_to_buffer(dummy.data).read())
     )
 
     # Get results
@@ -123,7 +123,7 @@ def test_results_setter(matchbox_api: MockRouter):
     # Mock the endpoints needed for results upload
     init_route = matchbox_api.post(f"/models/{dummy.model.metadata.name}/results").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id",
                 status="awaiting_upload",
@@ -134,7 +134,7 @@ def test_results_setter(matchbox_api: MockRouter):
 
     upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id",
                 status="processing",
@@ -174,7 +174,7 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
     # Mock the initial POST endpoint
     init_route = matchbox_api.post(f"/models/{dummy.model.metadata.name}/results").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id",
                 status="awaiting_upload",

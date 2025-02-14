@@ -446,7 +446,7 @@ def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
     # Mock the initial source metadata upload
     source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id",
                 status="awaiting_upload",
@@ -519,7 +519,7 @@ def test_index_with_columns(
     # Mock the API endpoints
     source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id",
                 status="awaiting_upload",
@@ -576,7 +576,7 @@ def test_index_upload_failure(MockSource: Mock, matchbox_api: MockRouter):
     # Mock successful source creation
     source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
-            200,
+            202,
             json=UploadStatus(
                 id="test-upload-id",
                 status="awaiting_upload",

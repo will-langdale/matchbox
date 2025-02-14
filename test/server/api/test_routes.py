@@ -13,6 +13,7 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     ModelAncestor,
     ModelOperationType,
+    NotFoundError,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -924,6 +925,66 @@ def test_set_ancestors_cache(get_backend: Mock):
     )
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    ["results", "truth", "ancestors", "ancestors_cache"],
+)
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_model_get_endpoints_404(
+    get_backend: Mock,
+    endpoint: str,
+) -> None:
+    """Test 404 responses for model GET endpoints when model doesn't exist."""
+    # Setup backend mock
+    mock_backend = Mock()
+    mock_method = getattr(mock_backend, f"get_model_{endpoint}")
+    mock_method.side_effect = MatchboxResolutionNotFoundError()
+    get_backend.return_value = mock_backend
+
+    # Make request
+    response = client.get(f"/models/nonexistent-model/{endpoint}")
+
+    # Verify response
+    assert response.status_code == 404
+    error = NotFoundError.model_validate(response.json())
+    assert error.entity == BackendRetrievableType.RESOLUTION
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "payload"),
+    [
+        ("truth", 0.95),
+        (
+            "ancestors_cache",
+            [
+                ModelAncestor(name="parent_model", truth=0.7).model_dump(),
+                ModelAncestor(name="grandparent_model", truth=0.8).model_dump(),
+            ],
+        ),
+    ],
+)
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_model_patch_endpoints_404(
+    get_backend: Mock,
+    endpoint: str,
+    payload: float | list[dict[str, Any]],
+) -> None:
+    """Test 404 responses for model PATCH endpoints when model doesn't exist."""
+    # Setup backend mock
+    mock_backend = Mock()
+    mock_method = getattr(mock_backend, f"set_model_{endpoint}")
+    mock_method.side_effect = MatchboxResolutionNotFoundError()
+    get_backend.return_value = mock_backend
+
+    # Make request
+    response = client.patch(f"/models/nonexistent-model/{endpoint}", json=payload)
+
+    # Verify response
+    assert response.status_code == 404
+    error = NotFoundError.model_validate(response.json())
+    assert error.entity == BackendRetrievableType.RESOLUTION
+
+
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_delete_model(get_backend: Mock):
     mock_backend = Mock()
@@ -958,3 +1019,24 @@ def test_delete_model_needs_confirmation(get_backend: Mock):
     assert response.json()["success"] is False
     message = response.json()["details"]
     assert "dedupe1" in message and "dedupe2" in message
+
+
+@pytest.mark.parametrize(
+    "certain",
+    [True, False],
+)
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_delete_model_404(get_backend: Mock, certain: bool) -> None:
+    """Test 404 response when trying to delete a non-existent model."""
+    # Setup backend mock
+    mock_backend = Mock()
+    mock_backend.delete_model.side_effect = MatchboxResolutionNotFoundError()
+    get_backend.return_value = mock_backend
+
+    # Make request
+    response = client.delete("/models/nonexistent-model", params={"certain": certain})
+
+    # Verify response
+    assert response.status_code == 404
+    error = NotFoundError.model_validate(response.json())
+    assert error.entity == BackendRetrievableType.RESOLUTION

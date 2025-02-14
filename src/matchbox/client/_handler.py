@@ -60,7 +60,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     """Handle HTTP status codes and raise appropriate exceptions."""
     res.read()
 
-    if res.status_code == 200:
+    if 299 >= res.status_code >= 200:
         return res
 
     if res.status_code == 400:
