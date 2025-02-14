@@ -106,7 +106,7 @@ def create_client() -> httpx.Client:
 
 
 CLIENT = create_client()
-
+DELAY = int(getenv("MB__CLIENT__RETRY_DELAY", 2))
 
 # Retrieval
 
@@ -201,7 +201,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
         if status.status == "failed":
             raise MatchboxServerFileError(status.details)
 
-        time.sleep(2)
+        time.sleep(DELAY)
 
     return status
 
@@ -257,7 +257,7 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
         if status.status == "failed":
             raise MatchboxServerFileError(status.details)
 
-        time.sleep(2)
+        time.sleep(DELAY)
 
     return status
 
