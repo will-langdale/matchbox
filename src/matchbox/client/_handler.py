@@ -303,7 +303,7 @@ def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
-def delete_model(name: str, certain: bool | None = False) -> ModelOperationStatus:
+def delete_model(name: str, certain: bool = False) -> ModelOperationStatus:
     """Delete a model in Matchbox."""
     res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
     return ModelOperationStatus.model_validate(res.json())
