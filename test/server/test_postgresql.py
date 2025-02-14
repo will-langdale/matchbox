@@ -4,7 +4,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from sqlalchemy import BIGINT, TEXT, Column, text
+from sqlalchemy import BIGINT, TEXT, Column, UniqueConstraint, text
 from sqlalchemy.orm import Session
 
 from matchbox.common.sources import Source
@@ -278,6 +278,8 @@ def test_large_ingest(matchbox_postgres: MatchboxPostgres):
             foo = Column(BIGINT, primary_key=True)
             bar = Column(TEXT, nullable=False)
 
+            __table_args__ = (UniqueConstraint("bar", name="dummy_unique_bar"),)
+
         MBDB.MatchboxBase.metadata.create_all(
             MBDB.get_engine(), tables=[DummyTable.__table__]
         )
@@ -297,5 +299,9 @@ def test_large_ingest(matchbox_postgres: MatchboxPostgres):
     )
 
     large_ingest(data, DummyTable)
+    # TODO: check constraints still apply; check indices apply
+    # TODO: what happens if we ingest data that doesn't satisfy constraints?
+    # TODO: allow custom subset selection before table copy
+    # TODO: replace batch_ingest with large_ingest
 
     assert DummyTable.count() == 3

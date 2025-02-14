@@ -194,7 +194,6 @@ def large_ingest(data: pa.Table, table: DeclarativeMeta):
     ):
         engine = MBDB.get_engine()
         # Create temp table
-        # metadata = MBDB.MatchboxBase.metadata
         suffix = datetime.now().strftime("%Y%m%d%H%M%S")
         table_name = table.__tablename__
         temp_table_name = table_name + suffix
@@ -206,7 +205,7 @@ def large_ingest(data: pa.Table, table: DeclarativeMeta):
         # metadata.create_all(engine, tables=[new_table])
         with Session(engine) as session:
             stmt = text(f"""
-                CREATE UNLOGGED TABLE {db_schema}.{temp_table_name}
+                CREATE TABLE {db_schema}.{temp_table_name}
                 AS SELECT * FROM {db_schema}.{table_name};
             """)
             session.execute(stmt)
@@ -222,12 +221,17 @@ def large_ingest(data: pa.Table, table: DeclarativeMeta):
         conn.commit()
 
         # Swap temp and real table
-        stmt = text(f"""
-            DROP TABLE {db_schema}.{table.__tablename__};
-            ALTER TABLE {db_schema}.{temp_table_name}
-                RENAME TO {table.__tablename__};
-        """)
-
         with Session(engine) as session:
+            stmt = text(f"""
+                DROP TABLE {db_schema}.{table.__tablename__};
+                ALTER TABLE {db_schema}.{temp_table_name}
+                    RENAME TO {table.__tablename__};
+            """)
             session.execute(stmt)
             session.commit()
+
+        # Re-apply constraints and indices
+        MBDB.MatchboxBase.metadata.create_all(engine, tables=[table.__table__])
+        # if hasattr(table, "__table_args__"):
+        #     for constraint in table.__table_args__:
+        #         constraint.create(bind=engine)
