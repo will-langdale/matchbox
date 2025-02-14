@@ -1,13 +1,20 @@
 from collections import Counter
+from functools import cache
 from textwrap import dedent
 from typing import Any, Literal
+from unittest.mock import Mock, PropertyMock, create_autospec
 
 import numpy as np
 import pyarrow as pa
 import rustworkx as rx
 from faker import Faker
+from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict
 
+from matchbox.client.models.dedupers.base import Deduper
+from matchbox.client.models.linkers.base import Linker
+from matchbox.client.models.models import Model
+from matchbox.client.results import Results
 from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.transform import graph_results
 
@@ -311,11 +318,40 @@ class ModelDummy(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    model: ModelMetadata
+    model: Model
     data: pa.Table
     metrics: ModelMetrics
 
+    def to_mock(self) -> Mock:
+        """Create a mock Model object that mimics this dummy model's behavior."""
+        mock_model = create_autospec(Model)
 
+        # Set basic attributes
+        mock_model.metadata = self.model
+        mock_model.left_data = DataFrame()  # Default empty DataFrame
+        mock_model.right_data = (
+            DataFrame() if self.model.type == ModelType.LINKER else None
+        )
+
+        # Mock results property
+        mock_results = Results(probabilities=self.data, metadata=self.model)
+        type(mock_model).results = PropertyMock(return_value=mock_results)
+
+        # Mock run method
+        mock_model.run.return_value = mock_results
+
+        # Mock the model instance based on type
+        if self.model.type == ModelType.LINKER:
+            mock_model.model_instance = create_autospec(Linker)
+            mock_model.model_instance.link.return_value = self.data
+        else:
+            mock_model.model_instance = create_autospec(Deduper)
+            mock_model.model_instance.dedupe.return_value = self.data
+
+        return mock_model
+
+
+@cache
 def model_factory(
     name: str | None = None,
     description: str | None = None,
@@ -342,7 +378,7 @@ def model_factory(
 
     model_type = ModelType(model_type.lower() if model_type else "deduper")
 
-    model = ModelMetadata(
+    metadata = ModelMetadata(
         name=name or generator.word(),
         description=description or generator.sentence(),
         type=model_type,
@@ -350,13 +386,20 @@ def model_factory(
         right_resolution=generator.word() if model_type == ModelType.LINKER else None,
     )
 
-    if model.type == ModelType.LINKER:
+    if metadata.type == ModelType.LINKER:
         left_values = list(range(n_true_entities))
         right_values = list(range(n_true_entities, n_true_entities * 2))
-    elif model.type == ModelType.DEDUPER:
+    elif metadata.type == ModelType.DEDUPER:
         values_count = n_true_entities * 2  # So there's something to dedupe
         left_values = list(range(values_count))
         right_values = None
+
+    model = Model(
+        metadata=metadata,
+        model_instance=Mock(),
+        left_data=DataFrame({"id": left_values}),
+        right_data=DataFrame({"id": right_values}) if right_values else None,
+    )
 
     probabilities = generate_dummy_probabilities(
         left_values=left_values,

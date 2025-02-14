@@ -6,10 +6,7 @@ from datetime import datetime, timedelta
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.dtos import (
-    BackendUploadType,
-    UploadStatus,
-)
+from matchbox.common.dtos import BackendUploadType, ModelMetadata, UploadStatus
 from matchbox.common.sources import Source
 from matchbox.server.api.arrow import s3_to_recordbatch
 from matchbox.server.base import MatchboxDBAdapter
@@ -18,7 +15,7 @@ from matchbox.server.base import MatchboxDBAdapter
 class MetadataCacheEntry(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    metadata: Source
+    metadata: Source | ModelMetadata
     upload_type: BackendUploadType
     update_timestamp: datetime
     status: UploadStatus
@@ -68,9 +65,20 @@ class MetadataStore:
         )
         return cache_id
 
-    def cache_model(self, metadata: object) -> str:
+    def cache_model(self, metadata: ModelMetadata) -> str:
         """Cache model results metadata and return ID."""
-        raise NotImplementedError
+        self._cleanup_if_needed()
+        cache_id = str(uuid.uuid4())
+
+        self._store[cache_id] = MetadataCacheEntry(
+            metadata=metadata,
+            upload_type=BackendUploadType.RESULTS,
+            update_timestamp=datetime.now(),
+            status=UploadStatus(
+                id=cache_id, status="awaiting_upload", entity=BackendUploadType.RESULTS
+            ),
+        )
+        return cache_id
 
     def get(self, cache_id: str) -> MetadataCacheEntry | None:
         """Retrieve metadata by ID if not expired. Updates timestamp on access."""
@@ -158,9 +166,10 @@ async def process_upload(
     """Background task to process uploaded file."""
     metadata_store.update_status(upload_id, "processing")
     client = backend.settings.datastore.get_client()
+    upload = metadata_store.get(upload_id)
 
     try:
-        data_hashes = pa.Table.from_batches(
+        data = pa.Table.from_batches(
             [
                 batch
                 async for batch in s3_to_recordbatch(
@@ -168,10 +177,14 @@ async def process_upload(
                 )
             ]
         )
+
         async with heartbeat(metadata_store, upload_id):
-            backend.index(
-                source=metadata_store.get(upload_id).metadata, data_hashes=data_hashes
-            )
+            if upload.upload_type == BackendUploadType.INDEX:
+                backend.index(source=upload.metadata, data_hashes=data)
+            elif upload.upload_type == BackendUploadType.RESULTS:
+                backend.set_model_results(model=upload.metadata.name, results=data)
+            else:
+                raise ValueError(f"Unknown upload type: {upload.upload_type}")
 
         metadata_store.update_status(upload_id, "complete")
 

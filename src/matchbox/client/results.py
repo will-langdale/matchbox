@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from matchbox.common.dtos import ModelMetadata
 from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
-from matchbox.server.base import MatchboxDBAdapter, inject_backend
 
 if TYPE_CHECKING:
     from matchbox.client.models.models import Model
@@ -210,8 +209,7 @@ class Results(BaseModel):
             right_merge_col="child",
         )
 
-    @inject_backend
-    def to_matchbox(self, backend: MatchboxDBAdapter) -> None:
+    def to_matchbox(self) -> None:
         """Writes the results to the Matchbox database."""
         self.model.insert_model()
         self.model.results = self
