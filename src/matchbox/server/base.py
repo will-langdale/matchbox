@@ -7,7 +7,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Optional,
     ParamSpec,
     Protocol,
     TypeVar,
@@ -55,11 +54,11 @@ class MatchboxDatastoreSettings(BaseSettings):
         extra="ignore",
     )
 
-    host: Optional[str] = None
-    port: Optional[int] = None
-    access_key_id: Optional[SecretStr] = None
-    secret_access_key: Optional[SecretStr] = None
-    default_region: Optional[str] = None
+    host: str | None = None
+    port: int | None = None
+    access_key_id: SecretStr | None = None
+    secret_access_key: SecretStr | None = None
+    default_region: str | None = None
     cache_bucket_name: str
 
     def get_client(self) -> S3Client:
