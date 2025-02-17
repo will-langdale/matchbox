@@ -184,54 +184,63 @@ def batch_ingest(
     )
 
 
-def large_ingest(data: pa.Table, table: DeclarativeMeta):
+# TODO: replace batch_ingest with large_ingest across the codebase
+# TODO: allow custom subset selection before table copy
+def large_ingest(data: pa.Table, table_class: DeclarativeMeta):
     """
     Saves a PyArrow Table to PostgreSQL using ADBC.
     """
     with (
         adbc_driver_postgresql.dbapi.connect(MBDB.connection_string) as conn,
         conn.cursor() as cursor,
+        MBDB.get_session() as session,
     ):
-        engine = MBDB.get_engine()
-        # Create temp table
-        suffix = datetime.now().strftime("%Y%m%d%H%M%S")
-        table_name = table.__tablename__
-        temp_table_name = table_name + suffix
-        db_schema = table.__table__.schema
-        # new_columns = (
-        #     Column(column.name, column.type) for column in table.__table__.columns
-        # )
-        # new_table = Table(temp_table_name, metadata, *new_columns)
-        # metadata.create_all(engine, tables=[new_table])
-        with Session(engine) as session:
-            stmt = text(f"""
-                CREATE TABLE {db_schema}.{temp_table_name}
-                AS SELECT * FROM {db_schema}.{table_name};
-            """)
-            session.execute(stmt)
-            session.commit()
-        # Convert PyArrow Table to Arrow RecordBatchStream for efficient transfer
-        batch_reader = pa.RecordBatchReader.from_batches(data.schema, data.to_batches())
-        cursor.adbc_ingest(
-            table_name=temp_table_name,
-            data=batch_reader,
-            mode="append",
-            db_schema_name=db_schema,
-        )
-        conn.commit()
+        table: Table = table_class.__table__
+        metadata = table.metadata
 
-        # Swap temp and real table
-        with Session(engine) as session:
-            stmt = text(f"""
-                DROP TABLE {db_schema}.{table.__tablename__};
-                ALTER TABLE {db_schema}.{temp_table_name}
-                    RENAME TO {table.__tablename__};
-            """)
-            session.execute(stmt)
+        try:
+            # Create temp table
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            temp_table_name = f"{table.name}_tmp_{timestamp}"
+            temp_table = Table(
+                temp_table_name, metadata, *[c.copy() for c in table.columns]
+            )
+            temp_table.create(session.bind)
+
+            # Copy old records to temp table
+            insert_stmt = temp_table.insert().from_select(
+                [c.name for c in table.columns], table.select()
+            )
+            session.execute(insert_stmt)
             session.commit()
 
-        # Re-apply constraints and indices
-        MBDB.MatchboxBase.metadata.create_all(engine, tables=[table.__table__])
-        # if hasattr(table, "__table_args__"):
-        #     for constraint in table.__table_args__:
-        #         constraint.create(bind=engine)
+            # Add new records
+            batch_reader = pa.RecordBatchReader.from_batches(
+                data.schema, data.to_batches()
+            )
+            cursor.adbc_ingest(
+                table_name=temp_table_name,
+                data=batch_reader,
+                mode="append",
+                db_schema_name=table.schema,
+            )
+            conn.commit()
+            with session.begin():
+                # TODO: need to deal with inbound foreign keys ahead of table dropping
+                # Swap temp and original table
+                table.drop(session.bind)
+                session.execute(
+                    text(
+                        f"""ALTER TABLE {table.schema}.{temp_table_name}
+                        RENAME TO {table.name};
+                        """
+                    )
+                )
+                # TODO: this won't deal with constraits
+                # Re-apply indices
+                for idx in table.indexes:
+                    # TODO: can we do better? It's expensive to re-create all indices
+                    idx.create(session.bind)
+        except Exception as e:
+            temp_table.drop(session.bind, checkfirst=True)
+            raise e

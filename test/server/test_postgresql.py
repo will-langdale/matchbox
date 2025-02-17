@@ -299,9 +299,8 @@ def test_large_ingest(matchbox_postgres: MatchboxPostgres):
     )
 
     large_ingest(data, DummyTable)
-    # TODO: check constraints still apply; check indices apply
+    # TODO: check that constraints and indices are still there
     # TODO: what happens if we ingest data that doesn't satisfy constraints?
-    # TODO: allow custom subset selection before table copy
-    # TODO: replace batch_ingest with large_ingest
+    # TODO: check temp table is deleted even when exceptions ae raised
 
     assert DummyTable.count() == 3
