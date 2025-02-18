@@ -44,6 +44,7 @@ services:
       args:
         ENV_FILE: dev_docker.env
       dockerfile: src/matchbox/server/Dockerfile
+      target: dev
     ports:
       - "8000:8000"
     depends_on:
