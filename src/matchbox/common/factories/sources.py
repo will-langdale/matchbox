@@ -139,52 +139,72 @@ class SourceMetrics(BaseModel):
     The metrics represent:
 
     * `n_true_entities`: The number of true entities generated.
-    * `n_unique_rows`: The number of unique rows generated. Can also be
-        thought of as the drop count after dropping all duplicates.
-    * `n_potential_pairs`: The number of potential pairs that can be compared
-        for deduplication.
+    * `n_unique_rows`: The number of unique rows after deduplication.
+    * `n_potential_pairs`: The total number of possible pairwise comparisons
+        if comparing every row with every other row.
+    * `n_blocked_pairs`: The number of pairwise comparisons when only comparing
+        variations within each entity (effectively using entity ID as a blocking rule).
+        This is intended to help unit test probability generation in processes
+        with simple
 
-    For example, in the following table:
+    For example, in the following table with 2 entities and their variations:
 
-    ```markdown
-    | id | company_name |
-    |----|--------------|
-    | 1  | alpha        |
-    | 2  | alpha ltd    |
-    | 3  | alpha        |
-    | 4  | alpha ltd    |
-    | 5  | beta         |
-    | 6  | beta ltd     |
-    | 7  | beta         |
-    | 8  | beta ltd     |
-    ```
+    | entity_id | company_name |
+    |-----------|--------------|
+    | 1         | alpha        |
+    | 1         | alpha ltd    |
+    | 1         | alpha uk     |
+    | 2         | beta         |
+    | 2         | beta ltd     |
+    | 2         | beta uk      |
 
-    * `n_true_entities` = 2
-    * `n_unique_rows` = 4
-    * `n_potential_pairs` = 12
-
-    The potential pairs formula multiplies (`n_unique_rows` choose 2) by
-    `n_true_entities` because we need to compare each unique variation with every
-    other variation for each true entity in the dataset. This accounts for the fact
-    that each unique row appears `n_true_entities` times in the full dataset.
+    The metrics would be:
+    * n_true_entities = 2 (two distinct base entities)
+    * n_unique_rows = 6 (total unique rows in the dataset)
+    * n_potential_pairs = 15 (6 choose 2 = 15 possible pairs)
+    * n_blocked_pairs = 6 (3 choose 2 = 3 pairs per entity * 2 entities)
     """
 
     n_true_entities: int
     n_unique_rows: int
     n_potential_pairs: int
+    n_blocked_pairs: int
 
     @classmethod
-    def calculate(
-        cls, n_true_entities: int, max_variations_per_entity: int
+    def from_data(
+        cls, df: pd.DataFrame, entity_pks: dict[UUID, list[str]], n_true_entities: int
     ) -> "SourceMetrics":
-        """Calculate metrics based on entity count and variations."""
-        n_unique_rows = 1 + max_variations_per_entity
-        n_potential_pairs = comb(n_unique_rows, 2) * n_true_entities
+        """Calculate metrics from actual generated data.
+
+        Args:
+            df: The generated DataFrame after all variations and rules are applied
+            entity_pks: Mapping of entity IDs to their PKs in the dataset
+            n_true_entities: The number of true entities
+        """
+        # Get feature columns (excluding pk)
+        feature_cols = [col for col in df.columns if col != "pk"]
+
+        # Count unique rows
+        n_unique_rows = df[feature_cols].drop_duplicates().shape[0]
+
+        # Calculate total potential pairs (all possible comparisons)
+        n_potential_pairs = comb(n_unique_rows, 2)
+
+        # Calculate blocked pairs (comparisons within each entity)
+        n_blocked_pairs = 0
+        for entity_pks_list in entity_pks.values():
+            # Get rows for this entity
+            entity_rows = df[df["pk"].isin(entity_pks_list)]
+            n_entity_variations = entity_rows[feature_cols].drop_duplicates().shape[0]
+            # Add pairs for this entity
+            if n_entity_variations > 1:
+                n_blocked_pairs += comb(n_entity_variations, 2)
 
         return cls(
             n_true_entities=n_true_entities,
             n_unique_rows=n_unique_rows,
             n_potential_pairs=n_potential_pairs,
+            n_blocked_pairs=n_blocked_pairs,
         )
 
 
@@ -407,7 +427,11 @@ def generate_source(
             seed_entities, min(n_true_entities, len(seed_entities))
         )
 
-    max_variations = max(len(f.variations) for f in features)
+    # Calculate variations (excluding DropBaseRule)
+    max_variations = max(
+        sum(1 for rule in f.variations if not isinstance(rule, DropBaseRule))
+        for f in features
+    )
 
     raw_data = {"pk": []}
     for feature in features:
@@ -418,41 +442,69 @@ def generate_source(
 
     # Generate data for each selected entity
     for entity in selected_entities:
-        # Base values
-        pk = str(uuid4())
-        raw_data["pk"].append(pk)
-        entity_pks[entity.id].append(pk)
+        # Check which features should include base values
+        features_with_base = [
+            f
+            for f in features
+            if not any(isinstance(rule, DropBaseRule) for rule in f.variations)
+        ]
 
-        for feature in features:
-            raw_data[feature.name].append(entity.base_values[feature.name])
+        # Add base values for all features at once
+        if features_with_base:
+            pk = str(uuid4())
+            raw_data["pk"].append(pk)
+            entity_pks[entity.id].append(pk)
 
-        # Variations
+            for feature in features:
+                raw_data[feature.name].append(entity.base_values[feature.name])
+
+        # Add variations
         for variation_idx in range(max_variations):
             pk = str(uuid4())
             raw_data["pk"].append(pk)
             entity_pks[entity.id].append(pk)
 
             for feature in features:
-                if variation_idx < len(feature.variations):
-                    value = feature.variations[variation_idx].apply(
+                non_drop_variations = [
+                    rule
+                    for rule in feature.variations
+                    if not isinstance(rule, DropBaseRule)
+                ]
+                if variation_idx < len(non_drop_variations):
+                    value = non_drop_variations[variation_idx].apply(
                         entity.base_values[feature.name]
                     )
                 else:
                     value = entity.base_values[feature.name]
                 raw_data[feature.name].append(value)
 
-    # Create DataFrame and apply DropBaseRule, if present
+    # Create DataFrame
     df = pd.DataFrame(raw_data)
 
+    # Remove rows with base values for features that have DropBaseRule
     drop_base_features = [
         feature.name
         for feature in features
         if any(isinstance(rule, DropBaseRule) for rule in feature.variations)
     ]
-    for entity in selected_entities:
-        for feature_name in drop_base_features:
-            base_value = entity.base_values[feature_name]
-            df = df[df[feature_name] != base_value]
+
+    if drop_base_features:
+        # Track which rows we're removing to update entity_pks
+        initial_pks = set(df["pk"])
+
+        for entity in selected_entities:
+            for feature_name in drop_base_features:
+                base_value = entity.base_values[feature_name]
+                df = df[df[feature_name] != base_value]
+
+        # Update entity_pks to remove dropped PKs
+        remaining_pks = set(df["pk"])
+        dropped_pks = initial_pks - remaining_pks
+
+        for entity_id in entity_pks:
+            entity_pks[entity_id] = [
+                pk for pk in entity_pks[entity_id] if pk not in dropped_pks
+            ]
 
     # Apply repetition
     df = pd.concat([df] * repetition, ignore_index=True)
@@ -474,13 +526,18 @@ def generate_source(
         schema=SCHEMA_INDEX,
     )
 
-    metrics = SourceMetrics.calculate(
-        n_true_entities=len(selected_entities), max_variations_per_entity=max_variations
+    # Calculate metrics from actual data
+    metrics = SourceMetrics.from_data(
+        df=df, entity_pks=entity_pks, n_true_entities=len(selected_entities)
     )
 
     # Update entities with variations count
+    feature_cols = [col for col in df.columns if col != "pk"]
     for entity in selected_entities:
-        entity.total_unique_variations = max_variations
+        entity_rows = df[df["pk"].isin(entity_pks[entity.id])]
+        entity.total_unique_variations = (
+            entity_rows[feature_cols].drop_duplicates().shape[0]
+        )
 
     return pa.Table.from_pandas(df), data_hashes, metrics, entity_pks
 
@@ -498,7 +555,7 @@ def source_factory(
     """Generate a complete dummy source.
 
     Args:
-        features: List of FeatureConfigs, used to generate features with variations
+        features: list of FeatureConfigs, used to generate features with variations
         full_name: Full name of the source, like "dbt.companies_house".
         engine: SQLAlchemy engine to use for the source.
         n_true_entities: Number of true entities to generate.

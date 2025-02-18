@@ -237,22 +237,26 @@ def test_source_factory_metrics_match_data_basic():
     )
     assert unique_base_values == n_true_entities
 
-    # Check variations per entity
+    # Each entity has base + 2 variations = 3 rows
     variations_per_entity = len(features[0].variations) + 1  # +1 for base value
-    assert dummy_source.metrics.n_unique_rows == variations_per_entity
+    expected_unique_rows = variations_per_entity * n_true_entities
+    assert dummy_source.metrics.n_unique_rows == expected_unique_rows
 
-    # Verify total rows
-    expected_total_rows = n_true_entities * variations_per_entity
+    # Verify total rows (should match unique rows since repetition=1)
     actual_total_rows = len(dummy_source.data)
-    assert actual_total_rows == expected_total_rows
+    assert actual_total_rows == expected_unique_rows
 
-    # Verify potential pairs calculation
-    expected_pairs = comb(variations_per_entity, 2) * n_true_entities
-    assert dummy_source.metrics.n_potential_pairs == expected_pairs
+    # Verify potential pairs (all possible pairs)
+    expected_potential_pairs = comb(expected_unique_rows, 2)
+    assert dummy_source.metrics.n_potential_pairs == expected_potential_pairs
+
+    # Verify blocked pairs (pairs within each entity)
+    expected_blocked_pairs = comb(variations_per_entity, 2) * n_true_entities
+    assert dummy_source.metrics.n_blocked_pairs == expected_blocked_pairs
 
 
 def test_source_factory_metrics_with_repetition():
-    """Test that repetition properly multiplies the data with correct metrics."""
+    """Test that repetition properly multiplies data, doesn't affect unique counts."""
     features = [
         FeatureConfig(
             name="email",
@@ -272,14 +276,22 @@ def test_source_factory_metrics_with_repetition():
 
     # Base metrics should not be affected by repetition
     assert dummy_source.metrics.n_true_entities == n_true_entities
-    assert dummy_source.metrics.n_unique_rows == 2  # base + 1 variation
 
-    # But total rows should be multiplied
-    expected_total_rows = (
-        n_true_entities * 2 * repetition
-    )  # 2 rows per entity * repetition
+    variations_per_entity = 2  # base + 1 variation
+    expected_unique_rows = variations_per_entity * n_true_entities
+    assert dummy_source.metrics.n_unique_rows == expected_unique_rows
+
+    # Total rows should be multiplied by repetition
+    expected_total_rows = expected_unique_rows * repetition
     actual_total_rows = len(dummy_source.data)
     assert actual_total_rows == expected_total_rows
+
+    # Pairs calculations should use unique rows, not repeated rows
+    expected_potential_pairs = comb(expected_unique_rows, 2)
+    assert dummy_source.metrics.n_potential_pairs == expected_potential_pairs
+
+    expected_blocked_pairs = comb(variations_per_entity, 2) * n_true_entities
+    assert dummy_source.metrics.n_blocked_pairs == expected_blocked_pairs
 
 
 def test_source_factory_metrics_with_multiple_features():
@@ -307,10 +319,59 @@ def test_source_factory_metrics_with_multiple_features():
 
     # Should use max variations across features
     max_variations = max(len(f.variations) for f in features)
-    expected_rows_per_entity = max_variations + 1  # +1 for base value
+    variations_per_entity = max_variations + 1  # +1 for base value
+    expected_unique_rows = variations_per_entity * n_true_entities
 
-    assert dummy_source.metrics.n_unique_rows == expected_rows_per_entity
-    assert len(dummy_source.data) == n_true_entities * expected_rows_per_entity
+    assert dummy_source.metrics.n_unique_rows == expected_unique_rows
+    assert len(dummy_source.data) == expected_unique_rows
+
+    # Verify pair calculations
+    expected_potential_pairs = comb(expected_unique_rows, 2)
+    assert dummy_source.metrics.n_potential_pairs == expected_potential_pairs
+
+    expected_blocked_pairs = comb(variations_per_entity, 2) * n_true_entities
+    assert dummy_source.metrics.n_blocked_pairs == expected_blocked_pairs
+
+
+def test_source_factory_metrics_with_drop_base():
+    """Test that DropBaseRule properly removes base values and affects metrics."""
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[
+                DropBaseRule(),
+                SuffixRule(suffix=" Inc"),
+                SuffixRule(suffix=" Ltd"),
+            ],
+        ),
+    ]
+
+    n_true_entities = 5
+    dummy_source = source_factory(
+        n_true_entities=n_true_entities, repetition=1, features=features, seed=42
+    )
+
+    # Base values should be dropped, leaving only variations
+    variations_per_entity = len(
+        [v for v in features[0].variations if not isinstance(v, DropBaseRule)]
+    )
+    expected_unique_rows = variations_per_entity * n_true_entities
+    assert dummy_source.metrics.n_unique_rows == expected_unique_rows
+
+    # Verify no base values exist in the data
+    df = dummy_source.data.to_pandas()
+    base_values = {
+        entity.base_values["company_name"] for entity in dummy_source.entities
+    }
+    assert not any(value in df["company_name"].values for value in base_values)
+
+    # Verify pair calculations use correct row counts
+    expected_potential_pairs = comb(expected_unique_rows, 2)
+    assert dummy_source.metrics.n_potential_pairs == expected_potential_pairs
+
+    expected_blocked_pairs = comb(variations_per_entity, 2) * n_true_entities
+    assert dummy_source.metrics.n_blocked_pairs == expected_blocked_pairs
 
 
 def test_source_factory_data_hashes_integrity():
@@ -387,7 +448,7 @@ def test_source_dummy_to_mock():
     mock_source.default_columns.assert_called_once()
     mock_source.hash_data.assert_called_once()
 
-    # Test method return valuse
+    # Test method return values
     assert mock_source.set_engine("test_engine") == mock_source
     assert mock_source.default_columns() == mock_source
     assert mock_source.hash_data() == dummy_source.data_hashes
@@ -408,10 +469,7 @@ def test_source_dummy_to_mock():
     # Test that to_table contains the correct data
     assert mock_source.to_table == dummy_source.data
     # Verify the number of rows matches what we expect from metrics
-    assert (
-        mock_source.to_table.shape[0]
-        == dummy_source.metrics.n_true_entities * dummy_source.metrics.n_unique_rows
-    )
+    assert mock_source.to_table.shape[0] == dummy_source.metrics.n_unique_rows
 
 
 def test_source_factory_mock_properties():
@@ -556,8 +614,11 @@ def test_entity_variations_tracking():
 
     # Each entity should track its variations
     for entity in source.entities:
-        # Check total variations count
-        assert entity.total_unique_variations == len(features[0].variations)
+        # After DropBaseRule, we should only have the non-drop variations
+        expected_variations = len(
+            [v for v in features[0].variations if not isinstance(v, DropBaseRule)]
+        )
+        assert entity.total_unique_variations == expected_variations
 
         # Get all variations
         variations = entity.variations({source.source.address.full_name: source})
@@ -570,8 +631,15 @@ def test_entity_variations_tracking():
         assert "company" in source_variations
         company_variations = source_variations["company"]
 
-        # Should include base value and all variations
-        assert len(company_variations) == 3  # Drop is a variation
+        # Should have the base value in the variation tracking (even though
+        # it's dropped) plus all actual variations
+        assert len(company_variations) == expected_variations + 1
+
+        # Verify base value is marked as dropped and variations use the rules
+        base_value = entity.base_values["company"]
+        assert "{'drop': True}" in company_variations[base_value]
+        assert any("Inc" in desc for desc in company_variations.values())
+        assert any("Ltd" in desc for desc in company_variations.values())
 
 
 def test_linked_sources_find_entities():
