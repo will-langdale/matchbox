@@ -311,7 +311,7 @@ class SourceDummy(BaseModel):
         description=(
             "Generated entities. Optional: when the SourceDummy comes from a "
             "source_factory they're stored here, but from linked_source_factory "
-            "they're stored as part of the shared LinkedSource object."
+            "they're stored as part of the shared LinkedSourcesDummy object."
         ),
     )
 
@@ -330,7 +330,7 @@ class SourceDummy(BaseModel):
         return mock_source
 
 
-class LinkedSources(BaseModel):
+class LinkedSourcesDummy(BaseModel):
     """Container for multiple related sources with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -577,7 +577,7 @@ def linked_sources_factory(
     source_configs: tuple[SourceConfig, ...] | None = None,
     n_entities: int = 10,
     seed: int = 42,
-) -> LinkedSources:
+) -> LinkedSourcesDummy:
     """Generate a set of linked sources with tracked entities.
 
     Args:
@@ -588,7 +588,7 @@ def linked_sources_factory(
         seed: Random seed for data generation.
 
     Returns:
-        LinkedSources: Container for generated sources and entities.
+        LinkedSourcesDummy: Container for generated sources and entities.
     """
     generator = Faker()
     generator.seed_instance(seed)
@@ -672,8 +672,8 @@ def linked_sources_factory(
         generator=generator, features=all_features, n_entities=max_entities
     )
 
-    # Initialize LinkedSources
-    linked = LinkedSources(
+    # Initialize LinkedSourcesDummy
+    linked = LinkedSourcesDummy(
         entities={entity.id: entity for entity in all_entities},
         sources={},
     )
@@ -713,50 +713,3 @@ def linked_sources_factory(
             entity.add_source_reference(config.full_name, pks)
 
     return linked
-
-
-if __name__ == "__main__":
-    linked = linked_sources_factory()
-
-    # Get all entities
-    all_entities = list(linked.entities.values())
-
-    # Get entities that appear in DUNS
-    duns_entities = [
-        entity
-        for entity in all_entities
-        if any(ref.name == "duns" for ref in entity.source_pks)
-    ]
-
-    # Print all entities with their data using the built-in methods
-    print("\nAll Entities and Their Source Data:")
-    for entity in linked.entities.values():
-        print(f"\n{'=' * 80}")
-        print(f"Entity {entity.id}")
-        print("Base values:", entity.base_values)
-
-        # Get and print all variations with explanations
-        print("\nAll possible variations:")
-        for source_name, features in entity.variations(linked.sources).items():
-            print(f"\n  {source_name}:")
-            for feature_name, variations in features.items():
-                print(f"\n    {feature_name}:")
-                for value, explanation in variations.items():
-                    print(f"      {value} ({explanation})")
-
-        # Get and print actual values present in the data
-        print("\nActual values in sources:")
-        for source_name, features in entity.get_values(linked.sources).items():
-            print(f"\n  {source_name}:")
-            for feature_name, values in features.items():
-                print(f"    {feature_name}: {values}")
-
-    # Print source_a entities
-    print("\nDUNS Entities:")
-    for entity in duns_entities:
-        print(f"\nEntity {entity.id}:")
-        print("Base values:", entity.base_values)
-        source_a_pks = next(
-            ref.source_pks for ref in entity.source_pks if ref.name == "duns"
-        )
-        print(f"PKs in source_a: {len(source_a_pks)}")
