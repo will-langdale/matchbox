@@ -10,12 +10,22 @@ import rustworkx as rx
 from faker import Faker
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import create_engine
 
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import Model
 from matchbox.client.results import Results
 from matchbox.common.dtos import ModelMetadata, ModelType
+from matchbox.common.factories.sources import (
+    DropBaseRule,
+    FeatureConfig,
+    SourceConfig,
+    SourceEntity,
+    SuffixRule,
+    linked_sources_factory,
+    source_factory,
+)
 from matchbox.common.transform import graph_results
 
 
@@ -307,12 +317,6 @@ def generate_dummy_probabilities(
     )
 
 
-class ModelMetrics(BaseModel):
-    """Metrics for a generated model."""
-
-    n_true_entities: int
-
-
 class ModelDummy(BaseModel):
     """Complete representation of a generated dummy Model."""
 
@@ -320,7 +324,7 @@ class ModelDummy(BaseModel):
 
     model: Model
     data: pa.Table
-    metrics: ModelMetrics
+    entities: tuple[SourceEntity, ...]
 
     def to_mock(self) -> Mock:
         """Create a mock Model object that mimics this dummy model's behavior."""
@@ -386,24 +390,89 @@ def model_factory(
         right_resolution=generator.word() if model_type == ModelType.LINKER else None,
     )
 
+    features = {
+        "company_name": FeatureConfig(
+            name="company_name",
+            base_generator="company",
+        ),
+        "crn": FeatureConfig(
+            name="crn",
+            base_generator="bothify",
+            parameters=(("text", "???-###-???-###"),),
+        ),
+        "duns": FeatureConfig(
+            name="duns",
+            base_generator="numerify",
+            parameters=(("text", "########"),),
+        ),
+        "cdms": FeatureConfig(
+            name="cdms",
+            base_generator="numerify",
+            parameters=(("text", "ORG-########"),),
+        ),
+        "address": FeatureConfig(
+            name="address",
+            base_generator="address",
+        ),
+    }
+
+    engine = create_engine("sqlite:///:memory:")
+
+    source_configs = (
+        SourceConfig(
+            full_name="crn",
+            engine=engine,
+            features=(
+                features["company_name"].add_variations(
+                    DropBaseRule(),
+                    SuffixRule(suffix=" Limited"),
+                    SuffixRule(suffix=" UK"),
+                    SuffixRule(suffix=" Company"),
+                ),
+                features["crn"],
+            ),
+            n_true_entities=n_true_entities,
+            repetition=0,
+        ),
+        SourceConfig(
+            full_name="cdms",
+            features=(
+                features["crn"],
+                features["cdms"],
+            ),
+            n_true_entities=n_true_entities,
+            repetition=1,
+        ),
+    )
+
     if metadata.type == ModelType.LINKER:
-        left_values = list(range(n_true_entities))
-        right_values = list(range(n_true_entities, n_true_entities * 2))
+        linked = linked_sources_factory(source_configs=source_configs)
+        left_data = linked.sources["crn"].data
+        right_data = linked.sources["cdms"].data
+        entities = tuple(linked.entities.values())
     elif metadata.type == ModelType.DEDUPER:
-        values_count = n_true_entities * 2  # So there's something to dedupe
-        left_values = list(range(values_count))
-        right_values = None
+        crn = source_configs[0]
+        source = source_factory(
+            full_name=crn.full_name,
+            engine=crn.engine,
+            features=crn.features,
+            n_true_entities=crn.n_true_entities,
+            repetition=crn.repetition,
+        )
+        left_data = source.data
+        right_data = None
+        entities = source.entities
 
     model = Model(
         metadata=metadata,
         model_instance=Mock(),
-        left_data=DataFrame({"id": left_values}),
-        right_data=DataFrame({"id": right_values}) if right_values else None,
+        left_data=left_data,
+        right_data=right_data,
     )
 
     probabilities = generate_dummy_probabilities(
-        left_values=left_values,
-        right_values=right_values,
+        left_values=left_data["id"],
+        right_values=right_data["id"] if right_data is not None else None,
         prob_range=prob_range,
         num_components=n_true_entities,
         seed=seed,
@@ -412,5 +481,5 @@ def model_factory(
     return ModelDummy(
         model=model,
         data=probabilities,
-        metrics=ModelMetrics(n_true_entities=n_true_entities),
+        entities=entities,
     )

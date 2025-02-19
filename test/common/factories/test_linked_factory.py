@@ -52,13 +52,13 @@ def test_linked_sources_custom_config():
             full_name="source_a",
             engine=engine,
             features=(features["name"], features["id"]),
-            n_entities=5,
+            n_true_entities=5,
             repetition=1,
         ),
         SourceConfig(
             full_name="source_b",
             features=(features["name"],),
-            n_entities=3,
+            n_true_entities=3,
             repetition=2,
         ),
     )
@@ -88,7 +88,7 @@ def test_linked_sources_custom_config():
 
 def test_linked_sources_find_entities():
     """Test the find_entities method with different criteria."""
-    linked = linked_sources_factory(n_entities=10)
+    linked = linked_sources_factory(n_true_entities=10)
 
     # Find entities that appear at least once in each source
     min_appearances = {"crn": 1, "duns": 1, "cdms": 1}
@@ -122,7 +122,7 @@ def test_linked_sources_find_entities():
 
 def test_entity_value_consistency():
     """Test that entity base values remain consistent across sources."""
-    linked = linked_sources_factory(n_entities=5)
+    linked = linked_sources_factory(n_true_entities=5)
 
     for entity in linked.entities.values():
         base_values = entity.base_values
@@ -152,7 +152,7 @@ def test_entity_value_consistency():
 
 def test_source_entity_equality():
     """Test SourceEntity equality and hashing behavior."""
-    linked = linked_sources_factory(n_entities=3)
+    linked = linked_sources_factory(n_true_entities=3)
 
     # Get a few entities
     entities = list(linked.entities.values())
@@ -183,7 +183,7 @@ def test_seed_reproducibility():
                 variations=[SuffixRule(suffix=" Jr")],
             ),
         ),
-        n_entities=5,
+        n_true_entities=5,
     )
 
     # Generate two instances with same seed
@@ -210,7 +210,7 @@ def test_empty_source_handling():
     config = SourceConfig(
         full_name="empty_source",
         features=(FeatureConfig(name="name", base_generator="name"),),
-        n_entities=0,
+        n_true_entities=0,
     )
 
     linked = linked_sources_factory(source_configs=(config,))
@@ -226,7 +226,7 @@ def test_large_entity_count():
     config = SourceConfig(
         full_name="large_source",
         features=(FeatureConfig(name="id", base_generator="uuid4"),),
-        n_entities=10_000,
+        n_true_entities=10_000,
     )
 
     linked = linked_sources_factory(source_configs=(config,))
@@ -277,7 +277,7 @@ def test_unique_feature_values():
             FeatureConfig(name="unique_id", base_generator="uuid4", unique=True),
             FeatureConfig(name="is_true", base_generator="boolean", unique=False),
         ),
-        n_entities=100,
+        n_true_entities=100,
     )
 
     linked = linked_sources_factory(source_configs=(config,))
@@ -298,7 +298,7 @@ def test_unique_feature_values():
 
 def test_source_references():
     """Test adding and retrieving source references."""
-    linked = linked_sources_factory(n_entities=2)
+    linked = linked_sources_factory(n_true_entities=2)
     entity = next(iter(linked.entities.values()))
 
     # Add new source reference

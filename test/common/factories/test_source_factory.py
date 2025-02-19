@@ -258,3 +258,37 @@ def test_entity_variations_tracking():
         assert "{'drop': True}" in company_variations[base_value]
         assert any("Inc" in desc for desc in company_variations.values())
         assert any("Ltd" in desc for desc in company_variations.values())
+
+
+def test_source_factory_id_generation():
+    """Test that source_factory generates unique IDs for rows."""
+    features = [
+        FeatureConfig(
+            name="company_name",
+            base_generator="company",
+            variations=[SuffixRule(suffix=" Inc")],
+        ),
+    ]
+
+    n_true_entities = 2
+    repetition = 2
+    source = source_factory(
+        n_true_entities=n_true_entities,
+        repetition=repetition,
+        features=features,
+        seed=42,
+    )
+
+    # Convert to pandas for easier analysis
+    data_df = source.data.to_pandas()
+
+    # Each unique row combination (excluding pk) should get a different ID
+    for _, group in data_df.groupby("company_name"):
+        # All rows with same features should have same ID
+        assert len(group["id"].unique()) == 1
+
+    # Verify we're generating int64 IDs
+    assert data_df["id"].dtype == "int64"
+
+    # Different rows should have different IDs
+    assert len(data_df["id"].unique()) == len(data_df["company_name"].unique())

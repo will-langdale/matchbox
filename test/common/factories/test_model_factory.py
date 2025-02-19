@@ -19,7 +19,7 @@ def test_model_factory_default():
     """Test that model_factory generates a dummy model with default parameters."""
     dummy = model_factory()
 
-    assert dummy.metrics.n_true_entities == 10
+    assert len(dummy.entities) == 10
     assert dummy.model.metadata.type == ModelType.DEDUPER
     assert dummy.model.metadata.right_resolution is None
 
@@ -44,7 +44,7 @@ def test_model_factory_with_custom_params():
 
     assert dummy.model.metadata.name == name
     assert dummy.model.metadata.description == description
-    assert dummy.metrics.n_true_entities == n_true_entities
+    assert len(dummy.entities) == n_true_entities
 
     # Check probability range
     probs = dummy.data.column("probability").to_pylist()
@@ -67,14 +67,10 @@ def test_model_factory_different_types(model_type: str):
     if model_type == ModelType.LINKER:
         assert dummy.model.metadata.right_resolution is not None
 
-        # Check that left and right values are in different ranges
-        left_vals = dummy.data.column("left_id").to_pylist()
-        right_vals = dummy.data.column("right_id").to_pylist()
-        left_min, left_max = min(left_vals), max(left_vals)
-        right_min, right_max = min(right_vals), max(right_vals)
-        assert (left_min < left_max < right_min < right_max) or (
-            right_min < right_max < left_min < left_max
-        )
+        # Check no collisions
+        left_ids = set(dummy.data["left_id"].to_pylist())
+        right_ids = set(dummy.data["right_id"].to_pylist())
+        assert len(left_ids.intersection(right_ids)) == 0
 
 
 @pytest.mark.parametrize(

@@ -141,7 +141,7 @@ class SourceConfig(BaseModel):
     features: tuple[FeatureConfig, ...] = Field(default_factory=tuple)
     full_name: str
     engine: Engine = Field(default=create_engine("sqlite:///:memory:"))
-    n_entities: int = Field(default=10)
+    n_true_entities: int = Field(default=10)
     repetition: int = Field(default=0)
 
 
@@ -348,11 +348,11 @@ class LinkedSourcesDummy(BaseModel):
 def generate_entities(
     generator: Faker,
     features: tuple[FeatureConfig, ...],
-    n_entities: int,
+    n: int,
 ) -> tuple[SourceEntity]:
     """Generate base entities with their ground truth values."""
     entities = []
-    for _ in range(n_entities):
+    for _ in range(n):
         base_values = {
             f.name: getattr(
                 generator.unique if f.unique else generator, f.base_generator
@@ -459,6 +459,9 @@ def generate_source(
                 pk for pk in entity_pks[entity_id] if pk not in dropped_pks
             ]
 
+    # Add a Matchbox ID for each unique row
+    df["id"] = [getrandbits(63) for _ in range(len(df))]
+
     # Apply repetition
     if repetition:
         df = pd.concat([df] * repetition, ignore_index=True)
@@ -488,7 +491,10 @@ def generate_source(
             entity_rows[feature_cols].drop_duplicates().shape[0]
         )
 
-    return pa.Table.from_pandas(df), data_hashes, entity_pks
+    # Reorder columns
+    df = df[["id", "pk", *[col for col in df.columns if col not in ["id", "pk"]]]]
+
+    return pa.Table.from_pandas(df, preserve_index=False), data_hashes, entity_pks
 
 
 @make_features_hashable
@@ -540,7 +546,7 @@ def source_factory(
     base_entities = generate_entities(
         generator=generator,
         features=features,
-        n_entities=n_true_entities,
+        n=n_true_entities,
     )
 
     # Generate data using the base entities
@@ -580,7 +586,7 @@ def source_factory(
 @cache
 def linked_sources_factory(
     source_configs: tuple[SourceConfig, ...] | None = None,
-    n_entities: int = 10,
+    n_true_entities: int = 10,
     seed: int = 42,
 ) -> LinkedSourcesDummy:
     """Generate a set of linked sources with tracked entities.
@@ -588,7 +594,7 @@ def linked_sources_factory(
     Args:
         source_configs: Configurations for generating sources. If None, a default
             set of configurations will be used.
-        n_entities: Base number of entities to generate when using default configs.
+        n_true_entities: Base number of entities to generate when using default configs.
             Ignored if source_configs is provided.
         seed: Random seed for data generation.
 
@@ -640,7 +646,7 @@ def linked_sources_factory(
                     ),
                     features["crn"],
                 ),
-                n_entities=n_entities,
+                n_true_entities=n_true_entities,
                 repetition=0,
             ),
             SourceConfig(
@@ -649,7 +655,7 @@ def linked_sources_factory(
                     features["company_name"],
                     features["duns"],
                 ),
-                n_entities=n_entities // 2,
+                n_true_entities=n_true_entities // 2,
                 repetition=0,
             ),
             SourceConfig(
@@ -658,7 +664,7 @@ def linked_sources_factory(
                     features["crn"],
                     features["cdms"],
                 ),
-                n_entities=n_entities,
+                n_true_entities=n_true_entities,
                 repetition=1,
             ),
         )
@@ -670,11 +676,11 @@ def linked_sources_factory(
     all_features = tuple(sorted(all_features, key=lambda f: f.name))
 
     # Find maximum number of entities needed
-    max_entities = max(config.n_entities for config in source_configs)
+    max_entities = max(config.n_true_entities for config in source_configs)
 
     # Generate all possible entities
     all_entities = generate_entities(
-        generator=generator, features=all_features, n_entities=max_entities
+        generator=generator, features=all_features, n=max_entities
     )
 
     # Initialize LinkedSourcesDummy
@@ -689,7 +695,7 @@ def linked_sources_factory(
         data, data_hashes, entity_pks = generate_source(
             generator=generator,
             features=tuple(config.features),
-            n_true_entities=config.n_entities,
+            n_true_entities=config.n_true_entities,
             repetition=config.repetition,
             seed_entities=all_entities,
         )
