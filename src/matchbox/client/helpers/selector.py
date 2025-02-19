@@ -1,5 +1,4 @@
 import itertools
-import logging
 from os import getenv
 from typing import Literal
 from warnings import warn
@@ -10,9 +9,8 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
+from matchbox.client._logging import client_logger
 from matchbox.common.sources import Match, Source, SourceAddress
-
-logic_logger = logging.getLogger("mb_logic")
 
 
 class Selector(BaseModel):
@@ -44,7 +42,7 @@ def select(
     if not engine:
         if default_engine := getenv("MB__CLIENT__DEFAULT_WAREHOUSE"):
             engine = create_engine(default_engine)
-            logic_logger.warning("Using default engine")
+            client_logger.warning("Using default engine")
         else:
             raise ValueError(
                 "An engine needs to be provided if "
