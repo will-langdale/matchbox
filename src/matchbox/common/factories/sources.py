@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from functools import cache, wraps
+from random import getrandbits
 from typing import Any, Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pandas as pd
 import pyarrow as pa
@@ -158,20 +159,51 @@ class SourceEntity(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    id: UUID = Field(default_factory=uuid4)
+    id: int = Field(default_factory=lambda: getrandbits(63))
     base_values: dict[str, Any] = Field(description="Feature name -> base value")
     source_pks: tuple[SourceEntityReference, ...] = Field(
         default_factory=tuple, description="Source references containing PKs"
     )
     total_unique_variations: int = Field(default=0)
 
-    def __eq__(self, other: "SourceEntity") -> bool:
-        """Entities are equal if they share base values."""
-        return self.base_values == other.base_values
+    def __eq__(self, other: object) -> bool:
+        """Equal if base values are shared, or integer ID matches."""
+        if isinstance(other, SourceEntity):
+            return self.base_values == other.base_values
+        if isinstance(other, int):
+            return self.id == other
+        return NotImplemented
+
+    def __lt__(self, other: object) -> bool:
+        """Compare based on ID for sorting operations."""
+        if isinstance(other, (SourceEntity, int)):
+            return self.id < int(other)
+        return NotImplemented
+
+    def __gt__(self, other: object) -> bool:
+        """Compare based on ID for sorting operations."""
+        if isinstance(other, (SourceEntity, int)):
+            return self.id > int(other)
+        return NotImplemented
+
+    def __le__(self, other: object) -> bool:
+        """Compare based on ID for sorting operations."""
+        if isinstance(other, (SourceEntity, int)):
+            return self.id <= int(other)
+        return NotImplemented
+
+    def __ge__(self, other: object) -> bool:
+        """Compare based on ID for sorting operations."""
+        if isinstance(other, (SourceEntity, int)):
+            return self.id >= int(other)
+        return NotImplemented
 
     def __hash__(self) -> int:
         """Hash based on sorted base values."""
         return hash(tuple(sorted(self.base_values.items())))
+
+    def __int__(self) -> int:
+        return self.id
 
     def add_source_reference(self, name: str, pks: list[str]) -> None:
         """Add or update a source reference."""
@@ -278,7 +310,7 @@ class LinkedSourcesDummy(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    entities: dict[UUID, SourceEntity] = Field(default_factory=dict)
+    entities: dict[int, SourceEntity] = Field(default_factory=dict)
     sources: dict[str, SourceDummy]
 
     def find_entities(
@@ -338,7 +370,7 @@ def generate_source(
     features: tuple[FeatureConfig, ...],
     repetition: int,
     seed_entities: tuple[SourceEntity, ...] | None = None,
-) -> tuple[pa.Table, pa.Table, dict[UUID, list[str]]]:
+) -> tuple[pa.Table, pa.Table, dict[int, list[str]]]:
     """Generate raw data as PyArrow tables with entity tracking."""
     # Generate or select entities
     if seed_entities is None:
@@ -359,7 +391,7 @@ def generate_source(
         raw_data[feature.name] = []
 
     # Track PKs for each entity
-    entity_pks: dict[UUID, list[str]] = {entity.id: [] for entity in selected_entities}
+    entity_pks: dict[int, list[str]] = {entity.id: [] for entity in selected_entities}
 
     # Generate data for each selected entity
     for entity in selected_entities:
