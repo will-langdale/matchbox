@@ -460,7 +460,7 @@ def generate_source(
             ]
 
     # Add a Matchbox ID for each unique row
-    df["id"] = [getrandbits(63) for _ in range(len(df))]
+    df["id"] = [generator.random_number(digits=16) for _ in range(len(df))]
 
     # Apply repetition
     if repetition:

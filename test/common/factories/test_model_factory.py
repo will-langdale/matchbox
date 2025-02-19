@@ -1,6 +1,7 @@
 from typing import Any
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
@@ -12,14 +13,18 @@ from matchbox.common.factories.models import (
     model_factory,
     verify_components,
 )
-from matchbox.common.factories.sources import SourceEntity
+from matchbox.common.factories.sources import (
+    SourceDummy,
+    SourceEntity,
+    linked_sources_factory,
+)
 
 
 def test_model_factory_default():
     """Test that model_factory generates a dummy model with default parameters."""
     dummy = model_factory()
 
-    assert len(dummy.entities) == 10
+    assert len(dummy.to_components()) == 10
     assert dummy.model.metadata.type == ModelType.DEDUPER
     assert dummy.model.metadata.right_resolution is None
 
@@ -44,11 +49,7 @@ def test_model_factory_with_custom_params():
 
     assert dummy.model.metadata.name == name
     assert dummy.model.metadata.description == description
-    assert len(dummy.entities) == n_true_entities
-
-    # Check probability range
-    probs = dummy.data.column("probability").to_pylist()
-    assert all(90 <= p <= 100 for p in probs)
+    assert len(dummy.to_components()) == n_true_entities
 
 
 @pytest.mark.parametrize(
@@ -93,6 +94,41 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
         assert dummy1.model.metadata.name != dummy2.model.metadata.name
         assert dummy1.model.metadata.description != dummy2.model.metadata.description
         assert not dummy1.data.equals(dummy2.data)
+
+
+@pytest.mark.parametrize(
+    ("left_source_type", "right_source_type"),
+    [
+        pytest.param(pa.Table, pa.Table, id="both_pyarrow"),
+        pytest.param(SourceDummy, SourceDummy, id="both_sourcedummy"),
+        pytest.param(pa.Table, SourceDummy, id="mixed_sources"),
+    ],
+)
+def test_model_factory_with_provided_sources(left_source_type, right_source_type):
+    """Test model_factory handles different source input types correctly."""
+    # Setup mock sources
+    linked = linked_sources_factory()
+    left_dummy = linked.sources.get("crn")
+    right_dummy = linked.sources.get("cdms")
+
+    if left_source_type == pa.Table:
+        left_source = left_dummy.data
+    else:
+        left_source = left_dummy
+
+    if right_source_type == pa.Table:
+        right_source = right_dummy.data
+    else:
+        right_source = right_dummy
+
+    # Create model
+    dummy = model_factory(left_source=left_source, right_source=right_source)
+
+    # Assert it worked
+    assert dummy.model.metadata.type == ModelType.LINKER
+    assert dummy.model.metadata.left_resolution is not None
+    assert dummy.model.metadata.right_resolution is not None
+    assert len(dummy.data) > 0
 
 
 @pytest.mark.parametrize(
@@ -187,11 +223,11 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         total_len = len_left + len_right
         len_right = parameters["right_count"]
         rand_vals = np.random.choice(a=total_len, replace=False, size=total_len)
-        left_values = list(rand_vals[:len_left])
-        right_values = list(rand_vals[len_left:])
+        left_values = tuple(rand_vals[:len_left])
+        right_values = tuple(rand_vals[len_left:])
     else:
         rand_vals = np.random.choice(a=len_left, replace=False, size=len_left)
-        left_values = list(rand_vals[:len_left])
+        left_values = tuple(rand_vals[:len_left])
         right_values = None
 
     n_components = parameters["num_components"]
@@ -297,12 +333,12 @@ def test_generate_dummy_probabilities_source_entity(parameters: dict[str, Any]):
         # Create all entities first to ensure unique IDs
         all_entities = [create_entity(i) for i in range(total_len)]
         rand_vals = np.random.choice(a=total_len, replace=False, size=total_len)
-        left_values = [all_entities[i] for i in rand_vals[:len_left]]
-        right_values = [all_entities[i] for i in rand_vals[len_left:]]
+        left_values = tuple([all_entities[i] for i in rand_vals[:len_left]])
+        right_values = tuple([all_entities[i] for i in rand_vals[len_left:]])
     else:
         all_entities = [create_entity(i) for i in range(len_left)]
         rand_vals = np.random.choice(a=len_left, replace=False, size=len_left)
-        left_values = [all_entities[i] for i in rand_vals[:len_left]]
+        left_values = tuple([all_entities[i] for i in rand_vals[:len_left]])
         right_values = None
 
     n_components = parameters["num_components"]
@@ -372,8 +408,8 @@ def test_generate_dummy_probabilities_source_entity(parameters: dict[str, Any]):
     ids=["lower_than_min", "higher_than_max"],
 )
 def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
-    left_values = range(*parameters["left_range"])
-    right_values = range(*parameters["right_range"])
+    left_values = tuple(range(*parameters["left_range"]))
+    right_values = tuple(range(*parameters["right_range"]))
 
     with pytest.raises(ValueError):
         generate_dummy_probabilities(

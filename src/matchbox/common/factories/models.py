@@ -1,7 +1,7 @@
 from collections import Counter
 from functools import cache
 from textwrap import dedent
-from typing import Any, Literal
+from typing import Any, Hashable, Literal, TypeVar
 from unittest.mock import Mock, PropertyMock, create_autospec
 
 import numpy as np
@@ -21,12 +21,14 @@ from matchbox.common.factories.sources import (
     DropBaseRule,
     FeatureConfig,
     SourceConfig,
-    SourceEntity,
+    SourceDummy,
     SuffixRule,
     linked_sources_factory,
     source_factory,
 )
-from matchbox.common.transform import graph_results
+from matchbox.common.transform import DisjointSet, graph_results
+
+T = TypeVar("T", bound=Hashable)
 
 
 def verify_components(all_nodes: list[Any], table: pa.Table) -> dict:
@@ -138,9 +140,10 @@ def calculate_min_max_edges(
     return min_edges, max_edges
 
 
+@cache
 def generate_dummy_probabilities(
-    left_values: list[int],
-    right_values: list[int] | None,
+    left_values: tuple[int],
+    right_values: tuple[int] | None,
     prob_range: tuple[float, float],
     num_components: int,
     total_rows: int | None = None,
@@ -149,8 +152,8 @@ def generate_dummy_probabilities(
     """Generate dummy Arrow probabilities data with guaranteed isolated components.
 
     Args:
-        left_values: List of integers to use for left column
-        right_values: List of integers to use for right column. If None, assume we
+        left_values: Tuple of integers to use for left column
+        right_values: Tuple of integers to use for right column. If None, assume we
             are generating probabilities for deduplication
         prob_range: Tuple of (min_prob, max_prob) to constrain probabilities
         num_components: Number of distinct connected components to generate
@@ -324,7 +327,6 @@ class ModelDummy(BaseModel):
 
     model: Model
     data: pa.Table
-    entities: tuple[SourceEntity, ...]
 
     def to_mock(self) -> Mock:
         """Create a mock Model object that mimics this dummy model's behavior."""
@@ -354,11 +356,47 @@ class ModelDummy(BaseModel):
 
         return mock_model
 
+    def to_components(self, threshold: int = 0) -> list[set[T]]:
+        """Extract connected components from the probabilities table.
 
-@cache
+        Args:
+            threshold: Minimum probability threshold for a match
+
+        Returns:
+            List of sets of matched values
+        """
+        djs = DisjointSet()
+        for record in self.data.to_pylist():
+            if record["probability"] >= threshold:
+                djs.union(record["left_id"], record["right_id"])
+        return djs.get_components()
+
+
+def _process_source(
+    source: SourceDummy | pa.Table, generator: Faker
+) -> tuple[str, pa.Table]:
+    """Process a single source input into standardized form.
+
+    Args:
+        source: The source input, either a SourceDummy or PyArrow table
+        generator: Faker instance for generating resolution names
+
+    Returns:
+        Tuple of (resolution_name, data)
+    """
+    if isinstance(source, pa.Table):
+        return generator.unique.word(), source
+    elif isinstance(source, SourceDummy):
+        return source.source.address.full_name, source.data
+    else:
+        raise ValueError(f"Unsupported source type: {type(source)}")
+
+
 def model_factory(
     name: str | None = None,
     description: str | None = None,
+    left_source: SourceDummy | pa.Table | None = None,
+    right_source: SourceDummy | pa.Table | None = None,
     model_type: Literal["deduper", "linker"] | None = None,
     n_true_entities: int = 10,
     prob_range: tuple[float, float] = (0.8, 1.0),
@@ -366,11 +404,19 @@ def model_factory(
 ) -> ModelDummy:
     """Generate a complete dummy model.
 
+    Allows autoconfiguration with minimal settings, or more nuanced control.
+
     Args:
         name: Name of the model
         description: Description of the model
-        type: Type of the model, one of 'deduper' or 'linker'
-        n_true_entities: Number of true entities to generate
+        left_source: A SourceDummy, or PyArrow table containing id, pk and fields, (the
+            expected output of query()) for the left source
+        right_source: If creating a deduper, a SourceDummy, or PyArrow table containing
+            id, pk and fields, (the expected output of query()) for the right source
+        model_type: Type of the model, one of 'deduper' or 'linker'
+            Ignored if left_source or right_source are provided.
+        n_true_entities: Base number of entities to generate when using default configs.
+            Ignored if left_source or right_source are provided.
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility
 
@@ -380,46 +426,47 @@ def model_factory(
     generator = Faker()
     generator.seed_instance(seed)
 
-    model_type = ModelType(model_type.lower() if model_type else "deduper")
+    # Process provided sources or create defaults
+    if left_source is not None:
+        left_resolution, left_data = _process_source(left_source, generator)
+        if right_source is not None:
+            model_type = ModelType.LINKER
+            right_resolution, right_data = _process_source(right_source, generator)
+        else:
+            model_type = ModelType.DEDUPER
+            right_resolution, right_data = None, None
+    else:
+        # Create default sources
+        engine = create_engine("sqlite:///:memory:")
+        model_type = ModelType(model_type.lower() if model_type else "deduper")
+        features = {
+            "company_name": FeatureConfig(
+                name="company_name",
+                base_generator="company",
+            ),
+            "crn": FeatureConfig(
+                name="crn",
+                base_generator="bothify",
+                parameters=(("text", "???-###-???-###"),),
+            ),
+            "duns": FeatureConfig(
+                name="duns",
+                base_generator="numerify",
+                parameters=(("text", "########"),),
+            ),
+            "cdms": FeatureConfig(
+                name="cdms",
+                base_generator="numerify",
+                parameters=(("text", "ORG-########"),),
+            ),
+            "address": FeatureConfig(
+                name="address",
+                base_generator="address",
+            ),
+        }
 
-    metadata = ModelMetadata(
-        name=name or generator.word(),
-        description=description or generator.sentence(),
-        type=model_type,
-        left_resolution=generator.word(),
-        right_resolution=generator.word() if model_type == ModelType.LINKER else None,
-    )
-
-    features = {
-        "company_name": FeatureConfig(
-            name="company_name",
-            base_generator="company",
-        ),
-        "crn": FeatureConfig(
-            name="crn",
-            base_generator="bothify",
-            parameters=(("text", "???-###-???-###"),),
-        ),
-        "duns": FeatureConfig(
-            name="duns",
-            base_generator="numerify",
-            parameters=(("text", "########"),),
-        ),
-        "cdms": FeatureConfig(
-            name="cdms",
-            base_generator="numerify",
-            parameters=(("text", "ORG-########"),),
-        ),
-        "address": FeatureConfig(
-            name="address",
-            base_generator="address",
-        ),
-    }
-
-    engine = create_engine("sqlite:///:memory:")
-
-    source_configs = (
-        SourceConfig(
+        left_resolution = generator.unique.word()
+        left_config = SourceConfig(
             full_name="crn",
             engine=engine,
             features=(
@@ -433,35 +480,50 @@ def model_factory(
             ),
             n_true_entities=n_true_entities,
             repetition=0,
-        ),
-        SourceConfig(
-            full_name="cdms",
-            features=(
-                features["crn"],
-                features["cdms"],
-            ),
-            n_true_entities=n_true_entities,
-            repetition=1,
-        ),
-    )
-
-    if metadata.type == ModelType.LINKER:
-        linked = linked_sources_factory(source_configs=source_configs)
-        left_data = linked.sources["crn"].data
-        right_data = linked.sources["cdms"].data
-        entities = tuple(linked.entities.values())
-    elif metadata.type == ModelType.DEDUPER:
-        crn = source_configs[0]
-        source = source_factory(
-            full_name=crn.full_name,
-            engine=crn.engine,
-            features=crn.features,
-            n_true_entities=crn.n_true_entities,
-            repetition=crn.repetition,
         )
-        left_data = source.data
-        right_data = None
-        entities = source.entities
+
+        if model_type == ModelType.LINKER:
+            right_resolution = generator.unique.word()
+            right_config = SourceConfig(
+                full_name="cdms",
+                features=(
+                    features["crn"],
+                    features["cdms"],
+                ),
+                n_true_entities=n_true_entities,
+                repetition=1,
+            )
+
+            linked = linked_sources_factory(
+                source_configs=(left_config, right_config), seed=seed
+            )
+
+            left_data = linked.sources["crn"].data
+            right_data = linked.sources["cdms"].data
+        else:
+            right_resolution = None
+            right_data = None
+
+            source = source_factory(
+                full_name=left_config.full_name,
+                engine=left_config.engine,
+                features=left_config.features,
+                n_true_entities=left_config.n_true_entities,
+                repetition=left_config.repetition,
+                seed=seed,
+            )
+
+            left_data = source.data
+
+    # Create model metadata, Model, and dummy probabilities
+
+    metadata = ModelMetadata(
+        name=name or generator.unique.word(),
+        description=description or generator.sentence(),
+        type=model_type,
+        left_resolution=left_resolution,
+        right_resolution=right_resolution,
+    )
 
     model = Model(
         metadata=metadata,
@@ -471,15 +533,13 @@ def model_factory(
     )
 
     probabilities = generate_dummy_probabilities(
-        left_values=left_data["id"],
-        right_values=right_data["id"] if right_data is not None else None,
+        left_values=tuple(left_data["id"].to_pylist()),
+        right_values=tuple(right_data["id"].to_pylist())
+        if right_data is not None
+        else None,
         prob_range=prob_range,
         num_components=n_true_entities,
         seed=seed,
     )
 
-    return ModelDummy(
-        model=model,
-        data=probabilities,
-        entities=entities,
-    )
+    return ModelDummy(model=model, data=probabilities)
