@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from functools import cache, wraps
-from math import comb
 from typing import Any, Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 from uuid import UUID, uuid4
@@ -133,81 +132,6 @@ class FeatureConfig(BaseModel):
         )
 
 
-class SourceMetrics(BaseModel):
-    """Metrics about the generated data.
-
-    The metrics represent:
-
-    * `n_true_entities`: The number of true entities generated.
-    * `n_unique_rows`: The number of unique rows after deduplication.
-    * `n_potential_pairs`: The total number of possible pairwise comparisons
-        if comparing every row with every other row.
-    * `n_blocked_pairs`: The number of pairwise comparisons when only comparing
-        variations within each entity (effectively using entity ID as a blocking rule).
-        This is intended to help unit test probability generation in processes
-        with simple
-
-    For example, in the following table with 2 entities and their variations:
-
-    | entity_id | company_name |
-    |-----------|--------------|
-    | 1         | alpha        |
-    | 1         | alpha ltd    |
-    | 1         | alpha uk     |
-    | 2         | beta         |
-    | 2         | beta ltd     |
-    | 2         | beta uk      |
-
-    The metrics would be:
-    * n_true_entities = 2 (two distinct base entities)
-    * n_unique_rows = 6 (total unique rows in the dataset)
-    * n_potential_pairs = 15 (6 choose 2 = 15 possible pairs)
-    * n_blocked_pairs = 6 (3 choose 2 = 3 pairs per entity * 2 entities)
-    """
-
-    n_true_entities: int
-    n_unique_rows: int
-    n_potential_pairs: int
-    n_blocked_pairs: int
-
-    @classmethod
-    def from_data(
-        cls, df: pd.DataFrame, entity_pks: dict[UUID, list[str]], n_true_entities: int
-    ) -> "SourceMetrics":
-        """Calculate metrics from actual generated data.
-
-        Args:
-            df: The generated DataFrame after all variations and rules are applied
-            entity_pks: Mapping of entity IDs to their PKs in the dataset
-            n_true_entities: The number of true entities
-        """
-        # Get feature columns (excluding pk)
-        feature_cols = [col for col in df.columns if col != "pk"]
-
-        # Count unique rows
-        n_unique_rows = df[feature_cols].drop_duplicates().shape[0]
-
-        # Calculate total potential pairs (all possible comparisons)
-        n_potential_pairs = comb(n_unique_rows, 2)
-
-        # Calculate blocked pairs (comparisons within each entity)
-        n_blocked_pairs = 0
-        for entity_pks_list in entity_pks.values():
-            # Get rows for this entity
-            entity_rows = df[df["pk"].isin(entity_pks_list)]
-            n_entity_variations = entity_rows[feature_cols].drop_duplicates().shape[0]
-            # Add pairs for this entity
-            if n_entity_variations > 1:
-                n_blocked_pairs += comb(n_entity_variations, 2)
-
-        return cls(
-            n_true_entities=n_true_entities,
-            n_unique_rows=n_unique_rows,
-            n_potential_pairs=n_potential_pairs,
-            n_blocked_pairs=n_blocked_pairs,
-        )
-
-
 class SourceConfig(BaseModel):
     """Configuration for generating a source."""
 
@@ -325,7 +249,6 @@ class SourceDummy(BaseModel):
     features: tuple[FeatureConfig, ...]
     data: pa.Table
     data_hashes: pa.Table
-    metrics: SourceMetrics
     entities: tuple[SourceEntity, ...] | None = Field(
         default=None,
         description=(
@@ -415,10 +338,8 @@ def generate_source(
     features: tuple[FeatureConfig, ...],
     repetition: int,
     seed_entities: tuple[SourceEntity, ...] | None = None,
-) -> tuple[pa.Table, pa.Table, SourceMetrics, dict[UUID, list[str]]]:
+) -> tuple[pa.Table, pa.Table, dict[UUID, list[str]]]:
     """Generate raw data as PyArrow tables with entity tracking."""
-    repetition = max(1, repetition)
-
     # Generate or select entities
     if seed_entities is None:
         selected_entities = generate_entities(generator, features, n_true_entities)
@@ -507,11 +428,12 @@ def generate_source(
             ]
 
     # Apply repetition
-    df = pd.concat([df] * repetition, ignore_index=True)
+    if repetition:
+        df = pd.concat([df] * repetition, ignore_index=True)
 
-    # Update entity PKs for repetition
+    # Update entity PKs for repetition + 1 (repetitions + original)
     for entity_id in entity_pks:
-        entity_pks[entity_id] = entity_pks[entity_id] * repetition
+        entity_pks[entity_id] = entity_pks[entity_id] * (repetition + 1)
 
     # Create hash groups and data_hashes table
     feature_names = [f.name for f in features]
@@ -526,11 +448,6 @@ def generate_source(
         schema=SCHEMA_INDEX,
     )
 
-    # Calculate metrics from actual data
-    metrics = SourceMetrics.from_data(
-        df=df, entity_pks=entity_pks, n_true_entities=len(selected_entities)
-    )
-
     # Update entities with variations count
     feature_cols = [col for col in df.columns if col != "pk"]
     for entity in selected_entities:
@@ -539,7 +456,7 @@ def generate_source(
             entity_rows[feature_cols].drop_duplicates().shape[0]
         )
 
-    return pa.Table.from_pandas(df), data_hashes, metrics, entity_pks
+    return pa.Table.from_pandas(df), data_hashes, entity_pks
 
 
 @make_features_hashable
@@ -595,7 +512,7 @@ def source_factory(
     )
 
     # Generate data using the base entities
-    data, data_hashes, metrics, entity_pks = generate_source(
+    data, data_hashes, entity_pks = generate_source(
         generator=generator,
         n_true_entities=n_true_entities,
         features=features,
@@ -624,7 +541,6 @@ def source_factory(
         features=features,
         data=data,
         data_hashes=data_hashes,
-        metrics=metrics,
         entities=tuple(source_entities),
     )
 
@@ -738,7 +654,7 @@ def linked_sources_factory(
     # Generate sources
     for config in source_configs:
         # Generate source data using seed entities
-        data, data_hashes, metrics, entity_pks = generate_source(
+        data, data_hashes, entity_pks = generate_source(
             generator=generator,
             features=tuple(config.features),
             n_true_entities=config.n_entities,
@@ -761,7 +677,6 @@ def linked_sources_factory(
             features=tuple(config.features),
             data=data,
             data_hashes=data_hashes,
-            metrics=metrics,
         )
 
         # Update entities with source references
@@ -770,3 +685,7 @@ def linked_sources_factory(
             entity.add_source_reference(config.full_name, pks)
 
     return linked
+
+
+if __name__ == "__main__":
+    pass
