@@ -19,6 +19,8 @@ from matchbox.client.results import Results
 from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.factories.entities import (
     FeatureConfig,
+    ResultsEntity,
+    SourceEntity,
     SuffixRule,
 )
 from matchbox.common.factories.sources import (
@@ -54,6 +56,64 @@ def verify_components(all_nodes: list[Any], table: pa.Table) -> dict:
         "min_component_size": min(component_sizes.keys()),
         "max_component_size": max(component_sizes.keys()),
     }
+
+
+def validate_components(
+    edges: list[tuple[int, int]],
+    entities: set[ResultsEntity],
+    source_entities: set[SourceEntity],
+) -> bool:
+    """Validate that probability edges create valid components.
+
+    Each component should be a subset of exactly one source entity.
+
+    Args:
+        edges: List of (left_id, right_id) edges
+        entities: Set of ResultsEntities
+        source_entities: Set of SourceEntities
+    """
+    # Create disjoint set of ResultsEntities
+    ds = DisjointSet[ResultsEntity]()
+
+    # Map IDs to ResultsEntities for lookup
+    id_to_entity = {entity.id: entity for entity in entities}
+
+    # Union entities based on probability edges
+    for left_id, right_id in edges:
+        left = id_to_entity[left_id]
+        right = id_to_entity[right_id]
+        ds.union(left, right)
+
+    # Get components
+    components = ds.get_components()
+
+    # For each component, check if it's a subset of a single source entity
+    for component in components:
+        if len(component) <= 1:
+            continue
+
+        # Merge all ResultsEntities in component
+        merged = None
+        for entity in component:
+            if merged is None:
+                merged = entity
+            else:
+                merged = merged + entity
+
+        # Find which source entity this component belongs to
+        found_source = None
+        for source in source_entities:
+            if merged.is_subset_of(source):
+                if found_source is not None:
+                    # Component matches multiple source entities - invalid!
+                    return False
+                found_source = source
+
+        if found_source is None:
+            # Component doesn't match any source entity
+            return False
+
+    return True
 
 
 def _min_edges_component(left: int, right: int, deduplicate: bool) -> int:
@@ -309,6 +369,121 @@ def generate_dummy_probabilities(
 
     # Convert to arrays
     lefts, rights, probs = zip(*all_edges, strict=True)
+
+    # Create PyArrow arrays
+    left_array = pa.array(lefts, type=pa.uint64())
+    right_array = pa.array(rights, type=pa.uint64())
+    prob_array = pa.array(probs, type=pa.uint8())
+
+    return pa.table(
+        [left_array, right_array, prob_array],
+        names=["left_id", "right_id", "probability"],
+    )
+
+
+@cache
+def generate_entity_probabilities(
+    left_entities: frozenset[ResultsEntity],
+    right_entities: frozenset[ResultsEntity] | None,
+    source_entities: frozenset[SourceEntity],
+    prob_range: tuple[float, float] = (0.8, 1.0),
+    seed: int = 42,
+) -> pa.Table:
+    """Generate probabilities that will recover entity relationships.
+
+    Compares ResultsEntities against ground truth SourceEntities by checking whether
+    their EntityReferences are subsets of the source entities. Initially focused on
+    generating fully connected, correct probabilities only.
+
+    Args:
+        left_entities: Set of ResultsEntities from left input
+        right_entities: Set of ResultsEntities from right input. If None, assume
+            we are deduplicating left_entities.
+        source_entities: Ground truth set of SourceEntities
+        prob_range: Range of probabilities to assign to matches. All matches will
+            be assigned a random probability in this range.
+
+    Returns:
+        PyArrow Table with 'left_id', 'right_id', and 'probability' columns
+    """
+    # Handle deduplication case
+    if right_entities is None:
+        right_entities = left_entities
+
+    # Create mapping of ResultsEntity -> SourceEntity
+    entity_mapping: dict[ResultsEntity, SourceEntity] = {}
+
+    def _map_entity(entity: ResultsEntity) -> None:
+        matching_sources = [
+            source for source in source_entities if entity.is_subset_of(source)
+        ]
+        if len(matching_sources) > 1:
+            raise ValueError(
+                f"ResultsEntity with ID {entity.id} is a subset of multiple "
+                f"SourceEntities. This violates the uniqueness constraint."
+            )
+        if matching_sources:
+            entity_mapping[entity] = matching_sources[0]
+
+    # Map all entities, checking constraints
+    for entity in left_entities:
+        _map_entity(entity)
+    if right_entities is not left_entities:
+        for entity in right_entities:
+            _map_entity(entity)
+
+    # Group by SourceEntity
+    source_groups: dict[
+        SourceEntity, tuple[set[ResultsEntity], set[ResultsEntity]]
+    ] = {}
+    for entity, source in entity_mapping.items():
+        if source not in source_groups:
+            source_groups[source] = (set(), set())
+        # Add to left or right group based on which input set it came from
+        if entity in left_entities:
+            source_groups[source][0].add(entity)
+        if entity in right_entities:  # Note: could be in both for deduplication
+            source_groups[source][1].add(entity)
+
+    # Generate probability edges for each group
+    edges = []
+    rng = np.random.default_rng(seed=seed)
+
+    # Convert probability range to integers (80-100 for 0.80-1.00)
+    prob_min = int(prob_range[0] * 100)
+    prob_max = int(prob_range[1] * 100)
+
+    for left_group, right_group in source_groups.values():
+        # Skip empty groups
+        if not left_group or not right_group:
+            continue
+
+        # Generate all pairs within this group
+        for left_entity in left_group:
+            for right_entity in right_group:
+                # For deduplication, only include each pair once
+                # and ensure left_id < right_id
+                if right_entities is left_entities:
+                    if left_entity.id >= right_entity.id:
+                        continue
+
+                # Generate random probability in range
+                prob = rng.integers(prob_min, prob_max + 1)
+                edges.append((left_entity.id, right_entity.id, prob))
+
+    # If no edges were generated, return empty table with correct schema
+    if not edges:
+        return pa.table(
+            [
+                pa.array([], type=pa.uint64()),
+                pa.array([], type=pa.uint64()),
+                pa.array([], type=pa.uint8()),
+            ],
+            names=["left_id", "right_id", "probability"],
+        )
+
+    # Convert to arrays
+    lefts, rights, probs = zip(*edges, strict=False)
 
     # Create PyArrow arrays
     left_array = pa.array(lefts, type=pa.uint64())

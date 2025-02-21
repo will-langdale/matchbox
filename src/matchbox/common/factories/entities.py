@@ -249,7 +249,8 @@ class SourceEntity(BaseModel):
     id: int = Field(default_factory=lambda: getrandbits(63))
     base_values: dict[str, Any] = Field(description="Feature name -> base value")
     source_pks: EntityReference = Field(
-        description="Dataset to PKs mapping", default=frozenset()
+        description="Dataset to PKs mapping",
+        default=EntityReference(mapping=frozenset()),
     )
     total_unique_variations: int = Field(default=0)
 
