@@ -1,10 +1,18 @@
+import functools
+
+import pytest
+from faker import Faker
 from sqlalchemy import create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
-from matchbox.common.factories.sources import (
-    DropBaseRule,
+from matchbox.common.factories.entities import (
     FeatureConfig,
+    ReplaceRule,
+    SourceEntity,
     SuffixRule,
+)
+from matchbox.common.factories.sources import (
+    generate_rows,
     source_factory,
 )
 from matchbox.common.sources import SourceAddress
@@ -45,15 +53,15 @@ def test_source_factory_repetition():
 
     # For each hash group, verify it contains the correct number of rows
     for _, group in hashes_df.groupby("hash"):
-        # Each hash should have repetition number of PKs
+        # Each hash should have repetition + 1 (base) number of PKs
         source_pks = group["source_pk"].explode()
-        assert len(source_pks) == repetition
+        assert len(source_pks) == repetition + 1
 
         # Get the actual rows for these PKs
         rows = data_df[data_df["pk"].isin(source_pks)]
 
-        # Should have repetition number of rows
-        assert len(rows) == repetition
+        # Should have repetition + 1 (base) number of rows
+        assert len(rows) == repetition + 1
 
         # All rows should have identical feature values
         for feature in features:
@@ -63,8 +71,8 @@ def test_source_factory_repetition():
     expected_unique_hashes = n_true_entities * (len(features[0].variations) + 1)
     assert len(hashes_df["hash"].unique()) == expected_unique_hashes
 
-    # Total number of rows should be unique hashes * repetition
-    assert len(data_df) == expected_unique_hashes * repetition
+    # Total number of rows should be unique hashes * repetition + 1 (base)
+    assert len(data_df) == expected_unique_hashes * (repetition + 1)
 
 
 def test_source_factory_data_hashes_integrity():
@@ -101,8 +109,9 @@ def test_source_factory_data_hashes_integrity():
 
     # Due to repetition=1, each unique row should appear
     # in exactly one hash group with two PKs
+    # Repetition + 1 because we include the base value
     assert all(
-        len(group["source_pk"].explode()) == repetition
+        len(group["source_pk"].explode()) == repetition + 1
         for _, group in hashes_df.groupby("hash")
     )
 
@@ -223,41 +232,39 @@ def test_entity_variations_tracking():
             variations=[
                 SuffixRule(suffix=" Inc"),
                 SuffixRule(suffix=" Ltd"),
-                DropBaseRule(),
             ],
+            drop_base=True,
         )
     ]
 
     source = source_factory(features=features, n_true_entities=2, seed=42)
 
     # Each entity should track its variations
-    for entity in source.entities:
-        # After DropBaseRule, we should only have the non-drop variations
-        expected_variations = len(
-            [v for v in features[0].variations if not isinstance(v, DropBaseRule)]
-        )
-        assert entity.total_unique_variations == expected_variations
+    for entity in source.true_entities:
+        # After drop base, we should only have the non-drop variations
+        assert entity.total_unique_variations == len(features[0].variations)
 
-        # Get all variations
-        variations = entity.variations({source.source.address.full_name: source})
+        # Get all values
+        values = entity.get_values({source.source.address.full_name: source})
 
-        # Should have variations for our source
-        assert len(variations) == 1
-        source_variations = next(iter(variations.values()))
+        # Should have values for our source
+        assert len(values) == 1
+        source_values = next(iter(values.values()))
 
-        # Should have variations for our feature
-        assert "company" in source_variations
-        company_variations = source_variations["company"]
+        # Should have values for our feature
+        assert "company" in source_values
+        company_values = source_values["company"]
 
-        # Should have the base value in the variation tracking (even though
-        # it's dropped) plus all actual variations
-        assert len(company_variations) == expected_variations + 1
+        # Should have expected number of unique values (variations only, base dropped)
+        assert len(company_values) == len(features[0].variations)
 
-        # Verify base value is marked as dropped and variations use the rules
+        # Base value should not be present due to dropped base
         base_value = entity.base_values["company"]
-        assert "{'drop': True}" in company_variations[base_value]
-        assert any("Inc" in desc for desc in company_variations.values())
-        assert any("Ltd" in desc for desc in company_variations.values())
+        assert base_value not in company_values
+
+        # Verify variations contain expected suffixes
+        assert any(val.endswith(" Inc") for val in company_values)
+        assert any(val.endswith(" Ltd") for val in company_values)
 
 
 def test_source_factory_id_generation():
@@ -292,3 +299,204 @@ def test_source_factory_id_generation():
 
     # Different rows should have different IDs
     assert len(data_df["id"].unique()) == len(data_df["company_name"].unique())
+
+
+@pytest.mark.parametrize(
+    ("selected_entities", "features"),
+    [
+        pytest.param(
+            # Base case: Two entities, one feature, unique values
+            (
+                SourceEntity(base_values={"name": "alpha"}),
+                SourceEntity(base_values={"name": "beta"}),
+            ),
+            (FeatureConfig(name="name", base_generator="name"),),
+            id="two_entities_unique_values",
+        ),
+        pytest.param(
+            # Case: Two entities with identical values - should share IDs
+            (
+                SourceEntity(base_values={"name": "alpha"}),
+                SourceEntity(base_values={"name": "alpha"}),
+            ),
+            (FeatureConfig(name="name", base_generator="name"),),
+            id="two_entities_same_values",
+        ),
+        pytest.param(
+            # Case: Multiple features, tests tuple-based identity
+            (
+                SourceEntity(base_values={"name": "alpha", "user_id": "123"}),
+                SourceEntity(base_values={"name": "alpha", "user_id": "456"}),
+            ),
+            (
+                FeatureConfig(name="name", base_generator="name"),
+                FeatureConfig(name="user_id", base_generator="uuid4"),
+            ),
+            id="multiple_features_partial_match",
+        ),
+        pytest.param(
+            # Case: Empty entities list - should handle gracefully
+            (),
+            (FeatureConfig(name="name", base_generator="name"),),
+            id="empty_entities",
+        ),
+        pytest.param(
+            # Case: Entity with variations and drop_base
+            (SourceEntity(base_values={"name": "alpha"}),),
+            (
+                FeatureConfig(
+                    name="name",
+                    base_generator="name",
+                    drop_base=True,
+                    variations=(
+                        ReplaceRule(old="a", new="@"),  # alpha -> @lph@
+                        ReplaceRule(old="a", new="4"),  # alpha -> 4lph4
+                    ),
+                ),
+            ),
+            id="variations_with_drop_base",
+        ),
+        pytest.param(
+            # Case: Entity with variations and drop_base
+            (SourceEntity(base_values={"name": "alpha", "user_id": "123"}),),
+            (
+                FeatureConfig(
+                    name="name",
+                    base_generator="name",
+                    drop_base=True,
+                    variations=(
+                        ReplaceRule(old="a", new="@"),  # alpha -> @lph@
+                        ReplaceRule(old="a", new="4"),  # alpha -> 4lph4
+                    ),
+                ),
+                FeatureConfig(
+                    name="user_id",
+                    base_generator="uuid4",
+                    # No variations, keeps base value
+                ),
+            ),
+            id="mixed_variations_and_drop_base",
+        ),
+        pytest.param(
+            # Case: Multiple entities with mixed variation configs
+            (
+                SourceEntity(base_values={"name": "alpha", "title": "ceo"}),
+                SourceEntity(base_values={"name": "beta", "title": "cto"}),
+            ),
+            (
+                FeatureConfig(
+                    name="name",
+                    base_generator="name",
+                    drop_base=False,  # Keeps original
+                    variations=(ReplaceRule(old="a", new="@"),),
+                ),
+                FeatureConfig(
+                    name="title",
+                    base_generator="job",
+                    drop_base=True,  # Drops original
+                    variations=(
+                        ReplaceRule(old="o", new="0"),
+                        ReplaceRule(old="e", new="3"),  # Won't affect CTO
+                    ),
+                ),
+            ),
+            id="multiple_entities_mixed_variations",
+        ),
+    ],
+)
+def test_generate_rows(
+    selected_entities: tuple[SourceEntity, ...],
+    features: tuple[FeatureConfig, ...],
+):
+    """Test generate_rows correctly tracks entities and row identities."""
+    generator = Faker(seed=42)
+    raw_data, entity_pks, id_pks = generate_rows(generator, selected_entities, features)
+
+    # Check arrays have consistent lengths
+    n_rows = len(raw_data["pk"])
+    assert len(raw_data["id"]) == n_rows
+    assert all(len(values) == n_rows for values in raw_data.values())
+
+    # Check entity tracking - each entity appears exactly once
+    assert len(selected_entities) == len(entity_pks)
+
+    # Check row identity tracking - each unique value combo gets one ID
+    unique_values = {
+        tuple(raw_data[f.name][i] for f in features) for i in range(n_rows)
+    }
+    assert len(unique_values) == len(id_pks)
+
+    # When we have duplicate values, verify correct ID sharing
+    value_counts = {}
+    for i in range(n_rows):
+        values = tuple(raw_data[f.name][i] for f in features)
+        row_id = raw_data["id"][i]
+        value_counts[values] = value_counts.get(values, 0) + 1
+
+    # Each ID's PKs set should match the number of times those values appear
+    for i in range(n_rows):
+        values = tuple(raw_data[f.name][i] for f in features)
+        row_id = raw_data["id"][i]
+        assert len(id_pks[row_id]) == value_counts[values]
+
+    # Verify all PKs are accounted for
+    all_pks = set(raw_data["pk"])
+    assert all(pk in all_pks for pks in entity_pks.values() for pk in pks)
+    assert all(pk in all_pks for pks in id_pks.values() for pk in pks)
+
+    # For empty entities case, verify empty results
+    if not selected_entities:
+        assert not raw_data["pk"]
+        assert not entity_pks
+        assert not id_pks
+
+    # Verify core variation behavior
+    for entity in selected_entities:
+        entity_rows = {
+            i for i, pk in enumerate(raw_data["pk"]) if pk in entity_pks[entity.id]
+        }
+
+        for feature in features:
+            values = {raw_data[feature.name][i] for i in entity_rows}
+            base_value = entity.base_values[feature.name]
+
+            # Check if base values are included/excluded correctly
+            if feature.drop_base:
+                assert base_value not in values
+            elif not feature.variations:
+                assert values == {base_value}
+
+            # Count effective variations (those that actually change the value)
+            effective_variations = [
+                rule.apply(base_value)
+                for rule in feature.variations
+                if rule.apply(base_value) != base_value
+            ]
+
+            # Check that variations were generated
+            if feature.variations:
+                expected_count = len(effective_variations) + (
+                    0 if feature.drop_base else 1
+                )
+                assert len(values) == expected_count
+
+    # Verify row count matches expectations
+    for entity in selected_entities:
+        # Count effective variations for each feature
+        variation_counts = []
+        for feature in features:
+            base_value = entity.base_values[feature.name]
+            effective_variations = [
+                rule.apply(base_value)
+                for rule in feature.variations
+                if rule.apply(base_value) != base_value
+            ]
+            # Count options: variations + (base if keeping it)
+            if feature.drop_base and effective_variations:
+                variation_counts.append(len(effective_variations))
+            else:
+                variation_counts.append(len(effective_variations) + 1)
+
+        # Multiply all counts together to get total combinations
+        expected_rows = functools.reduce(lambda x, y: x * y, variation_counts, 1)
+        assert len(entity_pks[entity.id]) == expected_rows

@@ -1,7 +1,6 @@
-from abc import ABC, abstractmethod
 from functools import cache, wraps
-from random import getrandbits
-from typing import Any, Callable, ParamSpec, TypeVar
+from itertools import product
+from typing import Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 from uuid import uuid4
 
@@ -12,6 +11,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.factories.entities import (
+    EntityReference,
+    FeatureConfig,
+    ResultsEntity,
+    SourceEntity,
+    SuffixRule,
+    generate_entities,
+)
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 P = ParamSpec("P")
@@ -42,97 +49,6 @@ def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class VariationRule(BaseModel, ABC):
-    """Abstract base class for variation rules."""
-
-    model_config = ConfigDict(frozen=True)
-
-    @abstractmethod
-    def apply(self, value: str) -> str:
-        """Apply the variation to a value."""
-        pass
-
-    @property
-    @abstractmethod
-    def type(self) -> str:
-        """Return the type of variation."""
-        pass
-
-
-class SuffixRule(VariationRule):
-    """Add a suffix to a value."""
-
-    suffix: str
-
-    def apply(self, value: str) -> str:
-        return f"{value}{self.suffix}"
-
-    @property
-    def type(self) -> str:
-        return "suffix"
-
-
-class PrefixRule(VariationRule):
-    """Add a prefix to a value."""
-
-    prefix: str
-
-    def apply(self, value: str) -> str:
-        return f"{self.prefix}{value}"
-
-    @property
-    def type(self) -> str:
-        return "prefix"
-
-
-class ReplaceRule(VariationRule):
-    """Replace occurrences of a string with another."""
-
-    old: str
-    new: str
-
-    def apply(self, value: str) -> str:
-        return value.replace(self.old, self.new)
-
-    @property
-    def type(self) -> str:
-        return "replace"
-
-
-class DropBaseRule(VariationRule):
-    """Drop the base value."""
-
-    drop: bool = Field(default=True)
-
-    def apply(self, value: str) -> str:
-        return value
-
-    @property
-    def type(self) -> str:
-        return "drop_base"
-
-
-class FeatureConfig(BaseModel):
-    """Configuration for generating a feature with variations."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    base_generator: str
-    parameters: tuple = Field(default_factory=tuple)
-    unique: bool = Field(default=True)
-    variations: tuple[VariationRule, ...] = Field(default_factory=tuple)
-
-    def add_variations(self, *rule: VariationRule) -> "FeatureConfig":
-        """Add a variation rule to the feature."""
-        return FeatureConfig(
-            name=self.name,
-            base_generator=self.base_generator,
-            parameters=self.parameters,
-            variations=self.variations + tuple(rule),
-        )
-
-
 class SourceConfig(BaseModel):
     """Configuration for generating a source."""
 
@@ -145,133 +61,6 @@ class SourceConfig(BaseModel):
     repetition: int = Field(default=0)
 
 
-class SourceEntityReference(BaseModel):
-    """Reference to an entity's presence in a specific source."""
-
-    name: str
-    source_pks: tuple[str, ...]
-
-    model_config = ConfigDict(frozen=True)
-
-
-class SourceEntity(BaseModel):
-    """Represents a single entity across all sources."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    id: int = Field(default_factory=lambda: getrandbits(63))
-    base_values: dict[str, Any] = Field(description="Feature name -> base value")
-    source_pks: tuple[SourceEntityReference, ...] = Field(
-        default_factory=tuple, description="Source references containing PKs"
-    )
-    total_unique_variations: int = Field(default=0)
-
-    def __eq__(self, other: object) -> bool:
-        """Equal if base values are shared, or integer ID matches."""
-        if isinstance(other, SourceEntity):
-            return self.base_values == other.base_values
-        if isinstance(other, int):
-            return self.id == other
-        return NotImplemented
-
-    def __lt__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id < int(other)
-        return NotImplemented
-
-    def __gt__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id > int(other)
-        return NotImplemented
-
-    def __le__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id <= int(other)
-        return NotImplemented
-
-    def __ge__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id >= int(other)
-        return NotImplemented
-
-    def __hash__(self) -> int:
-        """Hash based on sorted base values."""
-        return hash(tuple(sorted(self.base_values.items())))
-
-    def __int__(self) -> int:
-        return self.id
-
-    def add_source_reference(self, name: str, pks: list[str]) -> None:
-        """Add or update a source reference."""
-        new_ref = SourceEntityReference(name=name, source_pks=tuple(pks))
-        existing_refs = [ref for ref in self.source_pks if ref.name != name]
-        self.source_pks = tuple(existing_refs + [new_ref])
-
-    def get_source_pks(self, source_name: str) -> list[str]:
-        """Get PKs for a specific source."""
-        for ref in self.source_pks:
-            if ref.name == source_name:
-                return list(ref.source_pks)
-        return []
-
-    def variations(
-        self, sources: dict[str, "SourceDummy"]
-    ) -> dict[str, dict[str, dict[str, str]]]:
-        """Get all variations of this entity across sources with their rules."""
-        variations = {}
-        for ref in self.source_pks:
-            source = sources.get(ref.name)
-
-            if source is None:
-                continue
-
-            # Initialize source variations
-            variations[ref.name] = {}
-
-            # For each feature, track variations and their origins
-            for feature in source.features:
-                feature_variations = {}
-                base_value = self.base_values[feature.name]
-
-                # Add base value
-                feature_variations[base_value] = "Base value"
-
-                # Add variations from rules
-                for i, rule in enumerate(feature.variations):
-                    varied_value = rule.apply(base_value)
-                    feature_variations[varied_value] = (
-                        f"Variation {i + 1}: {rule.model_dump()}"
-                    )
-
-                variations[ref.name][feature.name] = feature_variations
-
-        return variations
-
-    def get_values(
-        self, sources: dict[str, "SourceDummy"]
-    ) -> dict[str, dict[str, list[str]]]:
-        """Get all unique values for this entity across sources."""
-        values = {}
-        for ref in self.source_pks:
-            source = sources[ref.name]
-            df = source.data.to_pandas()
-
-            # Get rows for this entity
-            entity_rows = df[df["pk"].isin(ref.source_pks)]
-
-            # Get unique values for each feature
-            values[ref.name] = {
-                feature.name: sorted(entity_rows[feature.name].unique())
-                for feature in source.features
-            }
-
-        return values
-
-
 class SourceDummy(BaseModel):
     """Complete representation of a generated dummy Source."""
 
@@ -281,13 +70,16 @@ class SourceDummy(BaseModel):
     features: tuple[FeatureConfig, ...]
     data: pa.Table
     data_hashes: pa.Table
-    entities: tuple[SourceEntity, ...] | None = Field(
+    true_entities: tuple[SourceEntity, ...] | None = Field(
         default=None,
         description=(
             "Generated entities. Optional: when the SourceDummy comes from a "
             "source_factory they're stored here, but from linked_source_factory "
             "they're stored as part of the shared LinkedSourcesDummy object."
         ),
+    )
+    entities: tuple[ResultsEntity, ...] = Field(
+        description="Entities that were generated from the source."
     )
 
     def to_mock(self) -> Mock:
@@ -304,13 +96,17 @@ class SourceDummy(BaseModel):
 
         return mock_source
 
+    def query(self) -> pa.Table:
+        """Return a PyArrow table in the same format at matchbox.query()."""
+        return self.data
+
 
 class LinkedSourcesDummy(BaseModel):
     """Container for multiple related sources with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    entities: dict[int, SourceEntity] = Field(default_factory=dict)
+    true_entities: dict[int, SourceEntity] = Field(default_factory=dict)
     sources: dict[str, SourceDummy]
 
     def find_entities(
@@ -319,7 +115,7 @@ class LinkedSourcesDummy(BaseModel):
         max_appearances: dict[str, int] | None = None,
     ) -> list[SourceEntity]:
         """Find entities matching appearance criteria."""
-        result = list(self.entities.values())
+        result = list(self.true_entities.values())
 
         if min_appearances:
             result = [
@@ -344,23 +140,95 @@ class LinkedSourcesDummy(BaseModel):
         return result
 
 
-@cache
-def generate_entities(
+def generate_rows(
     generator: Faker,
+    selected_entities: tuple[SourceEntity, ...],
     features: tuple[FeatureConfig, ...],
-    n: int,
-) -> tuple[SourceEntity]:
-    """Generate base entities with their ground truth values."""
-    entities = []
-    for _ in range(n):
-        base_values = {
-            f.name: getattr(
-                generator.unique if f.unique else generator, f.base_generator
-            )(**dict(f.parameters))
-            for f in features
-        }
-        entities.append(SourceEntity(base_values=base_values))
-    return tuple(entities)
+) -> tuple[dict[str, list], dict[int, list[str]], dict[int, list[str]]]:
+    """Generate raw data rows. Adds an ID shared by unique rows, and a PK for every row.
+
+    Returns a tuple of:
+    * raw_data: Dictionary of column arrays for DataFrame creation
+    * entity_pks: Maps SourceEntity.id to the set of PKs where that entity appears
+    * id_pks: Maps each ID to the set of PKs where that row appears
+
+    For example, if this is the raw data:
+
+    | id | pk | company_name |
+    |----|----|--------------|
+    | 1  | 1  | alpha co     |
+    | 2  | 2  | alpha ltd    |
+    | 1  | 3  | alpha co     |
+    | 2  | 4  | alpha ltd    |
+    | 3  | 5  | beta co      |
+    | 4  | 6  | beta ltd     |
+    | 3  | 7  | beta co      |
+    | 4  | 8  | beta ltd     |
+
+
+    Entity PKs would be this, because there are two true SourceEntities:
+
+    {
+        1: [1, 2, 3, 4],
+        2: [5, 6, 7, 8],
+    }
+
+    And ID PKs would be this, because there are four unique rows:
+
+    {
+        1: [1, 3],
+        2: [2, 4],
+        3: [5, 7],
+        4: [6, 8],
+    }
+    """
+    raw_data = {"pk": [], "id": []}
+    for feature in features:
+        raw_data[feature.name] = []
+
+    # Track entity locations and row identities
+    entity_pks = {entity.id: [] for entity in selected_entities}
+    id_pks = {}
+    value_to_id = {}
+
+    def add_row(entity_id: int, values: tuple) -> None:
+        """Add a row of data, handling IDs and PKs."""
+        pk = str(uuid4())
+        entity_pks[entity_id].append(pk)
+
+        if values not in value_to_id:
+            mb_id = generator.random_number(digits=16)
+            value_to_id[values] = mb_id
+            id_pks[mb_id] = []
+
+        row_id = value_to_id[values]
+        id_pks[row_id].append(pk)
+
+        raw_data["pk"].append(pk)
+        raw_data["id"].append(row_id)
+        for feature, value in zip(features, values, strict=True):
+            raw_data[feature.name].append(value)
+
+    for entity in selected_entities:
+        # For each feature, collect all possible values
+        possible_values = []
+        for feature in features:
+            base = entity.base_values[feature.name]
+
+            variations = []
+            # Apply all variations as long as they change the value
+            for v in (rule.apply(base) for rule in feature.variations):
+                if v != base:
+                    variations.append(v)
+
+            values = variations if feature.drop_base else variations + [base]
+            possible_values.append(values or [base])
+
+        # Create a row for each combination
+        for values in product(*possible_values):
+            add_row(entity.id, values)
+
+    return raw_data, entity_pks, id_pks
 
 
 @cache
@@ -370,9 +238,16 @@ def generate_source(
     features: tuple[FeatureConfig, ...],
     repetition: int,
     seed_entities: tuple[SourceEntity, ...] | None = None,
-) -> tuple[pa.Table, pa.Table, dict[int, list[str]]]:
-    """Generate raw data as PyArrow tables with entity tracking."""
-    # Generate or select entities
+) -> tuple[pa.Table, pa.Table, dict[int, set[str]], dict[int, set[str]]]:
+    """Generate raw data as PyArrow tables with entity tracking.
+
+    Returns:
+        - data: PyArrow table with generated data
+        - data_hashes: PyArrow table with hash groups
+        - entity_pks: SourceEntity ID -> list of PKs mapping
+        - row_pks: Results row ID -> list of PKs mapping for identical rows
+    """
+    # Select or generate entities
     if seed_entities is None:
         selected_entities = generate_entities(generator, features, n_true_entities)
     else:
@@ -380,121 +255,47 @@ def generate_source(
             seed_entities, min(n_true_entities, len(seed_entities))
         )
 
-    # Calculate variations (excluding DropBaseRule)
-    max_variations = max(
-        sum(1 for rule in f.variations if not isinstance(rule, DropBaseRule))
-        for f in features
+    # Generate initial data
+    raw_data, entity_pks, row_pks = generate_rows(
+        generator, selected_entities, features
     )
-
-    raw_data = {"pk": []}
-    for feature in features:
-        raw_data[feature.name] = []
-
-    # Track PKs for each entity
-    entity_pks: dict[int, list[str]] = {entity.id: [] for entity in selected_entities}
-
-    # Generate data for each selected entity
-    for entity in selected_entities:
-        # Check which features should include base values
-        features_with_base = [
-            f
-            for f in features
-            if not any(isinstance(rule, DropBaseRule) for rule in f.variations)
-        ]
-
-        # Add base values for all features at once
-        if features_with_base:
-            pk = str(uuid4())
-            raw_data["pk"].append(pk)
-            entity_pks[entity.id].append(pk)
-
-            for feature in features:
-                raw_data[feature.name].append(entity.base_values[feature.name])
-
-        # Add variations
-        for variation_idx in range(max_variations):
-            pk = str(uuid4())
-            raw_data["pk"].append(pk)
-            entity_pks[entity.id].append(pk)
-
-            for feature in features:
-                non_drop_variations = [
-                    rule
-                    for rule in feature.variations
-                    if not isinstance(rule, DropBaseRule)
-                ]
-                if variation_idx < len(non_drop_variations):
-                    value = non_drop_variations[variation_idx].apply(
-                        entity.base_values[feature.name]
-                    )
-                else:
-                    value = entity.base_values[feature.name]
-                raw_data[feature.name].append(value)
 
     # Create DataFrame
     df = pd.DataFrame(raw_data)
 
-    # Remove rows with base values for features that have DropBaseRule
-    drop_base_features = [
-        feature.name
-        for feature in features
-        if any(isinstance(rule, DropBaseRule) for rule in feature.variations)
-    ]
+    # Handle repetition
+    df = pd.concat([df] * (repetition + 1), ignore_index=True)
+    entity_pks = {eid: pks * (repetition + 1) for eid, pks in entity_pks.items()}
+    row_pks = {rid: pks * (repetition + 1) for rid, pks in row_pks.items()}
 
-    if drop_base_features:
-        # Track which rows we're removing to update entity_pks
-        initial_pks = set(df["pk"])
-
-        for entity in selected_entities:
-            for feature_name in drop_base_features:
-                base_value = entity.base_values[feature_name]
-                df = df[df[feature_name] != base_value]
-
-        # Update entity_pks to remove dropped PKs
-        remaining_pks = set(df["pk"])
-        dropped_pks = initial_pks - remaining_pks
-
-        for entity_id in entity_pks:
-            entity_pks[entity_id] = [
-                pk for pk in entity_pks[entity_id] if pk not in dropped_pks
-            ]
-
-    # Add a Matchbox ID for each unique row
-    df["id"] = [generator.random_number(digits=16) for _ in range(len(df))]
-
-    # Apply repetition
-    if repetition:
-        df = pd.concat([df] * repetition, ignore_index=True)
-
-    # Update entity PKs for repetition + 1 (repetitions + original)
-    for entity_id in entity_pks:
-        entity_pks[entity_id] = entity_pks[entity_id] * (repetition + 1)
-
-    # Create hash groups and data_hashes table
-    feature_names = [f.name for f in features]
-    hash_groups = df.groupby(feature_names, sort=False)["pk"].agg(list).reset_index()
-    hash_groups["hash"] = [str(uuid4()).encode() for _ in range(len(hash_groups))]
+    # Create hash groups
+    source_pks = []
+    hashes = []
+    for group_pks in row_pks.values():
+        source_pks.append(list(group_pks))
+        hashes.append(str(uuid4()).encode())
 
     data_hashes = pa.Table.from_pydict(
         {
-            "source_pk": hash_groups["pk"].tolist(),
-            "hash": hash_groups["hash"].tolist(),
+            "source_pk": source_pks,
+            "hash": hashes,
         },
         schema=SCHEMA_INDEX,
     )
 
-    # Update entities with variations count
-    feature_cols = [col for col in df.columns if col != "pk"]
+    # Update variation counts
     for entity in selected_entities:
-        entity_rows = df[df["pk"].isin(entity_pks[entity.id])]
-        entity.total_unique_variations = (
-            entity_rows[feature_cols].drop_duplicates().shape[0]
-        )
+        if entity.id in entity_pks:
+            # Count unique row IDs this entity appears in
+            entity_rows = df[df["pk"].isin(entity_pks[entity.id])]
+            entity.total_unique_variations = len(set(entity_rows["id"]))
 
-    # Reorder columns
-    df = df[["id", "pk", *[col for col in df.columns if col not in ["id", "pk"]]]]
-
-    return pa.Table.from_pandas(df, preserve_index=False), data_hashes, entity_pks
+    return (
+        pa.Table.from_pandas(df, preserve_index=False),
+        data_hashes,
+        entity_pks,
+        row_pks,
+    )
 
 
 @make_features_hashable
@@ -507,19 +308,7 @@ def source_factory(
     repetition: int = 0,
     seed: int = 42,
 ) -> SourceDummy:
-    """Generate a complete dummy source.
-
-    Args:
-        features: list of FeatureConfigs, used to generate features with variations
-        full_name: Full name of the source, like "dbt.companies_house".
-        engine: SQLAlchemy engine to use for the source.
-        n_true_entities: Number of true entities to generate.
-        repetition: Number of times to repeat the data.
-        seed: Random seed for data generation.
-
-    Returns:
-        SourceDummy: Complete dummy source with generated data, including entities.
-    """
+    """Generate a complete dummy source."""
     generator = Faker()
     generator.seed_instance(seed)
 
@@ -550,7 +339,7 @@ def source_factory(
     )
 
     # Generate data using the base entities
-    data, data_hashes, entity_pks = generate_source(
+    data, data_hashes, entity_pks, row_pks = generate_source(
         generator=generator,
         n_true_entities=n_true_entities,
         features=features,
@@ -561,12 +350,21 @@ def source_factory(
     # Create source entities with references
     source_entities = []
     for entity in base_entities:
-        # Get PKs for this entity if they exist
         pks = entity_pks.get(entity.id, [])
         if pks:
-            # Add source reference
             entity.add_source_reference(full_name, pks)
             source_entities.append(entity)
+
+    # Create ResultsEntity objects from row_pks
+    results_entities = [
+        ResultsEntity(
+            id=row_id,
+            source_pks=EntityReference(
+                mapping=frozenset([(full_name, frozenset(pks))])
+            ),
+        )
+        for row_id, pks in row_pks.items()
+    ]
 
     source = Source(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
@@ -579,7 +377,8 @@ def source_factory(
         features=features,
         data=data,
         data_hashes=data_hashes,
-        entities=tuple(source_entities),
+        true_entities=tuple(source_entities),
+        entities=tuple(sorted(results_entities)),
     )
 
 
@@ -589,18 +388,7 @@ def linked_sources_factory(
     n_true_entities: int = 10,
     seed: int = 42,
 ) -> LinkedSourcesDummy:
-    """Generate a set of linked sources with tracked entities.
-
-    Args:
-        source_configs: Configurations for generating sources. If None, a default
-            set of configurations will be used.
-        n_true_entities: Base number of entities to generate when using default configs.
-            Ignored if source_configs is provided.
-        seed: Random seed for data generation.
-
-    Returns:
-        LinkedSourcesDummy: Container for generated sources and entities.
-    """
+    """Generate a set of linked sources with tracked entities."""
     generator = Faker()
     generator.seed_instance(seed)
 
@@ -639,13 +427,13 @@ def linked_sources_factory(
                 engine=engine,
                 features=(
                     features["company_name"].add_variations(
-                        DropBaseRule(),
                         SuffixRule(suffix=" Limited"),
                         SuffixRule(suffix=" UK"),
                         SuffixRule(suffix=" Company"),
                     ),
                     features["crn"],
                 ),
+                drop_base=True,
                 n_true_entities=n_true_entities,
                 repetition=0,
             ),
@@ -685,20 +473,31 @@ def linked_sources_factory(
 
     # Initialize LinkedSourcesDummy
     linked = LinkedSourcesDummy(
-        entities={entity.id: entity for entity in all_entities},
+        true_entities={entity.id: entity for entity in all_entities},
         sources={},
     )
 
     # Generate sources
     for config in source_configs:
         # Generate source data using seed entities
-        data, data_hashes, entity_pks = generate_source(
+        data, data_hashes, entity_pks, row_pks = generate_source(
             generator=generator,
             features=tuple(config.features),
             n_true_entities=config.n_true_entities,
             repetition=config.repetition,
             seed_entities=all_entities,
         )
+
+        # Create ResultsEntity objects from row_pks
+        results_entities = [
+            ResultsEntity(
+                id=row_id,
+                source_pks=EntityReference(
+                    mapping=frozenset([(config.full_name, frozenset(pks))])
+                ),
+            )
+            for row_id, pks in row_pks.items()
+        ]
 
         # Create source
         source = Source(
@@ -709,17 +508,18 @@ def linked_sources_factory(
             columns=[SourceColumn(name=feature.name) for feature in config.features],
         )
 
-        # Add source directly to linked.sources
+        # Add source to linked.sources
         linked.sources[config.full_name] = SourceDummy(
             source=source,
             features=tuple(config.features),
             data=data,
             data_hashes=data_hashes,
+            entities=tuple(sorted(results_entities)),
         )
 
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
-            entity = linked.entities[entity_id]
+            entity = linked.true_entities[entity_id]
             entity.add_source_reference(config.full_name, pks)
 
     return linked

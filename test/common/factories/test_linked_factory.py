@@ -1,7 +1,6 @@
 from sqlalchemy import create_engine
 
 from matchbox.common.factories.sources import (
-    DropBaseRule,
     FeatureConfig,
     SourceConfig,
     SuffixRule,
@@ -19,16 +18,18 @@ def test_linked_sources_factory_default():
     assert "cdms" in linked.sources
 
     # Verify default entity count
-    assert len(linked.entities) == 10
+    assert len(linked.true_entities) == 10
 
     # Check that entities are properly tracked across sources
-    for entity in linked.entities.values():
-        # Each entity should have source references
-        assert len(entity.source_pks) > 0
+    for entity in linked.true_entities.values():
+        # Each entity should have references to multiple sources
+        source_references = list(entity.source_pks.items())
+        assert len(source_references) > 0
 
-        # Each reference should contain PKs
-        for ref in entity.source_pks:
-            assert len(ref.source_pks) > 0
+        # Each reference should have source name and PKs
+        for source_name, pks in source_references:
+            assert source_name in linked.sources
+            assert len(pks) > 0
 
 
 def test_linked_sources_custom_config():
@@ -41,8 +42,8 @@ def test_linked_sources_custom_config():
             base_generator="name",
             variations=[SuffixRule(suffix=" Jr")],
         ),
-        "id": FeatureConfig(
-            name="id",
+        "user_id": FeatureConfig(
+            name="user_id",
             base_generator="uuid4",
         ),
     }
@@ -51,7 +52,7 @@ def test_linked_sources_custom_config():
         SourceConfig(
             full_name="source_a",
             engine=engine,
-            features=(features["name"], features["id"]),
+            features=(features["name"], features["user_id"]),
             n_true_entities=5,
             repetition=1,
         ),
@@ -67,21 +68,17 @@ def test_linked_sources_custom_config():
 
     # Verify sources were created correctly
     assert set(linked.sources.keys()) == {"source_a", "source_b"}
-    assert len(linked.entities) == 5  # Max entities from configs
+    assert len(linked.true_entities) == 5  # Max entities from configs
 
     # Check source A entities
     source_a_entities = [
-        e
-        for e in linked.entities.values()
-        if any(ref.name == "source_a" for ref in e.source_pks)
+        e for e in linked.true_entities.values() if "source_a" in e.source_pks
     ]
     assert len(source_a_entities) == 5
 
     # Check source B entities
     source_b_entities = [
-        e
-        for e in linked.entities.values()
-        if any(ref.name == "source_b" for ref in e.source_pks)
+        e for e in linked.true_entities.values() if "source_b" in e.source_pks
     ]
     assert len(source_b_entities) == 3
 
@@ -95,7 +92,7 @@ def test_linked_sources_find_entities():
     common_entities = linked.find_entities(min_appearances=min_appearances)
 
     # Should be subset of total entities
-    assert len(common_entities) <= len(linked.entities)
+    assert len(common_entities) <= len(linked.true_entities)
 
     # Each entity should meet minimum appearance criteria
     for entity in common_entities:
@@ -124,26 +121,23 @@ def test_entity_value_consistency():
     """Test that entity base values remain consistent across sources."""
     linked = linked_sources_factory(n_true_entities=5)
 
-    for entity in linked.entities.values():
+    for entity in linked.true_entities.values():
         base_values = entity.base_values
 
         # Get actual values from each source
-        for source_ref in entity.source_pks:
-            source = linked.sources[source_ref.name]
+        for source_name, source_pks in entity.source_pks.items():
+            source = linked.sources[source_name]
             df = source.data.to_pandas()
 
             # Get rows for this entity
-            entity_rows = df[df["pk"].isin(source_ref.source_pks)]
+            entity_rows = df[df["pk"].isin(source_pks)]
 
             # For each feature in the source
             for feature in source.features:
                 if feature.name in base_values:
                     # The base value should appear in the data
-                    # (unless it was dropped by a DropBaseRule)
-                    has_drop_rule = any(
-                        isinstance(rule, DropBaseRule) for rule in feature.variations
-                    )
-                    if not has_drop_rule:
+                    # (unless it's marked as drop_base)
+                    if not feature.drop_base:
                         assert (
                             base_values[feature.name]
                             in entity_rows[feature.name].values
@@ -155,7 +149,7 @@ def test_source_entity_equality():
     linked = linked_sources_factory(n_true_entities=3)
 
     # Get a few entities
-    entities = list(linked.entities.values())
+    entities = list(linked.true_entities.values())
 
     # Same entity should be equal to itself
     assert entities[0] == entities[0]
@@ -197,7 +191,7 @@ def test_seed_reproducibility():
     assert linked1.sources["test_source"].data.equals(
         linked2.sources["test_source"].data
     )
-    assert len(linked1.entities) == len(linked2.entities)
+    assert len(linked1.true_entities) == len(linked2.true_entities)
 
     # Different seeds should produce different results
     assert not linked1.sources["test_source"].data.equals(
@@ -218,21 +212,21 @@ def test_empty_source_handling():
     # Should create source but with empty data
     assert "empty_source" in linked.sources
     assert len(linked.sources["empty_source"].data) == 0
-    assert len(linked.entities) == 0
+    assert len(linked.true_entities) == 0
 
 
 def test_large_entity_count():
     """Test handling of sources with large number of entities."""
     config = SourceConfig(
         full_name="large_source",
-        features=(FeatureConfig(name="id", base_generator="uuid4"),),
+        features=(FeatureConfig(name="user_id", base_generator="uuid4"),),
         n_true_entities=10_000,
     )
 
     linked = linked_sources_factory(source_configs=(config,))
 
     # Should handle large entity counts
-    assert len(linked.entities) == 10_000
+    assert len(linked.true_entities) == 10_000
     assert len(linked.sources["large_source"].data) == 10_000
 
 
@@ -256,16 +250,16 @@ def test_feature_inheritance():
     linked = linked_sources_factory(source_configs=configs)
 
     # Check that entities have all relevant features
-    for entity in linked.entities.values():
+    for entity in linked.true_entities.values():
         # All entities should have name (common feature)
         assert "name" in entity.base_values
 
         # Entities in source_a should have email
-        if any(ref.name == "source_a" for ref in entity.source_pks):
+        if "source_a" in entity.source_pks:
             assert "email" in entity.base_values
 
         # Entities in source_b should have phone
-        if any(ref.name == "source_b" for ref in entity.source_pks):
+        if "source_b" in entity.source_pks:
             assert "phone" in entity.base_values
 
 
@@ -285,7 +279,7 @@ def test_unique_feature_values():
     # Get all base values
     unique_ids = set()
     categories = set()
-    for entity in linked.entities.values():
+    for entity in linked.true_entities.values():
         unique_ids.add(entity.base_values["unique_id"])
         categories.add(entity.base_values["is_true"])
 
@@ -299,17 +293,17 @@ def test_unique_feature_values():
 def test_source_references():
     """Test adding and retrieving source references."""
     linked = linked_sources_factory(n_true_entities=2)
-    entity = next(iter(linked.entities.values()))
+    entity = next(iter(linked.true_entities.values()))
 
     # Add new source reference
-    new_pks = ["pk1", "pk2"]
+    new_pks = {"pk1", "pk2"}
     entity.add_source_reference("new_source", new_pks)
 
     # Should be able to retrieve the PKs
     assert entity.get_source_pks("new_source") == new_pks
 
     # Update existing reference
-    updated_pks = ["pk3"]
+    updated_pks = {"pk3"}
     entity.add_source_reference("new_source", updated_pks)
     assert entity.get_source_pks("new_source") == updated_pks
 

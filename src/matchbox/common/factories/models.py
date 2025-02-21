@@ -17,12 +17,13 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import Model
 from matchbox.client.results import Results
 from matchbox.common.dtos import ModelMetadata, ModelType
-from matchbox.common.factories.sources import (
-    DropBaseRule,
+from matchbox.common.factories.entities import (
     FeatureConfig,
+    SuffixRule,
+)
+from matchbox.common.factories.sources import (
     SourceConfig,
     SourceDummy,
-    SuffixRule,
     linked_sources_factory,
     source_factory,
 )
@@ -471,13 +472,13 @@ def model_factory(
             engine=engine,
             features=(
                 features["company_name"].add_variations(
-                    DropBaseRule(),
                     SuffixRule(suffix=" Limited"),
                     SuffixRule(suffix=" UK"),
                     SuffixRule(suffix=" Company"),
                 ),
                 features["crn"],
             ),
+            drop_base=True,
             n_true_entities=n_true_entities,
             repetition=0,
         )
