@@ -309,3 +309,62 @@ def test_source_references():
 
     # Non-existent source should return empty list
     assert entity.get_source_pks("nonexistent") == []
+
+
+def test_linked_sources_entity_hierarchy():
+    """Test that LinkedSourcesDummy correctly maintains entity hierarchy."""
+    # Create linked sources with multiple sources
+    features = {
+        "name": FeatureConfig(
+            name="name",
+            base_generator="name",
+            variations=[SuffixRule(suffix=" Jr")],
+        ),
+        "user_id": FeatureConfig(
+            name="user_id",
+            base_generator="uuid4",
+        ),
+    }
+
+    configs = (
+        SourceConfig(
+            full_name="source_a",
+            features=(features["name"], features["user_id"]),
+            n_true_entities=5,
+        ),
+        SourceConfig(
+            full_name="source_b",
+            features=(features["name"],),
+            n_true_entities=3,
+        ),
+    )
+
+    linked = linked_sources_factory(source_configs=configs, seed=42)
+
+    # Verify individual sources don't have true_entities set
+    for source in linked.sources.values():
+        assert source.true_entities is None, (
+            f"Source {source.name} has true_entities set"
+        )
+
+    # For each source, verify its entities are subsets of true_entities
+    for source_name, source in linked.sources.items():
+        for results_entity in source.entities:
+            # Find all true entities that could be parents of this results entity
+            matching_parents = [
+                true_entity
+                for true_entity in linked.true_entities.values()
+                if results_entity.is_subset_of(true_entity)
+            ]
+
+            # Each results entity must have at least one parent
+            assert len(matching_parents) > 0, (
+                f"ResultsEntity in {source_name} has no parent in true_entities"
+            )
+
+            # The source PKs from the results entity should be a subset of
+            # at least one true entity's PKs
+            assert any(
+                results_entity.source_pks <= true_entity.source_pks
+                for true_entity in matching_parents
+            ), f"ResultsEntity in {source_name} not a proper subset of any true entity"

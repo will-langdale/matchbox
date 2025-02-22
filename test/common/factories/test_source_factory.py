@@ -10,6 +10,7 @@ from matchbox.common.factories.entities import (
     ReplaceRule,
     SourceEntity,
     SuffixRule,
+    diff_results,
 )
 from matchbox.common.factories.sources import (
     generate_rows,
@@ -224,7 +225,10 @@ def test_source_factory_mock_properties():
 
 
 def test_entity_variations_tracking():
-    """Test that entity variations are correctly tracked and accessible."""
+    """Test that entity variations are correctly tracked and accessible.
+
+    Asserts that ResultsEntity objects are proper subsets of their SourceEntity parents.
+    """
     features = [
         FeatureConfig(
             name="company",
@@ -238,33 +242,104 @@ def test_entity_variations_tracking():
     ]
 
     source = source_factory(features=features, n_true_entities=2, seed=42)
+    source_name = source.source.address.full_name
 
     # Each entity should track its variations
-    for entity in source.true_entities:
+    for source_entity in source.true_entities:
         # After drop base, we should only have the non-drop variations
-        assert entity.total_unique_variations == len(features[0].variations)
+        assert source_entity.total_unique_variations == len(features[0].variations)
 
-        # Get all values
-        values = entity.get_values({source.source.address.full_name: source})
+        # Get sources as ResultsEntity and generated ResultsEntity for comparison
+        expected_results = source_entity.to_results_entity(source_name)
+        actual_results = [
+            re for re in source.entities if re.is_subset_of(source_entity)
+        ]
 
-        # Should have values for our source
-        assert len(values) == 1
-        source_values = next(iter(values.values()))
+        # Each result entity should be a subset of the source entity's full set
+        for result in actual_results:
+            identical, _ = diff_results([expected_results], [result])
+            if identical:
+                # This result entity represents all PKs (shouldn't happen w/ variations)
+                assert not True, "Found result entity identical to source entity"
+            else:
+                assert result.source_pks <= source_entity.source_pks
 
-        # Should have values for our feature
-        assert "company" in source_values
-        company_values = source_values["company"]
+        # Verify the data values match expectations
+        data_df = source.data.to_pandas()
 
-        # Should have expected number of unique values (variations only, base dropped)
-        assert len(company_values) == len(features[0].variations)
+        source_pks = source_entity.source_pks[source_name]
+        assert source_pks is not None
 
-        # Base value should not be present due to dropped base
-        base_value = entity.base_values["company"]
-        assert base_value not in company_values
+        for result in actual_results:
+            # Get PKs for this result entity
+            result_pks = result.source_pks[source_name]
+            assert result_pks is not None
+            assert result_pks <= source_pks
 
-        # Verify variations contain expected suffixes
-        assert any(val.endswith(" Inc") for val in company_values)
-        assert any(val.endswith(" Ltd") for val in company_values)
+            # All rows for a given result entity should share the same company value
+            result_rows = data_df[data_df["pk"].isin(result_pks)]
+            assert len(result_rows["company"].unique()) == 1
+
+            company_values = result_rows["company"]
+            # With drop_base=True, should only see variation values
+            assert all(
+                value.endswith(" Inc") or value.endswith(" Ltd")
+                for value in company_values
+            )
+
+
+def test_base_and_variation_entities():
+    """Test that base values and variations create correct ResultsEntity objects."""
+    features = [
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+            variations=[SuffixRule(suffix=" Inc")],
+            drop_base=False,  # Keep base value
+        )
+    ]
+
+    source = source_factory(features=features, n_true_entities=1, seed=42)
+    source_name = source.source.address.full_name
+    source_entity = source.true_entities[0]
+
+    # Should have two ResultsEntity objects - one for base, one for variation
+    assert len(source.entities) == 2
+
+    # Convert source entity to results for comparison
+    expected_full = source_entity.to_results_entity(source_name)
+
+    # Get the base and variation entities
+    data_df = source.data.to_pandas()
+    base_value = source_entity.base_values["company"]
+
+    base_entity = None
+    variation_entity = None
+
+    for entity in source.entities:
+        entity_pks = entity.source_pks[source_name]
+        assert entity_pks is not None
+        rows = data_df[data_df["pk"].isin(entity_pks)]
+        values = rows["company"]
+        assert len(values.unique()) == 1
+        value = values.iloc[0]
+
+        if value == base_value:
+            base_entity = entity
+        elif value.endswith(" Inc"):
+            variation_entity = entity
+
+    assert base_entity is not None, "No ResultsEntity found for base value"
+    assert variation_entity is not None, "No ResultsEntity found for variation"
+
+    # Verify both are proper subsets
+    assert base_entity.source_pks <= expected_full.source_pks
+    assert variation_entity.source_pks <= expected_full.source_pks
+
+    # Together they should compose the full source entity
+    combined = base_entity + variation_entity
+    identical, _ = diff_results([expected_full], [combined])
+    assert identical, "Base and variation entities should compose full source entity"
 
 
 def test_source_factory_id_generation():

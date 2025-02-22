@@ -191,6 +191,37 @@ class ResultsEntity(BaseModel):
             return NotImplemented
         return ResultsEntity(source_pks=self.source_pks + other.source_pks)
 
+    def __radd__(self, other: Any) -> "ResultsEntity":
+        """Handle sum() by treating 0 as an empty ResultsEntity."""
+        if other == 0:  # sum() starts with 0
+            return self
+        return NotImplemented
+
+    def __sub__(self, other: "ResultsEntity") -> dict[str, frozenset[str]]:
+        """Return PKs in self that aren't in other, by dataset.
+
+        Used to diff two ResultsEntities.
+        """
+        if not isinstance(other, ResultsEntity):
+            return NotImplemented
+
+        diff = {}
+        for name, our_pks in self.source_pks.items():
+            their_pks = other.source_pks[name]
+            if their_pks is None:
+                diff[name] = our_pks
+            else:
+                missing = our_pks - their_pks
+                if missing:
+                    diff[name] = missing
+        return diff
+
+    def __rsub__(self, other: "ResultsEntity") -> dict[str, frozenset[str]]:
+        """Support reverse subtraction."""
+        if not isinstance(other, ResultsEntity):
+            return NotImplemented
+        return other - self
+
     def __eq__(self, other: Any) -> bool:
         """Compare based on source_pks."""
         if not isinstance(other, ResultsEntity):
@@ -239,6 +270,29 @@ class ResultsEntity(BaseModel):
     def is_subset_of(self, source_entity: "SourceEntity") -> bool:
         """Check if this ResultsEntity's references are a subset of a SourceEntity's."""
         return self.source_pks <= source_entity.source_pks
+
+    def is_superset_of(self, other: "ResultsEntity") -> bool:
+        """Check if this entity contains all PKs from other."""
+        return other.source_pks <= self.source_pks
+
+    def similarity_ratio(self, other: "ResultsEntity") -> float:
+        """Return ratio of shared PKs to total PKs across all datasets."""
+        total_pks = 0
+        shared_pks = 0
+
+        # Get all dataset names
+        all_datasets = {name for name, _ in self.source_pks.items()} | {
+            name for name, _ in other.source_pks.items()
+        }
+
+        for name in all_datasets:
+            our_pks = self.source_pks[name] or frozenset()
+            their_pks = other.source_pks[name] or frozenset()
+
+            total_pks += len(our_pks | their_pks)
+            shared_pks += len(our_pks & their_pks)
+
+        return shared_pks / total_pks if total_pks > 0 else 0.0
 
 
 class SourceEntity(BaseModel):
@@ -358,6 +412,31 @@ class SourceEntity(BaseModel):
 
         return values
 
+    def to_results_entity(self, *names: str) -> ResultsEntity:
+        """Convert this SourceEntity to a ResultsEntity with the specified datasets.
+
+        Args:
+            *names: Names of datasets to include in the ResultsEntity
+
+        Returns:
+            ResultsEntity containing only the specified datasets' PKs
+
+        Raises:
+            KeyError: If any specified dataset name doesn't exist in this entity
+        """
+        # Filter mapping to only include specified datasets
+        filtered_mapping = frozenset(
+            (name, pks) for name, pks in self.source_pks.mapping if name in names
+        )
+
+        # Check if all requested datasets were found
+        found_datasets = {name for name, _ in filtered_mapping}
+        missing_datasets = set(names) - found_datasets
+        if missing_datasets:
+            raise KeyError(f"Datasets not found in entity: {missing_datasets}")
+
+        return ResultsEntity(source_pks=EntityReference(mapping=filtered_mapping))
+
 
 @cache
 def generate_entities(
@@ -443,6 +522,72 @@ def generate_entity_probabilities(
         ],
         names=["left_id", "right_id", "probability"],
     )
+
+
+def diff_results(
+    expected: list[ResultsEntity], actual: list[ResultsEntity], verbose: bool = False
+) -> tuple[bool, str]:
+    """Compare two lists of ResultsEntity with detailed diff information.
+
+    Args:
+        expected: Expected ResultsEntity list
+        actual: Actual ResultsEntity list
+        verbose: Whether to return detailed diff report
+
+    Returns:
+        Tuple of (is_identical, diff_message)
+    """
+    is_identical = set(expected) == set(actual)
+    if is_identical:
+        return True, ""
+
+    missing = set(expected) - set(actual)
+    extra = set(actual) - set(expected)
+
+    if not verbose:
+        # Calculate mean similarity ratio
+        ratios = []
+        # For each missing entity, get its best match ratio
+        for m in missing:
+            best_ratio = max((m.similarity_ratio(a) for a in actual), default=0.0)
+            ratios.append(best_ratio)
+
+        # For each extra entity, get its best match ratio
+        for e in extra:
+            best_ratio = max((e.similarity_ratio(m) for m in expected), default=0.0)
+            ratios.append(best_ratio)
+
+        mean_ratio = sum(ratios) / len(ratios) if ratios else 0.0
+        return False, f"Mean similarity ratio: {mean_ratio:.2%}"
+
+    messages = [f"Sets differ - {len(missing)} missing, {len(extra)} extra"]
+
+    # Check for partial matches
+    for m in missing:
+        similar = [(a, m.similarity_ratio(a)) for a in actual]
+        if similar:
+            messages.append(f"\nPartial matches for missing entity {m.id}:")
+            for a, ratio in sorted(similar, key=lambda x: x[1], reverse=True):
+                messages.append(f"  Match with {a.id} (similarity: {ratio:.2%}):")
+                missing_pks = m - a
+                extra_pks = a - m
+                if missing_pks:
+                    messages.append(f"    Missing: {dict(missing_pks)}")
+                if extra_pks:
+                    messages.append(f"    Extra: {dict(extra_pks)}")
+
+    # Show completely missing/extra entities
+    if missing:
+        messages.append("\nCompletely missing entities:")
+        for e in missing:
+            messages.append(f"  {e.id}: {dict(e.source_pks.items())}")
+
+    if extra:
+        messages.append("\nUnexpected extra entities:")
+        for e in extra:
+            messages.append(f"  {e.id}: {dict(e.source_pks.items())}")
+
+    return False, "\n".join(messages)
 
 
 if __name__ == "__main__":

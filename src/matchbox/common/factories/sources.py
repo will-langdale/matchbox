@@ -73,7 +73,7 @@ class SourceDummy(BaseModel):
     true_entities: tuple[SourceEntity, ...] | None = Field(
         default=None,
         description=(
-            "Generated entities. Optional: when the SourceDummy comes from a "
+            "Generated true entities. Optional: when the SourceDummy comes from a "
             "source_factory they're stored here, but from linked_source_factory "
             "they're stored as part of the shared LinkedSourcesDummy object."
         ),
@@ -81,6 +81,11 @@ class SourceDummy(BaseModel):
     entities: tuple[ResultsEntity, ...] = Field(
         description="Entities that were generated from the source."
     )
+
+    @property
+    def name(self) -> str:
+        """Return the full name of the source."""
+        return self.source.address.full_name
 
     def to_mock(self) -> Mock:
         """Create a mock Source object that mimics this dummy source's behavior."""

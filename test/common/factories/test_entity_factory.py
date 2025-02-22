@@ -7,6 +7,7 @@ from matchbox.common.factories.entities import (
     FeatureConfig,
     ResultsEntity,
     SourceEntity,
+    diff_results,
     generate_entities,
     generate_entity_probabilities,
 )
@@ -329,3 +330,147 @@ def test_complex_entity_relationships():
     # Should generate probabilities between all relevant pairs
     expected_pairs = 3  # (1-2, 1-3, 2-3) avoiding duplicates
     assert len(table) == expected_pairs
+
+
+@pytest.mark.parametrize(
+    ("expected", "actual", "verbose", "want_identical", "want_msg"),
+    [
+        # Identical sets
+        pytest.param(
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1"}))])
+                    )
+                )
+            ],
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1"}))])
+                    )
+                )
+            ],
+            False,
+            True,
+            "",
+            id="identical_sets",
+        ),
+        # Complete mismatch
+        pytest.param(
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1"}))])
+                    )
+                )
+            ],
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"2"}))])
+                    )
+                )
+            ],
+            False,
+            False,
+            "Mean similarity ratio: 0.00%",
+            id="complete_mismatch",
+        ),
+        # Partial match
+        pytest.param(
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1", "2"}))])
+                    )
+                )
+            ],
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1", "3"}))])
+                    )
+                )
+            ],
+            False,
+            False,
+            "Mean similarity ratio: 33.33%",
+            id="partial_match",
+        ),
+        # Verbose output
+        pytest.param(
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1", "2"}))])
+                    )
+                )
+            ],
+            [
+                ResultsEntity(
+                    source_pks=EntityReference(
+                        mapping=frozenset([("d1", frozenset({"1", "3"}))])
+                    )
+                )
+            ],
+            True,
+            False,
+            # Don't check exact message content since IDs are random
+            None,
+            id="verbose_output",
+        ),
+    ],
+)
+def test_diff_results(
+    expected: list[ResultsEntity],
+    actual: list[ResultsEntity],
+    verbose: bool,
+    want_identical: bool,
+    want_msg: str | None,
+):
+    """Test diff_results function handles various scenarios correctly."""
+    got_identical, got_msg = diff_results(expected, actual, verbose)
+    assert got_identical == want_identical
+    if want_msg is not None:  # Skip message check for verbose mode
+        assert got_msg == want_msg
+
+
+def test_source_to_results_conversion():
+    """Test converting source entities to results entities and comparing them."""
+    # Create source entity present in multiple datasets
+    source = SourceEntity(
+        base_values={"name": "Test"},
+        source_pks=EntityReference(
+            mapping=frozenset(
+                [
+                    ("dataset1", frozenset({"1", "2"})),
+                    ("dataset2", frozenset({"A", "B"})),
+                ]
+            )
+        ),
+    )
+
+    # Convert different subsets to results entities
+    results1 = source.to_results_entity("dataset1")
+    results2 = source.to_results_entity("dataset1", "dataset2")
+    results3 = source.to_results_entity("dataset2")
+
+    # Test different comparison scenarios
+    identical, msg = diff_results([results1], [results1])
+    assert identical
+    assert msg == ""
+
+    # Compare partial overlap
+    identical, msg = diff_results([results1], [results2])
+    assert not identical
+    assert "dataset2" in str(results2 - results1)
+
+    # Compare disjoint sets
+    identical, msg = diff_results([results1], [results3])
+    assert not identical
+    assert results1.similarity_ratio(results3) == 0.0
+
+    # Test error case for missing dataset
+    with pytest.raises(KeyError):
+        source.to_results_entity("nonexistent")
