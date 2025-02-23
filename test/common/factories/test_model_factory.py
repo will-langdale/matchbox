@@ -5,14 +5,12 @@ import pyarrow.compute as pc
 import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
-from matchbox.common.dtos import ModelType
 from matchbox.common.factories.entities import (
     EntityReference,
     ResultsEntity,
     SourceEntity,
 )
 from matchbox.common.factories.models import (
-    ModelDummy,
     calculate_min_max_edges,
     generate_dummy_probabilities,
     generate_entity_probabilities,
@@ -20,10 +18,7 @@ from matchbox.common.factories.models import (
     validate_components,
     verify_components,
 )
-from matchbox.common.factories.sources import (
-    SourceDummy,
-    linked_sources_factory,
-)
+from matchbox.common.factories.sources import linked_sources_factory
 
 
 def test_model_factory_entity_preservation():
@@ -149,45 +144,253 @@ def test_model_type_creation(
         )
 
 
-def test_model_factory_with_custom_params():
-    """Test model_factory with custom parameters."""
-    name = "test_model"
-    description = "test description"
-    n_true_entities = 5
-    prob_range = (0.9, 1.0)
-
-    dummy = model_factory(
-        name=name,
-        description=description,
-        n_true_entities=n_true_entities,
-        prob_range=prob_range,
-    )
-
-    assert dummy.model.metadata.name == name
-    assert dummy.model.metadata.description == description
-    assert len(dummy.entities) == n_true_entities
+@pytest.mark.parametrize(
+    ("kwargs", "expected_error", "expected_message"),
+    [
+        pytest.param(
+            {"model_type": "deduper", "prob_range": (0.9, 0.8)},
+            ValueError,
+            "Probabilities must be increasing values between 0 and 1",
+            id="invalid_prob_range_decreasing",
+        ),
+        pytest.param(
+            {"model_type": "deduper", "prob_range": (-0.1, 0.8)},
+            ValueError,
+            "Probabilities must be increasing values between 0 and 1",
+            id="invalid_prob_range_negative",
+        ),
+        pytest.param(
+            {"model_type": "deduper", "prob_range": (0.8, 1.1)},
+            ValueError,
+            "Probabilities must be increasing values between 0 and 1",
+            id="invalid_prob_range_too_high",
+        ),
+    ],
+)
+def test_model_factory_validation(
+    kwargs: dict[str, Any], expected_error: type[Exception], expected_message: str
+):
+    """Test that model_factory validates inputs correctly."""
+    with pytest.raises(expected_error, match=expected_message):
+        model_factory(**kwargs)
 
 
 @pytest.mark.parametrize(
-    ("model_type"),
+    (
+        "name",
+        "description",
+        "model_type",
+        "n_true_entities",
+        "prob_range",
+        "seed",
+        "expected_checks",
+    ),
     [
-        pytest.param("deduper", id="deduper"),
-        pytest.param("linker", id="linker"),
+        pytest.param(
+            "basic_deduper",
+            "Basic deduplication model",
+            "deduper",
+            5,
+            (0.8, 0.9),
+            42,
+            {
+                "type": "deduper",
+                "entity_count": 5,
+                "has_right": False,
+                "prob_min": 0.8,
+                "prob_max": 0.9,
+            },
+            id="basic_deduper",
+        ),
+        pytest.param(
+            "basic_linker",
+            "Basic linking model",
+            "linker",
+            10,
+            (0.7, 0.8),
+            42,
+            {
+                "type": "linker",
+                "entity_count": 10,
+                "has_right": True,
+                "prob_min": 0.7,
+                "prob_max": 0.8,
+            },
+            id="basic_linker",
+        ),
+        pytest.param(
+            "large_deduper",
+            "Deduper with many entities",
+            "deduper",
+            100,
+            (0.9, 1.0),
+            42,
+            {
+                "type": "deduper",
+                "entity_count": 100,
+                "has_right": False,
+                "prob_min": 0.9,
+                "prob_max": 1.0,
+            },
+            id="large_deduper",
+        ),
+        pytest.param(
+            "strict_linker",
+            "Linker with high probability threshold",
+            "linker",
+            20,
+            (0.95, 1.0),
+            42,
+            {
+                "type": "linker",
+                "entity_count": 20,
+                "has_right": True,
+                "prob_min": 0.95,
+                "prob_max": 1.0,
+            },
+            id="strict_linker",
+        ),
     ],
 )
-def test_model_factory_different_types(model_type: str):
-    """Test model_factory handles different model types correctly."""
-    dummy = model_factory(model_type=model_type)
+def test_model_factory_basic_creation(
+    name: str,
+    description: str,
+    model_type: str,
+    n_true_entities: int,
+    prob_range: tuple[float, float],
+    seed: int,
+    expected_checks: dict,
+) -> None:
+    """Test basic model factory creation without sources."""
+    model = model_factory(
+        name=name,
+        description=description,
+        model_type=model_type,
+        n_true_entities=n_true_entities,
+        prob_range=prob_range,
+        seed=seed,
+    )
 
-    assert dummy.model.metadata.type == model_type
+    # Basic metadata checks
+    assert model.model.metadata.name == name
+    assert model.model.metadata.description == description
+    assert str(model.model.metadata.type) == expected_checks["type"]
 
-    if model_type == ModelType.LINKER:
-        assert dummy.model.metadata.right_resolution is not None
+    # Structure checks
+    assert (model.right_query is not None) == expected_checks["has_right"]
+    assert (model.right_results is not None) == expected_checks["has_right"]
+    assert len(model.entities) == expected_checks["entity_count"]
 
-        # Check no collisions
-        left_ids = set(dummy.probabilities["left_id"].to_pylist())
-        right_ids = set(dummy.probabilities["right_id"].to_pylist())
-        assert len(left_ids.intersection(right_ids)) == 0
+    # Probability checks
+    probs = model.probabilities["probability"].to_numpy() / 100
+    assert all(p >= expected_checks["prob_min"] for p in probs)
+    assert all(p <= expected_checks["prob_max"] for p in probs)
+
+
+@pytest.mark.parametrize(
+    ("source_config", "expected_checks"),
+    [
+        pytest.param(
+            {
+                "left_name": "crn",
+                "right_name": None,
+                "true_entities_slice": slice(None),  # All entities
+                "prob_range": (0.8, 0.9),
+            },
+            {
+                "type": "deduper",
+                "has_right": False,
+                "prob_min": 0.8,
+                "prob_max": 0.9,
+            },
+            id="deduper_full_entities",
+        ),
+        pytest.param(
+            {
+                "left_name": "crn",
+                "right_name": "cdms",
+                "true_entities_slice": slice(None),
+                "prob_range": (0.8, 0.9),
+            },
+            {
+                "type": "linker",
+                "has_right": True,
+                "prob_min": 0.8,
+                "prob_max": 0.9,
+            },
+            id="linker_full_entities",
+        ),
+        pytest.param(
+            {
+                "left_name": "crn",
+                "right_name": None,
+                "true_entities_slice": slice(0, 1),  # Just first entity
+                "prob_range": (0.9, 1.0),
+            },
+            {
+                "type": "deduper",
+                "has_right": False,
+                "prob_min": 0.9,
+                "prob_max": 1.0,
+            },
+            id="deduper_partial_entities",
+        ),
+        pytest.param(
+            {
+                "left_name": "crn",
+                "right_name": "cdms",
+                "true_entities_slice": slice(0, 2),  # First two entities
+                "prob_range": (0.7, 0.8),
+            },
+            {
+                "type": "linker",
+                "has_right": True,
+                "prob_min": 0.7,
+                "prob_max": 0.8,
+            },
+            id="linker_partial_entities",
+        ),
+    ],
+)
+def test_model_factory_with_sources(source_config: dict, expected_checks: dict) -> None:
+    """Test model factory creation using sources."""
+    # Create source data
+    linked = linked_sources_factory()
+    all_true_sources = list(linked.true_entities.values())
+
+    # Get sources based on config
+    left_source = linked.sources[source_config["left_name"]]
+    right_source = (
+        linked.sources[source_config["right_name"]]
+        if source_config["right_name"]
+        else None
+    )
+
+    # Create model
+    model = model_factory(
+        left_source=left_source,
+        right_source=right_source,
+        true_entities=all_true_sources[source_config["true_entities_slice"]],
+        prob_range=source_config["prob_range"],
+    )
+
+    # Basic type checks
+    assert str(model.model.metadata.type) == expected_checks["type"]
+    assert (model.right_query is not None) == expected_checks["has_right"]
+    assert (model.right_results is not None) == expected_checks["has_right"]
+
+    # Verify probabilities
+    probs = model.probabilities["probability"].to_numpy() / 100
+    assert all(p >= expected_checks["prob_min"] for p in probs)
+    assert all(p <= expected_checks["prob_max"] for p in probs)
+
+    # Verify source PKs are preserved
+    input_pks = sum(
+        set(left_source.entities) | set(right_source.entities if right_source else {})
+    )
+    assert input_pks == sum(model.entities), (
+        "Model entities should preserve all source PKs"
+    )
 
 
 @pytest.mark.parametrize(
@@ -205,58 +408,17 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
     if should_be_equal:
         assert dummy1.model.metadata.name == dummy2.model.metadata.name
         assert dummy1.model.metadata.description == dummy2.model.metadata.description
+        assert dummy1.left_query.equals(dummy2.left_query)
+        assert set(dummy1.left_results) == set(dummy2.left_results)
+        assert set(dummy1.entities) == set(dummy2.entities)
         assert dummy1.probabilities.equals(dummy2.probabilities)
     else:
         assert dummy1.model.metadata.name != dummy2.model.metadata.name
         assert dummy1.model.metadata.description != dummy2.model.metadata.description
+        assert not dummy1.left_query.equals(dummy2.left_query)
+        assert set(dummy1.left_results) != set(dummy2.left_results)
+        assert set(dummy1.entities) != set(dummy2.entities)
         assert not dummy1.probabilities.equals(dummy2.probabilities)
-
-
-@pytest.mark.parametrize(
-    ("left_source_type", "right_source_type"),
-    [
-        pytest.param(SourceDummy, SourceDummy, id="both_sourcedummy"),
-        pytest.param(ModelDummy, ModelDummy, id="both_modeldummy"),
-        pytest.param(ModelDummy, SourceDummy, id="mixed_sources"),
-    ],
-)
-def test_model_factory_with_provided_sources(
-    left_source_type: SourceDummy | ModelDummy,
-    right_source_type: SourceDummy | ModelDummy,
-):
-    """Test model_factory handles different source input types correctly."""
-    # Setup mock sources
-    linked = linked_sources_factory()
-    left_dummy = linked.sources.get("crn")
-    right_dummy = linked.sources.get("cdms")
-    duns = linked.sources.get("duns")
-
-    if left_source_type == ModelDummy:
-        left_source = model_factory(
-            left_source=right_dummy,
-            right_source=duns,
-            true_entities=linked.true_entities.values(),
-        )
-    else:
-        left_source = left_dummy
-
-    if right_source_type == ModelDummy:
-        right_source = model_factory(
-            left_source=right_dummy,
-            right_source=duns,
-            true_entities=linked.true_entities.values(),
-        )
-    else:
-        right_source = right_dummy
-
-    # Create model
-    dummy = model_factory(left_source=left_source, right_source=right_source)
-
-    # Assert it worked
-    assert dummy.model.metadata.type == ModelType.LINKER
-    assert dummy.model.metadata.left_resolution is not None
-    assert dummy.model.metadata.right_resolution is not None
-    assert len(dummy.probabilities) > 0
 
 
 @pytest.mark.parametrize(
@@ -300,48 +462,66 @@ def test_calculate_min_max_edges(
 @pytest.mark.parametrize(
     ("parameters"),
     [
-        {
-            "left_count": 5,
-            "right_count": None,
-            "prob_range": (0.6, 0.8),
-            "num_components": 3,
-            "total_rows": 2,
-        },
-        {
-            "left_count": 1000,
-            "right_count": None,
-            "prob_range": (0.6, 0.8),
-            "num_components": 10,
-            "total_rows": calculate_min_max_edges(1000, 1000, 10, True)[0],
-        },
-        {
-            "left_count": 1_000,
-            "right_count": None,
-            "prob_range": (0.6, 0.8),
-            "num_components": 10,
-            "total_rows": calculate_min_max_edges(1000, 1000, 10, True)[1],
-        },
-        {
-            "left_count": 1_000,
-            "right_count": 1_000,
-            "prob_range": (0.6, 0.8),
-            "num_components": 10,
-            "total_rows": calculate_min_max_edges(1000, 1000, 10, False)[0],
-        },
-        {
-            "left_count": 1_000,
-            "right_count": 1_000,
-            "prob_range": (0.6, 0.8),
-            "num_components": 10,
-            "total_rows": calculate_min_max_edges(1000, 1000, 10, False)[1],
-        },
-    ],
-    ids=[
-        "dedupe_no_edges",
-        "dedupe_min",
-        "dedupe_max",
-        "link_min",
-        "link_max",
+        pytest.param(
+            {
+                "left_count": 5,
+                "right_count": None,
+                "prob_range": (0.6, 0.8),
+                "num_components": 3,
+                "total_rows": 2,
+            },
+            id="dedupe_no_edges",
+        ),
+        pytest.param(
+            {
+                "left_count": 1_000,
+                "right_count": None,
+                "prob_range": (0.6, 0.8),
+                "num_components": 10,
+                "total_rows": calculate_min_max_edges(1_000, 1_000, 10, True)[0],
+            },
+            id="dedupe_min",
+        ),
+        pytest.param(
+            {
+                "left_count": 1_000,
+                "right_count": None,
+                "prob_range": (0.6, 0.8),
+                "num_components": 10,
+                "total_rows": calculate_min_max_edges(1_000, 1_000, 10, True)[1],
+            },
+            id="dedupe_max",
+        ),
+        pytest.param(
+            {
+                "left_count": 1_000,
+                "right_count": 1_000,
+                "prob_range": (0.6, 0.8),
+                "num_components": 10,
+                "total_rows": calculate_min_max_edges(1_000, 1_000, 10, False)[0],
+            },
+            id="link_min",
+        ),
+        pytest.param(
+            {
+                "left_count": 1_000,
+                "right_count": 1_000,
+                "prob_range": (0.6, 0.8),
+                "num_components": 10,
+                "total_rows": calculate_min_max_edges(1_000, 1_000, 10, False)[1],
+            },
+            id="link_max",
+        ),
+        pytest.param(
+            {
+                "left_count": 1_000,
+                "right_count": 1_000,
+                "prob_range": (0.6, 0.8),
+                "num_components": 10,
+                "total_rows": None,
+            },
+            id="blank_total_rows",
+        ),
     ],
 )
 def test_generate_dummy_probabilities(parameters: dict[str, Any]):
@@ -360,6 +540,13 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
 
     n_components = parameters["num_components"]
     total_rows = parameters["total_rows"]
+    min_edges, _ = calculate_min_max_edges(
+        parameters["left_count"],
+        parameters["right_count"] or parameters["left_count"],
+        parameters["num_components"],
+        right_values is None,
+    )
+    total_rows = total_rows or min_edges
 
     probabilities = generate_dummy_probabilities(
         left_values=left_values,
@@ -715,3 +902,60 @@ def test_generate_entity_probabilities_mixed_merging():
         {merged_a, unmerged_a, unmerged_b1, unmerged_b2, unmerged_b3},
         {source_a, source_b},
     )
+
+
+@pytest.mark.parametrize(
+    ("seed1", "seed2", "should_be_equal", "case"),
+    [
+        pytest.param(42, 42, True, "dedupe", id="same_seeds_dedupe"),
+        pytest.param(1, 2, False, "dedupe", id="different_seeds_dedupe"),
+        pytest.param(42, 42, True, "link", id="same_seeds_link"),
+        pytest.param(1, 2, False, "link", id="different_seeds_link"),
+    ],
+)
+def test_generate_entity_probabilities_seed_behavior(
+    seed1: int, seed2: int, should_be_equal: bool, case: str
+):
+    """Test that generate_entity_probabilities produces consistent results w/ seeds."""
+    # Create test entities
+    source = _make_source_entity("test", ["a1", "a2", "a3"], "entity_a")
+    entity1 = _make_results_entity(1, "test", ["a1"])
+    entity2 = _make_results_entity(2, "test", ["a2"])
+    entity3 = _make_results_entity(3, "test", ["a3"])
+
+    entities = frozenset([entity1, entity2, entity3])
+    sources = frozenset([source])
+
+    if case == "dedupe":
+        right_entities = None
+    else:
+        # For linking case, use second set of entities
+        entity4 = _make_results_entity(4, "test", ["a1"])
+        entity5 = _make_results_entity(5, "test", ["a2"])
+        entity6 = _make_results_entity(6, "test", ["a3"])
+        right_entities = frozenset([entity4, entity5, entity6])
+
+    # Generate results with the two seeds
+    result1 = generate_entity_probabilities(
+        left_entities=entities,
+        right_entities=right_entities,
+        source_entities=sources,
+        prob_range=(0.8, 1.0),
+        seed=seed1,
+    )
+
+    result2 = generate_entity_probabilities(
+        left_entities=entities,
+        right_entities=right_entities,
+        source_entities=sources,
+        prob_range=(0.8, 1.0),
+        seed=seed2,
+    )
+
+    assert result1.shape[0] > 0
+    assert result2.shape[0] > 0
+
+    if should_be_equal:
+        assert result1.equals(result2)
+    else:
+        assert not result1.equals(result2)

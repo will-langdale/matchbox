@@ -1,3 +1,4 @@
+import warnings
 from functools import cache, wraps
 from itertools import product
 from typing import Callable, ParamSpec, TypeVar
@@ -57,7 +58,7 @@ class SourceConfig(BaseModel):
     features: tuple[FeatureConfig, ...] = Field(default_factory=tuple)
     full_name: str
     engine: Engine = Field(default=create_engine("sqlite:///:memory:"))
-    n_true_entities: int = Field(default=10)
+    n_true_entities: int | None = Field(default=None)
     repetition: int = Field(default=0)
 
 
@@ -198,7 +199,7 @@ def generate_rows(
 
     def add_row(entity_id: int, values: tuple) -> None:
         """Add a row of data, handling IDs and PKs."""
-        pk = str(uuid4())
+        pk = str(generator.uuid4())
         entity_pks[entity_id].append(pk)
 
         if values not in value_to_id:
@@ -390,14 +391,25 @@ def source_factory(
 @cache
 def linked_sources_factory(
     source_configs: tuple[SourceConfig, ...] | None = None,
-    n_true_entities: int = 10,
+    n_true_entities: int | None = None,
     seed: int = 42,
 ) -> LinkedSourcesDummy:
-    """Generate a set of linked sources with tracked entities."""
+    """Generate a set of linked sources with tracked entities.
+
+    Args:
+        source_configs: Optional tuple of source configurations
+        n_true_entities: Optional number of true entities to generate. If provided,
+            overrides any n_true_entities in source configs. If not provided, each
+            SourceConfig must specify its own n_true_entities.
+        seed: Random seed for reproducibility
+    """
     generator = Faker()
     generator.seed_instance(seed)
 
     if source_configs is None:
+        # Use factory parameter or default for default configs
+        n_true_entities = n_true_entities if n_true_entities is not None else 10
+
         features = {
             "company_name": FeatureConfig(
                 name="company_name",
@@ -461,6 +473,41 @@ def linked_sources_factory(
                 repetition=1,
             ),
         )
+    else:
+        if n_true_entities is not None:
+            # Factory parameter provided - warn if configs have values set
+            config_entities = [config.n_true_entities for config in source_configs]
+            if any(n is not None for n in config_entities):
+                warnings.warn(
+                    "Both source configs and linked_sources_factory specify "
+                    "n_true_entities. The factory parameter will be used.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            # Override all configs with factory parameter
+            source_configs = tuple(
+                SourceConfig(
+                    full_name=config.full_name,
+                    engine=config.engine,
+                    features=config.features,
+                    repetition=config.repetition,
+                    n_true_entities=n_true_entities,
+                )
+                for config in source_configs
+            )
+        else:
+            # No factory parameter - check all configs have n_true_entities set
+            missing_counts = [
+                config.full_name
+                for config in source_configs
+                if config.n_true_entities is None
+            ]
+            if missing_counts:
+                raise ValueError(
+                    "n_true_entities not set for sources: "
+                    f"{', '.join(missing_counts)}. When factory n_true_entities is "
+                    "not provided, all configs must specify it."
+                )
 
     # Collect all unique features
     all_features = set()
@@ -468,7 +515,7 @@ def linked_sources_factory(
         all_features.update(config.features)
     all_features = tuple(sorted(all_features, key=lambda f: f.name))
 
-    # Find maximum number of entities needed
+    # Find maximum number of entities needed across all sources
     max_entities = max(config.n_true_entities for config in source_configs)
 
     # Generate all possible entities

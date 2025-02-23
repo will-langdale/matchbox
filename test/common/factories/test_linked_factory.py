@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import create_engine
 
 from matchbox.common.factories.sources import (
@@ -247,7 +248,7 @@ def test_feature_inheritance():
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs)
+    linked = linked_sources_factory(source_configs=configs, n_true_entities=10)
 
     # Check that entities have all relevant features
     for entity in linked.true_entities.values():
@@ -368,3 +369,74 @@ def test_linked_sources_entity_hierarchy():
                 results_entity.source_pks <= true_entity.source_pks
                 for true_entity in matching_parents
             ), f"ResultsEntity in {source_name} not a proper subset of any true entity"
+
+
+def test_linked_sources_entity_count_behavior():
+    """Test different n_true_entities behaviors in linked_sources_factory."""
+    base_feature = FeatureConfig(name="name", base_generator="name")
+    engine = create_engine("sqlite:///:memory:")
+
+    # Test error when n_true_entities missing from configs
+    configs_missing_counts = (
+        SourceConfig(
+            full_name="source_a",
+            engine=engine,
+            features=(base_feature,),
+            n_true_entities=5,
+        ),
+        SourceConfig(
+            full_name="source_b",
+            features=(base_feature,),  # Deliberately missing n_true_entities
+        ),
+    )
+
+    with pytest.raises(
+        ValueError, match="n_true_entities not set for sources: source_b"
+    ):
+        linked_sources_factory(source_configs=configs_missing_counts)
+
+    # Test respecting different entity counts per source
+    configs_different_counts = (
+        SourceConfig(
+            full_name="source_a",
+            engine=engine,
+            features=(base_feature,),
+            n_true_entities=5,
+        ),
+        SourceConfig(
+            full_name="source_b",
+            features=(base_feature,),
+            n_true_entities=10,
+        ),
+    )
+
+    linked = linked_sources_factory(source_configs=configs_different_counts)
+
+    # Should generate enough entities for max requested (10)
+    assert len(linked.true_entities) == 10
+
+    # Each source should have its specified number of entities
+    source_a_entities = [
+        e for e in linked.true_entities.values() if "source_a" in e.source_pks
+    ]
+    source_b_entities = [
+        e for e in linked.true_entities.values() if "source_b" in e.source_pks
+    ]
+    assert len(source_a_entities) == 5, "Source A should have 5 entities"
+    assert len(source_b_entities) == 10, "Source B should have 10 entities"
+
+    # Test factory parameter override
+    with pytest.warns(UserWarning, match="factory parameter will be used"):
+        linked_override = linked_sources_factory(
+            source_configs=configs_different_counts, n_true_entities=15
+        )
+
+    # Both sources should now have 15 entities
+    override_source_a = [
+        e for e in linked_override.true_entities.values() if "source_a" in e.source_pks
+    ]
+    override_source_b = [
+        e for e in linked_override.true_entities.values() if "source_b" in e.source_pks
+    ]
+    assert len(override_source_a) == 15, "Source A should be overridden to 15 entities"
+    assert len(override_source_b) == 15, "Source B should be overridden to 15 entities"

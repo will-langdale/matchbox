@@ -1,3 +1,4 @@
+import warnings
 from collections import Counter
 from functools import cache
 from textwrap import dedent
@@ -650,6 +651,9 @@ def model_factory(
 
     Allows autoconfiguration with minimal settings, or more nuanced control.
 
+    Can either be used to generate a model in a pipeline, intercorrected with existing
+    SourceDummy or ModelDummy objects, or generate a standalone model with random data.
+
     Args:
         name: Name of the model
         description: Description of the model
@@ -669,6 +673,18 @@ def model_factory(
     Returns:
         SourceModel: A dummy model with generated data
     """
+    # Validate inputs
+    if not (0 <= prob_range[0] <= prob_range[1] <= 1):
+        raise ValueError("Probabilities must be increasing values between 0 and 1")
+    if any([left_source, true_entities]) and any(
+        [model_type is not None, n_true_entities != 10]
+    ):
+        warnings.warn(
+            "Some arguments will be ignored as sources or true entities are provided",
+            UserWarning,
+            stacklevel=2,
+        )
+
     generator = Faker()
     generator.seed_instance(seed)
 
@@ -745,13 +761,19 @@ def model_factory(
             )
 
             linked = linked_sources_factory(
-                source_configs=(left_config, right_config), seed=seed
+                source_configs=(left_config, right_config),
+                n_true_entities=n_true_entities,
+                seed=seed,
             )
 
             left_query = linked.sources["crn"].query()
             left_entities = linked.sources["crn"].entities
             right_query = linked.sources["cdms"].query()
             right_entities = linked.sources["cdms"].entities
+
+            dummy_true_entities: tuple[SourceEntity, ...] = tuple(
+                linked.true_entities.values()
+            )
         else:
             right_resolution = None
             right_query = None
@@ -768,6 +790,8 @@ def model_factory(
 
             left_query = source.query()
             left_entities = source.entities
+
+            dummy_true_entities: tuple[SourceEntity, ...] = source.true_entities
 
     # Create model metadata, Model, and dummy probabilities
 
@@ -786,24 +810,23 @@ def model_factory(
         right_data=right_query,
     )
 
-    if true_entities and left_source is not None:
-        probabilities = generate_entity_probabilities(
-            left_entities=frozenset(left_entities),
-            right_entities=frozenset(right_entities) if right_entities else None,
-            source_entities=frozenset(true_entities),
-            prob_range=prob_range,
-            seed=seed,
+    # We need the to generate true entities when either:
+    # * Sources provided, but no true entities given
+    # * No sources provided, so need random n_true_entities
+    if true_entities is None or left_source is None:
+        true_entities = generator.random_elements(
+            elements=dummy_true_entities,
+            unique=True,
+            length=n_true_entities,
         )
-    else:
-        probabilities = generate_dummy_probabilities(
-            left_values=tuple(left_query["id"].to_pylist()),
-            right_values=tuple(right_query["id"].to_pylist())
-            if right_query is not None
-            else None,
-            prob_range=prob_range,
-            num_components=n_true_entities,
-            seed=seed,
-        )
+
+    probabilities = generate_entity_probabilities(
+        left_entities=frozenset(left_entities),
+        right_entities=frozenset(right_entities) if right_entities else None,
+        source_entities=frozenset(true_entities),
+        prob_range=prob_range,
+        seed=seed,
+    )
 
     return ModelDummy(
         model=model,
