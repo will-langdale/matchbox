@@ -499,6 +499,50 @@ def generate_entity_probabilities(
     )
 
 
+def probabilities_to_results_entities(
+    probabilities: pa.Table,
+    left_results: tuple[ResultsEntity, ...],
+    right_results: tuple[ResultsEntity, ...] | None = None,
+    threshold: float | int = 0,
+) -> tuple[ResultsEntity, ...]:
+    """Convert probabilities to ResultsEntities based on a threshold."""
+    left_lookup = {entity.id: entity for entity in left_results}
+    if right_results is not None:
+        right_lookup = {entity.id: entity for entity in right_results}
+    else:
+        right_lookup = left_lookup
+
+    djs = DisjointSet[ResultsEntity]()
+
+    # Validate threshold
+    if isinstance(threshold, float):
+        threshold = int(threshold * 100)
+
+    # Add ALL entities to the disjoint set
+    for entity in left_results:
+        djs._find(entity)
+    if right_results is not None:
+        for entity in right_results:
+            djs._find(entity)
+
+    # Add edges to the disjoint set
+    for record in probabilities.to_pylist():
+        if record["probability"] >= threshold:
+            djs.union(
+                left_lookup.get(record["left_id"]),
+                right_lookup.get(record["right_id"]),
+            )
+
+    components: set[set[ResultsEntity]] = djs.get_components()
+
+    entities: list[ResultsEntity] = []
+    for component in components:
+        merged: ResultsEntity = sum(component)
+        entities.append(merged)
+
+    return tuple(entities)
+
+
 class ModelDummy(BaseModel):
     """Complete representation of a generated dummy Model."""
 
@@ -537,38 +581,26 @@ class ModelDummy(BaseModel):
     @threshold.setter
     def threshold(self, value: int):
         """Set the threshold for the model."""
-        djs = DisjointSet[ResultsEntity]()
+        right_results = self.right_results.values() if self.right_results else []
+        input_results = set(self.left_results.values()) | set(right_results)
 
-        if self.model.metadata.type == ModelType.DEDUPER:
-            right_results = self.left_results
-        else:
-            right_results = self.right_results
+        entities: tuple[ResultsEntity] = probabilities_to_results_entities(
+            probabilities=self.probabilities,
+            left_results=tuple(self.left_results.values()),
+            right_results=tuple(right_results)
+            if self.right_results is not None
+            else None,
+            threshold=value,
+        )
 
-        # Add ALL entities to the disjoint set
-        for entity in self.left_results.values():
-            djs._find(entity)
-        if right_results is not None:
-            for entity in right_results.values():
-                djs._find(entity)
+        id_mapping = {
+            original.id: entity.id
+            for original in input_results
+            for entity in set(entities)
+            if original in entity
+        }
 
-        # Add edges to the disjoint set
-        for record in self.probabilities.to_pylist():
-            if record["probability"] >= value:
-                djs.union(
-                    self.left_results.get(record["left_id"]),
-                    right_results.get(record["right_id"]),
-                )
-
-        components: set[set[ResultsEntity]] = djs.get_components()
-        ids: list[int] = []
-        new_ids: list[int] = []
-        entities: list[ResultsEntity] = []
-        for component in components:
-            merged: ResultsEntity = sum(component)
-            entities.append(merged)
-            for entity in component:
-                ids.append(entity.id)
-                new_ids.append(merged.id)
+        ids, new_ids = zip(*id_mapping.items(), strict=True) if id_mapping else ([], [])
 
         self._query_lookup = pa.table(
             {
@@ -576,7 +608,7 @@ class ModelDummy(BaseModel):
                 "new_id": pa.array(new_ids, type=pa.int64()),
             }
         )
-        self._entities = tuple(entities)
+        self._entities = entities
         self._threshold = value
 
     @model_validator(mode="after")

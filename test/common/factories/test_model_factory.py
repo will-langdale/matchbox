@@ -1,6 +1,7 @@
 from typing import Any
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
@@ -15,10 +16,26 @@ from matchbox.common.factories.models import (
     generate_dummy_probabilities,
     generate_entity_probabilities,
     model_factory,
+    probabilities_to_results_entities,
     validate_components,
     verify_components,
 )
 from matchbox.common.factories.sources import linked_sources_factory
+
+
+def _make_results_entity(id: int, dataset: str, pks: list[str]) -> ResultsEntity:
+    """Helper to create a ResultsEntity with specified dataset and PKs."""
+    return ResultsEntity(
+        id=id,
+        source_pks=EntityReference(mapping=frozenset([(dataset, frozenset(pks))])),
+    )
+
+
+def _make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
+    """Helper to create a SourceEntity with specified dataset and PKs."""
+    entity = SourceEntity(base_values={"name": base_val})
+    entity.add_source_reference(dataset, pks)
+    return entity
 
 
 def test_model_factory_entity_preservation():
@@ -646,21 +663,6 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         )
 
 
-def _make_results_entity(id: int, dataset: str, pks: list[str]) -> ResultsEntity:
-    """Helper to create a ResultsEntity with specified dataset and PKs."""
-    return ResultsEntity(
-        id=id,
-        source_pks=EntityReference(mapping=frozenset([(dataset, frozenset(pks))])),
-    )
-
-
-def _make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
-    """Helper to create a SourceEntity with specified dataset and PKs."""
-    entity = SourceEntity(base_values={"name": base_val})
-    entity.add_source_reference(dataset, pks)
-    return entity
-
-
 @pytest.mark.parametrize(
     (
         "left_entities",
@@ -959,3 +961,108 @@ def test_generate_entity_probabilities_seed_behavior(
         assert result1.equals(result2)
     else:
         assert not result1.equals(result2)
+
+
+@pytest.mark.parametrize(
+    (
+        "probabilities",
+        "left_results",
+        "right_results",
+        "threshold",
+        "expected_count",
+    ),
+    [
+        pytest.param(
+            pa.table(
+                {
+                    "left_id": [1, 2],
+                    "right_id": [2, 3],
+                    "probability": [90, 85],
+                }
+            ),
+            (
+                _make_results_entity(1, "test", ["a1"]),
+                _make_results_entity(2, "test", ["a2"]),
+                _make_results_entity(3, "test", ["a3"]),
+            ),
+            None,
+            80,
+            1,  # One merged entity containing all three records
+            id="basic_dedupe_chain",
+        ),
+        pytest.param(
+            pa.table(
+                {
+                    "left_id": [1],
+                    "right_id": [4],
+                    "probability": [95],
+                }
+            ),
+            (_make_results_entity(1, "left", ["a1"]),),
+            (_make_results_entity(4, "right", ["b1"]),),
+            0.9,
+            1,  # One merged entity from the link
+            id="basic_link_match",
+        ),
+        pytest.param(
+            pa.table(
+                {
+                    "left_id": [1, 2],
+                    "right_id": [2, 3],
+                    "probability": [75, 70],
+                }
+            ),
+            (
+                _make_results_entity(1, "test", ["a1"]),
+                _make_results_entity(2, "test", ["a2"]),
+                _make_results_entity(3, "test", ["a3"]),
+            ),
+            None,
+            80,
+            3,  # No merging due to threshold
+            id="threshold_prevents_merge",
+        ),
+        pytest.param(
+            pa.table(
+                {
+                    "left_id": [],
+                    "right_id": [],
+                    "probability": [],
+                }
+            ),
+            (
+                _make_results_entity(1, "test", ["a1"]),
+                _make_results_entity(2, "test", ["a2"]),
+            ),
+            None,
+            80,
+            2,  # No merging with empty probabilities
+            id="empty_probabilities",
+        ),
+    ],
+)
+def test_probabilities_to_results_entities(
+    probabilities: pa.Table,
+    left_results: tuple[ResultsEntity, ...],
+    right_results: tuple[ResultsEntity, ...] | None,
+    threshold: float,
+    expected_count: int,
+) -> None:
+    """Test probabilities_to_results_entities with various scenarios."""
+    result = probabilities_to_results_entities(
+        probabilities=probabilities,
+        left_results=left_results,
+        right_results=right_results,
+        threshold=threshold,
+    )
+
+    assert len(result) == expected_count
+
+    # For merging cases, verify all input entities are contained in the output
+    all_inputs = set(left_results)
+    if right_results:
+        all_inputs.update(right_results)
+
+    for input_entity in all_inputs:
+        # Each input entity should be contained within one of the output entities
+        assert any(input_entity in output_entity for output_entity in result)

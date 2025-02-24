@@ -228,6 +228,10 @@ class ResultsEntity(BaseModel):
             return NotImplemented
         return self.source_pks == other.source_pks
 
+    def __contains__(self, other: "ResultsEntity") -> bool:
+        """Check if this entity contains all PKs from other entity."""
+        return other.source_pks <= self.source_pks
+
     def __lt__(self, other: Any) -> bool:
         """Compare based on ID for sorting operations."""
         if isinstance(other, ResultsEntity):
