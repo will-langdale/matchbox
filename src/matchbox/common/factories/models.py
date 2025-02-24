@@ -1,3 +1,5 @@
+"""Factory functions for generating dummy models and data for testing."""
+
 import warnings
 from collections import Counter
 from functools import cache

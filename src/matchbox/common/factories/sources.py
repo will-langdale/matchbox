@@ -1,3 +1,5 @@
+"""Factories for generating dummy sources and linked sources for testing."""
+
 import warnings
 from functools import cache, wraps
 from itertools import product

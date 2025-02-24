@@ -1,3 +1,9 @@
+"""Classes and functions for generating and comparing entities.
+
+These underpin the entity resolution process, which is the core of the
+dummy sources and models factory system.
+"""
+
 from abc import ABC, abstractmethod
 from functools import cache
 from random import getrandbits
