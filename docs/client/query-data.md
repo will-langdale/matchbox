@@ -69,3 +69,5 @@ Retrieves entire data sources along with a unique entity identifier according to
     5       Gamma Exports                           2023                    ['90328', '90329']
     ...
     ```
+
+For more information on how to use the functions on this page, please check out the relevant examples in the [client API docs](../../api/client/).
