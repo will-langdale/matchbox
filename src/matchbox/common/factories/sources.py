@@ -18,7 +18,9 @@ from matchbox.common.factories.entities import (
     ResultsEntity,
     SourceEntity,
     SuffixRule,
+    diff_results,
     generate_entities,
+    probabilities_to_results_entities,
 )
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
@@ -144,6 +146,35 @@ class LinkedSourcesDummy(BaseModel):
             ]
 
         return result
+
+    def diff_results(
+        self,
+        probabilities: pa.Table,
+        sources: list[str],
+        left_results: tuple[ResultsEntity, ...],
+        right_results: tuple[ResultsEntity, ...] | None = None,
+        threshold: int | float = 0,
+        verbose: bool = False,
+    ) -> tuple[bool, str]:
+        """Diff a results of probabilities with the true SourceEntities.
+
+        Returns a tuple of:
+            * Whether the results match the true entities
+            * A message describing the result
+        """
+        return diff_results(
+            expected=[
+                entity.to_results_entity(*sources)
+                for entity in self.true_entities.values()
+            ],
+            actual=probabilities_to_results_entities(
+                probabilities=probabilities,
+                left_results=left_results,
+                right_results=right_results,
+                threshold=threshold,
+            ),
+            verbose=verbose,
+        )
 
 
 def generate_rows(

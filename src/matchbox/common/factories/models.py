@@ -24,6 +24,7 @@ from matchbox.common.factories.entities import (
     ResultsEntity,
     SourceEntity,
     SuffixRule,
+    probabilities_to_results_entities,
 )
 from matchbox.common.factories.sources import (
     SourceConfig,
@@ -497,50 +498,6 @@ def generate_entity_probabilities(
         [left_array, right_array, prob_array],
         names=["left_id", "right_id", "probability"],
     )
-
-
-def probabilities_to_results_entities(
-    probabilities: pa.Table,
-    left_results: tuple[ResultsEntity, ...],
-    right_results: tuple[ResultsEntity, ...] | None = None,
-    threshold: float | int = 0,
-) -> tuple[ResultsEntity, ...]:
-    """Convert probabilities to ResultsEntities based on a threshold."""
-    left_lookup = {entity.id: entity for entity in left_results}
-    if right_results is not None:
-        right_lookup = {entity.id: entity for entity in right_results}
-    else:
-        right_lookup = left_lookup
-
-    djs = DisjointSet[ResultsEntity]()
-
-    # Validate threshold
-    if isinstance(threshold, float):
-        threshold = int(threshold * 100)
-
-    # Add ALL entities to the disjoint set
-    for entity in left_results:
-        djs._find(entity)
-    if right_results is not None:
-        for entity in right_results:
-            djs._find(entity)
-
-    # Add edges to the disjoint set
-    for record in probabilities.to_pylist():
-        if record["probability"] >= threshold:
-            djs.union(
-                left_lookup.get(record["left_id"]),
-                right_lookup.get(record["right_id"]),
-            )
-
-    components: set[set[ResultsEntity]] = djs.get_components()
-
-    entities: list[ResultsEntity] = []
-    for component in components:
-        merged: ResultsEntity = sum(component)
-        entities.append(merged)
-
-    return tuple(entities)
 
 
 class ModelDummy(BaseModel):

@@ -1,13 +1,11 @@
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
-import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.factories.entities import (
-    EntityReference,
     ResultsEntity,
     SourceEntity,
 )
@@ -16,26 +14,12 @@ from matchbox.common.factories.models import (
     generate_dummy_probabilities,
     generate_entity_probabilities,
     model_factory,
-    probabilities_to_results_entities,
     validate_components,
     verify_components,
 )
 from matchbox.common.factories.sources import linked_sources_factory
 
-
-def _make_results_entity(id: int, dataset: str, pks: list[str]) -> ResultsEntity:
-    """Helper to create a ResultsEntity with specified dataset and PKs."""
-    return ResultsEntity(
-        id=id,
-        source_pks=EntityReference(mapping=frozenset([(dataset, frozenset(pks))])),
-    )
-
-
-def _make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
-    """Helper to create a SourceEntity with specified dataset and PKs."""
-    entity = SourceEntity(base_values={"name": base_val})
-    entity.add_source_reference(dataset, pks)
-    return entity
+from ..factories.test_entity_factory import _make_results_entity, _make_source_entity
 
 
 def test_model_factory_entity_preservation():
@@ -159,6 +143,111 @@ def test_model_type_creation(
         assert prob_right_ids <= right_ids, (
             "Probability right IDs should be subset of right IDs"
         )
+
+
+@pytest.mark.parametrize(
+    ("left_source", "right_source", "model_type"),
+    [
+        pytest.param(
+            "crn",
+            None,
+            "deduper",
+            id="test_initial_deduper_methodology",
+        ),
+        pytest.param(
+            "cdms",
+            None,
+            "deduper",
+            id="test_second_deduper_methodology",
+        ),
+        pytest.param(
+            "crn",
+            "cdms",
+            "linker",
+            id="test_final_linker_methodology",
+        ),
+    ],
+)
+def test_model_pipeline_with_dummy_methodology(
+    left_source: str,
+    right_source: str | None,
+    model_type: Literal["deduper", "linker"],
+) -> None:
+    """Tests the factories validate "real" methodologies in various pipeline positions.
+
+    This test demonstrates that:
+    1. We can set up pipelines in various configurations that work perfectly
+        with model_factory
+    2. When we swap in a simulated "real" methodology (using
+        generate_dummy_probabilities), the diff can detect the errors appropriately
+    3. This validation works across different pipeline positions and configurations
+    """
+    linked = linked_sources_factory()
+    all_true_sources = list(linked.true_entities.values())
+
+    # Create and validate perfect model
+    if model_type == "deduper":
+        perfect_model = model_factory(
+            left_source=linked.sources[left_source],
+            true_entities=all_true_sources,
+        )
+        sources = [left_source]
+        model_entities = (tuple(linked.sources[left_source].entities), None)
+    else:  # linker
+        # Create perfect deduped models first
+        left_deduped = model_factory(
+            left_source=linked.sources[left_source],
+            true_entities=all_true_sources,
+        )
+        right_deduped = model_factory(
+            left_source=linked.sources[right_source],
+            true_entities=all_true_sources,
+        )
+        perfect_model = model_factory(
+            left_source=left_deduped,
+            right_source=right_deduped,
+            true_entities=all_true_sources,
+        )
+        sources = [left_source, right_source]
+        model_entities = (tuple(left_deduped.entities), tuple(right_deduped.entities))
+
+    # Verify perfect model works
+    identical, _ = linked.diff_results(
+        probabilities=perfect_model.probabilities,
+        left_results=perfect_model.left_results.values(),
+        right_results=perfect_model.right_results.values()
+        if model_type == "linker"
+        else None,
+        sources=sources,
+        threshold=0,
+    )
+    assert identical, "Perfect model_factory setup should match"
+
+    # Test with imperfect methodology
+    random_probabilities = generate_dummy_probabilities(
+        left_values=model_entities[0],
+        right_values=model_entities[1],
+        prob_range=(0.0, 1.0),
+        num_components=len(all_true_sources) - 1,  # Intentionally wrong
+    )
+
+    identical, msg = linked.diff_results(
+        probabilities=random_probabilities,
+        left_results=perfect_model.left_results.values(),
+        right_results=perfect_model.right_results.values()
+        if model_type == "linker"
+        else None,
+        sources=sources,
+        threshold=0,
+        verbose=True,
+    )
+
+    # Verify the imperfect methodology was detected
+    assert not identical
+    assert "Sets differ" in msg
+    assert "Partial matches" in msg
+    assert "Completely missing entities" in msg
+    assert "Unexpected extra entities" in msg
 
 
 @pytest.mark.parametrize(
@@ -961,108 +1050,3 @@ def test_generate_entity_probabilities_seed_behavior(
         assert result1.equals(result2)
     else:
         assert not result1.equals(result2)
-
-
-@pytest.mark.parametrize(
-    (
-        "probabilities",
-        "left_results",
-        "right_results",
-        "threshold",
-        "expected_count",
-    ),
-    [
-        pytest.param(
-            pa.table(
-                {
-                    "left_id": [1, 2],
-                    "right_id": [2, 3],
-                    "probability": [90, 85],
-                }
-            ),
-            (
-                _make_results_entity(1, "test", ["a1"]),
-                _make_results_entity(2, "test", ["a2"]),
-                _make_results_entity(3, "test", ["a3"]),
-            ),
-            None,
-            80,
-            1,  # One merged entity containing all three records
-            id="basic_dedupe_chain",
-        ),
-        pytest.param(
-            pa.table(
-                {
-                    "left_id": [1],
-                    "right_id": [4],
-                    "probability": [95],
-                }
-            ),
-            (_make_results_entity(1, "left", ["a1"]),),
-            (_make_results_entity(4, "right", ["b1"]),),
-            0.9,
-            1,  # One merged entity from the link
-            id="basic_link_match",
-        ),
-        pytest.param(
-            pa.table(
-                {
-                    "left_id": [1, 2],
-                    "right_id": [2, 3],
-                    "probability": [75, 70],
-                }
-            ),
-            (
-                _make_results_entity(1, "test", ["a1"]),
-                _make_results_entity(2, "test", ["a2"]),
-                _make_results_entity(3, "test", ["a3"]),
-            ),
-            None,
-            80,
-            3,  # No merging due to threshold
-            id="threshold_prevents_merge",
-        ),
-        pytest.param(
-            pa.table(
-                {
-                    "left_id": [],
-                    "right_id": [],
-                    "probability": [],
-                }
-            ),
-            (
-                _make_results_entity(1, "test", ["a1"]),
-                _make_results_entity(2, "test", ["a2"]),
-            ),
-            None,
-            80,
-            2,  # No merging with empty probabilities
-            id="empty_probabilities",
-        ),
-    ],
-)
-def test_probabilities_to_results_entities(
-    probabilities: pa.Table,
-    left_results: tuple[ResultsEntity, ...],
-    right_results: tuple[ResultsEntity, ...] | None,
-    threshold: float,
-    expected_count: int,
-) -> None:
-    """Test probabilities_to_results_entities with various scenarios."""
-    result = probabilities_to_results_entities(
-        probabilities=probabilities,
-        left_results=left_results,
-        right_results=right_results,
-        threshold=threshold,
-    )
-
-    assert len(result) == expected_count
-
-    # For merging cases, verify all input entities are contained in the output
-    all_inputs = set(left_results)
-    if right_results:
-        all_inputs.update(right_results)
-
-    for input_entity in all_inputs:
-        # Each input entity should be contained within one of the output entities
-        assert any(input_entity in output_entity for output_entity in result)

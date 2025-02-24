@@ -7,6 +7,8 @@ import pyarrow as pa
 from faker import Faker
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from matchbox.common.transform import DisjointSet
+
 if TYPE_CHECKING:
     from matchbox.common.factories.sources import SourceDummy
 else:
@@ -187,6 +189,8 @@ class ResultsEntity(BaseModel):
 
     def __add__(self, other: "ResultsEntity") -> "ResultsEntity":
         """Combine two ResultsEntities by combining the source_pks."""
+        if other is None:
+            return self
         if not isinstance(other, ResultsEntity):
             return NotImplemented
         return ResultsEntity(source_pks=self.source_pks + other.source_pks)
@@ -465,7 +469,6 @@ def generate_entities(
     return tuple(entities)
 
 
-# @cache
 def generate_entity_probabilities(
     generator: Faker,
     left_entities: set[ResultsEntity],
@@ -473,7 +476,11 @@ def generate_entity_probabilities(
     source_entities: set[SourceEntity],
     prob_range: tuple[float, float] = (0.8, 1.0),
 ) -> pa.Table:
-    """Generate probabilities that will recover entity relationships."""
+    """Generate probabilities that will recover entity relationships.
+
+    Note this function can't be cachable while SourceEntity contains a dictionary
+    of its base values. This is because dictionaries are unhashable.
+    """
     if right_entities is None:
         right_entities = left_entities
 
@@ -526,6 +533,50 @@ def generate_entity_probabilities(
         ],
         names=["left_id", "right_id", "probability"],
     )
+
+
+def probabilities_to_results_entities(
+    probabilities: pa.Table,
+    left_results: tuple[ResultsEntity, ...],
+    right_results: tuple[ResultsEntity, ...] | None = None,
+    threshold: float | int = 0,
+) -> tuple[ResultsEntity, ...]:
+    """Convert probabilities to ResultsEntities based on a threshold."""
+    left_lookup = {entity.id: entity for entity in left_results}
+    if right_results is not None:
+        right_lookup = {entity.id: entity for entity in right_results}
+    else:
+        right_lookup = left_lookup
+
+    djs = DisjointSet[ResultsEntity]()
+
+    # Validate threshold
+    if isinstance(threshold, float):
+        threshold = int(threshold * 100)
+
+    # Add ALL entities to the disjoint set
+    for entity in left_results:
+        djs._find(entity)
+    if right_results is not None:
+        for entity in right_results:
+            djs._find(entity)
+
+    # Add edges to the disjoint set
+    for record in probabilities.to_pylist():
+        if record["probability"] >= threshold:
+            djs.union(
+                left_lookup.get(record["left_id"]),
+                right_lookup.get(record["right_id"]),
+            )
+
+    components: set[set[ResultsEntity]] = djs.get_components()
+
+    entities: list[ResultsEntity] = []
+    for component in components:
+        merged: ResultsEntity = sum(component)
+        entities.append(merged)
+
+    return tuple(entities)
 
 
 def diff_results(
