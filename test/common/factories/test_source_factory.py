@@ -252,7 +252,7 @@ def test_entity_variations_tracking():
         # Get sources as ResultsEntity and generated ResultsEntity for comparison
         expected_results = source_entity.to_results_entity(source_name)
         actual_results = [
-            re for re in source.entities if re.is_subset_of(source_entity)
+            re for re in source.entities if re.is_subset_of_source_entity(source_entity)
         ]
 
         # Each result entity should be a subset of the source entity's full set

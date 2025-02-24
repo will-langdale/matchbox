@@ -355,7 +355,7 @@ def test_linked_sources_entity_hierarchy():
             matching_parents = [
                 true_entity
                 for true_entity in linked.true_entities.values()
-                if results_entity.is_subset_of(true_entity)
+                if results_entity.is_subset_of_source_entity(true_entity)
             ]
 
             # Each results entity must have at least one parent

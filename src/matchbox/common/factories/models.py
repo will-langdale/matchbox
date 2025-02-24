@@ -109,7 +109,7 @@ def validate_components(
         # Find which source entity this component belongs to
         found_source = None
         for source in source_entities:
-            if merged.is_subset_of(source):
+            if merged.is_subset_of_source_entity(source):
                 if found_source is not None:
                     # Component matches multiple source entities - invalid!
                     return False
@@ -427,7 +427,9 @@ def generate_entity_probabilities(
 
     def _map_entity(entity: ResultsEntity) -> None:
         matching_sources = [
-            source for source in source_entities if entity.is_subset_of(source)
+            source
+            for source in source_entities
+            if entity.is_subset_of_source_entity(source)
         ]
         if len(matching_sources) > 1:
             raise ValueError(

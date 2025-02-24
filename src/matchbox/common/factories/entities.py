@@ -153,7 +153,53 @@ class EntityReference(frozendict):
         return all(name in other and self[name] <= other[name] for name in self)
 
 
-class ResultsEntity(BaseModel):
+class EntityIDMixin:
+    """Mixin providing common ID-based functionality for entity classes.
+
+    Implements integer conversion and comparison operators for sorting
+    based on the entity's ID.
+    """
+
+    id: int
+
+    def __int__(self) -> int:
+        """Allow converting an entity to an integer by returning its ID."""
+        return self.id
+
+    def __lt__(self, other: int | Any) -> bool:
+        """Compare based on ID for sorting operations."""
+        if hasattr(other, "id"):
+            return self.id < other.id
+        if isinstance(other, int):
+            return self.id < other
+        return NotImplemented
+
+    def __gt__(self, other: int | Any) -> bool:
+        """Compare based on ID for sorting operations."""
+        if hasattr(other, "id"):
+            return self.id > other.id
+        if isinstance(other, int):
+            return self.id > other
+        return NotImplemented
+
+    def __le__(self, other: int | Any) -> bool:
+        """Compare based on ID for sorting operations."""
+        if hasattr(other, "id"):
+            return self.id <= other.id
+        if isinstance(other, int):
+            return self.id <= other
+        return NotImplemented
+
+    def __ge__(self, other: int | Any) -> bool:
+        """Compare based on ID for sorting operations."""
+        if hasattr(other, "id"):
+            return self.id >= other.id
+        if isinstance(other, int):
+            return self.id >= other
+        return NotImplemented
+
+
+class ResultsEntity(BaseModel, EntityIDMixin):
     """Represents a merged entity mid-pipeline."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
@@ -207,52 +253,13 @@ class ResultsEntity(BaseModel):
         """Check if this entity contains all PKs from other entity."""
         return other.source_pks <= self.source_pks
 
-    def __lt__(self, other: Any) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, ResultsEntity):
-            return self.id < other.id
-        if isinstance(other, int):
-            return self.id < other
-        return NotImplemented
-
-    def __gt__(self, other: Any) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, ResultsEntity):
-            return self.id > other.id
-        if isinstance(other, int):
-            return self.id > other
-        return NotImplemented
-
-    def __le__(self, other: Any) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, ResultsEntity):
-            return self.id <= other.id
-        if isinstance(other, int):
-            return self.id <= other
-        return NotImplemented
-
-    def __ge__(self, other: Any) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, ResultsEntity):
-            return self.id >= other.id
-        if isinstance(other, int):
-            return self.id >= other
-        return NotImplemented
-
     def __hash__(self) -> int:
         """Hash based on EntityReference which is itself hashable."""
         return hash(self.source_pks)
 
-    def __int__(self) -> int:
-        return self.id
-
-    def is_subset_of(self, source_entity: "SourceEntity") -> bool:
+    def is_subset_of_source_entity(self, source_entity: "SourceEntity") -> bool:
         """Check if this ResultsEntity's references are a subset of a SourceEntity's."""
         return self.source_pks <= source_entity.source_pks
-
-    def is_superset_of(self, other: "ResultsEntity") -> bool:
-        """Check if this entity contains all PKs from other."""
-        return other.source_pks <= self.source_pks
 
     def similarity_ratio(self, other: "ResultsEntity") -> float:
         """Return ratio of shared PKs to total PKs across all datasets."""
@@ -272,7 +279,7 @@ class ResultsEntity(BaseModel):
         return shared_pks / total_pks if total_pks > 0 else 0.0
 
 
-class SourceEntity(BaseModel):
+class SourceEntity(BaseModel, EntityIDMixin):
     """Represents a single entity across all sources."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -293,36 +300,9 @@ class SourceEntity(BaseModel):
             return self.id == other
         return NotImplemented
 
-    def __lt__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id < int(other)
-        return NotImplemented
-
-    def __gt__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id > int(other)
-        return NotImplemented
-
-    def __le__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id <= int(other)
-        return NotImplemented
-
-    def __ge__(self, other: object) -> bool:
-        """Compare based on ID for sorting operations."""
-        if isinstance(other, (SourceEntity, int)):
-            return self.id >= int(other)
-        return NotImplemented
-
     def __hash__(self) -> int:
         """Hash based on sorted base values."""
         return hash(tuple(sorted(self.base_values.items())))
-
-    def __int__(self) -> int:
-        return self.id
 
     def add_source_reference(self, name: str, pks: list[str]) -> None:
         """Add or update a source reference.
@@ -423,70 +403,6 @@ def generate_entities(
             SourceEntity(base_values=base_values, source_pks=EntityReference())
         )
     return tuple(entities)
-
-
-# def generate_entity_probabilities(
-#     generator: Faker,
-#     left_entities: set[ResultsEntity],
-#     right_entities: set[ResultsEntity] | None,
-#     source_entities: set[SourceEntity],
-#     prob_range: tuple[float, float] = (0.8, 1.0),
-# ) -> pa.Table:
-#     """Generate probabilities that will recover entity relationships.
-
-#     Note this function can't be cachable while SourceEntity contains a dictionary
-#     of its base values. This is because dictionaries are unhashable.
-#     """
-#     if right_entities is None:
-#         right_entities = left_entities
-
-#     prob_min = int(prob_range[0] * 100)
-#     prob_max = int(prob_range[1] * 100)
-
-#     left_ids = []
-#     right_ids = []
-
-#     for left_entity in left_entities:
-#         # Find its source entity
-#         left_source = None
-#         for source in source_entities:
-#             if left_entity.is_subset_of(source):
-#                 left_source = source
-#                 break
-
-#         if left_source is None:
-#             continue
-
-#         for right_entity in right_entities:
-#             # Skip exact same entity
-#             if left_entity is right_entity:
-#                 continue
-
-#             # Skip self-matches in deduplication case (>= is arbitrary)
-#             if right_entities is left_entities and left_entity.id >= right_entity.id:
-#                 continue
-
-#             # Check if maps to same source
-#             if any(
-#                 right_entity.is_subset_of(source) and source == left_source
-#                 for source in source_entities
-#             ):
-#                 left_ids.append(left_entity.id)
-#                 right_ids.append(right_entity.id)
-
-#     # Generate probabilities
-#     probabilities = [
-#         generator.random_int(min=prob_min, max=prob_max) for _ in range(len(left_ids))
-#     ]
-
-#     return pa.Table.from_arrays(
-#         [
-#             pa.array(left_ids, type=pa.uint64()),
-#             pa.array(right_ids, type=pa.uint64()),
-#             pa.array(probabilities, type=pa.uint8()),
-#         ],
-#         schema=SCHEMA_RESULTS,
-#     )
 
 
 def probabilities_to_results_entities(
