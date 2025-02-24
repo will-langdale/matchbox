@@ -425,70 +425,68 @@ def generate_entities(
     return tuple(entities)
 
 
-def generate_entity_probabilities(
-    generator: Faker,
-    left_entities: set[ResultsEntity],
-    right_entities: set[ResultsEntity] | None,
-    source_entities: set[SourceEntity],
-    prob_range: tuple[float, float] = (0.8, 1.0),
-) -> pa.Table:
-    """Generate probabilities that will recover entity relationships.
+# def generate_entity_probabilities(
+#     generator: Faker,
+#     left_entities: set[ResultsEntity],
+#     right_entities: set[ResultsEntity] | None,
+#     source_entities: set[SourceEntity],
+#     prob_range: tuple[float, float] = (0.8, 1.0),
+# ) -> pa.Table:
+#     """Generate probabilities that will recover entity relationships.
 
-    Note this function can't be cachable while SourceEntity contains a dictionary
-    of its base values. This is because dictionaries are unhashable.
-    """
-    if right_entities is None:
-        right_entities = left_entities
+#     Note this function can't be cachable while SourceEntity contains a dictionary
+#     of its base values. This is because dictionaries are unhashable.
+#     """
+#     if right_entities is None:
+#         right_entities = left_entities
 
-    prob_min = int(prob_range[0] * 100)
-    prob_max = int(prob_range[1] * 100)
+#     prob_min = int(prob_range[0] * 100)
+#     prob_max = int(prob_range[1] * 100)
 
-    left_ids = []
-    right_ids = []
+#     left_ids = []
+#     right_ids = []
 
-    # For each left entity
-    for left_entity in left_entities:
-        # Find its source entity
-        left_source = None
-        for source in source_entities:
-            if left_entity.is_subset_of(source):
-                left_source = source
-                break
+#     for left_entity in left_entities:
+#         # Find its source entity
+#         left_source = None
+#         for source in source_entities:
+#             if left_entity.is_subset_of(source):
+#                 left_source = source
+#                 break
 
-        if left_source is None:
-            continue
+#         if left_source is None:
+#             continue
 
-        # For each right entity
-        for right_entity in right_entities:
-            # Skip exact same entity
-            if left_entity is right_entity:
-                continue
+#         for right_entity in right_entities:
+#             # Skip exact same entity
+#             if left_entity is right_entity:
+#                 continue
 
-            # Skip self-matches in deduplication case (>= is arbitrary)
-            if right_entities is left_entities and left_entity.id >= right_entity.id:
-                continue
+#             # Skip self-matches in deduplication case (>= is arbitrary)
+#             if right_entities is left_entities and left_entity.id >= right_entity.id:
+#                 continue
 
-            # Check if maps to same source
-            if any(
-                right_entity.is_subset_of(source) and source == left_source
-                for source in source_entities
-            ):
-                left_ids.append(left_entity.id)
-                right_ids.append(right_entity.id)
+#             # Check if maps to same source
+#             if any(
+#                 right_entity.is_subset_of(source) and source == left_source
+#                 for source in source_entities
+#             ):
+#                 left_ids.append(left_entity.id)
+#                 right_ids.append(right_entity.id)
 
-    # Generate probabilities
-    probabilities = [
-        generator.random_int(min=prob_min, max=prob_max) for _ in range(len(left_ids))
-    ]
+#     # Generate probabilities
+#     probabilities = [
+#         generator.random_int(min=prob_min, max=prob_max) for _ in range(len(left_ids))
+#     ]
 
-    return pa.Table.from_arrays(
-        [
-            pa.array(left_ids, type=pa.uint64()),
-            pa.array(right_ids, type=pa.uint64()),
-            pa.array(probabilities, type=pa.uint8()),
-        ],
-        names=["left_id", "right_id", "probability"],
-    )
+#     return pa.Table.from_arrays(
+#         [
+#             pa.array(left_ids, type=pa.uint64()),
+#             pa.array(right_ids, type=pa.uint64()),
+#             pa.array(probabilities, type=pa.uint8()),
+#         ],
+#         schema=SCHEMA_RESULTS,
+#     )
 
 
 def probabilities_to_results_entities(
@@ -599,7 +597,3 @@ def diff_results(
             messages.append(f"  {e.id}: {dict(e.source_pks.items())}")
 
     return False, "\n".join(messages)
-
-
-if __name__ == "__main__":
-    pass

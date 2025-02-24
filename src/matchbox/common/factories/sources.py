@@ -608,7 +608,3 @@ def linked_sources_factory(
             entity.add_source_reference(config.full_name, pks)
 
     return linked
-
-
-if __name__ == "__main__":
-    pass

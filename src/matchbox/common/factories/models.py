@@ -20,6 +20,7 @@ from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import Model
 from matchbox.client.results import Results
+from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.factories.entities import (
     FeatureConfig,
@@ -408,10 +409,15 @@ def generate_entity_probabilities(
         source_entities: Ground truth set of SourceEntities
         prob_range: Range of probabilities to assign to matches. All matches will
             be assigned a random probability in this range.
+        seed: Random seed for reproducibility
 
     Returns:
         PyArrow Table with 'left_id', 'right_id', and 'probability' columns
     """
+    # Validate inputs
+    if not (0 <= prob_range[0] <= prob_range[1] <= 1):
+        raise ValueError("Probabilities must be increasing values between 0 and 1")
+
     # Handle deduplication case
     if right_entities is None:
         right_entities = left_entities
@@ -469,7 +475,7 @@ def generate_entity_probabilities(
             for right_entity in right_group:
                 # For deduplication, only include each pair once
                 # and ensure left_id < right_id
-                if right_entities is left_entities:
+                if right_entities == left_entities:
                     if left_entity.id >= right_entity.id:
                         continue
 
@@ -485,7 +491,7 @@ def generate_entity_probabilities(
                 pa.array([], type=pa.uint64()),
                 pa.array([], type=pa.uint8()),
             ],
-            names=["left_id", "right_id", "probability"],
+            schema=SCHEMA_RESULTS,
         )
 
     # Convert to arrays
@@ -498,7 +504,7 @@ def generate_entity_probabilities(
 
     return pa.table(
         [left_array, right_array, prob_array],
-        names=["left_id", "right_id", "probability"],
+        schema=SCHEMA_RESULTS,
     )
 
 
@@ -642,7 +648,7 @@ def model_factory(
 
     Allows autoconfiguration with minimal settings, or more nuanced control.
 
-    Can either be used to generate a model in a pipeline, intercorrected with existing
+    Can either be used to generate a model in a pipeline, interconnected with existing
     SourceDummy or ModelDummy objects, or generate a standalone model with random data.
 
     Args:
