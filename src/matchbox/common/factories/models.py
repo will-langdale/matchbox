@@ -104,7 +104,7 @@ def validate_components(
             if merged is None:
                 merged = entity
             else:
-                merged = merged + entity
+                merged += entity
 
         # Find which source entity this component belongs to
         found_source = None

@@ -24,7 +24,7 @@ The factory system aims to provide objects that facilitate three groups of testi
 
 * Realistic mock `Source` and `Model` objects to test client-side connectivity functions
 * Realistic mock data to test server-side adapter functions
-* Realistic mock pipeliness with controlled completeness to test client-side methodologies
+* Realistic mock pipelines with controlled completeness to test client-side methodologies
 
 Three broad functions are provided:
 
@@ -32,7 +32,7 @@ Three broad functions are provided:
 * [`linked_sources_factory()`][matchbox.common.factories.sources.linked_sources_factory] generates [`LinkedSourcesDummy`][matchbox.common.factories.sources.LinkedSourcesDummy] objects, which contain a collection of interconnected `SourceDummy` objects, and the true entities this data describes
 * [`model_factory()`][matchbox.common.factories.models.model_factory] generates [`ModelDummy`][matchbox.common.factories.models.ModelDummy] objects, which mock probabilities that can connect both `SourceDummy` and other `ModelDummy` objects in ways that fail and succeed predictably
 
-Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ResultsEntity`][matchbox.common.factories.entities.ResultsEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparitors have been implements to make this simple to implement, understand, and read in unit testing.
+Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ResultsEntity`][matchbox.common.factories.entities.ResultsEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparators have been implements to make this simple to implement, understand, and read in unit testing.
 
 All factory methods aim to be useful in three ways:
 
@@ -139,7 +139,7 @@ for dummy_source in linked.sources.values():
 
 dummy_model = model_factory(
     left_source=linked.sources["crn"],
-    true_entities=all_true_sources,
+    true_entities=linked.true_entities.values(),
 )
 
 backend.insert_model(model=dummy_model.model.metadata)
@@ -157,32 +157,36 @@ Configure the true state of your data with `linked_sources_factory()`. Its defau
 * CDMS (CRN ID, DUNS ID) contains all entities repeated twice
 * DUNS (company name, DUNS ID) contains half the entities
 
-Give a tuple of [`SourceConfig`][matchbox.common.factories.sources.SourceConfig] objects to set up any scenario you desire.
+`linked_sources_factory()` can be configured using tuples of [`SourceConfig`][matchbox.common.factories.sources.SourceConfig] objects. Using these you can create complex sets of interweaving sources for methodologies to be tested against.
 
 The `model_factory()` is designed so you can chain together known processes in any order, before using your real methodology. [`LinkedSourcesDummy.diff_results()`][matchbox.common.factories.sources.LinkedSourcesDummy.diff_results] will make any probabilistic output comparable with the true source entities, and give a detailed diff to help you debug.
 
 ```python
-linked = linked_sources_factory()
+linked: LinkedSourcesDummy = linked_sources_factory()
 
 # Create perfect deduped models first
-left_deduped = model_factory(
+left_deduped: ModelDummy = model_factory(
     left_source=linked.sources["crn"],
     true_entities=linked.true_entities.values(),
 )
-right_deduped = model_factory(
+right_deduped: ModelDummy = model_factory(
     left_source=linked.sources["cdms"],
     true_entities=linked.true_entities.values(),
 )
 
 # Create a model and generate probabilities
-model = make_model(...)
-results = model.run()
+model: Model = make_model(
+    left_data=left_deduped.query(),
+    right_data=right_deduped.query()
+    ...
+)
+results: Results = model.run()
 
 # Diff, assert, and log the message if it fails
 identical, msg = linked.diff_results(
-    probabilities=results.probabilities,
-    left_results=left_deduped.entities,
-    right_results=right_deduped.entities
+    probabilities=results.probabilities,  # Your methodology's output
+    left_results=left_deduped.entities,  # Output of left deduper -- left input to your methodology
+    right_results=right_deduped.entities,  # Output of right deduper -- left input to your methodology
     sources=("crn", "cdms"),
     threshold=0,
     verbose=True,
