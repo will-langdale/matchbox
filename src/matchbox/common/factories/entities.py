@@ -411,8 +411,9 @@ class SourceEntity(BaseModel):
         # For each dataset we have PKs for
         for dataset_name, pks in self.source_pks.items():
             source = sources.get(dataset_name)
+
             if source is None:
-                continue
+                raise ValueError(f"Source not found: {dataset_name}")
 
             # Get rows for this entity in this source
             df = source.data.to_pandas()
@@ -461,12 +462,12 @@ def generate_entities(
     """Generate base entities with their ground truth values."""
     entities = []
     for _ in range(n):
-        base_values = {
-            f.name: getattr(
-                generator.unique if f.unique else generator, f.base_generator
-            )(**dict(f.parameters))
-            for f in features
-        }
+        base_values = {}
+        for feature in features:
+            generator_func = generator.unique if feature.unique else generator
+            value_generator = getattr(generator_func, feature.base_generator)
+            base_values[feature.name] = value_generator(**dict(feature.parameters))
+
         entities.append(
             SourceEntity(
                 base_values=base_values, source_pks=EntityReference(mapping=frozenset())

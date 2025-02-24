@@ -127,24 +127,26 @@ class LinkedSourcesDummy(BaseModel):
         """Find entities matching appearance criteria."""
         result = list(self.true_entities.values())
 
+        def _meets_criteria(
+            entity: SourceEntity, criteria: dict[str, int], compare: Callable
+        ) -> bool:
+            return all(
+                compare(len(entity.get_source_pks(src)), count)
+                for src, count in criteria.items()
+            )
+
         if min_appearances:
             result = [
-                e
-                for e in result
-                if all(
-                    len(e.get_source_pks(src)) >= count
-                    for src, count in min_appearances.items()
-                )
+                entity
+                for entity in result
+                if _meets_criteria(entity, min_appearances, lambda x, y: x >= y)
             ]
 
         if max_appearances:
             result = [
-                e
-                for e in result
-                if all(
-                    len(e.get_source_pks(src)) <= count
-                    for src, count in max_appearances.items()
-                )
+                entity
+                for entity in result
+                if _meets_criteria(entity, max_appearances, lambda x, y: x <= y)
             ]
 
         return result
@@ -290,8 +292,10 @@ def generate_source(
     if seed_entities is None:
         selected_entities = generate_entities(generator, features, n_true_entities)
     else:
-        selected_entities = generator.random.sample(
-            seed_entities, min(n_true_entities, len(seed_entities))
+        selected_entities = generator.random_elements(
+            elements=seed_entities,
+            unique=True,
+            length=min(n_true_entities, len(seed_entities)),
         )
 
     # Generate initial data
