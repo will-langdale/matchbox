@@ -402,9 +402,7 @@ def source_factory(
     results_entities = [
         ResultsEntity(
             id=row_id,
-            source_pks=EntityReference(
-                mapping=frozenset([(full_name, frozenset(pks))])
-            ),
+            source_pks=EntityReference({full_name: frozenset(pks)}),
         )
         for row_id, pks in row_pks.items()
     ]
@@ -581,9 +579,7 @@ def linked_sources_factory(
         results_entities = [
             ResultsEntity(
                 id=row_id,
-                source_pks=EntityReference(
-                    mapping=frozenset([(config.full_name, frozenset(pks))])
-                ),
+                source_pks=EntityReference({config.full_name: frozenset(pks)}),
             )
             for row_id, pks in row_pks.items()
         ]

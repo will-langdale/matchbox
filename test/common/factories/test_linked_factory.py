@@ -309,7 +309,7 @@ def test_source_references():
     assert entity.get_source_pks("new_source") == updated_pks
 
     # Non-existent source should return empty list
-    assert entity.get_source_pks("nonexistent") == []
+    assert entity.get_source_pks("nonexistent") == set()
 
 
 def test_linked_sources_entity_hierarchy():

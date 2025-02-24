@@ -7,10 +7,11 @@ dummy sources and models factory system.
 from abc import ABC, abstractmethod
 from functools import cache
 from random import getrandbits
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 from faker import Faker
+from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from matchbox.common.transform import DisjointSet
@@ -85,9 +86,23 @@ class FeatureConfig(BaseModel):
 
     name: str
     base_generator: str
-    parameters: tuple = Field(default_factory=tuple)
-    unique: bool = Field(default=True)
-    drop_base: bool = Field(default=False)
+    parameters: tuple = Field(
+        default_factory=tuple,
+        description=(
+            "Parameters for the generator. A tuple of tuples passed to the generator."
+        ),
+    )
+    unique: bool = Field(
+        default=True,
+        description=(
+            "Whether the generator enforces uniqueness in the generated data. "
+            "For example, using unique=True with the 'boolean' generator will error "
+            "if more the two values are generated."
+        ),
+    )
+    drop_base: bool = Field(
+        default=False, description="Whether the base case is dropped."
+    )
     variations: tuple[VariationRule, ...] = Field(default_factory=tuple)
 
     def add_variations(self, *rule: VariationRule) -> "FeatureConfig":
@@ -109,80 +124,33 @@ class FeatureConfig(BaseModel):
         return value
 
 
-class EntityReference(BaseModel):
-    """Reference to an entity's presence in a specific source.
+class EntityReference(frozendict):
+    """Reference to an entity's presence in specific sources.
 
-    Implemented as a frozenset rather than a dict for speed and immutability.
+    Maps dataset names to sets of primary keys.
     """
 
-    mapping: frozenset[tuple[str, frozenset[str]]] = Field(
-        description="(dataset_name, pks) pairs"
-    )
-
-    model_config = ConfigDict(frozen=True)
-
-    def __getitem__(self, dataset: str) -> frozenset[str] | None:
-        """Get PKs for a dataset if it exists"""
-        for name, pks in self.mapping:
-            if name == dataset:
-                return pks
-        return None
-
-    def items(self) -> Iterator[tuple[str, frozenset[str]]]:
-        """Iterator over (dataset, pks) pairs"""
-        return iter(self.mapping)
-
-    def __contains__(self, dataset: str) -> bool:
-        """Check if dataset exists in mapping"""
-        return any(name == dataset for name, _ in self.mapping)
-
-    def __hash__(self) -> int:
-        """Hash based on the immutable mapping"""
-        return hash(self.mapping)
-
-    def __eq__(self, other: Any) -> bool:
-        """Equal if mappings are identical"""
-        if not isinstance(other, EntityReference):
-            return NotImplemented
-        return self.mapping == other.mapping
+    def __init__(self, mapping: dict[str, frozenset[str]] | None = None) -> None:
+        super().__init__({} if mapping is None else mapping)
 
     def __add__(self, other: "EntityReference") -> "EntityReference":
         """Merge two EntityReferences by unioning PKs for each dataset"""
         if not isinstance(other, EntityReference):
             return NotImplemented
 
-        # Build combined mapping
-        combined = {}
-        # Add all our datasets
-        for name, pks in self.mapping:
-            combined[name] = pks
-
-        # Merge in other's datasets
-        for name, pks in other.mapping:
-            if name in combined:
-                # Union PKs for shared datasets
-                combined[name] = combined[name] | pks
-            else:
-                combined[name] = pks
-
-        # Convert back to frozenset of tuples
-        new_mapping = frozenset((name, pks) for name, pks in combined.items())
-        return EntityReference(mapping=new_mapping)
+        return EntityReference(
+            {
+                k: self.get(k, frozenset()) | other.get(k, frozenset())
+                for k in self.keys() | other.keys()
+            }
+        )
 
     def __le__(self, other: "EntityReference") -> bool:
         """Test if self is a subset of other"""
         if not isinstance(other, EntityReference):
             return NotImplemented
 
-        # For each of our datasets
-        for name, our_pks in self.mapping:
-            # Get their PKs for this dataset
-            their_pks = other[name]
-            # If they don't have this dataset or our PKs aren't a subset,
-            # we're not a subset
-            if their_pks is None or not our_pks <= their_pks:
-                return False
-        return True
+        return all(name in other and self[name] <= other[name] for name in self)
 
 
 class ResultsEntity(BaseModel):
@@ -217,13 +185,10 @@ class ResultsEntity(BaseModel):
 
         diff = {}
         for name, our_pks in self.source_pks.items():
-            their_pks = other.source_pks[name]
-            if their_pks is None:
-                diff[name] = our_pks
-            else:
-                missing = our_pks - their_pks
-                if missing:
-                    diff[name] = missing
+            their_pks = other.source_pks.get(name, frozenset())
+            if remaining := our_pks - their_pks:
+                diff[name] = remaining
+
         return diff
 
     def __rsub__(self, other: "ResultsEntity") -> dict[str, frozenset[str]]:
@@ -275,7 +240,7 @@ class ResultsEntity(BaseModel):
         return NotImplemented
 
     def __hash__(self) -> int:
-        """Hash now directly uses the frozenset hash."""
+        """Hash based on EntityReference which is itself hashable."""
         return hash(self.source_pks)
 
     def __int__(self) -> int:
@@ -295,13 +260,11 @@ class ResultsEntity(BaseModel):
         shared_pks = 0
 
         # Get all dataset names
-        all_datasets = {name for name, _ in self.source_pks.items()} | {
-            name for name, _ in other.source_pks.items()
-        }
+        all_datasets = set(self.source_pks.keys()) | set(other.source_pks.keys())
 
         for name in all_datasets:
-            our_pks = self.source_pks[name] or frozenset()
-            their_pks = other.source_pks[name] or frozenset()
+            our_pks = self.source_pks.get(name, frozenset())
+            their_pks = other.source_pks.get(name, frozenset())
 
             total_pks += len(our_pks | their_pks)
             shared_pks += len(our_pks & their_pks)
@@ -368,14 +331,9 @@ class SourceEntity(BaseModel):
             name: Dataset name
             pks: List of primary keys for this dataset
         """
-        # Get existing mapping pairs
-        pairs = {name: pks for name, pks in self.source_pks.mapping}
-        # Update or add new dataset
-        pairs[name] = frozenset(pks)
-        # Create new EntityReference with updated mapping
-        self.source_pks = EntityReference(
-            mapping=frozenset((name, pks) for name, pks in pairs.items())
-        )
+        mapping = dict(self.source_pks)
+        mapping[name] = frozenset(pks)
+        self.source_pks = EntityReference(mapping)
 
     def get_source_pks(self, source_name: str) -> set[str]:
         """Get PKs for a specific source.
@@ -384,10 +342,9 @@ class SourceEntity(BaseModel):
             source_name: Name of the dataset
 
         Returns:
-            List of primary keys, empty if dataset not found
+            Set of primary keys, empty if dataset not found
         """
-        pks = self.source_pks[source_name]
-        return set(pks) if pks is not None else []
+        return set(self.source_pks.get(source_name, frozenset()))
 
     def get_values(
         self, sources: dict[str, "SourceDummy"]
@@ -439,18 +396,12 @@ class SourceEntity(BaseModel):
         Raises:
             KeyError: If any specified dataset name doesn't exist in this entity
         """
-        # Filter mapping to only include specified datasets
-        filtered_mapping = frozenset(
-            (name, pks) for name, pks in self.source_pks.mapping if name in names
-        )
-
-        # Check if all requested datasets were found
-        found_datasets = {name for name, _ in filtered_mapping}
-        missing_datasets = set(names) - found_datasets
+        missing_datasets = set(names) - self.source_pks.keys()
         if missing_datasets:
             raise KeyError(f"Datasets not found in entity: {missing_datasets}")
 
-        return ResultsEntity(source_pks=EntityReference(mapping=filtered_mapping))
+        filtered = {name: self.source_pks[name] for name in names}
+        return ResultsEntity(source_pks=EntityReference(filtered))
 
 
 @cache
@@ -469,9 +420,7 @@ def generate_entities(
             base_values[feature.name] = value_generator(**dict(feature.parameters))
 
         entities.append(
-            SourceEntity(
-                base_values=base_values, source_pks=EntityReference(mapping=frozenset())
-            )
+            SourceEntity(base_values=base_values, source_pks=EntityReference())
         )
     return tuple(entities)
 
