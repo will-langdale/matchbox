@@ -134,7 +134,7 @@ class ModelOperationStatus(BaseModel):
 
 
 class OKMessage(BaseModel):
-    """Response model to validate and return when performing a health check."""
+    """Generic response model for an HTTP OK message."""
 
     status: str = "OK"
 
