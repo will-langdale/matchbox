@@ -133,12 +133,6 @@ class ModelOperationStatus(BaseModel):
         }
 
 
-class OKMessage(BaseModel):
-    """Generic response model for an HTTP OK message."""
-
-    status: str = "OK"
-
-
 class CountResult(BaseModel):
     """Response model for count results"""
 
