@@ -26,6 +26,7 @@ from matchbox.common.dtos import (
     ModelOperationStatus,
     ModelOperationType,
     NotFoundError,
+    OKMessage,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -82,9 +83,9 @@ def get_backend() -> MatchboxDBAdapter:
 
 
 @app.get("/health")
-async def healthcheck():
+async def healthcheck() -> OKMessage:
     """Perform a health check and return the status."""
-    return Response(status_code=status.HTTP_200_OK)
+    return OKMessage()
 
 
 @app.post(
@@ -654,10 +655,10 @@ async def clear_database(
     certain: Annotated[
         bool, Query(description="Confirm deletion of all data in the database")
     ] = False,
-):
+) -> OKMessage:
     try:
         backend.clear(certain=certain)
-        return Response(status_code=status.HTTP_200_OK)
+        return OKMessage()
     except MatchboxDeletionNotConfirmed as e:
         raise HTTPException(
             status_code=409,

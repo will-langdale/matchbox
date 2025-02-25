@@ -6,6 +6,12 @@ from pydantic import BaseModel, Field
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 
 
+class OKMessage(BaseModel):
+    """Generic HTTP OK response."""
+
+    status: str = "OK"
+
+
 class BackendCountableType(StrEnum):
     DATASETS = "datasets"
     MODELS = "models"

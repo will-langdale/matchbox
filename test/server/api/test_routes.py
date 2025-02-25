@@ -14,6 +14,7 @@ from matchbox.common.dtos import (
     ModelAncestor,
     ModelOperationType,
     NotFoundError,
+    OKMessage,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -45,7 +46,7 @@ def test_healthcheck():
     """Test the healthcheck endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "OK"}
+    OKMessage.model_validate(response.json())
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -1053,6 +1054,7 @@ def test_clear_backend_ok(get_backend: MatchboxDBAdapter):
 
     response = client.delete("/database", params={"certain": "true"})
     assert response.status_code == 200
+    OKMessage.model_validate(response.json())
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -1063,3 +1065,5 @@ def test_clear_backend_errors(get_backend: MatchboxDBAdapter):
 
     response = client.delete("/database")
     assert response.status_code == 409
+    # We send some explanatory message
+    assert response.content
