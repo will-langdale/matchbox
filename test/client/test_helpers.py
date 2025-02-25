@@ -83,18 +83,15 @@ def test_select_default_engine(matchbox_api: MockRouter, warehouse_engine: Engin
     )
 
     # Set up mocks and test data
-    source = Source(
-        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.bar"),
-        db_pk="pk",
-    )
+    dummy_source = source_factory(full_name="test.bar", engine=warehouse_engine)
+    source = dummy_source.source
 
     matchbox_api.get(
         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.bar"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
-    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
     with warehouse_engine.connect() as conn:
-        df.to_sql(
+        dummy_source.data.to_pandas().to_sql(
             name="bar",
             con=conn,
             schema="test",

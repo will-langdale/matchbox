@@ -26,7 +26,9 @@ def select(
 
     Args:
         selection: full source names and optionally a subset of columns to select
-        engine: the engine to connect to the data warehouse hosting the source
+        engine: the engine to connect to the data warehouse hosting the source.
+            If not provided, will use a connection string from the
+            `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
     Returns:
         A list of Selector objects
 
