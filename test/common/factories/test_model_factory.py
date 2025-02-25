@@ -14,7 +14,7 @@ def test_model_factory_entity_preservation():
 
     # Create first model
     first_model = model_factory(
-        left_source=linked.sources["crn"],
+        left_testkit=linked.sources["crn"],
         true_entities=all_true_sources[:1],  # Just one source entity
     )
 
@@ -24,7 +24,7 @@ def test_model_factory_entity_preservation():
 
     # Create second model with no matching true entities
     second_model = model_factory(
-        left_source=first_model,
+        left_testkit=first_model,
         true_entities=all_true_sources[1:],  # Different source entities
     )
 
@@ -33,7 +33,7 @@ def test_model_factory_entity_preservation():
 
 
 @pytest.mark.parametrize(
-    ("left_source", "right_source", "expected_type", "should_have_right"),
+    ("left_testkit", "right_testkit", "expected_type", "should_have_right"),
     [
         pytest.param(None, None, "deduper", False, id="default_creates_deduper"),
         pytest.param(
@@ -49,8 +49,8 @@ def test_model_factory_entity_preservation():
     ],
 )
 def test_model_type_creation(
-    left_source: None | str,
-    right_source: None | str,
+    left_testkit: None | str,
+    right_testkit: None | str,
     expected_type: str,
     should_have_right: bool,
 ):
@@ -60,27 +60,27 @@ def test_model_type_creation(
     all_true_sources = list(linked.true_entities.values())
     half_true_sources = all_true_sources[: len(all_true_sources) // 2]
 
-    if left_source == "source":
+    if left_testkit == "source":
         left = linked.sources["crn"]
-    elif left_source == "model":
+    elif left_testkit == "model":
         left = model_factory(
-            left_source=linked.sources["crn"], true_entities=half_true_sources
+            left_testkit=linked.sources["crn"], true_entities=half_true_sources
         )
     else:
         left = None
 
-    if right_source == "source":
+    if right_testkit == "source":
         right = linked.sources["cdms"]
-    elif right_source == "model":
+    elif right_testkit == "model":
         right = model_factory(
-            left_source=linked.sources["cdms"], true_entities=half_true_sources
+            left_testkit=linked.sources["cdms"], true_entities=half_true_sources
         )
     else:
         right = None
 
     # Create our model
     model = model_factory(
-        left_source=left, right_source=right, true_entities=all_true_sources, seed=13
+        left_testkit=left, right_testkit=right, true_entities=all_true_sources, seed=13
     )
 
     # Basic type verification
@@ -131,7 +131,7 @@ def test_model_type_creation(
 
 
 @pytest.mark.parametrize(
-    ("left_source", "right_source", "model_type"),
+    ("left_testkit", "right_testkit", "model_type"),
     [
         pytest.param(
             "crn",
@@ -154,8 +154,8 @@ def test_model_type_creation(
     ],
 )
 def test_model_pipeline_with_dummy_methodology(
-    left_source: str,
-    right_source: str | None,
+    left_testkit: str,
+    right_testkit: str | None,
     model_type: Literal["deduper", "linker"],
 ) -> None:
     """Tests the factories validate "real" methodologies in various pipeline positions.
@@ -173,27 +173,27 @@ def test_model_pipeline_with_dummy_methodology(
     # Create and validate perfect model
     if model_type == "deduper":
         perfect_model = model_factory(
-            left_source=linked.sources[left_source],
+            left_testkit=linked.sources[left_testkit],
             true_entities=all_true_sources,
         )
-        sources = [left_source]
-        model_entities = (tuple(linked.sources[left_source].entities), None)
+        sources = [left_testkit]
+        model_entities = (tuple(linked.sources[left_testkit].entities), None)
     else:  # linker
         # Create perfect deduped models first
         left_deduped = model_factory(
-            left_source=linked.sources[left_source],
+            left_testkit=linked.sources[left_testkit],
             true_entities=all_true_sources,
         )
         right_deduped = model_factory(
-            left_source=linked.sources[right_source],
+            left_testkit=linked.sources[right_testkit],
             true_entities=all_true_sources,
         )
         perfect_model = model_factory(
-            left_source=left_deduped,
-            right_source=right_deduped,
+            left_testkit=left_deduped,
+            right_testkit=right_deduped,
             true_entities=all_true_sources,
         )
-        sources = [left_source, right_source]
+        sources = [left_testkit, right_testkit]
         model_entities = (tuple(left_deduped.entities), tuple(right_deduped.entities))
 
     # Verify perfect model works
@@ -257,7 +257,7 @@ def test_model_pipeline_with_dummy_methodology(
             id="invalid_prob_range_too_high",
         ),
         pytest.param(
-            {"left_source": source_factory(), "true_entities": None},
+            {"left_testkit": source_factory(), "true_entities": None},
             ValueError,
             "Must provide true entities when sources are given",
             id="missing_true_entities_with_source",
@@ -456,8 +456,8 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     all_true_sources = list(linked.true_entities.values())
 
     # Get sources based on config
-    left_source = linked.sources[source_config["left_name"]]
-    right_source = (
+    left_testkit = linked.sources[source_config["left_name"]]
+    right_testkit = (
         linked.sources[source_config["right_name"]]
         if source_config["right_name"]
         else None
@@ -465,8 +465,8 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
 
     # Create model
     model = model_factory(
-        left_source=left_source,
-        right_source=right_source,
+        left_testkit=left_testkit,
+        right_testkit=right_testkit,
         true_entities=all_true_sources[source_config["true_entities_slice"]],
         prob_range=source_config["prob_range"],
     )
@@ -483,7 +483,8 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
 
     # Verify source PKs are preserved
     input_pks = sum(
-        set(left_source.entities) | set(right_source.entities if right_source else {})
+        set(left_testkit.entities)
+        | set(right_testkit.entities if right_testkit else {})
     )
     assert input_pks == sum(model.entities), (
         "Model entities should preserve all source PKs"

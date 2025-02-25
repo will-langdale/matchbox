@@ -1,7 +1,7 @@
 """Classes and functions for generating and comparing entities.
 
 These underpin the entity resolution process, which is the core of the
-dummy sources and models factory system.
+source and model testkit factory system.
 """
 
 import datetime
@@ -19,9 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
-    from matchbox.common.factories.sources import SourceDummy
+    from matchbox.common.factories.sources import SourceTestkit
 else:
-    SourceDummy = Any
+    SourceTestkit = Any
 
 
 class VariationRule(BaseModel, ABC):
@@ -271,7 +271,7 @@ class SourcePKMixin:
         return set(self.source_pks.get(source_name, frozenset()))
 
     def get_values(
-        self, sources: dict[str, "SourceDummy"]
+        self, sources: dict[str, "SourceTestkit"]
     ) -> dict[str, dict[str, list[str]]]:
         """Get all unique values for this entity across sources.
 
@@ -425,7 +425,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         mapping[name] = frozenset(pks)
         self.source_pks = EntityReference(mapping)
 
-    def to_results_entity(self, *names: str) -> ClusterEntity:
+    def to_cluster_entity(self, *names: str) -> ClusterEntity:
         """Convert this SourceEntity to a ClusterEntity with the specified datasets.
 
         This method makes diffing really easy. Testing whether ResultEntity objects
@@ -436,7 +436,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         ```python
         actual: set[ClusterEntity] = ...
         expected: set[ClusterEntity] = {
-            s.to_results_entity("dataset1", "dataset2")
+            s.to_cluster_entity("dataset1", "dataset2")
             for s in source_entities
         }
 

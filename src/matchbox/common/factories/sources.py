@@ -1,4 +1,4 @@
-"""Factories for generating dummy sources and linked sources for testing."""
+"""Factories for generating sources and linked source testkits for testing."""
 
 import warnings
 from functools import cache, wraps
@@ -66,8 +66,8 @@ class SourceConfig(BaseModel):
     repetition: int = Field(default=0)
 
 
-class SourceDummy(BaseModel):
-    """Complete representation of a generated dummy Source."""
+class SourceTestkit(BaseModel):
+    """A testkit of data and metadata for a Source."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -85,7 +85,7 @@ class SourceDummy(BaseModel):
         return self.source.address.full_name
 
     def to_mock(self) -> Mock:
-        """Create a mock Source object that mimics this dummy source's behavior."""
+        """Create a mock Source object that mimics this source testkit's behavior."""
         mock_source = create_autospec(self.source)
 
         mock_source.set_engine.return_value = mock_source
@@ -103,13 +103,13 @@ class SourceDummy(BaseModel):
         return self.data
 
 
-class LinkedSourcesDummy(BaseModel):
-    """Container for multiple related sources with entity tracking."""
+class LinkedSourcesTestkit(BaseModel):
+    """Container for multiple related Source testkits with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     true_entities: dict[int, SourceEntity] = Field(default_factory=dict)
-    sources: dict[str, SourceDummy]
+    sources: dict[str, SourceTestkit]
 
     def find_entities(
         self,
@@ -156,14 +156,14 @@ class LinkedSourcesDummy(BaseModel):
 
         Args:
             probabilities: Probabilities table to diff
-            sources: Subset of the LinkedSourcesDummy.sources that represents
+            sources: Subset of the LinkedSourcesTestkit.sources that represents
                 the true sources to compare against
             left_clusters: ClusterEntity objects from the object used as an input
                 to the process that produced the probabilities table. Should
-                be a SourceDummy.entities or ModelDummy.entities.
+                be a SourceTestkit.entities or ModelTestkit.entities.
             right_clusters: ClusterEntity objects from the object used as an input
                 to the process that produced the probabilities table. Should
-                be a SourceDummy.entities or ModelDummy.entities.
+                be a SourceTestkit.entities or ModelTestkit.entities.
             threshold: Threshold for considering a match true
             verbose: Whether to include verbose information in the report
 
@@ -174,7 +174,7 @@ class LinkedSourcesDummy(BaseModel):
         """
         return diff_results(
             expected=[
-                entity.to_results_entity(*sources)
+                entity.to_cluster_entity(*sources)
                 for entity in self.true_entities.values()
             ],
             actual=probabilities_to_results_entities(
@@ -356,8 +356,8 @@ def source_factory(
     n_true_entities: int = 10,
     repetition: int = 0,
     seed: int = 42,
-) -> SourceDummy:
-    """Generate a complete dummy source."""
+) -> SourceTestkit:
+    """Generate a complete source testkit."""
     generator = Faker()
     generator.seed_instance(seed)
 
@@ -422,7 +422,7 @@ def source_factory(
         ],
     )
 
-    return SourceDummy(
+    return SourceTestkit(
         source=source,
         features=features,
         data=data,
@@ -436,7 +436,7 @@ def linked_sources_factory(
     source_configs: tuple[SourceConfig, ...] | None = None,
     n_true_entities: int | None = None,
     seed: int = 42,
-) -> LinkedSourcesDummy:
+) -> LinkedSourcesTestkit:
     """Generate a set of linked sources with tracked entities.
 
     Args:
@@ -566,8 +566,8 @@ def linked_sources_factory(
         generator=generator, features=all_features, n=max_entities
     )
 
-    # Initialize LinkedSourcesDummy
-    linked = LinkedSourcesDummy(
+    # Initialize LinkedSourcesTestkit
+    linked = LinkedSourcesTestkit(
         true_entities={entity.id: entity for entity in all_entities},
         sources={},
     )
@@ -605,7 +605,7 @@ def linked_sources_factory(
         )
 
         # Add source to linked.sources
-        linked.sources[config.full_name] = SourceDummy(
+        linked.sources[config.full_name] = SourceTestkit(
             source=source,
             features=tuple(config.features),
             data=data,

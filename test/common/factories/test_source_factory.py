@@ -19,7 +19,7 @@ from matchbox.common.sources import SourceAddress
 
 
 def test_source_factory_default():
-    """Test that source_factory generates a dummy source with default parameters."""
+    """Test that source_factory generates a source testkit with default parameters."""
     source = source_factory()
 
     assert len(source.entities) == 10
@@ -87,7 +87,7 @@ def test_source_factory_data_hashes_integrity():
 
     n_true_entities = 3
     repetition = 1
-    dummy_source = source_factory(
+    source_testkit = source_factory(
         n_true_entities=n_true_entities,
         repetition=repetition,
         features=features,
@@ -95,8 +95,8 @@ def test_source_factory_data_hashes_integrity():
     )
 
     # Convert to pandas for easier analysis
-    hashes_df = dummy_source.data_hashes.to_pandas()
-    data_df = dummy_source.data.to_pandas()
+    hashes_df = source_testkit.data_hashes.to_pandas()
+    data_df = source_testkit.data.to_pandas()
 
     # For each hash group, verify that the corresponding rows are identical
     for _, group in hashes_df.groupby("hash"):
@@ -124,8 +124,8 @@ def test_source_factory_data_hashes_integrity():
 
 
 def test_source_dummy_to_mock():
-    """Test that SourceDummy.to_mock() creates a correctly configured mock."""
-    # Create a source dummy with some test data
+    """Test that SourceTestkit.to_mock() creates a correctly configured mock."""
+    # Create a source testkit with some test data
     features = [
         FeatureConfig(
             name="test_field",
@@ -134,12 +134,12 @@ def test_source_dummy_to_mock():
         )
     ]
 
-    dummy_source = source_factory(
+    source_testkit = source_factory(
         features=features, full_name="test.source", n_true_entities=2, seed=42
     )
 
     # Create the mock
-    mock_source = dummy_source.to_mock()
+    mock_source = source_testkit.to_mock()
 
     # Test that method calls are tracked
     mock_source.set_engine("test_engine")
@@ -153,14 +153,14 @@ def test_source_dummy_to_mock():
     # Test method return values
     assert mock_source.set_engine("test_engine") == mock_source
     assert mock_source.default_columns() == mock_source
-    assert mock_source.hash_data() == dummy_source.data_hashes
+    assert mock_source.hash_data() == source_testkit.data_hashes
 
     # Test model dump methods
-    original_dump = dummy_source.source.model_dump()
+    original_dump = source_testkit.source.model_dump()
     mock_dump = mock_source.model_dump()
     assert mock_dump == original_dump
 
-    original_json = dummy_source.source.model_dump_json()
+    original_json = source_testkit.source.model_dump_json()
     mock_json = mock_source.model_dump_json()
     assert mock_json == original_json
 
@@ -169,9 +169,9 @@ def test_source_dummy_to_mock():
     mock_source.model_dump_json.assert_called_once()
 
     # Test that to_table contains the correct data
-    assert mock_source.to_table == dummy_source.data
+    assert mock_source.to_table == source_testkit.data
     # Verify the number of rows matches what we created
-    assert mock_source.to_table.shape[0] == dummy_source.data.shape[0]
+    assert mock_source.to_table.shape[0] == source_testkit.data.shape[0]
 
 
 def test_source_factory_mock_properties():
@@ -193,30 +193,30 @@ def test_source_factory_mock_properties():
     full_name = "companies"
     engine = create_engine("sqlite:///:memory:")
 
-    dummy_source = source_factory(
+    source_testkit = source_factory(
         features=features, full_name=full_name, engine=engine
     ).source
 
     # Check source address properties
-    assert dummy_source.address.full_name == full_name
+    assert source_testkit.address.full_name == full_name
 
     # Warehouse hash should be consistent for same engine config
     expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
-    assert dummy_source.address.warehouse_hash == expected_address.warehouse_hash
+    assert source_testkit.address.warehouse_hash == expected_address.warehouse_hash
 
     # Check column configuration
-    assert len(dummy_source.columns) == len(features)
-    for feature, column in zip(features, dummy_source.columns, strict=False):
+    assert len(source_testkit.columns) == len(features)
+    for feature, column in zip(features, source_testkit.columns, strict=False):
         assert column.name == feature.name
         assert column.alias == feature.name
         assert column.type == feature.sql_type
 
     # Check default alias (should match full_name) and default pk
-    assert dummy_source.alias == full_name
-    assert dummy_source.db_pk == "pk"
+    assert source_testkit.alias == full_name
+    assert source_testkit.db_pk == "pk"
 
     # Verify source properties are preserved through model_dump
-    dump = dummy_source.model_dump()
+    dump = source_testkit.model_dump()
     assert dump["address"]["full_name"] == full_name
     assert dump["columns"] == [
         {"name": f.name, "alias": f.name, "type": f.sql_type} for f in features
@@ -244,9 +244,9 @@ def test_entity_variations_tracking():
     source_name = source.source.address.full_name
 
     # Process each ClusterEntity group
-    for results_entity in source.entities:
+    for cluster_entity in source.entities:
         # Get the values for this entity
-        entity_values = results_entity.get_values({source_name: source})
+        entity_values = cluster_entity.get_values({source_name: source})
 
         # Calculate total unique variations (equivalent to total_unique_variations)
         unique_variations = 0
@@ -261,11 +261,11 @@ def test_entity_variations_tracking():
         # Verify the data values match expectations
         data_df = source.data.to_pandas()
 
-        # Get PKs for this result entity
-        result_pks = results_entity.get_source_pks(source_name)
+        # Get PKs for this cluster entity
+        result_pks = cluster_entity.get_source_pks(source_name)
         assert result_pks is not None
 
-        # All rows for a given result entity should share the same company value
+        # All rows for a given cluster entity should share the same company value
         result_rows = data_df[data_df["pk"].isin(result_pks)]
         assert len(result_rows["company"].unique()) == 1
 

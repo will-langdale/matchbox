@@ -20,7 +20,7 @@
 
 ## Using the system
 
-The factory system aims to provide objects that facilitate three groups of testing scenarios:
+The factory system aims to provide `*Testkit` objects that facilitate three groups of testing scenarios:
 
 * Realistic mock `Source` and `Model` objects to test client-side connectivity functions
 * Realistic mock data to test server-side adapter functions
@@ -28,11 +28,11 @@ The factory system aims to provide objects that facilitate three groups of testi
 
 Three broad functions are provided:
 
-* [`source_factory()`][matchbox.common.factories.sources.source_factory] generates [`SourceDummy`][matchbox.common.factories.sources.SourceDummy] objects, which contain dummy `Source`s and associated data
-* [`linked_sources_factory()`][matchbox.common.factories.sources.linked_sources_factory] generates [`LinkedSourcesDummy`][matchbox.common.factories.sources.LinkedSourcesDummy] objects, which contain a collection of interconnected `SourceDummy` objects, and the true entities this data describes
-* [`model_factory()`][matchbox.common.factories.models.model_factory] generates [`ModelDummy`][matchbox.common.factories.models.ModelDummy] objects, which mock probabilities that can connect both `SourceDummy` and other `ModelDummy` objects in ways that fail and succeed predictably
+* [`source_factory()`][matchbox.common.factories.sources.source_factory] generates [`SourceTestkit`][matchbox.common.factories.sources.SourceTestkit] objects, which contain dummy `Source`s and associated data
+* [`linked_sources_factory()`][matchbox.common.factories.sources.linked_sources_factory] generates [`LinkedSourcesTestkit`][matchbox.common.factories.sources.LinkedSourcesTestkit] objects, which contain a collection of interconnected `SourceTestkit` objects, and the true entities this data describes
+* [`model_factory()`][matchbox.common.factories.models.model_factory] generates [`ModelTestkit`][matchbox.common.factories.models.ModelTestkit] objects, which mock probabilities that can connect both `SourceTestkit` and other `ModelTestkit` objects in ways that fail and succeed predictably
 
-Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ClusterEntity`][matchbox.common.factories.entities.ClusterEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparators have been implemented to make this simple to implement, understand, and read in unit testing.
+Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ClusterEntity`][matchbox.common.factories.entities.ClusterEntity]s to share data. The source is the true answer, and the clusters are the merging data as it moves through the system. A comprehensive set of comparators have been implemented to make this simple to implement, understand, and read in unit testing.
 
 All factory functions are configured to provide a sensible, useful default.
 
@@ -47,11 +47,11 @@ We can use the factories to test inserting or retrieving isolated `Source` or `M
 Perhaps you're testing the API and want to put a realistic `Source` in the ingestion pipeline.
 
 ```python
-dummy_source = source_factory()
+source_testkit = source_factory()
 
 # Setup store
 store = MetadataStore()
-update_id = store.cache_source(dummy_source.source)
+update_id = store.cache_source(source_testkit.source)
 ```
 
 Or you're testing the client handler and want to mock the API.
@@ -59,11 +59,10 @@ Or you're testing the client handler and want to mock the API.
 ```python
 @patch("matchbox.client.helpers.index.Source")
 def test_my_api(MockSource: Mock, matchbox_api: MockRouter):
-    source = source_factory(
+    source_testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}]
     )
-    mock_source_instance = source.to_mock()
-    MockSource.return_value = mock_source_instance
+    MockSource.return_value = source_testkit.to_mock()
 ```
 
 `source_factory()` can be configured with a powerful range of [`FeatureConfig`][matchbox.common.factories.entities.FeatureConfig] objects, including a [variety of rules][matchbox.common.factories.entities.VariationRule] which distort and duplicate the data in predictable ways. These use [Faker](https://faker.readthedocs.io/) to generate data.
@@ -98,50 +97,50 @@ The factories can generate data suitable for `MatchboxDBAdapter.index()`, `Match
 Adding a `Source`.
 
 ```python
-dummy_source = source_factory()
+source_testkit = source_factory()
 backend.index(
-    source=dummy_source.source
-    data_hashes=dummy_source.data_hashes
+    source=source_testkit.source
+    data_hashes=source_testkit.data_hashes
 )
 ```
 
 Adding a `Model`.
 
 ```python
-dummy_model = model_factory()
-backend.insert_model(model=dummy_model.model.metadata)
+model_testkit = model_factory()
+backend.insert_model(model=model_testkit.model.metadata)
 ```
 
 Inserting results.
 
 ```python
-dummy_model = model_factory()
+model_testkit = model_factory()
 backend.set_model_results(
-    model=dummy_model.model.metadata.full_name, 
-    results=dummy_model.probabilities
+    model=model_testkit.model.metadata.full_name, 
+    results=model_testkit.probabilities
 )
 ```
 
 `linked_sources_factory()` and `model_factory()` can be used together to create broader systems of data that connect -- or don't -- in controlled ways.
 
 ```python
-linked = linked_sources_factory()
+linked_testkit = linked_sources_factory()
 
-for dummy_source in linked.sources.values():
+for source_testkit in linked_testkit.sources.values():
     backend.index(
-        source=dummy_source.source
-        data_hashes=dummy_source.data_hashes
+        source=source_testkit.source
+        data_hashes=source_testkit.data_hashes
     )
 
-dummy_model = model_factory(
-    left_source=linked.sources["crn"],
-    true_entities=linked.true_entities.values(),
+model_testkit = model_factory(
+    left_testkit=linked_testkit.sources["crn"],
+    true_entities=linked_testkit.true_entities.values(),
 )
 
-backend.insert_model(model=dummy_model.model.metadata)
+backend.insert_model(model=model_testkit.model.metadata)
 backend.set_model_results(
-    model=dummy_model.model.metadata.full_name, 
-    results=dummy_model.probabilities
+    model=model_testkit.model.metadata.full_name, 
+    results=model_testkit.probabilities
 )
 ```
 
@@ -155,19 +154,19 @@ Configure the true state of your data with `linked_sources_factory()`. Its defau
 
 `linked_sources_factory()` can be configured using tuples of [`SourceConfig`][matchbox.common.factories.sources.SourceConfig] objects. Using these you can create complex sets of interweaving sources for methodologies to be tested against.
 
-The `model_factory()` is designed so you can chain together known processes in any order, before using your real methodology. [`LinkedSourcesDummy.diff_results()`][matchbox.common.factories.sources.LinkedSourcesDummy.diff_results] will make any probabilistic output comparable with the true source entities, and give a detailed diff to help you debug.
+The `model_factory()` is designed so you can chain together known processes in any order, before using your real methodology. [`LinkedSourcesTestkit.diff_results()`][matchbox.common.factories.sources.LinkedSourcesTestkit.diff_results] will make any probabilistic output comparable with the true source entities, and give a detailed diff to help you debug.
 
 ```python
-linked: LinkedSourcesDummy = linked_sources_factory()
+linked_testkit: LinkedSourcesTestkit = linked_sources_factory()
 
 # Create perfect deduped models first
-left_deduped: ModelDummy = model_factory(
-    left_source=linked.sources["crn"],
-    true_entities=linked.true_entities.values(),
+left_deduped: ModelTestkit = model_factory(
+    left_testkit=linked_testkit.sources["crn"],
+    true_entities=linked_testkit.true_entities.values(),
 )
-right_deduped: ModelDummy = model_factory(
-    left_source=linked.sources["cdms"],
-    true_entities=linked.true_entities.values(),
+right_deduped: ModelTestkit = model_factory(
+    left_testkit=linked_testkit.sources["cdms"],
+    true_entities=linked_testkit.true_entities.values(),
 )
 
 # Create a model and generate probabilities
@@ -179,7 +178,7 @@ model: Model = make_model(
 results: Results = model.run()
 
 # Diff, assert, and log the message if it fails
-identical, report = linked.diff_results(
+identical, report = linked_testkit.diff_results(
     probabilities=results.probabilities,  # Your methodology's output
     left_clusters=left_deduped.entities,  # Output of left deduper -- left input to your methodology
     right_clusters=right_deduped.entities,  # Output of right deduper -- left input to your methodology

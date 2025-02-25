@@ -1,4 +1,4 @@
-"""Factory functions for generating dummy models and data for testing."""
+"""Factory functions for generating model testkits and data for testing."""
 
 import warnings
 from collections import Counter
@@ -31,7 +31,7 @@ from matchbox.common.factories.entities import (
 )
 from matchbox.common.factories.sources import (
     SourceConfig,
-    SourceDummy,
+    SourceTestkit,
     linked_sources_factory,
 )
 from matchbox.common.transform import DisjointSet, graph_results
@@ -513,8 +513,8 @@ def generate_entity_probabilities(
     )
 
 
-class ModelDummy(BaseModel):
-    """Complete representation of a generated dummy Model."""
+class ModelTestkit(BaseModel):
+    """A testkit of data and metadata for a Model."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -582,13 +582,13 @@ class ModelDummy(BaseModel):
         self._threshold = value
 
     @model_validator(mode="after")
-    def init_query_lookup(self) -> "ModelDummy":
+    def init_query_lookup(self) -> "ModelTestkit":
         """Initialize the query lookup table."""
         self.threshold = 0
         return self
 
     def to_mock(self) -> Mock:
-        """Create a mock Model object that mimics this dummy model's behavior."""
+        """Create a mock Model object that mimics this model testkit's behavior."""
         mock_model = create_autospec(Model)
 
         # Set basic attributes
@@ -641,38 +641,39 @@ class ModelDummy(BaseModel):
 def model_factory(
     name: str | None = None,
     description: str | None = None,
-    left_source: SourceDummy | ModelDummy | None = None,
-    right_source: SourceDummy | ModelDummy | None = None,
+    left_testkit: SourceTestkit | ModelTestkit | None = None,
+    right_testkit: SourceTestkit | ModelTestkit | None = None,
     true_entities: tuple[SourceEntity, ...] | None = None,
     model_type: Literal["deduper", "linker"] | None = None,
     n_true_entities: int | None = None,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
-) -> ModelDummy:
-    """Generate a complete dummy model.
+) -> ModelTestkit:
+    """Generate a complete model testkit.
 
     Allows autoconfiguration with minimal settings, or more nuanced control.
 
     Can either be used to generate a model in a pipeline, interconnected with existing
-    SourceDummy or ModelDummy objects, or generate a standalone model with random data.
+    SourceTestkit or ModelTestkit objects, or generate a standalone model with
+    random data.
 
     Args:
         name: Name of the model
         description: Description of the model
-        left_source: A SourceDummy or ModelDummy for the left source
-        right_source: If creating a linker, a SourceDummy or ModelDummy for the
+        left_testkit: A SourceTestkit or ModelTestkit for the left source
+        right_testkit: If creating a linker, a SourceTestkit or ModelTestkit for the
             right source
         true_entities: Ground truth SourceEntity objects to use for
             generating probabilities. Must be supplied if sources are given
         model_type: Type of the model, one of 'deduper' or 'linker'
-            Defaults to deduper. Ignored if left_source or right_source are provided.
+            Defaults to deduper. Ignored if left_testkit or right_testkit are provided.
         n_true_entities: Base number of entities to generate when using default configs.
-            Defaults to 10. Ignored if left_source or right_source are provided.
+            Defaults to 10. Ignored if left_testkit or right_testkit are provided.
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility
 
     Returns:
-        ModelDummy: A dummy model with generated data
+        ModelTestkit: A model testkit with generated data
 
     Raises:
         ValueError:
@@ -684,10 +685,10 @@ def model_factory(
     if not (0 <= prob_range[0] <= prob_range[1] <= 1):
         raise ValueError("Probabilities must be increasing values between 0 and 1")
 
-    if left_source is not None and true_entities is None:
+    if left_testkit is not None and true_entities is None:
         raise ValueError("Must provide true entities when sources are given")
 
-    if any([left_source, true_entities]) and any(
+    if any([left_testkit, true_entities]) and any(
         [model_type is not None, n_true_entities is not None]
     ):
         warnings.warn(
@@ -703,17 +704,17 @@ def model_factory(
     dummy_true_entities = None
 
     # ==== Source configuration ====
-    if left_source is not None:
+    if left_testkit is not None:
         # Using provided sources
-        left_resolution = left_source.name
-        left_query = left_source.query()
-        left_entities = left_source.entities
+        left_resolution = left_testkit.name
+        left_query = left_testkit.query()
+        left_entities = left_testkit.entities
 
-        if right_source is not None:
+        if right_testkit is not None:
             model_type = ModelType.LINKER
-            right_resolution = right_source.name
-            right_query = right_source.query()
-            right_entities = right_source.entities
+            right_resolution = right_testkit.name
+            right_query = right_testkit.query()
+            right_entities = right_testkit.entities
         else:
             model_type = ModelType.DEDUPER
             right_resolution = right_query = right_entities = None
@@ -807,8 +808,8 @@ def model_factory(
     # ==== Entity and probability generation ====
     # We need to generate true entities when either:
     # * No true entities are provided (true_entities is None)
-    # * We're using default sources (left_source is None)
-    if true_entities is None or left_source is None:
+    # * We're using default sources (left_testkit is None)
+    if true_entities is None or left_testkit is None:
         final_true_entities = generator.random_elements(
             elements=dummy_true_entities,
             unique=True,
@@ -826,7 +827,7 @@ def model_factory(
     )
 
     # ==== Final model creation ====
-    return ModelDummy(
+    return ModelTestkit(
         model=model,
         left_query=left_query,
         left_clusters={entity.id: entity for entity in left_entities},

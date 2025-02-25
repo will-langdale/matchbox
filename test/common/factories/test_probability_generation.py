@@ -18,7 +18,7 @@ from matchbox.common.factories.models import (
 )
 from matchbox.common.transform import DisjointSet
 
-from ..factories.test_entity_factory import make_results_entity, make_source_entity
+from ..factories.test_entity_factory import make_cluster_entity, make_source_entity
 
 
 @pytest.mark.parametrize(
@@ -252,8 +252,8 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "test", ["a1"]),
-                    make_results_entity(2, "test", ["a2"]),
+                    make_cluster_entity(1, "test", ["a1"]),
+                    make_cluster_entity(2, "test", ["a2"]),
                 ]
             ),
             None,  # Deduplication case
@@ -263,8 +263,8 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
             id="basic_dedupe",
         ),
         pytest.param(
-            frozenset([make_results_entity(1, "left", ["a1"])]),
-            frozenset([make_results_entity(2, "right", ["b1"])]),
+            frozenset([make_cluster_entity(1, "left", ["a1"])]),
+            frozenset([make_cluster_entity(2, "right", ["b1"])]),
             frozenset(
                 [
                     make_source_entity("left", ["a1"], "a"),
@@ -276,8 +276,8 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
             id="basic_link_no_match",
         ),
         pytest.param(
-            frozenset([make_results_entity(1, "test", ["a1"])]),
-            frozenset([make_results_entity(2, "test", ["a2"])]),
+            frozenset([make_cluster_entity(1, "test", ["a1"])]),
+            frozenset([make_cluster_entity(2, "test", ["a2"])]),
             frozenset([make_source_entity("test", ["a1", "a2"], "a")]),
             (0.8, 1.0),
             {"edge_count": 1, "prob_range": (80, 100)},
@@ -286,9 +286,9 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "test", ["a1", "a2"]),
-                    make_results_entity(2, "test", ["a2", "a3"]),
-                    make_results_entity(3, "test", ["a3", "a4"]),
+                    make_cluster_entity(1, "test", ["a1", "a2"]),
+                    make_cluster_entity(2, "test", ["a2", "a3"]),
+                    make_cluster_entity(3, "test", ["a3", "a4"]),
                 ]
             ),
             None,
@@ -302,14 +302,14 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "test", ["a1"]),
-                    make_results_entity(2, "test", ["b1"]),
+                    make_cluster_entity(1, "test", ["a1"]),
+                    make_cluster_entity(2, "test", ["b1"]),
                 ]
             ),
             frozenset(
                 [
-                    make_results_entity(3, "test", ["a2"]),
-                    make_results_entity(4, "test", ["b2"]),
+                    make_cluster_entity(3, "test", ["a2"]),
+                    make_cluster_entity(4, "test", ["b2"]),
                 ]
             ),
             frozenset(
@@ -325,10 +325,10 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "test", ["a1"]),
-                    make_results_entity(2, "test", ["a2"]),
-                    make_results_entity(3, "test", ["x1"]),  # No source for this
-                    make_results_entity(4, "test", ["y1"]),  # No source for this
+                    make_cluster_entity(1, "test", ["a1"]),
+                    make_cluster_entity(2, "test", ["a2"]),
+                    make_cluster_entity(3, "test", ["x1"]),  # No source for this
+                    make_cluster_entity(4, "test", ["y1"]),  # No source for this
                 ]
             ),
             None,
@@ -348,8 +348,8 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "test", ["a1"]),
-                    make_results_entity(2, "test", ["a2"]),
+                    make_cluster_entity(1, "test", ["a1"]),
+                    make_cluster_entity(2, "test", ["a2"]),
                 ]
             ),
             None,
@@ -361,9 +361,9 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "test", ["a1", "a2"]),  # Merged
-                    make_results_entity(2, "test", ["a3"]),  # Unmerged
-                    make_results_entity(3, "test", ["b1"]),  # From different source
+                    make_cluster_entity(1, "test", ["a1", "a2"]),  # Merged
+                    make_cluster_entity(2, "test", ["a3"]),  # Unmerged
+                    make_cluster_entity(3, "test", ["b1"]),  # From different source
                 ]
             ),
             None,
@@ -380,9 +380,9 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_results_entity(1, "dataset1", ["1"]),
-                    make_results_entity(2, "dataset2", ["A"]),
-                    make_results_entity(3, "dataset3", ["X"]),
+                    make_cluster_entity(1, "dataset1", ["1"]),
+                    make_cluster_entity(2, "dataset2", ["A"]),
+                    make_cluster_entity(3, "dataset3", ["X"]),
                 ]
             ),
             None,
@@ -454,9 +454,9 @@ def test_seed_determinism(
     source = make_source_entity("test", ["a1", "a2", "a3"], "entity_a")
     entities = frozenset(
         [
-            make_results_entity(1, "test", ["a1"]),
-            make_results_entity(2, "test", ["a2"]),
-            make_results_entity(3, "test", ["a3"]),
+            make_cluster_entity(1, "test", ["a1"]),
+            make_cluster_entity(2, "test", ["a2"]),
+            make_cluster_entity(3, "test", ["a3"]),
         ]
     )
 
@@ -466,9 +466,9 @@ def test_seed_determinism(
         # For linking case, use second set of entities
         right_entities = frozenset(
             [
-                make_results_entity(4, "test", ["a1"]),
-                make_results_entity(5, "test", ["a2"]),
-                make_results_entity(6, "test", ["a3"]),
+                make_cluster_entity(4, "test", ["a1"]),
+                make_cluster_entity(5, "test", ["a2"]),
+                make_cluster_entity(6, "test", ["a3"]),
             ]
         )
 
@@ -504,21 +504,21 @@ def test_disjoint_set_recovery():
     source1 = make_source_entity("dataset1", ["1", "2", "3"], "entity1")
     source2 = make_source_entity("dataset1", ["4", "5", "6"], "entity2")
 
-    # Create split results entities
-    results = frozenset(
+    # Create split cluster entities
+    clusters = frozenset(
         [
-            make_results_entity(1, "dataset1", ["1"]),
-            make_results_entity(2, "dataset1", ["2"]),
-            make_results_entity(3, "dataset1", ["3"]),
-            make_results_entity(4, "dataset1", ["4"]),
-            make_results_entity(5, "dataset1", ["5"]),
-            make_results_entity(6, "dataset1", ["6"]),
+            make_cluster_entity(1, "dataset1", ["1"]),
+            make_cluster_entity(2, "dataset1", ["2"]),
+            make_cluster_entity(3, "dataset1", ["3"]),
+            make_cluster_entity(4, "dataset1", ["4"]),
+            make_cluster_entity(5, "dataset1", ["5"]),
+            make_cluster_entity(6, "dataset1", ["6"]),
         ]
     )
 
     # Generate probabilities
     table = generate_entity_probabilities(
-        left_entities=results,
+        left_entities=clusters,
         right_entities=None,
         source_entities=frozenset([source1, source2]),
         prob_range=(0.9, 1.0),
@@ -554,8 +554,8 @@ def test_invalid_probability_ranges(prob_range: tuple[float, float]):
     source = make_source_entity("test", ["a1", "a2"], "entity")
     entities = frozenset(
         [
-            make_results_entity(1, "test", ["a1"]),
-            make_results_entity(2, "test", ["a2"]),
+            make_cluster_entity(1, "test", ["a1"]),
+            make_cluster_entity(2, "test", ["a2"]),
         ]
     )
 
@@ -583,7 +583,7 @@ def test_complex_entity_recovery():
     )
 
     # Create fragmented ClusterEntity objects
-    results = frozenset(
+    clusters = frozenset(
         [
             ClusterEntity(source_pks=EntityReference({"dataset1": frozenset(["1"])})),
             ClusterEntity(source_pks=EntityReference({"dataset1": frozenset(["2"])})),
@@ -595,7 +595,7 @@ def test_complex_entity_recovery():
 
     # Generate probabilities
     table = generate_entity_probabilities(
-        left_entities=results,
+        left_entities=clusters,
         right_entities=None,
         source_entities=frozenset([source]),
         prob_range=(0.9, 1.0),

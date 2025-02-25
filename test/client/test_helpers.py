@@ -505,7 +505,7 @@ def test_index_with_columns(
     """Test indexing with different column definition formats."""
     engine = create_engine("sqlite:///:memory:")
 
-    # Create source dummy and mock
+    # Create source testkit and mock
     source = source_factory(
         features=[
             {"name": "name", "base_generator": "name"},

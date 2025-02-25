@@ -313,7 +313,7 @@ def test_source_references():
 
 
 def test_linked_sources_entity_hierarchy():
-    """Test that LinkedSourcesDummy correctly maintains entity hierarchy."""
+    """Test that LinkedSourcesTestkit correctly maintains entity hierarchy."""
     # Create linked sources with multiple sources
     features = {
         "name": FeatureConfig(
@@ -344,23 +344,23 @@ def test_linked_sources_entity_hierarchy():
 
     # For each source, verify its entities are subsets of true_entities
     for source_name, source in linked.sources.items():
-        for results_entity in source.entities:
-            # Find all true entities that could be parents of this results entity
+        for cluster_entity in source.entities:
+            # Find all true entities that could be parents of this cluster entity
             matching_parents = [
                 true_entity
                 for true_entity in linked.true_entities.values()
-                if results_entity.is_subset_of_source_entity(true_entity)
+                if cluster_entity.is_subset_of_source_entity(true_entity)
             ]
 
-            # Each results entity must have at least one parent
+            # Each cluster entity must have at least one parent
             assert len(matching_parents) > 0, (
                 f"ClusterEntity in {source_name} has no parent in true_entities"
             )
 
-            # The source PKs from the results entity should be a subset of
+            # The source PKs from the cluster entity should be a subset of
             # at least one true entity's PKs
             assert any(
-                results_entity.source_pks <= true_entity.source_pks
+                cluster_entity.source_pks <= true_entity.source_pks
                 for true_entity in matching_parents
             ), f"ClusterEntity in {source_name} not a proper subset of any true entity"
 

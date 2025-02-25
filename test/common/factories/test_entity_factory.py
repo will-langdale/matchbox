@@ -15,7 +15,7 @@ from matchbox.common.factories.entities import (
 )
 
 
-def make_results_entity(id: int, dataset: str, pks: list[str]) -> ClusterEntity:
+def make_cluster_entity(id: int, dataset: str, pks: list[str]) -> ClusterEntity:
     """Helper to create a ClusterEntity with specified dataset and PKs."""
     return ClusterEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
 
@@ -65,7 +65,7 @@ def test_entity_reference_subset():
     assert not superset <= subset
 
 
-def test_results_entity_creation():
+def test_cluster_entity_creation():
     """Test basic ClusterEntity functionality."""
     ref = EntityReference({"dataset1": frozenset({"1", "2"})})
     entity = ClusterEntity(source_pks=ref)
@@ -74,7 +74,7 @@ def test_results_entity_creation():
     assert isinstance(entity.id, int)
 
 
-def test_results_entity_addition():
+def test_cluster_entity_addition():
     """Test combining ClusterEntity objects."""
     entity1 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"1"})}))
     entity2 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"2"})}))
@@ -139,9 +139,9 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                 }
             ),
             (
-                make_results_entity(1, "test", ["a1"]),
-                make_results_entity(2, "test", ["a2"]),
-                make_results_entity(3, "test", ["a3"]),
+                make_cluster_entity(1, "test", ["a1"]),
+                make_cluster_entity(2, "test", ["a2"]),
+                make_cluster_entity(3, "test", ["a3"]),
             ),
             None,
             80,
@@ -156,8 +156,8 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                     "probability": [95],
                 }
             ),
-            (make_results_entity(1, "left", ["a1"]),),
-            (make_results_entity(4, "right", ["b1"]),),
+            (make_cluster_entity(1, "left", ["a1"]),),
+            (make_cluster_entity(4, "right", ["b1"]),),
             0.9,
             1,  # One merged entity from the link
             id="basic_link_match",
@@ -171,9 +171,9 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                 }
             ),
             (
-                make_results_entity(1, "test", ["a1"]),
-                make_results_entity(2, "test", ["a2"]),
-                make_results_entity(3, "test", ["a3"]),
+                make_cluster_entity(1, "test", ["a1"]),
+                make_cluster_entity(2, "test", ["a2"]),
+                make_cluster_entity(3, "test", ["a3"]),
             ),
             None,
             80,
@@ -189,8 +189,8 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                 }
             ),
             (
-                make_results_entity(1, "test", ["a1"]),
-                make_results_entity(2, "test", ["a2"]),
+                make_cluster_entity(1, "test", ["a1"]),
+                make_cluster_entity(2, "test", ["a2"]),
             ),
             None,
             80,
@@ -231,8 +231,8 @@ def test_probabilities_to_results_entities(
     [
         # Identical sets
         pytest.param(
-            [make_results_entity(1, "d1", ["1", "2"])],
-            [make_results_entity(1, "d1", ["1", "2"])],
+            [make_cluster_entity(1, "d1", ["1", "2"])],
+            [make_cluster_entity(1, "d1", ["1", "2"])],
             False,
             True,
             {},
@@ -240,7 +240,7 @@ def test_probabilities_to_results_entities(
         ),
         # Completely missing entity
         pytest.param(
-            [make_results_entity(1, "d1", ["1", "2"])],
+            [make_cluster_entity(1, "d1", ["1", "2"])],
             [],
             True,
             False,
@@ -255,7 +255,7 @@ def test_probabilities_to_results_entities(
         # Extra entity
         pytest.param(
             [],
-            [make_results_entity(2, "d1", ["1", "2"])],
+            [make_cluster_entity(2, "d1", ["1", "2"])],
             True,
             False,
             {
@@ -268,8 +268,8 @@ def test_probabilities_to_results_entities(
         ),
         # Partial match
         pytest.param(
-            [make_results_entity(1, "d1", ["1", "2", "3"])],
-            [make_results_entity(2, "d1", ["1", "2", "4"])],
+            [make_cluster_entity(1, "d1", ["1", "2", "3"])],
+            [make_cluster_entity(2, "d1", ["1", "2", "4"])],
             True,
             False,
             {
@@ -296,13 +296,13 @@ def test_probabilities_to_results_entities(
         # Complex scenario - partial match, missing, and extra
         pytest.param(
             [
-                make_results_entity(1, "d1", ["1", "2"]),
-                make_results_entity(2, "d1", ["3", "4"]),
-                make_results_entity(3, "d1", ["5", "6"]),
+                make_cluster_entity(1, "d1", ["1", "2"]),
+                make_cluster_entity(2, "d1", ["3", "4"]),
+                make_cluster_entity(3, "d1", ["5", "6"]),
             ],
             [
-                make_results_entity(4, "d1", ["1", "7"]),
-                make_results_entity(5, "d1", ["8", "9"]),
+                make_cluster_entity(4, "d1", ["1", "7"]),
+                make_cluster_entity(5, "d1", ["8", "9"]),
             ],
             True,
             False,
@@ -333,8 +333,8 @@ def test_probabilities_to_results_entities(
         ),
         # Non-verbose mode (only shows mean_similarity)
         pytest.param(
-            [make_results_entity(1, "d1", ["1", "2", "3"])],
-            [make_results_entity(2, "d1", ["1", "2", "4"])],
+            [make_cluster_entity(1, "d1", ["1", "2", "3"])],
+            [make_cluster_entity(2, "d1", ["1", "2", "4"])],
             False,
             False,
             {
@@ -406,7 +406,7 @@ def test_diff_results(
 
 
 def test_source_to_results_conversion():
-    """Test converting source entities to results entities and comparing them."""
+    """Test converting source entities to cluster entities and comparing them."""
     # Create source entity present in multiple datasets
     source = SourceEntity(
         base_values={"name": "Test"},
@@ -415,10 +415,10 @@ def test_source_to_results_conversion():
         ),
     )
 
-    # Convert different subsets to results entities
-    results1 = source.to_results_entity("dataset1")
-    results2 = source.to_results_entity("dataset1", "dataset2")
-    results3 = source.to_results_entity("dataset2")
+    # Convert different subsets to cluster entities
+    results1 = source.to_cluster_entity("dataset1")
+    results2 = source.to_cluster_entity("dataset1", "dataset2")
+    results3 = source.to_cluster_entity("dataset2")
 
     # Test different comparison scenarios
     identical, report = diff_results([results1], [results1])
@@ -437,7 +437,7 @@ def test_source_to_results_conversion():
 
     # Test error case for missing dataset
     with pytest.raises(KeyError):
-        source.to_results_entity("nonexistent")
+        source.to_cluster_entity("nonexistent")
 
 
 @pytest.mark.parametrize(
