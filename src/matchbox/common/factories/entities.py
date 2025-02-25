@@ -121,8 +121,6 @@ def infer_sql_type(base: str, parameters: tuple) -> str:
         datetime.date: "DATE",
         datetime.time: "TIME",
         Decimal: "DECIMAL(10,2)",
-        bytes: "BLOB",
-        bytearray: "BLOB",
     }
 
     return type_map.get(python_type, "TEXT")

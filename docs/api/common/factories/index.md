@@ -28,17 +28,13 @@ The factory system aims to provide objects that facilitate three groups of testi
 
 Three broad functions are provided:
 
-* [`source_factory()`][matchbox.common.factories.sources.source_factory] generates [`SourceDummy`][matchbox.common.factories.sources.SourceDummy] objects, which contain dummy `Source`s and associated data, such as the true entities this data describes
+* [`source_factory()`][matchbox.common.factories.sources.source_factory] generates [`SourceDummy`][matchbox.common.factories.sources.SourceDummy] objects, which contain dummy `Source`s and associated data
 * [`linked_sources_factory()`][matchbox.common.factories.sources.linked_sources_factory] generates [`LinkedSourcesDummy`][matchbox.common.factories.sources.LinkedSourcesDummy] objects, which contain a collection of interconnected `SourceDummy` objects, and the true entities this data describes
 * [`model_factory()`][matchbox.common.factories.models.model_factory] generates [`ModelDummy`][matchbox.common.factories.models.ModelDummy] objects, which mock probabilities that can connect both `SourceDummy` and other `ModelDummy` objects in ways that fail and succeed predictably
 
-Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ResultsEntity`][matchbox.common.factories.entities.ResultsEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparators have been implements to make this simple to implement, understand, and read in unit testing.
+Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ResultsEntity`][matchbox.common.factories.entities.ResultsEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparators have been implemented to make this simple to implement, understand, and read in unit testing.
 
-All factory methods aim to be useful in three ways:
-
-* When used without arguments, produce a sensible, useful default
-* A set of arguments that allow more generalised generation
-* A set of arguments that allow specific control, such as using a `SourceDummy` as an argument to `model_factory()`
+All factory functions are configured to provide a sensible, useful default.
 
 The system has been designed to be as hashable as possible to enable caching. Often you'll need to provide tuples where you might normally provide lists.
 
