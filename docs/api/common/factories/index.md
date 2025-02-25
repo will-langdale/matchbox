@@ -32,7 +32,7 @@ Three broad functions are provided:
 * [`linked_sources_factory()`][matchbox.common.factories.sources.linked_sources_factory] generates [`LinkedSourcesDummy`][matchbox.common.factories.sources.LinkedSourcesDummy] objects, which contain a collection of interconnected `SourceDummy` objects, and the true entities this data describes
 * [`model_factory()`][matchbox.common.factories.models.model_factory] generates [`ModelDummy`][matchbox.common.factories.models.ModelDummy] objects, which mock probabilities that can connect both `SourceDummy` and other `ModelDummy` objects in ways that fail and succeed predictably
 
-Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ResultsEntity`][matchbox.common.factories.entities.ResultsEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparators have been implemented to make this simple to implement, understand, and read in unit testing.
+Underneath, these factories and objects use a system of [`SourceEntity`][matchbox.common.factories.entities.SourceEntity] and [`ClusterEntity`][matchbox.common.factories.entities.ClusterEntity]s to share data. The source is the true answer, and the results are the merging data as it moves through the system. A comprehensive set of comparators have been implemented to make this simple to implement, understand, and read in unit testing.
 
 All factory functions are configured to provide a sensible, useful default.
 
@@ -181,8 +181,8 @@ results: Results = model.run()
 # Diff, assert, and log the message if it fails
 identical, report = linked.diff_results(
     probabilities=results.probabilities,  # Your methodology's output
-    left_results=left_deduped.entities,  # Output of left deduper -- left input to your methodology
-    right_results=right_deduped.entities,  # Output of right deduper -- left input to your methodology
+    left_clusters=left_deduped.entities,  # Output of left deduper -- left input to your methodology
+    right_clusters=right_deduped.entities,  # Output of right deduper -- left input to your methodology
     sources=("crn", "cdms"),
     threshold=0,
     verbose=True,

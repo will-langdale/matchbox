@@ -354,7 +354,7 @@ def test_linked_sources_entity_hierarchy():
 
             # Each results entity must have at least one parent
             assert len(matching_parents) > 0, (
-                f"ResultsEntity in {source_name} has no parent in true_entities"
+                f"ClusterEntity in {source_name} has no parent in true_entities"
             )
 
             # The source PKs from the results entity should be a subset of
@@ -362,7 +362,7 @@ def test_linked_sources_entity_hierarchy():
             assert any(
                 results_entity.source_pks <= true_entity.source_pks
                 for true_entity in matching_parents
-            ), f"ResultsEntity in {source_name} not a proper subset of any true entity"
+            ), f"ClusterEntity in {source_name} not a proper subset of any true entity"
 
 
 def test_linked_sources_entity_count_behavior():

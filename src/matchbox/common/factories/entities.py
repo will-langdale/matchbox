@@ -309,7 +309,7 @@ class SourcePKMixin:
         return values
 
 
-class ResultsEntity(BaseModel, EntityIDMixin, SourcePKMixin):
+class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
     """Represents a merged entity mid-pipeline."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
@@ -317,26 +317,26 @@ class ResultsEntity(BaseModel, EntityIDMixin, SourcePKMixin):
     id: int = Field(default_factory=lambda: getrandbits(63))
     source_pks: EntityReference
 
-    def __add__(self, other: "ResultsEntity") -> "ResultsEntity":
-        """Combine two ResultsEntities by combining the source_pks."""
+    def __add__(self, other: "ClusterEntity") -> "ClusterEntity":
+        """Combine two ClusterEntity objects by combining the source_pks."""
         if other is None:
             return self
-        if not isinstance(other, ResultsEntity):
+        if not isinstance(other, ClusterEntity):
             return NotImplemented
-        return ResultsEntity(source_pks=self.source_pks + other.source_pks)
+        return ClusterEntity(source_pks=self.source_pks + other.source_pks)
 
-    def __radd__(self, other: Any) -> "ResultsEntity":
-        """Handle sum() by treating 0 as an empty ResultsEntity."""
+    def __radd__(self, other: Any) -> "ClusterEntity":
+        """Handle sum() by treating 0 as an empty ClusterEntity."""
         if other == 0:  # sum() starts with 0
             return self
         return NotImplemented
 
-    def __sub__(self, other: "ResultsEntity") -> dict[str, frozenset[str]]:
+    def __sub__(self, other: "ClusterEntity") -> dict[str, frozenset[str]]:
         """Return PKs in self that aren't in other, by dataset.
 
-        Used to diff two ResultsEntities.
+        Used to diff two ClusterEntity objects.
         """
-        if not isinstance(other, ResultsEntity):
+        if not isinstance(other, ClusterEntity):
             return NotImplemented
 
         diff = {}
@@ -347,19 +347,19 @@ class ResultsEntity(BaseModel, EntityIDMixin, SourcePKMixin):
 
         return diff
 
-    def __rsub__(self, other: "ResultsEntity") -> dict[str, frozenset[str]]:
+    def __rsub__(self, other: "ClusterEntity") -> dict[str, frozenset[str]]:
         """Support reverse subtraction."""
-        if not isinstance(other, ResultsEntity):
+        if not isinstance(other, ClusterEntity):
             return NotImplemented
         return other - self
 
     def __eq__(self, other: Any) -> bool:
         """Compare based on source_pks."""
-        if not isinstance(other, ResultsEntity):
+        if not isinstance(other, ClusterEntity):
             return NotImplemented
         return self.source_pks == other.source_pks
 
-    def __contains__(self, other: "ResultsEntity") -> bool:
+    def __contains__(self, other: "ClusterEntity") -> bool:
         """Check if this entity contains all PKs from other entity."""
         return other.source_pks <= self.source_pks
 
@@ -368,10 +368,10 @@ class ResultsEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         return hash(self.source_pks)
 
     def is_subset_of_source_entity(self, source_entity: "SourceEntity") -> bool:
-        """Check if this ResultsEntity's references are a subset of a SourceEntity's."""
+        """Check if this ClusterEntity's references are a subset of a SourceEntity's."""
         return self.source_pks <= source_entity.source_pks
 
-    def similarity_ratio(self, other: "ResultsEntity") -> float:
+    def similarity_ratio(self, other: "ClusterEntity") -> float:
         """Return ratio of shared PKs to total PKs across all datasets."""
         total_pks = 0
         shared_pks = 0
@@ -425,8 +425,8 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         mapping[name] = frozenset(pks)
         self.source_pks = EntityReference(mapping)
 
-    def to_results_entity(self, *names: str) -> ResultsEntity:
-        """Convert this SourceEntity to a ResultsEntity with the specified datasets.
+    def to_results_entity(self, *names: str) -> ClusterEntity:
+        """Convert this SourceEntity to a ClusterEntity with the specified datasets.
 
         This method makes diffing really easy. Testing whether ResultEntity objects
         are subsets of SourceEntity objects is a weaker, logically more fragile test
@@ -434,8 +434,8 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         a really simple syntactical expression of the test.
 
         ```python
-        actual: set[ResultsEntity] = ...
-        expected: set[ResultsEntity] = {
+        actual: set[ClusterEntity] = ...
+        expected: set[ClusterEntity] = {
             s.to_results_entity("dataset1", "dataset2")
             for s in source_entities
         }
@@ -446,10 +446,10 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         ```
 
         Args:
-            *names: Names of datasets to include in the ResultsEntity
+            *names: Names of datasets to include in the ClusterEntity
 
         Returns:
-            ResultsEntity containing only the specified datasets' PKs
+            ClusterEntity containing only the specified datasets' PKs
 
         Raises:
             KeyError: If any specified dataset name doesn't exist in this entity
@@ -459,7 +459,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
             raise KeyError(f"Datasets not found in entity: {missing_datasets}")
 
         filtered = {name: self.source_pks[name] for name in names}
-        return ResultsEntity(source_pks=EntityReference(filtered))
+        return ClusterEntity(source_pks=EntityReference(filtered))
 
 
 @cache
@@ -485,28 +485,28 @@ def generate_entities(
 
 def probabilities_to_results_entities(
     probabilities: pa.Table,
-    left_results: tuple[ResultsEntity, ...],
-    right_results: tuple[ResultsEntity, ...] | None = None,
+    left_clusters: tuple[ClusterEntity, ...],
+    right_clusters: tuple[ClusterEntity, ...] | None = None,
     threshold: float | int = 0,
-) -> tuple[ResultsEntity, ...]:
-    """Convert probabilities to ResultsEntities based on a threshold."""
-    left_lookup = {entity.id: entity for entity in left_results}
-    if right_results is not None:
-        right_lookup = {entity.id: entity for entity in right_results}
+) -> tuple[ClusterEntity, ...]:
+    """Convert probabilities to ClusterEntity objects based on a threshold."""
+    left_lookup = {entity.id: entity for entity in left_clusters}
+    if right_clusters is not None:
+        right_lookup = {entity.id: entity for entity in right_clusters}
     else:
         right_lookup = left_lookup
 
-    djs = DisjointSet[ResultsEntity]()
+    djs = DisjointSet[ClusterEntity]()
 
     # Validate threshold
     if isinstance(threshold, float):
         threshold = int(threshold * 100)
 
     # Add ALL entities to the disjoint set
-    for entity in left_results:
+    for entity in left_clusters:
         djs.add(entity)
-    if right_results is not None:
-        for entity in right_results:
+    if right_clusters is not None:
+        for entity in right_clusters:
             djs.add(entity)
 
     # Add edges to the disjoint set
@@ -517,24 +517,24 @@ def probabilities_to_results_entities(
                 right_lookup.get(record["right_id"]),
             )
 
-    components: set[set[ResultsEntity]] = djs.get_components()
+    components: set[set[ClusterEntity]] = djs.get_components()
 
-    entities: list[ResultsEntity] = []
+    entities: list[ClusterEntity] = []
     for component in components:
-        merged: ResultsEntity = sum(component)
+        merged: ClusterEntity = sum(component)
         entities.append(merged)
 
     return tuple(entities)
 
 
 def diff_results(
-    expected: list[ResultsEntity], actual: list[ResultsEntity], verbose: bool = False
+    expected: list[ClusterEntity], actual: list[ClusterEntity], verbose: bool = False
 ) -> tuple[bool, dict]:
-    """Compare two lists of ResultsEntity with detailed diff information.
+    """Compare two lists of ClusterEntity with detailed diff information.
 
     Args:
-        expected: Expected ResultsEntity list
-        actual: Actual ResultsEntity list
+        expected: Expected ClusterEntity list
+        actual: Actual ClusterEntity list
         verbose: Whether to return detailed diff report
 
     Returns:

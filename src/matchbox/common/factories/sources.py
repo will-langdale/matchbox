@@ -15,9 +15,9 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.factories.entities import (
+    ClusterEntity,
     EntityReference,
     FeatureConfig,
-    ResultsEntity,
     SourceEntity,
     SuffixRule,
     diff_results,
@@ -75,7 +75,7 @@ class SourceDummy(BaseModel):
     features: tuple[FeatureConfig, ...]
     data: pa.Table
     data_hashes: pa.Table
-    entities: tuple[ResultsEntity, ...] = Field(
+    entities: tuple[ClusterEntity, ...] = Field(
         description="Entities that were generated from the source."
     )
 
@@ -147,8 +147,8 @@ class LinkedSourcesDummy(BaseModel):
         self,
         probabilities: pa.Table,
         sources: list[str],
-        left_results: tuple[ResultsEntity, ...],
-        right_results: tuple[ResultsEntity, ...] | None = None,
+        left_clusters: tuple[ClusterEntity, ...],
+        right_clusters: tuple[ClusterEntity, ...] | None = None,
         threshold: int | float = 0,
         verbose: bool = False,
     ) -> tuple[bool, dict]:
@@ -158,10 +158,10 @@ class LinkedSourcesDummy(BaseModel):
             probabilities: Probabilities table to diff
             sources: Subset of the LinkedSourcesDummy.sources that represents
                 the true sources to compare against
-            left_results: ResultsEntities from the object used as an input
+            left_clusters: ClusterEntity objects from the object used as an input
                 to the process that produced the probabilities table. Should
                 be a SourceDummy.entities or ModelDummy.entities.
-            right_results: ResultsEntities from the object used as an input
+            right_clusters: ClusterEntity objects from the object used as an input
                 to the process that produced the probabilities table. Should
                 be a SourceDummy.entities or ModelDummy.entities.
             threshold: Threshold for considering a match true
@@ -179,8 +179,8 @@ class LinkedSourcesDummy(BaseModel):
             ],
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,
-                left_results=left_results,
-                right_results=right_results,
+                left_clusters=left_clusters,
+                right_clusters=right_clusters,
                 threshold=threshold,
             ),
             verbose=verbose,
@@ -404,9 +404,9 @@ def source_factory(
             entity.add_source_reference(full_name, pks)
             source_entities.append(entity)
 
-    # Create ResultsEntity objects from row_pks
+    # Create ClusterEntity objects from row_pks
     results_entities = [
-        ResultsEntity(
+        ClusterEntity(
             id=row_id,
             source_pks=EntityReference({full_name: frozenset(pks)}),
         )
@@ -583,9 +583,9 @@ def linked_sources_factory(
             seed_entities=all_entities,
         )
 
-        # Create ResultsEntity objects from row_pks
+        # Create ClusterEntity objects from row_pks
         results_entities = [
-            ResultsEntity(
+            ClusterEntity(
                 id=row_id,
                 source_pks=EntityReference({config.full_name: frozenset(pks)}),
             )

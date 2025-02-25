@@ -226,7 +226,7 @@ def test_source_factory_mock_properties():
 def test_entity_variations_tracking():
     """Test that entity variations are correctly tracked and accessible.
 
-    Asserts that ResultsEntity objects are proper subsets of their parent entities.
+    Asserts that ClusterEntity objects are proper subsets of their parent entities.
     """
     features = [
         FeatureConfig(
@@ -243,7 +243,7 @@ def test_entity_variations_tracking():
     source = source_factory(features=features, n_true_entities=2, seed=42)
     source_name = source.source.address.full_name
 
-    # Process each ResultsEntity group
+    # Process each ClusterEntity group
     for results_entity in source.entities:
         # Get the values for this entity
         entity_values = results_entity.get_values({source_name: source})
@@ -277,7 +277,7 @@ def test_entity_variations_tracking():
 
 
 def test_base_and_variation_entities():
-    """Test that base values and variations create correct ResultsEntity objects."""
+    """Test that base values and variations create correct ClusterEntity objects."""
     features = [
         FeatureConfig(
             name="company",
@@ -290,7 +290,7 @@ def test_base_and_variation_entities():
     source = source_factory(features=features, n_true_entities=1, seed=42)
     source_name = source.source.address.full_name
 
-    # Should have two ResultsEntity objects - one for base, one for variation
+    # Should have two ClusterEntity objects - one for base, one for variation
     assert len(source.entities) == 2
 
     # Get the base and variation entities
@@ -323,8 +323,8 @@ def test_base_and_variation_entities():
         elif value == variation_value:
             variation_entity = entity
 
-    assert base_entity is not None, "No ResultsEntity found for base value"
-    assert variation_entity is not None, "No ResultsEntity found for variation"
+    assert base_entity is not None, "No ClusterEntity found for base value"
+    assert variation_entity is not None, "No ClusterEntity found for variation"
 
     # Verify that each entity only contains its own variation
     base_values = base_entity.get_values({source_name: source})

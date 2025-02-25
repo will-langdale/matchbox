@@ -5,9 +5,9 @@ import pytest
 from faker import Faker
 
 from matchbox.common.factories.entities import (
+    ClusterEntity,
     EntityReference,
     FeatureConfig,
-    ResultsEntity,
     SourceEntity,
     diff_results,
     generate_entities,
@@ -15,9 +15,9 @@ from matchbox.common.factories.entities import (
 )
 
 
-def make_results_entity(id: int, dataset: str, pks: list[str]) -> ResultsEntity:
-    """Helper to create a ResultsEntity with specified dataset and PKs."""
-    return ResultsEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
+def make_results_entity(id: int, dataset: str, pks: list[str]) -> ClusterEntity:
+    """Helper to create a ClusterEntity with specified dataset and PKs."""
+    return ClusterEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
 
 
 def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
@@ -66,18 +66,18 @@ def test_entity_reference_subset():
 
 
 def test_results_entity_creation():
-    """Test basic ResultsEntity functionality."""
+    """Test basic ClusterEntity functionality."""
     ref = EntityReference({"dataset1": frozenset({"1", "2"})})
-    entity = ResultsEntity(source_pks=ref)
+    entity = ClusterEntity(source_pks=ref)
 
     assert entity.source_pks == ref
     assert isinstance(entity.id, int)
 
 
 def test_results_entity_addition():
-    """Test combining ResultsEntities."""
-    entity1 = ResultsEntity(source_pks=EntityReference({"dataset1": frozenset({"1"})}))
-    entity2 = ResultsEntity(source_pks=EntityReference({"dataset1": frozenset({"2"})}))
+    """Test combining ClusterEntity objects."""
+    entity1 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"1"})}))
+    entity2 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"2"})}))
 
     combined = entity1 + entity2
     assert combined.source_pks["dataset1"] == frozenset({"1", "2"})
@@ -124,8 +124,8 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
 @pytest.mark.parametrize(
     (
         "probabilities",
-        "left_results",
-        "right_results",
+        "left_clusters",
+        "right_clusters",
         "threshold",
         "expected_count",
     ),
@@ -201,25 +201,25 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
 )
 def test_probabilities_to_results_entities(
     probabilities: pa.Table,
-    left_results: tuple[ResultsEntity, ...],
-    right_results: tuple[ResultsEntity, ...] | None,
+    left_clusters: tuple[ClusterEntity, ...],
+    right_clusters: tuple[ClusterEntity, ...] | None,
     threshold: float,
     expected_count: int,
 ) -> None:
     """Test probabilities_to_results_entities with various scenarios."""
     result = probabilities_to_results_entities(
         probabilities=probabilities,
-        left_results=left_results,
-        right_results=right_results,
+        left_clusters=left_clusters,
+        right_clusters=right_clusters,
         threshold=threshold,
     )
 
     assert len(result) == expected_count
 
     # For merging cases, verify all input entities are contained in the output
-    all_inputs = set(left_results)
-    if right_results:
-        all_inputs.update(right_results)
+    all_inputs = set(left_clusters)
+    if right_clusters:
+        all_inputs.update(right_clusters)
 
     for input_entity in all_inputs:
         # Each input entity should be contained within one of the output entities
@@ -349,8 +349,8 @@ def test_probabilities_to_results_entities(
     ],
 )
 def test_diff_results(
-    expected: list[ResultsEntity],
-    actual: list[ResultsEntity],
+    expected: list[ClusterEntity],
+    actual: list[ClusterEntity],
     verbose: bool,
     want_identical: bool,
     want_result: dict[str, Any],

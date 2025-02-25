@@ -6,8 +6,8 @@ import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.factories.entities import (
+    ClusterEntity,
     EntityReference,
-    ResultsEntity,
     SourceEntity,
 )
 from matchbox.common.factories.models import (
@@ -400,8 +400,8 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
     ],
 )
 def test_generate_entity_probabilities_scenarios(
-    left_entities: frozenset[ResultsEntity],
-    right_entities: frozenset[ResultsEntity] | None,
+    left_entities: frozenset[ClusterEntity],
+    right_entities: frozenset[ClusterEntity] | None,
     source_entities: frozenset[SourceEntity],
     prob_range: tuple[float, float],
     expected: dict,
@@ -536,7 +536,7 @@ def test_disjoint_set_recovery():
     # Should recover original entities - exactly two clusters
     assert len(clusters) == 2
 
-    # Each cluster should contain the right number of ResultsEntities
+    # Each cluster should contain the right number of ClusterEntity objects
     cluster_sizes = sorted(len(cluster) for cluster in clusters)
     assert cluster_sizes == [3, 3]
 
@@ -582,14 +582,14 @@ def test_complex_entity_recovery():
         ),
     )
 
-    # Create fragmented ResultsEntities
+    # Create fragmented ClusterEntity objects
     results = frozenset(
         [
-            ResultsEntity(source_pks=EntityReference({"dataset1": frozenset(["1"])})),
-            ResultsEntity(source_pks=EntityReference({"dataset1": frozenset(["2"])})),
-            ResultsEntity(source_pks=EntityReference({"dataset2": frozenset(["A"])})),
-            ResultsEntity(source_pks=EntityReference({"dataset2": frozenset(["B"])})),
-            ResultsEntity(source_pks=EntityReference({"dataset3": frozenset(["X"])})),
+            ClusterEntity(source_pks=EntityReference({"dataset1": frozenset(["1"])})),
+            ClusterEntity(source_pks=EntityReference({"dataset1": frozenset(["2"])})),
+            ClusterEntity(source_pks=EntityReference({"dataset2": frozenset(["A"])})),
+            ClusterEntity(source_pks=EntityReference({"dataset2": frozenset(["B"])})),
+            ClusterEntity(source_pks=EntityReference({"dataset3": frozenset(["X"])})),
         ]
     )
 

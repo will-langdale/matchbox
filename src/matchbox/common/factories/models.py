@@ -23,8 +23,8 @@ from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import ModelMetadata, ModelType
 from matchbox.common.factories.entities import (
+    ClusterEntity,
     FeatureConfig,
-    ResultsEntity,
     SourceEntity,
     SuffixRule,
     probabilities_to_results_entities,
@@ -65,7 +65,7 @@ def component_report(all_nodes: list[Any], table: pa.Table) -> dict:
 
 def validate_components(
     edges: list[tuple[int, int]],
-    entities: set[ResultsEntity],
+    entities: set[ClusterEntity],
     source_entities: set[SourceEntity],
 ) -> bool:
     """Validate that probability edges create valid components.
@@ -74,13 +74,13 @@ def validate_components(
 
     Args:
         edges: List of (left_id, right_id) edges
-        entities: Set of ResultsEntities
+        entities: Set of ClusterEntity objects
         source_entities: Set of SourceEntities
     """
-    # Create disjoint set of ResultsEntities
-    ds = DisjointSet[ResultsEntity]()
+    # Create disjoint set of ClusterEntity objects
+    ds = DisjointSet[ClusterEntity]()
 
-    # Map IDs to ResultsEntities for lookup
+    # Map IDs to ClusterEntity objects for lookup
     id_to_entity = {entity.id: entity for entity in entities}
 
     # Union entities based on probability edges
@@ -97,7 +97,7 @@ def validate_components(
         if len(component) <= 1:
             continue
 
-        # Merge all ResultsEntities in component
+        # Merge all ClusterEntity objects in component
         merged = None
         for entity in component:
             if merged is None:
@@ -393,21 +393,21 @@ def generate_dummy_probabilities(
 
 @cache
 def generate_entity_probabilities(
-    left_entities: frozenset[ResultsEntity],
-    right_entities: frozenset[ResultsEntity] | None,
+    left_entities: frozenset[ClusterEntity],
+    right_entities: frozenset[ClusterEntity] | None,
     source_entities: frozenset[SourceEntity],
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> pa.Table:
     """Generate probabilities that will recover entity relationships.
 
-    Compares ResultsEntities against ground truth SourceEntities by checking whether
-    their EntityReferences are subsets of the source entities. Initially focused on
-    generating fully connected, correct probabilities only.
+    Compares ClusterEntity objects against ground truth SourceEntities by checking
+    whether their EntityReferences are subsets of the source entities. Initially
+    focused on generating fully connected, correct probabilities only.
 
     Args:
-        left_entities: Set of ResultsEntities from left input
-        right_entities: Set of ResultsEntities from right input. If None, assume
+        left_entities: Set of ClusterEntity objects from left input
+        right_entities: Set of ClusterEntity objects from right input. If None, assume
             we are deduplicating left_entities.
         source_entities: Ground truth set of SourceEntities
         prob_range: Range of probabilities to assign to matches. All matches will
@@ -425,10 +425,10 @@ def generate_entity_probabilities(
     if right_entities is None:
         right_entities = left_entities
 
-    # Create mapping of ResultsEntity -> SourceEntity
-    entity_mapping: dict[ResultsEntity, SourceEntity] = {}
+    # Create mapping of ClusterEntity -> SourceEntity
+    entity_mapping: dict[ClusterEntity, SourceEntity] = {}
 
-    def _map_entity(entity: ResultsEntity) -> None:
+    def _map_entity(entity: ClusterEntity) -> None:
         matching_sources = [
             source
             for source in source_entities
@@ -436,7 +436,7 @@ def generate_entity_probabilities(
         ]
         if len(matching_sources) > 1:
             raise ValueError(
-                f"ResultsEntity with ID {entity.id} is a subset of multiple "
+                f"ClusterEntity with ID {entity.id} is a subset of multiple "
                 f"SourceEntities. This violates the uniqueness constraint."
             )
         if matching_sources:
@@ -451,7 +451,7 @@ def generate_entity_probabilities(
 
     # Group by SourceEntity
     source_groups: dict[
-        SourceEntity, tuple[set[ResultsEntity], set[ResultsEntity]]
+        SourceEntity, tuple[set[ClusterEntity], set[ClusterEntity]]
     ] = {}
     for entity, source in entity_mapping.items():
         if source not in source_groups:
@@ -520,12 +520,12 @@ class ModelDummy(BaseModel):
 
     model: Model
     left_query: pa.Table
-    left_results: dict[int, ResultsEntity]
+    left_clusters: dict[int, ClusterEntity]
     right_query: pa.Table | None
-    right_results: dict[int, ResultsEntity] | None
+    right_clusters: dict[int, ClusterEntity] | None
     probabilities: pa.Table
 
-    _entities: tuple[ResultsEntity, ...]
+    _entities: tuple[ClusterEntity, ...]
     _threshold: int
     _query_lookup: pa.Table
 
@@ -535,12 +535,12 @@ class ModelDummy(BaseModel):
         return self.model.metadata.name
 
     @property
-    def entities(self) -> tuple[ResultsEntity, ...]:
+    def entities(self) -> tuple[ClusterEntity, ...]:
         """Entities that were generated by the model."""
         return self._entities
 
     @entities.setter
-    def entities(self, value: tuple[ResultsEntity, ...]):
+    def entities(self, value: tuple[ClusterEntity, ...]):
         self._entities = value
 
     @property
@@ -551,14 +551,14 @@ class ModelDummy(BaseModel):
     @threshold.setter
     def threshold(self, value: int):
         """Set the threshold for the model."""
-        right_results = self.right_results.values() if self.right_results else []
-        input_results = set(self.left_results.values()) | set(right_results)
+        right_clusters = self.right_clusters.values() if self.right_clusters else []
+        input_results = set(self.left_clusters.values()) | set(right_clusters)
 
-        entities: tuple[ResultsEntity] = probabilities_to_results_entities(
+        entities: tuple[ClusterEntity] = probabilities_to_results_entities(
             probabilities=self.probabilities,
-            left_results=tuple(self.left_results.values()),
-            right_results=tuple(right_results)
-            if self.right_results is not None
+            left_clusters=tuple(self.left_clusters.values()),
+            right_clusters=tuple(right_clusters)
+            if self.right_clusters is not None
             else None,
             threshold=value,
         )
@@ -829,9 +829,9 @@ def model_factory(
     return ModelDummy(
         model=model,
         left_query=left_query,
-        left_results={entity.id: entity for entity in left_entities},
+        left_clusters={entity.id: entity for entity in left_entities},
         right_query=right_query,
-        right_results={entity.id: entity for entity in right_entities}
+        right_clusters={entity.id: entity for entity in right_entities}
         if right_entities
         else None,
         probabilities=probabilities,

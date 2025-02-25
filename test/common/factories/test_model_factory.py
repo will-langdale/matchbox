@@ -86,7 +86,7 @@ def test_model_type_creation(
     # Basic type verification
     assert model.model.metadata.type == expected_type
     assert (model.right_query is not None) == should_have_right
-    assert (model.right_results is not None) == should_have_right
+    assert (model.right_clusters is not None) == should_have_right
 
     # Verify probabilities were generated
     assert len(model.probabilities) > 0
@@ -199,8 +199,8 @@ def test_model_pipeline_with_dummy_methodology(
     # Verify perfect model works
     identical, _ = linked.diff_results(
         probabilities=perfect_model.probabilities,
-        left_results=perfect_model.left_results.values(),
-        right_results=perfect_model.right_results.values()
+        left_clusters=perfect_model.left_clusters.values(),
+        right_clusters=perfect_model.right_clusters.values()
         if model_type == "linker"
         else None,
         sources=sources,
@@ -218,8 +218,8 @@ def test_model_pipeline_with_dummy_methodology(
 
     identical, report = linked.diff_results(
         probabilities=random_probabilities,
-        left_results=perfect_model.left_results.values(),
-        right_results=perfect_model.right_results.values()
+        left_clusters=perfect_model.left_clusters.values(),
+        right_clusters=perfect_model.right_clusters.values()
         if model_type == "linker"
         else None,
         sources=sources,
@@ -375,7 +375,7 @@ def test_model_factory_basic_creation(
 
     # Structure checks
     assert (model.right_query is not None) == expected_checks["has_right"]
-    assert (model.right_results is not None) == expected_checks["has_right"]
+    assert (model.right_clusters is not None) == expected_checks["has_right"]
     assert len(model.entities) == expected_checks["entity_count"]
 
     # Probability checks
@@ -474,7 +474,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     # Basic type checks
     assert str(model.model.metadata.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
-    assert (model.right_results is not None) == expected_checks["has_right"]
+    assert (model.right_clusters is not None) == expected_checks["has_right"]
 
     # Verify probabilities
     probs = model.probabilities["probability"].to_numpy() / 100
@@ -506,13 +506,13 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
         assert dummy1.model.metadata.name == dummy2.model.metadata.name
         assert dummy1.model.metadata.description == dummy2.model.metadata.description
         assert dummy1.left_query.equals(dummy2.left_query)
-        assert set(dummy1.left_results) == set(dummy2.left_results)
+        assert set(dummy1.left_clusters) == set(dummy2.left_clusters)
         assert set(dummy1.entities) == set(dummy2.entities)
         assert dummy1.probabilities.equals(dummy2.probabilities)
     else:
         assert dummy1.model.metadata.name != dummy2.model.metadata.name
         assert dummy1.model.metadata.description != dummy2.model.metadata.description
         assert not dummy1.left_query.equals(dummy2.left_query)
-        assert set(dummy1.left_results) != set(dummy2.left_results)
+        assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
         assert not dummy1.probabilities.equals(dummy2.probabilities)
