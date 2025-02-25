@@ -438,3 +438,19 @@ def test_source_to_results_conversion():
     # Test error case for missing dataset
     with pytest.raises(KeyError):
         source.to_results_entity("nonexistent")
+
+
+@pytest.mark.parametrize(
+    ("base_generator", "expected_type"),
+    [
+        pytest.param("name", "TEXT", id="text_generator"),
+        pytest.param("random_int", "INTEGER", id="integer_generator"),
+        pytest.param("date_this_decade", "DATE", id="date_generator"),
+    ],
+)
+def test_feature_config_sql_type_inference(
+    base_generator: str, expected_type: str
+) -> None:
+    """Test that SQL types are correctly inferred from feature configurations."""
+    feature_config = FeatureConfig(name=base_generator, base_generator=base_generator)
+    assert feature_config.sql_type == expected_type

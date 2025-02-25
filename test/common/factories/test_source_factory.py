@@ -209,7 +209,7 @@ def test_source_factory_mock_properties():
     for feature, column in zip(features, dummy_source.columns, strict=False):
         assert column.name == feature.name
         assert column.alias == feature.name
-        assert column.type is None
+        assert column.type == feature.sql_type
 
     # Check default alias (should match full_name) and default pk
     assert dummy_source.alias == full_name
@@ -219,7 +219,7 @@ def test_source_factory_mock_properties():
     dump = dummy_source.model_dump()
     assert dump["address"]["full_name"] == full_name
     assert dump["columns"] == [
-        {"name": f.name, "alias": f.name, "type": None} for f in features
+        {"name": f.name, "alias": f.name, "type": f.sql_type} for f in features
     ]
 
 

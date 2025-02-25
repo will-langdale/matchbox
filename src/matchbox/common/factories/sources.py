@@ -416,7 +416,10 @@ def source_factory(
     source = Source(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
-        columns=[SourceColumn(name=feature.name) for feature in features],
+        columns=[
+            SourceColumn(name=feature.name, type=feature.sql_type)
+            for feature in features
+        ],
     )
 
     return SourceDummy(
@@ -595,7 +598,10 @@ def linked_sources_factory(
                 full_name=config.full_name, engine=config.engine
             ),
             db_pk="pk",
-            columns=[SourceColumn(name=feature.name) for feature in config.features],
+            columns=[
+                SourceColumn(name=feature.name, type=feature.sql_type)
+                for feature in config.features
+            ],
         )
 
         # Add source to linked.sources

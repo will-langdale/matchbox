@@ -4,7 +4,9 @@ These underpin the entity resolution process, which is the core of the
 dummy sources and models factory system.
 """
 
+import datetime
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from functools import cache
 from random import getrandbits
 from typing import TYPE_CHECKING, Any
@@ -79,6 +81,54 @@ class ReplaceRule(VariationRule):
         return "replace"
 
 
+def infer_sql_type(base: str, parameters: tuple) -> str:
+    """
+    Infer an appropriate SQL type from a Faker configuration.
+
+    Args:
+        base: Faker generator type
+        parameters: Parameters for the generator
+
+    Returns:
+        A SQL type string
+    """
+    """Generate base entities with their ground truth values."""
+    generator = Faker()
+    value_generator = getattr(generator, base)
+    examples = [value_generator(**dict(parameters)) for _ in range(5)]
+
+    # Get the types of all non-None examples
+    types_found = {type(x) for x in examples}
+
+    # If multiple types, use the most general one
+    if len(types_found) > 1:
+        # Check for numeric types
+        if all(issubclass(t, (int, float, Decimal)) for t in types_found):
+            if any(issubclass(t, float) or issubclass(t, Decimal) for t in types_found):
+                return "FLOAT"
+            return "INTEGER"
+        # Default to TEXT for mixed types
+        return "TEXT"
+
+    # Single type case
+    python_type = next(iter(types_found))
+
+    type_map = {
+        str: "TEXT",
+        int: "INTEGER",
+        float: "FLOAT",
+        bool: "BOOLEAN",
+        datetime.datetime: "TIMESTAMP",
+        datetime.date: "DATE",
+        datetime.time: "TIME",
+        Decimal: "DECIMAL(10,2)",
+        bytes: "BLOB",
+        bytearray: "BLOB",
+    }
+
+    return type_map.get(python_type, "TEXT")
+
+
 class FeatureConfig(BaseModel):
     """Configuration for generating a feature with variations."""
 
@@ -104,6 +154,11 @@ class FeatureConfig(BaseModel):
         default=False, description="Whether the base case is dropped."
     )
     variations: tuple[VariationRule, ...] = Field(default_factory=tuple)
+    sql_type: str = Field(
+        default_factory=lambda data: infer_sql_type(
+            data["base_generator"], data["parameters"]
+        )
+    )
 
     def add_variations(self, *rule: VariationRule) -> "FeatureConfig":
         """Add a variation rule to the feature."""

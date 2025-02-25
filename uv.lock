@@ -568,15 +568,14 @@ wheels = [
 
 [[package]]
 name = "faker"
-version = "35.2.0"
+version = "36.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "python-dateutil" },
-    { name = "typing-extensions" },
+    { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/d9/c5bc5edaeea1a3a5da6e7f93a5c0bdd49e0740d8c4a1e7ea9515fd4da2ed/faker-35.2.0.tar.gz", hash = "sha256:28c24061780f83b45d9cb15a72b8f143b09d276c9ff52eb557744b7a89e8ba19", size = 1874908 }
+sdist = { url = "https://files.pythonhosted.org/packages/55/8f/40d002bed58bd6b79bf970505582b769fc975afcacc62c2fe1518d5729c2/faker-36.1.1.tar.gz", hash = "sha256:7cb2bbd4c8f040e4a340ae4019e9a48b6cf1db6a71bda4e5a61d8d13b7bef28d", size = 1874935 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/db/bab82efcf241dabc93ad65cebaf0f2332cb2827b55a5d3a6ef1d52fa2c29/Faker-35.2.0-py3-none-any.whl", hash = "sha256:609abe555761ff31b0e5e16f958696e9b65c9224a7ac612ac96bfc2b8f09fe35", size = 1917786 },
+    { url = "https://files.pythonhosted.org/packages/65/79/e13ae542f63ce40d02b0fe63809563b102f19ffa3b94e6062ee9286a7801/Faker-36.1.1-py3-none-any.whl", hash = "sha256:ad1f1be7fd692ec0256517404a9d7f007ab36ac5d4674082fa72404049725eaa", size = 1917865 },
 ]
 
 [[package]]
@@ -1158,6 +1157,7 @@ dependencies = [
     { name = "click" },
     { name = "connectorx" },
     { name = "duckdb" },
+    { name = "faker" },
     { name = "frozendict" },
     { name = "httpx" },
     { name = "matplotlib" },
@@ -1185,7 +1185,6 @@ server = [
 [package.dev-dependencies]
 dev = [
     { name = "docker" },
-    { name = "faker" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
     { name = "mkdocs" },
@@ -1215,6 +1214,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7" },
     { name = "connectorx", specifier = ">=0.3.3" },
     { name = "duckdb", specifier = ">=1.1.1" },
+    { name = "faker", specifier = ">=36.1.1" },
     { name = "fastapi", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.115.0,<0.116.0" },
     { name = "frozendict", specifier = ">=2.4.6" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -1237,7 +1237,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "docker", specifier = ">=7.1.0" },
-    { name = "faker", specifier = ">=35.2.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "ipywidgets", specifier = ">=8.1.5" },
     { name = "mkdocs", specifier = ">=1.6.1" },
