@@ -658,7 +658,7 @@ async def clear_database(
 ) -> OKMessage:
     try:
         backend.clear(certain=certain)
-        return OKMessage
+        return OKMessage()
     except MatchboxDeletionNotConfirmed as e:
         raise HTTPException(
             status_code=409,
