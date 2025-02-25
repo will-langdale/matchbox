@@ -159,12 +159,26 @@ class LinkedSourcesDummy(BaseModel):
         right_results: tuple[ResultsEntity, ...] | None = None,
         threshold: int | float = 0,
         verbose: bool = False,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, dict]:
         """Diff a results of probabilities with the true SourceEntities.
 
-        Returns a tuple of:
+        Args:
+            probabilities: Probabilities table to diff
+            sources: Subset of the LinkedSourcesDummy.sources that represents
+                the true sources to compare against
+            left_results: ResultsEntities from the object used as an input
+                to the process that produced the probabilities table. Should
+                be a SourceDummy.entities or ModelDummy.entities.
+            right_results: ResultsEntities from the object used as an input
+                to the process that produced the probabilities table. Should
+                be a SourceDummy.entities or ModelDummy.entities.
+            threshold: Threshold for considering a match true
+            verbose: Whether to include verbose information in the report
+
+        Returns:
+            A tuple of bool, dict:
             * Whether the results match the true entities
-            * A message describing the result
+            * A dictionary report of differences
         """
         return diff_results(
             expected=[

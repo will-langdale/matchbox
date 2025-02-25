@@ -40,8 +40,8 @@ from matchbox.common.transform import DisjointSet, graph_results
 T = TypeVar("T", bound=Hashable)
 
 
-def verify_components(all_nodes: list[Any], table: pa.Table) -> dict:
-    """Fast verification of connected components using rustworkx.
+def component_report(all_nodes: list[Any], table: pa.Table) -> dict:
+    """Fast reporting on connected components using rustworkx.
 
     Args:
         all_nodes: list of identities of inputs being matched
@@ -217,6 +217,10 @@ def generate_dummy_probabilities(
     seed: int = 42,
 ) -> pa.Table:
     """Generate dummy Arrow probabilities data with guaranteed isolated components.
+
+    While much of the factory system uses generate_entity_probabilities, this function
+    is still in use in PostgreSQL benchmarking, and has been designed to be performant
+    at scale.
 
     Args:
         left_values: Tuple of integers to use for left column

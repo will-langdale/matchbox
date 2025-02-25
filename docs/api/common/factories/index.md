@@ -183,7 +183,7 @@ model: Model = make_model(
 results: Results = model.run()
 
 # Diff, assert, and log the message if it fails
-identical, msg = linked.diff_results(
+identical, report = linked.diff_results(
     probabilities=results.probabilities,  # Your methodology's output
     left_results=left_deduped.entities,  # Output of left deduper -- left input to your methodology
     right_results=right_deduped.entities,  # Output of right deduper -- left input to your methodology
@@ -192,5 +192,5 @@ identical, msg = linked.diff_results(
     verbose=True,
 )
 
-assert identical, msg
+assert identical, report
 ```

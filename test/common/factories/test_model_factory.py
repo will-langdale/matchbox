@@ -219,7 +219,7 @@ def test_model_pipeline_with_dummy_methodology(
         num_components=len(all_true_sources) - 1,  # Intentionally wrong
     )
 
-    identical, msg = linked.diff_results(
+    identical, report = linked.diff_results(
         probabilities=random_probabilities,
         left_results=perfect_model.left_results.values(),
         right_results=perfect_model.right_results.values()
@@ -232,10 +232,10 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Verify the imperfect methodology was detected
     assert not identical
-    assert "Sets differ" in msg
-    assert "Partial matches" in msg
-    assert "Completely missing entities" in msg
-    assert "Unexpected extra entities" in msg
+    assert report["mean_similarity"] < 1.0
+    # Random process: can't guarantee particular problems, but can guarantee
+    # that some will be present
+    assert any([report["partial"], report["missing"], report["extra"]])
 
 
 @pytest.mark.parametrize(

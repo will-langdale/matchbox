@@ -1,3 +1,5 @@
+from typing import Any
+
 import pyarrow as pa
 import pytest
 from faker import Faker
@@ -225,44 +227,124 @@ def test_probabilities_to_results_entities(
 
 
 @pytest.mark.parametrize(
-    ("expected", "actual", "verbose", "want_identical", "want_msg"),
+    ("expected", "actual", "verbose", "want_identical", "want_result"),
     [
         # Identical sets
         pytest.param(
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1"})}))],
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1"})}))],
+            [_make_results_entity(1, "d1", ["1", "2"])],
+            [_make_results_entity(1, "d1", ["1", "2"])],
             False,
             True,
-            "",
+            {},
             id="identical_sets",
         ),
-        # Complete mismatch
+        # Completely missing entity
         pytest.param(
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1"})}))],
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"2"})}))],
+            [_make_results_entity(1, "d1", ["1", "2"])],
+            [],
+            True,
             False,
+            {
+                "mean_similarity": 0.0,
+                "partial": [],
+                "missing": [{"id": 1, "source_pks": {"d1": frozenset(["1", "2"])}}],
+                "extra": [],
+            },
+            id="completely_missing_entity",
+        ),
+        # Extra entity
+        pytest.param(
+            [],
+            [_make_results_entity(2, "d1", ["1", "2"])],
+            True,
             False,
-            "Mean similarity ratio: 0.00%",
-            id="complete_mismatch",
+            {
+                "mean_similarity": 0.0,
+                "partial": [],
+                "missing": [],
+                "extra": [{"id": 2, "source_pks": {"d1": frozenset(["1", "2"])}}],
+            },
+            id="extra_entity",
         ),
         # Partial match
         pytest.param(
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1", "2"})}))],
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1", "3"})}))],
-            False,
-            False,
-            "Mean similarity ratio: 33.33%",
-            id="partial_match",
-        ),
-        # Verbose output
-        pytest.param(
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1", "2"})}))],
-            [ResultsEntity(source_pks=EntityReference({"d1": frozenset({"1", "3"})}))],
+            [_make_results_entity(1, "d1", ["1", "2", "3"])],
+            [_make_results_entity(2, "d1", ["1", "2", "4"])],
             True,
             False,
-            # Don't check exact message content since IDs are random
-            None,
-            id="verbose_output",
+            {
+                # Jaccard similarity: |intersection| / |union| = 2 / 4 = 0.5
+                "mean_similarity": 0.5,
+                "partial": [
+                    {
+                        "missing_entity_id": 1,
+                        "matches": [
+                            {
+                                "actual_entity_id": 2,
+                                "similarity": 0.5,  # 2 common keys out of 4 total
+                                "missing_pks": {"d1": frozenset(["3"])},
+                                "extra_pks": {"d1": frozenset(["4"])},
+                            }
+                        ],
+                    }
+                ],
+                "missing": [],
+                "extra": [],
+            },
+            id="partial_match",
+        ),
+        # Complex scenario - partial match, missing, and extra
+        pytest.param(
+            [
+                _make_results_entity(1, "d1", ["1", "2"]),
+                _make_results_entity(2, "d1", ["3", "4"]),
+                _make_results_entity(3, "d1", ["5", "6"]),
+            ],
+            [
+                _make_results_entity(4, "d1", ["1", "7"]),
+                _make_results_entity(5, "d1", ["8", "9"]),
+            ],
+            True,
+            False,
+            {
+                # Mean of best matches for all missing and extra entities:
+                # Best matches: [1/3, 0, 0, 1/3, 0] = 2/15 = 0.1333...
+                "mean_similarity": pytest.approx(2 / 15, rel=1e-2),
+                "partial": [
+                    {
+                        "missing_entity_id": 1,
+                        "matches": [
+                            {
+                                "actual_entity_id": 4,
+                                "similarity": 1 / 3,  # 1 common key out of 3 total
+                                "missing_pks": {"d1": frozenset(["2"])},
+                                "extra_pks": {"d1": frozenset(["7"])},
+                            }
+                        ],
+                    }
+                ],
+                "missing": [
+                    {"id": 2, "source_pks": {"d1": frozenset(["3", "4"])}},
+                    {"id": 3, "source_pks": {"d1": frozenset(["5", "6"])}},
+                ],
+                "extra": [{"id": 5, "source_pks": {"d1": frozenset(["8", "9"])}}],
+            },
+            id="complex_scenario",
+        ),
+        # Non-verbose mode (only shows mean_similarity)
+        pytest.param(
+            [_make_results_entity(1, "d1", ["1", "2", "3"])],
+            [_make_results_entity(2, "d1", ["1", "2", "4"])],
+            False,
+            False,
+            {
+                # Jaccard similarity: |intersection| / |union| = 2 / 4 = 0.5
+                "mean_similarity": 0.5,
+                "partial": [],
+                "missing": [],
+                "extra": [],
+            },
+            id="non_verbose_mode",
         ),
     ],
 )
@@ -271,13 +353,56 @@ def test_diff_results(
     actual: list[ResultsEntity],
     verbose: bool,
     want_identical: bool,
-    want_msg: str | None,
+    want_result: dict[str, Any],
 ):
     """Test diff_results function handles various scenarios correctly."""
-    got_identical, got_msg = diff_results(expected, actual, verbose)
+    got_identical, got_result = diff_results(expected, actual, verbose)
+
     assert got_identical == want_identical
-    if want_msg is not None:  # Skip message check for verbose mode
-        assert got_msg == want_msg
+
+    if got_identical:
+        assert got_result == {}
+    else:
+        # Handle complex nested dictionary comparison
+        assert got_result["mean_similarity"] == pytest.approx(
+            want_result["mean_similarity"], rel=1e-2
+        )
+
+        # Test partial matches
+        assert len(got_result["partial"]) == len(want_result["partial"])
+        for got_partial, want_partial in zip(
+            got_result["partial"], want_result["partial"], strict=True
+        ):
+            assert got_partial["missing_entity_id"] == want_partial["missing_entity_id"]
+
+            for got_match, want_match in zip(
+                got_partial["matches"], want_partial["matches"], strict=True
+            ):
+                assert got_match["actual_entity_id"] == want_match["actual_entity_id"]
+                assert got_match["similarity"] == pytest.approx(
+                    want_match["similarity"], rel=1e-2
+                )
+                assert got_match["missing_pks"] == want_match["missing_pks"]
+                assert got_match["extra_pks"] == want_match["extra_pks"]
+
+        # Test missing and extra entities
+        assert len(got_result["missing"]) == len(want_result["missing"])
+        for got_missing, want_missing in zip(
+            sorted(got_result["missing"], key=lambda x: x["id"]),
+            sorted(want_result["missing"], key=lambda x: x["id"]),
+            strict=True,
+        ):
+            assert got_missing["id"] == want_missing["id"]
+            assert got_missing["source_pks"] == want_missing["source_pks"]
+
+        assert len(got_result["extra"]) == len(want_result["extra"])
+        for got_extra, want_extra in zip(
+            sorted(got_result["extra"], key=lambda x: x["id"]),
+            sorted(want_result["extra"], key=lambda x: x["id"]),
+            strict=True,
+        ):
+            assert got_extra["id"] == want_extra["id"]
+            assert got_extra["source_pks"] == want_extra["source_pks"]
 
 
 def test_source_to_results_conversion():
@@ -296,17 +421,17 @@ def test_source_to_results_conversion():
     results3 = source.to_results_entity("dataset2")
 
     # Test different comparison scenarios
-    identical, msg = diff_results([results1], [results1])
+    identical, report = diff_results([results1], [results1])
     assert identical
-    assert msg == ""
+    assert report == {}
 
     # Compare partial overlap
-    identical, msg = diff_results([results1], [results2])
+    identical, report = diff_results([results1], [results2])
     assert not identical
     assert "dataset2" in str(results2 - results1)
 
     # Compare disjoint sets
-    identical, msg = diff_results([results1], [results3])
+    identical, report = diff_results([results1], [results3])
     assert not identical
     assert results1.similarity_ratio(results3) == 0.0
 

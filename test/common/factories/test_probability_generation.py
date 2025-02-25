@@ -12,9 +12,9 @@ from matchbox.common.factories.entities import (
 )
 from matchbox.common.factories.models import (
     calculate_min_max_edges,
+    component_report,
     generate_dummy_probabilities,
     generate_entity_probabilities,
-    verify_components,
 )
 from matchbox.common.transform import DisjointSet
 
@@ -155,7 +155,7 @@ def test_generate_dummy_probabilities(parameters: dict[str, Any]):
         num_components=n_components,
         total_rows=total_rows,
     )
-    report = verify_components(table=probabilities, all_nodes=rand_vals)
+    report = component_report(table=probabilities, all_nodes=rand_vals)
     p_left = probabilities["left_id"].to_pylist()
     p_right = probabilities["right_id"].to_pylist()
 

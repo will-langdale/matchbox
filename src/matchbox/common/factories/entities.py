@@ -367,6 +367,23 @@ class SourceEntity(BaseModel, EntityIDMixin):
     def to_results_entity(self, *names: str) -> ResultsEntity:
         """Convert this SourceEntity to a ResultsEntity with the specified datasets.
 
+        This method makes diffing really easy. Testing whether ResultEntity objects
+        are subsets of SourceEntity objects is a weaker, logically more fragile test
+        than directly comparing equality of sets of ResultEntity objects. It enables
+        a really simple syntactical expression of the test.
+
+        ```python
+        actual: set[ResultsEntity] = ...
+        expected: set[ResultsEntity] = {
+            s.to_results_entity("dataset1", "dataset2")
+            for s in source_entities
+        }
+
+        is_identical = expected) == actual
+        missing = expected - actual
+        extra = actual - expected
+        ```
+
         Args:
             *names: Names of datasets to include in the ResultsEntity
 
@@ -451,7 +468,7 @@ def probabilities_to_results_entities(
 
 def diff_results(
     expected: list[ResultsEntity], actual: list[ResultsEntity], verbose: bool = False
-) -> tuple[bool, str]:
+) -> tuple[bool, dict]:
     """Compare two lists of ResultsEntity with detailed diff information.
 
     Args:
@@ -460,56 +477,95 @@ def diff_results(
         verbose: Whether to return detailed diff report
 
     Returns:
-        Tuple of (is_identical, diff_message)
+        Tuple of (is_identical, diff_dict)
     """
-    is_identical = set(expected) == set(actual)
-    if is_identical:
-        return True, ""
+    expected_set = set(expected)
+    actual_set = set(actual)
 
-    missing = set(expected) - set(actual)
-    extra = set(actual) - set(expected)
+    if expected_set == actual_set:
+        return True, {}
+
+    missing = expected_set - actual_set
+    extra = actual_set - expected_set
+
+    # Calculate similarity scores and determine partial matches
+    partial_matches = {}
+    best_match_entities = set()
+
+    # Calculate mean similarity (best matches for all entities)
+    best_ratios = []
+
+    # Best ratios for missing entities
+    for m in missing:
+        # Find best match for this missing entity
+        best_match = None
+        best_ratio = 0.0
+
+        for a in actual:
+            ratio = m.similarity_ratio(a)
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_match = a
+
+        best_ratios.append(best_ratio)
+
+        # Record partial match if similarity > 0
+        if best_ratio > 0:
+            best_match_entities.add(best_match)
+
+            # Calculate difference between entities
+            missing_pks = m - best_match
+            extra_pks = best_match - m
+
+            partial_matches[m] = {
+                "entity": best_match,
+                "similarity": best_ratio,
+                "missing_pks": missing_pks,
+                "extra_pks": extra_pks,
+            }
+
+    # Best ratios for extra entities (including those used as best matches)
+    for e in extra:
+        best_ratio = max((e.similarity_ratio(m) for m in expected), default=0.0)
+        best_ratios.append(best_ratio)
+
+    # Calculate mean similarity
+    mean_ratio = sum(best_ratios) / len(best_ratios) if best_ratios else 0.0
+
+    # Build basic result dictionary
+    result = {"mean_similarity": mean_ratio, "partial": [], "missing": [], "extra": []}
 
     if not verbose:
-        # Calculate mean similarity ratio
-        ratios = []
-        # For each missing entity, get its best match ratio
-        for m in missing:
-            best_ratio = max((m.similarity_ratio(a) for a in actual), default=0.0)
-            ratios.append(best_ratio)
+        return False, result
 
-        # For each extra entity, get its best match ratio
-        for e in extra:
-            best_ratio = max((e.similarity_ratio(m) for m in expected), default=0.0)
-            ratios.append(best_ratio)
+    # Build detailed result dictionary when verbose=True
+    # Add partial matches
+    for m, match_info in partial_matches.items():
+        result["partial"].append(
+            {
+                "missing_entity_id": m.id,
+                "matches": [
+                    {
+                        "actual_entity_id": match_info["entity"].id,
+                        "similarity": match_info["similarity"],
+                        "missing_pks": dict(match_info["missing_pks"])
+                        if match_info["missing_pks"]
+                        else {},
+                        "extra_pks": dict(match_info["extra_pks"])
+                        if match_info["extra_pks"]
+                        else {},
+                    }
+                ],
+            }
+        )
 
-        mean_ratio = sum(ratios) / len(ratios) if ratios else 0.0
-        return False, f"Mean similarity ratio: {mean_ratio:.2%}"
+    # Add completely missing entities (those with no partial matches)
+    completely_missing = missing - set(partial_matches.keys())
+    for e in completely_missing:
+        result["missing"].append({"id": e.id, "source_pks": dict(e.source_pks.items())})
 
-    messages = [f"Sets differ - {len(missing)} missing, {len(extra)} extra"]
+    # Add extra entities (excluding those used in partial matches)
+    for e in extra - best_match_entities:
+        result["extra"].append({"id": e.id, "source_pks": dict(e.source_pks.items())})
 
-    # Check for partial matches
-    for m in missing:
-        similar = [(a, m.similarity_ratio(a)) for a in actual]
-        if similar:
-            messages.append(f"\nPartial matches for missing entity {m.id}:")
-            for a, ratio in sorted(similar, key=lambda x: x[1], reverse=True):
-                messages.append(f"  Match with {a.id} (similarity: {ratio:.2%}):")
-                missing_pks = m - a
-                extra_pks = a - m
-                if missing_pks:
-                    messages.append(f"    Missing: {dict(missing_pks)}")
-                if extra_pks:
-                    messages.append(f"    Extra: {dict(extra_pks)}")
-
-    # Show completely missing/extra entities
-    if missing:
-        messages.append("\nCompletely missing entities:")
-        for e in missing:
-            messages.append(f"  {e.id}: {dict(e.source_pks.items())}")
-
-    if extra:
-        messages.append("\nUnexpected extra entities:")
-        for e in extra:
-            messages.append(f"  {e.id}: {dict(e.source_pks.items())}")
-
-    return False, "\n".join(messages)
+    return False, result
