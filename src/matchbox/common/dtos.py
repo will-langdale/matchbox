@@ -133,7 +133,7 @@ class ModelOperationStatus(BaseModel):
         }
 
 
-class HealthCheck(BaseModel):
+class OKMessage(BaseModel):
     """Response model to validate and return when performing a health check."""
 
     status: str = "OK"

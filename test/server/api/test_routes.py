@@ -49,42 +49,6 @@ def test_healthcheck():
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
-def test_count_all_backend_items(get_backend):
-    """Test the unparameterised entity counting endpoint."""
-    entity_counts = {
-        "datasets": 1,
-        "models": 2,
-        "data": 3,
-        "clusters": 4,
-        "creates": 5,
-        "merges": 6,
-        "proposes": 7,
-    }
-    mock_backend = Mock()
-    for e, c in entity_counts.items():
-        mock_e = Mock()
-        mock_e.count = Mock(return_value=c)
-        setattr(mock_backend, e, mock_e)
-    get_backend.return_value = mock_backend
-
-    response = client.get("/testing/count")
-    assert response.status_code == 200
-    assert response.json() == {"entities": entity_counts}
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
-def test_count_backend_item(get_backend: MatchboxDBAdapter):
-    """Test the parameterised entity counting endpoint."""
-    mock_backend = Mock()
-    mock_backend.models.count = Mock(return_value=20)
-    get_backend.return_value = mock_backend
-
-    response = client.get("/testing/count", params={"entity": "models"})
-    assert response.status_code == 200
-    assert response.json() == {"entities": {"models": 20}}
-
-
-@patch("matchbox.server.base.BackendManager.get_backend")
 @patch("matchbox.server.api.routes.metadata_store")
 @patch("matchbox.server.api.routes.BackgroundTasks.add_task")
 def test_upload(
@@ -1040,3 +1004,62 @@ def test_delete_model_404(get_backend: Mock, certain: bool) -> None:
     assert response.status_code == 404
     error = NotFoundError.model_validate(response.json())
     assert error.entity == BackendRetrievableType.RESOLUTION
+
+
+# Admin
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_count_all_backend_items(get_backend):
+    """Test the unparameterised entity counting endpoint."""
+    entity_counts = {
+        "datasets": 1,
+        "models": 2,
+        "data": 3,
+        "clusters": 4,
+        "creates": 5,
+        "merges": 6,
+        "proposes": 7,
+    }
+    mock_backend = Mock()
+    for e, c in entity_counts.items():
+        mock_e = Mock()
+        mock_e.count = Mock(return_value=c)
+        setattr(mock_backend, e, mock_e)
+    get_backend.return_value = mock_backend
+
+    response = client.get("/database/count")
+    assert response.status_code == 200
+    assert response.json() == {"entities": entity_counts}
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_count_backend_item(get_backend: MatchboxDBAdapter):
+    """Test the parameterised entity counting endpoint."""
+    mock_backend = Mock()
+    mock_backend.models.count = Mock(return_value=20)
+    get_backend.return_value = mock_backend
+
+    response = client.get("/database/count", params={"entity": "models"})
+    assert response.status_code == 200
+    assert response.json() == {"entities": {"models": 20}}
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_clear_backend_ok(get_backend: MatchboxDBAdapter):
+    mock_backend = Mock()
+    mock_backend.clear = Mock()
+    get_backend.return_value = mock_backend
+
+    response = client.delete("/database", params={"certain": "true"})
+    assert response.status_code == 200
+
+
+@patch("matchbox.server.base.BackendManager.get_backend")
+def test_clear_backend_errors(get_backend: MatchboxDBAdapter):
+    mock_backend = Mock()
+    mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
+    get_backend.return_value = mock_backend
+
+    response = client.delete("/database")
+    assert response.status_code == 409
