@@ -92,7 +92,6 @@ def infer_sql_type(base: str, parameters: tuple) -> str:
     Returns:
         A SQL type string
     """
-    """Generate base entities with their ground truth values."""
     generator = Faker()
     value_generator = getattr(generator, base)
     examples = [value_generator(**dict(parameters)) for _ in range(5)]
