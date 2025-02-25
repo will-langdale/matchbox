@@ -15,12 +15,12 @@ from matchbox.common.factories.entities import (
 )
 
 
-def _make_results_entity(id: int, dataset: str, pks: list[str]) -> ResultsEntity:
+def make_results_entity(id: int, dataset: str, pks: list[str]) -> ResultsEntity:
     """Helper to create a ResultsEntity with specified dataset and PKs."""
     return ResultsEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
 
 
-def _make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
+def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
     """Helper to create a SourceEntity with specified dataset and PKs."""
     entity = SourceEntity(base_values={"name": base_val})
     entity.add_source_reference(dataset, pks)
@@ -139,9 +139,9 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                 }
             ),
             (
-                _make_results_entity(1, "test", ["a1"]),
-                _make_results_entity(2, "test", ["a2"]),
-                _make_results_entity(3, "test", ["a3"]),
+                make_results_entity(1, "test", ["a1"]),
+                make_results_entity(2, "test", ["a2"]),
+                make_results_entity(3, "test", ["a3"]),
             ),
             None,
             80,
@@ -156,8 +156,8 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                     "probability": [95],
                 }
             ),
-            (_make_results_entity(1, "left", ["a1"]),),
-            (_make_results_entity(4, "right", ["b1"]),),
+            (make_results_entity(1, "left", ["a1"]),),
+            (make_results_entity(4, "right", ["b1"]),),
             0.9,
             1,  # One merged entity from the link
             id="basic_link_match",
@@ -171,9 +171,9 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                 }
             ),
             (
-                _make_results_entity(1, "test", ["a1"]),
-                _make_results_entity(2, "test", ["a2"]),
-                _make_results_entity(3, "test", ["a3"]),
+                make_results_entity(1, "test", ["a1"]),
+                make_results_entity(2, "test", ["a2"]),
+                make_results_entity(3, "test", ["a3"]),
             ),
             None,
             80,
@@ -189,8 +189,8 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
                 }
             ),
             (
-                _make_results_entity(1, "test", ["a1"]),
-                _make_results_entity(2, "test", ["a2"]),
+                make_results_entity(1, "test", ["a1"]),
+                make_results_entity(2, "test", ["a2"]),
             ),
             None,
             80,
@@ -231,8 +231,8 @@ def test_probabilities_to_results_entities(
     [
         # Identical sets
         pytest.param(
-            [_make_results_entity(1, "d1", ["1", "2"])],
-            [_make_results_entity(1, "d1", ["1", "2"])],
+            [make_results_entity(1, "d1", ["1", "2"])],
+            [make_results_entity(1, "d1", ["1", "2"])],
             False,
             True,
             {},
@@ -240,7 +240,7 @@ def test_probabilities_to_results_entities(
         ),
         # Completely missing entity
         pytest.param(
-            [_make_results_entity(1, "d1", ["1", "2"])],
+            [make_results_entity(1, "d1", ["1", "2"])],
             [],
             True,
             False,
@@ -255,7 +255,7 @@ def test_probabilities_to_results_entities(
         # Extra entity
         pytest.param(
             [],
-            [_make_results_entity(2, "d1", ["1", "2"])],
+            [make_results_entity(2, "d1", ["1", "2"])],
             True,
             False,
             {
@@ -268,8 +268,8 @@ def test_probabilities_to_results_entities(
         ),
         # Partial match
         pytest.param(
-            [_make_results_entity(1, "d1", ["1", "2", "3"])],
-            [_make_results_entity(2, "d1", ["1", "2", "4"])],
+            [make_results_entity(1, "d1", ["1", "2", "3"])],
+            [make_results_entity(2, "d1", ["1", "2", "4"])],
             True,
             False,
             {
@@ -296,13 +296,13 @@ def test_probabilities_to_results_entities(
         # Complex scenario - partial match, missing, and extra
         pytest.param(
             [
-                _make_results_entity(1, "d1", ["1", "2"]),
-                _make_results_entity(2, "d1", ["3", "4"]),
-                _make_results_entity(3, "d1", ["5", "6"]),
+                make_results_entity(1, "d1", ["1", "2"]),
+                make_results_entity(2, "d1", ["3", "4"]),
+                make_results_entity(3, "d1", ["5", "6"]),
             ],
             [
-                _make_results_entity(4, "d1", ["1", "7"]),
-                _make_results_entity(5, "d1", ["8", "9"]),
+                make_results_entity(4, "d1", ["1", "7"]),
+                make_results_entity(5, "d1", ["8", "9"]),
             ],
             True,
             False,
@@ -333,8 +333,8 @@ def test_probabilities_to_results_entities(
         ),
         # Non-verbose mode (only shows mean_similarity)
         pytest.param(
-            [_make_results_entity(1, "d1", ["1", "2", "3"])],
-            [_make_results_entity(2, "d1", ["1", "2", "4"])],
+            [make_results_entity(1, "d1", ["1", "2", "3"])],
+            [make_results_entity(2, "d1", ["1", "2", "4"])],
             False,
             False,
             {
