@@ -75,14 +75,6 @@ class SourceDummy(BaseModel):
     features: tuple[FeatureConfig, ...]
     data: pa.Table
     data_hashes: pa.Table
-    true_entities: tuple[SourceEntity, ...] | None = Field(
-        default=None,
-        description=(
-            "Generated true entities. Optional: when the SourceDummy comes from a "
-            "source_factory they're stored here, but from linked_source_factory "
-            "they're stored as part of the shared LinkedSourcesDummy object."
-        ),
-    )
     entities: tuple[ResultsEntity, ...] = Field(
         description="Entities that were generated from the source."
     )
@@ -432,7 +424,6 @@ def source_factory(
         features=features,
         data=data,
         data_hashes=data_hashes,
-        true_entities=tuple(source_entities),
         entities=tuple(sorted(results_entities)),
     )
 

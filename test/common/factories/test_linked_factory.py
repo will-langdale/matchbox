@@ -342,12 +342,6 @@ def test_linked_sources_entity_hierarchy():
 
     linked = linked_sources_factory(source_configs=configs, seed=42)
 
-    # Verify individual sources don't have true_entities set
-    for source in linked.sources.values():
-        assert source.true_entities is None, (
-            f"Source {source.name} has true_entities set"
-        )
-
     # For each source, verify its entities are subsets of true_entities
     for source_name, source in linked.sources.items():
         for results_entity in source.entities:

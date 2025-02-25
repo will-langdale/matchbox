@@ -3,11 +3,8 @@ from typing import Any, Literal
 import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
-from matchbox.common.factories.models import (
-    generate_dummy_probabilities,
-    model_factory,
-)
-from matchbox.common.factories.sources import linked_sources_factory
+from matchbox.common.factories.models import generate_dummy_probabilities, model_factory
+from matchbox.common.factories.sources import linked_sources_factory, source_factory
 
 
 def test_model_factory_entity_preservation():
@@ -258,6 +255,12 @@ def test_model_pipeline_with_dummy_methodology(
             ValueError,
             "Probabilities must be increasing values between 0 and 1",
             id="invalid_prob_range_too_high",
+        ),
+        pytest.param(
+            {"left_source": source_factory(), "true_entities": None},
+            ValueError,
+            "Must provide true entities when sources are given",
+            id="missing_true_entities_with_source",
         ),
     ],
 )

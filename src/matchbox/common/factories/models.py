@@ -33,7 +33,6 @@ from matchbox.common.factories.sources import (
     SourceConfig,
     SourceDummy,
     linked_sources_factory,
-    source_factory,
 )
 from matchbox.common.transform import DisjointSet, graph_results
 
@@ -646,7 +645,7 @@ def model_factory(
     right_source: SourceDummy | ModelDummy | None = None,
     true_entities: tuple[SourceEntity, ...] | None = None,
     model_type: Literal["deduper", "linker"] | None = None,
-    n_true_entities: int = 10,
+    n_true_entities: int | None = None,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> ModelDummy:
@@ -664,23 +663,32 @@ def model_factory(
         right_source: If creating a linker, a SourceDummy or ModelDummy for the
             right source
         true_entities: Ground truth SourceEntity objects to use for
-            generating probabilities. If none are supplied, random entities will
-            be generated
+            generating probabilities. Must be supplied if sources are given
         model_type: Type of the model, one of 'deduper' or 'linker'
-            Ignored if left_source or right_source are provided.
+            Defaults to deduper. Ignored if left_source or right_source are provided.
         n_true_entities: Base number of entities to generate when using default configs.
-            Ignored if left_source or right_source are provided.
+            Defaults to 10. Ignored if left_source or right_source are provided.
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility
 
     Returns:
-        SourceModel: A dummy model with generated data
+        ModelDummy: A dummy model with generated data
+
+    Raises:
+        ValueError:
+            * If probabilities are not in increasing order and between 0 and 1
+            * If sources are provided without true entities
+        UserWarning: If some arguments are ignored due to sources or true entities
     """
-    # Validate inputs
+    # ==== Input validation ====
     if not (0 <= prob_range[0] <= prob_range[1] <= 1):
         raise ValueError("Probabilities must be increasing values between 0 and 1")
+
+    if left_source is not None and true_entities is None:
+        raise ValueError("Must provide true entities when sources are given")
+
     if any([left_source, true_entities]) and any(
-        [model_type is not None, n_true_entities != 10]
+        [model_type is not None, n_true_entities is not None]
     ):
         warnings.warn(
             "Some arguments will be ignored as sources or true entities are provided",
@@ -688,14 +696,19 @@ def model_factory(
             stacklevel=2,
         )
 
+    # ==== Setup ====
     generator = Faker()
     generator.seed_instance(seed)
+    n_true_entities = n_true_entities or 10
+    dummy_true_entities = None
 
-    # Process provided sources or create defaults
+    # ==== Source configuration ====
     if left_source is not None:
+        # Using provided sources
         left_resolution = left_source.name
         left_query = left_source.query()
         left_entities = left_source.entities
+
         if right_source is not None:
             model_type = ModelType.LINKER
             right_resolution = right_source.name
@@ -703,37 +716,30 @@ def model_factory(
             right_entities = right_source.entities
         else:
             model_type = ModelType.DEDUPER
-            right_resolution, right_query, right_entities = None, None, None
+            right_resolution = right_query = right_entities = None
     else:
         # Create default sources
         engine = create_engine("sqlite:///:memory:")
-        model_type = ModelType(model_type.lower() if model_type else "deduper")
+        resolved_model_type = ModelType(model_type.lower() if model_type else "deduper")
+
+        # Define common features
         features = {
             "company_name": FeatureConfig(
-                name="company_name",
-                base_generator="company",
+                name="company_name", base_generator="company"
             ),
             "crn": FeatureConfig(
                 name="crn",
                 base_generator="bothify",
                 parameters=(("text", "???-###-???-###"),),
             ),
-            "duns": FeatureConfig(
-                name="duns",
-                base_generator="numerify",
-                parameters=(("text", "########"),),
-            ),
             "cdms": FeatureConfig(
                 name="cdms",
                 base_generator="numerify",
                 parameters=(("text", "ORG-########"),),
             ),
-            "address": FeatureConfig(
-                name="address",
-                base_generator="address",
-            ),
         }
 
+        # Configure left source
         left_resolution = generator.unique.word()
         left_config = SourceConfig(
             full_name="crn",
@@ -747,57 +753,42 @@ def model_factory(
                 features["crn"],
             ),
             drop_base=True,
-            n_true_entities=n_true_entities,
             repetition=0,
         )
 
-        if model_type == ModelType.LINKER:
+        # Configure sources based on model type
+        source_configs = [left_config]
+        if resolved_model_type == ModelType.LINKER:
             right_resolution = generator.unique.word()
-            right_config = SourceConfig(
-                full_name="cdms",
-                features=(
-                    features["crn"],
-                    features["cdms"],
-                ),
-                n_true_entities=n_true_entities,
-                repetition=1,
+            source_configs.append(
+                SourceConfig(
+                    full_name="cdms",
+                    features=(features["crn"], features["cdms"]),
+                    repetition=1,
+                )
             )
+        else:
+            right_resolution = right_query = right_entities = None
 
-            linked = linked_sources_factory(
-                source_configs=(left_config, right_config),
-                n_true_entities=n_true_entities,
-                seed=seed,
-            )
+        # Generate linked sources
+        linked = linked_sources_factory(
+            source_configs=tuple(source_configs),
+            n_true_entities=n_true_entities,
+            seed=seed,
+        )
 
-            left_query = linked.sources["crn"].query()
-            left_entities = linked.sources["crn"].entities
+        # Extract source data
+        left_query = linked.sources["crn"].query()
+        left_entities = linked.sources["crn"].entities
+
+        if resolved_model_type == ModelType.LINKER:
             right_query = linked.sources["cdms"].query()
             right_entities = linked.sources["cdms"].entities
 
-            dummy_true_entities: tuple[SourceEntity, ...] = tuple(
-                linked.true_entities.values()
-            )
-        else:
-            right_resolution = None
-            right_query = None
-            right_entities = None
+        dummy_true_entities = tuple(linked.true_entities.values())
+        model_type = resolved_model_type
 
-            source = source_factory(
-                full_name=left_config.full_name,
-                engine=left_config.engine,
-                features=left_config.features,
-                n_true_entities=left_config.n_true_entities,
-                repetition=left_config.repetition,
-                seed=seed,
-            )
-
-            left_query = source.query()
-            left_entities = source.entities
-
-            dummy_true_entities: tuple[SourceEntity, ...] = source.true_entities
-
-    # Create model metadata, Model, and dummy probabilities
-
+    # ==== Model creation ====
     metadata = ModelMetadata(
         name=name or generator.unique.word(),
         description=description or generator.sentence(),
@@ -813,24 +804,28 @@ def model_factory(
         right_data=right_query,
     )
 
-    # We need the to generate true entities when either:
-    # * Sources provided, but no true entities given
-    # * No sources provided, so need random n_true_entities
+    # ==== Entity and probability generation ====
+    # We need to generate true entities when either:
+    # * No true entities are provided (true_entities is None)
+    # * We're using default sources (left_source is None)
     if true_entities is None or left_source is None:
-        true_entities = generator.random_elements(
+        final_true_entities = generator.random_elements(
             elements=dummy_true_entities,
             unique=True,
             length=n_true_entities,
         )
+    else:
+        final_true_entities = true_entities
 
     probabilities = generate_entity_probabilities(
         left_entities=frozenset(left_entities),
         right_entities=frozenset(right_entities) if right_entities else None,
-        source_entities=frozenset(true_entities),
+        source_entities=frozenset(final_true_entities),
         prob_range=prob_range,
         seed=seed,
     )
 
+    # ==== Final model creation ====
     return ModelDummy(
         model=model,
         left_query=left_query,

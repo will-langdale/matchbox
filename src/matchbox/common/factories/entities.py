@@ -199,7 +199,65 @@ class EntityIDMixin:
         return NotImplemented
 
 
-class ResultsEntity(BaseModel, EntityIDMixin):
+class SourcePKMixin:
+    """Mixin providing common source primary key functionality for entity classes.
+
+    Implements methods for accessing and retrieving source primary keys.
+    """
+
+    source_pks: EntityReference
+
+    def get_source_pks(self, source_name: str) -> set[str]:
+        """Get PKs for a specific source.
+
+        Args:
+            source_name: Name of the dataset
+
+        Returns:
+            Set of primary keys, empty if dataset not found
+        """
+        return set(self.source_pks.get(source_name, frozenset()))
+
+    def get_values(
+        self, sources: dict[str, "SourceDummy"]
+    ) -> dict[str, dict[str, list[str]]]:
+        """Get all unique values for this entity across sources.
+
+        Each source may have its own variations/transformations of the base data,
+        so we maintain separation between sources.
+
+        Args:
+            sources: Dictionary of source name to source data
+
+        Returns:
+            Dictionary mapping:
+                source_name -> {
+                    feature_name -> [unique values for that feature in that source]
+                }
+        """
+        values: dict[str, dict[str, list[str]]] = {}
+
+        # For each dataset we have PKs for
+        for dataset_name, pks in self.source_pks.items():
+            source = sources.get(dataset_name)
+
+            if source is None:
+                raise ValueError(f"Source not found: {dataset_name}")
+
+            # Get rows for this entity in this source
+            df = source.data.to_pandas()
+            entity_rows = df[df["pk"].isin(pks)]
+
+            # Get unique values for each feature in this source
+            values[dataset_name] = {
+                feature.name: sorted(entity_rows[feature.name].unique())
+                for feature in source.features
+            }
+
+        return values
+
+
+class ResultsEntity(BaseModel, EntityIDMixin, SourcePKMixin):
     """Represents a merged entity mid-pipeline."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
@@ -279,7 +337,7 @@ class ResultsEntity(BaseModel, EntityIDMixin):
         return shared_pks / total_pks if total_pks > 0 else 0.0
 
 
-class SourceEntity(BaseModel, EntityIDMixin):
+class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
     """Represents a single entity across all sources."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -314,55 +372,6 @@ class SourceEntity(BaseModel, EntityIDMixin):
         mapping = dict(self.source_pks)
         mapping[name] = frozenset(pks)
         self.source_pks = EntityReference(mapping)
-
-    def get_source_pks(self, source_name: str) -> set[str]:
-        """Get PKs for a specific source.
-
-        Args:
-            source_name: Name of the dataset
-
-        Returns:
-            Set of primary keys, empty if dataset not found
-        """
-        return set(self.source_pks.get(source_name, frozenset()))
-
-    def get_values(
-        self, sources: dict[str, "SourceDummy"]
-    ) -> dict[str, dict[str, list[str]]]:
-        """Get all unique values for this entity across sources.
-
-        Each source may have its own variations/transformations of the base data,
-        so we maintain separation between sources.
-
-        Args:
-            sources: Dictionary of source name to source data
-
-        Returns:
-            Dictionary mapping:
-                source_name -> {
-                    feature_name -> [unique values for that feature in that source]
-                }
-        """
-        values: dict[str, dict[str, list[str]]] = {}
-
-        # For each dataset we have PKs for
-        for dataset_name, pks in self.source_pks.items():
-            source = sources.get(dataset_name)
-
-            if source is None:
-                raise ValueError(f"Source not found: {dataset_name}")
-
-            # Get rows for this entity in this source
-            df = source.data.to_pandas()
-            entity_rows = df[df["pk"].isin(pks)]
-
-            # Get unique values for each feature in this source
-            values[dataset_name] = {
-                feature.name: sorted(entity_rows[feature.name].unique())
-                for feature in source.features
-            }
-
-        return values
 
     def to_results_entity(self, *names: str) -> ResultsEntity:
         """Convert this SourceEntity to a ResultsEntity with the specified datasets.
