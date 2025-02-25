@@ -452,10 +452,10 @@ def probabilities_to_results_entities(
 
     # Add ALL entities to the disjoint set
     for entity in left_results:
-        djs._find(entity)
+        djs.add(entity)
     if right_results is not None:
         for entity in right_results:
-            djs._find(entity)
+            djs.add(entity)
 
     # Add edges to the disjoint set
     for record in probabilities.to_pylist():
