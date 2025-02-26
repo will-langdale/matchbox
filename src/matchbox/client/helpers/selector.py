@@ -10,6 +10,7 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
 from matchbox.client._logging import client_logger
+from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.sources import Match, Source, SourceAddress
 
 
@@ -95,8 +96,10 @@ def query(
         selectors: each selector is the output of `select()`
             This allows querying sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
-            It can only be `None` when querying from a single source, in which case the
-            dataset resolution for that source will be used
+            If not set:
+
+            * If querying a single source, it will use the source resolution
+            * If querying 2 or more sources, it will look for a default resolution
         return_type: the form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): the threshold to use for creating clusters
@@ -129,9 +132,7 @@ def query(
     selectors = list(itertools.chain(*selectors))
 
     if not resolution_name and len(selectors) > 1:
-        raise ValueError(
-            "A resolution name must be specified if querying more than one source"
-        )
+        resolution_name = DEFAULT_RESOLUTION
 
     # Divide the limit among selectors
     if limit:
@@ -199,7 +200,7 @@ def match(
     *targets: list[Selector],
     source: list[Selector],
     source_pk: str,
-    resolution_name: str,
+    resolution_name: str = DEFAULT_RESOLUTION,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches IDs against the selected backend.
@@ -209,7 +210,8 @@ def match(
             This allows matching against sources coming from different engines
         source: The output of using `select()` on a single source.
         source_pk: The primary key value to match from the source.
-        resolution_name: the resolution name to use for filtering results
+        resolution_name (optional): the resolution name to use for filtering results.
+            If not set, it will look for a default resolution.
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
