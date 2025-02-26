@@ -182,6 +182,10 @@ class DisjointSet(Generic[T]):
         self.parent[x] = x
         self.rank[x] = 0
 
+    def add(self, x: T) -> None:
+        if x not in self.parent:
+            self._make_set(x)
+
     def union(self, x: T, y: T) -> None:
         self._link(self._find(x), self._find(y))
 

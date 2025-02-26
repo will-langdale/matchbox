@@ -568,15 +568,14 @@ wheels = [
 
 [[package]]
 name = "faker"
-version = "35.2.0"
+version = "36.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "python-dateutil" },
-    { name = "typing-extensions" },
+    { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/d9/c5bc5edaeea1a3a5da6e7f93a5c0bdd49e0740d8c4a1e7ea9515fd4da2ed/faker-35.2.0.tar.gz", hash = "sha256:28c24061780f83b45d9cb15a72b8f143b09d276c9ff52eb557744b7a89e8ba19", size = 1874908 }
+sdist = { url = "https://files.pythonhosted.org/packages/55/8f/40d002bed58bd6b79bf970505582b769fc975afcacc62c2fe1518d5729c2/faker-36.1.1.tar.gz", hash = "sha256:7cb2bbd4c8f040e4a340ae4019e9a48b6cf1db6a71bda4e5a61d8d13b7bef28d", size = 1874935 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/db/bab82efcf241dabc93ad65cebaf0f2332cb2827b55a5d3a6ef1d52fa2c29/Faker-35.2.0-py3-none-any.whl", hash = "sha256:609abe555761ff31b0e5e16f958696e9b65c9224a7ac612ac96bfc2b8f09fe35", size = 1917786 },
+    { url = "https://files.pythonhosted.org/packages/65/79/e13ae542f63ce40d02b0fe63809563b102f19ffa3b94e6062ee9286a7801/Faker-36.1.1-py3-none-any.whl", hash = "sha256:ad1f1be7fd692ec0256517404a9d7f007ab36ac5d4674082fa72404049725eaa", size = 1917865 },
 ]
 
 [[package]]
@@ -662,6 +661,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0d/0a/3466ce7c0db620c314c534aa242abe7fe2176a3f049f71bd0da1679917fa/fonttools-4.55.5-cp313-cp313-win32.whl", hash = "sha256:7cf3dc8051c0b37034c2661934e8795a1e95ac5cf4f97ce9935cf6f10ba481f0", size = 2163461 },
     { url = "https://files.pythonhosted.org/packages/eb/f1/a599c8fbe74a7735789ad98c4eaa2982d6e613ef72c35b5bfbe7b1c16b9f/fonttools-4.55.5-cp313-cp313-win_amd64.whl", hash = "sha256:b5e6868d8952a31cb3643080ea1594adde971bf2a05aae5bc47bf0ac91e79575", size = 2209257 },
     { url = "https://files.pythonhosted.org/packages/96/09/4bb71d2cf825a368bc7f44805a198d9980541944b0a400becaa05703c72d/fonttools-4.55.5-py3-none-any.whl", hash = "sha256:6261deeaa54a720405fc4a21dc92f722d1b2c5a977910d464029534b9475f716", size = 1112207 },
+]
+
+[[package]]
+name = "frozendict"
+version = "2.4.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/59/19eb300ba28e7547538bdf603f1c6c34793240a90e1a7b61b65d8517e35e/frozendict-2.4.6.tar.gz", hash = "sha256:df7cd16470fbd26fc4969a208efadc46319334eb97def1ddf48919b351192b8e", size = 316416 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/13/d9839089b900fa7b479cce495d62110cddc4bd5630a04d8469916c0e79c5/frozendict-2.4.6-py311-none-any.whl", hash = "sha256:d065db6a44db2e2375c23eac816f1a022feb2fa98cbb50df44a9e83700accbea", size = 16148 },
+    { url = "https://files.pythonhosted.org/packages/ba/d0/d482c39cee2ab2978a892558cf130681d4574ea208e162da8958b31e9250/frozendict-2.4.6-py312-none-any.whl", hash = "sha256:49344abe90fb75f0f9fdefe6d4ef6d4894e640fadab71f11009d52ad97f370b9", size = 16146 },
+    { url = "https://files.pythonhosted.org/packages/a5/8e/b6bf6a0de482d7d7d7a2aaac8fdc4a4d0bb24a809f5ddd422aa7060eb3d2/frozendict-2.4.6-py313-none-any.whl", hash = "sha256:7134a2bb95d4a16556bb5f2b9736dceb6ea848fa5b6f3f6c2d6dba93b44b4757", size = 16146 },
 ]
 
 [[package]]
@@ -1147,6 +1157,8 @@ dependencies = [
     { name = "click" },
     { name = "connectorx" },
     { name = "duckdb" },
+    { name = "faker" },
+    { name = "frozendict" },
     { name = "httpx" },
     { name = "matplotlib" },
     { name = "pandas" },
@@ -1173,7 +1185,6 @@ server = [
 [package.dev-dependencies]
 dev = [
     { name = "docker" },
-    { name = "faker" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
     { name = "mkdocs" },
@@ -1203,7 +1214,9 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7" },
     { name = "connectorx", specifier = ">=0.3.3" },
     { name = "duckdb", specifier = ">=1.1.1" },
+    { name = "faker", specifier = ">=36.1.1" },
     { name = "fastapi", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.115.0,<0.116.0" },
+    { name = "frozendict", specifier = ">=2.4.6" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "pandas", specifier = ">=2.2.3" },
@@ -1224,7 +1237,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "docker", specifier = ">=7.1.0" },
-    { name = "faker", specifier = ">=35.2.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "ipywidgets", specifier = ">=8.1.5" },
     { name = "mkdocs", specifier = ">=1.6.1" },
