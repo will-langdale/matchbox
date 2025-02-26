@@ -314,7 +314,7 @@ class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    id: int = Field(default_factory=lambda: getrandbits(63))
+    id: int = Field(default_factory=lambda: getrandbits(63))  # 64 gives OverflowError
     source_pks: EntityReference
 
     def __add__(self, other: "ClusterEntity") -> "ClusterEntity":
@@ -394,7 +394,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    id: int = Field(default_factory=lambda: getrandbits(63))
+    id: int = Field(default_factory=lambda: getrandbits(63))  # 64 gives OverflowError
     base_values: dict[str, Any] = Field(description="Feature name -> base value")
     source_pks: EntityReference = Field(
         description="Dataset to PKs mapping",
