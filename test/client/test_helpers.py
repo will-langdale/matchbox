@@ -26,6 +26,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
+from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
@@ -173,32 +174,6 @@ def test_select_missing_columns(matchbox_api: MockRouter, warehouse_engine: Engi
         select({"test.foo": ["a", "c"]}, engine=warehouse_engine)
 
 
-def test_query_no_resolution_fail():
-    """Querying with multiple selectors and no resolution is not allowed."""
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="i",
-            ),
-            fields=["a", "b"],
-        ),
-        Selector(
-            source=Source(
-                address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
-                db_pk="j",
-            ),
-            fields=["x", "y"],
-        ),
-    ]
-
-    with pytest.raises(ValueError, match="resolution name"):
-        query(sels)
-
-
 @patch.object(Source, "to_arrow")
 def test_query_no_resolution_ok_various_params(
     to_arrow: Mock, matchbox_api: MockRouter
@@ -339,7 +314,7 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
     ]
 
     # Validate results
-    results = query(sels, resolution_name="link", limit=7)
+    results = query(sels, limit=7)
     assert len(results) == 4
     assert {
         # All columns automatically selected for `foo`
@@ -355,18 +330,18 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
     assert dict(query_route.calls[-2].request.url.params) == {
         "full_name": sels[0].source.address.full_name,
         "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
-        "resolution_name": "link",
+        "resolution_name": DEFAULT_RESOLUTION,
         "limit": "4",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "full_name": sels[1].source.address.full_name,
         "warehouse_hash_b64": hash_to_base64(sels[1].source.address.warehouse_hash),
-        "resolution_name": "link",
+        "resolution_name": DEFAULT_RESOLUTION,
         "limit": "3",
     }
 
     # It also works with the selectors specified separately
-    query([sels[0]], [sels[1]], resolution_name="link", limit=7)
+    query([sels[0]], [sels[1]], limit=7)
 
 
 def test_query_404_resolution(matchbox_api: MockRouter):
