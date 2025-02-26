@@ -353,7 +353,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         if certain:
             MBDB.clear_database()
         else:
-            raise ValueError(
+            raise MatchboxDeletionNotConfirmed(
                 "This operation will drop the entire database. "
                 "It's principally used for testing. \n\n"
                 "If you're sure you want to continue, rerun with certain=True"

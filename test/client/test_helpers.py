@@ -474,7 +474,7 @@ def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
     source = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}], engine=engine
     )
-    mock_source_instance = source.to_mock()
+    mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
 
     # Mock the initial source metadata upload
@@ -539,7 +539,7 @@ def test_index_with_columns(
     """Test indexing with different column definition formats."""
     engine = create_engine("sqlite:///:memory:")
 
-    # Create source dummy and mock
+    # Create source testkit and mock
     source = source_factory(
         features=[
             {"name": "name", "base_generator": "name"},
@@ -547,7 +547,7 @@ def test_index_with_columns(
         ],
         engine=engine,
     )
-    mock_source_instance = source.to_mock()
+    mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
 
     # Mock the API endpoints
@@ -604,7 +604,7 @@ def test_index_upload_failure(MockSource: Mock, matchbox_api: MockRouter):
     source = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}], engine=engine
     )
-    mock_source_instance = source.to_mock()
+    mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
 
     # Mock successful source creation
