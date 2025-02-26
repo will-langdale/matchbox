@@ -76,16 +76,17 @@ class SourceTestkit(BaseModel):
     data: pa.Table
     data_hashes: pa.Table
     entities: tuple[ClusterEntity, ...] = Field(
-        description="Entities that were generated from the source."
+        description="ClusterEntities that were generated from the source."
     )
 
     @property
     def name(self) -> str:
-        """Return the full name of the source."""
+        """Return the full name of the Source."""
         return self.source.address.full_name
 
-    def to_mock(self) -> Mock:
-        """Create a mock Source object that mimics this source testkit's behavior."""
+    @property
+    def mock(self) -> Mock:
+        """Create a mock Source object with this testkit's configuration."""
         mock_source = create_autospec(self.source)
 
         mock_source.set_engine.return_value = mock_source
@@ -98,6 +99,7 @@ class SourceTestkit(BaseModel):
 
         return mock_source
 
+    @property
     def query(self) -> pa.Table:
         """Return a PyArrow table in the same format at matchbox.query()."""
         return self.data

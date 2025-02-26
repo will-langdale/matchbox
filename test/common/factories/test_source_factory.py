@@ -123,8 +123,8 @@ def test_source_factory_data_hashes_integrity():
     assert len(hashes_df["hash"].unique()) == expected_hash_groups
 
 
-def test_source_dummy_to_mock():
-    """Test that SourceTestkit.to_mock() creates a correctly configured mock."""
+def test_source_testkit_to_mock():
+    """Test that SourceTestkit.mock creates a correctly configured mock."""
     # Create a source testkit with some test data
     features = [
         FeatureConfig(
@@ -139,7 +139,7 @@ def test_source_dummy_to_mock():
     )
 
     # Create the mock
-    mock_source = source_testkit.to_mock()
+    mock_source = source_testkit.mock
 
     # Test that method calls are tracked
     mock_source.set_engine("test_engine")

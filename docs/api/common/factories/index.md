@@ -62,7 +62,7 @@ def test_my_api(MockSource: Mock, matchbox_api: MockRouter):
     source_testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}]
     )
-    MockSource.return_value = source_testkit.to_mock()
+    MockSource.return_value = source_testkit.mock
 ```
 
 `source_factory()` can be configured with a powerful range of [`FeatureConfig`][matchbox.common.factories.entities.FeatureConfig] objects, including a [variety of rules][matchbox.common.factories.entities.VariationRule] which distort and duplicate the data in predictable ways. These use [Faker](https://faker.readthedocs.io/) to generate data.
@@ -171,8 +171,8 @@ right_deduped: ModelTestkit = model_factory(
 
 # Create a model and generate probabilities
 model: Model = make_model(
-    left_data=left_deduped.query(),
-    right_data=right_deduped.query()
+    left_data=left_deduped.query,
+    right_data=right_deduped.query
     ...
 )
 results: Results = model.run()

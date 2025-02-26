@@ -428,9 +428,9 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
     def to_cluster_entity(self, *names: str) -> ClusterEntity:
         """Convert this SourceEntity to a ClusterEntity with the specified datasets.
 
-        This method makes diffing really easy. Testing whether ResultEntity objects
+        This method makes diffing really easy. Testing whether ClusterEntity objects
         are subsets of SourceEntity objects is a weaker, logically more fragile test
-        than directly comparing equality of sets of ResultEntity objects. It enables
+        than directly comparing equality of sets of ClusterEntity objects. It enables
         a really simple syntactical expression of the test.
 
         ```python

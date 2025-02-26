@@ -95,14 +95,14 @@ def test_model_type_creation(
     # Test threshold setting and querying
     initial_threshold = 80
     model.threshold = initial_threshold
-    initial_query = model.query()
+    initial_query = model.query
     initial_ids = set(initial_query["id"].to_pylist())
     assert len(initial_ids) > 0
 
     # Test threshold change affects results
     new_threshold = 90
     model.threshold = new_threshold
-    new_query = model.query()
+    new_query = model.query
     new_ids = set(new_query["id"].to_pylist())
 
     # Higher threshold should result in more distinct entities, as fewer merge
@@ -159,6 +159,9 @@ def test_model_pipeline_with_dummy_methodology(
     model_type: Literal["deduper", "linker"],
 ) -> None:
     """Tests the factories validate "real" methodologies in various pipeline positions.
+
+    Here we show that with just a single output of a probabilities table, the factory
+    and testkit system lets you evaluate the methodology of a deduper or linker.
 
     This test demonstrates that:
     1. We can set up pipelines in various configurations that work perfectly
