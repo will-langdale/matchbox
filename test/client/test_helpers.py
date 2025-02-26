@@ -83,15 +83,15 @@ def test_select_default_engine(matchbox_api: MockRouter, warehouse_engine: Engin
     )
 
     # Set up mocks and test data
-    dummy_source = source_factory(full_name="test.bar", engine=warehouse_engine)
-    source = dummy_source.source
+    testkit = source_factory(full_name="test.bar", engine=warehouse_engine)
+    source = testkit.source
 
     matchbox_api.get(
         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.bar"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
     with warehouse_engine.connect() as conn:
-        dummy_source.data.to_pandas().to_sql(
+        testkit.data.to_pandas().to_sql(
             name="bar",
             con=conn,
             schema="test",
