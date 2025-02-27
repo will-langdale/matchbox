@@ -3,6 +3,8 @@ from enum import StrEnum
 import rustworkx as rx
 from pydantic import BaseModel
 
+DEFAULT_RESOLUTION = "__DEFAULT__"
+
 
 class ResolutionNodeType(StrEnum):
     DATASET = "dataset"

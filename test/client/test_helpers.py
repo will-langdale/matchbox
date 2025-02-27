@@ -1,4 +1,5 @@
 import logging
+from os import environ
 from unittest.mock import Mock, patch
 
 import pyarrow as pa
@@ -26,6 +27,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
+from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
@@ -72,6 +74,39 @@ def test_comparisons():
     )
 
     assert comparison_name_id is not None
+
+
+def test_select_default_engine(matchbox_api: MockRouter, warehouse_engine: Engine):
+    """We can select without explicit engine if default is set"""
+    # Set up default engine
+    environ["MB__CLIENT__DEFAULT_WAREHOUSE"] = warehouse_engine.url.render_as_string(
+        hide_password=False
+    )
+
+    # Set up mocks and test data
+    testkit = source_factory(full_name="test.bar", engine=warehouse_engine)
+    source = testkit.source
+
+    matchbox_api.get(
+        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.bar"
+    ).mock(return_value=Response(200, content=source.model_dump_json()))
+
+    with warehouse_engine.connect() as conn:
+        testkit.data.to_pandas().to_sql(
+            name="bar",
+            con=conn,
+            schema="test",
+            if_exists="replace",
+            index=False,
+        )
+
+    # Select sources
+    selection = select("test.bar")
+
+    # Check they contain what we expect
+    assert selection[0].source.model_dump() == source.model_dump()
+    # Check the engine is set by the selector
+    assert selection[0].source.engine.url == warehouse_engine.url
 
 
 def test_select_mixed_style(matchbox_api: MockRouter, warehouse_engine: Engine):
@@ -171,32 +206,6 @@ def test_select_missing_columns(matchbox_api: MockRouter, warehouse_engine: Engi
         )
     with pytest.raises(ValueError):
         select({"test.foo": ["a", "c"]}, engine=warehouse_engine)
-
-
-def test_query_no_resolution_fail():
-    """Querying with multiple selectors and no resolution is not allowed."""
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="i",
-            ),
-            fields=["a", "b"],
-        ),
-        Selector(
-            source=Source(
-                address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
-                db_pk="j",
-            ),
-            fields=["x", "y"],
-        ),
-    ]
-
-    with pytest.raises(ValueError, match="resolution name"):
-        query(sels)
 
 
 @patch.object(Source, "to_arrow")
@@ -339,7 +348,7 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
     ]
 
     # Validate results
-    results = query(sels, resolution_name="link", limit=7)
+    results = query(sels, limit=7)
     assert len(results) == 4
     assert {
         # All columns automatically selected for `foo`
@@ -355,18 +364,18 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
     assert dict(query_route.calls[-2].request.url.params) == {
         "full_name": sels[0].source.address.full_name,
         "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
-        "resolution_name": "link",
+        "resolution_name": DEFAULT_RESOLUTION,
         "limit": "4",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "full_name": sels[1].source.address.full_name,
         "warehouse_hash_b64": hash_to_base64(sels[1].source.address.warehouse_hash),
-        "resolution_name": "link",
+        "resolution_name": DEFAULT_RESOLUTION,
         "limit": "3",
     }
 
     # It also works with the selectors specified separately
-    query([sels[0]], [sels[1]], resolution_name="link", limit=7)
+    query([sels[0]], [sels[1]], limit=7)
 
 
 def test_query_404_resolution(matchbox_api: MockRouter):
@@ -440,7 +449,7 @@ def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
     source = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}], engine=engine
     )
-    mock_source_instance = source.to_mock()
+    mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
 
     # Mock the initial source metadata upload
@@ -505,7 +514,7 @@ def test_index_with_columns(
     """Test indexing with different column definition formats."""
     engine = create_engine("sqlite:///:memory:")
 
-    # Create source dummy and mock
+    # Create source testkit and mock
     source = source_factory(
         features=[
             {"name": "name", "base_generator": "name"},
@@ -513,7 +522,7 @@ def test_index_with_columns(
         ],
         engine=engine,
     )
-    mock_source_instance = source.to_mock()
+    mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
 
     # Mock the API endpoints
@@ -570,7 +579,7 @@ def test_index_upload_failure(MockSource: Mock, matchbox_api: MockRouter):
     source = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}], engine=engine
     )
-    mock_source_instance = source.to_mock()
+    mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
 
     # Mock successful source creation
