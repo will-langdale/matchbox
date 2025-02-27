@@ -13,7 +13,7 @@ def cleaner(function: Callable, arguments: Dict) -> Dict[str, Dict[str, Any]]:
         arguments: a dictionary of keyword arguments to pass to the cleaning function
 
     Returns:
-        A representation of the cleaner ready to be passed to the `cleaners` function
+        A representation of the cleaner ready to be passed to the `cleaners()` function
 
     """
     return {function.__name__: {"function": function, "arguments": arguments}}
