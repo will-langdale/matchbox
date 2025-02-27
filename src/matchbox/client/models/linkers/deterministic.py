@@ -1,3 +1,5 @@
+"""A linking methodology based on a deterministic set of conditions."""
+
 from typing import Type
 
 import duckdb

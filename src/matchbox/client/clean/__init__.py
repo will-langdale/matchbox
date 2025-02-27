@@ -1,3 +1,5 @@
+"""Library of default cleaning functions."""
+
 from matchbox.client.clean.lib import (
     company_name,
     company_number,

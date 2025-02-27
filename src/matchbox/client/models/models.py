@@ -1,3 +1,5 @@
+"""Functions and classes to define, run and register models."""
+
 from typing import Any, ParamSpec, TypeVar
 
 from pandas import DataFrame

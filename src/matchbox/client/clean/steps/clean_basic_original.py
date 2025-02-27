@@ -1,3 +1,6 @@
+"""Legacy cleaning rules inherited by the Company Matching Service."""
+
+
 def cms_original_clean_company_name_general(column):
     """Replicates the original Company Matching Service company name cleaning
     regex exactly. Intended to help replicate the methodology for comparison.

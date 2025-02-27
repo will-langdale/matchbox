@@ -1,3 +1,5 @@
+"""Functions to select and retrieve data from the Matchbox server."""
+
 import itertools
 from os import getenv
 from typing import Literal
