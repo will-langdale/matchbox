@@ -1,4 +1,4 @@
-"""Functionalities to pre-process data sources."""
+"""Functions to pre-process data sources."""
 
 from typing import Any, Callable, Dict
 
@@ -10,7 +10,7 @@ def cleaner(function: Callable, arguments: Dict) -> Dict[str, Dict[str, Any]]:
 
     Args:
         function: the callable implementing the cleaning behaviour
-        arguments: a dictionary of arg
+        arguments: a dictionary of keyword arguments to pass to the cleaning function
 
     Returns:
         A representation of the cleaner ready to be passed to the `cleaners` function
@@ -23,11 +23,10 @@ def cleaners(*cleaner: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Combine multiple cleaners in a single object to pass to `process()`
 
     Args:
-        cleaner: Output of the `cleaner` function
+        cleaner: Output of the `cleaner()` function
 
     Returns:
-        A representation of multiple cleaners to be passed to the `process` function
-
+        A representation of multiple cleaners to be passed to the `process()` function
 
     Examples:
         ```python
@@ -51,7 +50,7 @@ def process(data: DataFrame, pipeline: Dict[str, Dict[str, Any]]) -> DataFrame:
 
     Args:
         data: The dataframe to process
-        pipeline: Output of the `cleaners` function
+        pipeline: Output of the `cleaners()` function
 
     Returns:
         The processed dataset

@@ -1,4 +1,4 @@
-"""Functionalities allowing to define, run and register models."""
+"""Functions and classes to define, run and register models."""
 
 from typing import Any, ParamSpec, TypeVar
 

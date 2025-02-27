@@ -1,4 +1,4 @@
-"""A dedupe methodology based on a deterministic set of conditions."""
+"""A deduplication methodology based on a deterministic set of conditions."""
 
 from typing import List, Type
 
