@@ -1,5 +1,12 @@
 from typing import Any
 
+# -- Configuration exceptions
+
+
+class MatchboxClientSettingsException(Exception):
+    """Incorrect configuration provided to client"""
+
+
 # -- Client-side API exceptions --
 
 

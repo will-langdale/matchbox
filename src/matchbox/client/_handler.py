@@ -18,6 +18,7 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
+    MatchboxClientSettingsException,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
@@ -94,7 +95,7 @@ def create_client() -> httpx.Client:
     api_root = getenv("MB__CLIENT__API_ROOT")
     timeout = getenv("MB__CLIENT__TIMEOUT")
     if api_root is None:
-        raise RuntimeError(
+        raise MatchboxClientSettingsException(
             "MB__CLIENT__API_ROOT needs to be defined in the environment"
         )
     if timeout is not None:
