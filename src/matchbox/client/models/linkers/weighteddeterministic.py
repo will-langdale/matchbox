@@ -1,3 +1,5 @@
+"""A linking methodology that applies different weights to field comparisons."""
+
 from typing import List, Type
 
 import duckdb

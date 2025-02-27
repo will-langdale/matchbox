@@ -1,3 +1,5 @@
+"""Base class for linkers."""
+
 import warnings
 from abc import ABC, abstractmethod
 

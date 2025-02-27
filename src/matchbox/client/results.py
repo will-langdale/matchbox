@@ -1,3 +1,5 @@
+"""Objects representing the results of running a model client-side."""
+
 import logging
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar

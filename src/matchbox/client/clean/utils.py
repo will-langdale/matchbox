@@ -1,3 +1,5 @@
+"""Generic utilities for default cleaning functions."""
+
 from typing import Callable
 
 import duckdb

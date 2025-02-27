@@ -1,3 +1,5 @@
+"""Functions abstracting the interaction with the server API."""
+
 import time
 from collections.abc import Iterable
 from io import BytesIO
