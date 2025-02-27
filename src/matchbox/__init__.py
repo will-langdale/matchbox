@@ -1,11 +1,6 @@
 import logging
 
-from dotenv import find_dotenv, load_dotenv
-
 from matchbox.common.exceptions import MatchboxClientSettingsException
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 logic_logger = logging.getLogger("mb_logic")
 

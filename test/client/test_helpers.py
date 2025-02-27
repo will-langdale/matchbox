@@ -4,13 +4,13 @@ from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
-from dotenv import find_dotenv, load_dotenv
 from httpx import Response
 from pandas import DataFrame
 from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
 from matchbox import index, match, process, query
+from matchbox.client._settings import settings as client_settings
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
@@ -30,9 +30,6 @@ from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
-
-dotenv_path = find_dotenv()
-load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +79,7 @@ def test_select_default_engine(matchbox_api: MockRouter, warehouse_engine: Engin
     environ["MB__CLIENT__DEFAULT_WAREHOUSE"] = warehouse_engine.url.render_as_string(
         hide_password=False
     )
+    client_settings.__init__()
 
     # Set up mocks and test data
     testkit = source_factory(full_name="test.bar", engine=warehouse_engine)

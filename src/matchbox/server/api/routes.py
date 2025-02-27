@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
-from dotenv import find_dotenv, load_dotenv
 from fastapi import (
     BackgroundTasks,
     Body,
@@ -45,9 +44,6 @@ if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 else:
     S3Client = Any
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 class ParquetResponse(Response):

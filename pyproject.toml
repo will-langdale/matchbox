@@ -19,7 +19,6 @@ dependencies = [
     "pyarrow>=17.0.0",
     "pydantic-settings>=2.5.2",
     "pydantic>=2.9.2",
-    "python-dotenv>=1.0.1",
     "rustworkx>=0.15.1",
     "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",

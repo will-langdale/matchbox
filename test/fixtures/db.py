@@ -1,12 +1,10 @@
 import os
-from os import getenv
 from typing import TYPE_CHECKING, Any, Callable, Generator, Literal
 
 import boto3
 import pytest
 import respx
 from _pytest.fixtures import FixtureRequest
-from dotenv import find_dotenv, load_dotenv
 from moto import mock_aws
 from pandas import DataFrame
 from respx import MockRouter
@@ -14,6 +12,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
 from matchbox import index, make_model
+from matchbox.client._settings import settings as client_settings
 from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
@@ -33,8 +32,6 @@ if TYPE_CHECKING:
 else:
     S3Client = Any
 
-dotenv_path = find_dotenv()
-load_dotenv(dotenv_path)
 
 AddIndexedDataCallable = Callable[[MatchboxPostgres, list[Source]], None]
 
@@ -395,6 +392,6 @@ def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
 @pytest.fixture(scope="function")
 def matchbox_api() -> Generator[MockRouter, None, None]:
     with respx.mock(
-        base_url=getenv("MB__CLIENT__API_ROOT"), assert_all_called=True
+        base_url=client_settings.api_root, assert_all_called=True
     ) as respx_mock:
         yield respx_mock

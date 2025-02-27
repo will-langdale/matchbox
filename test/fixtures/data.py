@@ -5,7 +5,6 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 import pytest
-from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 
 from matchbox import process, query
@@ -13,9 +12,6 @@ from matchbox.client.clean import company_name
 from matchbox.client.helpers import cleaner, cleaners, select
 from matchbox.client.helpers.selector import Selector
 from matchbox.common.sources import Source
-
-dotenv_path = find_dotenv()
-load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
 TEST_ROOT = Path(__file__).resolve().parents[1]

@@ -1,7 +1,6 @@
 """Functions to select and retrieve data from the Matchbox server."""
 
 import itertools
-from os import getenv
 from typing import Literal
 from warnings import warn
 
@@ -12,6 +11,7 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
 from matchbox.client._logging import client_logger
+from matchbox.client._settings import settings
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.sources import Match, Source, SourceAddress
 
@@ -45,7 +45,7 @@ def select(
         ```
     """
     if not engine:
-        if default_engine := getenv("MB__CLIENT__DEFAULT_WAREHOUSE"):
+        if default_engine := settings.default_warehouse:
             engine = create_engine(default_engine)
             client_logger.warning("Using default engine")
         else:

@@ -3,12 +3,12 @@
 import time
 from collections.abc import Iterable
 from io import BytesIO
-from os import getenv
 
 import httpx
 from pyarrow import Table
 from pyarrow.parquet import read_table
 
+from matchbox.client._settings import settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
@@ -20,7 +20,6 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
-    MatchboxClientSettingsException,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
@@ -94,22 +93,14 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
 def create_client() -> httpx.Client:
     """Create an HTTPX client with proper configuration."""
-    api_root = getenv("MB__CLIENT__API_ROOT")
-    timeout = getenv("MB__CLIENT__TIMEOUT")
-    if api_root is None:
-        raise MatchboxClientSettingsException(
-            "MB__CLIENT__API_ROOT needs to be defined in the environment"
-        )
-    if timeout is not None:
-        timeout = float(timeout)
-
     return httpx.Client(
-        base_url=api_root, timeout=timeout, event_hooks={"response": [handle_http_code]}
+        base_url=settings.api_root,
+        timeout=settings.timeout,
+        event_hooks={"response": [handle_http_code]},
     )
 
 
 CLIENT = create_client()
-DELAY = int(getenv("MB__CLIENT__RETRY_DELAY", 2))
 
 # Retrieval
 
@@ -204,7 +195,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
         if status.status == "failed":
             raise MatchboxServerFileError(status.details)
 
-        time.sleep(DELAY)
+        time.sleep(settings.retry_delay)
 
     return status
 
@@ -260,7 +251,7 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
         if status.status == "failed":
             raise MatchboxServerFileError(status.details)
 
-        time.sleep(DELAY)
+        time.sleep(settings.retry_delay)
 
     return status
 
