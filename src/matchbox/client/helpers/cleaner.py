@@ -1,3 +1,5 @@
+"""Functionalities to pre-process data sources."""
+
 from typing import Any, Callable, Dict
 
 from pandas import DataFrame

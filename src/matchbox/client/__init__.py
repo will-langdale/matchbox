@@ -1,3 +1,5 @@
+"""All client-side functionalities of Matchbox."""
+
 from matchbox.client.helpers.cleaner import process
 from matchbox.client.helpers.index import index
 from matchbox.client.helpers.selector import match, query

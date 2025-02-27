@@ -1,3 +1,5 @@
+"""A linking methodology leveraging Splink."""
+
 import ast
 import inspect
 import logging

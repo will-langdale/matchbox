@@ -1,3 +1,5 @@
+"""Client-side logging utilities."""
+
 import logging
 import sys
 

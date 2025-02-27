@@ -1,3 +1,5 @@
+"""Low-level primitives supporting default cleaning functions."""
+
 from typing import Dict, List
 
 from matchbox.client.clean.utils import ABBREVIATIONS, STOPWORDS
