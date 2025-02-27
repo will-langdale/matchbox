@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from matchbox.common.exceptions import MatchboxClientSettingsException
 
 
-class Settings(BaseSettings):
+class ClientSettings(BaseSettings):
     api_root: str
     timeout: float | None = None
     retry_delay: int = 5
@@ -21,6 +21,6 @@ class Settings(BaseSettings):
 
 
 try:
-    settings = Settings()
+    settings = ClientSettings()
 except ValueError as e:
     raise MatchboxClientSettingsException from e

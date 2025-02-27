@@ -10,5 +10,5 @@ try:
 except MatchboxClientSettingsException:
     logic_logger.warning(
         "Impossible to initialise client. "
-        "Please ignore if running in server-mode. Otherwise, check your env file.",
+        "Please ignore if running in server mode. Otherwise, check your .env file.",
     )
