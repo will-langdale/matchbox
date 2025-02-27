@@ -1,4 +1,4 @@
-"""Functionalities to index data sources to the Matchbox server."""
+"""Functions to index data sources to the Matchbox server."""
 
 from sqlalchemy import Engine
 
