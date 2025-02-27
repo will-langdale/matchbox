@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
 import pyarrow as pa
 import pyarrow.compute as pc
-from dotenv import find_dotenv, load_dotenv
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -24,9 +23,6 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 logic_logger = logging.getLogger("mb_logic")
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:

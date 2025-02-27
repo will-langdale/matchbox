@@ -1,10 +1,9 @@
 import logging
-from os import environ
+from typing import Callable
 from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
-from dotenv import find_dotenv, load_dotenv
 from httpx import Response
 from pandas import DataFrame
 from respx import MockRouter
@@ -30,9 +29,6 @@ from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
-
-dotenv_path = find_dotenv()
-load_dotenv(dotenv_path)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -76,12 +72,15 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
-def test_select_default_engine(matchbox_api: MockRouter, warehouse_engine: Engine):
+def test_select_default_engine(
+    matchbox_api: MockRouter,
+    warehouse_engine: Engine,
+    env_setter: Callable[[str, str], None],
+):
     """We can select without explicit engine if default is set"""
-    # Set up default engine
-    environ["MB__CLIENT__DEFAULT_WAREHOUSE"] = warehouse_engine.url.render_as_string(
-        hide_password=False
-    )
+    # Overwrite temporarily env variable
+    default_engine = warehouse_engine.url.render_as_string(hide_password=False)
+    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", default_engine)
 
     # Set up mocks and test data
     testkit = source_factory(full_name="test.bar", engine=warehouse_engine)
@@ -107,6 +106,12 @@ def test_select_default_engine(matchbox_api: MockRouter, warehouse_engine: Engin
     assert selection[0].source.model_dump() == source.model_dump()
     # Check the engine is set by the selector
     assert selection[0].source.engine.url == warehouse_engine.url
+
+
+def test_select_missing_engine():
+    """We must pass an engine if a default is not set"""
+    with pytest.raises(ValueError, match="engine"):
+        select("test.bar")
 
 
 def test_select_mixed_style(matchbox_api: MockRouter, warehouse_engine: Engine):
