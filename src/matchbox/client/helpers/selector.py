@@ -34,7 +34,7 @@ def select(
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
         only_indexed: Whether you intend to select indexed columns only. Will raise a
-            warning if False and non-indexed columns are selected. Defaults to True.
+            warning if True and non-indexed columns are selected. Defaults to True.
             Non-indexed columns should only be selected if you're querying data for
             a purpose other than matching
 
