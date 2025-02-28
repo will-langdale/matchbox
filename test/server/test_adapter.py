@@ -38,6 +38,7 @@ def backend_instance(request: pytest.FixtureRequest, backend: str):
 
 
 @pytest.mark.parametrize("backend", backends)
+@pytest.mark.docker
 class TestMatchboxBackend:
     @pytest.fixture(autouse=True)
     def setup(

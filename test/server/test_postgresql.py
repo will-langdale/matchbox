@@ -94,6 +94,7 @@ def test_hash_id_map():
     ],
     ids=["cdms-crn_crn", "cdms-crn_cdms", "crn-duns_crn", "crn-duns_duns"],
 )
+@pytest.mark.docker
 def test_benchmark_query_generation(
     setup_database: SetupDatabaseCallable,
     matchbox_postgres: MatchboxPostgres,
@@ -122,6 +123,7 @@ def test_benchmark_query_generation(
     assert df.pk.nunique() == parameters["unique_pks"]
 
 
+@pytest.mark.docker
 def test_benchmark_match_query_generation(
     setup_database: SetupDatabaseCallable,
     matchbox_postgres: MatchboxPostgres,
@@ -179,6 +181,7 @@ def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_p
         (86475, 3, {3, 4, None}),  # Both different
     ],
 )
+@pytest.mark.docker
 def test_benchmark_generate_tables_parameterized(
     matchbox_postgres: MatchboxDBAdapter,
     cluster_start_id: int,

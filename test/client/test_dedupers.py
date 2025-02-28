@@ -19,6 +19,7 @@ from ..fixtures.models import (
 
 @pytest.mark.parametrize("fx_data", dedupe_data_test_params)
 @pytest.mark.parametrize("fx_deduper", dedupe_model_test_params)
+@pytest.mark.docker
 def test_dedupers(
     # Fixtures
     matchbox_postgres: MatchboxPostgres,

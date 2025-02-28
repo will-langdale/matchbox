@@ -8,7 +8,7 @@ import httpx
 from pyarrow import Table
 from pyarrow.parquet import read_table
 
-from matchbox.client._settings import settings
+from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
@@ -91,7 +91,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     raise MatchboxUnhandledServerResponse(res.content)
 
 
-def create_client() -> httpx.Client:
+def create_client(settings: ClientSettings) -> httpx.Client:
     """Create an HTTPX client with proper configuration."""
     return httpx.Client(
         base_url=settings.api_root,
@@ -100,7 +100,7 @@ def create_client() -> httpx.Client:
     )
 
 
-CLIENT = create_client()
+CLIENT = create_client(settings=settings)
 
 # Retrieval
 

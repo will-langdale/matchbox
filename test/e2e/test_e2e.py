@@ -22,7 +22,7 @@ from matchbox.common.factories.sources import (
 from matchbox.server.postgresql import MatchboxPostgres
 
 
-@pytest.mark.e2e
+@pytest.mark.docker
 class TestE2EAnalyticalUser:
     """End to end tests for analytical user functionality."""
 

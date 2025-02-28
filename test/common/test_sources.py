@@ -67,6 +67,7 @@ def test_source_address_compose():
     assert len(same_table_name) == 1
 
 
+@pytest.mark.docker
 def test_source_set_engine(warehouse_engine: Engine):
     """Engine can be set on Source"""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
@@ -233,6 +234,7 @@ def test_source_format_columns():
     assert source2.format_column("col") == "foo_bar_col"
 
 
+@pytest.mark.docker
 def test_source_default_columns(warehouse_engine: Engine):
     """Default columns from the warehouse can be assigned to a Source."""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
@@ -262,6 +264,7 @@ def test_source_default_columns(warehouse_engine: Engine):
     assert source.columns == expected_columns
 
 
+@pytest.mark.docker
 def test_source_to_table(warehouse_engine: Engine):
     """Convert Source to SQLAlchemy Table."""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
@@ -282,6 +285,7 @@ def test_source_to_table(warehouse_engine: Engine):
     assert isinstance(source.to_table(), Table)
 
 
+@pytest.mark.docker
 def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
     """Convert Source to Arrow table or Pandas dataframe with options."""
     df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
@@ -344,6 +348,7 @@ def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
     )
 
 
+@pytest.mark.docker
 def test_source_hash_data(warehouse_engine: Engine):
     """A Source can output hashed versions of its rows."""
     df = pd.DataFrame(
