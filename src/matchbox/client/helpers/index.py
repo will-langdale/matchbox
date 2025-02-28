@@ -1,3 +1,5 @@
+"""Functions to index data sources to the Matchbox server."""
+
 from sqlalchemy import Engine
 
 from matchbox.client import _handler

@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
-from dotenv import find_dotenv, load_dotenv
 from fastapi import (
     BackgroundTasks,
     Body,
@@ -21,12 +20,12 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     BackendUploadType,
     CountResult,
-    HealthCheck,
     ModelAncestor,
     ModelMetadata,
     ModelOperationStatus,
     ModelOperationType,
     NotFoundError,
+    OKMessage,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -45,9 +44,6 @@ if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 else:
     S3Client = Any
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 class ParquetResponse(Response):
@@ -75,34 +71,17 @@ async def http_exception_handler(request, exc):
     return JSONResponse(content=exc.detail, status_code=exc.status_code)
 
 
-# General
-
-
 def get_backend() -> MatchboxDBAdapter:
     return BackendManager.get_backend()
 
 
+# General
+
+
 @app.get("/health")
-async def healthcheck() -> HealthCheck:
+async def healthcheck() -> OKMessage:
     """Perform a health check and return the status."""
-    return HealthCheck(status="OK")
-
-
-@app.get("/testing/count")
-async def count_backend_items(
-    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
-    entity: BackendCountableType | None = None,
-) -> CountResult:
-    """Count the number of various entities in the backend."""
-
-    def get_count(e: BackendCountableType) -> int:
-        return getattr(backend, str(e)).count()
-
-    if entity is not None:
-        return CountResult(entities={str(entity): get_count(entity)})
-    else:
-        res = {str(e): get_count(e) for e in BackendCountableType}
-        return CountResult(entities=res)
+    return OKMessage()
 
 
 @app.post(
@@ -640,4 +619,44 @@ async def delete_model(
                 operation=ModelOperationType.DELETE,
                 details=str(e),
             ).model_dump(),
+        ) from e
+
+
+# Admin
+
+
+@app.get("/database/count")
+async def count_backend_items(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    entity: BackendCountableType | None = None,
+) -> CountResult:
+    """Count the number of various entities in the backend."""
+
+    def get_count(e: BackendCountableType) -> int:
+        return getattr(backend, str(e)).count()
+
+    if entity is not None:
+        return CountResult(entities={str(entity): get_count(entity)})
+    else:
+        res = {str(e): get_count(e) for e in BackendCountableType}
+        return CountResult(entities=res)
+
+
+@app.delete(
+    "/database",
+    responses={409: {"model": str}},
+)
+async def clear_database(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    certain: Annotated[
+        bool, Query(description="Confirm deletion of all data in the database")
+    ] = False,
+) -> OKMessage:
+    try:
+        backend.clear(certain=certain)
+        return OKMessage()
+    except MatchboxDeletionNotConfirmed as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
         ) from e

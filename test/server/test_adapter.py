@@ -3,7 +3,6 @@ from typing import Callable
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame
 from sqlalchemy import Engine
 
@@ -24,10 +23,6 @@ from ..fixtures.models import (
     dedupe_data_test_params,
     link_data_test_params,
 )
-
-dotenv_path = find_dotenv()
-load_dotenv(dotenv_path)
-
 
 backends = [
     pytest.param("matchbox_postgres", id="postgres"),

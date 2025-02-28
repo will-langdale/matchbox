@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -11,7 +10,6 @@ from typing import (
 
 import boto3
 from botocore.exceptions import ClientError
-from dotenv import find_dotenv, load_dotenv
 from pyarrow import Table
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,9 +23,6 @@ if TYPE_CHECKING:
 else:
     S3Client = Any
 
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path, override=True)
 
 R = TypeVar("R")
 P = ParamSpec("P")
@@ -107,7 +102,6 @@ class MatchboxSettings(BaseSettings):
         extra="ignore",
     )
 
-    datasets_config: Path
     batch_size: int = Field(default=250_000)
     backend_type: MatchboxBackends
     datastore: MatchboxDatastoreSettings

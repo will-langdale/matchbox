@@ -1,3 +1,5 @@
+"""Functions to select and retrieve data from the Matchbox server."""
+
 import itertools
 from typing import Literal
 from warnings import warn
@@ -5,9 +7,12 @@ from warnings import warn
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
+from matchbox.client._logging import client_logger
+from matchbox.client._settings import settings
+from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.sources import Match, Source, SourceAddress
 
 
@@ -18,18 +23,21 @@ class Selector(BaseModel):
 
 def select(
     *selection: str | dict[str, str],
-    engine: Engine,
+    engine: Engine | None = None,
     non_indexed: bool = False,
 ) -> list[Selector]:
     """From one engine, builds and verifies a list of selectors.
 
     Args:
         selection: Full source names and optionally a subset of columns to select
-        engine: The engine to connect to the data warehouse hosting the source
+        engine: the engine to connect to the data warehouse hosting the source.
+            If not provided, will use a connection string from the
+            `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
         non_indexed: Whether you intend to select non-indexed columns. Will raise a
             warning if True and non-indexed columns are selected. Defaults to False.
             Non-indexed columns should only be selected if you're querying data for
             a purpose other than matching
+
     Returns:
         A list of Selector objects
 
@@ -42,6 +50,16 @@ def select(
         select({"companies_house": ["crn"], "hmrc_exporters": ["name"]}, engine=engine)
         ```
     """
+    if not engine:
+        if default_engine := settings.default_warehouse:
+            engine = create_engine(default_engine)
+            client_logger.warning("Using default engine")
+        else:
+            raise ValueError(
+                "An engine needs to be provided if "
+                "`MB__CLIENT__DEFAULT_WAREHOUSE` is unset"
+            )
+
     selectors = []
     for s in selection:
         if isinstance(s, str):
@@ -86,8 +104,10 @@ def query(
         selectors: each selector is the output of `select()`
             This allows querying sources coming from different engines
         resolution_name (optional): the name of the resolution point to query
-            It can only be `None` when querying from a single source, in which case the
-            dataset resolution for that source will be used
+            If not set:
+
+            * If querying a single source, it will use the source resolution
+            * If querying 2 or more sources, it will look for a default resolution
         return_type: the form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): the threshold to use for creating clusters
@@ -120,9 +140,7 @@ def query(
     selectors = list(itertools.chain(*selectors))
 
     if not resolution_name and len(selectors) > 1:
-        raise ValueError(
-            "A resolution name must be specified if querying more than one source"
-        )
+        resolution_name = DEFAULT_RESOLUTION
 
     # Divide the limit among selectors
     if limit:
@@ -190,7 +208,7 @@ def match(
     *targets: list[Selector],
     source: list[Selector],
     source_pk: str,
-    resolution_name: str,
+    resolution_name: str = DEFAULT_RESOLUTION,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches IDs against the selected backend.
@@ -200,11 +218,22 @@ def match(
             This allows matching against sources coming from different engines
         source: The output of using `select()` on a single source.
         source_pk: The primary key value to match from the source.
-        resolution_name: the resolution name to use for filtering results
+        resolution_name (optional): the resolution name to use for filtering results.
+            If not set, it will look for a default resolution.
         threshold (optional): the threshold to use for creating clusters
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
+
+    Examples:
+        ```python
+        mb.match(
+            select("datahub_companies", engine=engine),
+            source=select("companies_house", engine=engine),
+            source_pk="8534735",
+            resolution_name="last_linker",
+        )
+        ```
     """
     if len(source) > 1:
         raise ValueError("Only one source can be matched at one time")

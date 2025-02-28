@@ -1,12 +1,8 @@
-from dotenv import find_dotenv, load_dotenv
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from matchbox.server.base import MatchboxBackends, MatchboxSettings
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 class MatchboxPostgresCoreSettings(BaseModel):

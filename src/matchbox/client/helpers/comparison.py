@@ -1,3 +1,5 @@
+"""Functions to compare fields in different datasets."""
+
 import sqlglot.expressions as exp
 from sqlglot import parse_one
 from sqlglot.errors import ParseError

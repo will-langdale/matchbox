@@ -1,3 +1,5 @@
+"""Base class for deduplication methodologies."""
+
 import warnings
 from abc import ABC, abstractmethod
 

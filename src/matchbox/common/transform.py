@@ -8,7 +8,6 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import rustworkx as rx
-from dotenv import find_dotenv, load_dotenv
 
 from matchbox.common.hash import hash_values
 from matchbox.common.logging import build_progress_bar
@@ -16,9 +15,6 @@ from matchbox.common.logging import build_progress_bar
 T = TypeVar("T", bound=Hashable)
 
 logic_logger = logging.getLogger("mb_logic")
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 def to_clusters(

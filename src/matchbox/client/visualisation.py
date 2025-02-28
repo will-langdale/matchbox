@@ -1,3 +1,5 @@
+"""Visualisation utilities."""
+
 import rustworkx as rx
 from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw

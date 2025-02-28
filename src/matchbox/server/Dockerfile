@@ -1,5 +1,5 @@
 # connectorx won't work on ARM or python-alpine
-FROM --platform=amd64 python:3.11
+FROM --platform=amd64 python:3.11 AS base
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -18,7 +18,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --all-extras --no-install-project --no-dev
 
 ARG ENV_FILE
-COPY ./environments/$ENV_FILE /code/.env
 COPY ./uv.lock /code/uv.lock
 COPY ./pyproject.toml /code/pyproject.toml
 COPY ./src/matchbox /code/src/matchbox
@@ -31,6 +30,18 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/code/.venv/bin:$PATH"
 
-# Uses `fastapi dev` to enable hot-reloading when the `watch` sync occurs
-# Uses `--host 0.0.0.0` to allow access from outside the container
+
+# Local development stage: with locally-specified environment variables and hot reloading
+
+FROM base AS dev
+
+COPY ./environments/$ENV_FILE /code/.env
 CMD ["fastapi", "dev", "--host", "0.0.0.0", "src/matchbox/server/api"]
+
+
+# Production stage: no environment variables (they come from the infrastructure) and no hot reloading
+
+FROM base AS prod
+
+# Uses `--host 0.0.0.0` to allow access from outside the container
+CMD ["fastapi", "run", "--host", "0.0.0.0", "src/matchbox/server/api"]

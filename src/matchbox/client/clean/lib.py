@@ -1,3 +1,5 @@
+"""Implementation of default cleaning functions."""
+
 from functools import partial
 
 from pandas import DataFrame
