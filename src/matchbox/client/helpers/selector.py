@@ -30,7 +30,7 @@ def select(
 
     Args:
         selection: Full source names and optionally a subset of columns to select
-        engine: the engine to connect to the data warehouse hosting the source.
+        engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
         non_indexed: Whether you intend to select non-indexed columns. Will raise a
@@ -101,20 +101,20 @@ def query(
     """Runs queries against the selected backend.
 
     Args:
-        selectors: each selector is the output of `select()`
+        selectors: Each selector is the output of `select()`.
             This allows querying sources coming from different engines
-        resolution_name (optional): the name of the resolution point to query
+        resolution_name (optional): The name of the resolution point to query
             If not set:
 
             * If querying a single source, it will use the source resolution
             * If querying 2 or more sources, it will look for a default resolution
-        return_type: the form to return data in, one of "pandas" or "arrow"
+        return_type: The form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
-        threshold (optional): the threshold to use for creating clusters
+        threshold (optional): The threshold to use for creating clusters
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
-        limit (optional): the number to use in a limit clause. Useful for testing
+        limit (optional): The number to use in a limit clause. Useful for testing
 
     Returns:
         Data in the requested return type
@@ -214,13 +214,13 @@ def match(
     """Matches IDs against the selected backend.
 
     Args:
-        targets: each target is the output of `select()`
+        targets: Each target is the output of `select()`.
             This allows matching against sources coming from different engines
         source: The output of using `select()` on a single source.
         source_pk: The primary key value to match from the source.
-        resolution_name (optional): the resolution name to use for filtering results.
+        resolution_name (optional): The resolution name to use for filtering results.
             If not set, it will look for a default resolution.
-        threshold (optional): the threshold to use for creating clusters
+        threshold (optional): The threshold to use for creating clusters.
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors

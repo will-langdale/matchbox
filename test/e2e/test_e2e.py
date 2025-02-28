@@ -67,7 +67,7 @@ class TestE2EAnalyticalUser:
         # Create source configurations that match our test fixtures
         source_configs = (
             SourceConfig(
-                full_name="test.crn",
+                full_name="e2e.crn",
                 engine=warehouse_engine,
                 features=(
                     features["company_name"].add_variations(
@@ -82,7 +82,7 @@ class TestE2EAnalyticalUser:
                 repetition=0,  # No duplicates within the variations
             ),
             SourceConfig(
-                full_name="test.duns",
+                full_name="e2e.duns",
                 engine=warehouse_engine,
                 features=(
                     features["company_name"],
@@ -92,7 +92,7 @@ class TestE2EAnalyticalUser:
                 repetition=0,
             ),
             SourceConfig(
-                full_name="test.cdms",
+                full_name="e2e.cdms",
                 engine=warehouse_engine,
                 features=(
                     features["crn"],
@@ -108,6 +108,12 @@ class TestE2EAnalyticalUser:
             source_configs=source_configs,
             seed=42,  # For reproducibility
         )
+
+        # Use a separate schema to avoid conflict with legacy test data
+        # TODO: Remove once legacy tests are refactored
+        with warehouse_engine.connect() as conn:
+            conn.execute(text("create schema e2e;"))
+            conn.commit()
 
         # Setup code - Create tables in warehouse
         for source_name, source_testkit in self.linked_testkit.sources.items():
@@ -266,13 +272,13 @@ class TestE2EAnalyticalUser:
         # Define linking pairs based on common fields
         linking_pairs = [
             (
-                self.linked_testkit.sources["test.crn"],
-                self.linked_testkit.sources["test.duns"],
+                self.linked_testkit.sources["e2e.crn"],
+                self.linked_testkit.sources["e2e.duns"],
                 "company_name",
             ),  # CRN-DUNS via company_name
             (
-                self.linked_testkit.sources["test.crn"],
-                self.linked_testkit.sources["test.cdms"],
+                self.linked_testkit.sources["e2e.crn"],
+                self.linked_testkit.sources["e2e.cdms"],
                 "crn",
             ),  # CRN-CDMS via crn
         ]
@@ -375,9 +381,9 @@ class TestE2EAnalyticalUser:
 
         # === FINAL LINKING PHASE ===
         # Now link the first linked pair (crn-duns) with the third source (cdms)
-        crn_source = "test.crn"
-        duns_source = "test.duns"
-        cdms_source = "test.cdms"
+        crn_source = "e2e.crn"
+        duns_source = "e2e.duns"
+        cdms_source = "e2e.cdms"
         first_pair = (crn_source, duns_source)
 
         # Get prefixes for column names
@@ -469,9 +475,9 @@ class TestE2EAnalyticalUser:
 
         # === FINAL VERIFICATION PHASE ===
         # Query the final linked data with specific columns
-        crn_source = "test.crn"
-        duns_source = "test.duns"
-        cdms_source = "test.cdms"
+        crn_source = "e2e.crn"
+        duns_source = "e2e.duns"
+        cdms_source = "e2e.cdms"
 
         # Get necessary columns from each source
         final_df = query(
