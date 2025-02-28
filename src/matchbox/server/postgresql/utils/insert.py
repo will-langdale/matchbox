@@ -23,6 +23,7 @@ from matchbox.server.postgresql.orm import (
     ResolutionFrom,
     Resolutions,
     Sources,
+    ClusterSource,
 )
 from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
 
@@ -178,23 +179,39 @@ def insert_dataset(
                 pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
             )
         try:
+            cluster_ids = [next_cluster_id + i for i in range(len(data_hashes))]
+            data_hashes = data_hashes.append_column("cluster_id", pa.array(cluster_ids))
+            # creating cluster source
+            cluster_source = pa.Table.from_pandas(data_hashes.to_pandas().explode("source_pk"))
+
             # Upsert into Clusters table
             batch_ingest(
                 records=[
                     (
-                        next_cluster_id + i,
+                        clus["cluster_id"],
                         clus["hash"],
                         source_data["resolution_id"],
-                        clus["source_pk"],
                     )
-                    for i, clus in enumerate(data_hashes.to_pylist())
+                    for clus in data_hashes.to_pylist()
                 ],
                 table=Clusters,
                 conn=conn,
                 batch_size=batch_size,
             )
+            batch_ingest(
+                records=[
+                    (
+                        clus["cluster_id"],
+                        clus["source_pk"],
+                    )
+                    for clus in data_hashes.to_pylist()
+                ],
+                table=ClusterSource,
+                conn=conn,
+                batch_size=batch_size,
+            )
 
-            conn.commit()
+
         except IntegrityError as e:
             # Some edge cases, defined in tests, are not implemented yet
             raise NotImplementedError from e
@@ -379,7 +396,7 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
 
 def _results_to_insert_tables(
     resolution: Resolutions, probabilities: pa.Table, engine: Engine
-) -> tuple[pa.Table, pa.Table, pa.Table]:
+) -> tuple[pa.Table, pa.Table, pa.Table, pa.Table]:
     """Takes probabilities and returns three Arrow tables that can be inserted exactly.
 
     Returns:
@@ -432,14 +449,23 @@ def _results_to_insert_tables(
 
     # Create Clusters Arrow table to insert, containing only new clusters
     new_hashes = pc.filter(hm.lookup["hash"], hm.lookup["new"])
+    cluster_ids = pc.filter(hm.lookup["id"], hm.lookup["new"])
     clusters = pa.table(
         {
-            "cluster_id": pc.filter(hm.lookup["id"], hm.lookup["new"]),
+            "cluster_id": cluster_ids,
             "cluster_hash": new_hashes,
             "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
+        }
+    )
+
+    cluster_source_imploded = pa.table(
+        {
+            "cluster_id": cluster_ids,
             "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
         }
     )
+    cluster_source = pa.Table.from_pandas( cluster_source_imploded.to_pandas().explode("source_pk"))
+
 
     # Create Contains Arrow table to insert, containing only new contains edges
     # Recall that clusters are defined by their parents, so all existing clusters
@@ -456,7 +482,7 @@ def _results_to_insert_tables(
 
     logic_logger.info(f"[{resolution.name}] Wrangling complete!")
 
-    return clusters, contains, probabilities
+    return clusters, contains, probabilities, cluster_source
 
 
 def insert_results(
@@ -488,7 +514,7 @@ def insert_results(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"
     )
 
-    clusters, contains, probabilities = _results_to_insert_tables(
+    clusters, contains, probabilities, cluster_source = _results_to_insert_tables(
         resolution=resolution, probabilities=results, engine=engine
     )
 
@@ -548,6 +574,13 @@ def insert_results(
                 batch_size=batch_size,
             )
 
+            batch_ingest(
+                records=[tuple(c.values()) for c in cluster_source.to_pylist()],
+                table=ClusterSource,
+                conn=conn,
+                batch_size=batch_size,
+            )
+
             logic_logger.info(
                 f"[{resolution.name}] Successfully inserted "
                 f"{probabilities.shape[0]} objects into Probabilities table"
@@ -558,3 +591,4 @@ def insert_results(
             raise
 
     logic_logger.info(f"[{resolution.name}] Insert operation complete!")
+

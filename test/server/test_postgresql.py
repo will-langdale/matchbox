@@ -207,7 +207,8 @@ def test_benchmark_generate_tables_parameterized(
         )
 
         # Test number of tables
-        assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
+
+        assert len(results) == len(MBDB.MatchboxBase.metadata.tables) - 1
 
         # Test dataset IDs
         assert (

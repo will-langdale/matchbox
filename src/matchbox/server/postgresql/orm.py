@@ -1,3 +1,4 @@
+from typing import List
 from sqlalchemy import (
     BIGINT,
     FLOAT,
@@ -232,10 +233,9 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     cluster_id = Column(BIGINT, primary_key=True)
     cluster_hash = Column(BYTEA, nullable=False)
     dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
-    # Uses array as source data may have identical rows. We can't control this
-    # Must be indexed or PostgreSQL incorrectly tries to use nested joins
-    # when retrieving small datasets in query() -- extremely slow
-    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
+
+    # Relationship to ClusterSource
+    source_pks = relationship("ClusterSource", back_populates="clusters")
 
     # Relationships
     source = relationship("Sources", back_populates="clusters")
@@ -252,7 +252,6 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
     # Constraints and indices
     __table_args__ = (
-        Index("ix_clusters_id_gin", source_pk, postgresql_using="gin"),
         UniqueConstraint("cluster_hash", name="clusters_hash_key"),
     )
 
@@ -264,6 +263,9 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
                 select(func.coalesce(func.max(cls.cluster_id), 0))
             ).scalar()
             return result + 1
+
+    def get_source_pks(self) -> List[str]:
+        return [source.source_pk for source in self.source_pks]
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
@@ -290,3 +292,19 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     __table_args__ = (
         CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
     )
+
+
+class ClusterSource(CountMixin, MBDB.MatchboxBase):
+    """Table of relationship between clusters and source."""
+
+    __tablename__ = "clustersource"
+
+    # Columns
+    cluster = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+    )
+    source_pk = Column(TEXT, index=True, nullable=True, primary_key=True)
+
+    # Relationship to Clusters
+    clusters = relationship("Clusters", back_populates="source_pks")
+

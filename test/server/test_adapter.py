@@ -429,6 +429,7 @@ class TestMatchboxBackend:
 
         assert self.backend.get_source(address) == source
         assert self.backend.data.count() == 2
+        assert self.backend.clusters.count() == 2
         # I can add it again with no consequences
         self.backend.index(source, data_hashes)
         assert self.backend.data.count() == 2

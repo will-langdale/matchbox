@@ -101,3 +101,5 @@ class MatchboxDatabase:
 # Global database instance -- everything should use this
 
 MBDB = MatchboxDatabase(MatchboxPostgresSettings())
+
+
