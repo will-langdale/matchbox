@@ -5,12 +5,12 @@ from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
-from matchbox.common.logging import get_logger
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.logging import get_logger
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
     Clusters,

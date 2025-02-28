@@ -1,6 +1,5 @@
 """Objects representing the results of running a model client-side."""
 
-
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
@@ -9,9 +8,9 @@ import pyarrow.compute as pc
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from matchbox.common.logging import get_logger
 from matchbox.common.dtos import ModelMetadata
 from matchbox.common.hash import IntMap
+from matchbox.common.logging import get_logger
 from matchbox.common.transform import to_clusters
 
 if TYPE_CHECKING:

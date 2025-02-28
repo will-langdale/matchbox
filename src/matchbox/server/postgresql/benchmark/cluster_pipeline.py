@@ -4,16 +4,15 @@ from pathlib import Path
 
 import pyarrow as pa
 
-from matchbox.common.logging import get_logger
 from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import hash_data, hash_values
+from matchbox.common.logging import get_logger
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
 )
 from matchbox.server.postgresql.benchmark.generate_tables import PRESETS
 from matchbox.server.postgresql.utils.insert import HashIDMap
-
 
 pipeline_logger = get_logger("mb_pipeline")
 

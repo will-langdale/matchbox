@@ -1,5 +1,5 @@
-from matchbox.common.logging import get_logger
 from matchbox.common.exceptions import MatchboxClientSettingsException
+from matchbox.common.logging import get_logger
 
 logic_logger = get_logger("mb_logic")
 

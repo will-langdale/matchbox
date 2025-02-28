@@ -6,10 +6,10 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
-from matchbox.common.logging import get_logger , WARNING
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_values
+from matchbox.common.logging import WARNING, get_logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,

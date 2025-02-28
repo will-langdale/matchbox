@@ -8,10 +8,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import rustworkx as rx
 
-from matchbox import get_logger
-from matchbox.common.logging import get_logger
 from matchbox.common.hash import hash_values
-from matchbox.common.logging import build_progress_bar
+from matchbox.common.logging import build_progress_bar, get_logger
 
 T = TypeVar("T", bound=Hashable)
 

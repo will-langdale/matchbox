@@ -1,7 +1,7 @@
 import logging
-from rich.logging import RichHandler
 
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.progress import (
     BarColumn,
     Progress,
@@ -26,6 +26,7 @@ logging.basicConfig(
     format="%(message)s",
     handlers=[RichHandler(rich_tracebacks=True)],
 )
+
 
 def get_logger(name: str, custom_format: str = None) -> logging.Logger:
     logger = logging.getLogger(name)
