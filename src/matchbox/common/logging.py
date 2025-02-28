@@ -53,6 +53,9 @@ def get_logger(name: str, custom_format: str = None) -> logging.Logger:
     return logger
 
 
+mb_logic_logger = get_logger("mb_logic")
+
+
 def get_console():
     """Get the console instance."""
     return Console()

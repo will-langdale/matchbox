@@ -9,11 +9,9 @@ import pyarrow.compute as pc
 import rustworkx as rx
 
 from matchbox.common.hash import hash_values
-from matchbox.common.logging import build_progress_bar, get_logger
+from matchbox.common.logging import build_progress_bar, mb_logic_logger
 
 T = TypeVar("T", bound=Hashable)
-
-logic_logger = get_logger("mb_logic")
 
 
 def to_clusters(
@@ -321,7 +319,9 @@ def to_hierarchical_clusters(
     n_cores = multiprocessing.cpu_count()
     n_components = len(components)
 
-    logic_logger.info(f"Processing {n_components:,} components using {n_cores} workers")
+    mb_logic_logger.info(
+        f"Processing {n_components:,} components using {n_cores} workers"
+    )
 
     # Split table into separate component tables
     component_col = probabilities["component"]
@@ -369,12 +369,12 @@ def to_hierarchical_clusters(
                         results.append(result)
                         progress.update(process_task, advance=1)
                     except TimeoutError:
-                        logic_logger.error(
+                        mb_logic_logger.error(
                             f"Component processing timed out after {timeout} seconds"
                         )
                         raise
                     except Exception as e:
-                        logic_logger.error(f"Error processing component: {str(e)}")
+                        mb_logic_logger.error(f"Error processing component: {str(e)}")
                         raise
         else:
             results = [
@@ -383,11 +383,13 @@ def to_hierarchical_clusters(
                 if not progress.update(process_task, advance=1)
             ]
 
-    logic_logger.info(f"Completed processing {len(results):,} components successfully")
+    mb_logic_logger.info(
+        f"Completed processing {len(results):,} components successfully"
+    )
 
     # Create empty table if no results
     if not results:
-        logic_logger.warning("No results to concatenate")
+        mb_logic_logger.warning("No results to concatenate")
         return pa.table(
             {
                 "parent": pa.array([], type=dtype()),

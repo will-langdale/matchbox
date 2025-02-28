@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from matchbox.common.dtos import ModelMetadata
 from matchbox.common.hash import IntMap
-from matchbox.common.logging import get_logger
 from matchbox.common.transform import to_clusters
 
 if TYPE_CHECKING:
@@ -21,8 +20,6 @@ else:
 T = TypeVar("T", bound=Hashable)
 P = ParamSpec("P")
 R = TypeVar("R")
-
-logic_logger = get_logger("mb_logic")
 
 
 def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:

@@ -10,7 +10,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.logging import get_logger
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -26,8 +25,6 @@ else:
     PolarsDataFrame = Any
 
 T = TypeVar("T")
-
-logic_logger = get_logger("mb_logic")
 
 
 def _get_dataset_resolution(

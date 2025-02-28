@@ -9,7 +9,7 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_values
-from matchbox.common.logging import WARNING, get_logger
+from matchbox.common.logging import WARNING, get_logger, mb_logic_logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,
@@ -24,8 +24,6 @@ from matchbox.server.postgresql.orm import (
     Sources,
 )
 from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
-
-logic_logger = get_logger("mb_logic")
 
 
 class HashIDMap:
@@ -126,7 +124,7 @@ def insert_dataset(
     }
 
     with engine.connect() as conn:
-        logic_logger.info(f"Adding {source}")
+        mb_logic_logger.info(f"Adding {source}")
 
         # Generate existing max primary key values
         next_cluster_id = Clusters.next_id()
@@ -146,7 +144,7 @@ def insert_dataset(
         resolution_stmt = resolution_stmt.on_conflict_do_nothing()
         conn.execute(resolution_stmt)
 
-        logic_logger.info(f"{source} added to Resolutions table")
+        mb_logic_logger.info(f"{source} added to Resolutions table")
 
         # Upsert into Sources table
         sources_stmt = insert(Sources).values([source_data])
@@ -155,7 +153,7 @@ def insert_dataset(
 
         conn.commit()
 
-        logic_logger.info(f"{source} added to Sources table")
+        mb_logic_logger.info(f"{source} added to Sources table")
 
         existing_hashes_statement = (
             select(Clusters.cluster_hash)
@@ -198,11 +196,11 @@ def insert_dataset(
             # Some edge cases, defined in tests, are not implemented yet
             raise NotImplementedError from e
 
-        logic_logger.info(
+        mb_logic_logger.info(
             f"{source} added {len(data_hashes)} objects to Clusters table"
         )
 
-    logic_logger.info(f"Finished {source}")
+    mb_logic_logger.info(f"Finished {source}")
 
 
 def insert_model(
@@ -225,7 +223,7 @@ def insert_model(
         MatchboxResolutionNotFoundError: If the specified parent models don't exist.
         MatchboxResolutionNotFoundError: If the specified model doesn't exist.
     """
-    logic_logger.info(f"[{model}] Registering model")
+    mb_logic_logger.info(f"[{model}] Registering model")
     with Session(engine) as session:
         resolution_hash = hash_values(
             left.resolution_hash,
@@ -304,8 +302,8 @@ def insert_model(
         session.commit()
 
     status = "Inserted new" if not exists else "Updated existing"
-    logic_logger.info(f"[{model}] {status} model with ID {resolution_id}")
-    logic_logger.info(f"[{model}] Done!")
+    mb_logic_logger.info(f"[{model}] {status} model with ID {resolution_id}")
+    mb_logic_logger.info(f"[{model}] Done!")
 
 
 def _get_resolution_related_clusters(resolution_id: int) -> Select:
@@ -387,7 +385,7 @@ def _results_to_insert_tables(
             * A Contains update Arrow table
             * A Probabilities update Arrow table
     """
-    logic_logger.info(f"[{resolution.name}] Wrangling data to insert tables")
+    mb_logic_logger.info(f"[{resolution.name}] Wrangling data to insert tables")
 
     # Create ID-Hash lookup for existing probabilities
     lookup = sql_to_df(
@@ -453,7 +451,7 @@ def _results_to_insert_tables(
         }
     )
 
-    logic_logger.info(f"[{resolution.name}] Wrangling complete!")
+    mb_logic_logger.info(f"[{resolution.name}] Wrangling complete!")
 
     return clusters, contains, probabilities
 
@@ -483,7 +481,7 @@ def insert_results(
     Raises:
         MatchboxResolutionNotFoundError: If the specified model doesn't exist.
     """
-    logic_logger.info(
+    mb_logic_logger.info(
         f"[{resolution.name}] Writing results data with batch size {batch_size:,}"
     )
 
@@ -501,18 +499,18 @@ def insert_results(
             )
 
             session.commit()
-            logic_logger.info(f"[{resolution.name}] Removed old probabilities")
+            mb_logic_logger.info(f"[{resolution.name}] Removed old probabilities")
 
         except SQLAlchemyError as e:
             session.rollback()
-            logic_logger.error(
+            mb_logic_logger.error(
                 f"[{resolution.name}] Failed to clear old probabilities: {str(e)}"
             )
             raise
 
     with engine.connect() as conn:
         try:
-            logic_logger.info(
+            mb_logic_logger.info(
                 f"[{resolution.name}] Inserting {clusters.shape[0]:,} results objects"
             )
 
@@ -523,7 +521,7 @@ def insert_results(
                 batch_size=batch_size,
             )
 
-            logic_logger.info(
+            mb_logic_logger.info(
                 f"[{resolution.name}] Successfully inserted {clusters.shape[0]} "
                 "objects into Clusters table"
             )
@@ -535,7 +533,7 @@ def insert_results(
                 batch_size=batch_size,
             )
 
-            logic_logger.info(
+            mb_logic_logger.info(
                 f"[{resolution.name}] Successfully inserted {contains.shape[0]} "
                 "objects into Contains table"
             )
@@ -547,13 +545,15 @@ def insert_results(
                 batch_size=batch_size,
             )
 
-            logic_logger.info(
+            mb_logic_logger.info(
                 f"[{resolution.name}] Successfully inserted "
                 f"{probabilities.shape[0]} objects into Probabilities table"
             )
 
         except SQLAlchemyError as e:
-            logic_logger.error(f"[{resolution.name}] Failed to insert data: {str(e)}")
+            mb_logic_logger.error(
+                f"[{resolution.name}] Failed to insert data: {str(e)}"
+            )
             raise
 
-    logic_logger.info(f"[{resolution.name}] Insert operation complete!")
+    mb_logic_logger.info(f"[{resolution.name}] Insert operation complete!")
