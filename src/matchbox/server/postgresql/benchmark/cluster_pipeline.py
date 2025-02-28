@@ -1,11 +1,10 @@
-import logging
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
 import pyarrow as pa
-from rich.logging import RichHandler
 
+from matchbox.common.logging import get_logger
 from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import hash_data, hash_values
 from matchbox.common.transform import (
@@ -15,12 +14,8 @@ from matchbox.common.transform import (
 from matchbox.server.postgresql.benchmark.generate_tables import PRESETS
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
-pipeline_logger = logging.getLogger("mb_pipeline")
+
+pipeline_logger = get_logger("mb_pipeline")
 
 ROOT = Path(__file__).parent.parent
 

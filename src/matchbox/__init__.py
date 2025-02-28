@@ -1,8 +1,7 @@
-import logging
-
+from matchbox.common.logging import get_logger
 from matchbox.common.exceptions import MatchboxClientSettingsException
 
-logic_logger = logging.getLogger("mb_logic")
+logic_logger = get_logger("mb_logic")
 
 try:
     # Environment variables must be loaded first for other imports to work

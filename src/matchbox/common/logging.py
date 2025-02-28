@@ -1,3 +1,6 @@
+import logging
+from rich.logging import RichHandler
+
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -7,6 +10,46 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+
+CRITICAL = logging.CRITICAL
+FATAL = logging.FATAL
+ERROR = logging.ERROR
+WARNING = logging.WARNING
+WARN = logging.WARN
+INFO = logging.INFO
+DEBUG = logging.DEBUG
+NOTSET = logging.NOTSET
+
+
+logging.basicConfig(
+    level=INFO,
+    format="%(message)s",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+
+def get_logger(name: str, custom_format: str = None) -> logging.Logger:
+    logger = logging.getLogger(name)
+
+    if custom_format:
+        # Remove existing handlers
+        logger.handlers.clear()
+
+        # Create a custom handler
+        custom_handler = RichHandler(rich_tracebacks=True)
+
+        # Create a custom formatter
+        formatter = logging.Formatter(custom_format)
+
+        # Set formatter for the custom handler
+        custom_handler.setFormatter(formatter)
+
+        # Add custom handler to the logger
+        logger.addHandler(custom_handler)
+
+        # Prevent the logger from propagating messages to the root logger
+        logger.propagate = False
+
+    return logger
 
 
 def get_console():

@@ -1,5 +1,3 @@
-import logging
-
 import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
@@ -8,6 +6,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
+from matchbox.common.logging import get_logger , WARNING
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_values
@@ -26,7 +25,7 @@ from matchbox.server.postgresql.orm import (
 )
 from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
 
-logic_logger = logging.getLogger("mb_logic")
+logic_logger = get_logger("mb_logic")
 
 
 class HashIDMap:
@@ -106,8 +105,8 @@ def insert_dataset(
     source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
 ) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
-    db_logger = logging.getLogger("sqlalchemy.engine")
-    db_logger.setLevel(logging.WARNING)
+    db_logger = get_logger("sqlalchemy.engine")
+    db_logger.setLevel(WARNING)
 
     resolution_hash = source.signature
 

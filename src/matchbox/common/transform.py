@@ -1,4 +1,3 @@
-import logging
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -9,12 +8,14 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import rustworkx as rx
 
+from matchbox import get_logger
+from matchbox.common.logging import get_logger
 from matchbox.common.hash import hash_values
 from matchbox.common.logging import build_progress_bar
 
 T = TypeVar("T", bound=Hashable)
 
-logic_logger = logging.getLogger("mb_logic")
+logic_logger = get_logger("mb_logic")
 
 
 def to_clusters(

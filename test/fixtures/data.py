@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -7,13 +6,14 @@ import pandas as pd
 import pytest
 from pandas import DataFrame
 
+from matchbox.common.logging import get_logger
 from matchbox import process, query
 from matchbox.client.clean import company_name
 from matchbox.client.helpers import cleaner, cleaners, select
 from matchbox.client.helpers.selector import Selector
 from matchbox.common.sources import Source
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 TEST_ROOT = Path(__file__).resolve().parents[1]
 
 

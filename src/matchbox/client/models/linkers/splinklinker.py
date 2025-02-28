@@ -2,7 +2,7 @@
 
 import ast
 import inspect
-import logging
+
 from typing import Any, Dict, List, Optional, Type
 
 import pyarrow as pa
@@ -12,9 +12,10 @@ from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
 from splink.internals.linker_components.training import LinkerTraining
 
+from matchbox.common.logging import get_logger
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
-logic_logger = logging.getLogger("mb_logic")
+logic_logger = get_logger("mb_logic")
 
 
 class SplinkLinkerFunction(BaseModel):

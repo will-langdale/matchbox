@@ -1,13 +1,8 @@
 """Client-side logging utilities."""
 
-import logging
-import sys
+from matchbox.common.logging import get_logger, INFO
 
-client_logger = logging.getLogger(__name__)
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.INFO)
+client_logger = get_logger(__name__, "%(levelname)s: %(message)s")
+client_logger.setLevel(INFO)
 
-formatter = logging.Formatter("%(levelname)s: %(message)s")
-handler.setFormatter(formatter)
 
-client_logger.addHandler(handler)

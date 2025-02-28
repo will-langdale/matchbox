@@ -1,4 +1,3 @@
-import logging
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import pyarrow as pa
@@ -6,6 +5,7 @@ from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, 
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
+from matchbox.common.logging import get_logger
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
@@ -27,7 +27,7 @@ else:
 
 T = TypeVar("T")
 
-logic_logger = logging.getLogger("mb_logic")
+logic_logger = get_logger("mb_logic")
 
 
 def _get_dataset_resolution(
