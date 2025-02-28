@@ -5,6 +5,7 @@ import boto3
 import pytest
 import respx
 from _pytest.fixtures import FixtureRequest
+from httpx import Client
 from moto import mock_aws
 from pandas import DataFrame
 from respx import MockRouter
@@ -407,6 +408,6 @@ def matchbox_client_settings() -> ClientSettings:
 
 
 @pytest.fixture(scope="session")
-def matchbox_client(matchbox_client_settings: ClientSettings) -> MatchboxDBAdapter:
+def matchbox_client(matchbox_client_settings: ClientSettings) -> Client:
     """Client for the Matchbox API running in Docker."""
     return create_client(settings=matchbox_client_settings)

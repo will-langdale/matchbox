@@ -2,6 +2,7 @@ import logging
 from functools import partial
 
 import pytest
+from httpx import Client
 from pandas import DataFrame
 from sqlalchemy import Engine, text
 
@@ -19,27 +20,24 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     linked_sources_factory,
 )
-from matchbox.server.postgresql import MatchboxPostgres
 
 
 @pytest.mark.docker
 class TestE2EAnalyticalUser:
     """End to end tests for analytical user functionality."""
 
-    matchbox_postgres: MatchboxPostgres | None = None
+    client: Client | None = None
     warehouse_engine: Engine | None = None
     linked_testkit: LinkedSourcesTestkit | None = None
     n_true_entities: int | None = None
 
     @pytest.fixture(autouse=True, scope="function")
-    def setup_environment(
-        self, matchbox_postgres: MatchboxPostgres, warehouse_engine: Engine
-    ):
+    def setup_environment(self, matchbox_client: Client, warehouse_engine: Engine):
         """Set up warehouse and database using fixtures."""
         # Store fixtures as class attributes for use in tests with self.*
         n_true_entities = 100
 
-        self.__class__.matchbox_postgres = matchbox_postgres
+        self.__class__.client = matchbox_client
         self.__class__.warehouse_engine = warehouse_engine
         self.__class__.n_true_entities = n_true_entities
 
@@ -124,7 +122,8 @@ class TestE2EAnalyticalUser:
             )
 
         # Clear matchbox database before test
-        matchbox_postgres.clear(certain=True)
+        response = matchbox_client.delete("/database", params={"certain": "true"})
+        assert response.status_code == 200, "Failed to clear matchbox database"
 
         yield
 
@@ -136,7 +135,8 @@ class TestE2EAnalyticalUser:
                 conn.commit()
 
         # Clear matchbox database after test
-        matchbox_postgres.clear(certain=True)
+        response = matchbox_client.delete("/database", params={"certain": "true"})
+        assert response.status_code == 200, "Failed to clear matchbox database"
 
     def test_e2e_deduplication_and_linking_pipeline(self):
         """Runs an end to end test of the entire entity resolution pipeline.
