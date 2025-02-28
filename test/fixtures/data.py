@@ -10,10 +10,8 @@ from matchbox import process, query
 from matchbox.client.clean import company_name
 from matchbox.client.helpers import cleaner, cleaners, select
 from matchbox.client.helpers.selector import Selector
-from matchbox.common.logging import get_logger
 from matchbox.common.sources import Source
 
-LOGGER = get_logger(__name__)
 TEST_ROOT = Path(__file__).resolve().parents[1]
 
 

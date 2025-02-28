@@ -10,9 +10,9 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
-from matchbox.client._logging import client_logger
 from matchbox.client._settings import settings
 from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.common.logging import mb_client_logger
 from matchbox.common.sources import Match, Source, SourceAddress
 
 
@@ -47,7 +47,7 @@ def select(
     if not engine:
         if default_engine := settings.default_warehouse:
             engine = create_engine(default_engine)
-            client_logger.warning("Using default engine")
+            mb_client_logger.warning("Using default engine")
         else:
             raise ValueError(
                 "An engine needs to be provided if "
