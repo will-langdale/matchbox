@@ -24,6 +24,7 @@ from matchbox.client.clean.steps.clean_basic import (
     to_lower,
     to_upper,
     tokenise,
+    trim,
 )
 from matchbox.client.clean.steps.clean_basic_original import (
     cms_original_clean_cdms_id,
@@ -59,6 +60,7 @@ __all__ = (
     "to_lower",
     "to_upper",
     "tokenise",
+    "trim",
     # Original CMS steps
     "cms_original_clean_cdms_id",
     "cms_original_clean_ch_id",

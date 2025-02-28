@@ -323,6 +323,11 @@ def to_lower(column: str) -> str:
     return f"lower({column})"
 
 
+def trim(column: str) -> str:
+    """Remove leading and trailing whitespace."""
+    return f"trim({column})"
+
+
 def get_digits_only(column: str) -> str:
     """Extract digits only, including nonconsecutive"""
     return rf"""

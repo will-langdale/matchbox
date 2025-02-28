@@ -26,6 +26,7 @@ from ..fixtures.models import (
 
 @pytest.mark.parametrize("fx_data", link_data_test_params)
 @pytest.mark.parametrize("fx_linker", link_model_test_params)
+@pytest.mark.docker
 def test_linkers(
     # Fixtures
     matchbox_postgres: MatchboxPostgres,

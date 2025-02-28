@@ -11,6 +11,7 @@ from functools import cache
 from random import getrandbits
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 import pyarrow as pa
 from faker import Faker
 from frozendict import frozendict
@@ -425,7 +426,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         mapping[name] = frozenset(pks)
         self.source_pks = EntityReference(mapping)
 
-    def to_cluster_entity(self, *names: str) -> ClusterEntity:
+    def to_cluster_entity(self, *names: str) -> ClusterEntity | None:
         """Convert this SourceEntity to a ClusterEntity with the specified datasets.
 
         This method makes diffing really easy. Testing whether ClusterEntity objects
@@ -449,17 +450,60 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
             *names: Names of datasets to include in the ClusterEntity
 
         Returns:
-            ClusterEntity containing only the specified datasets' PKs
-
-        Raises:
-            KeyError: If any specified dataset name doesn't exist in this entity
+            ClusterEntity containing only the specified datasets' PKs, or None
+            if none of the specified datasets are present in this entity.
         """
-        missing_datasets = set(names) - self.source_pks.keys()
-        if missing_datasets:
-            raise KeyError(f"Datasets not found in entity: {missing_datasets}")
+        filtered = {
+            name: self.source_pks.get(name)
+            for name in names
+            if self.source_pks.get(name) is not None
+        }
 
-        filtered = {name: self.source_pks[name] for name in names}
+        if len(filtered) == 0:
+            return None
+
         return ClusterEntity(source_pks=EntityReference(filtered))
+
+
+def query_to_cluster_entities(
+    query: pa.Table | pd.DataFrame, source_pks: dict[str, str]
+) -> set[ClusterEntity]:
+    """Convert a query result to a set of ClusterEntities.
+
+    Useful for turning a real query from a real model resolution in Matchbox into
+    a set of ClusterEntities that can be used in `LinkedSourcesTestkit.diff_results()`.
+
+    Args:
+        query: A PyArrow table or DataFrame representing a query result
+        source_pks: Mapping of source names to primary key column names
+
+    Returns:
+        A set of ClusterEntity objects
+    """
+    if isinstance(query, pa.Table):
+        query = query.to_pandas()
+
+    must_have_columns = set(["id"] + list(source_pks.values()))
+    if not must_have_columns.issubset(query.columns):
+        raise ValueError(
+            f"Columms {must_have_columns.difference(query.columns)} must be included "
+            "in the query and are missing."
+        )
+
+    def _create_cluster_entity(group: pd.DataFrame) -> ClusterEntity:
+        entity_refs = {
+            source: frozenset(group[pk_column].dropna().values)
+            for source, pk_column in source_pks.items()
+            if not group[pk_column].dropna().empty
+        }
+
+        return ClusterEntity(
+            id=group.name,
+            source_pks=EntityReference(entity_refs),
+        )
+
+    result = query.groupby("id").apply(_create_cluster_entity, include_groups=False)
+    return set(result.tolist())
 
 
 @cache
@@ -513,8 +557,8 @@ def probabilities_to_results_entities(
     for record in probabilities.to_pylist():
         if record["probability"] >= threshold:
             djs.union(
-                left_lookup.get(record["left_id"]),
-                right_lookup.get(record["right_id"]),
+                left_lookup[record["left_id"]],
+                right_lookup[record["right_id"]],
             )
 
     components: set[set[ClusterEntity]] = djs.get_components()
@@ -548,6 +592,7 @@ def diff_results(
 
     missing = expected_set - actual_set
     extra = actual_set - expected_set
+    identical = expected_set & actual_set
 
     # Calculate similarity scores and determine partial matches
     partial_matches = {}
@@ -555,6 +600,9 @@ def diff_results(
 
     # Calculate mean similarity (best matches for all entities)
     best_ratios = []
+
+    # Include identical entities with similarity of 1.0
+    best_ratios.extend([1.0] * len(identical))
 
     # Best ratios for missing entities
     for m in missing:

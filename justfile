@@ -16,10 +16,18 @@ format:
 scan:
     bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo"
 
-# Run Python tests
-test:
-    docker compose up -d --wait
-    uv run pytest
+# Run Python tests (usage: just test [local|docker])
+test ENV="":
+    #!/usr/bin/env bash
+    if [[ "{{ENV}}" == "local" ]]; then
+        uv run pytest -m "not docker"
+    elif [[ "{{ENV}}" == "docker" ]]; then
+        docker compose up --build -d --wait
+        uv run pytest -m "docker"
+    else
+        docker compose up --build -d --wait
+        uv run pytest
+    fi
 
 # Run a local documentation development server
 docs:

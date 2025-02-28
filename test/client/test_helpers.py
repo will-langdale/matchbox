@@ -43,6 +43,7 @@ def test_cleaners():
     assert cleaner_name_number is not None
 
 
+@pytest.mark.docker
 def test_process(warehouse_data: list[Source]):
     crn = warehouse_data[0].to_arrow()
 
@@ -72,6 +73,7 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
+@pytest.mark.docker
 def test_select_default_engine(
     matchbox_api: MockRouter,
     warehouse_engine: Engine,
@@ -114,6 +116,7 @@ def test_select_missing_engine():
         select("test.bar")
 
 
+@pytest.mark.docker
 def test_select_mixed_style(matchbox_api: MockRouter, warehouse_engine: Engine):
     """We can select select specific columns from some of the sources"""
     # Set up mocks and test data
@@ -165,6 +168,7 @@ def test_select_mixed_style(matchbox_api: MockRouter, warehouse_engine: Engine):
     assert selection[1].source.engine == warehouse_engine
 
 
+@pytest.mark.docker
 def test_select_non_indexed_columns(matchbox_api: MockRouter, warehouse_engine: Engine):
     """Selecting columns not declared to backend generates warning."""
     source = Source(
@@ -189,6 +193,7 @@ def test_select_non_indexed_columns(matchbox_api: MockRouter, warehouse_engine: 
         select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
 
 
+@pytest.mark.docker
 def test_select_missing_columns(matchbox_api: MockRouter, warehouse_engine: Engine):
     """Selecting columns not in the warehouse errors."""
     source = Source(

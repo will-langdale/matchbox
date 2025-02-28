@@ -71,10 +71,12 @@ class SourceTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: Source
-    features: tuple[FeatureConfig, ...]
-    data: pa.Table
-    data_hashes: pa.Table
+    source: Source = Field(description="The real generated Source object.")
+    features: tuple[FeatureConfig, ...] = Field(
+        description="The features used to generate the data."
+    )
+    data: pa.Table = Field(description="The PyArrow table of generated data.")
+    data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
     )
@@ -174,11 +176,11 @@ class LinkedSourcesTestkit(BaseModel):
             * Whether the results match the true entities
             * A dictionary report of differences
         """
+        cluster_entities = [
+            entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
+        ]
         return diff_results(
-            expected=[
-                entity.to_cluster_entity(*sources)
-                for entity in self.true_entities.values()
-            ],
+            expected=[entity for entity in cluster_entities if entity is not None],
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,
                 left_clusters=left_clusters,

@@ -346,6 +346,42 @@ def test_probabilities_to_results_entities(
             },
             id="non_verbose_mode",
         ),
+        # Mixed identical and different entities
+        pytest.param(
+            [
+                make_cluster_entity(
+                    1, "d1", ["1", "2"]
+                ),  # Identical entity in both sets
+                make_cluster_entity(2, "d1", ["3", "4"]),  # Will be partially matched
+            ],
+            [
+                make_cluster_entity(1, "d1", ["1", "2"]),  # Same as in expected
+                make_cluster_entity(3, "d1", ["3", "5"]),  # Partial match with entity 2
+            ],
+            True,
+            False,
+            {
+                # Mean similarity combines perfect (1.0) and two partial (1/3) matches
+                # Calculated as (1.0 + 1/3 + 1/3) / 3 = (5/9)
+                "mean_similarity": pytest.approx(5 / 9, rel=1e-2),
+                "partial": [
+                    {
+                        "missing_entity_id": 2,
+                        "matches": [
+                            {
+                                "actual_entity_id": 3,
+                                "similarity": 1 / 3,  # 1 common key out of 3 total
+                                "missing_pks": {"d1": frozenset(["4"])},
+                                "extra_pks": {"d1": frozenset(["5"])},
+                            }
+                        ],
+                    }
+                ],
+                "missing": [],
+                "extra": [],
+            },
+            id="mixed_identical_and_different",
+        ),
     ],
 )
 def test_diff_results(
@@ -435,9 +471,8 @@ def test_source_to_results_conversion():
     assert not identical
     assert results1.similarity_ratio(results3) == 0.0
 
-    # Test error case for missing dataset
-    with pytest.raises(KeyError):
-        source.to_cluster_entity("nonexistent")
+    # Test missing dataset returns None
+    assert source.to_cluster_entity("nonexistent") is None
 
 
 @pytest.mark.parametrize(

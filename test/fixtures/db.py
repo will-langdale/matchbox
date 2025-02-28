@@ -5,6 +5,7 @@ import boto3
 import pytest
 import respx
 from _pytest.fixtures import FixtureRequest
+from httpx import Client
 from moto import mock_aws
 from pandas import DataFrame
 from respx import MockRouter
@@ -12,7 +13,8 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy import text as sqltext
 
 from matchbox import index, make_model
-from matchbox.client._settings import settings as client_settings
+from matchbox.client._handler import create_client
+from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
@@ -386,12 +388,23 @@ def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
         yield boto3.client("s3", region_name="eu-west-2")
 
 
-# Mock API
+# API, mocked and Docker
 
 
 @pytest.fixture(scope="function")
 def matchbox_api() -> Generator[MockRouter, None, None]:
-    with respx.mock(
-        base_url=client_settings.api_root, assert_all_called=True
-    ) as respx_mock:
+    """Client for the mocked Matchbox API."""
+    with respx.mock(base_url=settings.api_root, assert_all_called=True) as respx_mock:
         yield respx_mock
+
+
+@pytest.fixture(scope="session")
+def matchbox_client_settings() -> ClientSettings:
+    """Client settings for the Matchbox API running in Docker."""
+    return settings
+
+
+@pytest.fixture(scope="session")
+def matchbox_client(matchbox_client_settings: ClientSettings) -> Client:
+    """Client for the Matchbox API running in Docker."""
+    return create_client(settings=matchbox_client_settings)
