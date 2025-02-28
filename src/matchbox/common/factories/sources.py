@@ -176,12 +176,11 @@ class LinkedSourcesTestkit(BaseModel):
             * Whether the results match the true entities
             * A dictionary report of differences
         """
+        cluster_entities = [
+            entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
+        ]
         return diff_results(
-            expected=[
-                entity.to_cluster_entity(*sources)
-                for entity in self.true_entities.values()
-                if entity.to_cluster_entity(*sources) is not None
-            ],
+            expected=[entity for entity in cluster_entities if entity is not None],
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,
                 left_clusters=left_clusters,

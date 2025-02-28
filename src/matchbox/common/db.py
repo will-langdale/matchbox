@@ -82,3 +82,8 @@ def sql_to_df(
         return _convert_large_binary_to_binary(table=result)
 
     return result
+
+
+def fullname_to_prefix(fullname: str) -> str:
+    """Converts a full name to a prefix for column names."""
+    return fullname.replace('"', "").replace(".", "_") + "_"

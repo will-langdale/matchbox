@@ -361,6 +361,8 @@ def test_probabilities_to_results_entities(
             True,
             False,
             {
+                # Mean similarity combines perfect (1.0) and two partial (1/3) matches
+                # Calculated as (1.0 + 1/3 + 1/3) / 3 = (5/9)
                 "mean_similarity": pytest.approx(5 / 9, rel=1e-2),
                 "partial": [
                     {
@@ -469,7 +471,7 @@ def test_source_to_results_conversion():
     assert not identical
     assert results1.similarity_ratio(results3) == 0.0
 
-    # Test error case for missing dataset
+    # Test missing dataset returns None
     assert source.to_cluster_entity("nonexistent") is None
 
 

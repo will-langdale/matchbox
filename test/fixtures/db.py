@@ -14,7 +14,7 @@ from sqlalchemy import text as sqltext
 
 from matchbox import index, make_model
 from matchbox.client._handler import create_client
-from matchbox.client._settings import ClientSettings
+from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.base import MatchboxDatastoreSettings, MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
@@ -394,20 +394,14 @@ def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
 @pytest.fixture(scope="function")
 def matchbox_api() -> Generator[MockRouter, None, None]:
     """Client for the mocked Matchbox API."""
-    with respx.mock(
-        base_url="http://localhost:8000", assert_all_called=True
-    ) as respx_mock:
+    with respx.mock(base_url=settings.api_root, assert_all_called=True) as respx_mock:
         yield respx_mock
 
 
 @pytest.fixture(scope="session")
 def matchbox_client_settings() -> ClientSettings:
     """Client settings for the Matchbox API running in Docker."""
-    return ClientSettings(
-        api_root="http://localhost:8000",
-        timeout=10,
-        retry_delay=2,
-    )
+    return settings
 
 
 @pytest.fixture(scope="session")

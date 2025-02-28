@@ -24,7 +24,7 @@ class Selector(BaseModel):
 def select(
     *selection: str | dict[str, str],
     engine: Engine | None = None,
-    non_indexed: bool = False,
+    only_indexed: bool = True,
 ) -> list[Selector]:
     """From one engine, builds and verifies a list of selectors.
 
@@ -33,8 +33,8 @@ def select(
         engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
-        non_indexed: Whether you intend to select non-indexed columns. Will raise a
-            warning if True and non-indexed columns are selected. Defaults to False.
+        only_indexed: Whether you intend to select indexed columns only. Will raise a
+            warning if False and non-indexed columns are selected. Defaults to True.
             Non-indexed columns should only be selected if you're querying data for
             a purpose other than matching
 
@@ -79,7 +79,7 @@ def select(
                     )
 
                 indexed_cols = set(col.name for col in source.columns)
-                if (not selected_cols <= indexed_cols) and not non_indexed:
+                if (not selected_cols <= indexed_cols) and only_indexed:
                     warn(
                         "You are selecting columns that are not indexed in Matchbox",
                         stacklevel=2,

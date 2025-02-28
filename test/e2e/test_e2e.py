@@ -12,6 +12,7 @@ from matchbox.client.clean.utils import cleaning_function
 from matchbox.client.helpers import cleaner, cleaners, select
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.common.db import fullname_to_prefix
 from matchbox.common.factories.entities import query_to_cluster_entities
 from matchbox.common.factories.sources import (
     FeatureConfig,
@@ -112,7 +113,7 @@ class TestE2EAnalyticalUser:
         # Use a separate schema to avoid conflict with legacy test data
         # TODO: Remove once legacy tests are refactored
         with warehouse_engine.connect() as conn:
-            conn.execute(text("create schema e2e;"))
+            conn.execute(text("create schema if not exists e2e;"))
             conn.commit()
 
         # Setup code - Create tables in warehouse
@@ -201,19 +202,18 @@ class TestE2EAnalyticalUser:
         deduper_names = {}
 
         for source_name, source_testkit in self.linked_testkit.sources.items():
-            # Get prefix for column names based on source
-            schema, table = source_name.replace('"', "").split(".")
-            prefix = f"{schema}_{table}_"
+            # Get prefix for column names
+            prefix = fullname_to_prefix(source_name)
 
             # Query data from the source
             # PK included then dropped to create ClusterEntity objects for later diff
             source_select = select(
                 {
                     source_name: ["pk"]
-                    + [col.alias for col in source_testkit.source.columns]
+                    + [col.name for col in source_testkit.source.columns]
                 },
                 engine=self.warehouse_engine,
-                non_indexed=True,
+                only_indexed=False,
             )
             raw_df = query(source_select, return_type="pandas")
             clusters = query_to_cluster_entities(
@@ -285,10 +285,8 @@ class TestE2EAnalyticalUser:
 
         for left_testkit, right_testkit, common_field in linking_pairs:
             # Get prefixes for column names
-            left_schema, left_table = left_testkit.name.replace('"', "").split(".")
-            left_prefix = f"{left_schema}_{left_table}_"
-            right_schema, right_table = right_testkit.name.replace('"', "").split(".")
-            right_prefix = f"{right_schema}_{right_table}_"
+            left_prefix = fullname_to_prefix(left_testkit.name)
+            right_prefix = fullname_to_prefix(right_testkit.name)
 
             # Query deduplicated data
             # PK included then dropped to create ClusterEntity objects for later diff
@@ -296,7 +294,7 @@ class TestE2EAnalyticalUser:
                 select(
                     {left_testkit.name: ["pk", common_field]},
                     engine=self.warehouse_engine,
-                    non_indexed=True,
+                    only_indexed=False,
                 ),
                 resolution_name=deduper_names[left_testkit.name],
                 return_type="pandas",
@@ -311,7 +309,7 @@ class TestE2EAnalyticalUser:
                 select(
                     {right_testkit.name: ["pk", common_field]},
                     engine=self.warehouse_engine,
-                    non_indexed=True,
+                    only_indexed=False,
                 ),
                 resolution_name=deduper_names[right_testkit.name],
                 return_type="pandas",
@@ -387,12 +385,9 @@ class TestE2EAnalyticalUser:
         first_pair = (crn_source, duns_source)
 
         # Get prefixes for column names
-        crn_schema, crn_table = crn_source.replace('"', "").split(".")
-        crn_prefix = f"{crn_schema}_{crn_table}_"
-        duns_schema, duns_table = duns_source.replace('"', "").split(".")
-        duns_prefix = f"{duns_schema}_{duns_table}_"
-        cdms_schema, cdms_table = cdms_source.replace('"', "").split(".")
-        cdms_prefix = f"{cdms_schema}_{cdms_table}_"
+        crn_prefix = fullname_to_prefix(crn_source)
+        duns_prefix = fullname_to_prefix(duns_source)
+        cdms_prefix = fullname_to_prefix(cdms_source)
 
         # Query data from the first linked pair and the third source
         # PK included then dropped to create ClusterEntity objects for later diff
@@ -400,10 +395,10 @@ class TestE2EAnalyticalUser:
             select(
                 {crn_source: ["pk", "crn"]},
                 engine=self.warehouse_engine,
-                non_indexed=True,
+                only_indexed=False,
             ),
             select(
-                {duns_source: ["pk"]}, engine=self.warehouse_engine, non_indexed=True
+                {duns_source: ["pk"]}, engine=self.warehouse_engine, only_indexed=False
             ),
             resolution_name=linker_names[first_pair],
             return_type="pandas",
@@ -418,7 +413,7 @@ class TestE2EAnalyticalUser:
             select(
                 {cdms_source: ["pk", "crn"]},
                 engine=self.warehouse_engine,
-                non_indexed=True,
+                only_indexed=False,
             ),
             resolution_name=deduper_names[cdms_source],
             return_type="pandas",
@@ -482,19 +477,13 @@ class TestE2EAnalyticalUser:
         # Get necessary columns from each source
         final_df = query(
             select(
-                {crn_source: ["pk", "company_name", "crn"]},
+                {
+                    crn_source: ["pk", "company_name", "crn"],
+                    duns_source: ["pk", "company_name", "duns"],
+                    cdms_source: ["pk", "crn", "cdms"],
+                },
                 engine=self.warehouse_engine,
-                non_indexed=True,
-            ),
-            select(
-                {duns_source: ["pk", "company_name", "duns"]},
-                engine=self.warehouse_engine,
-                non_indexed=True,
-            ),
-            select(
-                {cdms_source: ["pk", "crn", "cdms"]},
-                engine=self.warehouse_engine,
-                non_indexed=True,
+                only_indexed=False,
             ),
             resolution_name=final_linker_name,
             return_type="pandas",
