@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.db import get_schema_table_names
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -103,8 +104,29 @@ class SourceTestkit(BaseModel):
 
     @property
     def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format at matchbox.query()."""
+        """Return a PyArrow table in the same format as matchbox.query()."""
         return self.data
+
+    @property
+    def query_backend(self) -> pa.Table:
+        """Return a PyArrow table in the same format as the SCHEMA_MB_IDS DTO."""
+        return pa.Table.from_arrays(
+            [self.data["id"], self.data["pk"]], names=["id", "source_pk"]
+        )
+
+    def to_warehouse(self, engine: Engine | None) -> None:
+        """Write the data to the Source's engine.
+
+        As the Source won't have an engine set by default, can be supplied.
+        """
+        schema, table = get_schema_table_names(self.name)
+        self.data.to_pandas().drop("id", axis=1).to_sql(
+            name=table,
+            schema=schema,
+            con=engine or self.source.engine,
+            index=False,
+            if_exists="replace",
+        )
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -440,6 +462,7 @@ def source_factory(
 def linked_sources_factory(
     source_configs: tuple[SourceConfig, ...] | None = None,
     n_true_entities: int | None = None,
+    engine: Engine | None = None,
     seed: int = 42,
 ) -> LinkedSourcesTestkit:
     """Generate a set of linked sources with tracked entities.
@@ -449,10 +472,14 @@ def linked_sources_factory(
         n_true_entities: Optional number of true entities to generate. If provided,
             overrides any n_true_entities in source configs. If not provided, each
             SourceConfig must specify its own n_true_entities.
+        engine: Optional SQLAlchemy engine to use for all sources. If provided,
+            overrides any engine in source configs.
         seed: Random seed for reproducibility
     """
     generator = Faker()
     generator.seed_instance(seed)
+
+    shared_engine = engine or create_engine("sqlite:///:memory:")
 
     if source_configs is None:
         # Use factory parameter or default for default configs
@@ -484,12 +511,10 @@ def linked_sources_factory(
             ),
         }
 
-        engine = create_engine("sqlite:///:memory:")
-
         source_configs = (
             SourceConfig(
                 full_name="crn",
-                engine=engine,
+                engine=shared_engine,
                 features=(
                     features["company_name"].add_variations(
                         SuffixRule(suffix=" Limited"),
@@ -504,6 +529,7 @@ def linked_sources_factory(
             ),
             SourceConfig(
                 full_name="duns",
+                engine=shared_engine,
                 features=(
                     features["company_name"],
                     features["duns"],
@@ -513,6 +539,7 @@ def linked_sources_factory(
             ),
             SourceConfig(
                 full_name="cdms",
+                engine=shared_engine,
                 features=(
                     features["crn"],
                     features["cdms"],
@@ -536,7 +563,7 @@ def linked_sources_factory(
             source_configs = tuple(
                 SourceConfig(
                     full_name=config.full_name,
-                    engine=config.engine,
+                    engine=shared_engine if engine is not None else config.engine,
                     features=config.features,
                     repetition=config.repetition,
                     n_true_entities=n_true_entities,
