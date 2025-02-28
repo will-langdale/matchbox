@@ -175,6 +175,10 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Create and validate perfect model
     if model_type == "deduper":
+        # Get inputs to final model for later diff
+        left_clusters = linked.sources[left_testkit].entities
+        right_clusters = None
+
         perfect_model = model_factory(
             left_testkit=linked.sources[left_testkit],
             true_entities=all_true_sources,
@@ -191,6 +195,11 @@ def test_model_pipeline_with_dummy_methodology(
             left_testkit=linked.sources[right_testkit],
             true_entities=all_true_sources,
         )
+
+        # Get inputs to final model for later diff
+        left_clusters = left_deduped.entities
+        right_clusters = right_deduped.entities
+
         perfect_model = model_factory(
             left_testkit=left_deduped,
             right_testkit=right_deduped,
@@ -202,10 +211,8 @@ def test_model_pipeline_with_dummy_methodology(
     # Verify perfect model works
     identical, _ = linked.diff_results(
         probabilities=perfect_model.probabilities,
-        left_clusters=perfect_model.left_clusters.values(),
-        right_clusters=perfect_model.right_clusters.values()
-        if model_type == "linker"
-        else None,
+        left_clusters=left_clusters,
+        right_clusters=right_clusters,
         sources=sources,
         threshold=0,
     )
@@ -221,10 +228,8 @@ def test_model_pipeline_with_dummy_methodology(
 
     identical, report = linked.diff_results(
         probabilities=random_probabilities,
-        left_clusters=perfect_model.left_clusters.values(),
-        right_clusters=perfect_model.right_clusters.values()
-        if model_type == "linker"
-        else None,
+        left_clusters=left_clusters,
+        right_clusters=right_clusters,
         sources=sources,
         threshold=0,
         verbose=True,

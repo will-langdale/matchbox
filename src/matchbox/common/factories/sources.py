@@ -3,7 +3,7 @@
 import warnings
 from functools import cache, wraps
 from itertools import product
-from typing import Callable, ParamSpec, TypeVar
+from typing import Callable, Literal, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 from uuid import uuid4
 
@@ -71,10 +71,12 @@ class SourceTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: Source
-    features: tuple[FeatureConfig, ...]
-    data: pa.Table
-    data_hashes: pa.Table
+    source: Source = Field(description="The real generated Source object.")
+    features: tuple[FeatureConfig, ...] = Field(
+        description="The features used to generate the data."
+    )
+    data: pa.Table = Field(description="The PyArrow table of generated data.")
+    data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
     )
@@ -103,6 +105,68 @@ class SourceTestkit(BaseModel):
     def query(self) -> pa.Table:
         """Return a PyArrow table in the same format at matchbox.query()."""
         return self.data
+
+    def reconcile_matchbox_ids(
+        self,
+        query: pa.Table | pd.DataFrame,
+        pk: str,
+        return_type: Literal["pandas", "arrow"] = "pandas",
+    ) -> pa.Table | pd.DataFrame:
+        """Updates the testkit's entity IDs based on a matchbox query result.
+
+        If you upload this testkit's data to Matchbox, using it as a resolution point
+        in matchbox.query() will return data where the ID column is determined by
+        the backend, not the testkit. This method corrects the ID in the testkit,
+        enabling it to be used and diffed with further testkits. As long as the
+        entities have identical properties (source_pks), the specific IDs don't matter.
+
+        Because the testkit uses primary keys to track entities, the primary key
+        column must be included as part of the query. For convenience, the query
+        is returned with it dropped.
+
+        Args:
+            query: A PyArrow table representing a matchbox.query() result that:
+                * Used this testkit as a resolution point
+                * Contains the primary key column from the data
+            pk: The primary key column name
+            return_type: Whether to return the result as a PyArrow table or a DataFrame
+
+        Returns:
+            The query data with the pk column dropped
+        """
+        if isinstance(query, pa.Table):
+            query = query.to_pandas()
+
+        if not {"id", pk}.issubset(query.columns):
+            raise ValueError(
+                f"ID and primary key column '{pk}' must be included in the query."
+            )
+
+        # Filter out rows where the primary key is null
+        query = query[~query[pk].isna()]
+
+        # Create cluster entities from the query
+        def _create_cluster_entity(row: pd.Series) -> ClusterEntity:
+            return ClusterEntity(
+                id=row["id"],
+                source_pks=EntityReference({self.name: frozenset({row[pk]})}),
+            )
+
+        query_entities = set(query.apply(_create_cluster_entity, axis=1).tolist())
+
+        if set(self.entities) != query_entities:
+            raise ValueError("Query entities do not match testkit entities.")
+
+        # Replace the testkit's entities with the query entities
+        self.entities = tuple(query_entities)
+
+        # Return the query data
+        result = query.copy()
+
+        if return_type == "arrow":
+            return pa.Table.from_pandas(result.drop(columns=[pk]), preserve_index=False)
+
+        return result.drop(columns=[pk])
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -178,6 +242,7 @@ class LinkedSourcesTestkit(BaseModel):
             expected=[
                 entity.to_cluster_entity(*sources)
                 for entity in self.true_entities.values()
+                if entity.to_cluster_entity(*sources) is not None
             ],
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,

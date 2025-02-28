@@ -19,12 +19,17 @@ class Selector(BaseModel):
 def select(
     *selection: str | dict[str, str],
     engine: Engine,
+    non_indexed: bool = False,
 ) -> list[Selector]:
     """From one engine, builds and verifies a list of selectors.
 
     Args:
-        selection: full source names and optionally a subset of columns to select
-        engine: the engine to connect to the data warehouse hosting the source
+        selection: Full source names and optionally a subset of columns to select
+        engine: The engine to connect to the data warehouse hosting the source
+        non_indexed: Whether you intend to select non-indexed columns. Will raise a
+            warning if True and non-indexed columns are selected. Defaults to False.
+            Non-indexed columns should only be selected if you're querying data for
+            a purpose other than matching
     Returns:
         A list of Selector objects
 
@@ -56,7 +61,7 @@ def select(
                     )
 
                 indexed_cols = set(col.name for col in source.columns)
-                if not selected_cols <= indexed_cols:
+                if (not selected_cols <= indexed_cols) and not non_indexed:
                     warn(
                         "You are selecting columns that are not indexed in Matchbox",
                         stacklevel=2,

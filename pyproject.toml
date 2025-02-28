@@ -114,3 +114,6 @@ filterwarnings = [
     'ignore:.*__fields.*:pydantic.PydanticDeprecatedSince20:unittest.mock',
     'ignore:.*__fields_set__.*:pydantic.PydanticDeprecatedSince20:unittest.mock'
 ]
+markers = [
+    "e2e: marks tests that require resources like Docker to be available",
+]
