@@ -200,6 +200,7 @@ class TestE2EAnalyticalUser:
             prefix = f"{schema}_{table}_"
 
             # Query data from the source
+            # PK included then dropped to create ClusterEntity objects for later diff
             source_select = select(
                 {
                     source_name: ["pk"]
@@ -209,10 +210,11 @@ class TestE2EAnalyticalUser:
                 non_indexed=True,
             )
             raw_df = query(source_select, return_type="pandas")
-            df = source_testkit.reconcile_matchbox_ids(
-                query=raw_df, pk=f"{prefix}pk", return_type="pandas"
+            clusters = query_to_cluster_entities(
+                query=raw_df,
+                source_pks={source_name: f"{prefix}pk"},
             )
-            clusters = source_testkit.entities
+            df = raw_df.drop(f"{prefix}pk", axis=1)
 
             # Apply cleaning based on features in the source
             cleaned = _clean_company_name(df, prefix)
@@ -283,8 +285,7 @@ class TestE2EAnalyticalUser:
             right_prefix = f"{right_schema}_{right_table}_"
 
             # Query deduplicated data
-            # Clusters for verification are created before the PK is dropped when we
-            # reconcile the matchbox IDs
+            # PK included then dropped to create ClusterEntity objects for later diff
             left_raw_df = query(
                 select(
                     {left_testkit.name: ["pk", common_field]},
@@ -298,9 +299,7 @@ class TestE2EAnalyticalUser:
                 query=left_raw_df,
                 source_pks={left_testkit.name: f"{left_prefix}pk"},
             )
-            left_df = left_testkit.reconcile_matchbox_ids(
-                query=left_raw_df, pk=f"{left_prefix}pk", return_type="pandas"
-            )
+            left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
 
             right_raw_df = query(
                 select(
@@ -315,9 +314,7 @@ class TestE2EAnalyticalUser:
                 query=right_raw_df,
                 source_pks={right_testkit.name: f"{right_prefix}pk"},
             )
-            right_df = right_testkit.reconcile_matchbox_ids(
-                query=right_raw_df, pk=f"{right_prefix}pk", return_type="pandas"
-            )
+            right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
 
             # Apply cleaning based on features in the sources
             left_cleaned = _clean_company_name(left_df, left_prefix)
@@ -392,6 +389,7 @@ class TestE2EAnalyticalUser:
         cdms_prefix = f"{cdms_schema}_{cdms_table}_"
 
         # Query data from the first linked pair and the third source
+        # PK included then dropped to create ClusterEntity objects for later diff
         left_raw_df = query(
             select(
                 {crn_source: ["pk", "crn"]},
@@ -408,9 +406,7 @@ class TestE2EAnalyticalUser:
             query=left_raw_df,
             source_pks={crn_source: f"{crn_prefix}pk", duns_source: f"{duns_prefix}pk"},
         )
-        left_df = self.linked_testkit.sources[crn_source].reconcile_matchbox_ids(
-            query=left_raw_df, pk=f"{crn_prefix}pk", return_type="pandas"
-        )
+        left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
 
         right_raw_df = query(
             select(
@@ -425,9 +421,7 @@ class TestE2EAnalyticalUser:
             query=right_raw_df,
             source_pks={cdms_source: f"{cdms_prefix}pk"},
         )
-        right_df = self.linked_testkit.sources[cdms_source].reconcile_matchbox_ids(
-            query=right_raw_df, pk=f"{cdms_prefix}pk", return_type="pandas"
-        )
+        right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
 
         # Apply cleaning if needed
         left_cleaned = _clean_company_name(left_df, crn_prefix)

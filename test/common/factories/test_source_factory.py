@@ -1,8 +1,5 @@
 import functools
-from typing import Literal
 
-import pandas as pd
-import pyarrow as pa
 import pytest
 from faker import Faker
 from sqlalchemy import create_engine
@@ -392,97 +389,6 @@ def test_source_factory_id_generation():
 
     # Different rows should have different IDs
     assert len(data_df["id"].unique()) == len(data_df["company_name"].unique())
-
-
-@pytest.mark.parametrize(
-    "return_type",
-    [
-        pytest.param("pandas", id="pandas"),
-        pytest.param("arrow", id="arrow"),
-    ],
-)
-def test_reconcile_matchbox_ids(return_type: Literal["pandas", "arrow"]) -> None:
-    """Test that reconcile_matchbox_ids correctly updates entity IDs."""
-    # Create a source testkit with test data
-    source_testkit = source_factory(
-        full_name="test.source",
-        n_true_entities=3,
-        seed=(42 if return_type == "pandas" else 43),
-    )
-
-    noise_source_testkit = source_factory(
-        full_name="test.noise",
-        features=[{"name": "user", "base_generator": "name"}],
-        n_true_entities=3,
-        seed=(314 if return_type == "pandas" else 161),
-    )
-
-    # Store original entity IDs
-    original_ids = {entity.id for entity in source_testkit.entities}
-
-    # Get the query data from the testkit
-    source_df = source_testkit.query.to_pandas().rename(columns={"pk": "source_pk"})
-    noise_df = noise_source_testkit.query.to_pandas().rename(columns={"pk": "noise_pk"})
-
-    # Concatenate the dataframes
-    query_data = pd.concat([source_df, noise_df], ignore_index=True)
-
-    # Simulate matchbox assigning new IDs
-    matchbox_ids = {
-        entity.id: 1000 + i for i, entity in enumerate(source_testkit.entities)
-    }
-
-    # Update the IDs in the query data - for both source and noise data
-    # This will leave the noise data with the original IDs
-    query_data = query_data.copy()
-    query_data["id"] = query_data["id"].map(lambda x: matchbox_ids.get(x, x))
-
-    # Ensure we have the expected number of rows
-    assert len(query_data) == len(source_df) + len(noise_df)
-
-    # Verify the source_pk column has nulls for noise data rows
-    assert query_data["source_pk"].isna().sum() == len(noise_df)
-
-    # Verify the noise_pk column has nulls for source data rows
-    assert query_data["noise_pk"].isna().sum() == len(source_df)
-
-    # Test reconciliation - using source_pk as the primary key
-    result = source_testkit.reconcile_matchbox_ids(
-        query=query_data,
-        pk="source_pk",
-        return_type=return_type,
-    )
-
-    # Check return type
-    if return_type == "arrow":
-        assert isinstance(result, pa.Table)
-        check_df = result.to_pandas()
-    else:
-        assert isinstance(result, pd.DataFrame)
-        check_df = result
-
-    # Verify only rows with source_pk are present (noise rows filtered out)
-    assert len(check_df) == len(source_df)
-
-    # Verify the source_pk column was dropped
-    assert "source_pk" not in check_df.columns
-
-    # Verify noise_pk column is still present (but should be all nulls)
-    assert "noise_pk" in check_df.columns
-    assert check_df["noise_pk"].isna().all()
-
-    # Verify the testkit's entity IDs have been updated to match matchbox IDs
-    new_ids = {entity.id for entity in source_testkit.entities}
-
-    # New IDs should match matchbox IDs values
-    assert new_ids == set(matchbox_ids.values())
-
-    # Original and new IDs should be different
-    assert new_ids != original_ids
-
-    # Verify IDs in the result match the matchbox IDs
-    result_ids = set(check_df["id"].unique())
-    assert result_ids == set(matchbox_ids.values())
 
 
 @pytest.mark.parametrize(
