@@ -1,4 +1,3 @@
-import logging
 from typing import Callable
 from unittest.mock import Mock, patch
 
@@ -9,6 +8,7 @@ from pandas import DataFrame
 from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
+from matchbox.common.logging import get_logger
 from matchbox import index, match, process, query
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
@@ -30,7 +30,7 @@ from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 
 
 def test_cleaners():
