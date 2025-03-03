@@ -24,6 +24,7 @@ from matchbox.common.factories.sources import (
     SourceConfig,
     SourceTestkit,
     linked_sources_factory,
+    source_factory,
 )
 
 LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
@@ -318,3 +319,38 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
     )
 
     assert identical, f"Expected perfect results but got: {report}"
+
+
+@pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
+def test_no_matching_entities_linking(
+    Linker: Linker, configure_linker: LinkerConfigurator
+):
+    """Test linking when there are no matching entities between sources.
+
+    Verifies linkers behave correctly when there should be no matches.
+    """
+    # Create two completely separate sets of entities
+    features = (
+        FeatureConfig(name="company", base_generator="company"),
+        FeatureConfig(name="identifier", base_generator="uuid4"),
+    )
+
+    # Create the sources with disjoint entity sets
+    left_source = source_factory(features=features, n_true_entities=10, seed=314)
+    right_source = source_factory(features=features, n_true_entities=10, seed=159)
+
+    # Configure and run the linker
+    linker = make_model(
+        model_name="no_match_linker",
+        description="Linking with no matching entities",
+        model_class=Linker,
+        model_settings=configure_linker(left_source, right_source),
+        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_left",
+        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_resolution="source_right",
+    )
+    results = linker.run()
+
+    # For this case, we expect no probabilities or empty results
+    assert results.probabilities.shape[0] == 0, "Expected no matching probabilities"
