@@ -1,238 +1,320 @@
-import pyarrow as pa
-import pyarrow.compute as pc
+from typing import Any, Callable
+
 import pytest
-from pandas import DataFrame
 from splink import SettingsCreator
+from splink import blocking_rule_library as brl
+from splink import comparison_library as cl
+from splink.internals.blocking_rule_creator import BlockingRuleCreator
+from splink.internals.comparison_creator import ComparisonCreator
 
-from matchbox import make_model, query
-from matchbox.client.helpers.selector import Selector
-from matchbox.client.models.linkers.splinklinker import (
-    SplinkLinkerFunction,
-    SplinkSettings,
+from matchbox import make_model
+from matchbox.client.models.linkers.base import Linker
+from matchbox.client.models.linkers.deterministic import (
+    DeterministicLinker,
+    DeterministicSettings,
 )
-from matchbox.common.sources import Source
-from matchbox.server.postgresql import MatchboxPostgres
-
-from ..fixtures.db import AddDedupeModelsAndDataCallable, AddIndexedDataCallable
-from ..fixtures.models import (
-    LinkTestParams,
-    ModelTestParams,
-    dedupe_data_test_params,
-    dedupe_model_test_params,
-    link_data_test_params,
-    link_model_test_params,
+from matchbox.client.models.linkers.splinklinker import SplinkLinker, SplinkSettings
+from matchbox.client.models.linkers.weighteddeterministic import (
+    WeightedDeterministicLinker,
+    WeightedDeterministicSettings,
+)
+from matchbox.client.results import Results
+from matchbox.common.factories.entities import FeatureConfig
+from matchbox.common.factories.sources import (
+    SourceConfig,
+    SourceTestkit,
+    linked_sources_factory,
 )
 
+LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 
-@pytest.mark.parametrize("fx_data", link_data_test_params)
-@pytest.mark.parametrize("fx_linker", link_model_test_params)
-@pytest.mark.docker
-def test_linkers(
-    # Fixtures
-    matchbox_postgres: MatchboxPostgres,
-    db_add_dedupe_models_and_data: AddDedupeModelsAndDataCallable,
-    db_add_indexed_data: AddIndexedDataCallable,
-    warehouse_data: list[Source],
-    # Parameterised data classes
-    fx_data: LinkTestParams,
-    fx_linker: ModelTestParams,
-    # Pytest
-    request: pytest.FixtureRequest,
-):
-    """Runs all linker methodologies over exemplar tables.
+# Methodology configuration adapters
 
-    Tests:
-        1. That the input data is as expected
-        2. That the data is linked correctly
-        3. That the linked probabilities are inserted correctly
-        4. That the correct number of clusters are resolved and inserted correctly
+
+def configure_deterministic_linker(
+    left_source: SourceTestkit, right_source: SourceTestkit
+) -> dict[str, Any]:
+    """Configure settings for DeterministicLinker.
+
+    Args:
+        left_source: Left source object from linked_sources_factory
+        right_source: Right source object from linked_sources_factory
+
+    Returns:
+        A dictionary with validated settings for DeterministicLinker
     """
-    # i. Ensure database is ready, collect fixtures, perform any special linker cleaning
+    # Extract column names excluding pk and id
+    left_fields = [
+        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+    ]
+    right_fields = [
+        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+    ]
 
-    db_add_dedupe_models_and_data(
-        db_add_indexed_data=db_add_indexed_data,
-        backend=matchbox_postgres,
-        warehouse_data=warehouse_data,
-        dedupe_data=dedupe_data_test_params,
-        dedupe_models=[dedupe_model_test_params[0]],  # Naive deduper,
-        request=request,
-    )
+    # Build comparison string
+    comparisons = []
+    for l_field, r_field in zip(left_fields, right_fields, strict=True):
+        comparisons.append(f"l.{l_field} = r.{r_field}")
 
-    select_l: list[Selector]
-    select_r: list[Selector]
-    df_l: DataFrame
-    df_r: DataFrame
-
-    select_l, df_l = request.getfixturevalue(fx_data.fixture_l)
-    select_r, df_r = request.getfixturevalue(fx_data.fixture_r)
-
-    fields_l = list(fx_data.fields_l.keys())
-    fields_r = list(fx_data.fields_r.keys())
-
-    if fx_linker.rename_fields:
-        df_l_renamed = df_l.copy().rename(columns=fx_data.fields_l)
-        df_r_renamed = df_r.copy().rename(columns=fx_data.fields_r)
-        fields_l_renamed = list(fx_data.fields_l.values())
-        fields_r_renamed = list(fx_data.fields_r.values())
-        df_l_renamed = df_l_renamed.filter(["id"] + fields_l_renamed)
-        df_r_renamed = df_r_renamed.filter(["id"] + fields_r_renamed)
-        assert set(df_l_renamed.columns) == set(df_r_renamed.columns)
-        assert df_l_renamed.dtypes.equals(df_r_renamed.dtypes)
-
-    # 1. Input data is as expected
-
-    if fx_linker.rename_fields:
-        assert isinstance(df_l_renamed, DataFrame)
-        assert df_l_renamed.shape[0] == fx_data.curr_n_l
-    else:
-        assert isinstance(df_l, DataFrame)
-        assert df_l.shape[0] == fx_data.curr_n_l
-
-    if fx_linker.rename_fields:
-        assert isinstance(df_r_renamed, DataFrame)
-        assert df_r_renamed.shape[0] == fx_data.curr_n_r
-    else:
-        assert isinstance(df_r, DataFrame)
-        assert df_r.shape[0] == fx_data.curr_n_r
-
-    # 2. Data is linked correctly
-
-    linker_name = f"{fx_linker.name}_{fx_data.source_l}_{fx_data.source_r}"
-    linker_settings = fx_linker.build_settings(fx_data)
-
-    model = make_model(
-        model_name=linker_name,
-        description=(
-            f"Testing link of {fx_data.source_l} and {fx_data.source_r} "
-            f"with {fx_linker.name} method."
+    settings_dict = {
+        "left_id": "id",
+        "right_id": "id",
+        "comparisons": " and ".join(
+            comparisons,
         ),
-        model_class=fx_linker.cls,
-        model_settings=linker_settings,
-        left_data=df_l_renamed if fx_linker.rename_fields else df_l,
-        left_resolution=fx_data.source_l,
-        right_data=df_r_renamed if fx_linker.rename_fields else df_r,
-        right_resolution=fx_data.source_r,
-    )
+    }
 
-    results = model.run()
+    # Validate the settings dictionary
+    DeterministicSettings.model_validate(settings_dict)
 
-    result_with_source = results.inspect_probabilities(
-        left_data=df_l,
-        left_key="id",
-        right_data=df_r,
-        right_key="id",
-    )
+    return settings_dict
 
-    assert isinstance(results.probabilities, pa.Table)
-    assert results.probabilities.shape[0] == fx_data.tgt_prob_n
 
-    assert isinstance(result_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r, strict=True):
-        assert result_with_source[field_l].equals(result_with_source[field_r])
+def configure_weighted_deterministic_linker(
+    left_source: SourceTestkit, right_source: SourceTestkit
+) -> dict[str, Any]:
+    """Configure settings for WeightedDeterministicLinker.
 
-    # 3. Correct number of clusters are resolved
+    Args:
+        left_source: Left source object from linked_sources_factory
+        right_source: Right source object from linked_sources_factory
 
-    clusters_with_source = results.inspect_clusters(
-        left_data=df_l,
-        left_key="id",
-        right_data=df_r,
-        right_key="id",
-    )
+    Returns:
+        A dictionary with validated settings for WeightedDeterministicLinker
+    """
+    # Extract column names excluding pk and id
+    left_fields = [
+        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+    ]
+    right_fields = [
+        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+    ]
 
-    assert isinstance(results.clusters, pa.Table)
-    assert pc.count_distinct(results.clusters["parent"]).as_py() == fx_data.tgt_clus_n
-
-    assert isinstance(clusters_with_source, DataFrame)
-    for field_l, field_r in zip(fields_l, fields_r, strict=True):
-        # When we enrich results clusters in a deduplication job, every child
-        # id will match something in the source data, because we're only using
-        # one dataset. NaNs are therefore impossible.
-        # When we enrich results clusters in a link job, some child ids
-        # will match something in the left data, and others in the right data.
-        # NaNs are therefore guaranteed.
-        # We therefore coalesce by parent to unique joined values, which
-        # we can expect to equal the target cluster number, and have matching
-        # rows of data
-        def unique_non_null(s):
-            return s.dropna().unique()
-
-        cluster_vals = (
-            clusters_with_source.filter(["parent", field_l, field_r])
-            .groupby("parent")
-            .agg(
-                {
-                    field_l: unique_non_null,
-                    field_r: unique_non_null,
-                }
-            )
-            .explode(column=[field_l, field_r])
-            .reset_index()
+    # Build weighted comparisons with equal weights
+    weighted_comparisons = []
+    for l_field, r_field in zip(left_fields, right_fields, strict=True):
+        weighted_comparisons.append(
+            {"comparison": f"l.{l_field} = r.{r_field}", "weight": 1}
         )
 
-        assert cluster_vals[field_l].equals(cluster_vals[field_r])
-        assert cluster_vals.parent.nunique() == fx_data.tgt_clus_n
-        assert cluster_vals.shape[0] == fx_data.tgt_clus_n
+    # Create settings dictionary
+    settings_dict = {
+        "left_id": "id",
+        "right_id": "id",
+        "weighted_comparisons": weighted_comparisons,
+        "threshold": 1,  # Require all comparisons to match
+    }
 
-    # 4. Probabilities and clusters are inserted correctly
+    # Validate the settings dictionary
+    WeightedDeterministicSettings.model_validate(settings_dict)
 
-    results.to_matchbox()
+    return settings_dict
 
-    retrieved_results = matchbox_postgres.get_model_results(model=linker_name)
-    assert retrieved_results.shape[0] == fx_data.tgt_prob_n
 
-    matchbox_postgres.set_model_truth(model=linker_name, truth=0.0)
+def configure_splink_linker(
+    left_source: SourceTestkit, right_source: SourceTestkit
+) -> dict[str, Any]:
+    """Configure settings for SplinkLinker.
 
-    clusters = query(
-        select_l,
-        select_r,
-        resolution_name=linker_name,
-        return_type="pandas",
+    Args:
+        left_source: Left source object from linked_sources_factory
+        right_source: Right source object from linked_sources_factory
+
+    Returns:
+        A dictionary with validated settings for SplinkLinker
+    """
+    # Extract column names excluding pk and id
+    left_fields = [
+        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+    ]
+    right_fields = [
+        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+    ]
+
+    deterministic_matching_rules: list[str] = []
+    blocking_rules_to_generate_predictions: list[BlockingRuleCreator] = []
+    comparisons: list[ComparisonCreator] = []
+
+    for l_field, r_field in zip(left_fields, right_fields, strict=True):
+        # Splink requires exact name matches
+        assert l_field == r_field
+
+        deterministic_matching_rules.append(f"l.{l_field} = r.{r_field}")
+        blocking_rules_to_generate_predictions.append(brl.block_on(l_field))
+        comparisons.append(cl.ExactMatch(l_field).configure(m_probabilities=[1, 0]))
+
+    linker_training_functions = [
+        {
+            "function": "estimate_probability_two_random_records_match",
+            "arguments": {
+                "deterministic_matching_rules": deterministic_matching_rules,
+                "recall": 1,
+            },
+        },
+        {
+            "function": "estimate_u_using_random_sampling",
+            "arguments": {"max_pairs": 1e4},
+        },
+    ]
+
+    # The m parameter is 1 because we're testing in a deterministic system, and
+    # many of these tests only have one field, so we can't use expectation
+    # maximisation to estimate. For testing raw functionality, fine to use 1
+    linker_settings = SettingsCreator(
+        link_type="link_only",
+        retain_matching_columns=False,
+        retain_intermediate_calculation_columns=False,
+        blocking_rules_to_generate_predictions=blocking_rules_to_generate_predictions,
+        comparisons=comparisons,
     )
 
-    assert isinstance(clusters, DataFrame)
-    assert clusters.id.nunique() == fx_data.unique_n
+    settings_dict = {
+        "left_id": "id",
+        "right_id": "id",
+        "linker_training_functions": linker_training_functions,
+        "linker_settings": linker_settings,
+        "threshold": None,
+    }
+
+    SplinkSettings.model_validate(settings_dict)
+
+    return settings_dict
 
 
-def test_splink_training_functions():
-    # You can create a valid SplinkLinkerFunction
-    SplinkLinkerFunction(
-        function="estimate_u_using_random_sampling",
-        arguments={"max_pairs": 1e4},
+LINKERS = [
+    pytest.param(
+        DeterministicLinker, configure_deterministic_linker, id="Deterministic"
+    ),
+    pytest.param(
+        WeightedDeterministicLinker,
+        configure_weighted_deterministic_linker,
+        id="WeightedDeterministic",
+    ),
+    pytest.param(SplinkLinker, configure_splink_linker, id="Splink"),
+    # Add more linker classes and configuration functions here
+]
+
+# Test cases
+
+
+@pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
+def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurator):
+    """Test linking with exact matches between sources."""
+    # Create sources with the same entities
+    features = (
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+        ),
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+        ),
     )
-    # You can't reference a function that doesn't exist
-    with pytest.raises(ValueError):
-        SplinkLinkerFunction(function="made_up_funcname", arguments=dict())
-    # You can't pass arguments that don't exist
-    with pytest.raises(ValueError):
-        SplinkLinkerFunction(
-            function="estimate_u_using_random_sampling", arguments={"foo": "bar"}
-        )
 
-
-def test_splink_settings():
-    valid_settings = SplinkSettings(
-        left_id="id",
-        right_id="id",
-        linker_training_functions=[],
-        linker_settings=SettingsCreator(link_type="link_only"),
-        threshold=None,
+    configs = (
+        SourceConfig(
+            full_name="source_left",
+            features=features,
+            n_true_entities=10,
+        ),
+        SourceConfig(
+            full_name="source_right",
+            features=features,
+            n_true_entities=10,  # Same number of entities
+        ),
     )
-    assert valid_settings.linker_settings.unique_id_column_name == "id"
-    # Can only use "link_only"
-    with pytest.raises(ValueError):
-        valid_settings = SplinkSettings(
-            left_id="id",
-            right_id="id",
-            linker_training_functions=[],
-            linker_settings=SettingsCreator(link_type="dedupe_only"),
-            threshold=None,
-        )
-    # Left and right ID must coincide
-    with pytest.raises(ValueError):
-        valid_settings = SplinkSettings(
-            left_id="id",
-            right_id="id2",
-            linker_training_functions=[],
-            linker_settings=SettingsCreator(link_type="link_only"),
-            threshold=None,
-        )
+
+    linked = linked_sources_factory(source_configs=configs, seed=42)
+    left_source = linked.sources["source_left"]
+    right_source = linked.sources["source_right"]
+
+    # Configure and run the linker
+    linker = make_model(
+        model_name="exact_match_linker",
+        description="Linking with exact matches",
+        model_class=Linker,
+        model_settings=configure_linker(left_source, right_source),
+        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_left",
+        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_resolution="source_right",
+    )
+    results: Results = linker.run()
+
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=left_source.entities,
+        right_clusters=right_source.entities,
+        sources=["source_left", "source_right"],
+        threshold=0,
+        verbose=True,
+    )
+
+    assert identical, f"Expected perfect results but got: {report}"
+
+
+@pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
+def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigurator):
+    """Test linking when one source contains only a subset of entities.
+
+    This tests that the linker correctly handles when the right source
+    only contains a subset of the entities in the left source.
+    """
+    # Create features for our test sources
+    features = (
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+        ),
+        FeatureConfig(
+            name="registration_id",
+            base_generator="numerify",
+            parameters=(("text", "######"),),
+        ),
+    )
+
+    # Configure sources - full set on left, half on right
+    configs = (
+        SourceConfig(
+            full_name="source_left",
+            features=features,
+            n_true_entities=10,  # Full set
+        ),
+        SourceConfig(
+            full_name="source_right",
+            features=features,
+            n_true_entities=5,  # Half the entities
+        ),
+    )
+
+    # Create the linked sources
+    linked = linked_sources_factory(source_configs=configs, seed=42)
+    left_source = linked.sources["source_left"]
+    right_source = linked.sources["source_right"]
+
+    # Configure and run the linker
+    linker = make_model(
+        model_name="partial_match_linker",
+        description="Linking with partial entity coverage",
+        model_class=Linker,
+        model_settings=configure_linker(left_source, right_source),
+        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_left",
+        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_resolution="source_right",
+    )
+    results = linker.run()
+
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=left_source.entities,
+        right_clusters=right_source.entities,
+        sources=["source_left", "source_right"],
+        threshold=0,
+        verbose=True,
+    )
+
+    assert identical, f"Expected perfect results but got: {report}"

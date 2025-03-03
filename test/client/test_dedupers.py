@@ -1,126 +1,162 @@
-import pyarrow as pa
-import pyarrow.compute as pc
+from typing import Any, Callable
+
 import pytest
-from pandas import DataFrame
 
-from matchbox import make_model, query
-from matchbox.client.helpers.selector import Selector
-from matchbox.common.sources import Source
-from matchbox.server.postgresql import MatchboxPostgres
-
-from ..fixtures.db import AddIndexedDataCallable
-from ..fixtures.models import (
-    DedupeTestParams,
-    ModelTestParams,
-    dedupe_data_test_params,
-    dedupe_model_test_params,
+from matchbox import make_model
+from matchbox.client.models.dedupers.base import Deduper
+from matchbox.client.models.dedupers.naive import NaiveDeduper, NaiveSettings
+from matchbox.client.results import Results
+from matchbox.common.factories.entities import FeatureConfig, SuffixRule
+from matchbox.common.factories.sources import (
+    SourceConfig,
+    SourceTestkit,
+    linked_sources_factory,
 )
+from matchbox.common.sources import Source
+
+DeduperConfigurator = Callable[[Source], dict[str, Any]]
+
+# Methodology configuration adapters
 
 
-@pytest.mark.parametrize("fx_data", dedupe_data_test_params)
-@pytest.mark.parametrize("fx_deduper", dedupe_model_test_params)
-@pytest.mark.docker
-def test_dedupers(
-    # Fixtures
-    matchbox_postgres: MatchboxPostgres,
-    db_add_indexed_data: AddIndexedDataCallable,
-    warehouse_data: list[Source],
-    # Parameterised data classes
-    fx_data: DedupeTestParams,
-    fx_deduper: ModelTestParams,
-    # Pytest
-    request: pytest.FixtureRequest,
-):
-    """Runs all deduper methodologies over exemplar tables.
+def configure_naive_deduper(source: SourceTestkit) -> dict[str, Any]:
+    """Configure settings for NaiveDeduper.
 
-    Tests:
-        1. That the input data is as expected
-        2. That the data is deduplicated correctly
-        3. That the deduplicated probabilities are inserted correctly
-        4. That the correct number of clusters are resolved and inserted correctly
+    Args:
+        source: Source object from linked_sources_factory
+
+    Returns:
+        A dictionary with validated settings for NaiveDeduper
     """
-    # i. Ensure database is ready, collect fixtures, perform any special
-    # deduper cleaning
+    # Extract column names excluding pk and id
+    fields = [c.name for c in source.source.columns if c.name not in ("pk", "id")]
 
-    db_add_indexed_data(backend=matchbox_postgres, warehouse_data=warehouse_data)
+    settings_dict = {
+        "id": "id",
+        "unique_fields": fields,
+    }
 
-    select: list[Selector]
-    df: DataFrame
+    NaiveSettings.model_validate(settings_dict)
 
-    select, df = request.getfixturevalue(fx_data.fixture)
+    return settings_dict
 
-    fields = list(fx_data.fields.keys())
 
-    if fx_deduper.rename_fields:
-        df_renamed = df.copy().rename(columns=fx_data.fields)
-        fields_renamed = list(fx_data.fields.values())
-        df_renamed = df_renamed.filter(["id"] + fields_renamed)
+DEDUPERS = [
+    pytest.param(NaiveDeduper, configure_naive_deduper, id="Naive"),
+    # Add more deduper classes and configuration functions here
+]
 
-    # 1. Input data is as expected
 
-    if fx_deduper.rename_fields:
-        assert isinstance(df_renamed, DataFrame)
-        assert df_renamed.shape[0] == fx_data.curr_n
-    else:
-        assert isinstance(df, DataFrame)
-        assert df.shape[0] == fx_data.curr_n
+# Test cases
 
-    # 2. Data is deduplicated correctly
 
-    deduper_name = f"{fx_deduper.name}_{fx_data.source}"
-    deduper_settings = fx_deduper.build_settings(fx_data)
-
-    model = make_model(
-        model_name=deduper_name,
-        description=f"Testing dedupe of {fx_data.source} with {fx_deduper.name} method",
-        model_class=fx_deduper.cls,
-        model_settings=deduper_settings,
-        left_data=df_renamed if fx_deduper.rename_fields else df,
-        left_resolution=fx_data.source,
+@pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
+def test_exact_duplicate_deduplication(
+    Deduper: Deduper, configure_deduper: DeduperConfigurator
+):
+    """Test deduplication with exact duplicates."""
+    # Create a source with exact duplicates
+    features = (
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+        ),
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+        ),
     )
 
-    results = model.run()
-
-    result_with_source = results.inspect_probabilities(
-        left_data=df, left_key="id", right_data=df, right_key="id"
+    source_config = SourceConfig(
+        full_name="source_exact",
+        features=features,
+        n_true_entities=10,
+        repetition=2,  # Each entity appears 3 times (base + 2 repetitions)
     )
 
-    assert isinstance(results.probabilities, pa.Table)
-    assert results.probabilities.shape[0] == fx_data.tgt_prob_n
+    linked = linked_sources_factory(source_configs=(source_config,), seed=42)
+    source = linked.sources["source_exact"]
 
-    assert isinstance(result_with_source, DataFrame)
-    for field in fields:
-        assert result_with_source[field + "_x"].equals(result_with_source[field + "_y"])
+    # Configure and run the deduper
+    deduper = make_model(
+        model_name="exact_deduper",
+        description="Deduplication of exact duplicates",
+        model_class=Deduper,
+        model_settings=configure_deduper(source),
+        left_data=source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_exact",
+    )
+    results: Results = deduper.run()
 
-    # 3. Correct number of clusters are resolved
-
-    clusters_with_source = results.inspect_clusters(
-        left_data=df, left_key="id", right_data=df, right_key="id"
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=source.entities,
+        right_clusters=None,
+        sources=["source_exact"],
+        threshold=0,
+        verbose=True,
     )
 
-    assert isinstance(results.clusters, pa.Table)
-    assert pc.count_distinct(results.clusters["parent"]).as_py() == fx_data.tgt_clus_n
+    assert identical, f"Expected perfect results but got: {report}"
 
-    assert isinstance(clusters_with_source, DataFrame)
-    for field in fields:
-        assert clusters_with_source[field + "_x"].equals(
-            clusters_with_source[field + "_y"]
-        )
 
-    # 4. Probabilities and clusters are inserted correctly
+@pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
+def test_variation_deduplication(
+    Deduper: Deduper, configure_deduper: DeduperConfigurator
+):
+    """Test deduplication with name variations.
 
-    results.to_matchbox()
-
-    retrieved_results = matchbox_postgres.get_model_results(model=deduper_name)
-    assert retrieved_results.shape[0] == fx_data.tgt_prob_n
-
-    matchbox_postgres.set_model_truth(model=deduper_name, truth=0.0)
-
-    clusters = query(
-        select,
-        resolution_name=deduper_name,
-        return_type="pandas",
+    Without cleaning, identifying duplicates with probability 1.0 is impossible.
+    """
+    # Create a source with name variations
+    features = (
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+            variations=[
+                SuffixRule(suffix=" Inc"),
+                SuffixRule(suffix=" Ltd"),
+            ],
+            drop_base=False,
+        ),
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+        ),
     )
 
-    assert isinstance(clusters, DataFrame)
-    assert clusters.id.nunique() == fx_data.unique_n
+    source_config = SourceConfig(
+        full_name="source_var",
+        features=features,
+        n_true_entities=10,
+        repetition=0,  # No repetition needed since we have variations
+    )
+
+    linked = linked_sources_factory(source_configs=(source_config,), seed=42)
+    source = linked.sources["source_var"]
+
+    # Configure and run the deduper
+    deduper = make_model(
+        model_name="variation_deduper",
+        description="Deduplication with name variations",
+        model_class=Deduper,
+        model_settings=configure_deduper(source),
+        left_data=source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_var",
+    )
+    results: Results = deduper.run()
+
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=source.entities,
+        right_clusters=None,
+        sources=["source_var"],
+        threshold=0,
+        verbose=True,
+    )
+
+    assert not identical
+    # Check that there are missing links (partial results)
+    assert len(report["partial"]) > 0 or len(report["missing"]) > 0
