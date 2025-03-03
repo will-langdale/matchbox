@@ -51,6 +51,55 @@ DEDUPERS = [
 
 
 @pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
+def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurator):
+    """Test deduplication where there aren't actually any duplicates."""
+    # Create a source with exact duplicates
+    features = (
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+        ),
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+        ),
+    )
+
+    source_config = SourceConfig(
+        full_name="source_exact",
+        features=features,
+        n_true_entities=10,
+        repetition=0,  # Each entity appears once
+    )
+
+    linked = linked_sources_factory(source_configs=(source_config,), seed=42)
+    source = linked.sources["source_exact"]
+
+    # Configure and run the deduper
+    deduper = make_model(
+        model_name="exact_deduper",
+        description="Deduplication of exact duplicates",
+        model_class=Deduper,
+        model_settings=configure_deduper(source),
+        left_data=source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_exact",
+    )
+    results: Results = deduper.run()
+
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=source.entities,
+        right_clusters=None,
+        sources=["source_exact"],
+        threshold=0,
+        verbose=True,
+    )
+
+    assert identical, f"Expected perfect results but got: {report}"
+
+
+@pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
 def test_exact_duplicate_deduplication(
     Deduper: Deduper, configure_deduper: DeduperConfigurator
 ):

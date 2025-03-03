@@ -257,6 +257,68 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
 
 
 @pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
+def test_exact_match_with_duplicates_linking(
+    Linker: Linker, configure_linker: LinkerConfigurator
+):
+    """Test linking with exact matches between sources, where data is duplicated."""
+    # Create sources with the same entities
+    features = (
+        FeatureConfig(
+            name="company",
+            base_generator="company",
+        ),
+        FeatureConfig(
+            name="email",
+            base_generator="email",
+        ),
+    )
+
+    configs = (
+        SourceConfig(
+            full_name="source_left",
+            features=features,
+            n_true_entities=10,
+            repetition=1,  # Each entity appears once
+        ),
+        SourceConfig(
+            full_name="source_right",
+            features=features,
+            n_true_entities=10,  # Same number of entities
+            repetition=3,  # Each entity appears 3 times
+        ),
+    )
+
+    linked = linked_sources_factory(source_configs=configs, seed=42)
+    left_source = linked.sources["source_left"]
+    right_source = linked.sources["source_right"]
+
+    # Configure and run the linker
+    linker = make_model(
+        model_name="exact_match_linker",
+        description="Linking with exact matches",
+        model_class=Linker,
+        model_settings=configure_linker(left_source, right_source),
+        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_resolution="source_left",
+        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_resolution="source_right",
+    )
+    results: Results = linker.run()
+
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=left_source.entities,
+        right_clusters=right_source.entities,
+        sources=["source_left", "source_right"],
+        threshold=0,
+        verbose=True,
+    )
+
+    assert identical, f"Expected perfect results but got: {report}"
+
+
+@pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
 def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigurator):
     """Test linking when one source contains only a subset of entities.
 
