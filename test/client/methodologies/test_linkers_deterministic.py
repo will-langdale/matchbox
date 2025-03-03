@@ -1,3 +1,5 @@
+"""Test deterministic behavior of linkers."""
+
 from typing import Any, Callable
 
 import pytest
@@ -177,6 +179,7 @@ def configure_splink_linker(
         "threshold": None,
     }
 
+    # Validate the settings dictionary
     SplinkSettings.model_validate(settings_dict)
 
     return settings_dict

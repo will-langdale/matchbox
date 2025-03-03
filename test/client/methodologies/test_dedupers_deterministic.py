@@ -1,3 +1,5 @@
+"""Test deterministic behavior of dedupers."""
+
 from typing import Any, Callable
 
 import pytest
