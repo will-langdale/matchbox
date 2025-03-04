@@ -1,4 +1,3 @@
-import logging
 from typing import Callable
 from unittest.mock import Mock, patch
 
@@ -29,8 +28,6 @@ from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
-
-LOGGER = logging.getLogger(__name__)
 
 
 def test_cleaners():
