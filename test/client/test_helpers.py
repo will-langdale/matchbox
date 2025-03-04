@@ -27,10 +27,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.logging import get_logger
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
-
-LOGGER = get_logger(__name__)
 
 
 def test_cleaners():

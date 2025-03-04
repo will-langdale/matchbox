@@ -53,9 +53,7 @@ def get_logger(name: str, custom_format: str = None) -> logging.Logger:
     return logger
 
 
-mb_server_logger = get_logger("mb_server_logger")
-mb_client_logger = get_logger("mb_client_logger")
-mb_test_logger = get_logger("mb_test_logger")
+logger = get_logger("matchbox")
 
 
 def get_console():
