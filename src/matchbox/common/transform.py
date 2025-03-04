@@ -319,9 +319,7 @@ def to_hierarchical_clusters(
     n_cores = multiprocessing.cpu_count()
     n_components = len(components)
 
-    logger.info(
-        f"Processing {n_components:,} components using {n_cores} workers"
-    )
+    logger.info(f"Processing {n_components:,} components using {n_cores} workers")
 
     # Split table into separate component tables
     component_col = probabilities["component"]
@@ -383,9 +381,7 @@ def to_hierarchical_clusters(
                 if not progress.update(process_task, advance=1)
             ]
 
-    logger.info(
-        f"Completed processing {len(results):,} components successfully"
-    )
+    logger.info(f"Completed processing {len(results):,} components successfully")
 
     # Create empty table if no results
     if not results:

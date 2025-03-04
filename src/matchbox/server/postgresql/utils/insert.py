@@ -196,9 +196,7 @@ def insert_dataset(
             # Some edge cases, defined in tests, are not implemented yet
             raise NotImplementedError from e
 
-        logger.info(
-            f"{source} added {len(data_hashes)} objects to Clusters table"
-        )
+        logger.info(f"{source} added {len(data_hashes)} objects to Clusters table")
 
     logger.info(f"Finished {source}")
 
@@ -551,9 +549,7 @@ def insert_results(
             )
 
         except SQLAlchemyError as e:
-            logger.error(
-                f"[{resolution.name}] Failed to insert data: {str(e)}"
-            )
+            logger.error(f"[{resolution.name}] Failed to insert data: {str(e)}")
             raise
 
     logger.info(f"[{resolution.name}] Insert operation complete!")
