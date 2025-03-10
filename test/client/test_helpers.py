@@ -6,7 +6,7 @@ import pytest
 from httpx import Response
 from pandas import DataFrame
 from respx import MockRouter
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 
 from matchbox import index, match, process, query
 from matchbox.client.clean import company_name, company_number
@@ -24,10 +24,13 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.factories.sources import source_factory
+from matchbox.common.factories.sources import (
+    linked_sources_factory,
+    source_factory,
+)
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import Source, SourceAddress
 
 
 def test_cleaners():
@@ -40,24 +43,23 @@ def test_cleaners():
     assert cleaner_name_number is not None
 
 
-@pytest.mark.docker
-def test_process(warehouse_data: list[Source]):
-    crn = warehouse_data[0].to_arrow()
+def test_process():
+    crn = source_factory().query
 
     cleaner_name = cleaner(
         function=company_name,
-        arguments={"column": "test_crn_company_name"},
+        arguments={"column": "company_name"},
     )
     cleaner_number = cleaner(
         function=company_number,
-        arguments={"column": "test_crn_crn"},
+        arguments={"column": "crn"},
     )
     cleaner_name_number = cleaners(cleaner_name, cleaner_number)
 
     df_name_cleaned = process(data=crn, pipeline=cleaner_name_number)
 
     assert isinstance(df_name_cleaned, DataFrame)
-    assert df_name_cleaned.shape[0] == 3000
+    assert df_name_cleaned.shape[0] == 10
 
 
 def test_comparisons():
@@ -70,41 +72,32 @@ def test_comparisons():
     assert comparison_name_id is not None
 
 
-@pytest.mark.docker
 def test_select_default_engine(
     matchbox_api: MockRouter,
-    warehouse_engine: Engine,
+    sqlite_warehouse: Engine,
     env_setter: Callable[[str, str], None],
 ):
-    """We can select without explicit engine if default is set"""
-    # Overwrite temporarily env variable
-    default_engine = warehouse_engine.url.render_as_string(hide_password=False)
+    """We can select without explicit engine if default is set."""
+    default_engine = sqlite_warehouse.url.render_as_string(hide_password=False)
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", default_engine)
 
     # Set up mocks and test data
-    testkit = source_factory(full_name="test.bar", engine=warehouse_engine)
+    testkit = source_factory(full_name="bar", engine=sqlite_warehouse)
     source = testkit.source
 
     matchbox_api.get(
-        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.bar"
+        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/bar"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
-    with warehouse_engine.connect() as conn:
-        testkit.data.to_pandas().to_sql(
-            name="bar",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Select sources
-    selection = select("test.bar")
+    selection = select("bar")
 
     # Check they contain what we expect
     assert selection[0].source.model_dump() == source.model_dump()
     # Check the engine is set by the selector
-    assert selection[0].source.engine.url == warehouse_engine.url
+    assert selection[0].source.engine.url == sqlite_warehouse.url
 
 
 def test_select_missing_engine():
@@ -113,106 +106,66 @@ def test_select_missing_engine():
         select("test.bar")
 
 
-@pytest.mark.docker
-def test_select_mixed_style(matchbox_api: MockRouter, warehouse_engine: Engine):
-    """We can select select specific columns from some of the sources"""
-    # Set up mocks and test data
-    source1 = Source(
-        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
-        db_pk="pk",
-        columns=[SourceColumn(name="a", type="BIGINT")],
-    )
-    source2 = Source(
-        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.bar"),
-        db_pk="pk",
-    )
+def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """We can select specific columns from some of the sources"""
+    linked = linked_sources_factory(engine=sqlite_warehouse)
+
+    source1 = linked.sources["crn"].source
+    source2 = linked.sources["cdms"].source
 
     matchbox_api.get(
-        f"/sources/{hash_to_base64(source1.address.warehouse_hash)}/test.foo"
+        f"/sources/{hash_to_base64(source1.address.warehouse_hash)}/crn"
     ).mock(return_value=Response(200, content=source1.model_dump_json()))
     matchbox_api.get(
-        f"/sources/{hash_to_base64(source2.address.warehouse_hash)}/test.bar"
+        f"/sources/{hash_to_base64(source2.address.warehouse_hash)}/cdms"
     ).mock(return_value=Response(200, content=source2.model_dump_json()))
 
-    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    linked.sources["crn"].to_warehouse(engine=sqlite_warehouse)
+    linked.sources["cdms"].to_warehouse(engine=sqlite_warehouse)
 
-        df.to_sql(
-            name="bar",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    selection = select({"crn": ["company_name"]}, "cdms", engine=sqlite_warehouse)
 
-    # Select sources
-    selection = select({"test.foo": ["a"]}, "test.bar", engine=warehouse_engine)
-
-    # Check they contain what we expect
-    assert selection[0].fields == ["a"]
+    assert selection[0].fields == ["company_name"]
     assert not selection[1].fields
     assert selection[0].source.model_dump() == source1.model_dump()
     assert selection[1].source.model_dump() == source2.model_dump()
-    # Check the engine is set by the selector
-    assert selection[0].source.engine == warehouse_engine
-    assert selection[1].source.engine == warehouse_engine
+    assert selection[0].source.engine == sqlite_warehouse
+    assert selection[1].source.engine == sqlite_warehouse
 
 
-@pytest.mark.docker
-def test_select_non_indexed_columns(matchbox_api: MockRouter, warehouse_engine: Engine):
+def test_select_non_indexed_columns(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Selecting columns not declared to backend generates warning."""
-    source = Source(
-        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
-        db_pk="pk",
-    )
+    source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
+
+    source: Source = source_testkit.source
+    source.columns = source.columns[:1]  # Don't index on one columns
+
     matchbox_api.get(
-        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.foo"
+        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
-    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
     with pytest.warns(Warning):
-        select({"test.foo": ["a", "b"]}, engine=warehouse_engine)
+        select({"foo": ["company_name", "crn"]}, engine=sqlite_warehouse)
 
 
-@pytest.mark.docker
-def test_select_missing_columns(matchbox_api: MockRouter, warehouse_engine: Engine):
+def test_select_missing_columns(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Selecting columns not in the warehouse errors."""
-    source = Source(
-        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
-        db_pk="pk",
-    )
+    source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
+
+    source = source_testkit.source
 
     matchbox_api.get(
-        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/test.foo"
+        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"
     ).mock(return_value=Response(200, content=source.model_dump_json()))
 
-    df = DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+
     with pytest.raises(ValueError):
-        select({"test.foo": ["a", "c"]}, engine=warehouse_engine)
+        select(
+            {"foo": ["company_name", "non_existent_column"]}, engine=sqlite_warehouse
+        )
 
 
 @patch.object(Source, "to_arrow")
@@ -448,13 +401,14 @@ def test_query_404_source(matchbox_api: MockRouter):
 
 
 @patch("matchbox.client.helpers.index.Source")
-def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
+def test_index_success(
+    MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
     """Test successful indexing flow through the API."""
-    engine = create_engine("sqlite:///:memory:")
-
     # Mock Source
     source = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}], engine=engine
+        features=[{"name": "company_name", "base_generator": "company"}],
+        engine=sqlite_warehouse,
     )
     mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
@@ -485,7 +439,7 @@ def test_index_success(MockSource: Mock, matchbox_api: MockRouter):
     index(
         full_name=source.source.address.full_name,
         db_pk=source.source.db_pk,
-        engine=engine,
+        engine=sqlite_warehouse,
     )
 
     # Verify the API calls
@@ -517,17 +471,16 @@ def test_index_with_columns(
     MockSource: Mock,
     matchbox_api: MockRouter,
     columns: list[str] | list[dict[str, str]],
+    sqlite_warehouse: Engine,
 ):
     """Test indexing with different column definition formats."""
-    engine = create_engine("sqlite:///:memory:")
-
     # Create source testkit and mock
     source = source_factory(
         features=[
             {"name": "name", "base_generator": "name"},
             {"name": "age", "base_generator": "random_int"},
         ],
-        engine=engine,
+        engine=sqlite_warehouse,
     )
     mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
@@ -557,7 +510,7 @@ def test_index_with_columns(
     index(
         full_name=source.source.address.full_name,
         db_pk=source.source.db_pk,
-        engine=engine,
+        engine=sqlite_warehouse,
         columns=columns,
     )
 
@@ -570,7 +523,7 @@ def test_index_with_columns(
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
-    mock_source_instance.set_engine.assert_called_once_with(engine)
+    mock_source_instance.set_engine.assert_called_once_with(sqlite_warehouse)
     if columns:
         mock_source_instance.default_columns.assert_not_called()
     else:
@@ -578,13 +531,14 @@ def test_index_with_columns(
 
 
 @patch("matchbox.client.helpers.index.Source")
-def test_index_upload_failure(MockSource: Mock, matchbox_api: MockRouter):
+def test_index_upload_failure(
+    MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
     """Test handling of upload failures."""
-    engine = create_engine("sqlite:///:memory:")
-
     # Mock Source
     source = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}], engine=engine
+        features=[{"name": "company_name", "base_generator": "company"}],
+        engine=sqlite_warehouse,
     )
     mock_source_instance = source.mock
     MockSource.return_value = mock_source_instance
@@ -619,7 +573,7 @@ def test_index_upload_failure(MockSource: Mock, matchbox_api: MockRouter):
         index(
             full_name=source.source.address.full_name,
             db_pk=source.source.db_pk,
-            engine=engine,
+            engine=sqlite_warehouse,
         )
 
     # Verify API calls

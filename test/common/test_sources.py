@@ -1,10 +1,13 @@
-import pandas as pd
+import copy
+
 import pytest
 from pandas.testing import assert_frame_equal
 from sqlalchemy import Engine, Table, create_engine
 
 from matchbox.client.helpers.selector import Match
+from matchbox.common.db import fullname_to_prefix
 from matchbox.common.exceptions import MatchboxSourceColumnError
+from matchbox.common.factories.sources import source_factory
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 
@@ -67,48 +70,29 @@ def test_source_address_compose():
     assert len(same_table_name) == 1
 
 
-@pytest.mark.docker
-def test_source_set_engine(warehouse_engine: Engine):
+def test_source_set_engine(sqlite_warehouse: Engine):
     """Engine can be set on Source"""
-    df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    source_testkit = source_factory(
+        features=[{"name": "b", "base_generator": "random_int", "sql_type": "BIGINT"}],
+        engine=sqlite_warehouse,
+    )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
     # We can set engine with correct column specification
-    source = Source(
-        address=SourceAddress.compose(warehouse_engine, "test.foo"),
-        db_pk="pk",
-        columns=[
-            SourceColumn(name="b", type="TEXT"),
-        ],
-    ).set_engine(warehouse_engine)
+    source = source_testkit.source.set_engine(sqlite_warehouse)
     assert isinstance(source, Source)
 
     # Error is raised with missing column
-    with pytest.raises(MatchboxSourceColumnError):
-        Source(
-            address=SourceAddress.compose(warehouse_engine, "test.foo"),
-            db_pk="pk",
-            columns=[
-                SourceColumn(name="c", type="TEXT"),
-            ],
-        ).set_engine(warehouse_engine)
+    with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
+        new_source = copy.copy(source_testkit.source)
+        new_source.columns = [SourceColumn(name="c", type="TEXT")]
+        new_source.set_engine(sqlite_warehouse)
 
     # Error is raised with wrong type
-    with pytest.raises(MatchboxSourceColumnError):
-        Source(
-            address=SourceAddress.compose(warehouse_engine, "test.foo"),
-            db_pk="pk",
-            columns=[
-                SourceColumn(name="b", type="BIGINT"),
-            ],
-        ).set_engine(warehouse_engine)
+    with pytest.raises(MatchboxSourceColumnError, match="Type BIGINT != TEXT for b"):
+        new_source = copy.copy(source_testkit.source)
+        new_source.columns = [SourceColumn(name="b", type="TEXT")]
+        new_source.set_engine(sqlite_warehouse)
 
 
 def test_source_signature():
@@ -234,154 +218,114 @@ def test_source_format_columns():
     assert source2.format_column("col") == "foo_bar_col"
 
 
-@pytest.mark.docker
-def test_source_default_columns(warehouse_engine: Engine):
+def test_source_default_columns(sqlite_warehouse: Engine):
     """Default columns from the warehouse can be assigned to a Source."""
-    df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
+    source_testkit = source_factory(
+        features=[
+            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
+            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+        engine=sqlite_warehouse,
+    )
+
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+
     expected_columns = [
         SourceColumn(name="a", type="BIGINT"),
         SourceColumn(name="b", type="TEXT"),
     ]
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
 
-    source = (
-        Source(
-            address=SourceAddress.compose(
-                engine=warehouse_engine, full_name="test.foo"
-            ),
-            db_pk="pk",
-        )
-        .set_engine(warehouse_engine)
-        .default_columns()
-    )
+    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+
     assert source.columns == expected_columns
 
 
-@pytest.mark.docker
-def test_source_to_table(warehouse_engine: Engine):
+def test_source_to_table(sqlite_warehouse: Engine):
     """Convert Source to SQLAlchemy Table."""
-    df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
+    source_testkit = source_factory(engine=sqlite_warehouse)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    source = Source(
-        address=SourceAddress.compose(engine=warehouse_engine, full_name="test.foo"),
-        db_pk="pk",
-    ).set_engine(warehouse_engine)
+    source = source_testkit.source.set_engine(sqlite_warehouse)
 
     assert isinstance(source.to_table(), Table)
 
 
-@pytest.mark.docker
-def test_source_to_arrow_to_pandas(warehouse_engine: Engine):
+def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
     """Convert Source to Arrow table or Pandas dataframe with options."""
-    df = pd.DataFrame([{"pk": 0, "a": 1, "b": "2"}, {"pk": 1, "a": 10, "b": "20"}])
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
-
-    source = (
-        Source(
-            address=SourceAddress.compose(
-                engine=warehouse_engine, full_name="test.foo"
-            ),
-            db_pk="pk",
-        )
-        .set_engine(warehouse_engine)
-        .default_columns()
+    source_testkit = source_factory(
+        features=[
+            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
+            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+        engine=sqlite_warehouse,
+        n_true_entities=2,
+    )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+    prefix = fullname_to_prefix(source_testkit.name)
+    expected_df_prefixed = (
+        source_testkit.data.to_pandas().drop(columns=["id"]).add_prefix(prefix)
     )
 
-    df["pk"] = df["pk"].astype(str)
-    df_prefixed = df.add_prefix("test_foo_")
-    # No parameters
+    # Test basic conversion
     assert_frame_equal(
-        df_prefixed, source.to_pandas(), check_like=True, check_dtype=False
+        expected_df_prefixed, source.to_pandas(), check_like=True, check_dtype=False
     )
     assert_frame_equal(
-        df_prefixed, source.to_arrow().to_pandas(), check_like=True, check_dtype=False
+        expected_df_prefixed,
+        source.to_arrow().to_pandas(),
+        check_like=True,
+        check_dtype=False,
     )
 
-    # Limit parameter
+    # Test with limit parameter
     assert_frame_equal(
-        df_prefixed.iloc[:1],
+        expected_df_prefixed.iloc[:1],
         source.to_pandas(limit=1),
         check_like=True,
         check_dtype=False,
     )
     assert_frame_equal(
-        df_prefixed.iloc[:1],
+        expected_df_prefixed.iloc[:1],
         source.to_arrow(limit=1).to_pandas(),
         check_like=True,
         check_dtype=False,
     )
 
-    # Fields parameter
+    # Test with fields parameter
     assert_frame_equal(
-        df_prefixed[["test_foo_pk", "test_foo_a"]],
+        expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
         source.to_pandas(fields=["a"]),
         check_like=True,
         check_dtype=False,
     )
     assert_frame_equal(
-        df_prefixed[["test_foo_pk", "test_foo_a"]],
+        expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
         source.to_arrow(fields=["a"]).to_pandas(),
         check_like=True,
         check_dtype=False,
     )
 
 
-@pytest.mark.docker
-def test_source_hash_data(warehouse_engine: Engine):
+def test_source_hash_data(sqlite_warehouse: Engine):
     """A Source can output hashed versions of its rows."""
-    df = pd.DataFrame(
-        [
-            {"pk": 0, "a": 1, "b": "2"},
-            {"pk": 1, "a": 1, "b": "2"},
-            {"pk": 2, "a": 10, "b": "20"},
-        ]
+    source_testkit = source_factory(
+        features=[
+            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
+            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+        engine=sqlite_warehouse,
+        n_true_entities=2,
+        repetition=1,
     )
-    with warehouse_engine.connect() as conn:
-        df.to_sql(
-            name="foo",
-            con=conn,
-            schema="test",
-            if_exists="replace",
-            index=False,
-        )
 
-    source = (
-        Source(
-            address=SourceAddress.compose(
-                engine=warehouse_engine, full_name="test.foo"
-            ),
-            db_pk="pk",
-        )
-        .set_engine(warehouse_engine)
-        .default_columns()
-    )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
 
     res = source.hash_data().to_pandas()
     assert len(res) == 2
     assert len(res.source_pk.iloc[0]) == 2
-    assert len(res.source_pk.iloc[1]) == 1
+    assert len(res.source_pk.iloc[1]) == 2
 
 
 def test_match_validates():
