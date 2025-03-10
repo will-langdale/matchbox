@@ -1,6 +1,5 @@
 """Objects representing the results of running a model client-side."""
 
-import logging
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
@@ -21,8 +20,6 @@ else:
 T = TypeVar("T", bound=Hashable)
 P = ParamSpec("P")
 R = TypeVar("R")
-
-logic_logger = logging.getLogger("mb_logic")
 
 
 def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:

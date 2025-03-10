@@ -2,7 +2,6 @@
 
 import ast
 import inspect
-import logging
 from typing import Any, Dict, List, Optional, Type
 
 import pyarrow as pa
@@ -13,8 +12,7 @@ from splink import Linker as SplinkLibLinkerClass
 from splink.internals.linker_components.training import LinkerTraining
 
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
-
-logic_logger = logging.getLogger("mb_logic")
+from matchbox.common.logging import logger
 
 
 class SplinkLinkerFunction(BaseModel):
@@ -219,7 +217,7 @@ class SplinkLinker(Linker):
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
         if left is not None or right is not None:
-            logic_logger.warning(
+            logger.warning(
                 "Left and right data are declared in .prepare() for SplinkLinker. "
                 "These values will be ignored"
             )

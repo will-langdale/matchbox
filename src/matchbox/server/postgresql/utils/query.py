@@ -1,4 +1,3 @@
-import logging
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import pyarrow as pa
@@ -26,8 +25,6 @@ else:
     PolarsDataFrame = Any
 
 T = TypeVar("T")
-
-logic_logger = logging.getLogger("mb_logic")
 
 
 def _get_dataset_resolution(

@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -13,7 +12,6 @@ from matchbox.client.helpers import cleaner, cleaners, select
 from matchbox.client.helpers.selector import Selector
 from matchbox.common.sources import Source
 
-LOGGER = logging.getLogger(__name__)
 TEST_ROOT = Path(__file__).resolve().parents[1]
 
 
