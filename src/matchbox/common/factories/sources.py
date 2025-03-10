@@ -478,7 +478,7 @@ def linked_sources_factory(
     generator = Faker()
     generator.seed_instance(seed)
 
-    shared_engine = engine or create_engine("sqlite:///:memory:")
+    default_engine = create_engine("sqlite:///:memory:")
 
     if source_configs is None:
         # Use factory parameter or default for default configs
@@ -513,7 +513,7 @@ def linked_sources_factory(
         source_configs = (
             SourceConfig(
                 full_name="crn",
-                engine=shared_engine,
+                engine=engine or default_engine,
                 features=(
                     features["company_name"].add_variations(
                         SuffixRule(suffix=" Limited"),
@@ -528,7 +528,7 @@ def linked_sources_factory(
             ),
             SourceConfig(
                 full_name="duns",
-                engine=shared_engine,
+                engine=engine or default_engine,
                 features=(
                     features["company_name"],
                     features["duns"],
@@ -538,7 +538,7 @@ def linked_sources_factory(
             ),
             SourceConfig(
                 full_name="cdms",
-                engine=shared_engine,
+                engine=engine or default_engine,
                 features=(
                     features["crn"],
                     features["cdms"],
@@ -562,7 +562,7 @@ def linked_sources_factory(
             source_configs = tuple(
                 SourceConfig(
                     full_name=config.full_name,
-                    engine=shared_engine if engine is not None else config.engine,
+                    engine=engine or config.engine,
                     features=config.features,
                     repetition=config.repetition,
                     n_true_entities=n_true_entities,
