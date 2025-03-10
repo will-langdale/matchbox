@@ -35,23 +35,23 @@ LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 
 
 def configure_deterministic_linker(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
     """Configure settings for DeterministicLinker.
 
     Args:
-        left_source: Left source object from linked_sources_factory
-        right_source: Right source object from linked_sources_factory
+        left_testkit: Left SourceTestkit from linked_sources_factory
+        right_testkit: Right SourceTestkit from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for DeterministicLinker
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     # Build comparison string
@@ -74,23 +74,23 @@ def configure_deterministic_linker(
 
 
 def configure_weighted_deterministic_linker(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
     """Configure settings for WeightedDeterministicLinker.
 
     Args:
-        left_source: Left source object from linked_sources_factory
-        right_source: Right source object from linked_sources_factory
+        left_testkit: Left source object from linked_sources_factory
+        right_testkit: Right source object from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for WeightedDeterministicLinker
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     # Build weighted comparisons with equal weights
@@ -115,23 +115,23 @@ def configure_weighted_deterministic_linker(
 
 
 def configure_splink_linker(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
     """Configure settings for SplinkLinker.
 
     Args:
-        left_source: Left source object from linked_sources_factory
-        right_source: Right source object from linked_sources_factory
+        left_testkit: Left source object from linked_sources_factory
+        right_testkit: Right source object from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for SplinkLinker
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     deterministic_matching_rules: list[str] = []

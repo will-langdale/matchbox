@@ -21,17 +21,17 @@ DeduperConfigurator = Callable[[Source], dict[str, Any]]
 # Methodology configuration adapters
 
 
-def configure_naive_deduper(source: SourceTestkit) -> dict[str, Any]:
+def configure_naive_deduper(testkit: SourceTestkit) -> dict[str, Any]:
     """Configure settings for NaiveDeduper.
 
     Args:
-        source: Source object from linked_sources_factory
+        testkit: SourceTestkit object from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for NaiveDeduper
     """
     # Extract column names excluding pk and id
-    fields = [c.name for c in source.source.columns if c.name not in ("pk", "id")]
+    fields = [c.name for c in testkit.source.columns if c.name not in ("pk", "id")]
 
     settings_dict = {
         "id": "id",
