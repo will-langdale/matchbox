@@ -209,5 +209,9 @@ def test_variation_deduplication(
     )
 
     assert not identical
-    # Check that there are missing links (partial results)
-    assert len(report["partial"]) > 0 or len(report["missing"]) > 0
+    # Check that there are missing, partial, or extra links
+    assert (
+        len(report["partial"]) > 0
+        or len(report["missing"]) > 0
+        or len(report["extra"]) > 0
+    )

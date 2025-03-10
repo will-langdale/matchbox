@@ -134,10 +134,6 @@ def configure_splink_probabilistic(
         else:
             comparisons.append(cl.ExactMatch(field))
 
-    # Use simple modulo blocking if no blocking rules were created
-    if not blocking_rules:
-        blocking_rules = ["l.id % 10 = r.id % 10"]
-
     # Create Splink settings
     linker_settings = SettingsCreator(
         link_type="link_only",
@@ -255,4 +251,4 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
     )
 
     assert not identical, f"Expected imperfect results but got: {report}"
-    assert len(report["missing"]) == 0
+    assert len(report["missing"]) == 0, "Expected no completely incorrect matches"

@@ -582,7 +582,16 @@ def diff_results(
         verbose: Whether to return detailed diff report
 
     Returns:
-        Tuple of (is_identical, diff_dict)
+        A tuple containing:
+        - Boolean indicating if lists are identical
+        - Dictionary with detailed diff information:
+            - 'partial': Partially correct answers present in the probabilities.
+                The report includes the similarity between the best match to a
+                correct answer, and the differences in primary keys
+            - 'extra': Completely incorrect answers present in the probabilities.
+                Answers "extra" to the correct ones.
+            - 'missing': Correct answers that the probabilities don't even
+                partially get right -- completely missing
     """
     expected_set = set(expected)
     actual_set = set(actual)

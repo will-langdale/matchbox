@@ -194,9 +194,14 @@ class LinkedSourcesTestkit(BaseModel):
             verbose: Whether to include verbose information in the report
 
         Returns:
-            A tuple of bool, dict:
-            * Whether the results match the true entities
-            * A dictionary report of differences
+            A tuple containing:
+            - Boolean indicating if lists are identical
+            - Dictionary with detailed diff information:
+                - 'missing': Correct answers missing from the probabilities
+                - 'extra': Incorrect answers present in the probabilities
+                - 'partial': Partially correct answers present in the probabilities.
+                    The report includes the similarity between the best match to a
+                    correct answer, and the differences in primary keys
         """
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
