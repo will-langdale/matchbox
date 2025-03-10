@@ -1,9 +1,8 @@
 import copy
-import tempfile
 
 import pytest
 from pandas.testing import assert_frame_equal
-from sqlalchemy import Table, create_engine
+from sqlalchemy import Engine, Table, create_engine
 
 from matchbox.client.helpers.selector import Match
 from matchbox.common.db import fullname_to_prefix
@@ -71,30 +70,29 @@ def test_source_address_compose():
     assert len(same_table_name) == 1
 
 
-def test_source_set_engine():
+def test_source_set_engine(sqlite_warehouse: Engine):
     """Engine can be set on Source"""
-    engine = create_engine("sqlite://")
     source_testkit = source_factory(
         features=[{"name": "b", "base_generator": "random_int", "sql_type": "BIGINT"}],
-        engine=engine,
+        engine=sqlite_warehouse,
     )
-    source_testkit.to_warehouse(engine=engine)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
     # We can set engine with correct column specification
-    source = source_testkit.source.set_engine(engine)
+    source = source_testkit.source.set_engine(sqlite_warehouse)
     assert isinstance(source, Source)
 
     # Error is raised with missing column
-    with pytest.raises(MatchboxSourceColumnError):
+    with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
         new_source = copy.copy(source_testkit.source)
         new_source.columns = [SourceColumn(name="c", type="TEXT")]
-        new_source.set_engine(engine)
+        new_source.set_engine(sqlite_warehouse)
 
     # Error is raised with wrong type
-    with pytest.raises(MatchboxSourceColumnError):
+    with pytest.raises(MatchboxSourceColumnError, match="Type BIGINT != TEXT for b"):
         new_source = copy.copy(source_testkit.source)
         new_source.columns = [SourceColumn(name="b", type="TEXT")]
-        new_source.set_engine(engine)
+        new_source.set_engine(sqlite_warehouse)
 
 
 def test_source_signature():
@@ -220,127 +218,114 @@ def test_source_format_columns():
     assert source2.format_column("col") == "foo_bar_col"
 
 
-def test_source_default_columns():
+def test_source_default_columns(sqlite_warehouse: Engine):
     """Default columns from the warehouse can be assigned to a Source."""
-    engine = create_engine("sqlite://")
-
     source_testkit = source_factory(
         features=[
             {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
             {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
         ],
-        engine=engine,
+        engine=sqlite_warehouse,
     )
 
-    source_testkit.to_warehouse(engine=engine)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
     expected_columns = [
         SourceColumn(name="a", type="BIGINT"),
         SourceColumn(name="b", type="TEXT"),
     ]
 
-    source = source_testkit.source.set_engine(engine).default_columns()
+    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
 
     assert source.columns == expected_columns
 
 
-def test_source_to_table():
+def test_source_to_table(sqlite_warehouse: Engine):
     """Convert Source to SQLAlchemy Table."""
-    engine = create_engine("sqlite://")
+    source_testkit = source_factory(engine=sqlite_warehouse)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    source_testkit = source_factory(engine=engine)
-    source_testkit.to_warehouse(engine=engine)
-
-    source = source_testkit.source.set_engine(engine)
+    source = source_testkit.source.set_engine(sqlite_warehouse)
 
     assert isinstance(source.to_table(), Table)
 
 
-def test_source_to_arrow_to_pandas():
+def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
     """Convert Source to Arrow table or Pandas dataframe with options."""
-    # We use a temporary file for the SQLite database as the connection
-    # needs to be shared using the URI alone -- in-memory won't work
-    with tempfile.NamedTemporaryFile(suffix=".sqlite") as tmp:
-        engine = create_engine(f"sqlite:///{tmp.name}")
-        source_testkit = source_factory(
-            features=[
-                {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
-                {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
-            ],
-            engine=engine,
-            n_true_entities=2,
-        )
-        source_testkit.to_warehouse(engine=engine)
-        source = source_testkit.source.set_engine(engine).default_columns()
-        prefix = fullname_to_prefix(source_testkit.name)
-        expected_df_prefixed = (
-            source_testkit.data.to_pandas().drop(columns=["id"]).add_prefix(prefix)
-        )
+    source_testkit = source_factory(
+        features=[
+            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
+            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+        engine=sqlite_warehouse,
+        n_true_entities=2,
+    )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+    prefix = fullname_to_prefix(source_testkit.name)
+    expected_df_prefixed = (
+        source_testkit.data.to_pandas().drop(columns=["id"]).add_prefix(prefix)
+    )
 
-        # Test basic conversion
-        assert_frame_equal(
-            expected_df_prefixed, source.to_pandas(), check_like=True, check_dtype=False
-        )
-        assert_frame_equal(
-            expected_df_prefixed,
-            source.to_arrow().to_pandas(),
-            check_like=True,
-            check_dtype=False,
-        )
+    # Test basic conversion
+    assert_frame_equal(
+        expected_df_prefixed, source.to_pandas(), check_like=True, check_dtype=False
+    )
+    assert_frame_equal(
+        expected_df_prefixed,
+        source.to_arrow().to_pandas(),
+        check_like=True,
+        check_dtype=False,
+    )
 
-        # Test with limit parameter
-        assert_frame_equal(
-            expected_df_prefixed.iloc[:1],
-            source.to_pandas(limit=1),
-            check_like=True,
-            check_dtype=False,
-        )
-        assert_frame_equal(
-            expected_df_prefixed.iloc[:1],
-            source.to_arrow(limit=1).to_pandas(),
-            check_like=True,
-            check_dtype=False,
-        )
+    # Test with limit parameter
+    assert_frame_equal(
+        expected_df_prefixed.iloc[:1],
+        source.to_pandas(limit=1),
+        check_like=True,
+        check_dtype=False,
+    )
+    assert_frame_equal(
+        expected_df_prefixed.iloc[:1],
+        source.to_arrow(limit=1).to_pandas(),
+        check_like=True,
+        check_dtype=False,
+    )
 
-        # Test with fields parameter
-        assert_frame_equal(
-            expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
-            source.to_pandas(fields=["a"]),
-            check_like=True,
-            check_dtype=False,
-        )
-        assert_frame_equal(
-            expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
-            source.to_arrow(fields=["a"]).to_pandas(),
-            check_like=True,
-            check_dtype=False,
-        )
+    # Test with fields parameter
+    assert_frame_equal(
+        expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
+        source.to_pandas(fields=["a"]),
+        check_like=True,
+        check_dtype=False,
+    )
+    assert_frame_equal(
+        expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
+        source.to_arrow(fields=["a"]).to_pandas(),
+        check_like=True,
+        check_dtype=False,
+    )
 
 
-def test_source_hash_data():
+def test_source_hash_data(sqlite_warehouse: Engine):
     """A Source can output hashed versions of its rows."""
-    # We use a temporary file for the SQLite database as the connection
-    # needs to be shared using the URI alone -- in-memory won't work
-    with tempfile.NamedTemporaryFile(suffix=".sqlite") as tmp:
-        engine = create_engine(f"sqlite:///{tmp.name}")
+    source_testkit = source_factory(
+        features=[
+            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
+            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+        engine=sqlite_warehouse,
+        n_true_entities=2,
+        repetition=1,
+    )
 
-        source_testkit = source_factory(
-            features=[
-                {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
-                {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
-            ],
-            engine=engine,
-            n_true_entities=2,
-            repetition=1,
-        )
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
 
-        source_testkit.to_warehouse(engine=engine)
-        source = source_testkit.source.set_engine(engine).default_columns()
-
-        res = source.hash_data().to_pandas()
-        assert len(res) == 2
-        assert len(res.source_pk.iloc[0]) == 2
-        assert len(res.source_pk.iloc[1]) == 2
+    res = source.hash_data().to_pandas()
+    assert len(res) == 2
+    assert len(res.source_pk.iloc[0]) == 2
+    assert len(res.source_pk.iloc[1]) == 2
 
 
 def test_match_validates():
