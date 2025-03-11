@@ -15,9 +15,31 @@ from matchbox.common.factories.entities import (
 )
 
 
-def make_cluster_entity(id: int, dataset: str, pks: list[str]) -> ClusterEntity:
-    """Helper to create a ClusterEntity with specified dataset and PKs."""
-    return ClusterEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
+def make_cluster_entity(id: int, *args) -> ClusterEntity:
+    """Helper to create a ClusterEntity with specified datasets and PKs.
+
+    Args:
+        id: Entity ID
+        *args: Variable arguments in pairs of (dataset_name, pks_list)
+            e.g., "d1", ["1", "2"], "d2", ["3", "4"]
+
+    Returns:
+        ClusterEntity with the specified datasets and primary keys
+    """
+    if len(args) % 2 != 0:
+        raise ValueError("Arguments must be pairs of dataset name and PKs list")
+
+    source_pks = {}
+    for i in range(0, len(args), 2):
+        dataset = args[i]
+        pks = args[i + 1]
+        if not isinstance(dataset, str):
+            raise TypeError(f"Dataset name must be a string, got {type(dataset)}")
+        if not isinstance(pks, list):
+            raise TypeError(f"PKs must be a list, got {type(pks)}")
+        source_pks[dataset] = frozenset(pks)
+
+    return ClusterEntity(id=id, source_pks=EntityReference(source_pks))
 
 
 def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
@@ -226,6 +248,42 @@ def test_probabilities_to_results_entities(
         assert any(input_entity in output_entity for output_entity in result)
 
 
+def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list):
+    """Compare nested structures with approximate equality for floats."""
+    # Handle float comparison
+    if isinstance(want, float):
+        assert got == pytest.approx(want, rel=1e-2)
+        return
+
+    # Handle dictionary comparison
+    if isinstance(want, dict):
+        assert isinstance(got, dict)
+        assert set(want.keys()) <= set(got.keys())  # All expected keys must exist
+        for k, v in want.items():
+            assert_deep_approx_equal(got[k], v)
+        return
+
+    # Handle list comparison
+    if isinstance(want, list):
+        assert isinstance(got, list)
+        assert len(got) == len(want)
+
+        # Sort lists of dictionaries by ID fields for easier comparison
+        if want and all(isinstance(x, dict) for x in want + got):
+            for id_key in ["entity_id", "expected_entity_id", "actual_entity_id"]:
+                if all(id_key in x for x in want + got):
+                    got = sorted(got, key=lambda x: x[id_key])
+                    want = sorted(want, key=lambda x: x[id_key])
+                    break
+
+        for w, g in zip(want, got, strict=True):
+            assert_deep_approx_equal(g, w)
+        return
+
+    # Direct comparison for all other types
+    assert got == want
+
+
 @pytest.mark.parametrize(
     ("expected", "actual", "verbose", "want_identical", "want_result"),
     [
@@ -245,10 +303,23 @@ def test_probabilities_to_results_entities(
             True,
             False,
             {
-                "mean_similarity": 0.0,
-                "partial": [],
-                "missing": [{"id": 1, "source_pks": {"d1": frozenset(["1", "2"])}}],
-                "extra": [],
+                "perfect_matches": [],
+                "fragmented_matches": [],
+                "unexpected_matches": [],
+                "missing_matches": [
+                    {
+                        "expected_entity_id": 1,
+                        "source_pks": {"d1": frozenset(["1", "2"])},
+                    }
+                ],
+                "spurious_matches": [],
+                "metrics": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fragmentation": 0.0,
+                    "similarity": 0.0,
+                },
             },
             id="completely_missing_entity",
         ),
@@ -259,41 +330,64 @@ def test_probabilities_to_results_entities(
             True,
             False,
             {
-                "mean_similarity": 0.0,
-                "partial": [],
-                "missing": [],
-                "extra": [{"id": 2, "source_pks": {"d1": frozenset(["1", "2"])}}],
+                "perfect_matches": [],
+                "fragmented_matches": [],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 2,
+                        "actual_source_pks": {"d1": frozenset(["1", "2"])},
+                    }
+                ],
+                "metrics": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fragmentation": 0.0,
+                    "similarity": 0.0,
+                },
             },
             id="extra_entity",
         ),
-        # Partial match
+        # Fragmented match
         pytest.param(
             [make_cluster_entity(1, "d1", ["1", "2", "3"])],
             [make_cluster_entity(2, "d1", ["1", "2", "4"])],
             True,
             False,
             {
-                # Jaccard similarity: |intersection| / |union| = 2 / 4 = 0.5
-                "mean_similarity": 0.5,
-                "partial": [
+                "perfect_matches": [],
+                "fragmented_matches": [
                     {
-                        "missing_entity_id": 1,
-                        "matches": [
+                        "expected_entity_id": 1,
+                        "expected_source_pks": {"d1": frozenset(["1", "2", "3"])},
+                        "coverage_ratio": 2 / 3,  # 2 of 3 keys are covered
+                        "missing_pks": {"d1": frozenset(["3"])},
+                        "fragments": [
                             {
                                 "actual_entity_id": 2,
-                                "similarity": 0.5,  # 2 common keys out of 4 total
-                                "missing_pks": {"d1": frozenset(["3"])},
-                                "extra_pks": {"d1": frozenset(["4"])},
+                                "source_pks": {"d1": frozenset(["1", "2", "4"])},
+                                # 2 common keys out of 4 total (Jaccard similarity)
+                                "similarity": 0.5,
                             }
                         ],
                     }
                 ],
-                "missing": [],
-                "extra": [],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [],
+                "metrics": {
+                    "precision": 0.0,  # No perfect matches
+                    "recall": 0.0,  # No perfect matches
+                    "f1": 0.0,
+                    "fragmentation": 1.0,  # 1 fragment per expected entity
+                    "similarity": 2 / 3,  # Coverage ratio
+                },
             },
-            id="partial_match",
+            id="fragmented_match",
         ),
-        # Complex scenario - partial match, missing, and extra
+        # Complex scenario with fragmented and missing
         pytest.param(
             [
                 make_cluster_entity(1, "d1", ["1", "2"]),
@@ -307,51 +401,70 @@ def test_probabilities_to_results_entities(
             True,
             False,
             {
-                # Mean of best matches for all missing and extra entities:
-                # Best matches: [1/3, 0, 0, 1/3, 0] = 2/15 = 0.1333...
-                "mean_similarity": pytest.approx(2 / 15, rel=1e-2),
-                "partial": [
+                "perfect_matches": [],
+                "fragmented_matches": [
                     {
-                        "missing_entity_id": 1,
-                        "matches": [
+                        "expected_entity_id": 1,
+                        "expected_source_pks": {"d1": frozenset(["1", "2"])},
+                        "coverage_ratio": 0.5,  # 1 of 2 keys are covered
+                        "missing_pks": {"d1": frozenset(["2"])},
+                        "fragments": [
                             {
                                 "actual_entity_id": 4,
-                                "similarity": 1 / 3,  # 1 common key out of 3 total
-                                "missing_pks": {"d1": frozenset(["2"])},
-                                "extra_pks": {"d1": frozenset(["7"])},
+                                "source_pks": {"d1": frozenset(["1", "7"])},
+                                "similarity": 1 / 3,  # 1 common key out of 3 total keys
                             }
                         ],
                     }
                 ],
-                "missing": [
-                    {"id": 2, "source_pks": {"d1": frozenset(["3", "4"])}},
-                    {"id": 3, "source_pks": {"d1": frozenset(["5", "6"])}},
+                "unexpected_matches": [],
+                "missing_matches": [
+                    {
+                        "expected_entity_id": 2,
+                        "source_pks": {"d1": frozenset(["3", "4"])},
+                    },
+                    {
+                        "expected_entity_id": 3,
+                        "source_pks": {"d1": frozenset(["5", "6"])},
+                    },
                 ],
-                "extra": [{"id": 5, "source_pks": {"d1": frozenset(["8", "9"])}}],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 5,
+                        "actual_source_pks": {"d1": frozenset(["8", "9"])},
+                    }
+                ],
+                "metrics": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fragmentation": 1.0,
+                    "similarity": pytest.approx(1 / 6, rel=1e-2),  # (0.5 + 0 + 0)/3
+                },
             },
             id="complex_scenario",
         ),
-        # Non-verbose mode (only shows mean_similarity)
+        # Non-verbose mode (only shows metrics)
         pytest.param(
             [make_cluster_entity(1, "d1", ["1", "2", "3"])],
             [make_cluster_entity(2, "d1", ["1", "2", "4"])],
             False,
             False,
             {
-                # Jaccard similarity: |intersection| / |union| = 2 / 4 = 0.5
-                "mean_similarity": 0.5,
-                "partial": [],
-                "missing": [],
-                "extra": [],
+                "metrics": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fragmentation": 1.0,
+                    "similarity": 2 / 3,
+                }
             },
             id="non_verbose_mode",
         ),
-        # Mixed identical and different entities
+        # Mixed identical and fragmented entities
         pytest.param(
             [
-                make_cluster_entity(
-                    1, "d1", ["1", "2"]
-                ),  # Identical entity in both sets
+                make_cluster_entity(1, "d1", ["1", "2"]),  # Identical entity
                 make_cluster_entity(2, "d1", ["3", "4"]),  # Will be partially matched
             ],
             [
@@ -361,26 +474,238 @@ def test_probabilities_to_results_entities(
             True,
             False,
             {
-                # Mean similarity combines perfect (1.0) and two partial (1/3) matches
-                # Calculated as (1.0 + 1/3 + 1/3) / 3 = (5/9)
-                "mean_similarity": pytest.approx(5 / 9, rel=1e-2),
-                "partial": [
+                "perfect_matches": [
+                    {"entity_id": 1, "source_pks": {"d1": frozenset(["1", "2"])}}
+                ],
+                "fragmented_matches": [
                     {
-                        "missing_entity_id": 2,
-                        "matches": [
+                        "expected_entity_id": 2,
+                        "expected_source_pks": {"d1": frozenset(["3", "4"])},
+                        "coverage_ratio": 0.5,  # 1 of 2 keys are covered
+                        "missing_pks": {"d1": frozenset(["4"])},
+                        "fragments": [
                             {
                                 "actual_entity_id": 3,
+                                "source_pks": {"d1": frozenset(["3", "5"])},
                                 "similarity": 1 / 3,  # 1 common key out of 3 total
-                                "missing_pks": {"d1": frozenset(["4"])},
-                                "extra_pks": {"d1": frozenset(["5"])},
                             }
                         ],
                     }
                 ],
-                "missing": [],
-                "extra": [],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [],
+                "metrics": {
+                    "precision": 0.5,  # 1 perfect out of 2 total
+                    "recall": 0.5,  # 1 perfect out of 2 expected
+                    "f1": 0.5,
+                    "fragmentation": 1.0,
+                    "similarity": 0.75,  # (1.0 + 0.5) / 2
+                },
             },
-            id="mixed_identical_and_different",
+            id="mixed_identical_and_fragmented",
+        ),
+        # Fragmentation - multiple fragments per expected entity
+        pytest.param(
+            [make_cluster_entity(1, "d1", ["1", "2", "3", "4"])],
+            [
+                make_cluster_entity(2, "d1", ["1", "2"]),
+                make_cluster_entity(3, "d1", ["3", "4"]),
+            ],
+            True,
+            False,
+            {
+                "perfect_matches": [],
+                "fragmented_matches": [
+                    {
+                        "expected_entity_id": 1,
+                        "expected_source_pks": {"d1": frozenset(["1", "2", "3", "4"])},
+                        "coverage_ratio": 1.0,  # All keys are covered by fragments
+                        "missing_pks": {},
+                        "fragments": [
+                            {
+                                "actual_entity_id": 2,
+                                "source_pks": {"d1": frozenset(["1", "2"])},
+                                "similarity": 0.5,  # 2 common keys out of 4 total
+                            },
+                            {
+                                "actual_entity_id": 3,
+                                "source_pks": {"d1": frozenset(["3", "4"])},
+                                "similarity": 0.5,  # 2 common keys out of 4 total
+                            },
+                        ],
+                    }
+                ],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [],
+                "metrics": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fragmentation": 2.0,  # 2 fragments for 1 expected entity
+                    "similarity": 1.0,  # Full coverage
+                },
+            },
+            id="high_threshold_creates_subsets",
+        ),
+        # Unexpected merge - one actual entity contains multiple expected entities
+        pytest.param(
+            [
+                make_cluster_entity(1, "d1", ["1", "2"]),
+                make_cluster_entity(2, "d1", ["3", "4"]),
+            ],
+            [make_cluster_entity(3, "d1", ["1", "2", "3", "4", "5"])],
+            True,
+            False,
+            {
+                "perfect_matches": [],
+                # Both expected entities should also appear in fragmented_matches
+                "fragmented_matches": [
+                    {
+                        "expected_entity_id": 1,
+                        "expected_source_pks": {"d1": frozenset(["1", "2"])},
+                        "coverage_ratio": 1.0,  # All keys are covered
+                        "missing_pks": {},
+                        "fragments": [
+                            {
+                                "actual_entity_id": 3,
+                                "source_pks": {
+                                    "d1": frozenset(["1", "2", "3", "4", "5"])
+                                },
+                                "similarity": 2 / 5,  # 2 common keys out of 5 total
+                            }
+                        ],
+                    },
+                    {
+                        "expected_entity_id": 2,
+                        "expected_source_pks": {"d1": frozenset(["3", "4"])},
+                        "coverage_ratio": 1.0,  # All keys are covered
+                        "missing_pks": {},
+                        "fragments": [
+                            {
+                                "actual_entity_id": 3,
+                                "source_pks": {
+                                    "d1": frozenset(["1", "2", "3", "4", "5"])
+                                },
+                                "similarity": 2 / 5,  # 2 common keys out of 5 total
+                            }
+                        ],
+                    },
+                ],
+                "unexpected_matches": [
+                    {
+                        "actual_entity_id": 3,
+                        "actual_source_pks": {
+                            "d1": frozenset(["1", "2", "3", "4", "5"])
+                        },
+                        "extra_pks": {"d1": frozenset(["5"])},
+                        "merged_entities": [
+                            {
+                                "expected_entity_id": 1,
+                                "source_pks": {"d1": frozenset(["1", "2"])},
+                                "similarity": 2 / 5,  # 2 common keys out of 5 total
+                            },
+                            {
+                                "expected_entity_id": 2,
+                                "source_pks": {"d1": frozenset(["3", "4"])},
+                                "similarity": 2 / 5,  # 2 common keys out of 5 total
+                            },
+                        ],
+                    }
+                ],
+                "missing_matches": [],
+                "spurious_matches": [],
+                "metrics": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fragmentation": 1.0,  # Because each expected entity has 1 fragment
+                    "similarity": 0.7,  # (1.0 + 1.0 + 0.4 + 0.4) / 4 = 0.7
+                },
+            },
+            id="unexpected_merge",
+        ),
+        # Spurious entities from different sources
+        pytest.param(
+            [make_cluster_entity(1, "d1", ["1", "2"])],
+            [
+                make_cluster_entity(2, "d1", ["1", "2"]),  # Perfect match
+                make_cluster_entity(3, "d2", ["3", "4"]),  # Different source
+            ],
+            True,
+            False,
+            {
+                "perfect_matches": [
+                    {"entity_id": 1, "source_pks": {"d1": frozenset(["1", "2"])}}
+                ],
+                "fragmented_matches": [],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 3,
+                        "actual_source_pks": {"d2": frozenset(["3", "4"])},
+                    }
+                ],
+                "metrics": {
+                    "precision": 0.5,  # 1 perfect out of 2 total
+                    "recall": 1.0,  # 1 perfect out of 1 expected
+                    "f1": pytest.approx(2 / 3, rel=1e-2),  # 2*0.5*1.0/(0.5+1.0)
+                    "fragmentation": 0.0,  # No fragmentation
+                    "similarity": 1.0,  # (1.0) / 1
+                },
+            },
+            id="spurious_entities_different_source",
+        ),
+        # Spurious entities with mixed sources
+        pytest.param(
+            [make_cluster_entity(1, "d1", ["1", "2"])],
+            [
+                make_cluster_entity(2, "d1", ["1", "3"]),  # Fragmented match
+                make_cluster_entity(
+                    3, "d1", ["4", "5"], "d2", ["6", "7"]
+                ),  # Mixed sources
+            ],
+            True,
+            False,
+            {
+                "perfect_matches": [],
+                "fragmented_matches": [
+                    {
+                        "expected_entity_id": 1,
+                        "expected_source_pks": {"d1": frozenset(["1", "2"])},
+                        "coverage_ratio": 0.5,  # 1 of 2 keys are covered
+                        "missing_pks": {"d1": frozenset(["2"])},
+                        "fragments": [
+                            {
+                                "actual_entity_id": 2,
+                                "source_pks": {"d1": frozenset(["1", "3"])},
+                                "similarity": 1 / 3,  # 1 common key out of 3 total
+                            }
+                        ],
+                    }
+                ],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 3,
+                        "actual_source_pks": {
+                            "d1": frozenset(["4", "5"]),
+                            "d2": frozenset(["6", "7"]),
+                        },
+                    }
+                ],
+                "metrics": {
+                    "precision": 0.0,  # No perfect matches
+                    "recall": 0.0,  # No perfect matches
+                    "f1": 0.0,
+                    "fragmentation": 1.0,  # 1 fragment per expected entity
+                    "similarity": 0.5,  # (0.5) / 1
+                },
+            },
+            id="spurious_entities_mixed_sources",
         ),
     ],
 )
@@ -396,49 +721,17 @@ def test_diff_results(
 
     assert got_identical == want_identical
 
+    # If identical, result should be empty
     if got_identical:
         assert got_result == {}
     else:
-        # Handle complex nested dictionary comparison
-        assert got_result["mean_similarity"] == pytest.approx(
-            want_result["mean_similarity"], rel=1e-2
-        )
-
-        # Test partial matches
-        assert len(got_result["partial"]) == len(want_result["partial"])
-        for got_partial, want_partial in zip(
-            got_result["partial"], want_result["partial"], strict=True
-        ):
-            assert got_partial["missing_entity_id"] == want_partial["missing_entity_id"]
-
-            for got_match, want_match in zip(
-                got_partial["matches"], want_partial["matches"], strict=True
-            ):
-                assert got_match["actual_entity_id"] == want_match["actual_entity_id"]
-                assert got_match["similarity"] == pytest.approx(
-                    want_match["similarity"], rel=1e-2
-                )
-                assert got_match["missing_pks"] == want_match["missing_pks"]
-                assert got_match["extra_pks"] == want_match["extra_pks"]
-
-        # Test missing and extra entities
-        assert len(got_result["missing"]) == len(want_result["missing"])
-        for got_missing, want_missing in zip(
-            sorted(got_result["missing"], key=lambda x: x["id"]),
-            sorted(want_result["missing"], key=lambda x: x["id"]),
-            strict=True,
-        ):
-            assert got_missing["id"] == want_missing["id"]
-            assert got_missing["source_pks"] == want_missing["source_pks"]
-
-        assert len(got_result["extra"]) == len(want_result["extra"])
-        for got_extra, want_extra in zip(
-            sorted(got_result["extra"], key=lambda x: x["id"]),
-            sorted(want_result["extra"], key=lambda x: x["id"]),
-            strict=True,
-        ):
-            assert got_extra["id"] == want_extra["id"]
-            assert got_extra["source_pks"] == want_extra["source_pks"]
+        if not verbose:
+            # For non-verbose, just check metrics
+            assert "metrics" in got_result
+            assert_deep_approx_equal(got_result["metrics"], want_result["metrics"])
+        else:
+            # For verbose mode, check the entire structure
+            assert_deep_approx_equal(got_result, want_result)
 
 
 def test_source_to_results_conversion():

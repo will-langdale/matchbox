@@ -241,10 +241,11 @@ def test_model_pipeline_with_dummy_methodology(
 
     # Verify the imperfect methodology was detected
     assert not identical
-    assert report["mean_similarity"] < 1.0
     # Random process: can't guarantee particular problems, but can guarantee
     # that some will be present
-    assert any([report["partial"], report["missing"], report["extra"]])
+    assert any([report["fragmented_matches"], report["unexpected_matches"]])
+    assert report["metrics"]["precision"] < 1.0
+    assert report["metrics"]["recall"] < 1.0
 
 
 @pytest.mark.parametrize(

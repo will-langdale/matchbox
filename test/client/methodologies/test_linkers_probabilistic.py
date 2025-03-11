@@ -31,15 +31,23 @@ LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 
 
 def configure_weighted_probabilistic(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure WeightedDeterministicLinker with probabilistic-like behavior."""
+    """Configure WeightedDeterministicLinker with probabilistic-like behavior.
+
+    Args:
+        left_testkit: Left source object from linked_sources_factory
+        right_testkit: Right source object from linked_sources_factory
+
+    Returns:
+        A dictionary with validated settings for WeightedDeterministicLinker
+    """
 
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     # Generate geometric series of weights
@@ -71,16 +79,24 @@ def configure_weighted_probabilistic(
 
 
 def configure_splink_probabilistic(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
-    """Configure SplinkLinker for probabilistic matching."""
+    """Configure SplinkLinker for probabilistic matching.
+
+    Args:
+        left_testkit: Left source object from linked_sources_factory
+        right_testkit: Right source object from linked_sources_factory
+
+    Returns:
+        A dictionary with validated settings for SplinkLinker
+    """
 
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     # Create comparison functions based on field type
@@ -94,7 +110,7 @@ def configure_splink_probabilistic(
 
         field = l_field  # Use common field name after checking they match
         field_type = next(
-            (c.type for c in left_source.source.columns if c.name == field), "TEXT"
+            (c.type for c in left_testkit.source.columns if c.name == field), "TEXT"
         )
 
         # Create deterministic matching rule for each field
@@ -117,10 +133,6 @@ def configure_splink_probabilistic(
 
         else:
             comparisons.append(cl.ExactMatch(field))
-
-    # Use simple modulo blocking if no blocking rules were created
-    if not blocking_rules:
-        blocking_rules = ["l.id % 10 = r.id % 10"]
 
     # Create Splink settings
     linker_settings = SettingsCreator(
@@ -239,4 +251,10 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
     )
 
     assert not identical, f"Expected imperfect results but got: {report}"
-    assert len(report["missing"]) == 0
+    # Expect fragmented matches
+    assert report["metrics"]["fragmentation"] > 0
+    assert len(report["fragmented_matches"]) > 0
+    # Expect no unexpected, missing or spurious matches (perfect possible but unlikely)
+    assert len(report["unexpected_matches"]) == 0
+    assert len(report["missing_matches"]) == 0
+    assert len(report["spurious_matches"]) == 0

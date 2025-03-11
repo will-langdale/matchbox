@@ -582,99 +582,178 @@ def diff_results(
         verbose: Whether to return detailed diff report
 
     Returns:
-        Tuple of (is_identical, diff_dict)
+        A tuple containing:
+        - Boolean: True if lists are identical, False otherwise
+        - Dictionary with comparison details:
+            - 'perfect_matches': Entities that match exactly in both lists
+            - 'fragmented_matches': Expected entities that are split into multiple
+                fragments in the actual results
+            - 'unexpected_matches': Actual entities that incorrectly merge multiple
+            - 'missing_matches': Expected entities not found in the results
+                expected entities
+            - 'spurious_matches': Actual entities containing keys not present in
+                any expected entity
+            - 'metrics': Performance measurements:
+                - 'precision': Correct matches ÷ total matches
+                - 'recall': Correct matches ÷ expected matches
+                - 'f1': Harmonic mean of precision and recall
+                - 'fragmentation': Average fragments per expected entity
+                - 'similarity': Average similarity between expected entities and
+                    their best matches
     """
-    expected_set = set(expected)
-    actual_set = set(actual)
-
+    # Quick comparison
+    expected_set, actual_set = set(expected), set(actual)
     if expected_set == actual_set:
         return True, {}
 
-    missing = expected_set - actual_set
-    extra = actual_set - expected_set
-    identical = expected_set & actual_set
+    # Find different match types
+    perfect_matches = expected_set & actual_set
+    remaining_expected = expected_set - perfect_matches
+    remaining_actual = actual_set - perfect_matches
 
-    # Calculate similarity scores and determine partial matches
-    partial_matches = {}
-    best_match_entities = set()
+    # Initialise tracking
+    similarity_scores = [1.0] * len(perfect_matches)
+    categorised_expected = set(perfect_matches)
+    categorised_actual = set(perfect_matches)
+    fragment_counts = []
 
-    # Calculate mean similarity (best matches for all entities)
-    best_ratios = []
+    # Initialise result
+    result = {"metrics": {}}
+    if verbose:
+        result["perfect_matches"] = [
+            {"entity_id": e.id, "source_pks": dict(e.source_pks.items())}
+            for e in perfect_matches
+        ]
+        result["fragmented_matches"] = []
+        result["unexpected_matches"] = []
+        result["missing_matches"] = []
+        result["spurious_matches"] = []
 
-    # Include identical entities with similarity of 1.0
-    best_ratios.extend([1.0] * len(identical))
+    # Process fragmented matches
+    for expected_entity in remaining_expected:
+        fragments = [
+            e for e in remaining_actual if expected_entity.similarity_ratio(e) > 0
+        ]
+        if not fragments:
+            continue
 
-    # Best ratios for missing entities
-    for m in missing:
-        # Find best match for this missing entity
-        best_match = None
-        best_ratio = 0.0
-
-        for a in actual:
-            ratio = m.similarity_ratio(a)
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_match = a
-
-        best_ratios.append(best_ratio)
-
-        # Record partial match if similarity > 0
-        if best_ratio > 0:
-            best_match_entities.add(best_match)
-
-            # Calculate difference between entities
-            missing_pks = m - best_match
-            extra_pks = best_match - m
-
-            partial_matches[m] = {
-                "entity": best_match,
-                "similarity": best_ratio,
-                "missing_pks": missing_pks,
-                "extra_pks": extra_pks,
+        # Extract overlap between expected and fragments
+        combined = None
+        for fragment in fragments:
+            overlap_pks = {
+                dataset: exp_pks & fragment.source_pks.get(dataset, frozenset())
+                for dataset, exp_pks in expected_entity.source_pks.items()
+                if exp_pks & fragment.source_pks.get(dataset, frozenset())
             }
 
-    # Best ratios for extra entities (including those used as best matches)
-    for e in extra:
-        best_ratio = max((e.similarity_ratio(m) for m in expected), default=0.0)
-        best_ratios.append(best_ratio)
+            if any(overlap_pks.values()):
+                temp = ClusterEntity(
+                    source_pks=EntityReference(
+                        {k: v for k, v in overlap_pks.items() if v}
+                    )
+                )
+                combined = temp if combined is None else combined + temp
 
-    # Calculate mean similarity
-    mean_ratio = sum(best_ratios) / len(best_ratios) if best_ratios else 0.0
+        # Record metrics
+        coverage = combined.similarity_ratio(expected_entity) if combined else 0
+        similarity_scores.append(coverage)
+        categorised_expected.add(expected_entity)
+        categorised_actual.update(fragments)
+        fragment_counts.append(len(fragments))
 
-    # Build basic result dictionary
-    result = {"mean_similarity": mean_ratio, "partial": [], "missing": [], "extra": []}
+        # Record details if verbose
+        if verbose:
+            result["fragmented_matches"].append(
+                {
+                    "expected_entity_id": expected_entity.id,
+                    "expected_source_pks": dict(expected_entity.source_pks.items()),
+                    "coverage_ratio": coverage,
+                    "missing_pks": expected_entity - combined
+                    if combined
+                    else dict(expected_entity.source_pks.items()),
+                    "fragments": [
+                        {
+                            "actual_entity_id": f.id,
+                            "source_pks": dict(f.source_pks.items()),
+                            "similarity": expected_entity.similarity_ratio(f),
+                        }
+                        for f in fragments
+                    ],
+                }
+            )
 
-    if not verbose:
-        return False, result
+    # Process unexpected matches (merges)
+    for actual_entity in remaining_actual:
+        contained = [e for e in remaining_expected if e in actual_entity]
+        if len(contained) <= 1:
+            continue
 
-    # Build detailed result dictionary when verbose=True
-    # Add partial matches
-    for m, match_info in partial_matches.items():
-        result["partial"].append(
-            {
-                "missing_entity_id": m.id,
-                "matches": [
-                    {
-                        "actual_entity_id": match_info["entity"].id,
-                        "similarity": match_info["similarity"],
-                        "missing_pks": dict(match_info["missing_pks"])
-                        if match_info["missing_pks"]
-                        else {},
-                        "extra_pks": dict(match_info["extra_pks"])
-                        if match_info["extra_pks"]
-                        else {},
-                    }
-                ],
-            }
-        )
+        # Record metrics
+        for entity in contained:
+            similarity_scores.append(actual_entity.similarity_ratio(entity))
+            categorised_expected.add(entity)
 
-    # Add completely missing entities (those with no partial matches)
-    completely_missing = missing - set(partial_matches.keys())
-    for e in completely_missing:
-        result["missing"].append({"id": e.id, "source_pks": dict(e.source_pks.items())})
+        categorised_actual.add(actual_entity)
 
-    # Add extra entities (excluding those used in partial matches)
-    for e in extra - best_match_entities:
-        result["extra"].append({"id": e.id, "source_pks": dict(e.source_pks.items())})
+        # Record details if verbose
+        if verbose:
+            combined = None
+            for entity in contained:
+                combined = entity if combined is None else combined + entity
+
+            result["unexpected_matches"].append(
+                {
+                    "actual_entity_id": actual_entity.id,
+                    "actual_source_pks": dict(actual_entity.source_pks.items()),
+                    "extra_pks": actual_entity - combined,
+                    "merged_entities": [
+                        {
+                            "expected_entity_id": e.id,
+                            "source_pks": dict(e.source_pks.items()),
+                            "similarity": actual_entity.similarity_ratio(e),
+                        }
+                        for e in contained
+                    ],
+                }
+            )
+
+    # Any remaining uncategorised actual entities are spurious
+    if verbose:
+        for actual_entity in remaining_actual - categorised_actual:
+            result["spurious_matches"].append(
+                {
+                    "actual_entity_id": actual_entity.id,
+                    "actual_source_pks": dict(actual_entity.source_pks.items()),
+                }
+            )
+
+    # Handle missing entities
+    missing = remaining_expected - categorised_expected
+    similarity_scores.extend([0.0] * len(missing))
+
+    if verbose:
+        result["missing_matches"] = [
+            {"expected_entity_id": e.id, "source_pks": dict(e.source_pks.items())}
+            for e in missing
+        ]
+
+    # Calculate metrics
+    perf_count = len(perfect_matches)
+    precision = perf_count / len(actual) if actual else 0.0
+    recall = perf_count / len(expected) if expected else 0.0
+
+    result["metrics"] = {
+        "precision": precision,
+        "recall": recall,
+        "f1": 2 * precision * recall / (precision + recall)
+        if (precision + recall) > 0
+        else 0.0,
+        "fragmentation": sum(fragment_counts) / len(fragment_counts)
+        if fragment_counts
+        else 0.0,
+        "similarity": sum(similarity_scores) / len(similarity_scores)
+        if similarity_scores
+        else 0.0,
+    }
 
     return False, result

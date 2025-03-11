@@ -35,23 +35,23 @@ LinkerConfigurator = Callable[[SourceTestkit, SourceTestkit], dict[str, Any]]
 
 
 def configure_deterministic_linker(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
     """Configure settings for DeterministicLinker.
 
     Args:
-        left_source: Left source object from linked_sources_factory
-        right_source: Right source object from linked_sources_factory
+        left_testkit: Left SourceTestkit from linked_sources_factory
+        right_testkit: Right SourceTestkit from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for DeterministicLinker
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     # Build comparison string
@@ -74,23 +74,23 @@ def configure_deterministic_linker(
 
 
 def configure_weighted_deterministic_linker(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
     """Configure settings for WeightedDeterministicLinker.
 
     Args:
-        left_source: Left source object from linked_sources_factory
-        right_source: Right source object from linked_sources_factory
+        left_testkit: Left source object from linked_sources_factory
+        right_testkit: Right source object from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for WeightedDeterministicLinker
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     # Build weighted comparisons with equal weights
@@ -115,23 +115,23 @@ def configure_weighted_deterministic_linker(
 
 
 def configure_splink_linker(
-    left_source: SourceTestkit, right_source: SourceTestkit
+    left_testkit: SourceTestkit, right_testkit: SourceTestkit
 ) -> dict[str, Any]:
     """Configure settings for SplinkLinker.
 
     Args:
-        left_source: Left source object from linked_sources_factory
-        right_source: Right source object from linked_sources_factory
+        left_testkit: Left source object from linked_sources_factory
+        right_testkit: Right source object from linked_sources_factory
 
     Returns:
         A dictionary with validated settings for SplinkLinker
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_source.source.columns if c.name not in ("pk", "id")
+        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
     ]
 
     deterministic_matching_rules: list[str] = []
@@ -233,6 +233,10 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
+    assert left_source.query.select(["company", "email"]).equals(
+        right_source.query.select(["company", "email"])
+    )
+
     # Configure and run the linker
     linker = make_model(
         model_name="exact_match_linker",
@@ -281,13 +285,13 @@ def test_exact_match_with_duplicates_linking(
             full_name="source_left",
             features=features,
             n_true_entities=10,
-            repetition=1,  # Each entity appears once
+            repetition=1,  # Each entity appears twice
         ),
         SourceConfig(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
-            repetition=3,  # Each entity appears 3 times
+            repetition=3,  # Each entity appears four times
         ),
     )
 
@@ -394,15 +398,30 @@ def test_no_matching_entities_linking(
 
     Verifies linkers behave correctly when there should be no matches.
     """
-    # Create two completely separate sets of entities
+    # Create two data source with disjoint entities
     features = (
         FeatureConfig(name="company", base_generator="company"),
         FeatureConfig(name="identifier", base_generator="uuid4"),
     )
 
-    # Create the sources with disjoint entity sets
-    left_source = source_factory(features=features, n_true_entities=10, seed=314)
-    right_source = source_factory(features=features, n_true_entities=10, seed=159)
+    configs = (
+        SourceConfig(
+            full_name="source_left",
+            features=features,
+            n_true_entities=10,
+        ),
+    )
+
+    linked = linked_sources_factory(source_configs=configs, seed=314)
+    left_source = linked.sources["source_left"]
+    right_source = source_factory(
+        full_name="source_right", features=features, n_true_entities=10, seed=159
+    )
+
+    for column in ("company", "identifier"):
+        l_col = set(left_source.query[column].to_pylist())
+        r_col = set(right_source.query[column].to_pylist())
+        assert l_col.isdisjoint(r_col)
 
     # Configure and run the linker
     linker = make_model(
@@ -417,5 +436,18 @@ def test_no_matching_entities_linking(
     )
     results = linker.run()
 
-    # For this case, we expect no probabilities or empty results
-    assert results.probabilities.shape[0] == 0, "Expected no matching probabilities"
+    # Validate results against ground truth
+    identical, report = linked.diff_results(
+        probabilities=results.probabilities,
+        left_clusters=left_source.entities,
+        right_clusters=right_source.entities,
+        sources=["source_left", "source_right"],
+        threshold=0,
+        verbose=True,
+    )
+
+    assert not identical
+    # 10 'perfect' matches from the unlinked left_source, found in the linker
+    assert len(report["perfect_matches"]) == 10
+    # 10 spurious matches from the unlinked right_source, not in the linker
+    assert len(report["spurious_matches"]) == 10

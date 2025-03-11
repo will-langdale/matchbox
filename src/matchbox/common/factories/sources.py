@@ -194,9 +194,24 @@ class LinkedSourcesTestkit(BaseModel):
             verbose: Whether to include verbose information in the report
 
         Returns:
-            A tuple of bool, dict:
-            * Whether the results match the true entities
-            * A dictionary report of differences
+            A tuple containing:
+            - Boolean: True if lists are identical, False otherwise
+            - Dictionary with comparison details:
+                - 'perfect_matches': Entities that match exactly in both lists
+                - 'fragmented_matches': Expected entities that are split into multiple
+                    fragments in the actual results
+                - 'unexpected_matches': Actual entities that incorrectly merge multiple
+                - 'missing_matches': Expected entities not found in the results
+                    expected entities
+                - 'spurious_matches': Actual entities containing keys not present in
+                    any expected entity
+                - 'metrics': Performance measurements:
+                    - 'precision': Correct matches ÷ total matches
+                    - 'recall': Correct matches ÷ expected matches
+                    - 'f1': Harmonic mean of precision and recall
+                    - 'fragmentation': Average fragments per expected entity
+                    - 'similarity': Average similarity between expected entities and
+                        their best matches
         """
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
@@ -478,7 +493,7 @@ def linked_sources_factory(
     generator = Faker()
     generator.seed_instance(seed)
 
-    shared_engine = engine or create_engine("sqlite:///:memory:")
+    default_engine = create_engine("sqlite:///:memory:")
 
     if source_configs is None:
         # Use factory parameter or default for default configs
@@ -513,7 +528,7 @@ def linked_sources_factory(
         source_configs = (
             SourceConfig(
                 full_name="crn",
-                engine=shared_engine,
+                engine=engine or default_engine,
                 features=(
                     features["company_name"].add_variations(
                         SuffixRule(suffix=" Limited"),
@@ -528,7 +543,7 @@ def linked_sources_factory(
             ),
             SourceConfig(
                 full_name="duns",
-                engine=shared_engine,
+                engine=engine or default_engine,
                 features=(
                     features["company_name"],
                     features["duns"],
@@ -538,7 +553,7 @@ def linked_sources_factory(
             ),
             SourceConfig(
                 full_name="cdms",
-                engine=shared_engine,
+                engine=engine or default_engine,
                 features=(
                     features["crn"],
                     features["cdms"],
@@ -562,7 +577,7 @@ def linked_sources_factory(
             source_configs = tuple(
                 SourceConfig(
                     full_name=config.full_name,
-                    engine=shared_engine if engine is not None else config.engine,
+                    engine=engine or config.engine,
                     features=config.features,
                     repetition=config.repetition,
                     n_true_entities=n_true_entities,

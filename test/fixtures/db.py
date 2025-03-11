@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import tempfile
 from typing import TYPE_CHECKING, Any, Callable, Generator, Literal
 
 import boto3
@@ -348,6 +349,16 @@ def warehouse_data(
         conn.execute(sqltext("drop table if exists test.duns;"))
         conn.execute(sqltext("drop table if exists test.cdms;"))
         conn.commit()
+
+
+@pytest.fixture(scope="function")
+def sqlite_warehouse() -> Generator[Engine, None, None]:
+    """Creates an engine for a function-scoped SQLite warehouse database.
+
+    By using a temporary file, produces a URI that can be shared between processes.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".sqlite") as tmp:
+        yield create_engine(f"sqlite:///{tmp.name}")
 
 
 # Matchbox database fixtures
