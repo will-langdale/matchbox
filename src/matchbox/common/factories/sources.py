@@ -196,12 +196,22 @@ class LinkedSourcesTestkit(BaseModel):
         Returns:
             A tuple containing:
             - Boolean indicating if lists are identical
-            - Dictionary with detailed diff information:
-                - 'missing': Correct answers missing from the probabilities
-                - 'extra': Incorrect answers present in the probabilities
-                - 'partial': Partially correct answers present in the probabilities.
-                    The report includes the similarity between the best match to a
-                    correct answer, and the differences in primary keys
+            - Dictionary with detailed diff information. Note the same expected entitiy
+                can appear more than once. The report contains the following keys:
+                - 'perfect_matches': Entities that are identical in both lists
+                - 'fragmented_matches': Expected entities that are partially correct,
+                    in the actual entities, plus all the fragments that were matched
+                - 'unexpected_matches': Actual entities that merge multiple expected
+                    entities, plus all the expected entities that were merged
+                - 'missing_matches': Expected entities that are not present in the
+                    results
+                - 'metrics': A dictionary with the following metrics:
+                    - 'precision': The ratio of correct matches to all matches
+                    - 'recall': The ratio of correct matches to all expected matches
+                    - 'f1': The harmonic mean of precision and recall
+                    - 'fragmentation': Average number of fragments per expected entity
+                    - 'similarity': Average similarity ratio for all expected entities,
+                        when considering its best match in the actual entities
         """
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
