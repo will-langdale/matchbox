@@ -74,9 +74,9 @@ def _resolve_thresholds(
         # Model
         if threshold is None:
             resolved_thresholds[resolution_id] = default_truth
-        elif isinstance(threshold, float):
+        elif isinstance(threshold, int):
             resolved_thresholds[resolution_id] = (
-                threshold
+                float(threshold) / 100
                 if resolution_id == resolution.resolution_id
                 else default_truth
             )
