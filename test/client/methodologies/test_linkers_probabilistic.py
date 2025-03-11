@@ -251,4 +251,10 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
     )
 
     assert not identical, f"Expected imperfect results but got: {report}"
-    assert len(report["missing"]) == 0, "Expected no completely incorrect matches"
+    # Expect fragmented matches
+    assert report["metrics"]["fragmentation"] > 0
+    assert len(report["fragmented_matches"]) > 0
+    # Expect no unexpected, missing or spurious matches (perfect possible but unlikely)
+    assert len(report["unexpected_matches"]) == 0
+    assert len(report["missing_matches"]) == 0
+    assert len(report["spurious_matches"]) == 0

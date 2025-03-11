@@ -15,9 +15,31 @@ from matchbox.common.factories.entities import (
 )
 
 
-def make_cluster_entity(id: int, dataset: str, pks: list[str]) -> ClusterEntity:
-    """Helper to create a ClusterEntity with specified dataset and PKs."""
-    return ClusterEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
+def make_cluster_entity(id: int, *args) -> ClusterEntity:
+    """Helper to create a ClusterEntity with specified datasets and PKs.
+
+    Args:
+        id: Entity ID
+        *args: Variable arguments in pairs of (dataset_name, pks_list)
+            e.g., "d1", ["1", "2"], "d2", ["3", "4"]
+
+    Returns:
+        ClusterEntity with the specified datasets and primary keys
+    """
+    if len(args) % 2 != 0:
+        raise ValueError("Arguments must be pairs of dataset name and PKs list")
+
+    source_pks = {}
+    for i in range(0, len(args), 2):
+        dataset = args[i]
+        pks = args[i + 1]
+        if not isinstance(dataset, str):
+            raise TypeError(f"Dataset name must be a string, got {type(dataset)}")
+        if not isinstance(pks, list):
+            raise TypeError(f"PKs must be a list, got {type(pks)}")
+        source_pks[dataset] = frozenset(pks)
+
+    return ClusterEntity(id=id, source_pks=EntityReference(source_pks))
 
 
 def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
@@ -290,6 +312,7 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                         "source_pks": {"d1": frozenset(["1", "2"])},
                     }
                 ],
+                "spurious_matches": [],
                 "metrics": {
                     "precision": 0.0,
                     "recall": 0.0,
@@ -309,9 +332,14 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
             {
                 "perfect_matches": [],
                 "fragmented_matches": [],
-                # Not really an "unexpected merge" since there are no expected entities
                 "unexpected_matches": [],
                 "missing_matches": [],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 2,
+                        "actual_source_pks": {"d1": frozenset(["1", "2"])},
+                    }
+                ],
                 "metrics": {
                     "precision": 0.0,
                     "recall": 0.0,
@@ -348,6 +376,7 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                 ],
                 "unexpected_matches": [],
                 "missing_matches": [],
+                "spurious_matches": [],
                 "metrics": {
                     "precision": 0.0,  # No perfect matches
                     "recall": 0.0,  # No perfect matches
@@ -398,6 +427,12 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                         "expected_entity_id": 3,
                         "source_pks": {"d1": frozenset(["5", "6"])},
                     },
+                ],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 5,
+                        "actual_source_pks": {"d1": frozenset(["8", "9"])},
+                    }
                 ],
                 "metrics": {
                     "precision": 0.0,
@@ -459,6 +494,7 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                 ],
                 "unexpected_matches": [],
                 "missing_matches": [],
+                "spurious_matches": [],
                 "metrics": {
                     "precision": 0.5,  # 1 perfect out of 2 total
                     "recall": 0.5,  # 1 perfect out of 2 expected
@@ -502,6 +538,7 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                 ],
                 "unexpected_matches": [],
                 "missing_matches": [],
+                "spurious_matches": [],
                 "metrics": {
                     "precision": 0.0,
                     "recall": 0.0,
@@ -578,6 +615,7 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                     }
                 ],
                 "missing_matches": [],
+                "spurious_matches": [],
                 "metrics": {
                     "precision": 0.0,
                     "recall": 0.0,
@@ -587,6 +625,87 @@ def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list
                 },
             },
             id="unexpected_merge",
+        ),
+        # Spurious entities from different sources
+        pytest.param(
+            [make_cluster_entity(1, "d1", ["1", "2"])],
+            [
+                make_cluster_entity(2, "d1", ["1", "2"]),  # Perfect match
+                make_cluster_entity(3, "d2", ["3", "4"]),  # Different source
+            ],
+            True,
+            False,
+            {
+                "perfect_matches": [
+                    {"entity_id": 1, "source_pks": {"d1": frozenset(["1", "2"])}}
+                ],
+                "fragmented_matches": [],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 3,
+                        "actual_source_pks": {"d2": frozenset(["3", "4"])},
+                    }
+                ],
+                "metrics": {
+                    "precision": 0.5,  # 1 perfect out of 2 total
+                    "recall": 1.0,  # 1 perfect out of 1 expected
+                    "f1": pytest.approx(2 / 3, rel=1e-2),  # 2*0.5*1.0/(0.5+1.0)
+                    "fragmentation": 0.0,  # No fragmentation
+                    "similarity": 1.0,  # (1.0) / 1
+                },
+            },
+            id="spurious_entities_different_source",
+        ),
+        # Spurious entities with mixed sources
+        pytest.param(
+            [make_cluster_entity(1, "d1", ["1", "2"])],
+            [
+                make_cluster_entity(2, "d1", ["1", "3"]),  # Fragmented match
+                make_cluster_entity(
+                    3, "d1", ["4", "5"], "d2", ["6", "7"]
+                ),  # Mixed sources
+            ],
+            True,
+            False,
+            {
+                "perfect_matches": [],
+                "fragmented_matches": [
+                    {
+                        "expected_entity_id": 1,
+                        "expected_source_pks": {"d1": frozenset(["1", "2"])},
+                        "coverage_ratio": 0.5,  # 1 of 2 keys are covered
+                        "missing_pks": {"d1": frozenset(["2"])},
+                        "fragments": [
+                            {
+                                "actual_entity_id": 2,
+                                "source_pks": {"d1": frozenset(["1", "3"])},
+                                "similarity": 1 / 3,  # 1 common key out of 3 total
+                            }
+                        ],
+                    }
+                ],
+                "unexpected_matches": [],
+                "missing_matches": [],
+                "spurious_matches": [
+                    {
+                        "actual_entity_id": 3,
+                        "actual_source_pks": {
+                            "d1": frozenset(["4", "5"]),
+                            "d2": frozenset(["6", "7"]),
+                        },
+                    }
+                ],
+                "metrics": {
+                    "precision": 0.0,  # No perfect matches
+                    "recall": 0.0,  # No perfect matches
+                    "f1": 0.0,
+                    "fragmentation": 1.0,  # 1 fragment per expected entity
+                    "similarity": 0.5,  # (0.5) / 1
+                },
+            },
+            id="spurious_entities_mixed_sources",
         ),
     ],
 )

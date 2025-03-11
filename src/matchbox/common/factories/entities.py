@@ -612,12 +612,13 @@ def diff_results(
     remaining_expected = expected_set - perfect_matches
     remaining_actual = actual_set - perfect_matches
 
-    # Initialize tracking
+    # Initialise tracking
     similarity_scores = [1.0] * len(perfect_matches)
-    categorized_expected = set(perfect_matches)
+    categorised_expected = set(perfect_matches)
+    categorised_actual = set(perfect_matches)
     fragment_counts = []
 
-    # Initialize result
+    # Initialise result
     result = {"metrics": {}}
     if verbose:
         result["perfect_matches"] = [
@@ -627,6 +628,7 @@ def diff_results(
         result["fragmented_matches"] = []
         result["unexpected_matches"] = []
         result["missing_matches"] = []
+        result["spurious_matches"] = []
 
     # Process fragmented matches
     for expected_entity in remaining_expected:
@@ -656,7 +658,8 @@ def diff_results(
         # Record metrics
         coverage = combined.similarity_ratio(expected_entity) if combined else 0
         similarity_scores.append(coverage)
-        categorized_expected.add(expected_entity)
+        categorised_expected.add(expected_entity)
+        categorised_actual.update(fragments)
         fragment_counts.append(len(fragments))
 
         # Record details if verbose
@@ -689,7 +692,9 @@ def diff_results(
         # Record metrics
         for entity in contained:
             similarity_scores.append(actual_entity.similarity_ratio(entity))
-            categorized_expected.add(entity)
+            categorised_expected.add(entity)
+
+        categorised_actual.add(actual_entity)
 
         # Record details if verbose
         if verbose:
@@ -713,8 +718,18 @@ def diff_results(
                 }
             )
 
+    # Any remaining uncategorised actual entities are spurious
+    if verbose:
+        for actual_entity in remaining_actual - categorised_actual:
+            result["spurious_matches"].append(
+                {
+                    "actual_entity_id": actual_entity.id,
+                    "actual_source_pks": dict(actual_entity.source_pks.items()),
+                }
+            )
+
     # Handle missing entities
-    missing = remaining_expected - categorized_expected
+    missing = remaining_expected - categorised_expected
     similarity_scores.extend([0.0] * len(missing))
 
     if verbose:

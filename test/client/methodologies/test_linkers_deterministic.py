@@ -447,9 +447,7 @@ def test_no_matching_entities_linking(
     )
 
     assert not identical
-    # Check that there are missing, partial, or extra links
-    assert (
-        len(report["partial"]) > 0
-        or len(report["missing"]) > 0
-        or len(report["extra"]) > 0
-    )
+    # 10 'perfect' matches from the unlinked left_source, found in the linker
+    assert len(report["perfect_matches"]) == 10
+    # 10 spurious matches from the unlinked right_source, not in the linker
+    assert len(report["spurious_matches"]) == 10
