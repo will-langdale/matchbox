@@ -583,24 +583,23 @@ def diff_results(
 
     Returns:
         A tuple containing:
-        - Boolean indicating if lists are identical
-        - Dictionary with detailed diff information. Note the same expected entitiy
-            can appear more than once. The report contains the following keys:
-            - 'perfect_matches': Entities that are identical in both lists
-            - 'fragmented_matches': Expected entities that are partially correct,
-                in the actual entities, plus all the fragments that were matched
-            - 'unexpected_matches': Actual entities that merge multiple expected
-                entities, plus all the expected entities that were merged
-            - 'missing_matches': Expected entities that are not present in the results
-            - 'spurious_matches': Actual entities that use keys not represented in the
+        - Boolean: True if lists are identical, False otherwise
+        - Dictionary with comparison details:
+            - 'perfect_matches': Entities that match exactly in both lists
+            - 'fragmented_matches': Expected entities that are split into multiple
+                fragments in the actual results
+            - 'unexpected_matches': Actual entities that incorrectly merge multiple
+            - 'missing_matches': Expected entities not found in the results
                 expected entities
-            - 'metrics': A dictionary with the following metrics:
-                - 'precision': The ratio of correct matches to all matches
-                - 'recall': The ratio of correct matches to all expected matches
-                - 'f1': The harmonic mean of precision and recall
-                - 'fragmentation': Average number of fragments per expected entity
-                - 'similarity': Average similarity ratio for all expected entities,
-                    when considering its best match in the actual entities
+            - 'spurious_matches': Actual entities containing keys not present in
+                any expected entity
+            - 'metrics': Performance measurements:
+                - 'precision': Correct matches ÷ total matches
+                - 'recall': Correct matches ÷ expected matches
+                - 'f1': Harmonic mean of precision and recall
+                - 'fragmentation': Average fragments per expected entity
+                - 'similarity': Average similarity between expected entities and
+                    their best matches
     """
     # Quick comparison
     expected_set, actual_set = set(expected), set(actual)
