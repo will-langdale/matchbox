@@ -1,23 +1,23 @@
+from pydantic import BaseModel
+
 from matchbox.common.factories.models import ModelTestkit
 from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
 
 
-class TestkitDAG:
+class TestkitDAG(BaseModel):
     """Simple DAG container for testkits."""
 
-    def __init__(self):
-        # Store sources and their containing LinkedSourcesTestkit
-        self.sources: dict[str, SourceTestkit] = {}
-        self.linked: list[LinkedSourcesTestkit] = []
-        self.source_to_linked: dict[str, int] = {}
-        self.models: dict[str, ModelTestkit] = {}
+    sources: dict[str, SourceTestkit] = {}
+    linked: list[LinkedSourcesTestkit] = []
+    source_to_linked: dict[str, int] = {}
+    models: dict[str, ModelTestkit] = {}
 
-        # Dependency graph tracking
-        self.adjacency: dict[str, set[str]] = {}  # name -> direct dependencies
-        self.root_sources: dict[str, set[str]] = {}  # model -> root sources
+    # Dependency graph tracking
+    adjacency: dict[str, set[str]] = {}  # name -> direct dependencies
+    root_sources: dict[str, set[str]] = {}  # model -> root sources
 
-        # Keep track of all used names to ensure uniqueness
-        self._all_names: set[str] = set()
+    # Keep track of all used names to ensure uniqueness
+    _all_names: set[str] = set()
 
     def _validate_unique_name(self, name: str) -> str:
         """Ensure a name is unique across all testkits."""

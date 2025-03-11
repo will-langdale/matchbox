@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from functools import wraps
 from typing import Callable, ParamSpec, TypeVar
 
@@ -9,6 +10,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     PlainValidator,
+    PrivateAttr,
     WithJsonSchema,
     model_validator,
 )
@@ -109,11 +111,29 @@ class Source(BaseModel):
     db_pk: str
     columns: list[SourceColumn] = []
 
-    _engine: Engine | None = None
+    _engine: Engine | None = PrivateAttr(default=None)
 
     @property
     def engine(self) -> Engine | None:
         return self._engine
+
+    def __deepcopy__(self, memo=None):
+        """Create a deep copy of the Source object."""
+        if memo is None:
+            memo = {}
+
+        obj_copy = Source(
+            address=deepcopy(self.address, memo),
+            alias=deepcopy(self.alias, memo),
+            db_pk=deepcopy(self.db_pk, memo),
+            columns=deepcopy(self.columns, memo),
+        )
+
+        # Both objects should share the same engine
+        if self._engine is not None:
+            obj_copy._engine = self._engine
+
+        return obj_copy
 
     def set_engine(self, engine: Engine):
         """Adds engine, and use it to validate current columns"""

@@ -37,13 +37,13 @@ class MatchboxSnapshot(BaseModel):
 
     @field_validator("data")
     @classmethod
-    def check_serializable(cls, value: Any) -> Any:
-        """Validate that the value can be serialized to JSON."""
+    def check_serialisable(cls, value: Any) -> Any:
+        """Validate that the value can be serialised to JSON."""
         try:
             json.dumps(value)
             return value
         except (TypeError, OverflowError) as e:
-            raise ValueError(f"Value is not JSON serializable: {e}") from e
+            raise ValueError(f"Value is not JSON serialisable: {e}") from e
 
 
 class MatchboxDatastoreSettings(BaseSettings):
