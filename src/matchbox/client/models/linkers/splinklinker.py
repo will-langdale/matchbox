@@ -238,7 +238,7 @@ class SplinkLinker(Linker):
                     df[f"{self.settings.right_id}_r"].apply(self._id_dtype_r),
                     type=pa.uint64(),
                 ),
-                pa.array(df["match_probability"], type=pa.float32()),
+                pa.array(df["match_probability"] * 100, type=pa.uint8()),
             ],
             names=["left_id", "right_id", "probability"],
         )
