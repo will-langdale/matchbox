@@ -1,3 +1,3 @@
-from matchbox.common.logging import ERROR, logger
+from matchbox.common.logging import ERROR, set_log_level
 
-logger.setLevel(ERROR)
+set_log_level(ERROR)
