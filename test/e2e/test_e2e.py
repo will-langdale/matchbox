@@ -246,7 +246,6 @@ class TestE2EAnalyticalUser:
                 right_clusters=None,
                 sources=[source_name],
                 threshold=0,
-                verbose=True,
             )
 
             assert identical, f"Deduplication of {source_name} failed: {report}"
@@ -348,7 +347,6 @@ class TestE2EAnalyticalUser:
                 right_clusters=right_clusters,
                 sources=[left_testkit.name, right_testkit.name],
                 threshold=0,
-                verbose=True,
             )
 
             report_counts = {
@@ -447,7 +445,6 @@ class TestE2EAnalyticalUser:
             right_clusters=right_clusters,
             sources=[crn_source, duns_source, cdms_source],
             threshold=0,
-            verbose=True,
         )
 
         report_counts = {

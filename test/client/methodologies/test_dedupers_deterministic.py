@@ -95,7 +95,6 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         right_clusters=None,
         sources=["source_exact"],
         threshold=0,
-        verbose=True,
     )
 
     assert identical, f"Expected perfect results but got: {report}"
@@ -146,7 +145,6 @@ def test_exact_duplicate_deduplication(
         right_clusters=None,
         sources=["source_exact"],
         threshold=0,
-        verbose=True,
     )
 
     assert identical, f"Expected perfect results but got: {report}"

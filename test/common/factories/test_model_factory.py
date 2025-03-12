@@ -236,16 +236,13 @@ def test_model_pipeline_with_dummy_methodology(
         right_clusters=right_clusters,
         sources=sources,
         threshold=0,
-        verbose=True,
     )
 
     # Verify the imperfect methodology was detected
     assert not identical
     # Random process: can't guarantee particular problems, but can guarantee
     # that some will be present
-    assert any([report["fragmented_matches"], report["unexpected_matches"]])
-    assert report["metrics"]["precision"] < 1.0
-    assert report["metrics"]["recall"] < 1.0
+    assert report["wrong"] > 0 or report["subset"] > 0 or report["superset"] > 0
 
 
 @pytest.mark.parametrize(

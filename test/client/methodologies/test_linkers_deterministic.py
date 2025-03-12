@@ -257,7 +257,6 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
         threshold=0,
-        verbose=True,
     )
 
     assert identical, f"Expected perfect results but got: {report}"
@@ -319,7 +318,6 @@ def test_exact_match_with_duplicates_linking(
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
         threshold=0,
-        verbose=True,
     )
 
     assert identical, f"Expected perfect results but got: {report}"
@@ -384,7 +382,6 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
         threshold=0,
-        verbose=True,
     )
 
     assert identical, f"Expected perfect results but got: {report}"
@@ -443,11 +440,10 @@ def test_no_matching_entities_linking(
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
         threshold=0,
-        verbose=True,
     )
 
     assert not identical
-    # 10 'perfect' matches from the unlinked left_source, found in the linker
-    assert len(report["perfect_matches"]) == 10
-    # 10 spurious matches from the unlinked right_source, not in the linker
-    assert len(report["spurious_matches"]) == 10
+    # 10 perfect matches from the unlinked left_source, found in the linker
+    assert report["perfect"] == 10
+    # 10 invalid matches from the unlinked right_source, not in the linker
+    assert report["invalid"] == 10
