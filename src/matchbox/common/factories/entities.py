@@ -6,6 +6,7 @@ source and model testkit factory system.
 
 import datetime
 from abc import ABC, abstractmethod
+from collections import Counter
 from decimal import Decimal
 from functools import cache
 from random import getrandbits
@@ -572,109 +573,51 @@ def probabilities_to_results_entities(
 
 
 def diff_results(
-    expected: list[ClusterEntity], actual: list[ClusterEntity], verbose: bool = False
+    expected: list[ClusterEntity], actual: list[ClusterEntity]
 ) -> tuple[bool, dict]:
     """Compare two lists of ClusterEntity with detailed diff information.
 
     Args:
         expected: Expected ClusterEntity list
         actual: Actual ClusterEntity list
-        verbose: Whether to return detailed diff report
 
     Returns:
-        Tuple of (is_identical, diff_dict)
+        A tuple containing:
+        - Boolean: True if lists are identical, False otherwise
+        - Dictionary that counts the number of actual entities that fall into the
+            following criteria:
+            - 'perfect': Match an expected entity exactly
+            - 'subset': Are a subset of an expected entity
+            - 'superset': Are a superset of an expected entity
+            - 'wrong': Don't match any expected entity
+            - 'invalid': Contain source_pks not present in any expected entity
     """
-    expected_set = set(expected)
-    actual_set = set(actual)
-
+    expected_set, actual_set = set(expected), set(actual)
     if expected_set == actual_set:
         return True, {}
 
-    missing = expected_set - actual_set
-    extra = actual_set - expected_set
-    identical = expected_set & actual_set
+    all_expected = sum(expected_set)
+    perfect_matches = expected_set & actual_set
+    remaining_actual = actual_set - perfect_matches
 
-    # Calculate similarity scores and determine partial matches
-    partial_matches = {}
-    best_match_entities = set()
+    counter = Counter(
+        {
+            "perfect": len(perfect_matches),
+            "subset": 0,
+            "superset": 0,
+            "wrong": 0,
+            "invalid": 0,
+        }
+    )
 
-    # Calculate mean similarity (best matches for all entities)
-    best_ratios = []
+    for a in remaining_actual:
+        if any(a in e for e in expected_set):
+            counter["subset"] += 1
+        elif a not in all_expected:
+            counter["invalid"] += 1
+        elif any(e in a for e in expected_set):
+            counter["superset"] += 1
+        else:
+            counter["wrong"] += 1
 
-    # Include identical entities with similarity of 1.0
-    best_ratios.extend([1.0] * len(identical))
-
-    # Best ratios for missing entities
-    for m in missing:
-        # Find best match for this missing entity
-        best_match = None
-        best_ratio = 0.0
-
-        for a in actual:
-            ratio = m.similarity_ratio(a)
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_match = a
-
-        best_ratios.append(best_ratio)
-
-        # Record partial match if similarity > 0
-        if best_ratio > 0:
-            best_match_entities.add(best_match)
-
-            # Calculate difference between entities
-            missing_pks = m - best_match
-            extra_pks = best_match - m
-
-            partial_matches[m] = {
-                "entity": best_match,
-                "similarity": best_ratio,
-                "missing_pks": missing_pks,
-                "extra_pks": extra_pks,
-            }
-
-    # Best ratios for extra entities (including those used as best matches)
-    for e in extra:
-        best_ratio = max((e.similarity_ratio(m) for m in expected), default=0.0)
-        best_ratios.append(best_ratio)
-
-    # Calculate mean similarity
-    mean_ratio = sum(best_ratios) / len(best_ratios) if best_ratios else 0.0
-
-    # Build basic result dictionary
-    result = {"mean_similarity": mean_ratio, "partial": [], "missing": [], "extra": []}
-
-    if not verbose:
-        return False, result
-
-    # Build detailed result dictionary when verbose=True
-    # Add partial matches
-    for m, match_info in partial_matches.items():
-        result["partial"].append(
-            {
-                "missing_entity_id": m.id,
-                "matches": [
-                    {
-                        "actual_entity_id": match_info["entity"].id,
-                        "similarity": match_info["similarity"],
-                        "missing_pks": dict(match_info["missing_pks"])
-                        if match_info["missing_pks"]
-                        else {},
-                        "extra_pks": dict(match_info["extra_pks"])
-                        if match_info["extra_pks"]
-                        else {},
-                    }
-                ],
-            }
-        )
-
-    # Add completely missing entities (those with no partial matches)
-    completely_missing = missing - set(partial_matches.keys())
-    for e in completely_missing:
-        result["missing"].append({"id": e.id, "source_pks": dict(e.source_pks.items())})
-
-    # Add extra entities (excluding those used in partial matches)
-    for e in extra - best_match_entities:
-        result["extra"].append({"id": e.id, "source_pks": dict(e.source_pks.items())})
-
-    return False, result
+    return False, dict(counter)

@@ -176,7 +176,6 @@ class LinkedSourcesTestkit(BaseModel):
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
         threshold: int | float = 0,
-        verbose: bool = False,
     ) -> tuple[bool, dict]:
         """Diff a results of probabilities with the true SourceEntities.
 
@@ -191,12 +190,11 @@ class LinkedSourcesTestkit(BaseModel):
                 to the process that produced the probabilities table. Should
                 be a SourceTestkit.entities or ModelTestkit.entities.
             threshold: Threshold for considering a match true
-            verbose: Whether to include verbose information in the report
 
         Returns:
-            A tuple of bool, dict:
-            * Whether the results match the true entities
-            * A dictionary report of differences
+            A tuple of whether the results are identical, and a report dictionary.
+                See [`diff_results()`][matchbox.common.factories.entities.diff_results]
+                for the report format.
         """
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
@@ -209,7 +207,6 @@ class LinkedSourcesTestkit(BaseModel):
                 right_clusters=right_clusters,
                 threshold=threshold,
             ),
-            verbose=verbose,
         )
 
 
