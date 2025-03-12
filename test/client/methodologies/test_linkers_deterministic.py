@@ -443,7 +443,4 @@ def test_no_matching_entities_linking(
     )
 
     assert not identical
-    # 10 perfect matches from the unlinked left_source, found in the linker
-    assert report["perfect"] == 10
-    # 10 invalid matches from the unlinked right_source, not in the linker
-    assert report["invalid"] == 10
+    assert results.probabilities.num_rows == 0
