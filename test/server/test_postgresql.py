@@ -1,12 +1,13 @@
-from typing import Any, Iterable
+import itertools
+from typing import Iterable
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Engine, text
 
-from matchbox.common.sources import Source
+from matchbox.common.factories.entities import SourceEntity
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.benchmark.generate_tables import (
@@ -20,7 +21,7 @@ from matchbox.server.postgresql.benchmark.query import (
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
-from ..fixtures.db import SetupDatabaseCallable
+from ..fixtures.db import setup_scenario
 
 
 def test_hash_id_map():
@@ -61,97 +62,98 @@ def test_hash_id_map():
 
 
 @pytest.mark.parametrize(
-    ("parameters"),
+    ("point_of_truth", "source"),
     [
         # Test case 1: CDMS/CRN linker, CRN dataset
-        {
-            "point_of_truth": "deterministic_naive_test.cdms_naive_test.crn",
-            "source_index": 0,  # CRN
-            "unique_ids": 1_000,
-            "unique_pks": 3_000,
-        },
+        pytest.param(
+            "deterministic_naive_test.crn_naive_test.cdms", "crn", id="cdms-crn_crn"
+        ),
         # Test case 2: CDMS/CRN linker, CDMS dataset
-        {
-            "point_of_truth": "deterministic_naive_test.cdms_naive_test.crn",
-            "source_index": 2,  # CDMS
-            "unique_ids": 1_000,
-            "unique_pks": 2_000,
-        },
+        pytest.param(
+            "deterministic_naive_test.crn_naive_test.cdms", "cdms", id="cdms-crn_cdms"
+        ),
         # Test case 3: CRN/DUNS linker, CRN dataset
-        {
-            "point_of_truth": "deterministic_naive_test.crn_naive_test.duns",
-            "source_index": 0,  # CRN
-            "unique_ids": 1_000,
-            "unique_pks": 3_000,
-        },
+        pytest.param(
+            "deterministic_naive_test.crn_naive_test.duns", "crn", id="crn-duns_crn"
+        ),
         # Test case 4: CRN/DUNS linker, DUNS dataset
-        {
-            "point_of_truth": "deterministic_naive_test.crn_naive_test.duns",
-            "source_index": 1,  # DUNS
-            "unique_ids": 500,
-            "unique_pks": 500,
-        },
+        pytest.param(
+            "deterministic_naive_test.crn_naive_test.duns", "duns", id="crn-duns_duns"
+        ),
     ],
-    ids=["cdms-crn_crn", "cdms-crn_cdms", "crn-duns_crn", "crn-duns_duns"],
 )
 @pytest.mark.docker
 def test_benchmark_query_generation(
-    setup_database: SetupDatabaseCallable,
     matchbox_postgres: MatchboxPostgres,
-    warehouse_data: list[Source],
-    parameters: dict[str, Any],
+    postgres_warehouse: Engine,
+    point_of_truth: str,
+    source: str,
 ):
-    setup_database(matchbox_postgres, warehouse_data, "link")
+    with setup_scenario(matchbox_postgres, "link", warehouse=postgres_warehouse) as dag:
+        engine = MBDB.get_engine()
 
-    engine = MBDB.get_engine()
-    point_of_truth = parameters["point_of_truth"]
-    idx = parameters["source_index"]
+        linked, _ = dag.get_sources_for_model(point_of_truth)
+        true_entities = linked.true_entity_subset(source)
+        true_pks = set(
+            itertools.chain.from_iterable(
+                s for e in true_entities for s in e.source_pks.values()
+            )
+        )
 
-    sql_query = compile_query_sql(
-        point_of_truth=point_of_truth,
-        source_address=warehouse_data[idx].address,
-    )
+        sql_query = compile_query_sql(
+            point_of_truth=point_of_truth,
+            source_address=dag.sources[source].source.address,
+        )
 
-    assert isinstance(sql_query, str)
+        assert isinstance(sql_query, str)
 
-    with engine.connect() as conn:
-        res = conn.execute(text(sql_query)).all()
+        with engine.connect() as conn:
+            res = conn.execute(text(sql_query)).all()
 
-    df = pd.DataFrame(res, columns=["id", "pk"])
+        df = pd.DataFrame(res, columns=["id", "pk"])
 
-    assert df.id.nunique() == parameters["unique_ids"]
-    assert df.pk.nunique() == parameters["unique_pks"]
+        assert df.id.nunique() == len(true_entities)
+        assert set(df.pk) == true_pks
 
 
 @pytest.mark.docker
 def test_benchmark_match_query_generation(
-    setup_database: SetupDatabaseCallable,
     matchbox_postgres: MatchboxPostgres,
-    warehouse_data: list[Source],
-    revolution_inc: dict[str, list[str]],
+    postgres_warehouse: Engine,
 ):
-    setup_database(matchbox_postgres, warehouse_data, "link")
+    with setup_scenario(matchbox_postgres, "link", warehouse=postgres_warehouse) as dag:
+        engine = MBDB.get_engine()
 
-    engine = MBDB.get_engine()
-    source_pks = revolution_inc["duns"]
-    target_pks = revolution_inc["crn"]
+        linker_name = "deterministic_naive_test.crn_naive_test.duns"
+        linked, _ = dag.get_sources_for_model(linker_name)
+        # crn_testkit = dag.sources.get("crn")
+        duns_testkit = dag.sources.get("duns")
 
-    sql_match = compile_match_sql(
-        source_pk=source_pks[0],
-        source_name=warehouse_data[1].address.full_name,  # DUNS
-        point_of_truth="deterministic_naive_test.crn_naive_test.duns",
-    )
+        # A random one:many entity
+        source_entity: SourceEntity = linked.find_entities(
+            min_appearances={"crn": 2},
+            max_appearances={"duns": 1},
+        )[0]
 
-    assert isinstance(sql_match, str)
+        sql_match = compile_match_sql(
+            source_pk=next(iter(source_entity.source_pks["duns"])),
+            source_name=duns_testkit.source.address.full_name,
+            point_of_truth="deterministic_naive_test.crn_naive_test.duns",
+        )
 
-    with engine.connect() as conn:
-        res = conn.execute(text(sql_match)).all()
+        assert isinstance(sql_match, str)
 
-    df = pd.DataFrame(res, columns=["cluster", "dataset", "source_pk"]).dropna()
+        with engine.connect() as conn:
+            res = conn.execute(text(sql_match)).all()
 
-    assert df.cluster.nunique() == 1
-    assert df.dataset.nunique() == 2
-    assert set(df.source_pk) == set(source_pks + target_pks)
+        df = pd.DataFrame(res, columns=["cluster", "dataset", "source_pk"]).dropna()
+
+        assert df.cluster.nunique() == 1
+        assert df.dataset.nunique() == 2
+        assert (
+            set(df.source_pk)
+            == source_entity.source_pks["duns"] | source_entity.source_pks["crn"]
+        )
 
 
 @pytest.mark.parametrize(

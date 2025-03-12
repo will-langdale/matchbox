@@ -171,9 +171,10 @@ class LinkedSourcesTestkit(BaseModel):
 
     def true_entity_subset(self, *sources: str) -> list[ClusterEntity]:
         """Return a subset of true entities that appear in the given sources."""
-        return [
+        cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
         ]
+        return [entity for entity in cluster_entities if entity is not None]
 
     def diff_results(
         self,
@@ -219,9 +220,8 @@ class LinkedSourcesTestkit(BaseModel):
                     - 'similarity': Average similarity between expected entities and
                         their best matches
         """
-        cluster_entities = self.true_entity_subset(*sources)
         return diff_results(
-            expected=[entity for entity in cluster_entities if entity is not None],
+            expected=self.true_entity_subset(*sources),
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,
                 left_clusters=left_clusters,

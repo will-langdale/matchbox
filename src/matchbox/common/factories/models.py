@@ -392,7 +392,6 @@ def generate_dummy_probabilities(
     )
 
 
-@cache
 def generate_entity_probabilities(
     left_entities: frozenset[ClusterEntity],
     right_entities: frozenset[ClusterEntity] | None,

@@ -103,6 +103,7 @@ line-ending = "auto"
 testpaths = ["test"]
 pythonpath = ["."]
 addopts = "-s -vv --cov=matchbox test/ --log-disable=pg_bulk_ingest"
+norecursedirs = "src"
 log_cli = false
 log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"

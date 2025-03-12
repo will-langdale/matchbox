@@ -33,13 +33,13 @@ class TestE2EAnalyticalUser:
     n_true_entities: int | None = None
 
     @pytest.fixture(autouse=True, scope="function")
-    def setup_environment(self, matchbox_client: Client, warehouse_engine: Engine):
+    def setup_environment(self, matchbox_client: Client, postgres_warehouse: Engine):
         """Set up warehouse and database using fixtures."""
         # Store fixtures as class attributes for use in tests with self.*
         n_true_entities = 100
 
         self.__class__.client = matchbox_client
-        self.__class__.warehouse_engine = warehouse_engine
+        self.__class__.warehouse_engine = postgres_warehouse
         self.__class__.n_true_entities = n_true_entities
 
         # Create feature configurations
@@ -69,7 +69,7 @@ class TestE2EAnalyticalUser:
         source_configs = (
             SourceConfig(
                 full_name="e2e.crn",
-                engine=warehouse_engine,
+                engine=postgres_warehouse,
                 features=(
                     features["company_name"].add_variations(
                         SuffixRule(suffix=" Limited"),
@@ -84,7 +84,7 @@ class TestE2EAnalyticalUser:
             ),
             SourceConfig(
                 full_name="e2e.duns",
-                engine=warehouse_engine,
+                engine=postgres_warehouse,
                 features=(
                     features["company_name"],
                     features["duns"],
@@ -94,7 +94,7 @@ class TestE2EAnalyticalUser:
             ),
             SourceConfig(
                 full_name="e2e.cdms",
-                engine=warehouse_engine,
+                engine=postgres_warehouse,
                 features=(
                     features["crn"],
                     features["cdms"],
@@ -112,13 +112,13 @@ class TestE2EAnalyticalUser:
 
         # Use a separate schema to avoid conflict with legacy test data
         # TODO: Remove once legacy tests are refactored
-        with warehouse_engine.connect() as conn:
+        with postgres_warehouse.connect() as conn:
             conn.execute(text("create schema if not exists e2e;"))
             conn.commit()
 
         # Setup code - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.to_warehouse(engine=warehouse_engine)
+            source_testkit.to_warehouse(engine=postgres_warehouse)
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -128,7 +128,7 @@ class TestE2EAnalyticalUser:
 
         # Teardown code
         # Clean up database tables
-        with warehouse_engine.connect() as conn:
+        with postgres_warehouse.connect() as conn:
             for source_name in self.linked_testkit.sources:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
                 conn.commit()

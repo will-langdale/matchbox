@@ -8,7 +8,6 @@ from rich.console import Console
 from rich.progress import Progress
 
 pytest_plugins = [
-    "test.fixtures.data",
     "test.fixtures.db",
     "test.fixtures.graph",
     "test.fixtures.client",
