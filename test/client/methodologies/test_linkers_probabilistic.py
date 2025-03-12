@@ -235,7 +235,6 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
         threshold=0,
-        verbose=True,
     )
 
     assert identical, f"Expected perfect results but got: {report}"
@@ -247,14 +246,11 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         right_clusters=right_source.entities,
         sources=["source_left", "source_right"],
         threshold=np.mean(results.probabilities["probability"]),
-        verbose=True,
     )
 
     assert not identical, f"Expected imperfect results but got: {report}"
-    # Expect fragmented matches
-    assert report["metrics"]["fragmentation"] > 0
-    assert len(report["fragmented_matches"]) > 0
-    # Expect no unexpected, missing or spurious matches (perfect possible but unlikely)
-    assert len(report["unexpected_matches"]) == 0
-    assert len(report["missing_matches"]) == 0
-    assert len(report["spurious_matches"]) == 0
+    # Expect subsets of matches where connections weren't made
+    assert report["subset"] > 0
+    # Expect no wrong or invalid matches (perfect possible but unlikely)
+    assert report["wrong"] == 0
+    assert report["invalid"] == 0

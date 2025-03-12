@@ -176,7 +176,6 @@ class LinkedSourcesTestkit(BaseModel):
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
         threshold: int | float = 0,
-        verbose: bool = False,
     ) -> tuple[bool, dict]:
         """Diff a results of probabilities with the true SourceEntities.
 
@@ -191,27 +190,11 @@ class LinkedSourcesTestkit(BaseModel):
                 to the process that produced the probabilities table. Should
                 be a SourceTestkit.entities or ModelTestkit.entities.
             threshold: Threshold for considering a match true
-            verbose: Whether to include verbose information in the report
 
         Returns:
-            A tuple containing:
-            - Boolean: True if lists are identical, False otherwise
-            - Dictionary with comparison details:
-                - 'perfect_matches': Entities that match exactly in both lists
-                - 'fragmented_matches': Expected entities that are split into multiple
-                    fragments in the actual results
-                - 'unexpected_matches': Actual entities that incorrectly merge multiple
-                - 'missing_matches': Expected entities not found in the results
-                    expected entities
-                - 'spurious_matches': Actual entities containing keys not present in
-                    any expected entity
-                - 'metrics': Performance measurements:
-                    - 'precision': Correct matches ÷ total matches
-                    - 'recall': Correct matches ÷ expected matches
-                    - 'f1': Harmonic mean of precision and recall
-                    - 'fragmentation': Average fragments per expected entity
-                    - 'similarity': Average similarity between expected entities and
-                        their best matches
+            A tuple of whether the results are identical, and a report dictionary.
+                See [`diff_results()`][matchbox.common.factories.entities.diff_results]
+                for the report format.
         """
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
@@ -224,7 +207,6 @@ class LinkedSourcesTestkit(BaseModel):
                 right_clusters=right_clusters,
                 threshold=threshold,
             ),
-            verbose=verbose,
         )
 
 

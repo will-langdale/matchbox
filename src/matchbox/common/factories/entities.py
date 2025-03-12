@@ -6,6 +6,7 @@ source and model testkit factory system.
 
 import datetime
 from abc import ABC, abstractmethod
+from collections import Counter
 from decimal import Decimal
 from functools import cache
 from random import getrandbits
@@ -572,188 +573,51 @@ def probabilities_to_results_entities(
 
 
 def diff_results(
-    expected: list[ClusterEntity], actual: list[ClusterEntity], verbose: bool = False
+    expected: list[ClusterEntity], actual: list[ClusterEntity]
 ) -> tuple[bool, dict]:
     """Compare two lists of ClusterEntity with detailed diff information.
 
     Args:
         expected: Expected ClusterEntity list
         actual: Actual ClusterEntity list
-        verbose: Whether to return detailed diff report
 
     Returns:
         A tuple containing:
         - Boolean: True if lists are identical, False otherwise
-        - Dictionary with comparison details:
-            - 'perfect_matches': Entities that match exactly in both lists
-            - 'fragmented_matches': Expected entities that are split into multiple
-                fragments in the actual results
-            - 'unexpected_matches': Actual entities that incorrectly merge multiple
-            - 'missing_matches': Expected entities not found in the results
-                expected entities
-            - 'spurious_matches': Actual entities containing keys not present in
-                any expected entity
-            - 'metrics': Performance measurements:
-                - 'precision': Correct matches ÷ total matches
-                - 'recall': Correct matches ÷ expected matches
-                - 'f1': Harmonic mean of precision and recall
-                - 'fragmentation': Average fragments per expected entity
-                - 'similarity': Average similarity between expected entities and
-                    their best matches
+        - Dictionary that counts the number of actual entities that fall into the
+            following criteria:
+            - 'perfect': Match an expected entity exactly
+            - 'subset': Are a subset of an expected entity
+            - 'superset': Are a superset of an expected entity
+            - 'wrong': Don't match any expected entity
+            - 'invalid': Contain source_pks not present in any expected entity
     """
-    # Quick comparison
     expected_set, actual_set = set(expected), set(actual)
     if expected_set == actual_set:
         return True, {}
 
-    # Find different match types
+    all_expected = sum(expected_set)
     perfect_matches = expected_set & actual_set
-    remaining_expected = expected_set - perfect_matches
     remaining_actual = actual_set - perfect_matches
 
-    # Initialise tracking
-    similarity_scores = [1.0] * len(perfect_matches)
-    categorised_expected = set(perfect_matches)
-    categorised_actual = set(perfect_matches)
-    fragment_counts = []
+    counter = Counter(
+        {
+            "perfect": len(perfect_matches),
+            "subset": 0,
+            "superset": 0,
+            "wrong": 0,
+            "invalid": 0,
+        }
+    )
 
-    # Initialise result
-    result = {"metrics": {}}
-    if verbose:
-        result["perfect_matches"] = [
-            {"entity_id": e.id, "source_pks": dict(e.source_pks.items())}
-            for e in perfect_matches
-        ]
-        result["fragmented_matches"] = []
-        result["unexpected_matches"] = []
-        result["missing_matches"] = []
-        result["spurious_matches"] = []
+    for a in remaining_actual:
+        if any(a in e for e in expected_set):
+            counter["subset"] += 1
+        elif a not in all_expected:
+            counter["invalid"] += 1
+        elif any(e in a for e in expected_set):
+            counter["superset"] += 1
+        else:
+            counter["wrong"] += 1
 
-    # Process fragmented matches
-    for expected_entity in remaining_expected:
-        fragments = [
-            e for e in remaining_actual if expected_entity.similarity_ratio(e) > 0
-        ]
-        if not fragments:
-            continue
-
-        # Extract overlap between expected and fragments
-        combined = None
-        for fragment in fragments:
-            overlap_pks = {
-                dataset: exp_pks & fragment.source_pks.get(dataset, frozenset())
-                for dataset, exp_pks in expected_entity.source_pks.items()
-                if exp_pks & fragment.source_pks.get(dataset, frozenset())
-            }
-
-            if any(overlap_pks.values()):
-                temp = ClusterEntity(
-                    source_pks=EntityReference(
-                        {k: v for k, v in overlap_pks.items() if v}
-                    )
-                )
-                combined = temp if combined is None else combined + temp
-
-        # Record metrics
-        coverage = combined.similarity_ratio(expected_entity) if combined else 0
-        similarity_scores.append(coverage)
-        categorised_expected.add(expected_entity)
-        categorised_actual.update(fragments)
-        fragment_counts.append(len(fragments))
-
-        # Record details if verbose
-        if verbose:
-            result["fragmented_matches"].append(
-                {
-                    "expected_entity_id": expected_entity.id,
-                    "expected_source_pks": dict(expected_entity.source_pks.items()),
-                    "coverage_ratio": coverage,
-                    "missing_pks": expected_entity - combined
-                    if combined
-                    else dict(expected_entity.source_pks.items()),
-                    "fragments": [
-                        {
-                            "actual_entity_id": f.id,
-                            "source_pks": dict(f.source_pks.items()),
-                            "similarity": expected_entity.similarity_ratio(f),
-                        }
-                        for f in fragments
-                    ],
-                }
-            )
-
-    # Process unexpected matches (merges)
-    for actual_entity in remaining_actual:
-        contained = [e for e in remaining_expected if e in actual_entity]
-        if len(contained) <= 1:
-            continue
-
-        # Record metrics
-        for entity in contained:
-            similarity_scores.append(actual_entity.similarity_ratio(entity))
-            categorised_expected.add(entity)
-
-        categorised_actual.add(actual_entity)
-
-        # Record details if verbose
-        if verbose:
-            combined = None
-            for entity in contained:
-                combined = entity if combined is None else combined + entity
-
-            result["unexpected_matches"].append(
-                {
-                    "actual_entity_id": actual_entity.id,
-                    "actual_source_pks": dict(actual_entity.source_pks.items()),
-                    "extra_pks": actual_entity - combined,
-                    "merged_entities": [
-                        {
-                            "expected_entity_id": e.id,
-                            "source_pks": dict(e.source_pks.items()),
-                            "similarity": actual_entity.similarity_ratio(e),
-                        }
-                        for e in contained
-                    ],
-                }
-            )
-
-    # Any remaining uncategorised actual entities are spurious
-    if verbose:
-        for actual_entity in remaining_actual - categorised_actual:
-            result["spurious_matches"].append(
-                {
-                    "actual_entity_id": actual_entity.id,
-                    "actual_source_pks": dict(actual_entity.source_pks.items()),
-                }
-            )
-
-    # Handle missing entities
-    missing = remaining_expected - categorised_expected
-    similarity_scores.extend([0.0] * len(missing))
-
-    if verbose:
-        result["missing_matches"] = [
-            {"expected_entity_id": e.id, "source_pks": dict(e.source_pks.items())}
-            for e in missing
-        ]
-
-    # Calculate metrics
-    perf_count = len(perfect_matches)
-    precision = perf_count / len(actual) if actual else 0.0
-    recall = perf_count / len(expected) if expected else 0.0
-
-    result["metrics"] = {
-        "precision": precision,
-        "recall": recall,
-        "f1": 2 * precision * recall / (precision + recall)
-        if (precision + recall) > 0
-        else 0.0,
-        "fragmentation": sum(fragment_counts) / len(fragment_counts)
-        if fragment_counts
-        else 0.0,
-        "similarity": sum(similarity_scores) / len(similarity_scores)
-        if similarity_scores
-        else 0.0,
-    }
-
-    return False, result
+    return False, dict(counter)
