@@ -428,10 +428,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         with Session(MBDB.get_engine()) as session:
             session.add(resolution)
-            resolution.truth = truth
+            resolution.truth = int(truth * 100)
             session.commit()
 
-    def get_model_truth(self, model: str) -> float:
+    def get_model_truth(self, model: str) -> int:
         """Gets the current truth threshold for this model."""
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return resolution.truth

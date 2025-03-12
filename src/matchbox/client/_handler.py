@@ -269,7 +269,7 @@ def set_model_truth(name: str, truth: float) -> ModelOperationStatus:
     return ModelOperationStatus.model_validate(res.json())
 
 
-def get_model_truth(name: str) -> float:
+def get_model_truth(name: str) -> int:
     """Get the truth threshold for a model in Matchbox."""
     res = CLIENT.get(f"/models/{name}/truth")
     return res.json()

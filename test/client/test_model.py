@@ -277,8 +277,8 @@ def test_ancestors_getter(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     ancestors_data = [
-        ModelAncestor(name="model1", truth=0.9).model_dump(),
-        ModelAncestor(name="model2", truth=0.8).model_dump(),
+        ModelAncestor(name="model1", truth=90).model_dump(),
+        ModelAncestor(name="model2", truth=80).model_dump(),
     ]
 
     # Mock the GET /models/{name}/ancestors endpoint
@@ -303,7 +303,7 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
         f"/models/{testkit.model.metadata.name}/ancestors_cache"
     ).mock(
         return_value=Response(
-            200, json=[ModelAncestor(name="model1", truth=0.9).model_dump()]
+            200, json=[ModelAncestor(name="model1", truth=90).model_dump()]
         )
     )
 
@@ -330,7 +330,7 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
     testkit.model.ancestors_cache = {"model2": 0.8}
     assert set_route.called
     assert json.loads(set_route.calls.last.request.content.decode()) == [
-        ModelAncestor(name="model2", truth=0.8).model_dump()
+        ModelAncestor(name="model2", truth=80).model_dump()
     ]
 
 

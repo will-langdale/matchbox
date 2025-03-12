@@ -49,7 +49,7 @@ class Model:
             )
 
     @property
-    def truth(self) -> float:
+    def truth(self) -> int:
         """Retrieve the truth threshold for the model."""
         return _handler.get_model_truth(name=self.metadata.name)
 

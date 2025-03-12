@@ -44,13 +44,13 @@ erDiagram
         enum type
         string name
         string description
-        float truth
+        int truth
     }
     ResolutionFrom {
         bigint parent PK,FK
         bigint child PK,FK
         int level
-        float truth_cache
+        int truth_cache
     }
 
     Sources |o--|| Resolutions : ""
