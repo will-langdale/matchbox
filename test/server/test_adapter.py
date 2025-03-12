@@ -1,6 +1,9 @@
+from functools import partial
+
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from sqlalchemy import Engine
 
 from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
@@ -15,7 +18,7 @@ from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.base import MatchboxDBAdapter
 
-from ..fixtures.db import ScenarioCallable
+from ..fixtures.db import setup_scenario
 
 backends = [
     pytest.param("matchbox_postgres", id="postgres"),
@@ -34,12 +37,13 @@ def backend_instance(request: pytest.FixtureRequest, backend: str):
 @pytest.mark.docker
 class TestMatchboxBackend:
     @pytest.fixture(autouse=True)
-    def setup(self, backend_instance: str):
+    def setup(self, backend_instance: str, sqlite_warehouse: Engine):
         self.backend: MatchboxDBAdapter = backend_instance
+        self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
 
-    def test_properties(self, scenario: ScenarioCallable):
+    def test_properties(self):
         """Test that properties obey their protocol restrictions."""
-        with scenario(self.backend, "index"):
+        with self.scenario(self.backend, "index"):
             assert isinstance(self.backend.datasets.list(), list)
             assert isinstance(self.backend.datasets.count(), int)
             assert isinstance(self.backend.models.count(), int)
@@ -49,9 +53,9 @@ class TestMatchboxBackend:
             assert isinstance(self.backend.merges.count(), int)
             assert isinstance(self.backend.proposes.count(), int)
 
-    def test_validate_ids(self, scenario: ScenarioCallable):
+    def test_validate_ids(self):
         """Test validating data IDs."""
-        with scenario(self.backend, "dedupe") as dag:
+        with self.scenario(self.backend, "dedupe") as dag:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
@@ -66,9 +70,9 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.validate_ids(ids=[-6])
 
-    def test_validate_hashes(self, scenario: ScenarioCallable):
+    def test_validate_hashes(self):
         """Test validating data hashes."""
-        with scenario(self.backend, "dedupe") as dag:
+        with self.scenario(self.backend, "dedupe") as dag:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
@@ -86,9 +90,9 @@ class TestMatchboxBackend:
                     hashes=[HASH_FUNC(b"nonexistent").digest()]
                 )
 
-    def test_cluster_id_to_hash(self, scenario: ScenarioCallable):
+    def test_cluster_id_to_hash(self):
         """Test getting ID to Cluster hash lookup from the database."""
-        with scenario(self.backend, "dedupe") as dag:
+        with self.scenario(self.backend, "dedupe") as dag:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
@@ -106,9 +110,9 @@ class TestMatchboxBackend:
 
             assert self.backend.cluster_id_to_hash(ids=[-6]) == {-6: None}
 
-    def test_get_source(self, scenario: ScenarioCallable):
+    def test_get_source(self):
         """Test querying data from the database."""
-        with scenario(self.backend, "index") as dag:
+        with self.scenario(self.backend, "index") as dag:
             crn_testkit = dag.sources.get("crn")
 
             crn_retrieved = self.backend.get_source(crn_testkit.source.address)
@@ -122,30 +126,30 @@ class TestMatchboxBackend:
                     )
                 )
 
-    def test_get_resolution_graph(self, scenario: ScenarioCallable):
+    def test_get_resolution_graph(self):
         """Test getting the resolution graph."""
         graph = self.backend.get_resolution_graph()
         assert len(graph.nodes) == 0
         assert len(graph.edges) == 0
         assert isinstance(graph, ResolutionGraph)
 
-        with scenario(self.backend, "link"):
+        with self.scenario(self.backend, "link"):
             graph = self.backend.get_resolution_graph()
             # Nodes: 3 datasets, 3 dedupers, and 3 linkers
             # Edges: 1 per deduper, 2 per linker
             assert len(graph.nodes) == 9
             assert len(graph.edges) == 9
 
-    def test_get_model(self, scenario: ScenarioCallable):
+    def test_get_model(self):
         """Test getting a model from the database."""
-        with scenario(self.backend, "dedupe"):
+        with self.scenario(self.backend, "dedupe"):
             model = self.backend.get_model(model="naive_test.crn")
             assert isinstance(model, ModelMetadata)
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_model(model="nonexistant")
 
-    def test_delete_model(self, scenario: ScenarioCallable):
+    def test_delete_model(self):
         """
         Tests the deletion of:
 
@@ -156,7 +160,7 @@ class TestMatchboxBackend:
         * All of the above for all parent models. As every model is defined by
             its parents, deleting a model means cascading deletion to all descendants
         """
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             # Expect it to delete itself, its probabilities,
             # its parents, and their probabilities
             deduper_to_delete = "naive_test.crn"
@@ -194,9 +198,9 @@ class TestMatchboxBackend:
             assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
             assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
 
-    def test_insert_model(self, scenario: ScenarioCallable):
+    def test_insert_model(self):
         """Test that models can be inserted."""
-        with scenario(self.backend, "index") as dag:
+        with self.scenario(self.backend, "index") as dag:
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
 
@@ -248,9 +252,9 @@ class TestMatchboxBackend:
 
             assert self.backend.models.count() == models_count + 3
 
-    def test_model_results(self, scenario: ScenarioCallable):
+    def test_model_results(self):
         """Test that a model's results data can be set and retrieved."""
-        with scenario(self.backend, "dedupe"):
+        with self.scenario(self.backend, "dedupe"):
             # Retrieve
             pre_results = self.backend.get_model_results(model="naive_test.crn")
 
@@ -288,9 +292,9 @@ class TestMatchboxBackend:
             # Check difference
             assert len(pre_results) != len(post_results)
 
-    def test_model_truth(self, scenario: ScenarioCallable):
+    def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""
-        with scenario(self.backend, "dedupe"):
+        with self.scenario(self.backend, "dedupe"):
             # Retrieve
             pre_truth = self.backend.get_model_truth(model="naive_test.crn")
 
@@ -303,9 +307,9 @@ class TestMatchboxBackend:
             # Check difference
             assert pre_truth != post_truth
 
-    def test_model_ancestors(self, scenario: ScenarioCallable):
+    def test_model_ancestors(self):
         """Test that a model's ancestors can be retrieved."""
-        with scenario(self.backend, "link"):
+        with self.scenario(self.backend, "link"):
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
             linker_ancestors = self.backend.get_model_ancestors(model=linker_name)
 
@@ -321,9 +325,9 @@ class TestMatchboxBackend:
 
             assert truth_found
 
-    def test_model_ancestors_cache(self, scenario: ScenarioCallable):
+    def test_model_ancestors_cache(self):
         """Test that a model's ancestors cache can be set and retrieved."""
-        with scenario(self.backend, "link"):
+        with self.scenario(self.backend, "link"):
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
 
             # Retrieve
@@ -349,20 +353,20 @@ class TestMatchboxBackend:
             assert pre_ancestors_cache != post_ancestors_cache
             assert post_ancestors_cache == updated_ancestors_cache
 
-    def test_index(self, scenario: ScenarioCallable):
+    def test_index(self):
         """Test that indexing data works."""
         assert self.backend.data.count() == 0
 
-        with scenario(self.backend, "index") as dag:
+        with self.scenario(self.backend, "index") as dag:
             assert self.backend.data.count() == (
                 len(dag.sources["crn"].entities)
                 + len(dag.sources["cdms"].entities)
                 + len(dag.sources["duns"].entities)
             )
 
-    def test_index_new_source(self, scenario: ScenarioCallable):
+    def test_index_new_source(self):
         """Test that indexing identical works."""
-        with scenario(self.backend, "bare") as dag:
+        with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             assert self.backend.clusters.count() == 0
@@ -379,9 +383,9 @@ class TestMatchboxBackend:
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 1
 
-    def test_index_duplicate_clusters(self, scenario: ScenarioCallable):
+    def test_index_duplicate_clusters(self):
         """Test that indexing new data with duplicate hashes works."""
-        with scenario(self.backend, "bare") as dag:
+        with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             data_hashes_halved = crn_testkit.data_hashes.slice(
@@ -395,9 +399,9 @@ class TestMatchboxBackend:
             assert self.backend.data.count() == crn_testkit.data_hashes.num_rows
             assert self.backend.source_resolutions.count() == 1
 
-    def test_index_same_resolution(self, scenario: ScenarioCallable):
+    def test_index_same_resolution(self):
         """Test that indexing same-name sources in different warehouses works."""
-        with scenario(self.backend, "bare") as dag:
+        with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             crn_source_1 = crn_testkit.source
@@ -411,9 +415,9 @@ class TestMatchboxBackend:
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 1
 
-    def test_index_different_resolution_same_hashes(self, scenario: ScenarioCallable):
+    def test_index_different_resolution_same_hashes(self):
         """Test that indexing data with the same hashes but different sources works."""
-        with scenario(self.backend, "bare") as dag:
+        with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
             duns_testkit: SourceTestkit = dag.sources.get("duns")
 
@@ -423,9 +427,9 @@ class TestMatchboxBackend:
             with pytest.raises(NotImplementedError):
                 self.backend.index(duns_testkit.source, crn_testkit.data_hashes)
 
-    def test_query_only_source(self, scenario: ScenarioCallable):
+    def test_query_only_source(self):
         """Test querying data from a link point of truth."""
-        with scenario(self.backend, "index") as dag:
+        with self.scenario(self.backend, "index") as dag:
             crn_testkit = dag.sources.get("crn")
 
             df_crn_sample = self.backend.query(
@@ -441,9 +445,9 @@ class TestMatchboxBackend:
             assert df_crn_full.num_rows == crn_testkit.query.num_rows
             assert set(df_crn_full.column_names) == {"id", "source_pk"}
 
-    def test_query_with_dedupe_model(self, scenario: ScenarioCallable):
+    def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""
-        with scenario(self.backend, "dedupe") as dag:
+        with self.scenario(self.backend, "dedupe") as dag:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
@@ -461,9 +465,9 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn")
             )
 
-    def test_query_with_link_model(self, scenario: ScenarioCallable):
+    def test_query_with_link_model(self):
         """Test querying data from a link point of truth."""
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
@@ -496,9 +500,9 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn", "duns")
             )
 
-    def test_match_one_to_many(self, scenario: ScenarioCallable):
+    def test_match_one_to_many(self):
         """Test that matching data works when the target has many IDs."""
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
             linked, _ = dag.get_sources_for_model(linker_name)
             crn_testkit = dag.sources.get("crn")
@@ -525,9 +529,9 @@ class TestMatchboxBackend:
             assert res[0].source_id == source_entity.source_pks["duns"]
             assert res[0].target_id == source_entity.source_pks["crn"]
 
-    def test_match_many_to_one(self, scenario: ScenarioCallable):
+    def test_match_many_to_one(self):
         """Test that matching data works when the source has more possible IDs."""
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
             linked, _ = dag.get_sources_for_model(linker_name)
             crn_testkit = dag.sources.get("crn")
@@ -554,9 +558,9 @@ class TestMatchboxBackend:
             assert res[0].source_id == source_entity.source_pks["crn"]
             assert res[0].target_id == source_entity.source_pks["duns"]
 
-    def test_match_one_to_none(self, scenario: ScenarioCallable):
+    def test_match_one_to_none(self):
         """Test that matching data works when the target has no IDs."""
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
             linked, _ = dag.get_sources_for_model(linker_name)
             crn_testkit = dag.sources.get("crn")
@@ -583,9 +587,9 @@ class TestMatchboxBackend:
             assert res[0].source_id == source_entity.source_pks["crn"]
             assert res[0].target_id == source_entity.source_pks.get("duns", set())
 
-    def test_match_none_to_none(self, scenario: ScenarioCallable):
+    def test_match_none_to_none(self):
         """Test that matching data works when the supplied key doesn't exist."""
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
@@ -608,9 +612,9 @@ class TestMatchboxBackend:
             assert res[0].source_id == set()
             assert res[0].target_id == set()
 
-    def test_clear(self, scenario: ScenarioCallable):
+    def test_clear(self):
         """Test clearing the database."""
-        with scenario(self.backend, "dedupe"):
+        with self.scenario(self.backend, "dedupe"):
             assert self.backend.datasets.count() > 0
             assert self.backend.data.count() > 0
             assert self.backend.models.count() > 0
@@ -629,9 +633,9 @@ class TestMatchboxBackend:
             assert self.backend.merges.count() == 0
             assert self.backend.proposes.count() == 0
 
-    def test_dump_and_restore(self, scenario: ScenarioCallable):
+    def test_dump_and_restore(self):
         """Test that dumping and restoring the database works."""
-        with scenario(self.backend, "link") as dag:
+        with self.scenario(self.backend, "link") as dag:
             crn_testkit = dag.sources.get("crn")
 
             # Verify we have data

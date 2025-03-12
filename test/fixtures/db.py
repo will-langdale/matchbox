@@ -1,9 +1,8 @@
 import os
 import tempfile
 from contextlib import contextmanager
-from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Generator, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Generator, Literal
 
 import boto3
 import pyarrow as pa
@@ -35,12 +34,6 @@ TEST_ROOT = Path(__file__).resolve().parents[1]
 
 
 # Database scenario fixtures and helper functions
-
-
-ScenarioCallable: TypeAlias = Callable[
-    [MatchboxDBAdapter, Literal["index", "dedupe", "link"], int, int],
-    Generator[TestkitDAG, None, None],
-]
 
 
 def _generate_cache_key(
@@ -281,13 +274,6 @@ def setup_scenario(
     yield dag
 
     backend.clear(certain=True)
-
-
-@pytest.fixture(scope="function")
-def scenario(sqlite_warehouse: Engine) -> ScenarioCallable:
-    """Fixture that provides a TestkitDAG with appropriate database setup."""
-    _scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
-    return _scenario
 
 
 # Filesystem fixtures
