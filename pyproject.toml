@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 server = [
     "boto3>=1.35.99",
+    "ddtrace>=3.2.1",
     "fastapi[standard]>=0.115.0,<0.116.0",
     "pg-bulk-ingest>=0.0.54",
     "python-multipart>=0.0.18",
