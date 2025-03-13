@@ -76,8 +76,32 @@ class Results(BaseModel):
         if table_fields - optional_fields != expected_fields:
             raise ValueError(f"Expected {expected_fields}. \nFound {table_fields}.")
 
-        # If a process produces floats or decimals,
-        # we multiply by 100 and coerce to uint8
+        # Define the schema based on whether 'id' is present
+        has_id = "id" in table_fields
+        schema_fields = (
+            [
+                ("id", pa.uint64()),
+                ("left_id", pa.uint64()),
+                ("right_id", pa.uint64()),
+                ("probability", pa.uint8()),
+            ]
+            if has_id
+            else [
+                ("left_id", pa.uint64()),
+                ("right_id", pa.uint64()),
+                ("probability", pa.uint8()),
+            ]
+        )
+        target_schema = pa.schema(schema_fields)
+
+        # Handle empty tables
+        if value.num_rows == 0:
+            empty_arrays = [pa.array([], type=field.type) for field in target_schema]
+            return pa.Table.from_arrays(
+                empty_arrays, names=[field.name for field in target_schema]
+            )
+
+        # Process probability field if it contains floating-point or decimal values
         probability_type = value["probability"].type
         if any(
             [
@@ -92,19 +116,18 @@ class Results(BaseModel):
                 ),
             )
 
-            if value.shape[0] > 0:
-                if pc.max(probability_uint8).as_py() > 100:
-                    p_max = pc.max(value["probability"]).as_py()
-                    p_min = pc.min(value["probability"]).as_py()
-                    raise ValueError(
-                        f"Probability range misconfigured: [{p_min}, {p_max}]"
-                    )
+            # Check max value only if the table is not empty
+            max_prob = pc.max(probability_uint8)
+            if max_prob is not None and max_prob.as_py() > 100:
+                p_max = pc.max(value["probability"]).as_py()
+                p_min = pc.min(value["probability"]).as_py()
+                raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
 
-                value = value.set_column(
-                    i=value.schema.get_field_index("probability"),
-                    field_="probability",
-                    column=probability_uint8,
-                )
+            value = value.set_column(
+                i=value.schema.get_field_index("probability"),
+                field_="probability",
+                column=probability_uint8,
+            )
 
         if "id" in table_fields:
             return value.cast(
