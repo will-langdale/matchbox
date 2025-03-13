@@ -15,9 +15,31 @@ from matchbox.common.factories.entities import (
 )
 
 
-def make_cluster_entity(id: int, dataset: str, pks: list[str]) -> ClusterEntity:
-    """Helper to create a ClusterEntity with specified dataset and PKs."""
-    return ClusterEntity(id=id, source_pks=EntityReference({dataset: frozenset(pks)}))
+def make_cluster_entity(id: int, *args) -> ClusterEntity:
+    """Helper to create a ClusterEntity with specified datasets and PKs.
+
+    Args:
+        id: Entity ID
+        *args: Variable arguments in pairs of (dataset_name, pks_list)
+            e.g., "d1", ["1", "2"], "d2", ["3", "4"]
+
+    Returns:
+        ClusterEntity with the specified datasets and primary keys
+    """
+    if len(args) % 2 != 0:
+        raise ValueError("Arguments must be pairs of dataset name and PKs list")
+
+    source_pks = {}
+    for i in range(0, len(args), 2):
+        dataset = args[i]
+        pks = args[i + 1]
+        if not isinstance(dataset, str):
+            raise TypeError(f"Dataset name must be a string, got {type(dataset)}")
+        if not isinstance(pks, list):
+            raise TypeError(f"PKs must be a list, got {type(pks)}")
+        source_pks[dataset] = frozenset(pks)
+
+    return ClusterEntity(id=id, source_pks=EntityReference(source_pks))
 
 
 def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
@@ -226,219 +248,145 @@ def test_probabilities_to_results_entities(
         assert any(input_entity in output_entity for output_entity in result)
 
 
+def assert_deep_approx_equal(got: float | dict | list, want: float | dict | list):
+    """Compare nested structures with approximate equality for floats."""
+    # Handle float comparison
+    if isinstance(want, float):
+        assert got == pytest.approx(want, rel=1e-2)
+        return
+
+    # Handle dictionary comparison
+    if isinstance(want, dict):
+        assert isinstance(got, dict)
+        assert set(want.keys()) <= set(got.keys())  # All expected keys must exist
+        for k, v in want.items():
+            assert_deep_approx_equal(got[k], v)
+        return
+
+    # Handle list comparison
+    if isinstance(want, list):
+        assert isinstance(got, list)
+        assert len(got) == len(want)
+
+        # Sort lists of dictionaries by ID fields for easier comparison
+        if want and all(isinstance(x, dict) for x in want + got):
+            for id_key in ["entity_id", "expected_entity_id", "actual_entity_id"]:
+                if all(id_key in x for x in want + got):
+                    got = sorted(got, key=lambda x: x[id_key])
+                    want = sorted(want, key=lambda x: x[id_key])
+                    break
+
+        for w, g in zip(want, got, strict=True):
+            assert_deep_approx_equal(g, w)
+        return
+
+    # Direct comparison for all other types
+    assert got == want
+
+
 @pytest.mark.parametrize(
-    ("expected", "actual", "verbose", "want_identical", "want_result"),
+    ("expected", "actual", "want_identical", "want_result"),
     [
-        # Identical sets
         pytest.param(
             [make_cluster_entity(1, "d1", ["1", "2"])],
-            [make_cluster_entity(1, "d1", ["1", "2"])],
-            False,
+            [make_cluster_entity(2, "d1", ["1", "2"])],
             True,
             {},
             id="identical_sets",
         ),
-        # Completely missing entity
-        pytest.param(
-            [make_cluster_entity(1, "d1", ["1", "2"])],
-            [],
-            True,
-            False,
-            {
-                "mean_similarity": 0.0,
-                "partial": [],
-                "missing": [{"id": 1, "source_pks": {"d1": frozenset(["1", "2"])}}],
-                "extra": [],
-            },
-            id="completely_missing_entity",
-        ),
-        # Extra entity
-        pytest.param(
-            [],
-            [make_cluster_entity(2, "d1", ["1", "2"])],
-            True,
-            False,
-            {
-                "mean_similarity": 0.0,
-                "partial": [],
-                "missing": [],
-                "extra": [{"id": 2, "source_pks": {"d1": frozenset(["1", "2"])}}],
-            },
-            id="extra_entity",
-        ),
-        # Partial match
-        pytest.param(
-            [make_cluster_entity(1, "d1", ["1", "2", "3"])],
-            [make_cluster_entity(2, "d1", ["1", "2", "4"])],
-            True,
-            False,
-            {
-                # Jaccard similarity: |intersection| / |union| = 2 / 4 = 0.5
-                "mean_similarity": 0.5,
-                "partial": [
-                    {
-                        "missing_entity_id": 1,
-                        "matches": [
-                            {
-                                "actual_entity_id": 2,
-                                "similarity": 0.5,  # 2 common keys out of 4 total
-                                "missing_pks": {"d1": frozenset(["3"])},
-                                "extra_pks": {"d1": frozenset(["4"])},
-                            }
-                        ],
-                    }
-                ],
-                "missing": [],
-                "extra": [],
-            },
-            id="partial_match",
-        ),
-        # Complex scenario - partial match, missing, and extra
         pytest.param(
             [
                 make_cluster_entity(1, "d1", ["1", "2"]),
                 make_cluster_entity(2, "d1", ["3", "4"]),
-                make_cluster_entity(3, "d1", ["5", "6"]),
             ],
-            [
-                make_cluster_entity(4, "d1", ["1", "7"]),
-                make_cluster_entity(5, "d1", ["8", "9"]),
-            ],
-            True,
+            [make_cluster_entity(3, "d1", ["2", "3"])],
             False,
             {
-                # Mean of best matches for all missing and extra entities:
-                # Best matches: [1/3, 0, 0, 1/3, 0] = 2/15 = 0.1333...
-                "mean_similarity": pytest.approx(2 / 15, rel=1e-2),
-                "partial": [
-                    {
-                        "missing_entity_id": 1,
-                        "matches": [
-                            {
-                                "actual_entity_id": 4,
-                                "similarity": 1 / 3,  # 1 common key out of 3 total
-                                "missing_pks": {"d1": frozenset(["2"])},
-                                "extra_pks": {"d1": frozenset(["7"])},
-                            }
-                        ],
-                    }
-                ],
-                "missing": [
-                    {"id": 2, "source_pks": {"d1": frozenset(["3", "4"])}},
-                    {"id": 3, "source_pks": {"d1": frozenset(["5", "6"])}},
-                ],
-                "extra": [{"id": 5, "source_pks": {"d1": frozenset(["8", "9"])}}],
+                "perfect": 0,
+                "subset": 0,
+                "superset": 0,
+                "wrong": 1,
+                "invalid": 0,
             },
-            id="complex_scenario",
+            id="completely_different_sets",
         ),
-        # Non-verbose mode (only shows mean_similarity)
         pytest.param(
             [make_cluster_entity(1, "d1", ["1", "2", "3"])],
-            [make_cluster_entity(2, "d1", ["1", "2", "4"])],
-            False,
+            [make_cluster_entity(2, "d1", ["1", "2"])],
             False,
             {
-                # Jaccard similarity: |intersection| / |union| = 2 / 4 = 0.5
-                "mean_similarity": 0.5,
-                "partial": [],
-                "missing": [],
-                "extra": [],
+                "perfect": 0,
+                "subset": 1,
+                "superset": 0,
+                "wrong": 0,
+                "invalid": 0,
             },
-            id="non_verbose_mode",
+            id="subset_match",
         ),
-        # Mixed identical and different entities
         pytest.param(
             [
-                make_cluster_entity(
-                    1, "d1", ["1", "2"]
-                ),  # Identical entity in both sets
-                make_cluster_entity(2, "d1", ["3", "4"]),  # Will be partially matched
+                make_cluster_entity(1, "d1", ["1", "2"]),
+                make_cluster_entity(2, "d1", ["3"]),
             ],
-            [
-                make_cluster_entity(1, "d1", ["1", "2"]),  # Same as in expected
-                make_cluster_entity(3, "d1", ["3", "5"]),  # Partial match with entity 2
-            ],
-            True,
+            [make_cluster_entity(3, "d1", ["1", "2", "3"])],
             False,
             {
-                # Mean similarity combines perfect (1.0) and two partial (1/3) matches
-                # Calculated as (1.0 + 1/3 + 1/3) / 3 = (5/9)
-                "mean_similarity": pytest.approx(5 / 9, rel=1e-2),
-                "partial": [
-                    {
-                        "missing_entity_id": 2,
-                        "matches": [
-                            {
-                                "actual_entity_id": 3,
-                                "similarity": 1 / 3,  # 1 common key out of 3 total
-                                "missing_pks": {"d1": frozenset(["4"])},
-                                "extra_pks": {"d1": frozenset(["5"])},
-                            }
-                        ],
-                    }
-                ],
-                "missing": [],
-                "extra": [],
+                "perfect": 0,
+                "subset": 0,
+                "superset": 1,
+                "wrong": 0,
+                "invalid": 0,
             },
-            id="mixed_identical_and_different",
+            id="superset_match",
+        ),
+        pytest.param(
+            [make_cluster_entity(1, "d1", ["1", "2"])],
+            [make_cluster_entity(2, "d1", ["1", "2", "3", "4"])],
+            False,
+            {
+                "perfect": 0,
+                "subset": 0,
+                "superset": 0,
+                "wrong": 0,
+                "invalid": 1,
+            },
+            id="invalid_entity",
+        ),
+        pytest.param(
+            [
+                make_cluster_entity(1, "d1", ["1", "2"]),
+                make_cluster_entity(2, "d1", ["3", "4"]),
+            ],
+            [
+                make_cluster_entity(3, "d1", ["1", "2"]),  # perfect match
+                make_cluster_entity(4, "d1", ["3"]),  # subset
+                make_cluster_entity(4, "d1", ["1", "2", "3"]),  # superset
+                make_cluster_entity(5, "d1", ["2", "3"]),  # wrong
+                make_cluster_entity(6, "d1", ["7", "8", "9"]),  # invalid
+            ],
+            False,
+            {
+                "perfect": 1,
+                "subset": 1,
+                "superset": 1,
+                "wrong": 1,
+                "invalid": 1,
+            },
+            id="mixed_scenario",
         ),
     ],
 )
 def test_diff_results(
     expected: list[ClusterEntity],
     actual: list[ClusterEntity],
-    verbose: bool,
     want_identical: bool,
     want_result: dict[str, Any],
 ):
     """Test diff_results function handles various scenarios correctly."""
-    got_identical, got_result = diff_results(expected, actual, verbose)
+    got_identical, got_result = diff_results(expected, actual)
 
     assert got_identical == want_identical
-
-    if got_identical:
-        assert got_result == {}
-    else:
-        # Handle complex nested dictionary comparison
-        assert got_result["mean_similarity"] == pytest.approx(
-            want_result["mean_similarity"], rel=1e-2
-        )
-
-        # Test partial matches
-        assert len(got_result["partial"]) == len(want_result["partial"])
-        for got_partial, want_partial in zip(
-            got_result["partial"], want_result["partial"], strict=True
-        ):
-            assert got_partial["missing_entity_id"] == want_partial["missing_entity_id"]
-
-            for got_match, want_match in zip(
-                got_partial["matches"], want_partial["matches"], strict=True
-            ):
-                assert got_match["actual_entity_id"] == want_match["actual_entity_id"]
-                assert got_match["similarity"] == pytest.approx(
-                    want_match["similarity"], rel=1e-2
-                )
-                assert got_match["missing_pks"] == want_match["missing_pks"]
-                assert got_match["extra_pks"] == want_match["extra_pks"]
-
-        # Test missing and extra entities
-        assert len(got_result["missing"]) == len(want_result["missing"])
-        for got_missing, want_missing in zip(
-            sorted(got_result["missing"], key=lambda x: x["id"]),
-            sorted(want_result["missing"], key=lambda x: x["id"]),
-            strict=True,
-        ):
-            assert got_missing["id"] == want_missing["id"]
-            assert got_missing["source_pks"] == want_missing["source_pks"]
-
-        assert len(got_result["extra"]) == len(want_result["extra"])
-        for got_extra, want_extra in zip(
-            sorted(got_result["extra"], key=lambda x: x["id"]),
-            sorted(want_result["extra"], key=lambda x: x["id"]),
-            strict=True,
-        ):
-            assert got_extra["id"] == want_extra["id"]
-            assert got_extra["source_pks"] == want_extra["source_pks"]
+    assert dict(got_result) == want_result
 
 
 def test_source_to_results_conversion():

@@ -64,7 +64,7 @@ class Results(BaseModel):
     def check_probabilities(cls, value: pa.Table | DataFrame) -> pa.Table:
         """Verifies the probabilities table contains the expected fields."""
         if isinstance(value, DataFrame):
-            value = pa.Table.from_pandas(value)
+            value = pa.Table.from_pandas(value, preserve_index=False)
 
         if not isinstance(value, pa.Table):
             raise ValueError("Expected a pandas DataFrame or pyarrow Table.")
@@ -129,27 +129,7 @@ class Results(BaseModel):
                 column=probability_uint8,
             )
 
-        if "id" in table_fields:
-            return value.cast(
-                pa.schema(
-                    [
-                        ("id", pa.uint64()),
-                        ("left_id", pa.uint64()),
-                        ("right_id", pa.uint64()),
-                        ("probability", pa.uint8()),
-                    ]
-                )
-            )
-
-        return value.cast(
-            pa.schema(
-                [
-                    ("left_id", pa.uint64()),
-                    ("right_id", pa.uint64()),
-                    ("probability", pa.uint8()),
-                ]
-            )
-        )
+        return value.cast(target_schema)
 
     def _merge_with_source_data(
         self,

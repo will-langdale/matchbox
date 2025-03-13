@@ -184,7 +184,6 @@ identical, report = linked_testkit.diff_results(
     right_clusters=right_deduped.entities,  # Output of right deduper -- left input to your methodology
     sources=("crn", "cdms"),
     threshold=0,
-    verbose=True,
 )
 
 assert identical, report

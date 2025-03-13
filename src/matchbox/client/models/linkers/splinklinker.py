@@ -2,7 +2,7 @@
 
 import ast
 import inspect
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Type
 
 import pyarrow as pa
 from pandas import DataFrame
@@ -19,7 +19,7 @@ class SplinkLinkerFunction(BaseModel):
     """A method of splink.Linker.training used to train the linker."""
 
     function: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
 
     @model_validator(mode="after")
     def validate_function_and_arguments(self) -> "SplinkLinkerFunction":
@@ -57,7 +57,7 @@ class SplinkSettings(LinkerSettings):
         """,
     )
 
-    linker_training_functions: List[SplinkLinkerFunction] = Field(
+    linker_training_functions: list[SplinkLinkerFunction] = Field(
         description="""
             A list of dictionaries where keys are the names of methods for
             splink.Linker.training and values are dictionaries encoding the arguments of
@@ -118,7 +118,7 @@ class SplinkSettings(LinkerSettings):
                 ... )         
         """
     )
-    threshold: Optional[float] = Field(
+    threshold: float | None = Field(
         default=None,
         description="""
             The probability above which matches will be kept.
@@ -167,7 +167,7 @@ class SplinkLinker(Linker):
         cls,
         left_id: str,
         right_id: str,
-        linker_training_functions: List[Dict[str, Any]],
+        linker_training_functions: list[dict[str, Any]],
         linker_settings: SettingsCreator,
         threshold: float,
     ) -> "SplinkLinker":
