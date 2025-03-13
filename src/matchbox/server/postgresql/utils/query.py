@@ -76,7 +76,7 @@ def _resolve_thresholds(
             resolved_thresholds[resolution_id] = default_truth
         elif isinstance(threshold, int):
             resolved_thresholds[resolution_id] = (
-                float(threshold) / 100
+                threshold
                 if resolution_id == resolution.resolution_id
                 else default_truth
             )
