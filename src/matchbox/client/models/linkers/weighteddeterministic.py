@@ -112,7 +112,7 @@ class WeightedDeterministicLinker(Linker):
                     select distinct on (list_sort([raw.left_id, raw.right_id]))
                         raw.left_id,
                         raw.right_id,
-                        1 * {weighted_comparison.weight} as probability
+                        1.0 * {weighted_comparison.weight} as probability
                     from (
                         select
                             l.{self.settings.left_id} as left_id,
@@ -133,8 +133,7 @@ class WeightedDeterministicLinker(Linker):
             select
                 matches.left_id,
                 matches.right_id,
-                cast((sum(matches.probability) / {total_weight} ) * 100 as integer) 
-                    as probability
+                sum(matches.probability) / {total_weight} as probability
             from
                 ({match_subquery}) matches
             group by
@@ -142,7 +141,7 @@ class WeightedDeterministicLinker(Linker):
                 matches.right_id
             having
                 sum(matches.probability) / 
-                    {total_weight} >= {self.settings.threshold * 100};
+                    {total_weight} >= {self.settings.threshold};
         """
         df_arrow = duckdb.sql(sql).arrow()
         res = df_arrow.to_pandas(

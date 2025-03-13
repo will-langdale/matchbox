@@ -76,8 +76,15 @@ class Results(BaseModel):
         if table_fields - optional_fields != expected_fields:
             raise ValueError(f"Expected {expected_fields}. \nFound {table_fields}.")
 
-        # If a process produces floats, we multiply by 100 and coerce to uint8
-        if pa.types.is_floating(value["probability"].type):
+        # If a process produces floats or decimals,
+        # we multiply by 100 and coerce to uint8
+        probability_type = value["probability"].type
+        if any(
+            [
+                pa.types.is_floating(probability_type),
+                pa.types.is_decimal(probability_type),
+            ]
+        ):
             probability_uint8 = pc.cast(
                 pc.multiply(value["probability"], 100),
                 options=pc.CastOptions(
@@ -85,16 +92,19 @@ class Results(BaseModel):
                 ),
             )
 
-            if pc.max(probability_uint8).as_py() > 100:
-                p_max = pc.max(value["probability"]).as_py()
-                p_min = pc.min(value["probability"]).as_py()
-                raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
+            if value.shape[0] > 0:
+                if pc.max(probability_uint8).as_py() > 100:
+                    p_max = pc.max(value["probability"]).as_py()
+                    p_min = pc.min(value["probability"]).as_py()
+                    raise ValueError(
+                        f"Probability range misconfigured: [{p_min}, {p_max}]"
+                    )
 
-            value = value.set_column(
-                i=value.schema.get_field_index("probability"),
-                field_="probability",
-                column=probability_uint8,
-            )
+                value = value.set_column(
+                    i=value.schema.get_field_index("probability"),
+                    field_="probability",
+                    column=probability_uint8,
+                )
 
         if "id" in table_fields:
             return value.cast(

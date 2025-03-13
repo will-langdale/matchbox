@@ -63,7 +63,7 @@ class DeterministicLinker(Linker):
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
                 raw.right_id,
-                100 as probability
+                1.0 as probability
             from (
                 select
                     l.{self.settings.left_id} as left_id,
