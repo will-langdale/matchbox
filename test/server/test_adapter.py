@@ -459,7 +459,9 @@ class TestMatchboxBackend:
             assert df_crn.num_rows == crn_testkit.query.num_rows
             assert set(df_crn.column_names) == {"id", "source_pk"}
 
-            linked, _ = dag.get_sources_for_model("naive_test.crn")
+            sources_dict = dag.get_sources_for_model("naive_test.crn")
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
 
             assert pc.count_distinct(df_crn["id"]).as_py() == len(
                 linked.true_entity_subset("crn")
@@ -490,7 +492,9 @@ class TestMatchboxBackend:
             assert df_duns.num_rows == duns_testkit.query.num_rows
             assert set(df_duns.column_names) == {"id", "source_pk"}
 
-            linked, _ = dag.get_sources_for_model(linker_name)
+            sources_dict = dag.get_sources_for_model(linker_name)
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
 
             all_ids = pa.concat_arrays(
                 [df_crn["id"].combine_chunks(), df_duns["id"].combine_chunks()]
@@ -504,9 +508,12 @@ class TestMatchboxBackend:
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            linked, _ = dag.get_sources_for_model(linker_name)
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
+
+            sources_dict = dag.get_sources_for_model(linker_name)
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
 
             # A random one:many entity
             source_entity: SourceEntity = linked.find_entities(
@@ -533,9 +540,12 @@ class TestMatchboxBackend:
         """Test that matching data works when the source has more possible IDs."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            linked, _ = dag.get_sources_for_model(linker_name)
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
+
+            sources_dict = dag.get_sources_for_model(linker_name)
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
 
             # A random many:one entity
             source_entity: SourceEntity = linked.find_entities(
@@ -562,9 +572,12 @@ class TestMatchboxBackend:
         """Test that matching data works when the target has no IDs."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            linked, _ = dag.get_sources_for_model(linker_name)
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
+
+            sources_dict = dag.get_sources_for_model(linker_name)
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
 
             # A random one:none entity
             source_entity: SourceEntity = linked.find_entities(

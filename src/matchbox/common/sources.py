@@ -10,7 +10,6 @@ from pydantic import (
     Field,
     PlainSerializer,
     PlainValidator,
-    PrivateAttr,
     WithJsonSchema,
     model_validator,
 )
@@ -111,7 +110,7 @@ class Source(BaseModel):
     db_pk: str
     columns: list[SourceColumn] = []
 
-    _engine: Engine | None = PrivateAttr(default=None)
+    _engine: Engine | None = None
 
     @property
     def engine(self) -> Engine | None:

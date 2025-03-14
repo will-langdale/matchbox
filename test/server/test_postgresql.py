@@ -92,7 +92,10 @@ def test_benchmark_query_generation(
     with setup_scenario(matchbox_postgres, "link", warehouse=postgres_warehouse) as dag:
         engine = MBDB.get_engine()
 
-        linked, _ = dag.get_sources_for_model(point_of_truth)
+        sources_dict = dag.get_sources_for_model(point_of_truth)
+        assert len(sources_dict) == 1
+        linked = dag.linked[next(iter(sources_dict))]
+
         true_entities = linked.true_entity_subset(source)
         true_pks = set(
             itertools.chain.from_iterable(
@@ -125,9 +128,11 @@ def test_benchmark_match_query_generation(
         engine = MBDB.get_engine()
 
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
-        linked, _ = dag.get_sources_for_model(linker_name)
-        # crn_testkit = dag.sources.get("crn")
         duns_testkit = dag.sources.get("duns")
+
+        sources_dict = dag.get_sources_for_model(linker_name)
+        assert len(sources_dict) == 1
+        linked = dag.linked[next(iter(sources_dict))]
 
         # A random one:many entity
         source_entity: SourceEntity = linked.find_entities(
