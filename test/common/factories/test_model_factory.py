@@ -14,7 +14,7 @@ from matchbox.common.factories.sources import linked_sources_factory, source_fac
 def test_model_factory_entity_preservation():
     """Test that model_factory preserves source_pks with incomplete probabilities."""
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
 
     # Create first model
     first_model = model_factory(
@@ -61,7 +61,7 @@ def test_model_type_creation(
     """Test that model creation and core operations work correctly for each type."""
     # Create our source objects from the string parameters
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
     half_true_sources = all_true_sources[: len(all_true_sources) // 2]
 
     if left_testkit == "source":
@@ -175,7 +175,7 @@ def test_model_pipeline_with_dummy_methodology(
     3. This validation works across different pipeline positions and configurations
     """
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
 
     # Create and validate perfect model
     if model_type == "deduper":
@@ -463,7 +463,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     """Test model factory creation using sources."""
     # Create source data
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
 
     # Get sources based on config
     left_testkit = linked.sources[source_config["left_name"]]
@@ -534,7 +534,7 @@ def test_query_to_model_factory_validation():
     # Create test resources using existing factory
     linked = linked_sources_factory()
     left_testkit = linked.sources["crn"]
-    true_entities = tuple(linked.true_entities.values())
+    true_entities = tuple(linked.true_entities)
 
     # Extract query and source_pks for our function
     left_query = left_testkit.query
@@ -598,7 +598,7 @@ def test_query_to_model_factory_creation(
     """Test basic model creation from queries."""
     # Create linked sources with factory
     linked = linked_sources_factory()
-    true_entities = tuple(linked.true_entities.values())
+    true_entities = tuple(linked.true_entities)
 
     # Get left source
     left_testkit = linked.sources["crn"]
@@ -655,7 +655,7 @@ def test_query_to_model_factory_seed_behavior(
     """Test that query_to_model_factory handles seeds correctly for reproducibility."""
     # Create linked sources with factory
     linked = linked_sources_factory()
-    true_entities = tuple(linked.true_entities.values())
+    true_entities = tuple(linked.true_entities)
 
     # Get source
     left_testkit = linked.sources["crn"]
@@ -694,7 +694,7 @@ def test_query_to_model_factory_compare_with_model_factory():
     """Test that query_to_model_factory produces equivalent results to model_factory."""
     # Create linked sources with factory
     linked = linked_sources_factory(seed=42)
-    true_entities = tuple(linked.true_entities.values())
+    true_entities = tuple(linked.true_entities)
 
     # Create model using model_factory
     standard_model = model_factory(

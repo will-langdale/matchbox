@@ -788,7 +788,7 @@ def model_factory(
             right_query = linked.sources["cdms"].query
             right_entities = linked.sources["cdms"].entities
 
-        dummy_true_entities = tuple(linked.true_entities.values())
+        dummy_true_entities = tuple(linked.true_entities)
         model_type = resolved_model_type
 
     # ==== Model creation ====

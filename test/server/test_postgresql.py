@@ -136,7 +136,7 @@ def test_benchmark_match_query_generation(
 
         # A random one:many entity
         source_entity: SourceEntity = linked.find_entities(
-            min_appearances={"crn": 2},
+            min_appearances={"crn": 2, "duns": 1},
             max_appearances={"duns": 1},
         )[0]
 

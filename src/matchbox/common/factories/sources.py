@@ -134,7 +134,7 @@ class LinkedSourcesTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    true_entities: dict[int, SourceEntity] = Field(default_factory=dict)
+    true_entities: set[SourceEntity] = Field(default_factory=set)
     sources: dict[str, SourceTestkit]
 
     def find_entities(
@@ -143,7 +143,7 @@ class LinkedSourcesTestkit(BaseModel):
         max_appearances: dict[str, int] | None = None,
     ) -> list[SourceEntity]:
         """Find entities matching appearance criteria."""
-        result = list(self.true_entities.values())
+        result = list(self.true_entities)
 
         def _meets_criteria(
             entity: SourceEntity, criteria: dict[str, int], compare: Callable
@@ -172,7 +172,7 @@ class LinkedSourcesTestkit(BaseModel):
     def true_entity_subset(self, *sources: str) -> list[ClusterEntity]:
         """Return a subset of true entities that appear in the given sources."""
         cluster_entities = [
-            entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
+            entity.to_cluster_entity(*sources) for entity in self.true_entities
         ]
         return [entity for entity in cluster_entities if entity is not None]
 
@@ -599,8 +599,9 @@ def linked_sources_factory(
     )
 
     # Initialize LinkedSourcesTestkit
+    true_entity_lookup = {entity.id: entity for entity in all_entities}
     linked = LinkedSourcesTestkit(
-        true_entities={entity.id: entity for entity in all_entities},
+        true_entities=all_entities,
         sources={},
     )
 
@@ -647,7 +648,7 @@ def linked_sources_factory(
 
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
-            entity = linked.true_entities[entity_id]
+            entity = true_entity_lookup[entity_id]
             entity.add_source_reference(config.full_name, pks)
 
     return linked

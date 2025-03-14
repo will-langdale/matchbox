@@ -148,7 +148,7 @@ def test_testkit_dag_model_chain(
     dag.add_source(standalone)
 
     linked_key = f"linked_{'_'.join(sorted(linked.sources.keys()))}"
-    all_true_sources = tuple(linked.true_entities.values())
+    all_true_sources = tuple(linked.true_entities)
     models = {}
 
     # Build model chain
@@ -239,12 +239,12 @@ def test_testkit_dag_multiple_linked_sources():
     # Create and add models using sources from each linked testkit
     model1 = model_factory(
         left_testkit=linked1.sources["foo1"],
-        true_entities=tuple(linked1.true_entities.values()),
+        true_entities=tuple(linked1.true_entities),
         seed=42,
     )
     model2 = model_factory(
         left_testkit=linked2.sources["bar1"],
-        true_entities=tuple(linked2.true_entities.values()),
+        true_entities=tuple(linked2.true_entities),
         seed=43,
     )
     dag.add_model(model1)
@@ -264,9 +264,7 @@ def test_testkit_dag_multiple_linked_sources():
     model3 = model_factory(
         left_testkit=linked1.sources["foo1"],
         right_testkit=linked2.sources["bar1"],
-        true_entities=tuple(
-            list(linked1.true_entities.values()) + list(linked2.true_entities.values())
-        ),
+        true_entities=tuple(list(linked1.true_entities) + list(linked2.true_entities)),
         seed=44,
     )
     dag.add_model(model3)
@@ -281,7 +279,7 @@ def test_testkit_dag_multiple_linked_sources():
     model4 = model_factory(
         left_testkit=linked1.sources["foo1"],
         right_testkit=linked1.sources["foo2"],
-        true_entities=tuple(linked1.true_entities.values()),
+        true_entities=tuple(linked1.true_entities),
         seed=45,
     )
     dag.add_model(model4)
@@ -301,13 +299,13 @@ def test_testkit_dag_out_of_order_models():
     model1 = model_factory(
         name="base_model",
         left_testkit=linked.sources["crn"],
-        true_entities=tuple(linked.true_entities.values()),
+        true_entities=tuple(linked.true_entities),
     )
 
     model2 = model_factory(
         name="dependent_model",
         left_testkit=model1,  # This creates a dependency on model1
-        true_entities=tuple(linked.true_entities.values()),
+        true_entities=tuple(linked.true_entities),
     )
 
     # Add model2 out of order

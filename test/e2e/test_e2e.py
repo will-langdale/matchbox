@@ -149,7 +149,7 @@ class TestE2EAnalyticalUser:
         """
         # === SETUP PHASE ===
         # Get all sources and true entities for later verification
-        all_true_entities = list(self.linked_testkit.true_entities.values())
+        all_true_entities = list(self.linked_testkit.true_entities)
 
         # Basic validation of our test data
         assert len(self.linked_testkit.sources) == 3, "Expected 3 sources"
@@ -501,7 +501,7 @@ class TestE2EAnalyticalUser:
 
         true_entities = {
             entity.to_cluster_entity(crn_source, duns_source, cdms_source)
-            for entity in self.linked_testkit.true_entities.values()
+            for entity in self.linked_testkit.true_entities
             if entity.to_cluster_entity(crn_source, duns_source, cdms_source)
             is not None
         }

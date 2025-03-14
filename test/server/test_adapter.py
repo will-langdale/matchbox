@@ -517,7 +517,7 @@ class TestMatchboxBackend:
 
             # A random one:many entity
             source_entity: SourceEntity = linked.find_entities(
-                min_appearances={"crn": 2},
+                min_appearances={"crn": 2, "duns": 1},
                 max_appearances={"duns": 1},
             )[0]
 
@@ -549,7 +549,7 @@ class TestMatchboxBackend:
 
             # A random many:one entity
             source_entity: SourceEntity = linked.find_entities(
-                min_appearances={"crn": 2},
+                min_appearances={"crn": 2, "duns": 1},
                 max_appearances={"duns": 1},
             )[0]
 
