@@ -23,7 +23,7 @@ class StepInput(BaseModel):
     origin: DagNode
     select: dict[str, list[str]]
     cleaners: dict[str, dict[str, Any]] = {}
-    threshold: int | None = None
+    threshold: float | None = None
 
     @property
     def name(self):
