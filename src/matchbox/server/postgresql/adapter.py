@@ -55,7 +55,7 @@ else:
 
 
 class FilteredClusters(BaseModel):
-    """Wrapper class for filtered cluster queries"""
+    """Wrapper class for filtered cluster queries."""
 
     has_dataset: bool | None = None
 
@@ -71,7 +71,7 @@ class FilteredClusters(BaseModel):
 
 
 class FilteredProbabilities(BaseModel):
-    """Wrapper class for filtered probability queries"""
+    """Wrapper class for filtered probability queries."""
 
     over_truth: bool = False
 
@@ -92,7 +92,7 @@ class FilteredProbabilities(BaseModel):
 
 
 class FilteredResolutions(BaseModel):
-    """Wrapper class for filtered resolution queries"""
+    """Wrapper class for filtered resolution queries."""
 
     datasets: bool = False
     humans: bool = False
@@ -502,6 +502,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Updates the cached ancestor thresholds.
 
         Args:
+            model: The name of the model to update
             ancestors_cache: List of ModelAncestor objects mapping model names to
                 their truth thresholds
         """
@@ -557,6 +558,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Delete a model from the database.
 
         Args:
+            model: The name of the model to delete.
             certain: Whether to delete the model without confirmation.
         """
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())

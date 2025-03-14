@@ -81,7 +81,7 @@ select = [
     "F",
     "I",
     "B",
-    # "D"
+    "D"
 ]
 ignore = []
 fixable = ["ALL"]
@@ -92,6 +92,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
+"**/matchbox/server/**/*.py" = ["D1"]
 "**/{test,docs}/*" = ["D"]
 
 [tool.ruff.format]

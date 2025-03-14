@@ -69,7 +69,6 @@ class MatchboxDatastoreSettings(BaseSettings):
 
         Creates S3 buckets if they don't exist.
         """
-
         kwargs = {
             "endpoint_url": f"http://{self.host}:{self.port}"
             if self.host and self.port

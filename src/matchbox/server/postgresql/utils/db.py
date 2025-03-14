@@ -125,6 +125,7 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
     """Restores the database from a snapshot.
 
     Args:
+        engine: The database engine.
         snapshot: A MatchboxSnapshot object of type "postgres" with the
             database's state
         batch_size: The number of records to insert in each batch

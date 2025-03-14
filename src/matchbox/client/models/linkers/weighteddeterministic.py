@@ -36,6 +36,7 @@ class WeightedComparison(BaseModel):
     @field_validator("comparison")
     @classmethod
     def validate_comparison(cls, v: str) -> str:
+        """Validate the comparison string."""
         comp_val = comparison(v)
         return comp_val
 
@@ -72,6 +73,8 @@ class WeightedDeterministicSettings(LinkerSettings):
 
 
 class WeightedDeterministicLinker(Linker):
+    """A deterministic linker that applies different weights to field comparisons."""
+
     settings: WeightedDeterministicSettings
 
     _id_dtype_l: Type = None
@@ -85,6 +88,7 @@ class WeightedDeterministicLinker(Linker):
         weighted_comparisons: list[dict[str, Any]],
         threshold: float,
     ) -> "WeightedDeterministicLinker":
+        """Create a WeightedDeterministicLinker from a settings dictionary."""
         settings = WeightedDeterministicSettings(
             left_id=left_id,
             right_id=right_id,
@@ -98,9 +102,11 @@ class WeightedDeterministicLinker(Linker):
         return cls(settings=settings)
 
     def prepare(self, left: DataFrame, right: DataFrame) -> None:
+        """Prepare the linker for linking."""
         pass
 
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+        """Link the left and right dataframes."""
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 

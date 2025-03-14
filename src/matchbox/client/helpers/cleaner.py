@@ -19,7 +19,7 @@ def cleaner(function: Callable, arguments: Dict) -> Dict[str, Dict[str, Any]]:
 
 
 def cleaners(*cleaner: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Combine multiple cleaners in a single object to pass to `process()`
+    """Combine multiple cleaners in a single object to pass to `process()`.
 
     Args:
         cleaner: Output of the `cleaner()` function

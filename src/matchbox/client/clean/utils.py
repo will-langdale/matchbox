@@ -32,13 +32,13 @@ ABBREVIATIONS = {"co": "company", "ltd": "limited"}
 
 
 def cleaning_function(*functions: Callable) -> Callable:
-    """Takes a list of basic cleaning functions appropriate for a select
-    statement and add them together into a full cleaning function for use in
-    a linker's _clean_data() method. Runs the cleaning in duckdb.
+    """Takes a list of basic cleaning functions and composes them into a callable.
 
-    Only for use with cleaning methods that take a single column as their
-    argument. Consider using functools.partial to coerce functions that need
-    arguments into this shape, if you want.
+    Functions must be appropriate for a select statement.
+
+    Only for use with cleaning methods that take a single column as their argument.
+    Consider using functools.partial to coerce functions that need arguments into
+    this shape.
 
     Arguments:
         functions: a list of functions appropriate for a select statement.
@@ -76,6 +76,7 @@ def alias(function: Callable, alias: str) -> Callable:
 
     Arguments:
         function: an outut from a cleaning_function function
+        alias: the new column name to use
     """
 
     def cleaning_method(df: DataFrame, column: str) -> DataFrame:
@@ -100,9 +101,10 @@ def alias(function: Callable, alias: str) -> Callable:
 
 
 def unnest_renest(function: Callable) -> Callable:
-    """Takes a cleaning function and adds unnesting and renesting either side
-    of it. Useful for applying the same function to an array where there are
-    sub-functions that also use arrays, blocking list_transform.
+    """Takes a cleaning function and adds unnesting and renesting either side of it.
+
+    Useful for applying the same function to an array where there are sub-functions
+    that also use arrays, blocking list_transform.
 
     Arguments:
         function: an outut from a cleaning_function function

@@ -124,8 +124,7 @@ class MetadataStore:
 async def heartbeat(
     metadata_store: MetadataStore, upload_id: str, interval_seconds: int = 300
 ):
-    """
-    Context manager that updates status with a heartbeat while the main operation runs.
+    """Context manager that updates status with a heartbeat.
 
     Args:
         metadata_store: Store for updating status

@@ -67,7 +67,7 @@ app = FastAPI(
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request, exc):
-    """Overwrite the default JSON schema for an `HTTPException`"""
+    """Overwrite the default JSON schema for an `HTTPException`."""
     return JSONResponse(content=exc.detail, status_code=exc.status_code)
 
 
