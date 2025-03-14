@@ -49,11 +49,11 @@ class WeightedDeterministicSettings(LinkerSettings):
         ...     left_id: "hash",
         ...     right_id: "hash",
         ...     weighted_comparisons: [
-        ...         ("l.company_name = r.company_name", .7),
-        ...         ("l.postcode = r.postcode", .7),
-        ...         ("l.company_id = r.company_id", 1)
+        ...         ("l.company_name = r.company_name", 0.7),
+        ...         ("l.postcode = r.postcode", 0.7),
+        ...         ("l.company_id = r.company_id", 1),
         ...     ],
-        ...     threshold: 0.8
+        ...     threshold: 0.8,
         ... }
     """
 
@@ -110,8 +110,8 @@ class WeightedDeterministicLinker(Linker):
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
-        left_df = left.copy()  # NoQA: F841
-        right_df = right.copy()  # NoQA: F841
+        left_df = left.copy()  # noqa: F841
+        right_df = right.copy()  # noqa: F841
 
         match_subquery = []
         weights = []

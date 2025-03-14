@@ -1,3 +1,5 @@
+"""Generate tables for benchmarking PostgreSQL backend."""
+
 from itertools import chain
 from pathlib import Path
 from typing import Iterable

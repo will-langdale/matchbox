@@ -1,3 +1,5 @@
+"""General utilities for the PostgreSQL backend."""
+
 import base64
 import contextlib
 import cProfile
@@ -227,8 +229,9 @@ def data_to_batch(
     """Constructs a batches function for any dataframe and table."""
 
     def _batches(
-        high_watermark,  # noqa ARG001 required for pg_bulk_ingest
+        high_watermark,  # noqa: ARG001
     ) -> Iterable[tuple[None, None, Iterable[tuple[Table, tuple]]]]:
+        # high_watermark required for pg_bulk_ingest
         for batch in batched(records, batch_size):
             yield None, None, ((table, t) for t in batch)
 

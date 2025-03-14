@@ -62,8 +62,8 @@ class DeterministicLinker(Linker):
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
-        left_df = left.copy()  # NoQA: F841
-        right_df = right.copy()  # NoQA: F841
+        left_df = left.copy()  # noqa: F841
+        right_df = right.copy()  # noqa: F841
 
         sql = f"""
             select distinct on (list_sort([raw.left_id, raw.right_id]))
