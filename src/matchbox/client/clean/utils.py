@@ -40,7 +40,7 @@ def cleaning_function(*functions: Callable) -> Callable:
     Consider using functools.partial to coerce functions that need arguments into
     this shape.
 
-    Arguments:
+    Args:
         functions: a list of functions appropriate for a select statement.
             See clean_basic for some examples
     """
@@ -74,7 +74,7 @@ def cleaning_function(*functions: Callable) -> Callable:
 def alias(function: Callable, alias: str) -> Callable:
     """Takes a cleaning function and aliases the output to a new column.
 
-    Arguments:
+    Args:
         function: an outut from a cleaning_function function
         alias: the new column name to use
     """
@@ -106,7 +106,7 @@ def unnest_renest(function: Callable) -> Callable:
     Useful for applying the same function to an array where there are sub-functions
     that also use arrays, blocking list_transform.
 
-    Arguments:
+    Args:
         function: an outut from a cleaning_function function
     """
 
