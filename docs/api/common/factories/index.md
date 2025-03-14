@@ -134,7 +134,7 @@ for source_testkit in linked_testkit.sources.values():
 
 model_testkit = model_factory(
     left_testkit=linked_testkit.sources["crn"],
-    true_entities=linked_testkit.true_entities.values(),
+    true_entities=linked_testkit.true_entities,
 )
 
 backend.insert_model(model=model_testkit.model.metadata)
@@ -162,11 +162,11 @@ linked_testkit: LinkedSourcesTestkit = linked_sources_factory()
 # Create perfect deduped models first
 left_deduped: ModelTestkit = model_factory(
     left_testkit=linked_testkit.sources["crn"],
-    true_entities=linked_testkit.true_entities.values(),
+    true_entities=linked_testkit.true_entities,
 )
 right_deduped: ModelTestkit = model_factory(
     left_testkit=linked_testkit.sources["cdms"],
-    true_entities=linked_testkit.true_entities.values(),
+    true_entities=linked_testkit.true_entities,
 )
 
 # Create a model and generate probabilities

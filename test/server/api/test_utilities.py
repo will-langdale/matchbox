@@ -8,7 +8,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from fastapi import UploadFile
-from pandas import DataFrame
 
 from matchbox.common.dtos import BackendUploadType
 from matchbox.common.exceptions import MatchboxServerFileError
@@ -23,13 +22,30 @@ else:
 
 
 @pytest.mark.asyncio
-async def test_file_to_s3(s3: S3Client, all_companies: DataFrame):
+async def test_file_to_s3(s3: S3Client):
     """Test that a file can be uploaded to S3."""
     # Create a mock bucket
     s3.create_bucket(
         Bucket="test-bucket",
         CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
     )
+    source_testkit = source_factory(
+        features=[
+            {"name": "company_name", "base_generator": "company"},
+            {"name": "address", "base_generator": "address"},
+            {
+                "name": "crn",
+                "base_generator": "bothify",
+                "parameters": (("text", "???-###-???-###"),),
+            },
+            {
+                "name": "duns",
+                "base_generator": "bothify",
+                "parameters": (("text", "??######"),),
+            },
+        ],
+    )
+    all_companies = source_testkit.query.to_pandas()
 
     # Test 1: Upload a parquet file
     # Create a mock UploadFile
