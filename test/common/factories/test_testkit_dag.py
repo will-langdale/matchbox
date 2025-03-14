@@ -134,7 +134,7 @@ def test_testkit_dag_model_chain(
     5. Standalone sources are handled correctly
     """
     # Setup: Create sources and DAG
-    linked = linked_sources_factory(seed=hash(str(chain_config)) % 1000000)
+    linked = linked_sources_factory(seed=hash(str(chain_config)))
     standalone = source_factory(
         full_name="standalone_source",
         features=[
@@ -163,7 +163,15 @@ def test_testkit_dag_model_chain(
         left_testkit = None
         right_testkit = None
 
-        # Set left testkit (primary input)
+        # Validate total inputs don't exceed 2
+        total_inputs = len(prev_models) + len(source_names)
+        if total_inputs > 2:
+            raise ValueError(
+                "Model can only have a maximum of two inputs, got "
+                f"{len(prev_models)} previous models and {len(source_names)} sources"
+            )
+
+        # Set left testkit (always required)
         if prev_models:
             left_testkit = models[prev_models[0]]
         elif is_standalone:
@@ -171,12 +179,13 @@ def test_testkit_dag_model_chain(
         elif source_names:
             left_testkit = linked.sources[source_names[0]]
 
-        # Set right testkit (secondary input, if needed)
-        if len(prev_models) >= 2:
+        # Set right testkit (if there's a second input)
+        if len(prev_models) == 2:
             right_testkit = models[prev_models[1]]
-        elif len(source_names) >= 2 or (prev_models and source_names):
-            src_idx = 1 if len(source_names) >= 2 else 0
-            right_testkit = linked.sources[source_names[src_idx]]
+        elif len(prev_models) == 1 and source_names:
+            right_testkit = linked.sources[source_names[0]]
+        elif len(source_names) == 2:
+            right_testkit = linked.sources[source_names[1]]
 
         # Create and add model
         model = model_factory(
