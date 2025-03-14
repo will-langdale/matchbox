@@ -106,13 +106,13 @@ def dump(engine: Engine) -> MatchboxSnapshot:
                 for column in inspect(model).columns:
                     value = getattr(record, column.name)
 
-                    # Store bytes as base64
+                    # Store bytes as nested dictionary with encoding format
                     if isinstance(value, bytes):
-                        value = base64.b64encode(value).decode("ascii")
-                        # Mark this as encoded so we can decode it on restoration
-                        record_dict[f"{column.name}_format"] = "base64"
-
-                    record_dict[column.name] = value
+                        record_dict[column.name] = {
+                            "base64": base64.b64encode(value).decode("ascii")
+                        }
+                    else:
+                        record_dict[column.name] = value
 
                 table_data.append(record_dict)
 
@@ -128,6 +128,9 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
         snapshot: A MatchboxSnapshot object of type "postgres" with the
             database's state
         batch_size: The number of records to insert in each batch
+
+    Raises:
+        ValueError: If the snapshot is missing data
     """
     table_map = {
         "resolutions": Resolutions,
@@ -151,7 +154,7 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
         # Process tables in order
         for table_name in table_order:
             if table_name not in snapshot.data:
-                continue
+                raise ValueError(f"Invalid: Table {table_name} not found in snapshot.")
 
             model = table_map[table_name]
             records = snapshot.data[table_name]
@@ -165,16 +168,11 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
                 processed_record = {}
 
                 for key, value in record.items():
-                    if key.endswith("_format"):
-                        continue
-
-                    if (
-                        f"{key}_format" in record
-                        and record[f"{key}_format"] == "base64"
-                    ):
-                        value = base64.b64decode(value)
-
-                    processed_record[key] = value
+                    # Check if the value is a dictionary with encoding format
+                    if isinstance(value, dict) and "base64" in value:
+                        processed_record[key] = base64.b64decode(value["base64"])
+                    else:
+                        processed_record[key] = value
 
                 processed_records.append(processed_record)
 
