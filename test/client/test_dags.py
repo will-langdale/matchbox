@@ -9,9 +9,12 @@ from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_factory
 
 
+@patch("matchbox.client.dags._handler.index")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
-def test_dag_runs(dedupe_run: Mock, link_run: Mock, sqlite_warehouse: Engine):
+def test_dag_runs(
+    link_run: Mock, dedupe_run: Mock, handler_index: Mock, sqlite_warehouse: Engine
+):
     """A legal DAG can be built and run"""
     # Set up constituents
     foo = source_factory(full_name="foo").source
@@ -63,16 +66,29 @@ def test_dag_runs(dedupe_run: Mock, link_run: Mock, sqlite_warehouse: Engine):
 
     # Prepare DAG
     dag.prepare()
-    assert dag.sequence in (
-        ["d_foo", "d_bar", "foo_bar"],
-        ["d_bar", "d_foo", "foo_bar"],
+    s_foo, s_bar, s_d_foo, s_d_bar, s_foo_bar = (
+        dag.sequence.index("foo"),
+        dag.sequence.index("bar"),
+        dag.sequence.index("d_foo"),
+        dag.sequence.index("d_bar"),
+        dag.sequence.index("foo_bar"),
     )
+    assert s_foo < s_d_foo < s_foo_bar
+    assert s_bar < s_d_bar < s_foo_bar
 
     # Run DAG
     dag.run()
-    d_foo.run.assert_called()
-    d_bar.run.assert_called()
-    foo_bar.run.assert_called()
+
+    assert handler_index.call_count == 2
+    assert {
+        handler_index.call_args_list[0].kwargs["source"].address.full_name,
+        handler_index.call_args_list[1].kwargs["source"].address.full_name,
+    } == {"foo", "bar"}
+
+    assert dedupe_run.call_count == 2
+    dedupe_run.assert_called_with(engine=sqlite_warehouse)
+
+    link_run.assert_called_once_with(engine=sqlite_warehouse)
 
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):

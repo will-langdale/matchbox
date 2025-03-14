@@ -14,11 +14,13 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
 from matchbox.common.sources import Source
 
+DagNode = Union["ModelStep", Source]
+
 
 class StepInput(BaseModel):
     """Input to a DAG step."""
 
-    origin: Union["ModelStep", Source]
+    origin: DagNode
     select: dict[str, list[str]]
     cleaners: dict[str, dict[str, Any]] = {}
     threshold: int | None = None
@@ -69,7 +71,7 @@ class DedupeStep(ModelStep):
 
     model_class: type[Deduper]
 
-    def deduplicate(self, df_clean: DataFrame) -> Results:
+    def deduplicate(self, df: DataFrame) -> Results:
         """Define and run deduper on pre-processed data.
 
         Args:
@@ -83,7 +85,7 @@ class DedupeStep(ModelStep):
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
-            left_data=df_clean,
+            left_data=df,
             left_resolution=self.left.name,
         )
 
@@ -109,7 +111,33 @@ class LinkStep(ModelStep):
     model_class: type[Linker]
     right: "StepInput"
 
-    def run(self): ...
+    def link(
+        self,
+        left_df: DataFrame,
+        right_df: DataFrame,
+    ):
+        linker = make_model(
+            model_name=self.name,
+            description=self.description,
+            model_class=self.model_class,
+            model_settings=self.settings,
+            left_data=left_df,
+            left_resolution=self.left.name,
+            right_data=right_df,
+            right_resolution=self.right.name,
+        )
+
+        return linker.run()
+
+    def run(self, engine: Engine):
+        left_raw = self.query(self.left, engine)
+        left_clean = process(left_raw, self.left.cleaners)
+
+        right_raw = self.query(self.right, engine)
+        right_clean = process(right_raw, self.right.cleaners)
+
+        res = self.link(left_clean, right_clean)
+        res.to_matchbox()
 
 
 class Dag:
@@ -118,9 +146,9 @@ class Dag:
     def __init__(self, engine: Engine):
         self.engine = engine
 
-        self.nodes = {}
-        self.graph = {}
-        self.sequence = []
+        self.nodes: dict[str, DagNode] = {}
+        self.graph: dict[str, list[str]] = {}
+        self.sequence: list[str] = []
 
     def add_sources(self, *sources: Source):
         """Add sources to DAG.
@@ -165,9 +193,6 @@ class Dag:
             apex = apex.pop()
 
         def depth_first(node: str, sequence: list):
-            if isinstance(self.nodes[node], Source):
-                return
-
             sequence.append(node)
             for neighbour in self.graph[node]:
                 if neighbour not in sequence:
@@ -182,8 +207,8 @@ class Dag:
         self.prepare()
 
         for step_name in self.sequence:
-            step = self.nodes[step_name]
-            if isinstance(step, Source):
-                _handler.index(source=step)
+            node = self.nodes[step_name]
+            if isinstance(node, Source):
+                _handler.index(source=node)
             else:
-                step.run(engine=self.engine)
+                node.run(engine=self.engine)
