@@ -71,6 +71,10 @@ def create_scenario_dag(
     This approach first creates source data, writes it to backend and warehouse,
     then builds models by querying the backend to ensure ID alignment.
     """
+    # Validate inputs
+    if scenario_type not in ["bare", "index", "dedupe", "link"]:
+        raise ValueError(f"Invalid scenario: {scenario_type}")
+
     dag = TestkitDAG()
 
     # 1. Create linked sources
