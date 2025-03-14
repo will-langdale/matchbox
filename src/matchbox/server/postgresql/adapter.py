@@ -423,12 +423,12 @@ class MatchboxPostgres(MatchboxDBAdapter):
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return get_model_results(engine=MBDB.get_engine(), resolution=resolution)
 
-    def set_model_truth(self, model: str, truth: float) -> None:
+    def set_model_truth(self, model: str, truth: int) -> None:
         """Sets the truth threshold for this model, changing the default clusters."""
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         with Session(MBDB.get_engine()) as session:
             session.add(resolution)
-            resolution.truth = int(truth * 100)
+            resolution.truth = truth
             session.commit()
 
     def get_model_truth(self, model: str) -> int:

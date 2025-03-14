@@ -56,7 +56,8 @@ class Model:
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        _handler.set_model_truth(name=self.metadata.name, truth=truth)
+        # Convert float to int
+        _handler.set_model_truth(name=self.metadata.name, truth=int(truth * 100))
 
     @property
     def ancestors(self) -> dict[str, float]:

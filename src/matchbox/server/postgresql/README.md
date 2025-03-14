@@ -36,7 +36,7 @@ erDiagram
     Probabilities {
         bigint resolution PK,FK
         bigint cluster PK,FK
-        int probability
+        smallint probability
     }
     Resolutions {
         bigint resolution_id PK,FK
