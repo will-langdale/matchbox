@@ -3,14 +3,18 @@ from typing import Any, Literal
 import pytest
 
 from matchbox.common.arrow import SCHEMA_RESULTS
-from matchbox.common.factories.models import generate_dummy_probabilities, model_factory
+from matchbox.common.factories.models import (
+    generate_dummy_probabilities,
+    model_factory,
+    query_to_model_factory,
+)
 from matchbox.common.factories.sources import linked_sources_factory, source_factory
 
 
 def test_model_factory_entity_preservation():
     """Test that model_factory preserves source_pks with incomplete probabilities."""
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
 
     # Create first model
     first_model = model_factory(
@@ -57,7 +61,7 @@ def test_model_type_creation(
     """Test that model creation and core operations work correctly for each type."""
     # Create our source objects from the string parameters
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
     half_true_sources = all_true_sources[: len(all_true_sources) // 2]
 
     if left_testkit == "source":
@@ -171,7 +175,7 @@ def test_model_pipeline_with_dummy_methodology(
     3. This validation works across different pipeline positions and configurations
     """
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
 
     # Create and validate perfect model
     if model_type == "deduper":
@@ -459,7 +463,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     """Test model factory creation using sources."""
     # Create source data
     linked = linked_sources_factory()
-    all_true_sources = list(linked.true_entities.values())
+    all_true_sources = list(linked.true_entities)
 
     # Get sources based on config
     left_testkit = linked.sources[source_config["left_name"]]
@@ -523,3 +527,214 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
         assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
         assert not dummy1.probabilities.equals(dummy2.probabilities)
+
+
+def test_query_to_model_factory_validation():
+    """Test validation in query_to_model_factory."""
+    # Create test resources using existing factory
+    linked = linked_sources_factory()
+    left_testkit = linked.sources["crn"]
+    true_entities = tuple(linked.true_entities)
+
+    # Extract query and source_pks for our function
+    left_query = left_testkit.query
+    left_source_pks = {"crn": "pk"}
+
+    # Test invalid probability range
+    with pytest.raises(ValueError, match="Probabilities must be increasing values"):
+        query_to_model_factory(
+            left_resolution="crn",
+            left_query=left_query,
+            left_source_pks=left_source_pks,
+            true_entities=true_entities,
+            prob_range=(0.9, 0.8),
+        )
+
+    # Test inconsistent right-side arguments
+    with pytest.raises(ValueError, match="all of right_resolution, right_query"):
+        query_to_model_factory(
+            left_resolution="crn",
+            left_query=left_query,
+            left_source_pks=left_source_pks,
+            true_entities=true_entities,
+            right_resolution="right",
+        )
+
+
+@pytest.mark.parametrize(
+    ("test_config", "expected_checks"),
+    [
+        pytest.param(
+            {
+                "right_args": False,
+                "prob_range": (0.8, 0.9),
+            },
+            {
+                "type": "deduper",
+                "has_right": False,
+                "prob_min": 0.8,
+                "prob_max": 0.9,
+            },
+            id="deduper_configuration",
+        ),
+        pytest.param(
+            {
+                "right_args": True,
+                "prob_range": (0.7, 0.95),
+            },
+            {
+                "type": "linker",
+                "has_right": True,
+                "prob_min": 0.7,
+                "prob_max": 0.95,
+            },
+            id="linker_configuration",
+        ),
+    ],
+)
+def test_query_to_model_factory_creation(
+    test_config: dict[str, Any], expected_checks: dict[str, Any]
+):
+    """Test basic model creation from queries."""
+    # Create linked sources with factory
+    linked = linked_sources_factory()
+    true_entities = tuple(linked.true_entities)
+
+    # Get left source
+    left_testkit = linked.sources["crn"]
+    left_query = left_testkit.query
+    left_source_pks = {"crn": "pk"}
+
+    # Setup right query if needed
+    right_query = None
+    right_source_pks = None
+    right_resolution = None
+
+    if test_config["right_args"]:
+        right_testkit = linked.sources["cdms"]
+        right_query = right_testkit.query
+        right_source_pks = {"cdms": "pk"}
+        right_resolution = "cdms"
+
+    # Create the model using our function
+    model = query_to_model_factory(
+        left_resolution="crn",
+        left_query=left_query,
+        left_source_pks=left_source_pks,
+        true_entities=true_entities,
+        right_resolution=right_resolution,
+        right_query=right_query,
+        right_source_pks=right_source_pks,
+        prob_range=test_config["prob_range"],
+        seed=42,
+    )
+
+    # Basic type checks
+    assert str(model.model.metadata.type) == expected_checks["type"]
+    assert (model.right_query is not None) == expected_checks["has_right"]
+    assert (model.right_clusters is not None) == expected_checks["has_right"]
+
+    # Verify probabilities
+    assert model.probabilities.schema.equals(SCHEMA_RESULTS)
+    if len(model.probabilities) > 0:
+        probs = model.probabilities["probability"].to_numpy() / 100
+        assert all(p >= expected_checks["prob_min"] for p in probs)
+        assert all(p <= expected_checks["prob_max"] for p in probs)
+
+
+@pytest.mark.parametrize(
+    ("seed1", "seed2", "should_be_equal"),
+    [
+        pytest.param(42, 42, True, id="same_seeds"),
+        pytest.param(1, 2, False, id="different_seeds"),
+    ],
+)
+def test_query_to_model_factory_seed_behavior(
+    seed1: int, seed2: int, should_be_equal: bool
+):
+    """Test that query_to_model_factory handles seeds correctly for reproducibility."""
+    # Create linked sources with factory
+    linked = linked_sources_factory()
+    true_entities = tuple(linked.true_entities)
+
+    # Get source
+    left_testkit = linked.sources["crn"]
+    left_query = left_testkit.query
+    left_source_pks = {"crn": "pk"}
+
+    # Create two models with different seeds
+    model1 = query_to_model_factory(
+        left_resolution="crn",
+        left_query=left_query,
+        left_source_pks=left_source_pks,
+        true_entities=true_entities,
+        seed=seed1,
+    )
+
+    model2 = query_to_model_factory(
+        left_resolution="crn",
+        left_query=left_query,
+        left_source_pks=left_source_pks,
+        true_entities=true_entities,
+        seed=seed2,
+    )
+
+    if should_be_equal:
+        assert model1.model.metadata.name == model2.model.metadata.name
+        assert model1.model.metadata.description == model2.model.metadata.description
+        assert model1.probabilities.equals(model2.probabilities)
+    else:
+        assert model1.model.metadata.name != model2.model.metadata.name
+        assert model1.model.metadata.description != model2.model.metadata.description
+        if len(model1.probabilities) > 0 and len(model2.probabilities) > 0:
+            assert not model1.probabilities.equals(model2.probabilities)
+
+
+def test_query_to_model_factory_compare_with_model_factory():
+    """Test that query_to_model_factory produces equivalent results to model_factory."""
+    # Create linked sources with factory
+    linked = linked_sources_factory(seed=42)
+    true_entities = tuple(linked.true_entities)
+
+    # Create model using model_factory
+    standard_model = model_factory(
+        left_testkit=linked.sources["crn"],
+        right_testkit=linked.sources["cdms"],
+        true_entities=true_entities,
+        seed=42,
+    )
+
+    # Extract queries for our new function
+    left_query = linked.sources["crn"].query
+    right_query = linked.sources["cdms"].query
+    left_source_pks = {"crn": "pk"}
+    right_source_pks = {"cdms": "pk"}
+
+    # Create model using query_to_model_factory
+    query_model = query_to_model_factory(
+        left_resolution="crn",
+        left_query=left_query,
+        left_source_pks=left_source_pks,
+        true_entities=true_entities,
+        right_resolution="cdms",
+        right_query=right_query,
+        right_source_pks=right_source_pks,
+        seed=42,
+    )
+
+    # Verify that both models produce equivalent results
+    # Names and descriptions will differ because they're randomly generated,
+    # but probabilities should match with the same seed
+    assert standard_model.probabilities.equals(query_model.probabilities)
+
+    # Set the same threshold and verify queries
+    standard_model.threshold = 80
+    query_model.threshold = 80
+
+    # Compare entities
+    assert len(standard_model.entities) == len(query_model.entities)
+
+    # Compare model type
+    assert str(standard_model.model.metadata.type) == str(
+        query_model.model.metadata.type
+    )
