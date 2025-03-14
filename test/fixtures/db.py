@@ -1,7 +1,6 @@
 import os
 import tempfile
 from contextlib import contextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator, Literal
 
 import boto3
@@ -30,8 +29,6 @@ if TYPE_CHECKING:
 else:
     S3Client = Any
 
-TEST_ROOT = Path(__file__).resolve().parents[1]
-
 
 # Database scenario fixtures and helper functions
 
@@ -51,15 +48,15 @@ def _generate_cache_key(
     return cache_key
 
 
-def _reconcile_engine_and_testkitdag(engine: Engine, dag: TestkitDAG) -> None:
-    """Reconcile a TestkitDAG with a warehouse engine.
+def _testkitdag_to_warehouse(warehouse_engine: Engine, dag: TestkitDAG) -> None:
+    """Upload a TestkitDAG to a warehouse.
 
     * Writes all data to the warehouse, replacing existing data
     * Updates the engine of all sources in the DAG
     """
     for source_testkit in dag.sources.values():
-        source_testkit.to_warehouse(engine)
-        source_testkit.source.set_engine(engine)
+        source_testkit.to_warehouse(warehouse_engine)
+        source_testkit.source.set_engine(warehouse_engine)
 
 
 def create_scenario_dag(
@@ -81,7 +78,7 @@ def create_scenario_dag(
     dag.add_source(linked)
 
     # 2. Write sources to warehouse
-    _reconcile_engine_and_testkitdag(warehouse_engine, dag)
+    _testkitdag_to_warehouse(warehouse_engine, dag)
 
     # End here for bare database scenarios
     if scenario_type == "bare":
@@ -98,144 +95,135 @@ def create_scenario_dag(
         return dag
 
     # 4. Create and add deduplication models
-    if scenario_type in ["dedupe", "link"]:
-        # Build deduplication models
-        for source_name in ["crn", "duns", "cdms"]:
-            model_name = f"naive_test.{source_name}"
+    for source_name in ["crn", "duns", "cdms"]:
+        model_name = f"naive_test.{source_name}"
 
-            # Query the raw data
-            source_query = backend.query(
-                source_address=linked.sources[source_name].source.address,
-                resolution_name=source_name,
-            )
+        # Query the raw data
+        source_query = backend.query(
+            source_address=linked.sources[source_name].source.address,
+            resolution_name=source_name,
+        )
 
-            # Build model testkit using query data
-            model_testkit = query_to_model_factory(
-                left_resolution=source_name,
-                left_query=source_query,
-                left_source_pks={source_name: "source_pk"},
-                true_entities=tuple(linked.true_entities),
-                name=model_name,
-                description=f"Deduplication of {source_name}",
-                seed=seed,
-            )
+        # Build model testkit using query data
+        model_testkit = query_to_model_factory(
+            left_resolution=source_name,
+            left_query=source_query,
+            left_source_pks={source_name: "source_pk"},
+            true_entities=tuple(linked.true_entities),
+            name=model_name,
+            description=f"Deduplication of {source_name}",
+            seed=seed,
+        )
 
-            # Add to backend and DAG
-            backend.insert_model(model=model_testkit.model.metadata)
-            backend.set_model_results(
-                model=model_name, results=model_testkit.probabilities
-            )
-            dag.add_model(model_testkit)
+        # Add to backend and DAG
+        backend.insert_model(model=model_testkit.model.metadata)
+        backend.set_model_results(model=model_name, results=model_testkit.probabilities)
+        dag.add_model(model_testkit)
 
     # End here for dedupe-only scenarios
     if scenario_type == "dedupe":
         return dag
 
     # 5. Create linking models
-    if scenario_type == "link":
-        # First create CRN-DUNS link
-        crn_model = dag.models["naive_test.crn"]
-        duns_model = dag.models["naive_test.duns"]
-        cdms_model = dag.models["naive_test.cdms"]
+    # First create CRN-DUNS link
+    crn_model = dag.models["naive_test.crn"]
+    duns_model = dag.models["naive_test.duns"]
+    cdms_model = dag.models["naive_test.cdms"]
 
-        # Query data for each resolution
-        crn_query = backend.query(
-            source_address=linked.sources["crn"].source.address,
-            resolution_name=crn_model.name,
-        )
+    # Query data for each resolution
+    crn_query = backend.query(
+        source_address=linked.sources["crn"].source.address,
+        resolution_name=crn_model.name,
+    )
 
-        duns_query = backend.query(
-            source_address=linked.sources["duns"].source.address,
-            resolution_name=duns_model.name,
-        )
+    duns_query = backend.query(
+        source_address=linked.sources["duns"].source.address,
+        resolution_name=duns_model.name,
+    )
 
-        cdms_query = backend.query(
-            source_address=linked.sources["cdms"].source.address,
-            resolution_name=cdms_model.name,
-        )
+    cdms_query = backend.query(
+        source_address=linked.sources["cdms"].source.address,
+        resolution_name=cdms_model.name,
+    )
 
-        # Create CRN-DUNS link
-        crn_duns_name = "deterministic_naive_test.crn_naive_test.duns"
-        crn_duns_model = query_to_model_factory(
-            left_resolution=crn_model.name,
-            left_query=crn_query,
-            left_source_pks={"crn": "source_pk"},
-            right_resolution=duns_model.name,
-            right_query=duns_query,
-            right_source_pks={"duns": "source_pk"},
-            true_entities=tuple(linked.true_entities),
-            name=crn_duns_name,
-            description="Link between CRN and DUNS",
-            seed=seed,
-        )
+    # Create CRN-DUNS link
+    crn_duns_name = "deterministic_naive_test.crn_naive_test.duns"
+    crn_duns_model = query_to_model_factory(
+        left_resolution=crn_model.name,
+        left_query=crn_query,
+        left_source_pks={"crn": "source_pk"},
+        right_resolution=duns_model.name,
+        right_query=duns_query,
+        right_source_pks={"duns": "source_pk"},
+        true_entities=tuple(linked.true_entities),
+        name=crn_duns_name,
+        description="Link between CRN and DUNS",
+        seed=seed,
+    )
 
-        # Add to backend and DAG
-        backend.insert_model(model=crn_duns_model.model.metadata)
-        backend.set_model_results(
-            model=crn_duns_name, results=crn_duns_model.probabilities
-        )
-        dag.add_model(crn_duns_model)
+    # Add to backend and DAG
+    backend.insert_model(model=crn_duns_model.model.metadata)
+    backend.set_model_results(model=crn_duns_name, results=crn_duns_model.probabilities)
+    dag.add_model(crn_duns_model)
 
-        # Create CRN-CDMS link
-        crn_cdms_name = "deterministic_naive_test.crn_naive_test.cdms"
-        crn_cdms_model = query_to_model_factory(
-            left_resolution=crn_model.name,
-            left_query=crn_query,
-            left_source_pks={"crn": "source_pk"},
-            right_resolution=cdms_model.name,
-            right_query=cdms_query,
-            right_source_pks={"cdms": "source_pk"},
-            true_entities=tuple(linked.true_entities),
-            name=crn_cdms_name,
-            description="Link between CRN and CDMS",
-            seed=seed,
-        )
+    # Create CRN-CDMS link
+    crn_cdms_name = "deterministic_naive_test.crn_naive_test.cdms"
+    crn_cdms_model = query_to_model_factory(
+        left_resolution=crn_model.name,
+        left_query=crn_query,
+        left_source_pks={"crn": "source_pk"},
+        right_resolution=cdms_model.name,
+        right_query=cdms_query,
+        right_source_pks={"cdms": "source_pk"},
+        true_entities=tuple(linked.true_entities),
+        name=crn_cdms_name,
+        description="Link between CRN and CDMS",
+        seed=seed,
+    )
 
-        backend.insert_model(model=crn_cdms_model.model.metadata)
-        backend.set_model_results(
-            model=crn_cdms_name, results=crn_cdms_model.probabilities
-        )
-        dag.add_model(crn_cdms_model)
+    backend.insert_model(model=crn_cdms_model.model.metadata)
+    backend.set_model_results(model=crn_cdms_name, results=crn_cdms_model.probabilities)
+    dag.add_model(crn_cdms_model)
 
-        # Create final join
-        # Query the previous link's results
-        crn_cdms_query_crn_only = backend.query(
-            source_address=linked.sources["crn"].source.address,
-            resolution_name=crn_cdms_name,
-        ).rename_columns(["id", "source_pk_crn"])
-        crn_cdms_query_cdms_only = backend.query(
-            source_address=linked.sources["cdms"].source.address,
-            resolution_name=crn_cdms_name,
-        ).rename_columns(["id", "source_pk_cdms"])
-        crn_cdms_query = pa.concat_tables(
-            [crn_cdms_query_crn_only, crn_cdms_query_cdms_only],
-            promote_options="default",
-        ).combine_chunks()
+    # Create final join
+    # Query the previous link's results
+    crn_cdms_query_crn_only = backend.query(
+        source_address=linked.sources["crn"].source.address,
+        resolution_name=crn_cdms_name,
+    ).rename_columns(["id", "source_pk_crn"])
+    crn_cdms_query_cdms_only = backend.query(
+        source_address=linked.sources["cdms"].source.address,
+        resolution_name=crn_cdms_name,
+    ).rename_columns(["id", "source_pk_cdms"])
+    crn_cdms_query = pa.concat_tables(
+        [crn_cdms_query_crn_only, crn_cdms_query_cdms_only],
+        promote_options="default",
+    ).combine_chunks()
 
-        duns_query_linked = backend.query(
-            source_address=linked.sources["duns"].source.address,
-            resolution_name=crn_duns_name,
-        )
+    duns_query_linked = backend.query(
+        source_address=linked.sources["duns"].source.address,
+        resolution_name=crn_duns_name,
+    )
 
-        final_join_name = "final_join"
-        final_join_model = query_to_model_factory(
-            left_resolution=crn_cdms_name,
-            left_query=crn_cdms_query,
-            left_source_pks={"crn": "source_pk_crn", "cdms": "source_pk_cdms"},
-            right_resolution=duns_model.name,
-            right_query=duns_query_linked,
-            right_source_pks={"duns": "source_pk"},
-            true_entities=tuple(linked.true_entities),
-            name=final_join_name,
-            description="Final join of all entities",
-            seed=seed,
-        )
+    final_join_name = "final_join"
+    final_join_model = query_to_model_factory(
+        left_resolution=crn_cdms_name,
+        left_query=crn_cdms_query,
+        left_source_pks={"crn": "source_pk_crn", "cdms": "source_pk_cdms"},
+        right_resolution=duns_model.name,
+        right_query=duns_query_linked,
+        right_source_pks={"duns": "source_pk"},
+        true_entities=tuple(linked.true_entities),
+        name=final_join_name,
+        description="Final join of all entities",
+        seed=seed,
+    )
 
-        backend.insert_model(model=final_join_model.model.metadata)
-        backend.set_model_results(
-            model=final_join_name, results=final_join_model.probabilities
-        )
-        dag.add_model(final_join_model)
+    backend.insert_model(model=final_join_model.model.metadata)
+    backend.set_model_results(
+        model=final_join_name, results=final_join_model.probabilities
+    )
+    dag.add_model(final_join_model)
 
     return dag
 
@@ -263,7 +251,7 @@ def setup_scenario(
 
         # Restore backend and write sources to warehouse
         backend.restore(clear=True, snapshot=snapshot)
-        _reconcile_engine_and_testkitdag(warehouse, dag)
+        _testkitdag_to_warehouse(warehouse, dag)
     else:
         # Create new TestkitDAG with proper backend integration
         dag = create_scenario_dag(backend, warehouse, scenario_type, n_entities, seed)
@@ -274,14 +262,6 @@ def setup_scenario(
     yield dag
 
     backend.clear(certain=True)
-
-
-# Filesystem fixtures
-
-
-@pytest.fixture(scope="session")
-def test_root_dir() -> Path:
-    return TEST_ROOT
 
 
 # Warehouse database fixtures
