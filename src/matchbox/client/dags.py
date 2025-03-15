@@ -35,12 +35,12 @@ class StepInput(BaseModel):
             return self.origin.address.full_name
 
 
-class ModelStep(ABC, BaseModel):
+class ModelStep(BaseModel, ABC):
     """Base step in DAG."""
 
     name: str
     description: str
-    left: "StepInput"
+    left: StepInput
     settings: dict[str, Any]
     sources: set[str] = set()
 
@@ -144,7 +144,7 @@ class LinkStep(ModelStep):
 
 
 class Dag:
-    """Self-sufficient pipeline of indexing, deduping and linking."""
+    """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
     def __init__(self, engine: Engine):
         self.engine = engine
@@ -153,10 +153,9 @@ class Dag:
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
 
-    def _add_node(self, name: str, node: DagNode):
+    def _validate_node(self, name: str, node: DagNode):
         if name in self.nodes:
-            raise ValueError(f"Name '{name}' is already taken by")
-        self.nodes[name] = node
+            raise ValueError(f"Name '{name}' is already taken in the DAG")
 
     def add_sources(self, *sources: Source):
         """Add sources to DAG.
@@ -165,7 +164,8 @@ class Dag:
             sources: All sources to add.
         """
         for source in sources:
-            self._add_node(source.address.full_name, source)
+            self._validate_node(source.address.full_name, source)
+            self.nodes[source.address.full_name] = source
             self.graph[source.address.full_name] = []
 
     def add_steps(self, *steps: ModelStep):
@@ -175,16 +175,13 @@ class Dag:
             steps: Dedupe and link steps.
         """
 
-        def process_input(step: ModelStep, step_input: StepInput):
-            """Update graph and available sources with one step input"""
+        def validate_input(step: ModelStep, step_input: StepInput):
+            """Validate and update available sources for step input"""
             if step_input.name not in self.nodes:
                 raise ValueError(f"Dependency {step_input.name} not available")
-            if step.name not in self.graph:
-                self.graph[step.name] = []
-
-            self.graph[step.name].append(step_input.name)
 
             origin = step_input.origin
+            # Before adding sources, validate select statements
             if isinstance(origin, Source):
                 if (
                     len(step_input.select) > 1
@@ -203,11 +200,23 @@ class Dag:
                 step.sources.update(origin.sources)
 
         for step in steps:
-            self._add_node(step.name, step)
-            process_input(step, step.left)
+            self._validate_node(step.name, step)
 
+            try:
+                validate_input(step, step.left)
+
+                if isinstance(step, LinkStep):
+                    validate_input(step, step.right)
+            except ValueError as e:
+                # If the validation fails, reset this step's sources
+                step.sources = set()
+                raise e
+
+            # Only add to DAG after everything is validated
+            self.nodes[step.name] = step
+            self.graph[step.name] = [step.left.name]
             if isinstance(step, LinkStep):
-                process_input(step, step.right)
+                self.graph[step.name].append(step.right.name)
 
     def prepare(self):
         """Determine order of execution of steps"""

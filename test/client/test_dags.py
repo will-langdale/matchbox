@@ -251,12 +251,15 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
     dag = Dag(engine=sqlite_warehouse)
     with pytest.raises(ValueError, match="Dependency"):
         dag.add_steps(d_foo)
+    # Sources are not added
+    assert not d_foo.sources
 
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
     """Names across sources and steps must be unique"""
     foo = source_factory(full_name="foo").source
     d_foo = DedupeStep(
+        # Name clash!
         name="foo",
         description="",
         left=StepInput(origin=foo, select={foo.address.full_name: []}),
@@ -267,11 +270,16 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     dag.add_sources(foo)
     with pytest.raises(ValueError, match="already taken"):
         dag.add_steps(d_foo)
+    # DAG is not modified by failed attempt
+    assert dag.nodes["foo"] == foo
+    assert not len(dag.graph["foo"])
+    # Sources are not added
+    assert not d_foo.sources
 
 
 def test_dag_source_unavailable(sqlite_warehouse: Engine):
     """Cannot select sources not available to a step"""
-    # Reading from Source
+    # CASE 1: Reading from Source
     foo = source_factory(full_name="foo").source
     d_foo = DedupeStep(
         name="d_foo",
@@ -285,9 +293,12 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
     dag.add_sources(foo)
     with pytest.raises(ValueError, match="only select"):
         dag.add_steps(d_foo)
+    # DAG is not modified by failed attempt
+    assert d_foo.name not in dag.graph and d_foo.name not in dag.nodes
 
-    # Reading from previous step
-    foo = source_factory(full_name="foo").source
+    # CASE 2: Reading from previous step
+    bar = source_factory(full_name="bar").source
+    # Re-define d_foo, this time correctly
     d_foo = DedupeStep(
         name="d_foo",
         description="",
@@ -295,19 +306,24 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
         model_class=NaiveDeduper,
         settings={},
     )
-    d_d_foo = DedupeStep(
-        name="d_d_foo",
+    bar_foo = LinkStep(
+        name="foo_bar",
         description="",
-        left=StepInput(origin=d_foo, select={"bar": []}),
-        model_class=NaiveDeduper,
+        left=StepInput(origin=bar, select={bar.address.full_name: []}),
+        # Notice "typo"
+        right=StepInput(origin=d_foo, select={"typo": []}),
+        model_class=DeterministicLinker,
         settings={},
     )
 
     dag = Dag(engine=sqlite_warehouse)
-    dag.add_sources(foo)
+    dag.add_sources(foo, bar)
     dag.add_steps(d_foo)
     with pytest.raises(ValueError, match="Cannot select"):
-        dag.add_steps(d_d_foo)
+        dag.add_steps(bar_foo)
+    # DAG is not modified by failed attempt
+    assert bar_foo.name not in dag.graph and bar_foo.name not in dag.nodes
+    assert not bar_foo.sources
 
 
 def test_dag_disconnected(sqlite_warehouse: Engine):
