@@ -205,18 +205,20 @@ def query(
     # Combine results
     if combine_type == "concat":
         result = pa.concat_tables(tables, promote_options="default")
+    else:
+        result = tables[0]
+        for table in tables[1:]:
+            result = result.join(table, keys=["id"], join_type="full outer")
 
-    result = tables[0]
-    for table in tables[1:]:
-        result = result.join(table, keys=["id"], join_type="full outer")
-
-    if combine_type == "list_agg":
-        # Aggregate into lists
-        aggregate_rule = [(col, "list") for col in result.column_names if col != "id"]
-        result = result.group_by("id").aggregate(aggregate_rule)
-        # Recover original column names
-        rename_rule = {f"{col}_list": col for col, _ in aggregate_rule}
-        result = result.rename_columns(rename_rule)
+        if combine_type == "list_agg":
+            # Aggregate into lists
+            aggregate_rule = [
+                (col, "list") for col in result.column_names if col != "id"
+            ]
+            result = result.group_by("id").aggregate(aggregate_rule)
+            # Recover original column names
+            rename_rule = {f"{col}_list": col for col, _ in aggregate_rule}
+            result = result.rename_columns(rename_rule)
 
     # Return in requested format
     if return_type == "pandas":
