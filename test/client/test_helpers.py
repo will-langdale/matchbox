@@ -46,16 +46,23 @@ def test_cleaners():
 
 def test_process():
     crn = source_factory().query
+    # Duplicate column
+    crn = crn.append_column("company_name_again", crn.column("company_name"))
 
     cleaner_name = cleaner(
         function=company_name,
         arguments={"column": "company_name"},
     )
+    # I can add the same function twice
+    cleaner_name_again = cleaner(
+        function=company_name,
+        arguments={"column": "company_name_again"},
+    )
     cleaner_number = cleaner(
         function=company_number,
         arguments={"column": "crn"},
     )
-    cleaner_name_number = cleaners(cleaner_name, cleaner_number)
+    cleaner_name_number = cleaners(cleaner_name, cleaner_name_again, cleaner_number)
 
     df_name_cleaned = process(data=crn, pipeline=cleaner_name_number)
 
