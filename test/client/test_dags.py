@@ -168,7 +168,6 @@ def test_dag_runs(
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        cleaners={},
         left=StepInput(origin=foo, select={foo.address.full_name: []}),
         model_class=NaiveDeduper,
         settings={},
@@ -177,7 +176,6 @@ def test_dag_runs(
     d_bar = DedupeStep(
         name="d_bar",
         description="",
-        cleaners={},
         left=StepInput(origin=bar, select={bar.address.full_name: []}),
         model_class=NaiveDeduper,
         settings={},
@@ -208,6 +206,9 @@ def test_dag_runs(
 
     dag.add_steps(d_foo, d_bar, foo_bar)
     assert set(dag.nodes.keys()) == {"foo", "bar", "d_foo", "d_bar", "foo_bar"}
+    assert d_foo.sources == {"foo"}
+    assert d_bar.sources == {"bar"}
+    assert foo_bar.sources == {"foo", "bar"}
 
     # Prepare DAG
     dag.prepare()
@@ -242,7 +243,6 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        cleaners={},
         left=StepInput(origin=foo, select={foo.address.full_name: []}),
         model_class=NaiveDeduper,
         settings={},
@@ -251,6 +251,63 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
     dag = Dag(engine=sqlite_warehouse)
     with pytest.raises(ValueError, match="Dependency"):
         dag.add_steps(d_foo)
+
+
+def test_dag_name_clash(sqlite_warehouse: Engine):
+    """Names across sources and steps must be unique"""
+    foo = source_factory(full_name="foo").source
+    d_foo = DedupeStep(
+        name="foo",
+        description="",
+        left=StepInput(origin=foo, select={foo.address.full_name: []}),
+        model_class=NaiveDeduper,
+        settings={},
+    )
+    dag = Dag(engine=sqlite_warehouse)
+    dag.add_sources(foo)
+    with pytest.raises(ValueError, match="already taken"):
+        dag.add_steps(d_foo)
+
+
+def test_dag_source_unavailable(sqlite_warehouse: Engine):
+    """Cannot select sources not available to a step"""
+    # Reading from Source
+    foo = source_factory(full_name="foo").source
+    d_foo = DedupeStep(
+        name="d_foo",
+        description="",
+        left=StepInput(origin=foo, select={"bar": []}),
+        model_class=NaiveDeduper,
+        settings={},
+    )
+
+    dag = Dag(engine=sqlite_warehouse)
+    dag.add_sources(foo)
+    with pytest.raises(ValueError, match="only select"):
+        dag.add_steps(d_foo)
+
+    # Reading from previous step
+    foo = source_factory(full_name="foo").source
+    d_foo = DedupeStep(
+        name="d_foo",
+        description="",
+        left=StepInput(origin=foo, select={foo.address.full_name: []}),
+        model_class=NaiveDeduper,
+        settings={},
+    )
+    d_d_foo = DedupeStep(
+        name="d_d_foo",
+        description="",
+        left=StepInput(origin=d_foo, select={"bar": []}),
+        model_class=NaiveDeduper,
+        settings={},
+    )
+
+    dag = Dag(engine=sqlite_warehouse)
+    dag.add_sources(foo)
+    dag.add_steps(d_foo)
+    with pytest.raises(ValueError, match="Cannot select"):
+        dag.add_steps(d_d_foo)
 
 
 def test_dag_disconnected(sqlite_warehouse: Engine):

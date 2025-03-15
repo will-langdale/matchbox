@@ -6,12 +6,14 @@ from pandas import DataFrame
 from pydantic import BaseModel
 from sqlalchemy import Engine
 
-from matchbox import make_model, process, query
 from matchbox.client import _handler
-from matchbox.client.helpers.selector import select
+from matchbox.client.helpers.cleaner import process
+from matchbox.client.helpers.selector import query, select
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
+from matchbox.client.models.models import make_model
 from matchbox.client.results import Results
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 
 DagNode = Union["ModelStep", Source]
@@ -40,6 +42,7 @@ class ModelStep(ABC, BaseModel):
     description: str
     left: "StepInput"
     settings: dict[str, Any]
+    sources: set[str] = set()
 
     def query(self, step_input: StepInput, engine: Engine) -> DataFrame:
         """Retrieve data for declared step input.
@@ -150,6 +153,11 @@ class Dag:
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
 
+    def _add_node(self, name: str, node: DagNode):
+        if name in self.nodes:
+            raise ValueError(f"Name '{name}' is already taken by")
+        self.nodes[name] = node
+
     def add_sources(self, *sources: Source):
         """Add sources to DAG.
 
@@ -157,26 +165,49 @@ class Dag:
             sources: All sources to add.
         """
         for source in sources:
-            source_name = source.address.full_name
-            self.nodes[source_name] = source
-            self.graph[source_name] = []
+            self._add_node(source.address.full_name, source)
+            self.graph[source.address.full_name] = []
 
     def add_steps(self, *steps: ModelStep):
-        """Add dedupers and linkers to DAG.
+        """Add dedupers and linkers to DAG, and register sources available to steps.
 
         Args:
             steps: Dedupe and link steps.
         """
+
+        def process_input(step: ModelStep, step_input: StepInput):
+            """Update graph and available sources with one step input"""
+            if step_input.name not in self.nodes:
+                raise ValueError(f"Dependency {step_input.name} not available")
+            if step.name not in self.graph:
+                self.graph[step.name] = []
+
+            self.graph[step.name].append(step_input.name)
+
+            origin = step_input.origin
+            if isinstance(origin, Source):
+                if (
+                    len(step_input.select) > 1
+                    or list(step_input.select.keys())[0] != origin.address.full_name
+                ):
+                    raise ValueError(
+                        f"Can only select from source {origin.address.full_name}"
+                    )
+                step.sources.add(step_input.origin.address.full_name)
+            else:
+                for source_name in step_input.select:
+                    if source_name not in origin.sources:
+                        raise ValueError(
+                            f"Cannot select {source_name} from {step_input.name}"
+                        )
+                step.sources.update(origin.sources)
+
         for step in steps:
-            self.nodes[step.name] = step
-            if step.left.name not in self.nodes:
-                raise ValueError(f"Dependency {step.left.name} not available")
-            self.graph[step.name] = [step.left.name]
+            self._add_node(step.name, step)
+            process_input(step, step.left)
 
             if isinstance(step, LinkStep):
-                if step.right.name not in self.nodes:
-                    raise ValueError(f"Dependency {step.right.name} not available")
-                self.graph[step.name].append(step.right.name)
+                process_input(step, step.right)
 
     def prepare(self):
         """Determine order of execution of steps"""
@@ -210,5 +241,7 @@ class Dag:
             node = self.nodes[step_name]
             if isinstance(node, Source):
                 _handler.index(source=node)
+                logger.info(f"Indexed {node.address.full_name}")
             else:
                 node.run(engine=self.engine)
+                logger.info(f"Run {node.name} model pipeline")
