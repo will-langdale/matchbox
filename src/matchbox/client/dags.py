@@ -1,3 +1,5 @@
+"""Objects to define a DAG which indexes, deduplicates and links data."""
+
 from abc import ABC
 from collections import defaultdict
 from typing import Any, Union
@@ -29,6 +31,7 @@ class StepInput(BaseModel):
 
     @property
     def name(self):
+        """Resolution name for input origin."""
         if isinstance(self.origin, ModelStep):
             return self.origin.name
         else:
@@ -78,7 +81,7 @@ class DedupeStep(ModelStep):
         """Define and run deduper on pre-processed data.
 
         Args:
-            df_clean: Pandas dataframe with cleaned data.
+            df: Pandas dataframe with cleaned data.
 
         Returns:
             Results from running the model.
@@ -101,7 +104,6 @@ class DedupeStep(ModelStep):
         Args:
             engine: SQLAlchemy Engine to use when retrieving data.
         """
-
         df_raw = self.query(self.left, engine)
         df_clean = process(df_raw, self.left.cleaners)
         results = self.deduplicate(df_clean)
@@ -119,6 +121,7 @@ class LinkStep(ModelStep):
         left_df: DataFrame,
         right_df: DataFrame,
     ):
+        """Create linking model and pass it input dataframes."""
         linker = make_model(
             model_name=self.name,
             description=self.description,
@@ -133,6 +136,7 @@ class LinkStep(ModelStep):
         return linker.run()
 
     def run(self, engine: Engine):
+        """Run whole linking step."""
         left_raw = self.query(self.left, engine)
         left_clean = process(left_raw, self.left.cleaners)
 
@@ -147,6 +151,7 @@ class Dag:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
     def __init__(self, engine: Engine):
+        """Initialise DAG object."""
         self.engine = engine
 
         self.nodes: dict[str, DagNode] = {}
@@ -176,7 +181,7 @@ class Dag:
         """
 
         def validate_input(step: ModelStep, step_input: StepInput):
-            """Validate and update available sources for step input"""
+            """Validate and update available sources for step input."""
             if step_input.name not in self.nodes:
                 raise ValueError(f"Dependency {step_input.name} not available")
 
@@ -219,7 +224,7 @@ class Dag:
                 self.graph[step.name].append(step.right.name)
 
     def prepare(self):
-        """Determine order of execution of steps"""
+        """Determine order of execution of steps."""
         self.sequence = []
 
         inverse_graph = defaultdict(list)

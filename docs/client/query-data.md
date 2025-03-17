@@ -71,4 +71,4 @@ Retrieves entire data sources along with a unique entity identifier according to
     ...
     ```
 
-For more information on how to use the functions on this page, please check out the relevant examples in the [client API docs](../../api/client/).
+For more information on how to use the functions on this page, please check out the relevant examples in the [client API docs](../api/client/index.md).

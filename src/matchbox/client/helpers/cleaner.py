@@ -22,7 +22,7 @@ def cleaner(function: Callable, arguments: dict) -> dict[str, dict[str, Any]]:
 
 
 def cleaners(*cleaner: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Combine multiple cleaners in a single object to pass to `process()`
+    """Combine multiple cleaners in a single object to pass to `process()`.
 
     Args:
         cleaner: Output of the `cleaner()` function
