@@ -211,7 +211,7 @@ def insert_model(
     description: str,
     engine: Engine,
 ) -> None:
-    """Writes a model to Matchbox with a default truth value of 100.
+    """Writes a model to Matchbox with a default truth value of 50.
 
     Args:
         model: Name of the new model
