@@ -299,7 +299,7 @@ class TestMatchboxBackend:
             pre_truth = self.backend.get_model_truth(model="naive_test.crn")
 
             # Set
-            self.backend.set_model_truth(model="naive_test.crn", truth=0.5)
+            self.backend.set_model_truth(model="naive_test.crn", truth=75)
 
             # Retrieve again
             post_truth = self.backend.get_model_truth(model="naive_test.crn")
@@ -337,7 +337,7 @@ class TestMatchboxBackend:
 
             # Set
             updated_ancestors_cache = [
-                ModelAncestor(name=ancestor.name, truth=50)
+                ModelAncestor(name=ancestor.name, truth=90)
                 for ancestor in pre_ancestors_cache
             ]
             self.backend.set_model_ancestors_cache(
@@ -467,6 +467,18 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn")
             )
 
+            # Test query with threshold
+            df_crn_threshold = self.backend.query(
+                source_address=crn_testkit.source.address,
+                resolution_name="naive_test.crn",
+                threshold=99,
+            )
+            assert len(df_crn) == len(df_crn_threshold)
+            assert (
+                pc.count_distinct(df_crn["id"]).as_py()
+                < pc.count_distinct(df_crn_threshold["id"]).as_py()
+            )
+
     def test_query_with_link_model(self):
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "link") as dag:
@@ -535,6 +547,18 @@ class TestMatchboxBackend:
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.source_pks["duns"]
             assert res[0].target_id == source_entity.source_pks["crn"]
+
+            # Test match with threshold
+            res_threshold = self.backend.match(
+                source_pk=next(iter(source_entity.source_pks["duns"])),
+                source=duns_testkit.source.address,
+                targets=[crn_testkit.source.address],
+                resolution_name=linker_name,
+                threshold=100,
+            )
+            assert len(res) == 1
+            assert isinstance(res_threshold[0], Match)
+            assert res_threshold[0].target_id == set()
 
     def test_match_many_to_one(self):
         """Test that matching data works when the source has more possible IDs."""

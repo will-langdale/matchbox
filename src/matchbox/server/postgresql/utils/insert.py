@@ -251,7 +251,7 @@ def insert_model(
                 type=ResolutionNodeType.MODEL.value,
                 name=model,
                 description=description,
-                truth=100,
+                truth=50,
             )
             .on_conflict_do_update(
                 index_elements=["resolution_hash"],
