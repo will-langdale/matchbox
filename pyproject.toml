@@ -1,8 +1,8 @@
 [project]
-name = "matchbox"
+name = "matchbox-db"
 version = "0.2.1"
-description = "A framework for orchestrating and comparing various company matching methodologies."
-authors = [{ name = "DDaTDataScienceTeam" }]
+description = "A framework for orchestrating and comparing data linking and deduplication methodologies."
+authors = [{ name="Department for Business and Trade" }]
 license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.11"
@@ -61,6 +61,14 @@ typing = [
     "polars>=1.11.0",
     "pyarrow-stubs>=17.16",
 ]
+
+[project.urls]
+"Documentation" = "https://uktrade.github.io/matchbox/"
+"Repository" = "https://github.com/uktrade/matchbox.git"
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
 
 [tool.uv]
 default-groups = ["dev", "typing"]
