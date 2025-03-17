@@ -253,7 +253,7 @@ def test_truth_setter(matchbox_api: MockRouter):
 
     # Verify the API call
     assert route.called
-    assert float(route.calls.last.request.read()) == 0.9
+    assert float(route.calls.last.request.read()) == 90
 
 
 def test_truth_setter_validation_error(matchbox_api: MockRouter):
