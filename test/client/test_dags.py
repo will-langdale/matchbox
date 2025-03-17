@@ -321,8 +321,6 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
     assert d_foo_wrong.name not in dag.graph and d_foo_wrong.name not in dag.nodes
 
     # CASE 2: Reading from previous step
-    # Re-define d_foo, this time correctly
-
     dag = DAG()
     dag.add_sources(foo, bar)
     dag.add_steps(d_foo_right)

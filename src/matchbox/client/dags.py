@@ -111,7 +111,7 @@ class LinkStep(ModelStep):
         self,
         left_df: DataFrame,
         right_df: DataFrame,
-    ):
+    ) -> Results:
         """Create linking model and pass it input dataframes."""
         linker = make_model(
             model_name=self.name,
