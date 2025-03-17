@@ -18,13 +18,13 @@ from matchbox.client.results import Results
 from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 
-DagNode = Union["ModelStep", Source]
+DAGNode = Union["ModelStep", Source]
 
 
 class StepInput(BaseModel):
     """Input to a DAG step."""
 
-    origin: DagNode
+    origin: DAGNode
     select: dict[str, list[str]]
     cleaners: dict[str, dict[str, Any]] = {}
     threshold: float | None = None
@@ -147,18 +147,18 @@ class LinkStep(ModelStep):
         res.to_matchbox()
 
 
-class Dag:
+class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
     def __init__(self, engine: Engine):
         """Initialise DAG object."""
         self.engine = engine
 
-        self.nodes: dict[str, DagNode] = {}
+        self.nodes: dict[str, DAGNode] = {}
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
 
-    def _validate_node(self, name: str, node: DagNode):
+    def _validate_node(self, name: str, node: DAGNode):
         if name in self.nodes:
             raise ValueError(f"Name '{name}' is already taken in the DAG")
 

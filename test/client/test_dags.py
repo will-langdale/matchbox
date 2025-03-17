@@ -3,7 +3,7 @@ from unittest.mock import Mock, call, patch
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.client.dags import Dag, DedupeStep, LinkStep, StepInput
+from matchbox.client.dags import DAG, DedupeStep, LinkStep, StepInput
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_factory
@@ -199,7 +199,7 @@ def test_dag_runs(
     )
 
     # Assemble DAG
-    dag = Dag(engine=sqlite_warehouse)
+    dag = DAG(engine=sqlite_warehouse)
 
     dag.add_sources(foo, bar)
     assert set(dag.nodes.keys()) == {"foo", "bar"}
@@ -248,7 +248,7 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
         settings={},
     )
 
-    dag = Dag(engine=sqlite_warehouse)
+    dag = DAG(engine=sqlite_warehouse)
     with pytest.raises(ValueError, match="Dependency"):
         dag.add_steps(d_foo)
     # Sources are not added
@@ -266,7 +266,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         model_class=NaiveDeduper,
         settings={},
     )
-    dag = Dag(engine=sqlite_warehouse)
+    dag = DAG(engine=sqlite_warehouse)
     dag.add_sources(foo)
     with pytest.raises(ValueError, match="already taken"):
         dag.add_steps(d_foo)
@@ -289,7 +289,7 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
         settings={},
     )
 
-    dag = Dag(engine=sqlite_warehouse)
+    dag = DAG(engine=sqlite_warehouse)
     dag.add_sources(foo)
     with pytest.raises(ValueError, match="only select"):
         dag.add_steps(d_foo)
@@ -316,7 +316,7 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
         settings={},
     )
 
-    dag = Dag(engine=sqlite_warehouse)
+    dag = DAG(engine=sqlite_warehouse)
     dag.add_sources(foo, bar)
     dag.add_steps(d_foo)
     with pytest.raises(ValueError, match="Cannot select"):
@@ -331,7 +331,7 @@ def test_dag_disconnected(sqlite_warehouse: Engine):
     foo = source_factory(full_name="foo").source
     bar = source_factory(full_name="bar").source
 
-    dag = Dag(engine=sqlite_warehouse)
+    dag = DAG(engine=sqlite_warehouse)
     dag.add_sources(foo, bar)
 
     with pytest.raises(ValueError, match="disconnected"):
