@@ -1,3 +1,3 @@
-from matchbox.common.logging import ERROR, set_log_level
+from matchbox.common.logging import parse_toml
 
-set_log_level(ERROR)
+parse_toml()

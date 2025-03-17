@@ -1,4 +1,5 @@
 import logging
+import tomllib
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -77,7 +78,29 @@ def build_progress_bar(console: Console | None = None) -> Progress:
     )
 
 
-def set_log_level(level: int) -> None:
+def set_log_level(
+    level: int, log_format: str = None, log_date_format: str = None
+) -> None:
     """Set the log level. for all loggers."""
     for log in [logging.getLogger(name) for name in logging.root.manager.loggerDict]:
         log.setLevel(level)
+        if all([log_format, log_date_format]):
+            formatter = logging.Formatter(log_format, log_date_format)
+            for handler in log.handlers:
+                handler.setFormatter(formatter)
+
+
+def parse_toml() -> None:
+    """Parse a toml file."""
+    # Load the pyproject.toml file
+
+    with open("pyproject.toml", "rb") as file:
+        data = tomllib.load(file)
+
+    # Access the specific values
+    log_cli_level = data["tool"]["pytest"]["ini_options"]["log_cli_level"]
+    log_cli_format = data["tool"]["pytest"]["ini_options"]["log_cli_format"]
+    log_cli_date_format = data["tool"]["pytest"]["ini_options"]["log_cli_date_format"]
+
+    log_level = getattr(logging, log_cli_level, INFO)
+    set_log_level(log_level, log_cli_format, log_cli_date_format)
