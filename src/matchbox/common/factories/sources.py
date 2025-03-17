@@ -32,6 +32,12 @@ R = TypeVar("R")
 
 
 def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to allow configuring source_factory with dicts.
+
+    This retains the hashability of FeatureConfig while still making it simple
+    to use the factory without special objects.
+    """
+
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         # Handle features in first positional arg
@@ -134,7 +140,7 @@ class LinkedSourcesTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    true_entities: dict[int, SourceEntity] = Field(default_factory=dict)
+    true_entities: set[SourceEntity] = Field(default_factory=set)
     sources: dict[str, SourceTestkit]
 
     def find_entities(
@@ -143,7 +149,7 @@ class LinkedSourcesTestkit(BaseModel):
         max_appearances: dict[str, int] | None = None,
     ) -> list[SourceEntity]:
         """Find entities matching appearance criteria."""
-        result = list(self.true_entities.values())
+        result = list(self.true_entities)
 
         def _meets_criteria(
             entity: SourceEntity, criteria: dict[str, int], compare: Callable
@@ -168,6 +174,13 @@ class LinkedSourcesTestkit(BaseModel):
             ]
 
         return result
+
+    def true_entity_subset(self, *sources: str) -> list[ClusterEntity]:
+        """Return a subset of true entities that appear in the given sources."""
+        cluster_entities = [
+            entity.to_cluster_entity(*sources) for entity in self.true_entities
+        ]
+        return [entity for entity in cluster_entities if entity is not None]
 
     def diff_results(
         self,
@@ -196,11 +209,8 @@ class LinkedSourcesTestkit(BaseModel):
                 See [`diff_results()`][matchbox.common.factories.entities.diff_results]
                 for the report format.
         """
-        cluster_entities = [
-            entity.to_cluster_entity(*sources) for entity in self.true_entities.values()
-        ]
         return diff_results(
-            expected=[entity for entity in cluster_entities if entity is not None],
+            expected=self.true_entity_subset(*sources),
             actual=probabilities_to_results_entities(
                 probabilities=probabilities,
                 left_clusters=left_clusters,
@@ -595,8 +605,9 @@ def linked_sources_factory(
     )
 
     # Initialize LinkedSourcesTestkit
+    true_entity_lookup = {entity.id: entity for entity in all_entities}
     linked = LinkedSourcesTestkit(
-        true_entities={entity.id: entity for entity in all_entities},
+        true_entities=all_entities,
         sources={},
     )
 
@@ -643,7 +654,7 @@ def linked_sources_factory(
 
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
-            entity = linked.true_entities[entity_id]
+            entity = true_entity_lookup[entity_id]
             entity.add_source_reference(config.full_name, pks)
 
     return linked

@@ -28,6 +28,7 @@ from matchbox.common.factories.entities import (
     SourceEntity,
     SuffixRule,
     probabilities_to_results_entities,
+    query_to_cluster_entities,
 )
 from matchbox.common.factories.sources import (
     SourceConfig,
@@ -142,6 +143,7 @@ def _min_edges_component(left: int, right: int, deduplicate: bool) -> int:
 
 def _max_edges_component(left: int, right: int, deduplicate: bool) -> int:
     """Calculate max edges for component to be avoid duplication.
+
     Considers complete graph for deduping, and complete bipartite graph for linking.
 
     Args:
@@ -228,6 +230,7 @@ def generate_dummy_probabilities(
         prob_range: Tuple of (min_prob, max_prob) to constrain probabilities
         num_components: Number of distinct connected components to generate
         total_rows: Total number of rows to generate
+        seed: Random seed for reproducibility
 
     Returns:
         PyArrow Table with 'left_id', 'right_id', and 'probability' columns
@@ -391,7 +394,6 @@ def generate_dummy_probabilities(
     )
 
 
-@cache
 def generate_entity_probabilities(
     left_entities: frozenset[ClusterEntity],
     right_entities: frozenset[ClusterEntity] | None,
@@ -788,7 +790,7 @@ def model_factory(
             right_query = linked.sources["cdms"].query
             right_entities = linked.sources["cdms"].entities
 
-        dummy_true_entities = tuple(linked.true_entities.values())
+        dummy_true_entities = tuple(linked.true_entities)
         model_type = resolved_model_type
 
     # ==== Model creation ====
@@ -836,6 +838,108 @@ def model_factory(
         right_query=right_query,
         right_clusters={entity.id: entity for entity in right_entities}
         if right_entities
+        else None,
+        probabilities=probabilities,
+    )
+
+
+def query_to_model_factory(
+    left_resolution: str,
+    left_query: pa.Table,
+    left_source_pks: dict[str, str],
+    true_entities: tuple[SourceEntity, ...],
+    name: str | None = None,
+    description: str | None = None,
+    right_resolution: str | None = None,
+    right_query: pa.Table | None = None,
+    right_source_pks: dict[str, str] | None = None,
+    prob_range: tuple[float, float] = (0.8, 1.0),
+    seed: int = 42,
+) -> ModelTestkit:
+    """Turns raw queries from Matchbox into ModelTestkits.
+
+    Args:
+        left_resolution: Name of the resolution used for the left query
+        left_query: PyArrow table with left query data
+        left_source_pks: Dictionary mapping source names to primary key column names
+            in left query
+        true_entities: Ground truth SourceEntity objects to use for generating
+            probabilities
+        name: Name of the model
+        description: Description of the model
+        right_resolution: Name of the resolution used for the right query
+        right_query: PyArrow table with right query data, if creating a linker
+        right_source_pks: Dictionary mapping source names to primary key column names
+            in right query
+        prob_range: Range of probabilities to generate
+        seed: Random seed for reproducibility
+
+    Returns:
+        ModelTestkit with the processed data
+    """
+    # Validate inputs
+    if not (0 <= prob_range[0] <= prob_range[1] <= 1):
+        raise ValueError("Probabilities must be increasing values between 0 and 1")
+
+    # Check if right-side arguments are consistently provided
+    right_args = [right_resolution, right_query, right_source_pks]
+    if any(arg is not None for arg in right_args) and not all(
+        arg is not None for arg in right_args
+    ):
+        raise ValueError(
+            "When providing right-side arguments, all of right_resolution, "
+            "right_query, and right_source_pks must be provided"
+        )
+
+    # Create a Faker instance with the seed
+    generator = Faker()
+    generator.seed_instance(seed)
+
+    # Determine model type based on inputs
+    model_type = ModelType.LINKER if right_query is not None else ModelType.DEDUPER
+
+    # Create left and right ClusterEntity sets
+    left_clusters = query_to_cluster_entities(left_query, left_source_pks)
+
+    if right_query is not None and right_source_pks is not None:
+        right_clusters = query_to_cluster_entities(right_query, right_source_pks)
+    else:
+        right_clusters = None
+
+    # Create model metadata
+    metadata = ModelMetadata(
+        name=name or generator.unique.word(),
+        description=description or generator.sentence(),
+        type=model_type,
+        left_resolution=left_resolution,
+        right_resolution=right_resolution,
+    )
+
+    # Create model instance
+    model = Model(
+        metadata=metadata,
+        model_instance=Mock(),
+        left_data=left_query,
+        right_data=right_query,
+    )
+
+    # Generate probabilities
+    probabilities = generate_entity_probabilities(
+        left_entities=frozenset(left_clusters),
+        right_entities=frozenset(right_clusters) if right_clusters else None,
+        source_entities=frozenset(true_entities) if true_entities else frozenset(),
+        prob_range=prob_range,
+        seed=seed,
+    )
+
+    # Create ModelTestkit
+    return ModelTestkit(
+        model=model,
+        left_query=left_query,
+        left_clusters={entity.id: entity for entity in left_clusters},
+        right_query=right_query,
+        right_clusters={entity.id: entity for entity in right_clusters}
+        if right_clusters
         else None,
         probabilities=probabilities,
     )

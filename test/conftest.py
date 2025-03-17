@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 from unittest.mock import patch
 
@@ -8,11 +9,17 @@ from rich.console import Console
 from rich.progress import Progress
 
 pytest_plugins = [
-    "test.fixtures.data",
     "test.fixtures.db",
     "test.fixtures.graph",
     "test.fixtures.client",
 ]
+
+TEST_ROOT = Path(__file__).resolve().parent
+
+
+@pytest.fixture(scope="session")
+def test_root_dir() -> Path:
+    return TEST_ROOT
 
 
 @contextmanager

@@ -1,3 +1,6 @@
+"""General utilities for the PostgreSQL backend."""
+
+import base64
 import contextlib
 import cProfile
 import io
@@ -6,20 +9,27 @@ from itertools import islice
 from typing import Any, Callable, Iterable
 
 from pg_bulk_ingest import Delete, Upsert, ingest
-from sqlalchemy import Engine, Index, MetaData, Table, func
+from sqlalchemy import Engine, Index, MetaData, Table, func, inspect, select
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
+)
 from matchbox.common.graph import (
     ResolutionEdge,
     ResolutionGraph,
     ResolutionNode,
     ResolutionNodeType,
 )
+from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.orm import (
+    Clusters,
+    Contains,
+    Probabilities,
     ResolutionFrom,
     Resolutions,
+    Sources,
 )
 
 # Retrieval
@@ -30,6 +40,7 @@ def resolve_model_name(model: str, engine: Engine) -> Resolutions:
 
     Args:
         model: The name of the model to resolve.
+        engine: The database engine.
 
     Raises:
         MatchboxResolutionNotFoundError: If the model doesn't exist.
@@ -59,6 +70,122 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
             G.edges.add(ResolutionEdge(parent=edge.parent, child=edge.child))
 
     return G
+
+
+# Data management
+
+
+def dump(engine: Engine) -> MatchboxSnapshot:
+    """Dumps the entire database to a snapshot.
+
+    Args:
+        engine: The database engine.
+
+    Returns:
+        A MatchboxSnapshot object of type "postgres" with the database's
+            current state.
+    """
+    tables = {
+        "resolutions": Resolutions,
+        "resolution_from": ResolutionFrom,
+        "sources": Sources,
+        "clusters": Clusters,
+        "contains": Contains,
+        "probabilities": Probabilities,
+    }
+
+    data = {}
+
+    with Session(engine) as session:
+        for table_name, model in tables.items():
+            # Query all records from this table
+            records = session.execute(select(model)).scalars().all()
+
+            # Convert each record to a dictionary
+            table_data = []
+            for record in records:
+                record_dict = {}
+                for column in inspect(model).columns:
+                    value = getattr(record, column.name)
+
+                    # Store bytes as nested dictionary with encoding format
+                    if isinstance(value, bytes):
+                        record_dict[column.name] = {
+                            "base64": base64.b64encode(value).decode("ascii")
+                        }
+                    else:
+                        record_dict[column.name] = value
+
+                table_data.append(record_dict)
+
+            data[table_name] = table_data
+
+    return MatchboxSnapshot(backend_type=MatchboxBackends.POSTGRES, data=data)
+
+
+def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None:
+    """Restores the database from a snapshot.
+
+    Args:
+        engine: The database engine.
+        snapshot: A MatchboxSnapshot object of type "postgres" with the
+            database's state
+        batch_size: The number of records to insert in each batch
+
+    Raises:
+        ValueError: If the snapshot is missing data
+    """
+    table_map = {
+        "resolutions": Resolutions,
+        "resolution_from": ResolutionFrom,
+        "sources": Sources,
+        "clusters": Clusters,
+        "contains": Contains,
+        "probabilities": Probabilities,
+    }
+
+    table_order = [
+        "resolutions",
+        "resolution_from",
+        "sources",
+        "clusters",
+        "contains",
+        "probabilities",
+    ]
+
+    with Session(engine) as session:
+        # Process tables in order
+        for table_name in table_order:
+            if table_name not in snapshot.data:
+                raise ValueError(f"Invalid: Table {table_name} not found in snapshot.")
+
+            model = table_map[table_name]
+            records = snapshot.data[table_name]
+
+            if not records:
+                continue
+
+            # Process records for insertion
+            processed_records = []
+            for record in records:
+                processed_record = {}
+
+                for key, value in record.items():
+                    # Check if the value is a dictionary with encoding format
+                    if isinstance(value, dict) and "base64" in value:
+                        processed_record[key] = base64.b64decode(value["base64"])
+                    else:
+                        processed_record[key] = value
+
+                processed_records.append(processed_record)
+
+            # Insert
+            for i in range(0, len(processed_records), batch_size):
+                batch = processed_records[i : i + batch_size]
+                session.bulk_insert_mappings(model, batch)
+                session.flush()
+
+        session.commit()
 
 
 # SQLAlchemy profiling
@@ -102,8 +229,9 @@ def data_to_batch(
     """Constructs a batches function for any dataframe and table."""
 
     def _batches(
-        high_watermark,  # noqa ARG001 required for pg_bulk_ingest
+        high_watermark,  # noqa: ARG001
     ) -> Iterable[tuple[None, None, Iterable[tuple[Table, tuple]]]]:
+        # high_watermark required for pg_bulk_ingest
         for batch in batched(records, batch_size):
             yield None, None, ((table, t) for t in batch)
 

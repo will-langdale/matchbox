@@ -21,6 +21,32 @@ To install the full package, including the server features:
 pip install "matchbox[server] @ git+ssh://git@github.com/uktrade/matchbox.git"
 ```
 
+## Running the server locally
+
+To run the server locally, run:
+
+```bash
+docker compose up --build
+```
+
+## Running the server locally with Datadog (monitoring) integration
+
+1. Run:
+
+   ```
+   cp ./environments/datadog-agent-private-sample.env ./environments/.datadog-agent-private.env
+   ```
+
+2. Populate the newly-created ` ./environments/.datadog-agent-private.env` with a Datadog API key.
+
+
+3. Run the server using:
+
+   ```bash
+   docker compose --profile monitoring up --build
+   ```
+
+
 ## Use cases
 
 ### Data architects and engineers
