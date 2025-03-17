@@ -46,8 +46,10 @@ def test_source_address_compose():
             SourceAddress.compose(sqlite_name, "tablename").warehouse_hash,
         ]
     )
+    different_wh_hashes_str = set([str(sa) for sa in different_wh_hashes])
 
     assert len(different_wh_hashes) == 6
+    assert len(different_wh_hashes_str) == 6
 
     same_wh_hashes = set(
         [
@@ -57,8 +59,10 @@ def test_source_address_compose():
             SourceAddress.compose(pg_dialect, "tablename").warehouse_hash,
         ]
     )
+    same_wh_hashes_str = set([str(sa) for sa in same_wh_hashes])
 
     assert len(same_wh_hashes) == 1
+    assert len(same_wh_hashes_str) == 1
 
     same_table_name = set(
         [
@@ -66,8 +70,10 @@ def test_source_address_compose():
             SourceAddress.compose(sqlite, "tablename").full_name,
         ]
     )
+    same_table_name_str = set([str(sa) for sa in same_table_name])
 
     assert len(same_table_name) == 1
+    assert len(same_table_name_str) == 1
 
 
 def test_source_set_engine(sqlite_warehouse: Engine):

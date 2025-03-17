@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG, DedupeStep, LinkStep, StepInput
+from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_factory
@@ -17,7 +18,6 @@ def test_dedupe_step_run(
         patch("matchbox.client.dags.make_model") as make_model_mock,
         patch("matchbox.client.dags.process") as process_mock,
         patch("matchbox.client.dags.query") as query_mock,
-        patch("matchbox.client.dags.select") as select_mock,
     ):
         # Complete mock set up
         model_mock = Mock()
@@ -29,22 +29,20 @@ def test_dedupe_step_run(
         model_mock.run = Mock(return_value=results_mock)
 
         # Set up and run deduper
-        foo = source_factory(full_name="foo").source
-        foo_select = {foo.address.full_name: []}
+        foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
         d_foo = DedupeStep(
             name="d_foo",
             description="",
-            left=StepInput(origin=foo, select=foo_select, threshold=0.5),
+            left=StepInput(origin=foo, select={foo: []}, threshold=0.5),
             model_class=NaiveDeduper,
             settings={"id": "id", "unique_fields": []},
         )
 
-        d_foo.run(engine=sqlite_warehouse)
+        d_foo.run()
 
         # Right data is queried
-        select_mock.assert_called_once_with(foo_select, engine=sqlite_warehouse)
         query_mock.assert_called_once_with(
-            select_mock.return_value,
+            [Selector(source=foo, fields=[])],
             return_type="pandas",
             threshold=d_foo.left.threshold,
             resolution_name=d_foo.left.name,
@@ -77,7 +75,6 @@ def test_link_step_run(
         patch("matchbox.client.dags.make_model") as make_model_mock,
         patch("matchbox.client.dags.process") as process_mock,
         patch("matchbox.client.dags.query") as query_mock,
-        patch("matchbox.client.dags.select") as select_mock,
     ):
         # Complete mock set up
         model_mock = Mock()
@@ -89,40 +86,29 @@ def test_link_step_run(
         model_mock.run = Mock(return_value=results_mock)
 
         # Set up and run deduper
-        foo = source_factory(full_name="foo").source
-        bar = source_factory(full_name="bar").source
-        foo_select = {foo.address.full_name: []}
-        bar_select = {bar.address.full_name: []}
+        foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+        bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
         foo_bar = LinkStep(
             name="foo_bar",
             description="",
-            left=StepInput(origin=foo, select=foo_select, threshold=0.5),
-            right=StepInput(origin=bar, select=bar_select, threshold=0.7),
+            left=StepInput(origin=foo, select={foo: []}, threshold=0.5),
+            right=StepInput(origin=bar, select={bar: []}, threshold=0.7),
             model_class=DeterministicLinker,
             settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         )
 
-        foo_bar.run(engine=sqlite_warehouse)
+        foo_bar.run()
 
         # Right data is queried
-        assert select_mock.call_count == 2
-        assert select_mock.call_args_list[0] == call(
-            foo_select,
-            engine=sqlite_warehouse,
-        )
-        assert select_mock.call_args_list[1] == call(
-            bar_select,
-            engine=sqlite_warehouse,
-        )
         assert query_mock.call_count == 2
         assert query_mock.call_args_list[0] == call(
-            select_mock.return_value,
+            [Selector(source=foo, fields=[])],
             return_type="pandas",
             threshold=foo_bar.left.threshold,
             resolution_name=foo_bar.left.name,
         )
         assert query_mock.call_args_list[1] == call(
-            select_mock.return_value,
+            [Selector(source=bar, fields=[])],
             return_type="pandas",
             threshold=foo_bar.right.threshold,
             resolution_name=foo_bar.right.name,
@@ -162,13 +148,13 @@ def test_dag_runs(
 ):
     """A legal DAG can be built and run"""
     # Set up constituents
-    foo = source_factory(full_name="foo").source
-    bar = source_factory(full_name="bar").source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
 
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo.address.full_name: []}),
+        left=StepInput(origin=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -176,7 +162,7 @@ def test_dag_runs(
     d_bar = DedupeStep(
         name="d_bar",
         description="",
-        left=StepInput(origin=bar, select={bar.address.full_name: []}),
+        left=StepInput(origin=bar, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -184,12 +170,12 @@ def test_dag_runs(
     foo_bar = LinkStep(
         left=StepInput(
             origin=d_foo,
-            select={foo.address.full_name: []},
+            select={foo: []},
             cleaners={},
         ),
         right=StepInput(
             origin=d_bar,
-            select={bar.address.full_name: []},
+            select={bar: []},
             cleaners={},
         ),
         name="foo_bar",
@@ -199,22 +185,28 @@ def test_dag_runs(
     )
 
     # Assemble DAG
-    dag = DAG(engine=sqlite_warehouse)
+    dag = DAG()
 
     dag.add_sources(foo, bar)
-    assert set(dag.nodes.keys()) == {"foo", "bar"}
+    assert set(dag.nodes.keys()) == {str(foo.address), str(bar.address)}
 
     dag.add_steps(d_foo, d_bar, foo_bar)
-    assert set(dag.nodes.keys()) == {"foo", "bar", "d_foo", "d_bar", "foo_bar"}
-    assert d_foo.sources == {"foo"}
-    assert d_bar.sources == {"bar"}
-    assert foo_bar.sources == {"foo", "bar"}
+    assert set(dag.nodes.keys()) == {
+        str(foo.address),
+        str(bar.address),
+        "d_foo",
+        "d_bar",
+        "foo_bar",
+    }
+    assert d_foo.sources == {foo.address}
+    assert d_bar.sources == {bar.address}
+    assert foo_bar.sources == {foo.address, bar.address}
 
     # Prepare DAG
     dag.prepare()
     s_foo, s_bar, s_d_foo, s_d_bar, s_foo_bar = (
-        dag.sequence.index("foo"),
-        dag.sequence.index("bar"),
+        dag.sequence.index(str(foo.address)),
+        dag.sequence.index(str(bar.address)),
         dag.sequence.index("d_foo"),
         dag.sequence.index("d_bar"),
         dag.sequence.index("foo_bar"),
@@ -227,28 +219,28 @@ def test_dag_runs(
 
     assert handler_index.call_count == 2
     assert {
-        handler_index.call_args_list[0].kwargs["source"].address.full_name,
-        handler_index.call_args_list[1].kwargs["source"].address.full_name,
-    } == {"foo", "bar"}
+        handler_index.call_args_list[0].kwargs["source"],
+        handler_index.call_args_list[1].kwargs["source"],
+    } == {foo, bar}
 
     assert dedupe_run.call_count == 2
-    dedupe_run.assert_called_with(engine=sqlite_warehouse)
+    dedupe_run.assert_called_with()
 
-    link_run.assert_called_once_with(engine=sqlite_warehouse)
+    link_run.assert_called_once_with()
 
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
     """Steps cannot be added before their dependencies"""
-    foo = source_factory(full_name="foo").source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo.address.full_name: []}),
+        left=StepInput(origin=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
 
-    dag = DAG(engine=sqlite_warehouse)
+    dag = DAG()
     with pytest.raises(ValueError, match="Dependency"):
         dag.add_steps(d_foo)
     # Sources are not added
@@ -257,81 +249,96 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
     """Names across sources and steps must be unique"""
-    foo = source_factory(full_name="foo").source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
     d_foo = DedupeStep(
-        # Name clash!
-        name="foo",
+        name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo.address.full_name: []}),
+        left=StepInput(origin=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
-    dag = DAG(engine=sqlite_warehouse)
+    d_bar_wrong = DedupeStep(
+        # Name clash!
+        name="d_foo",
+        description="",
+        left=StepInput(origin=bar, select={bar: []}),
+        model_class=NaiveDeduper,
+        settings={},
+    )
+    dag = DAG()
     dag.add_sources(foo)
+    dag.add_steps(d_foo)
     with pytest.raises(ValueError, match="already taken"):
-        dag.add_steps(d_foo)
+        dag.add_steps(d_bar_wrong)
     # DAG is not modified by failed attempt
-    assert dag.nodes["foo"] == foo
-    assert not len(dag.graph["foo"])
+    assert dag.nodes["d_foo"] == d_foo
+    # We didn't overwrite d_foo's dependencies
+    assert dag.graph["d_foo"] == [str(foo.address)]
     # Sources are not added
-    assert not d_foo.sources
+    assert not d_bar_wrong.sources
 
 
 def test_dag_source_unavailable(sqlite_warehouse: Engine):
     """Cannot select sources not available to a step"""
-    # CASE 1: Reading from Source
-    foo = source_factory(full_name="foo").source
-    d_foo = DedupeStep(
+    # Set up all nodes
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+
+    d_foo_right = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={"bar": []}),
+        left=StepInput(origin=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
 
-    dag = DAG(engine=sqlite_warehouse)
-    dag.add_sources(foo)
-    with pytest.raises(ValueError, match="only select"):
-        dag.add_steps(d_foo)
-    # DAG is not modified by failed attempt
-    assert d_foo.name not in dag.graph and d_foo.name not in dag.nodes
-
-    # CASE 2: Reading from previous step
-    bar = source_factory(full_name="bar").source
-    # Re-define d_foo, this time correctly
-    d_foo = DedupeStep(
+    d_foo_wrong = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo.address.full_name: []}),
+        # Origin and select disagree
+        left=StepInput(origin=foo, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
     )
-    bar_foo = LinkStep(
+
+    bar_foo_wrong = LinkStep(
         name="foo_bar",
         description="",
-        left=StepInput(origin=bar, select={bar.address.full_name: []}),
-        # Notice "typo"
-        right=StepInput(origin=d_foo, select={"typo": []}),
+        left=StepInput(origin=bar, select={bar: []}),
+        # Origin and select disagree
+        right=StepInput(origin=d_foo_right, select={bar: []}),
         model_class=DeterministicLinker,
         settings={},
     )
 
-    dag = DAG(engine=sqlite_warehouse)
-    dag.add_sources(foo, bar)
-    dag.add_steps(d_foo)
-    with pytest.raises(ValueError, match="Cannot select"):
-        dag.add_steps(bar_foo)
+    # CASE 1: Reading from Source
+    dag = DAG()
+    dag.add_sources(foo)
+    with pytest.raises(ValueError, match="only select"):
+        dag.add_steps(d_foo_wrong)
     # DAG is not modified by failed attempt
-    assert bar_foo.name not in dag.graph and bar_foo.name not in dag.nodes
-    assert not bar_foo.sources
+    assert d_foo_wrong.name not in dag.graph and d_foo_wrong.name not in dag.nodes
+
+    # CASE 2: Reading from previous step
+    # Re-define d_foo, this time correctly
+
+    dag = DAG()
+    dag.add_sources(foo, bar)
+    dag.add_steps(d_foo_right)
+    with pytest.raises(ValueError, match="Cannot select"):
+        dag.add_steps(bar_foo_wrong)
+    # DAG is not modified by failed attempt
+    assert bar_foo_wrong.name not in dag.graph and bar_foo_wrong.name not in dag.nodes
+    assert not bar_foo_wrong.sources
 
 
 def test_dag_disconnected(sqlite_warehouse: Engine):
     """Nodes cannot be disconnected"""
-    foo = source_factory(full_name="foo").source
-    bar = source_factory(full_name="bar").source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
 
-    dag = DAG(engine=sqlite_warehouse)
+    dag = DAG()
     dag.add_sources(foo, bar)
 
     with pytest.raises(ValueError, match="disconnected"):

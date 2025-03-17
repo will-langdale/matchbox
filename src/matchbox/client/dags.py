@@ -6,17 +6,16 @@ from typing import Any, Union
 
 from pandas import DataFrame
 from pydantic import BaseModel
-from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.client.helpers.cleaner import process
-from matchbox.client.helpers.selector import query, select
+from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
 from matchbox.client.results import Results
 from matchbox.common.logging import logger
-from matchbox.common.sources import Source
+from matchbox.common.sources import Source, SourceAddress
 
 DAGNode = Union["ModelStep", Source]
 
@@ -25,7 +24,7 @@ class StepInput(BaseModel):
     """Input to a DAG step."""
 
     origin: DAGNode
-    select: dict[str, list[str]]
+    select: dict[Source, list[str]]
     cleaners: dict[str, dict[str, Any]] = {}
     threshold: float | None = None
 
@@ -35,7 +34,7 @@ class StepInput(BaseModel):
         if isinstance(self.origin, ModelStep):
             return self.origin.name
         else:
-            return self.origin.address.full_name
+            return str(self.origin.address)
 
 
 class ModelStep(BaseModel, ABC):
@@ -45,9 +44,9 @@ class ModelStep(BaseModel, ABC):
     description: str
     left: StepInput
     settings: dict[str, Any]
-    sources: set[str] = set()
+    sources: set[SourceAddress] = set()
 
-    def query(self, step_input: StepInput, engine: Engine) -> DataFrame:
+    def query(self, step_input: StepInput) -> DataFrame:
         """Retrieve data for declared step input.
 
         Args:
@@ -57,13 +56,9 @@ class ModelStep(BaseModel, ABC):
         Returns:
             Pandas dataframe with retrieved results.
         """
-        selector = select(
-            step_input.select,
-            engine=engine,
-        )
-
+        selectors = [Selector(source=s, fields=f) for s, f in step_input.select.items()]
         df_raw = query(
-            selector,
+            selectors,
             return_type="pandas",
             threshold=step_input.threshold,
             resolution_name=step_input.name,
@@ -98,13 +93,9 @@ class DedupeStep(ModelStep):
         res = model.run()
         return res
 
-    def run(self, engine: Engine):
-        """Run full deduping pipeline and store results.
-
-        Args:
-            engine: SQLAlchemy Engine to use when retrieving data.
-        """
-        df_raw = self.query(self.left, engine)
+    def run(self):
+        """Run full deduping pipeline and store results."""
+        df_raw = self.query(self.left)
         df_clean = process(df_raw, self.left.cleaners)
         results = self.deduplicate(df_clean)
         results.to_matchbox()
@@ -135,12 +126,12 @@ class LinkStep(ModelStep):
 
         return linker.run()
 
-    def run(self, engine: Engine):
+    def run(self):
         """Run whole linking step."""
-        left_raw = self.query(self.left, engine)
+        left_raw = self.query(self.left)
         left_clean = process(left_raw, self.left.cleaners)
 
-        right_raw = self.query(self.right, engine)
+        right_raw = self.query(self.right)
         right_clean = process(right_raw, self.right.cleaners)
 
         res = self.link(left_clean, right_clean)
@@ -150,10 +141,8 @@ class LinkStep(ModelStep):
 class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
-    def __init__(self, engine: Engine):
+    def __init__(self):
         """Initialise DAG object."""
-        self.engine = engine
-
         self.nodes: dict[str, DAGNode] = {}
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
@@ -169,9 +158,9 @@ class DAG:
             sources: All sources to add.
         """
         for source in sources:
-            self._validate_node(source.address.full_name, source)
-            self.nodes[source.address.full_name] = source
-            self.graph[source.address.full_name] = []
+            self._validate_node(str(source.address), source)
+            self.nodes[str(source.address)] = source
+            self.graph[str(source.address)] = []
 
     def add_steps(self, *steps: ModelStep):
         """Add dedupers and linkers to DAG, and register sources available to steps.
@@ -190,17 +179,15 @@ class DAG:
             if isinstance(origin, Source):
                 if (
                     len(step_input.select) > 1
-                    or list(step_input.select.keys())[0] != origin.address.full_name
+                    or list(step_input.select.keys())[0] != origin
                 ):
-                    raise ValueError(
-                        f"Can only select from source {origin.address.full_name}"
-                    )
-                step.sources.add(step_input.origin.address.full_name)
+                    raise ValueError(f"Can only select from source {origin.address}")
+                step.sources.add(step_input.origin.address)
             else:
-                for source_name in step_input.select:
-                    if source_name not in origin.sources:
+                for source in step_input.select:
+                    if source.address not in origin.sources:
                         raise ValueError(
-                            f"Cannot select {source_name} from {step_input.name}"
+                            f"Cannot select {source.address} from {step_input.name}"
                         )
                 step.sources.update(origin.sources)
 
@@ -257,5 +244,5 @@ class DAG:
                 _handler.index(source=node)
                 logger.info(f"Indexed {node.address.full_name}")
             else:
-                node.run(engine=self.engine)
+                node.run()
                 logger.info(f"Run {node.name} model pipeline")

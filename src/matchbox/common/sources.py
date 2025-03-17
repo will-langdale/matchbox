@@ -50,6 +50,10 @@ class SourceColumn(BaseModel):
         default=None, description="The type to cast the column to before hashing data."
     )
 
+    def __hash__(self) -> int:
+        """Hash based on all properties."""
+        return hash((self.name, self.alias, self.type))
+
 
 def b64_bytes_validator(val: bytes | str) -> bytes:
     """Ensure that a value is a base64 encoded string or bytes."""
@@ -75,6 +79,14 @@ class SourceAddress(BaseModel):
 
     full_name: str
     warehouse_hash: SerialisableBytes
+
+    def __hash__(self) -> int:
+        """Hash based on full name and warehouse hash."""
+        return hash((self.full_name, self.warehouse_hash))
+
+    def __str__(self) -> str:
+        """Convert to a string."""
+        return self.full_name + "@" + hash_to_base64(self.warehouse_hash)
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
@@ -155,6 +167,10 @@ class Source(BaseModel):
                     f"Type {actual_type} != {col.type} for {col.name}"
                 )
         return self
+
+    def __hash__(self) -> int:
+        """Hash based on all properties without the engine."""
+        return hash((self.address, self.alias, self.db_pk, tuple(self.columns)))
 
     @property
     def signature(self) -> bytes:
