@@ -348,7 +348,7 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
 
 @pytest.mark.parametrize(
     "combine_type",
-    ["list_agg", "explode"],
+    ["set_agg", "explode"],
 )
 @patch.object(Source, "to_arrow")
 def test_query_combine_type(
@@ -376,9 +376,10 @@ def test_query_combine_type(
                 content=table_to_buffer(
                     pa.Table.from_pylist(
                         [
+                            # Creating a duplicate value for the same Matchbox ID
                             {"source_pk": "3", "id": 2},
-                            {"source_pk": "4", "id": 2},
-                            {"source_pk": "5", "id": 3},
+                            {"source_pk": "3", "id": 2},
+                            {"source_pk": "4", "id": 3},
                         ],
                         schema=SCHEMA_MB_IDS,
                     )
@@ -424,11 +425,13 @@ def test_query_combine_type(
     # Validate results
     results = query(sels, combine_type=combine_type)
 
-    if combine_type == "list_agg":
+    if combine_type == "set_agg":
         expected_len = 3
         for _, row in results.drop(columns=["id"]).iterrows():
             for cell in row.values:
                 assert isinstance(cell, ndarray)
+                # No duplicates
+                assert len(cell) == len(set(cell))
     else:
         expected_len = 5
 

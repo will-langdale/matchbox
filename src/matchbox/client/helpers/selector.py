@@ -6,6 +6,7 @@ from warnings import warn
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
+from pyarrow import compute as pc
 from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine
 
@@ -96,7 +97,7 @@ def select(
 def query(
     *selectors: list[Selector],
     resolution_name: str | None = None,
-    combine_type: Literal["concat", "explode", "list_agg"] = "concat",
+    combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_type: Literal["pandas", "arrow"] = "pandas",
     threshold: int | None = None,
     limit: int | None = None,
@@ -115,9 +116,8 @@ def query(
 
             * If `concat`, concatenate all sources queried without any merging
             * If `explode`, join on Matchbox ID
-            * If `list_agg`, join on Matchbox ID, then group on Matchbox ID. All
-                columns except for the Matchbox ID will hold lists of values,
-                including nulls and duplicates
+            * If `set_agg`, join on Matchbox ID, then group on Matchbox ID. All
+                columns except for the Matchbox ID will hold lists of unique values
         return_type: The form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): The threshold to use for creating clusters
@@ -145,7 +145,7 @@ def query(
         ```
     """
     # Validate arguments
-    if combine_type not in ("concat", "explode", "list_agg"):
+    if combine_type not in ("concat", "explode", "set_agg"):
         raise ValueError(f"combine_type of {combine_type} not valid")
 
     if return_type not in ("pandas", "arrow"):
@@ -212,14 +212,16 @@ def query(
         for table in tables[1:]:
             result = result.join(table, keys=["id"], join_type="full outer")
 
-        if combine_type == "list_agg":
+        if combine_type == "set_agg":
             # Aggregate into lists
             aggregate_rule = [
-                (col, "list") for col in result.column_names if col != "id"
+                (col, "distinct", pc.CountOptions(mode="only_valid"))
+                for col in result.column_names
+                if col != "id"
             ]
             result = result.group_by("id").aggregate(aggregate_rule)
             # Recover original column names
-            rename_rule = {f"{col}_list": col for col, _ in aggregate_rule}
+            rename_rule = {f"{col}_distinct": col for col, _, _ in aggregate_rule}
             result = result.rename_columns(rename_rule)
 
     # Return in requested format
