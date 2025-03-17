@@ -317,11 +317,11 @@ class TestMatchboxBackend:
                 isinstance(ancestor, ModelAncestor) for ancestor in linker_ancestors
             ]
 
-        # Not all ancestors have truth values, but one must
-        truth_found = False
-        for ancestor in linker_ancestors:
-            if isinstance(ancestor.truth, int):
-                truth_found = True
+            # Not all ancestors have truth values, but one must
+            truth_found = False
+            for ancestor in linker_ancestors:
+                if isinstance(ancestor.truth, int):
+                    truth_found = True
 
             assert truth_found
 
@@ -335,14 +335,14 @@ class TestMatchboxBackend:
                 model=linker_name
             )
 
-        # Set
-        updated_ancestors_cache = [
-            ModelAncestor(name=ancestor.name, truth=50)
-            for ancestor in pre_ancestors_cache
-        ]
-        self.backend.set_model_ancestors_cache(
-            model=linker_name, ancestors_cache=updated_ancestors_cache
-        )
+            # Set
+            updated_ancestors_cache = [
+                ModelAncestor(name=ancestor.name, truth=50)
+                for ancestor in pre_ancestors_cache
+            ]
+            self.backend.set_model_ancestors_cache(
+                model=linker_name, ancestors_cache=updated_ancestors_cache
+            )
 
             # Retrieve again
             post_ancestors_cache = self.backend.get_model_ancestors_cache(
