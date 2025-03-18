@@ -9,6 +9,7 @@ import pyarrow as pa
 from pandas import DataFrame
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     PlainSerializer,
     PlainValidator,
@@ -44,15 +45,13 @@ R = TypeVar("R")
 class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
     alias: str = Field(default_factory=lambda data: data["name"])
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
-
-    def __hash__(self) -> int:
-        """Hash based on all properties."""
-        return hash((self.name, self.alias, self.type))
 
 
 def b64_bytes_validator(val: bytes | str) -> bytes:
@@ -77,12 +76,10 @@ SerialisableBytes = Annotated[
 class SourceAddress(BaseModel):
     """A unique identifier for a dataset in a warehouse."""
 
+    model_config = ConfigDict(frozen=True)
+
     full_name: str
     warehouse_hash: SerialisableBytes
-
-    def __hash__(self) -> int:
-        """Hash based on full name and warehouse hash."""
-        return hash((self.full_name, self.warehouse_hash))
 
     def __str__(self) -> str:
         """Convert to a string."""
