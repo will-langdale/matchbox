@@ -324,7 +324,7 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
     dag = DAG()
     dag.add_sources(foo, bar)
     dag.add_steps(d_foo_right)
-    with pytest.raises(ValueError, match="Cannot select"):
+    with pytest.raises(ValueError, match="cannot select"):
         dag.add_steps(bar_foo_wrong)
     # DAG is not modified by failed attempt
     assert bar_foo_wrong.name not in dag.graph and bar_foo_wrong.name not in dag.nodes

@@ -114,10 +114,14 @@ def query(
             * If querying 2 or more sources, it will look for a default resolution
         combine_type: How to combine the data from different sources
 
-            * If `concat`, concatenate all sources queried without any merging
-            * If `explode`, join on Matchbox ID
-            * If `set_agg`, join on Matchbox ID, then group on Matchbox ID. All
-                columns except for the Matchbox ID will hold lists of unique values
+            * If `concat`, concatenate all sources queried without any merging.
+                Multiple rows per ID, with null values where data isn't available
+            * If `explode`, outer join on Matchbox ID. Multiple rows per ID,
+                with one for every unique combination of data requested
+                across all sources
+            * If `set_agg`, join on Matchbox ID, group on Matchbox ID, then
+                aggregate to nested lists of unique values. One row per ID,
+                but all requested data is in nested arrays
         return_type: The form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): The threshold to use for creating clusters
