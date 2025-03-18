@@ -1,6 +1,6 @@
 [project]
 name = "matchbox-db"
-version = "0.2.1"
+version = "0.0.0.dev0"
 description = "A framework for orchestrating and comparing data linking and deduplication methodologies."
 authors = [{ name="Department for Business and Trade" }]
 license = {file = "LICENSE"}
