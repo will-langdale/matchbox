@@ -66,7 +66,7 @@ metadata_store = MetadataStore(expiry_minutes=30)
 
 app = FastAPI(
     title="matchbox API",
-    version=version("matchbox"),
+    version=version("matchbox_db"),
     lifespan=lifespan,
 )
 
