@@ -35,22 +35,14 @@ def get_logger(name: str, custom_format: str = None) -> logging.Logger:
     logger = logging.getLogger(name)
 
     if custom_format:
-        # Remove existing handlers
         logger.handlers.clear()
 
-        # Create a custom handler
         custom_handler = RichHandler(rich_tracebacks=True)
-
-        # Create a custom formatter
         formatter = logging.Formatter(custom_format)
-
-        # Set formatter for the custom handler
         custom_handler.setFormatter(formatter)
 
-        # Add custom handler to the logger
         logger.addHandler(custom_handler)
 
-        # Prevent the logger from propagating messages to the root logger
         logger.propagate = False
 
     return logger

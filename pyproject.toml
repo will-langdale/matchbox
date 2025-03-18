@@ -1,11 +1,11 @@
 [project]
-name = "matchbox"
-version = "0.2.1"
-description = "A framework for orchestrating and comparing various company matching methodologies."
-authors = [{ name = "DDaTDataScienceTeam" }]
+name = "matchbox-db"
+version = "0.0.0.dev0"
+description = "A framework for orchestrating and comparing data linking and deduplication methodologies."
+authors = [{ name="Department for Business and Trade" }]
 license = {file = "LICENSE"}
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "click>=8.1.7",
     "connectorx>=0.3.3",
@@ -62,6 +62,14 @@ typing = [
     "pyarrow-stubs>=17.16",
 ]
 
+[project.urls]
+"Documentation" = "https://uktrade.github.io/matchbox/"
+"Repository" = "https://github.com/uktrade/matchbox.git"
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
 [tool.uv]
 default-groups = ["dev", "typing"]
 package = true
@@ -105,12 +113,12 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
-addopts = "-s -vv --cov=matchbox test/ --log-disable=pg_bulk_ingest"
+addopts = "--cov=matchbox test/ --log-disable=pg_bulk_ingest"
 norecursedirs = "src"
-log_cli = false
-log_cli_level = "INFO"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+log_cli = false  # Set to true to enable logs and individual tests
+log_cli_level = "ERROR"  # Set to "INFO" to see more detailed logging
+log_cli_format = "%(asctime)s [%(levelname)s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%X"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [

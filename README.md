@@ -1,8 +1,9 @@
-# 🔥 Matchbox (née Company Matching Framework)
+# 🔥 Matchbox DB
 
 Record matching is a chore. Matchbox is a match pipeline orchestration tool that aims to:
 
 * Make matching an iterative, collaborative, measurable problem
+* Compose sources, dedupers and linkers and make the results very easy to query
 * Allow organisations to know they have matching records without having to share the data
 * Allow matching pipelines to run iteratively
 * Support batch and real-time matching 
@@ -12,13 +13,13 @@ Matchbox doesn't store raw data, instead indexing the data in your warehouse and
 ## Installation
 To install the matchbox client:
 ```
-pip install "matchbox @ git+ssh://git@github.com/uktrade/matchbox.git"
+pip install "matchbox-db"
 ```
 
 To install the full package, including the server features:
 
 ```
-pip install "matchbox[server] @ git+ssh://git@github.com/uktrade/matchbox.git"
+pip install "matchbox-db[server]"
 ```
 
 ## Running the server locally
