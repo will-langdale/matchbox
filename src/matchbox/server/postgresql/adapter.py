@@ -28,6 +28,7 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     ResolutionFrom,
     Resolutions,
+    SourceColumns,
     Sources,
 )
 from matchbox.server.postgresql.utils.db import (
@@ -198,18 +199,24 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .first()
             )
             if source:
+                columns = (
+                    session.query(SourceColumns)
+                    .filter(SourceColumns.source_id == source.resolution_id)
+                    .order_by(SourceColumns.column_index)
+                    .all()
+                )
+
                 return Source(
                     alias=source.alias,
                     address=address,
                     db_pk=source.id,
                     columns=[
-                        SourceColumn(name=name, alias=alias, type=type_)
-                        for name, alias, type_ in zip(
-                            source.column_names,
-                            source.column_aliases,
-                            source.column_types,
-                            strict=True,
+                        SourceColumn(
+                            name=column.column_name,
+                            alias=column.column_alias,
+                            type=column.column_type,
                         )
+                        for column in columns
                     ],
                 )
             else:

@@ -13,7 +13,7 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, TEXT
+from sqlalchemy.dialects.postgresql import BYTEA, TEXT
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -170,6 +170,33 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             return result + 1
 
 
+class SourceColumns(CountMixin, MBDB.MatchboxBase):
+    """Table for storing column details for Sources."""
+
+    __tablename__ = "source_columns"
+
+    # Columns
+    column_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    source_id = Column(
+        BIGINT,
+        ForeignKey("sources.resolution_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    column_index = Column(INTEGER, nullable=False)
+    column_name = Column(TEXT, nullable=False)
+    column_alias = Column(TEXT, nullable=False)
+    column_type = Column(TEXT, nullable=False)
+
+    # Relationships
+    source = relationship("Sources", back_populates="columns")
+
+    # Constraints and indices
+    __table_args__ = (
+        UniqueConstraint("source_id", "column_index", name="unique_column_index"),
+        Index("ix_source_columns_source_id", "source_id"),
+    )
+
+
 class Sources(CountMixin, MBDB.MatchboxBase):
     """Table of sources of data for Matchbox."""
 
@@ -185,13 +212,13 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
     id = Column(TEXT, nullable=False)
-    column_names = Column(ARRAY(TEXT), nullable=False)
-    column_aliases = Column(ARRAY(TEXT), nullable=False)
-    column_types = Column(ARRAY(TEXT), nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")
     clusters = relationship("Clusters", back_populates="source")
+    columns = relationship(
+        "SourceColumns", back_populates="source", cascade="all, delete-orphan"
+    )
 
     # Constraints
     __table_args__ = (

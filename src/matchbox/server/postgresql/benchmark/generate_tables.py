@@ -62,37 +62,77 @@ def _hash_list_int(li: list[int]) -> list[bytes]:
     return [HASH_FUNC(str(i).encode("utf-8")).digest() for i in li]
 
 
-def generate_sources(dataset_start_id: int = 1) -> pa.Table:
-    """Generate sources table.
+def generate_sources(
+    dataset_start_id: int = 1,
+) -> tuple[pa.Table, pa.Table]:
+    """Generate sources and source_columns tables.
 
     Args:
         dataset_start_id: Starting ID for dataset resolution IDs
 
     Returns:
-        PyArrow sources table
+        Tuple of (sources_table, source_columns_table) as PyArrow tables
     """
+    # Sources data
     sources_resolution_id = [dataset_start_id, dataset_start_id + 1]
     sources_alias = ["alias1", "alias2"]
     sources_full_names = ["dbt.companies_house", "dbt.hmrc_exporters"]
     sources_id = ["company_number", "id"]
-
-    column_names = [["col1"], ["col2"]]
-    column_aliases = [["col1"], ["col2"]]
-    column_types = [["TEXT"], ["TEXT"]]
     warehouse_hashes = [bytes("foo".encode("ascii"))] * 2
 
-    return pa.table(
+    # Create sources table without column arrays
+    sources_table = pa.table(
         {
             "resolution_id": pa.array(sources_resolution_id, type=pa.uint64()),
             "alias": pa.array(sources_alias, type=pa.string()),
             "full_name": pa.array(sources_full_names, type=pa.string()),
             "warehouse_hash": pa.array(warehouse_hashes, type=pa.binary()),
             "id": pa.array(sources_id, type=pa.string()),
-            "column_names": pa.array(column_names, type=pa.list_(pa.string())),
-            "column_aliases": pa.array(column_aliases, type=pa.list_(pa.string())),
-            "column_types": pa.array(column_types, type=pa.list_(pa.string())),
         }
     )
+
+    # Column data
+    column_names = [["col1"], ["col2"]]
+    column_aliases = [["col1"], ["col2"]]
+    column_types = [["TEXT"], ["TEXT"]]
+
+    # Create flattened data for source_columns table
+    column_ids = []
+    source_ids = []
+    column_indices = []
+    column_name_values = []
+    column_alias_values = []
+    column_type_values = []
+
+    # Start with column_id = 1
+    next_column_id = 1
+
+    # Process each source and its columns
+    for i, source_id in enumerate(sources_resolution_id):
+        for j, (name, alias, type_val) in enumerate(
+            zip(column_names[i], column_aliases[i], column_types[i], strict=False)
+        ):
+            column_ids.append(next_column_id)
+            next_column_id += 1
+            source_ids.append(source_id)
+            column_indices.append(j)
+            column_name_values.append(name)
+            column_alias_values.append(alias)
+            column_type_values.append(type_val)
+
+    # Create source_columns table
+    source_columns_table = pa.table(
+        {
+            "column_id": pa.array(column_ids, type=pa.uint64()),
+            "source_id": pa.array(source_ids, type=pa.uint64()),
+            "column_index": pa.array(column_indices, type=pa.int32()),
+            "column_name": pa.array(column_name_values, type=pa.string()),
+            "column_alias": pa.array(column_alias_values, type=pa.string()),
+            "column_type": pa.array(column_type_values, type=pa.string()),
+        }
+    )
+
+    return sources_table, source_columns_table
 
 
 def generate_resolutions(dataset_start_id: int = 1) -> pa.Table:
@@ -413,9 +453,8 @@ def generate_all_tables(
     console.log("Generating sources")
     resolutions = generate_resolutions(dataset_start_id)
     resolution_from = generate_resolution_from(dataset_start_id)
-    sources = generate_sources(dataset_start_id)
+    sources, columns = generate_sources(dataset_start_id)
 
-    # Generate both Clusters and ClusterSourcePK tables
     clusters_source1, source_pks1 = generate_cluster_source(
         range_left=0,
         range_right=source_len,
@@ -505,11 +544,11 @@ def generate_all_tables(
     console.log(f"Next cluster id: {final_next_id}")
     console.log(f"Next source pk id: {current_pk_id}")
 
-    # Order matters - include the new ClusterSourcePK table
     return {
         "resolutions": resolutions,
         "resolution_from": resolution_from,
         "sources": sources,
+        "source_columns": columns,
         "clusters": clusters,
         "cluster_source_pks": cluster_source_pks,
         "contains": contains,
