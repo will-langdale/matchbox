@@ -19,6 +19,7 @@ from matchbox.common.transform import (
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
+    ClusterSourcePK,
     Contains,
     Probabilities,
     ResolutionFrom,
@@ -112,6 +113,7 @@ def insert_dataset(
     resolution_hash = source.signature
 
     resolution_data = {
+        "name": source.alias,
         "resolution_hash": resolution_hash,
         "type": ResolutionNodeType.DATASET.value,
     }
@@ -131,6 +133,8 @@ def insert_dataset(
 
         # Generate existing max primary key values
         next_cluster_id = Clusters.next_id()
+        next_pk_id = ClusterSourcePK.next_id()
+
         with Session(engine) as session:
             resolution_id = (
                 session.query(Resolutions.resolution_id)
@@ -140,7 +144,6 @@ def insert_dataset(
 
         resolution_data["resolution_id"] = resolution_id or Resolutions.next_id()
         source_data["resolution_id"] = resolution_data["resolution_id"]
-        resolution_data["name"] = source_data["alias"]
 
         # Upsert into Resolutions table
         resolution_stmt = insert(Resolutions).values([resolution_data])
@@ -178,28 +181,67 @@ def insert_dataset(
                 pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
             )
         try:
-            # Upsert into Clusters table
-            batch_ingest(
-                records=[
-                    (
-                        next_cluster_id + i,
-                        clus["hash"],
-                        source_data["resolution_id"],
-                        clus["source_pk"],
-                    )
-                    for i, clus in enumerate(data_hashes.to_pylist())
-                ],
-                table=Clusters,
-                conn=conn,
-                batch_size=batch_size,
-            )
+            cluster_records = []
+            source_pk_records = []
+            pk_id_counter = next_pk_id
 
-            conn.commit()
+            # Prepare data for both tables
+            for i, clus in enumerate(data_hashes.to_pylist()):
+                cluster_id = next_cluster_id + i
+
+                # Add cluster record
+                cluster_records.append(
+                    (
+                        cluster_id,  # cluster_id
+                        clus["hash"],  # cluster_hash
+                        source_data["resolution_id"],  # dataset
+                    )
+                )
+
+                # Add pk records
+                for pk in clus["source_pk"]:
+                    source_pk_records.append(
+                        (
+                            pk_id_counter,  # pk_id
+                            cluster_id,  # cluster_id
+                            pk,  # source_pk
+                        )
+                    )
+                    pk_id_counter += 1
+
+            # Bulk insert into Clusters table
+            if cluster_records:
+                batch_ingest(
+                    records=cluster_records,
+                    table=Clusters,
+                    conn=conn,
+                    batch_size=batch_size,
+                )
+
+                # Bulk insert into ClusterSourcePK table
+                batch_ingest(
+                    records=source_pk_records,
+                    table=ClusterSourcePK,
+                    conn=conn,
+                    batch_size=batch_size,
+                )
+
+                # Commit both inserts in a single transaction
+                conn.commit()
+
+                logger.info(
+                    f"{source} added {len(cluster_records)} objects to Clusters table"
+                )
+                logger.info(
+                    f"{source} added {len(source_pk_records)} primary keys to "
+                    "ClusterSourcePK table"
+                )
+            else:
+                logger.info(f"No new records to add for {source}")
+
         except IntegrityError as e:
             # Some edge cases, defined in tests, are not implemented yet
             raise NotImplementedError from e
-
-        logger.info(f"{source} added {len(data_hashes)} objects to Clusters table")
 
     logger.info(f"Finished {source}")
 

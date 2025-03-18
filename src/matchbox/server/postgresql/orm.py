@@ -226,6 +226,37 @@ class Contains(CountMixin, MBDB.MatchboxBase):
     )
 
 
+class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
+    """Table for storing source primary keys for clusters."""
+
+    __tablename__ = "cluster_source_pks"
+
+    # Columns
+    pk_id = Column(BIGINT, primary_key=True)
+    cluster_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
+    )
+    source_pk = Column(TEXT, nullable=False)
+
+    # Relationships
+    cluster = relationship("Clusters", back_populates="source_pks")
+
+    # Constraints and indices
+    __table_args__ = (
+        Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
+        Index("ix_cluster_source_pks_source_pk", "source_pk"),
+    )
+
+    @classmethod
+    def next_id(cls) -> int:
+        """Returns the next available cluster_id."""
+        with Session(MBDB.get_engine()) as session:
+            result = session.execute(
+                select(func.coalesce(func.max(cls.pk_id), 0))
+            ).scalar()
+            return result + 1
+
+
 class Clusters(CountMixin, MBDB.MatchboxBase):
     """Table of indexed data and clusters that match it."""
 
@@ -235,13 +266,12 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     cluster_id = Column(BIGINT, primary_key=True)
     cluster_hash = Column(BYTEA, nullable=False)
     dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
-    # Uses array as source data may have identical rows. We can't control this
-    # Must be indexed or PostgreSQL incorrectly tries to use nested joins
-    # when retrieving small datasets in query() -- extremely slow
-    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="clusters")
+    source_pks = relationship(
+        "ClusterSourcePK", back_populates="cluster", cascade="all, delete-orphan"
+    )
     probabilities = relationship(
         "Probabilities", back_populates="proposes", cascade="all, delete-orphan"
     )
@@ -254,10 +284,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     )
 
     # Constraints and indices
-    __table_args__ = (
-        Index("ix_clusters_id_gin", source_pk, postgresql_using="gin"),
-        UniqueConstraint("cluster_hash", name="clusters_hash_key"),
-    )
+    __table_args__ = (UniqueConstraint("cluster_hash", name="clusters_hash_key"),)
 
     @classmethod
     def next_id(cls) -> int:

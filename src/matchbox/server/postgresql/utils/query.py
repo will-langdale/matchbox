@@ -15,6 +15,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.orm import (
     Clusters,
+    ClusterSourcePK,
     Contains,
     Probabilities,
     Resolutions,
@@ -170,17 +171,17 @@ def _resolve_cluster_hierarchy(
         # Get clusters valid across all resolutions in lineage
         valid_clusters = _union_valid_clusters(thresholds)
 
-        # Get base mapping of IDs to clusters
+        # Get base mapping of IDs to clusters using the new ClusterSourcePK table
         mapping_0 = (
             select(
                 Clusters.cluster_id.label("cluster_id"),
-                func.unnest(Clusters.source_pk).label("source_pk"),
+                ClusterSourcePK.source_pk.label("source_pk"),
             )
+            .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
             .where(
                 and_(
                     Clusters.cluster_id.in_(select(valid_clusters.c.cluster)),
                     Clusters.dataset == dataset_id,
-                    Clusters.source_pk.isnot(None),
                 )
             )
             .cte("mapping_0")
@@ -312,9 +313,10 @@ def _build_unnested_clusters() -> CTE:
         select(
             Clusters.cluster_id,
             Clusters.dataset,
-            func.unnest(Clusters.source_pk).label("source_pk"),
+            ClusterSourcePK.source_pk,
         )
         .select_from(Clusters)
+        .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
         .cte("unnested_clusters")
     )
 
