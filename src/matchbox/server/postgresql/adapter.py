@@ -199,7 +199,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
             if source:
                 return Source(
-                    alias=source.alias,
+                    resolution_name=source.resolution_name,
                     address=address,
                     db_pk=source.id,
                     columns=[

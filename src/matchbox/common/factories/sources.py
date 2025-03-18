@@ -636,6 +636,7 @@ def linked_sources_factory(
             address=SourceAddress.compose(
                 full_name=config.full_name, engine=config.engine
             ),
+            resolution_name=config.full_name,
             db_pk="pk",
             columns=[
                 SourceColumn(name=feature.name, type=feature.sql_type)

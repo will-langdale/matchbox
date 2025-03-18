@@ -117,7 +117,7 @@ def insert_dataset(
     }
 
     source_data = {
-        "alias": source.alias,
+        "resolution_name": source.resolution_name,
         "full_name": source.address.full_name,
         "warehouse_hash": source.address.warehouse_hash,
         "id": source.db_pk,
@@ -134,13 +134,13 @@ def insert_dataset(
         with Session(engine) as session:
             resolution_id = (
                 session.query(Resolutions.resolution_id)
-                .filter_by(name=source.alias)
+                .filter_by(name=source.resolution_name)
                 .scalar()
             )
 
         resolution_data["resolution_id"] = resolution_id or Resolutions.next_id()
         source_data["resolution_id"] = resolution_data["resolution_id"]
-        resolution_data["name"] = source_data["alias"]
+        resolution_data["name"] = source_data["resolution_name"]
 
         # Upsert into Resolutions table
         resolution_stmt = insert(Resolutions).values([resolution_data])

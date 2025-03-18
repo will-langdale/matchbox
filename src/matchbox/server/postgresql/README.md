@@ -15,7 +15,7 @@ There are two graph-like trees in place here.
 erDiagram
     Sources {
         bigint resolution_id PK,FK
-        string alias
+        string resolution_name
         string full_name
         bytes warehouse_hash
         string id

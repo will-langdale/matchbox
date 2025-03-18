@@ -72,7 +72,7 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
         PyArrow sources table
     """
     sources_resolution_id = [dataset_start_id, dataset_start_id + 1]
-    sources_alias = ["alias1", "alias2"]
+    sources_resolution_names = ["source1@warehouse", "source2@warehouse"]
     sources_full_names = ["dbt.companies_house", "dbt.hmrc_exporters"]
     sources_id = ["company_number", "id"]
 
@@ -84,7 +84,7 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
     return pa.table(
         {
             "resolution_id": pa.array(sources_resolution_id, type=pa.uint64()),
-            "alias": pa.array(sources_alias, type=pa.string()),
+            "resolution_name": pa.array(sources_resolution_names, type=pa.string()),
             "full_name": pa.array(sources_full_names, type=pa.string()),
             "warehouse_hash": pa.array(warehouse_hashes, type=pa.binary()),
             "id": pa.array(sources_id, type=pa.string()),

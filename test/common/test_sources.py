@@ -105,7 +105,7 @@ def test_source_signature():
     """Source signatures are generated correctly"""
     # Column order doesn't matter
     source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar1"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
@@ -113,7 +113,7 @@ def test_source_signature():
         ],
     )
     source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="b", type="TEXT"),
@@ -124,14 +124,14 @@ def test_source_signature():
 
     # Column type matters
     source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar1"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
         ],
     )
     source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="BIGINT"),
@@ -141,14 +141,14 @@ def test_source_signature():
 
     # Table name matters
     source1 = Source(
-        address=SourceAddress(full_name="bar", warehouse_hash=b"bar1"),
+        address=SourceAddress(full_name="bar", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
         ],
     )
     source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
@@ -156,18 +156,35 @@ def test_source_signature():
     )
     assert source1.signature != source2.signature
 
-    # Alias supersedes table name
+    # Warehouse matters
     source1 = Source(
-        alias="alias",
-        address=SourceAddress(full_name="bar", warehouse_hash=b"bar1"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh1"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
         ],
     )
     source2 = Source(
-        alias="alias",
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh2"),
+        db_pk="i",
+        columns=[
+            SourceColumn(name="a", type="TEXT"),
+        ],
+    )
+    assert source1.signature != source2.signature
+
+    # Resolution name can be set manually
+    source1 = Source(
+        resolution_name="source@warehouse",
+        address=SourceAddress(full_name="bar", warehouse_hash=b"wh1"),
+        db_pk="i",
+        columns=[
+            SourceColumn(name="a", type="TEXT"),
+        ],
+    )
+    source2 = Source(
+        resolution_name="source@warehouse",
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh2"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
@@ -177,14 +194,14 @@ def test_source_signature():
 
     # Column name matters
     source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar1"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", type="TEXT"),
         ],
     )
     source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="b", type="TEXT"),
@@ -194,14 +211,14 @@ def test_source_signature():
 
     # Alias supersedes column name
     source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar1"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="a", alias="alias", type="TEXT"),
         ],
     )
     source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar2"),
+        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
         columns=[
             SourceColumn(name="b", alias="alias", type="TEXT"),

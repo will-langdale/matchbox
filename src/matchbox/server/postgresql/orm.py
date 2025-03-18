@@ -181,7 +181,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    alias = Column(TEXT, nullable=False)
+    resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
     id = Column(TEXT, nullable=False)

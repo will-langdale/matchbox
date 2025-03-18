@@ -34,11 +34,7 @@ class StepInput(BaseModel):
         if isinstance(self.prev_node, ModelStep):
             return self.prev_node.name
         else:
-            # Sources can change their alias to be the same, so that they map to
-            # the same resolution even when the address differs.
-            # On the other hand, if the source full name is the same but the engine
-            # differs, sources could end up having the same alias by mistake
-            return self.prev_node.alias
+            return self.prev_node.resolution_name
 
 
 class ModelStep(BaseModel, ABC):

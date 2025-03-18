@@ -120,7 +120,7 @@ class Source(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
     address: SourceAddress
-    alias: str = Field(default_factory=lambda data: data["address"].full_name)
+    resolution_name: str = Field(default_factory=lambda data: str(data["address"]))
     db_pk: str
     columns: list[SourceColumn] = []
 
@@ -138,7 +138,7 @@ class Source(BaseModel):
 
         obj_copy = Source(
             address=deepcopy(self.address, memo),
-            alias=deepcopy(self.alias, memo),
+            resolution_name=deepcopy(self.resolution_name, memo),
             db_pk=deepcopy(self.db_pk, memo),
             columns=deepcopy(self.columns, memo),
         )
@@ -167,13 +167,15 @@ class Source(BaseModel):
 
     def __hash__(self) -> int:
         """Hash based on all properties without the engine."""
-        return hash((self.address, self.alias, self.db_pk, tuple(self.columns)))
+        return hash(
+            (self.address, self.resolution_name, self.db_pk, tuple(self.columns))
+        )
 
     @property
     def signature(self) -> bytes:
         """Generate a unique hash based on the table's metadata."""
         sorted_columns = sorted(self.columns, key=lambda c: c.alias)
-        schema_representation = f"{self.alias}: " + ",".join(
+        schema_representation = f"{self.resolution_name}: " + ",".join(
             f"{col.alias}:{col.type}" for col in sorted_columns
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
