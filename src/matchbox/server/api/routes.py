@@ -1,6 +1,7 @@
 """API routes for the Matchbox server."""
 
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
 
 from fastapi import (
@@ -65,7 +66,7 @@ metadata_store = MetadataStore(expiry_minutes=30)
 
 app = FastAPI(
     title="matchbox API",
-    version="0.2.1",
+    version=version("matchbox_db"),
     lifespan=lifespan,
 )
 
