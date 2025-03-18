@@ -13,7 +13,7 @@ from matchbox.common.factories.sources import source_factory
 def test_dedupe_step_run(
     sqlite_warehouse: Engine,
 ):
-    """Tests that a dedupe step orchestrates lower-level API correctly"""
+    """Tests that a dedupe step orchestrates lower-level API correctly."""
     with (
         patch("matchbox.client.dags.make_model") as make_model_mock,
         patch("matchbox.client.dags.process") as process_mock,
@@ -70,7 +70,7 @@ def test_dedupe_step_run(
 def test_link_step_run(
     sqlite_warehouse: Engine,
 ):
-    """Tests that a link step orchestrates lower-level API correctly"""
+    """Tests that a link step orchestrates lower-level API correctly."""
     with (
         patch("matchbox.client.dags.make_model") as make_model_mock,
         patch("matchbox.client.dags.process") as process_mock,
@@ -146,7 +146,7 @@ def test_link_step_run(
 def test_dag_runs(
     link_run: Mock, dedupe_run: Mock, handler_index: Mock, sqlite_warehouse: Engine
 ):
-    """A legal DAG can be built and run"""
+    """A legal DAG can be built and run."""
     # Set up constituents
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
@@ -230,7 +230,7 @@ def test_dag_runs(
 
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
-    """Steps cannot be added before their dependencies"""
+    """Steps cannot be added before their dependencies."""
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     d_foo = DedupeStep(
         name="d_foo",
@@ -248,7 +248,7 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
 
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
-    """Names across sources and steps must be unique"""
+    """Names across sources and steps must be unique."""
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
     d_foo = DedupeStep(
@@ -280,7 +280,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
 
 
 def test_dag_source_unavailable(sqlite_warehouse: Engine):
-    """Cannot select sources not available to a step"""
+    """Cannot select sources not available to a step."""
     # Set up all nodes
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
@@ -332,7 +332,7 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
 
 
 def test_dag_disconnected(sqlite_warehouse: Engine):
-    """Nodes cannot be disconnected"""
+    """Nodes cannot be disconnected."""
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
 
