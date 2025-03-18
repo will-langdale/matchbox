@@ -33,7 +33,7 @@ def test_dedupe_step_run(
         d_foo = DedupeStep(
             name="d_foo",
             description="",
-            left=StepInput(origin=foo, select={foo: []}, threshold=0.5),
+            left=StepInput(prev_node=foo, select={foo: []}, threshold=0.5),
             model_class=NaiveDeduper,
             settings={"id": "id", "unique_fields": []},
         )
@@ -91,8 +91,8 @@ def test_link_step_run(
         foo_bar = LinkStep(
             name="foo_bar",
             description="",
-            left=StepInput(origin=foo, select={foo: []}, threshold=0.5),
-            right=StepInput(origin=bar, select={bar: []}, threshold=0.7),
+            left=StepInput(prev_node=foo, select={foo: []}, threshold=0.5),
+            right=StepInput(prev_node=bar, select={bar: []}, threshold=0.7),
             model_class=DeterministicLinker,
             settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         )
@@ -154,7 +154,7 @@ def test_dag_runs(
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo: []}),
+        left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -162,19 +162,19 @@ def test_dag_runs(
     d_bar = DedupeStep(
         name="d_bar",
         description="",
-        left=StepInput(origin=bar, select={bar: []}),
+        left=StepInput(prev_node=bar, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
     )
 
     foo_bar = LinkStep(
         left=StepInput(
-            origin=d_foo,
+            prev_node=d_foo,
             select={foo: []},
             cleaners={},
         ),
         right=StepInput(
-            origin=d_bar,
+            prev_node=d_bar,
             select={bar: []},
             cleaners={},
         ),
@@ -235,7 +235,7 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo: []}),
+        left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -254,7 +254,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo: []}),
+        left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -262,7 +262,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         # Name clash!
         name="d_foo",
         description="",
-        left=StepInput(origin=bar, select={bar: []}),
+        left=StepInput(prev_node=bar, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -288,7 +288,7 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
     d_foo_right = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(origin=foo, select={foo: []}),
+        left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -296,8 +296,8 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
     d_foo_wrong = DedupeStep(
         name="d_foo",
         description="",
-        # Origin and select disagree
-        left=StepInput(origin=foo, select={bar: []}),
+        # Previous node and select disagree
+        left=StepInput(prev_node=foo, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
     )
@@ -305,9 +305,9 @@ def test_dag_source_unavailable(sqlite_warehouse: Engine):
     bar_foo_wrong = LinkStep(
         name="foo_bar",
         description="",
-        left=StepInput(origin=bar, select={bar: []}),
-        # Origin and select disagree
-        right=StepInput(origin=d_foo_right, select={bar: []}),
+        left=StepInput(prev_node=bar, select={bar: []}),
+        # Previous node and select disagree
+        right=StepInput(prev_node=d_foo_right, select={bar: []}),
         model_class=DeterministicLinker,
         settings={},
     )
