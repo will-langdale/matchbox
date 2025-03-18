@@ -11,14 +11,10 @@
             "justMyCode": false,
             "env": {
                 "PYTEST_ADDOPTS": "--no-cov",
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}",
             },
             "python": "${workspaceFolder}/.venv/bin/python",
             "cwd": "${workspaceFolder}",
-            "args": [
-                "-v",
-                "-s"
-            ]
         },
         {
             "name": "Matchbox: Profile",
