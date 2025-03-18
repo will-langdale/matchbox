@@ -1,7 +1,3 @@
-# Make datasets table
-matchbox:
-    uv run python src/matchbox/admin.py --datasets datasets.toml
-
 # Delete all compiled Python files
 clean:
     find . -type f -name "*.py[co]" -delete
