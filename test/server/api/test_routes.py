@@ -242,7 +242,7 @@ async def test_process_upload_deletes_file_on_failure(s3: S3Client):
     buffer = table_to_buffer(source_testkit.data_hashes)
     s3.put_object(Bucket=bucket, Key=test_key, Body=buffer)
 
-    s3.head_object(Bucket=bucket, Key=test_key)
+    assert s3.head_object(Bucket=bucket, Key=test_key)
 
     # Setup metadata store with test data
     store = MetadataStore()
