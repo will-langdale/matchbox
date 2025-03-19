@@ -7,6 +7,7 @@ import boto3
 import pyarrow as pa
 import pytest
 import respx
+from botocore.config import Config
 from httpx import Client
 from moto import mock_aws
 from respx import MockRouter
@@ -366,7 +367,11 @@ def aws_credentials() -> None:
 def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
     """Return a mocked S3 client."""
     with mock_aws():
-        yield boto3.client("s3", region_name="eu-west-2")
+        yield boto3.client(
+            "s3",
+            region_name="eu-west-2",
+            config=Config(s3={"payload_signing_enabled": True}),
+        )
 
 
 # API, mocked and Docker

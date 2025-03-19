@@ -449,7 +449,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     )
                 )
                 session.execute(delete_stmt)
-                session.delete(resolution)
                 session.commit()
             else:
                 children = [r.name for r in resolution.descendants]
