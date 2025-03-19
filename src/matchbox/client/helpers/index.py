@@ -26,6 +26,7 @@ def index(
     db_pk: str,
     engine: Engine,
     columns: list[str] | list[dict[str, dict[str, str]]] | None = None,
+    batch_size: int | None = None,
 ) -> None:
     """Indexes data in Matchbox.
 
@@ -34,6 +35,8 @@ def index(
         db_pk: the primary key of the source
         engine: the engine to connect to a data warehouse
         columns: the columns to index
+        batch_size: the size of each batch when fetching data from the warehouse,
+            which helps reduce the load on the database. Default is None.
 
     Examples:
         ```python
@@ -53,6 +56,9 @@ def index(
             ],
         )
         ```
+        ```python
+        index("mb.test_orig", "id", engine=engine, batch_size=10_000)
+        ```
     """
     columns = _process_columns(columns)
 
@@ -65,4 +71,10 @@ def index(
     if not columns:
         source = source.default_columns()
 
-    _handler.index(source=source, data_hashes=source.hash_data())
+    if batch_size is not None:
+        _handler.index(
+            source=source,
+            data_hashes=source.hash_data(iter_batches=True, batch_size=batch_size),
+        )
+    else:
+        _handler.index(source=source, data_hashes=source.hash_data())
