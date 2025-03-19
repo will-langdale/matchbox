@@ -551,6 +551,8 @@ class TestMatchboxBackend:
                 ]
             )
 
+            # Query returns more clusters when threshold exceeds
+            # true entity match probabilities
             assert pc.count_distinct(threshold_ids).as_py() > len(
                 linked.true_entity_subset("crn", "cdms")
             )
@@ -706,6 +708,8 @@ class TestMatchboxBackend:
             assert res[0].source == crn_testkit.source.address
             assert res[0].target == cdms_testkit.source.address
             assert res[0].source_id == source_entity.source_pks["crn"]
+            # Match does not return true target ids when threshold
+            # exceeds match probability
             assert len(res[0].target_id) < len(source_entity.source_pks["cdms"])
 
     def test_clear(self):

@@ -110,9 +110,11 @@ class Results(BaseModel):
             ]
         ):
             probability_uint8 = pc.cast(
-                pc.multiply(value["probability"], 100),
+                pc.round(pc.multiply(value["probability"], 100)),
                 options=pc.CastOptions(
-                    target_type=pa.uint8(), allow_float_truncate=True
+                    target_type=pa.uint8(),
+                    allow_float_truncate=True,
+                    allow_decimal_truncate=True,
                 ),
             )
 

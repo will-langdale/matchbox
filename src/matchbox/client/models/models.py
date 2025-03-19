@@ -52,28 +52,21 @@ class Model:
     @property
     def truth(self) -> float:
         """Retrieve the truth threshold for the model."""
-        truth_int = _handler.get_model_truth(name=self.metadata.name)
-        # Convert int to float
-        truth = float(truth_int / 100)
-        if isinstance(truth, float) and 0.0 <= truth <= 1.0:
-            return truth
-        else:
-            raise ValueError(f"Truth value {truth} not a valid probability")
+        truth = _handler.get_model_truth(name=self.metadata.name)
+        return _truth_int_to_float(truth)
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        if isinstance(truth, float) and 0.0 <= truth <= 1.0:
-            # Convert float to int
-            _handler.set_model_truth(name=self.metadata.name, truth=int(truth * 100))
-        else:
-            raise ValueError(f"Truth value {truth} not a valid probability")
+        _handler.set_model_truth(
+            name=self.metadata.name, truth=_truth_float_to_int(truth)
+        )
 
     @property
     def ancestors(self) -> dict[str, float]:
         """Retrieve the ancestors of the model."""
         return {
-            ancestor.name: float(ancestor.truth / 100)
+            ancestor.name: _truth_int_to_float(ancestor.truth)
             for ancestor in _handler.get_model_ancestors(name=self.metadata.name)
         }
 
@@ -81,23 +74,18 @@ class Model:
     def ancestors_cache(self) -> dict[str, float]:
         """Retrieve the ancestors cache of the model."""
         return {
-            ancestor.name: float(ancestor.truth / 100)
+            ancestor.name: _truth_int_to_float(ancestor.truth)
             for ancestor in _handler.get_model_ancestors_cache(name=self.metadata.name)
         }
 
     @ancestors_cache.setter
     def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None:
         """Set the ancestors cache of the model."""
-        # Validate probabilities and convert truth values to int
-        ancestors_cache_int = {
-            k: int(v * 100)
-            for k, v in ancestors_cache.items()
-            if isinstance(v, float) and 0.0 <= v <= 1.0
-        }
         _handler.set_model_ancestors_cache(
             name=self.metadata.name,
             ancestors=[
-                ModelAncestor(name=k, truth=v) for k, v in ancestors_cache_int.items()
+                ModelAncestor(name=k, truth=_truth_float_to_int(v))
+                for k, v in ancestors_cache.items()
             ],
         )
 
@@ -182,3 +170,19 @@ def make_model(
         left_data=left_data,
         right_data=right_data,
     )
+
+
+def _truth_float_to_int(truth: float) -> int:
+    """Convert user input float truth values to int."""
+    if isinstance(truth, float) and 0.0 <= truth <= 1.0:
+        return round(truth * 100)
+    else:
+        raise ValueError(f"Truth value {truth} not a valid probability")
+
+
+def _truth_int_to_float(truth: int) -> float:
+    """Convert backend int truth values to float."""
+    if isinstance(truth, int) and 0 <= truth <= 100:
+        return float(truth / 100)
+    else:
+        raise ValueError(f"Truth value {truth} not valid")
