@@ -277,7 +277,7 @@ def get_model_truth(name: str) -> int:
 def get_model_ancestors(name: str) -> list[ModelAncestor]:
     """Get the ancestors of a model in Matchbox."""
     res = CLIENT.get(f"/models/{name}/ancestors")
-    return [ModelAncestor.model_validate(m, strict=True) for m in res.json()]
+    return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
 def set_model_ancestors_cache(
@@ -293,7 +293,7 @@ def set_model_ancestors_cache(
 def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
     """Get the ancestors cache for a model in Matchbox."""
     res = CLIENT.get(f"/models/{name}/ancestors_cache")
-    return [ModelAncestor.model_validate(m, strict=True) for m in res.json()]
+    return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
 def delete_model(name: str, certain: bool = False) -> ModelOperationStatus:

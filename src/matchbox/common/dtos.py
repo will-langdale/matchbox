@@ -86,7 +86,7 @@ class ModelAncestor(BaseModel):
 
     name: str = Field(..., description="Name of the ancestor model")
     truth: int | None = Field(
-        default=None, description="Truth threshold value", ge=0, le=100
+        default=None, description="Truth threshold value", ge=0, le=100, strict=True
     )
 
 
