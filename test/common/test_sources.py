@@ -1,5 +1,3 @@
-import copy
-
 import pytest
 from pandas.testing import assert_frame_equal
 from sqlalchemy import Engine, Table, create_engine
@@ -12,7 +10,7 @@ from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 
 def test_source_address_compose():
-    """Correct addresses are generated from engines and table names"""
+    """Correct addresses are generated from engines and table names."""
     pg = create_engine("postgresql://user:fakepass@host:1234/db")  # trufflehog:ignore
     pg_host = create_engine(
         "postgresql://user:fakepass@host2:1234/db"  # trufflehog:ignore
@@ -77,7 +75,7 @@ def test_source_address_compose():
 
 
 def test_source_set_engine(sqlite_warehouse: Engine):
-    """Engine can be set on Source"""
+    """Engine can be set on Source."""
     source_testkit = source_factory(
         features=[{"name": "b", "base_generator": "random_int", "sql_type": "BIGINT"}],
         engine=sqlite_warehouse,
@@ -88,37 +86,44 @@ def test_source_set_engine(sqlite_warehouse: Engine):
     source = source_testkit.source.set_engine(sqlite_warehouse)
     assert isinstance(source, Source)
 
+    # Error is raised with wrong engine
+    with pytest.raises(ValueError, match="engine must be the same"):
+        wrong_engine = create_engine("sqlite:///:memory:")
+        source.set_engine(wrong_engine)
+
     # Error is raised with missing column
     with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
-        new_source = copy.copy(source_testkit.source)
-        new_source.columns = [SourceColumn(name="c", type="TEXT")]
+        new_source = source_testkit.source.model_copy(
+            update={"columns": (SourceColumn(name="c", type="TEXT"),)}
+        )
         new_source.set_engine(sqlite_warehouse)
 
     # Error is raised with wrong type
     with pytest.raises(MatchboxSourceColumnError, match="Type BIGINT != TEXT for b"):
-        new_source = copy.copy(source_testkit.source)
-        new_source.columns = [SourceColumn(name="b", type="TEXT")]
+        new_source = source_testkit.source.model_copy(
+            update={"columns": (SourceColumn(name="b", type="TEXT"),)}
+        )
         new_source.set_engine(sqlite_warehouse)
 
 
 def test_source_signature():
-    """Source signatures are generated correctly"""
+    """Source signatures are generated correctly."""
     # Column order doesn't matter
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
+        columns=(
             SourceColumn(name="a", type="TEXT"),
             SourceColumn(name="b", type="TEXT"),
-        ],
+        ),
     )
     source2 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
+        columns=(
             SourceColumn(name="b", type="TEXT"),
             SourceColumn(name="a", type="TEXT"),
-        ],
+        ),
     )
     assert source1.signature == source2.signature
 
@@ -126,16 +131,12 @@ def test_source_signature():
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     source2 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="BIGINT"),
-        ],
+        columns=(SourceColumn(name="a", type="BIGINT"),),
     )
     assert source1.signature != source2.signature
 
@@ -143,16 +144,12 @@ def test_source_signature():
     source1 = Source(
         address=SourceAddress(full_name="bar", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     source2 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     assert source1.signature != source2.signature
 
@@ -160,16 +157,12 @@ def test_source_signature():
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh1"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     source2 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh2"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     assert source1.signature != source2.signature
 
@@ -178,17 +171,13 @@ def test_source_signature():
         resolution_name="source@warehouse",
         address=SourceAddress(full_name="bar", warehouse_hash=b"wh1"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     source2 = Source(
         resolution_name="source@warehouse",
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh2"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     assert source1.signature == source2.signature
 
@@ -196,16 +185,12 @@ def test_source_signature():
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", type="TEXT"),),
     )
     source2 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="b", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="b", type="TEXT"),),
     )
     assert source1.signature != source2.signature
 
@@ -213,22 +198,33 @@ def test_source_signature():
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="a", alias="alias", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="a", alias="alias", type="TEXT"),),
     )
     source2 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
         db_pk="i",
-        columns=[
-            SourceColumn(name="b", alias="alias", type="TEXT"),
-        ],
+        columns=(SourceColumn(name="b", alias="alias", type="TEXT"),),
     )
     assert source1.signature == source2.signature
 
 
+def test_source_hash_equality(sqlite_warehouse: Engine):
+    """__eq__ and __hash__ behave as expected for a Source."""
+    # This won't set the engine just yet
+    source_testkit = source_factory(engine=sqlite_warehouse)
+    source = source_testkit.source
+    source_eq = source.model_copy(deep=True)
+
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    source.set_engine(sqlite_warehouse)
+
+    assert source.engine != source_eq.engine
+    assert source == source_eq
+    assert hash(source) == hash(source_eq)
+
+
 def test_source_format_columns():
-    """Column names can get a standard prefix from a table name"""
+    """Column names can get a standard prefix from a table name."""
     source1 = Source(
         address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="i"
     )
@@ -253,14 +249,18 @@ def test_source_default_columns(sqlite_warehouse: Engine):
 
     source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    expected_columns = [
+    expected_columns = (
         SourceColumn(name="a", type="BIGINT"),
         SourceColumn(name="b", type="TEXT"),
-    ]
+    )
 
     source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
 
     assert source.columns == expected_columns
+    # We create a new source, but attributes and engine match
+    assert source is not source_testkit.source
+    assert source == source_testkit.source
+    assert source.engine == sqlite_warehouse
 
 
 def test_source_to_table(sqlite_warehouse: Engine):

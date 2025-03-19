@@ -105,7 +105,7 @@ def test_benchmark_query_generation(
 
         sql_query = compile_query_sql(
             point_of_truth=point_of_truth,
-            source_address=dag.sources[source].source.address,
+            source_address=dag.get_source_testkit(source).source.address,
         )
 
         assert isinstance(sql_query, str)
@@ -128,7 +128,7 @@ def test_benchmark_match_query_generation(
         engine = MBDB.get_engine()
 
         linker_name = "deterministic_naive_test.crn_naive_test.duns"
-        duns_testkit = dag.sources.get("duns")
+        duns_testkit = dag.get_source_testkit("duns")
 
         sources_dict = dag.get_sources_for_model(linker_name)
         assert len(sources_dict) == 1
@@ -142,7 +142,7 @@ def test_benchmark_match_query_generation(
 
         sql_match = compile_match_sql(
             source_pk=next(iter(source_entity.source_pks["duns"])),
-            source_name=duns_testkit.source.address.full_name,
+            resolution_name=str(duns_testkit.source.address),
             point_of_truth="deterministic_naive_test.crn_naive_test.duns",
         )
 

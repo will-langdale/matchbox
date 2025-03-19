@@ -3,7 +3,7 @@
 import json
 from copy import deepcopy
 from functools import wraps
-from typing import Callable, ParamSpec, TypeVar
+from typing import Any, Callable, ParamSpec, TypeVar
 
 import pyarrow as pa
 from pandas import DataFrame
@@ -119,10 +119,13 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
 class Source(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
+    model_config = ConfigDict(frozen=True)
+
     address: SourceAddress
     resolution_name: str = Field(default_factory=lambda data: str(data["address"]))
     db_pk: str
-    columns: list[SourceColumn] = []
+    # Columns need to be set at creation, or initialised with `.default_columns()`
+    columns: tuple[SourceColumn, ...] | None = None
 
     _engine: Engine | None = None
 
@@ -130,6 +133,19 @@ class Source(BaseModel):
     def engine(self) -> Engine | None:
         """The SQLAlchemy Engine used to connect to the dataset."""
         return self._engine
+
+    def __eq__(self, other: Any) -> bool:
+        """Custom equality which ignores engine."""
+        return (self.address, self.resolution_name, self.db_pk, self.columns) == (
+            other.address,
+            other.resolution_name,
+            other.db_pk,
+            other.columns,
+        )
+
+    def __hash__(self) -> int:
+        """Custom hash which ignores engine."""
+        return hash((self.address, self.resolution_name, self.db_pk, self.columns))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the Source object."""
@@ -151,6 +167,14 @@ class Source(BaseModel):
 
     def set_engine(self, engine: Engine):
         """Adds engine, and use it to validate current columns."""
+        implied_address = SourceAddress.compose(
+            full_name=self.address.full_name, engine=engine
+        )
+        if implied_address != self.address:
+            raise ValueError(
+                "The engine must be the same that was used to index the source"
+            )
+
         self._engine = engine
         remote_columns = self._get_remote_columns()
         for col in self.columns:
@@ -164,12 +188,6 @@ class Source(BaseModel):
                     f"Type {actual_type} != {col.type} for {col.name}"
                 )
         return self
-
-    def __hash__(self) -> int:
-        """Hash based on all properties without the engine."""
-        return hash(
-            (self.address, self.resolution_name, self.db_pk, tuple(self.columns))
-        )
 
     @property
     def signature(self) -> bytes:
@@ -200,14 +218,28 @@ class Source(BaseModel):
 
     @needs_engine
     def default_columns(self) -> "Source":
-        """Overwrites columns with all non-primary keys from source warehouse."""
+        """Returns a new source with default columns.
+
+        Default columns are all from the source warehouse other than `self.db_pk`.
+        All other attributes are copied, and its engine (if present) is set.
+        """
         remote_columns = self._get_remote_columns()
-        self.columns = [
+        columns_attribute = (
             SourceColumn(name=col_name, type=str(col_type))
             for col_name, col_type in remote_columns.items()
-        ]
+        )
 
-        return self
+        new_source = Source(
+            address=self.address,
+            resolution_name=self.resolution_name,
+            db_pk=self.db_pk,
+            columns=columns_attribute,
+        )
+
+        if self.engine:
+            new_source.set_engine(self.engine)
+
+        return new_source
 
     @needs_engine
     def to_table(self) -> Table:

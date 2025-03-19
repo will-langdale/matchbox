@@ -145,8 +145,8 @@ def test_select_non_indexed_columns(matchbox_api: MockRouter, sqlite_warehouse: 
     """Selecting columns not declared to backend generates warning."""
     source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
 
-    source: Source = source_testkit.source
-    source.columns = source.columns[:1]  # Don't index on one columns
+    source = source_testkit.source
+    source = source.model_copy(update={"columns": source.columns[:1]})
 
     matchbox_api.get(
         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"

@@ -202,7 +202,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     resolution_name=source.resolution_name,
                     address=address,
                     db_pk=source.id,
-                    columns=[
+                    columns=(
                         SourceColumn(name=name, alias=alias, type=type_)
                         for name, alias, type_ in zip(
                             source.column_names,
@@ -210,7 +210,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                             source.column_types,
                             strict=True,
                         )
-                    ],
+                    ),
                 )
             else:
                 raise MatchboxSourceNotFoundError(address=str(address))

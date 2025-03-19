@@ -65,13 +65,36 @@ class TestkitDAG(BaseModel):
             self.linked[linked_key] = testkit
 
             # Add each source and track its association with the linked key
-            for source_name, source_testkit in testkit.sources.items():
-                self._validate_unique_name(source_name)
-                self.sources[source_name] = source_testkit
-                self.source_to_linked[source_name] = linked_key
+            for source_testkit in testkit.sources.values():
+                address_str = self._validate_unique_name(
+                    str(source_testkit.source.address)
+                )
+                self.sources[address_str] = source_testkit
+                self.source_to_linked[address_str] = linked_key
         else:
-            source_name = self._validate_unique_name(testkit.name)
-            self.sources[source_name] = testkit
+            address_str = self._validate_unique_name(str(testkit.source.address))
+            self.sources[address_str] = testkit
+
+    def get_source_testkit(self, starts_with: str) -> SourceTestkit | None:
+        """Get source testkit from DAG given the beginning of its key.
+
+        Args:
+            starts_with: A string matching the left part of a DAG source key.
+
+        Returns:
+            The matching testkit if found, None otherwise.
+        """
+        matching = [
+            testkit
+            for source_name, testkit in self.sources.items()
+            if source_name.startswith(starts_with)
+        ]
+        if len(matching) == 0:
+            return None
+        if len(matching) > 1:
+            raise ValueError(f"Multiple matches for source starting with {starts_with}")
+
+        return matching[0]
 
     def add_model(self, testkit: ModelTestkit):
         """Add a model testkit to the DAG."""

@@ -8,17 +8,17 @@ from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 def _process_columns(
     columns: list[str] | list[dict[str, dict[str, str]]] | None,
-) -> list[SourceColumn]:
+) -> tuple[SourceColumn]:
     if columns is None:
         return []
 
     if isinstance(columns[0], str):
-        return [SourceColumn(name=column) for column in columns]
+        return (SourceColumn(name=column) for column in columns)
 
-    return [
+    return (
         SourceColumn(name=column["name"], alias=column["alias"], type=column["type"])
         for column in columns
-    ]
+    )
 
 
 def index(
@@ -35,7 +35,7 @@ def index(
         db_pk: the primary key of the source
         engine: the engine to connect to a data warehouse
         resolution_name: a custom resolution name
-            If missing, will use a default from the full name and engine
+            If missing, will the default for a `Source`
         columns: the columns to index
 
     Examples:
@@ -60,13 +60,21 @@ def index(
     columns = _process_columns(columns)
 
     address = SourceAddress.compose(engine=engine, full_name=full_name)
-    source = Source(
-        address=address,
-        resolution_name=resolution_name or str(address),
-        columns=columns,
-        db_pk=db_pk,
-    ).set_engine(engine)
+    if resolution_name:
+        source = Source(
+            address=address,
+            resolution_name=resolution_name,
+            columns=columns,
+            db_pk=db_pk,
+        )
+    else:
+        source = Source(
+            address=address,
+            columns=columns,
+            db_pk=db_pk,
+        )
 
+    source.set_engine(engine)
     if not columns:
         source = source.default_columns()
 

@@ -233,7 +233,7 @@ class TestE2EAnalyticalUser:
                     "unique_fields": feature_names,
                 },
                 left_data=cleaned,
-                left_resolution=source_name,
+                left_resolution=source_testkit.source.resolution_name,
             )
 
             # Run the deduper and store results
