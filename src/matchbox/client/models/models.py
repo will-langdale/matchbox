@@ -50,21 +50,30 @@ class Model:
             )
 
     @property
-    def truth(self) -> int:
+    def truth(self) -> float:
         """Retrieve the truth threshold for the model."""
-        return _handler.get_model_truth(name=self.metadata.name)
+        truth_int = _handler.get_model_truth(name=self.metadata.name)
+        # Convert int to float
+        truth = float(truth_int / 100)
+        if isinstance(truth, float) and 0.0 <= truth <= 1.0:
+            return truth
+        else:
+            raise ValueError(f"Truth value {truth} not a valid probability")
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        # Convert float to int
-        _handler.set_model_truth(name=self.metadata.name, truth=int(truth * 100))
+        if isinstance(truth, float) and 0.0 <= truth <= 1.0:
+            # Convert float to int
+            _handler.set_model_truth(name=self.metadata.name, truth=int(truth * 100))
+        else:
+            raise ValueError(f"Truth value {truth} not a valid probability")
 
     @property
     def ancestors(self) -> dict[str, float]:
         """Retrieve the ancestors of the model."""
         return {
-            ancestor.name: ancestor.truth
+            ancestor.name: float(ancestor.truth / 100)
             for ancestor in _handler.get_model_ancestors(name=self.metadata.name)
         }
 
@@ -72,17 +81,23 @@ class Model:
     def ancestors_cache(self) -> dict[str, float]:
         """Retrieve the ancestors cache of the model."""
         return {
-            ancestor.name: ancestor.truth
+            ancestor.name: float(ancestor.truth / 100)
             for ancestor in _handler.get_model_ancestors_cache(name=self.metadata.name)
         }
 
     @ancestors_cache.setter
     def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None:
         """Set the ancestors cache of the model."""
+        # Validate probabilities and convert truth values to int
+        ancestors_cache_int = {
+            k: int(v * 100)
+            for k, v in ancestors_cache.items()
+            if isinstance(v, float) and 0.0 <= v <= 1.0
+        }
         _handler.set_model_ancestors_cache(
             name=self.metadata.name,
             ancestors=[
-                ModelAncestor(name=k, truth=v) for k, v in ancestors_cache.items()
+                ModelAncestor(name=k, truth=v) for k, v in ancestors_cache_int.items()
             ],
         )
 

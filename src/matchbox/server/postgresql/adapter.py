@@ -89,7 +89,7 @@ class FilteredProbabilities(BaseModel):
                 ).filter(
                     and_(
                         Resolutions.truth.isnot(None),
-                        Probabilities.probability > Resolutions.truth,
+                        Probabilities.probability >= Resolutions.truth,
                     )
                 )
             return query.scalar()

@@ -116,6 +116,7 @@ def create_scenario_dag(
             true_entities=tuple(linked.true_entities),
             name=model_name,
             description=f"Deduplication of {source_name}",
+            prob_range=(1.0, 1.0),
             seed=seed,
         )
 
@@ -162,6 +163,7 @@ def create_scenario_dag(
         true_entities=tuple(linked.true_entities),
         name=crn_duns_name,
         description="Link between CRN and DUNS",
+        prob_range=(1.0, 1.0),
         seed=seed,
     )
 
@@ -171,7 +173,7 @@ def create_scenario_dag(
     dag.add_model(crn_duns_model)
 
     # Create CRN-CDMS link
-    crn_cdms_name = "deterministic_naive_test.crn_naive_test.cdms"
+    crn_cdms_name = "probabilistic_naive_test.crn_naive_test.cdms"
     crn_cdms_model = query_to_model_factory(
         left_resolution=crn_model.name,
         left_query=crn_query,
@@ -187,6 +189,7 @@ def create_scenario_dag(
 
     backend.insert_model(model=crn_cdms_model.model.metadata)
     backend.set_model_results(model=crn_cdms_name, results=crn_cdms_model.probabilities)
+    backend.set_model_truth(model=crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
 
     # Create final join

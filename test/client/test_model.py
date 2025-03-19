@@ -20,7 +20,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxUnhandledServerResponse,
-    MatchboxUnparsedClientRequest,
 )
 from matchbox.common.factories.models import model_factory
 
@@ -221,7 +220,7 @@ def test_truth_getter(matchbox_api: MockRouter):
 
     # Mock the GET /models/{name}/truth endpoint
     route = matchbox_api.get(f"/models/{testkit.model.metadata.name}/truth").mock(
-        return_value=Response(200, json=0.9)
+        return_value=Response(200, json=90)
     )
 
     # Get truth
@@ -260,16 +259,9 @@ def test_truth_setter_validation_error(matchbox_api: MockRouter):
     """Test setting invalid truth values."""
     testkit = model_factory(model_type="linker")
 
-    # Mock the PATCH endpoint with a validation error
-    route = matchbox_api.patch(f"/models/{testkit.model.metadata.name}/truth").mock(
-        return_value=Response(422)
-    )
-
     # Attempt to set an invalid truth value
-    with pytest.raises(MatchboxUnparsedClientRequest):
+    with pytest.raises(ValueError):
         testkit.model.truth = 1.5
-
-    assert route.called
 
 
 def test_ancestors_getter(matchbox_api: MockRouter):
@@ -291,8 +283,7 @@ def test_ancestors_getter(matchbox_api: MockRouter):
 
     # Verify the API call
     assert route.called
-    # assert ancestors == {"model1": 0.9, "model2": 0.8}
-    assert ancestors == {"model1": 90, "model2": 80}
+    assert ancestors == {"model1": 0.9, "model2": 0.8}
 
 
 def test_ancestors_cache_operations(matchbox_api: MockRouter):
@@ -325,10 +316,10 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
     # Get ancestors cache
     cache = testkit.model.ancestors_cache
     assert get_route.called
-    assert cache == {"model1": 90}
+    assert cache == {"model1": 0.9}
 
     # Set ancestors cache
-    testkit.model.ancestors_cache = {"model2": 80}
+    testkit.model.ancestors_cache = {"model2": 0.8}
     assert set_route.called
     assert json.loads(set_route.calls.last.request.content.decode()) == [
         ModelAncestor(name="model2", truth=80).model_dump()

@@ -467,18 +467,6 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn")
             )
 
-            # Test query with threshold
-            df_crn_threshold = self.backend.query(
-                source_address=crn_testkit.source.address,
-                resolution_name="naive_test.crn",
-                threshold=99,
-            )
-            assert len(df_crn) == len(df_crn_threshold)
-            assert (
-                pc.count_distinct(df_crn["id"]).as_py()
-                < pc.count_distinct(df_crn_threshold["id"]).as_py()
-            )
-
     def test_query_with_link_model(self):
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "link") as dag:
@@ -516,6 +504,57 @@ class TestMatchboxBackend:
                 linked.true_entity_subset("crn", "duns")
             )
 
+    def test_threshold_query_with_link_model(self):
+        """Test querying data from a link point of truth."""
+        with self.scenario(self.backend, "link") as dag:
+            linker_name = "probabilistic_naive_test.crn_naive_test.cdms"
+            crn_testkit = dag.sources.get("crn")
+            cdms_testkit = dag.sources.get("cdms")
+
+            df_crn = self.backend.query(
+                source_address=crn_testkit.source.address,
+                resolution_name=linker_name,
+            )
+
+            assert isinstance(df_crn, pa.Table)
+            assert df_crn.num_rows == crn_testkit.query.num_rows
+            assert set(df_crn.column_names) == {"id", "source_pk"}
+
+            df_cdms = self.backend.query(
+                source_address=cdms_testkit.source.address,
+                resolution_name=linker_name,
+            )
+
+            assert isinstance(df_cdms, pa.Table)
+            assert df_cdms.num_rows == cdms_testkit.query.num_rows
+            assert set(df_cdms.column_names) == {"id", "source_pk"}
+
+            sources_dict = dag.get_sources_for_model(linker_name)
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
+
+            # Test query with threshold
+            df_crn_threshold = self.backend.query(
+                source_address=crn_testkit.source.address,
+                resolution_name=linker_name,
+                threshold=100,
+            )
+            df_cdms_threshold = self.backend.query(
+                source_address=cdms_testkit.source.address,
+                resolution_name=linker_name,
+                threshold=100,
+            )
+            threshold_ids = pa.concat_arrays(
+                [
+                    df_crn_threshold["id"].combine_chunks(),
+                    df_cdms_threshold["id"].combine_chunks(),
+                ]
+            )
+
+            assert pc.count_distinct(threshold_ids).as_py() > len(
+                linked.true_entity_subset("crn", "cdms")
+            )
+
     def test_match_one_to_many(self):
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag:
@@ -547,18 +586,6 @@ class TestMatchboxBackend:
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.source_pks["duns"]
             assert res[0].target_id == source_entity.source_pks["crn"]
-
-            # Test match with threshold
-            res_threshold = self.backend.match(
-                source_pk=next(iter(source_entity.source_pks["duns"])),
-                source=duns_testkit.source.address,
-                targets=[crn_testkit.source.address],
-                resolution_name=linker_name,
-                threshold=100,
-            )
-            assert len(res) == 1
-            assert isinstance(res_threshold[0], Match)
-            assert res_threshold[0].target_id == set()
 
     def test_match_many_to_one(self):
         """Test that matching data works when the source has more possible IDs."""
@@ -648,6 +675,38 @@ class TestMatchboxBackend:
             assert res[0].cluster is None
             assert res[0].source_id == set()
             assert res[0].target_id == set()
+
+    def test_threshold_match_many_to_one(self):
+        """Test that matching data works when the target has many IDs."""
+        with self.scenario(self.backend, "link") as dag:
+            linker_name = "probabilistic_naive_test.crn_naive_test.cdms"
+            crn_testkit = dag.sources.get("crn")
+            cdms_testkit = dag.sources.get("cdms")
+
+            sources_dict = dag.get_sources_for_model(linker_name)
+            assert len(sources_dict) == 1
+            linked = dag.linked[next(iter(sources_dict))]
+
+            # A random one:many entity
+            source_entity: SourceEntity = linked.find_entities(
+                min_appearances={"crn": 2, "cdms": 1},
+                max_appearances={"cdms": 1},
+            )[0]
+
+            res = self.backend.match(
+                source_pk=next(iter(source_entity.source_pks["crn"])),
+                source=crn_testkit.source.address,
+                targets=[cdms_testkit.source.address],
+                resolution_name=linker_name,
+                threshold=100,
+            )
+
+            assert len(res) == 1
+            assert isinstance(res[0], Match)
+            assert res[0].source == crn_testkit.source.address
+            assert res[0].target == cdms_testkit.source.address
+            assert res[0].source_id == source_entity.source_pks["crn"]
+            assert len(res[0].target_id) < len(source_entity.source_pks["cdms"])
 
     def test_clear(self):
         """Test clearing the database."""
