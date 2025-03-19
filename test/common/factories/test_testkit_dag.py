@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import Engine
 
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig
@@ -8,6 +9,22 @@ from matchbox.common.factories.sources import (
     linked_sources_factory,
     source_factory,
 )
+
+
+def test_dag_get_sources(sqlite_warehouse: Engine):
+    """DAG can retrieve source testkit using partial string match."""
+    foo1 = source_factory(full_name="foo")
+    foo2 = source_factory(full_name="foo", engine=sqlite_warehouse)
+
+    dag = TestkitDAG()
+    dag.add_source(foo1)
+
+    assert not dag.get_source_testkit("bar")
+    assert dag.get_source_testkit("foo") == foo1
+
+    dag.add_source(foo2)
+    with pytest.raises(ValueError, match="Multiple matches"):
+        dag.get_source_testkit("foo")
 
 
 @pytest.mark.parametrize(
