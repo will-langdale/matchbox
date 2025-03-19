@@ -150,7 +150,9 @@ def test_dag_runs(
     # Set up constituents
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
 
+    # Structure: Sources can be deduped
     d_foo = DedupeStep(
         name="d_foo",
         description="",
@@ -159,14 +161,9 @@ def test_dag_runs(
         settings={},
     )
 
-    d_bar = DedupeStep(
-        name="d_bar",
-        description="",
-        left=StepInput(prev_node=bar, select={bar: []}),
-        model_class=NaiveDeduper,
-        settings={},
-    )
-
+    # Structure:
+    # - Sources can be passed directly to linkers
+    # - Or, linkers can take dedupers
     foo_bar = LinkStep(
         left=StepInput(
             prev_node=d_foo,
@@ -174,7 +171,7 @@ def test_dag_runs(
             cleaners={},
         ),
         right=StepInput(
-            prev_node=d_bar,
+            prev_node=bar,
             select={bar: []},
             cleaners={},
         ),
@@ -184,49 +181,71 @@ def test_dag_runs(
         settings={},
     )
 
+    # Structure: Linkers can take other linkers
+    foo_bar_baz = LinkStep(
+        left=StepInput(
+            prev_node=foo_bar,
+            select={foo: [], bar: []},
+            cleaners={},
+        ),
+        right=StepInput(
+            prev_node=baz,
+            select={baz: []},
+            cleaners={},
+        ),
+        name="foo_bar_baz",
+        description="",
+        model_class=DeterministicLinker,
+        settings={},
+    )
+
     # Assemble DAG
     dag = DAG()
 
-    dag.add_sources(foo, bar)
-    assert set(dag.nodes.keys()) == {str(foo.address), str(bar.address)}
-
-    dag.add_steps(d_foo, d_bar, foo_bar)
+    dag.add_sources(foo, bar, baz)
     assert set(dag.nodes.keys()) == {
         str(foo.address),
         str(bar.address),
-        "d_foo",
-        "d_bar",
-        "foo_bar",
+        str(baz.address),
+    }
+
+    dag.add_steps(d_foo, foo_bar, foo_bar_baz)
+    assert set(dag.nodes.keys()) == {
+        str(foo.address),
+        str(bar.address),
+        str(baz.address),
+        d_foo.name,
+        foo_bar.name,
+        foo_bar_baz.name,
     }
     assert d_foo.sources == {foo.address}
-    assert d_bar.sources == {bar.address}
     assert foo_bar.sources == {foo.address, bar.address}
+    assert foo_bar_baz.sources == {foo.address, bar.address, baz.address}
 
     # Prepare DAG
     dag.prepare()
-    s_foo, s_bar, s_d_foo, s_d_bar, s_foo_bar = (
+    s_foo, s_bar, s_d_foo, s_foo_bar, s_foo_bar_baz = (
         dag.sequence.index(str(foo.address)),
         dag.sequence.index(str(bar.address)),
-        dag.sequence.index("d_foo"),
-        dag.sequence.index("d_bar"),
-        dag.sequence.index("foo_bar"),
+        dag.sequence.index(d_foo.name),
+        dag.sequence.index(foo_bar.name),
+        dag.sequence.index(foo_bar_baz.name),
     )
-    assert s_foo < s_d_foo < s_foo_bar
-    assert s_bar < s_d_bar < s_foo_bar
+    assert s_foo < s_d_foo < s_foo_bar < s_foo_bar_baz
+    assert s_bar < s_foo_bar < s_foo_bar_baz
 
     # Run DAG
     dag.run()
 
-    assert handler_index.call_count == 2
+    assert handler_index.call_count == 3
     assert {
         handler_index.call_args_list[0].kwargs["source"],
         handler_index.call_args_list[1].kwargs["source"],
-    } == {foo, bar}
+        handler_index.call_args_list[2].kwargs["source"],
+    } == {foo, bar, baz}
 
-    assert dedupe_run.call_count == 2
-    dedupe_run.assert_called_with()
-
-    link_run.assert_called_once_with()
+    assert dedupe_run.call_count == 1
+    assert link_run.call_count == 2
 
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
