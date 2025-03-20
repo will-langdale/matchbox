@@ -111,36 +111,23 @@ class TestkitDAG(BaseModel):
             A dictionary mapping:
             - LinkedSourcesTestkit keys (or None) to sets of model's source names
         """
-        model = self.models.get(model_name)
-        if not model:
+        if model_name not in self.models:
             return {None: set()}
 
-        # Get root sources for this model
         root_source_addresses = self.root_source_addresses.get(model_name, set())
-
-        result: dict[str | None, set[str]] = {}
+        if not root_source_addresses:
+            return {None: set()}
 
         source_names = [
             self.source_address_to_name[address] for address in root_source_addresses
         ]
-        # Get standalone sources (sources without a linked testkit)
-        standalone_sources = {s for s in source_names if s not in self.source_to_linked}
-        if standalone_sources:
-            result[None] = standalone_sources
 
-        # Find sources that have a linked testkit
-        linked_sources = {s for s in source_names if s in self.source_to_linked}
-
-        if not linked_sources and not standalone_sources:
-            return {None: set()}
-
-        # Group sources by their linked key
-        for source in linked_sources:
-            linked_key = self.source_to_linked[source]
-
+        result = {}
+        for name in source_names:
+            # linked_key could be None
+            linked_key = self.source_to_linked.get(name)
             if linked_key not in result:
                 result[linked_key] = set()
-
-            result[linked_key].add(source)
+            result[linked_key].add(name)
 
         return result
