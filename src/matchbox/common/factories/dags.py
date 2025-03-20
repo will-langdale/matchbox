@@ -16,10 +16,15 @@ class TestkitDAG(BaseModel):
 
     # Dependency graph tracking
     adjacency: dict[str, set[str]] = {}  # name -> direct dependencies
-    root_sources: dict[str, set[str]] = {}  # model -> root sources
+    root_source_addresses: dict[str, set[str]] = {}  # model -> root source addresses
 
     # Keep track of all used names to ensure uniqueness
     _all_names: set[str] = set()
+
+    @property
+    def source_address_to_name(self) -> dict[str, str]:
+        """Map source address string to source key."""
+        return {str(tk.source.address): name for name, tk in self.sources.items()}
 
     def _validate_unique_name(self, name: str) -> str:
         """Ensure a name is unique across all testkits."""
@@ -32,11 +37,10 @@ class TestkitDAG(BaseModel):
 
     def _validate_dependencies(self, left_res: str, right_res: str | None) -> bool:
         """Ensure dependencies are valid."""
-        missing_deps = [
-            dep
-            for dep in set(i for i in [left_res, right_res] if i is not None)
-            if dep not in self.sources and dep not in self.models
-        ]
+        valid_deps = set(self.source_address_to_name.keys()) | set(self.models.keys())
+        dependencies = {dep for dep in [left_res, right_res] if dep is not None}
+
+        missing_deps = dependencies - valid_deps
         if missing_deps:
             raise ValueError(
                 f"Missing dependencies for model: {missing_deps}. "
@@ -44,15 +48,17 @@ class TestkitDAG(BaseModel):
             )
         return True
 
-    def _update_root_sources(self, model_name: str):
-        """Update root sources for a model."""
+    def _update_root_source_addresses(self, model_name: str):
+        """Update root source addresses for a model."""
         for dep_name in self.adjacency[model_name]:
-            if dep_name in self.sources:
+            if dep_name in self.source_address_to_name:
                 # If dependency is a source, add it directly
-                self.root_sources[model_name].add(dep_name)
+                self.root_source_addresses[model_name].add(dep_name)
             elif dep_name in self.models:
                 # If dependency is a model, add all its root sources
-                self.root_sources[model_name].update(self.root_sources[dep_name])
+                self.root_source_addresses[model_name].update(
+                    self.root_source_addresses[dep_name]
+                )
 
     def add_source(self, testkit: SourceTestkit | LinkedSourcesTestkit):
         """Add a source testkit to the DAG."""
@@ -78,7 +84,7 @@ class TestkitDAG(BaseModel):
         model_name = self._validate_unique_name(testkit.name)
         self.models[model_name] = testkit
         self.adjacency[model_name] = set()
-        self.root_sources[model_name] = set()
+        self.root_source_addresses[model_name] = set()
 
         # Validate dependencies
         left_res = testkit.model.metadata.left_resolution
@@ -93,7 +99,7 @@ class TestkitDAG(BaseModel):
             self.adjacency[model_name].add(right_res)
 
         # Update root sources
-        self._update_root_sources(model_name)
+        self._update_root_source_addresses(model_name)
 
     def get_sources_for_model(self, model_name: str) -> dict[str | None, set[str]]:
         """Find the LinkedSourcesTestkit keys and specific source names for a model.
@@ -105,33 +111,23 @@ class TestkitDAG(BaseModel):
             A dictionary mapping:
             - LinkedSourcesTestkit keys (or None) to sets of model's source names
         """
-        model = self.models.get(model_name)
-        if not model:
+        if model_name not in self.models:
             return {None: set()}
 
-        # Get root sources for this model
-        root_sources = self.root_sources.get(model_name, set())
-
-        result: dict[str | None, set[str]] = {}
-
-        # Get standalone sources (sources without a linked testkit)
-        standalone_sources = {s for s in root_sources if s not in self.source_to_linked}
-        if standalone_sources:
-            result[None] = standalone_sources
-
-        # Find sources that have a linked testkit
-        linked_sources = {s for s in root_sources if s in self.source_to_linked}
-
-        if not linked_sources and not standalone_sources:
+        root_source_addresses = self.root_source_addresses.get(model_name, set())
+        if not root_source_addresses:
             return {None: set()}
 
-        # Group sources by their linked key
-        for source in linked_sources:
-            linked_key = self.source_to_linked[source]
+        source_names = [
+            self.source_address_to_name[address] for address in root_source_addresses
+        ]
 
+        result = {}
+        for name in source_names:
+            # linked_key could be None
+            linked_key = self.source_to_linked.get(name)
             if linked_key not in result:
                 result[linked_key] = set()
-
-            result[linked_key].add(source)
+            result[linked_key].add(name)
 
         return result

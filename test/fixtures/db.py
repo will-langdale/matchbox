@@ -1,6 +1,8 @@
+import io
 import os
 import tempfile
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator, Literal
 
 import boto3
@@ -78,7 +80,9 @@ def create_scenario_dag(
     dag = TestkitDAG()
 
     # 1. Create linked sources
-    linked = linked_sources_factory(n_true_entities=n_entities, seed=seed)
+    linked = linked_sources_factory(
+        n_true_entities=n_entities, seed=seed, engine=warehouse_engine
+    )
     dag.add_source(linked)
 
     # 2. Write sources to warehouse
@@ -99,23 +103,23 @@ def create_scenario_dag(
         return dag
 
     # 4. Create and add deduplication models
-    for source_name in ["crn", "duns", "cdms"]:
-        model_name = f"naive_test.{source_name}"
+    for testkit in dag.sources.values():
+        source = testkit.source
+        model_name = f"naive_test.{source.address.full_name}"
 
         # Query the raw data
         source_query = backend.query(
-            source_address=linked.sources[source_name].source.address,
-            resolution_name=source_name,
+            source_address=linked.sources[source.address.full_name].source.address,
         )
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_resolution=source_name,
+            left_resolution=source.resolution_name,
             left_query=source_query,
-            left_source_pks={source_name: "source_pk"},
+            left_source_pks={source.address.full_name: "source_pk"},
             true_entities=tuple(linked.true_entities),
             name=model_name,
-            description=f"Deduplication of {source_name}",
+            description=f"Deduplication of {source.address.full_name}",
             prob_range=(1.0, 1.0),
             seed=seed,
         )
@@ -288,13 +292,31 @@ def postgres_warehouse() -> Generator[Engine, None, None]:
     engine.dispose()
 
 
+@contextmanager
+def named_temp_file(filename: str) -> Generator[io.BufferedWriter, None, None]:
+    """
+    Create a temporary file with a specific name that auto-deletes.
+
+    Args:
+        filename: Just the filename (not path) you want to use
+    """
+    temp_dir = Path(tempfile.gettempdir())
+    full_path = temp_dir / filename
+    try:
+        with full_path.open(mode="wb") as f:
+            yield f
+    finally:
+        if full_path.exists():
+            full_path.unlink()
+
+
 @pytest.fixture(scope="function")
 def sqlite_warehouse() -> Generator[Engine, None, None]:
     """Creates an engine for a function-scoped SQLite warehouse database.
 
     By using a temporary file, produces a URI that can be shared between processes.
     """
-    with tempfile.NamedTemporaryFile(suffix=".sqlite") as tmp:
+    with named_temp_file("db.sqlite") as tmp:
         engine = create_engine(f"sqlite:///{tmp.name}")
         yield engine
         engine.dispose()
