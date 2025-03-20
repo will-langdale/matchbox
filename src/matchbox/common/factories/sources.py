@@ -91,7 +91,7 @@ class SourceTestkit(BaseModel):
     @property
     def name(self) -> str:
         """Return the full name of the Source."""
-        return self.source.address.full_name
+        return self.source.resolution_name
 
     @property
     def mock(self) -> Mock:
@@ -125,7 +125,7 @@ class SourceTestkit(BaseModel):
 
         As the Source won't have an engine set by default, can be supplied.
         """
-        schema, table = get_schema_table_names(self.name)
+        schema, table = get_schema_table_names(self.source.address.full_name)
         self.data.to_pandas().drop("id", axis=1).to_sql(
             name=table,
             schema=schema,

@@ -710,19 +710,13 @@ def model_factory(
     # ==== Source configuration ====
     if left_testkit is not None:
         # Using provided sources
-        if isinstance(left_testkit, SourceTestkit):
-            left_resolution = left_testkit.source.resolution_name
-        else:
-            left_resolution = left_testkit.name
+        left_resolution = left_testkit.name
         left_query = left_testkit.query
         left_entities = left_testkit.entities
 
         if right_testkit is not None:
             model_type = ModelType.LINKER
-            if isinstance(right_testkit, SourceTestkit):
-                right_resolution = right_testkit.source.resolution_name
-            else:
-                right_resolution = right_testkit.name
+            right_resolution = right_testkit.name
             right_query = right_testkit.query
             right_entities = right_testkit.entities
         else:

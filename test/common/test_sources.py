@@ -285,7 +285,7 @@ def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
     )
     source_testkit.to_warehouse(engine=sqlite_warehouse)
     source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
-    prefix = fullname_to_prefix(source_testkit.name)
+    prefix = fullname_to_prefix(source_testkit.source.address.full_name)
     expected_df_prefixed = (
         source_testkit.data.to_pandas().drop(columns=["id"]).add_prefix(prefix)
     )

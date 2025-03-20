@@ -37,11 +37,10 @@ class TestkitDAG(BaseModel):
 
     def _validate_dependencies(self, left_res: str, right_res: str | None) -> bool:
         """Ensure dependencies are valid."""
-        missing_deps = [
-            dep
-            for dep in set(i for i in [left_res, right_res] if i is not None)
-            if dep not in self.source_address_to_name.keys() and dep not in self.models
-        ]
+        valid_deps = set(self.source_address_to_name.keys()) | set(self.models.keys())
+        dependencies = {dep for dep in [left_res, right_res] if dep is not None}
+
+        missing_deps = dependencies - valid_deps
         if missing_deps:
             raise ValueError(
                 f"Missing dependencies for model: {missing_deps}. "
@@ -52,7 +51,7 @@ class TestkitDAG(BaseModel):
     def _update_root_source_addresses(self, model_name: str):
         """Update root source addresses for a model."""
         for dep_name in self.adjacency[model_name]:
-            if dep_name in self.source_address_to_name.keys():
+            if dep_name in self.source_address_to_name:
                 # If dependency is a source, add it directly
                 self.root_source_addresses[model_name].add(dep_name)
             elif dep_name in self.models:
