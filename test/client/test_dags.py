@@ -10,6 +10,73 @@ from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_factory
 
 
+def test_step_input_validation(sqlite_warehouse: Engine):
+    """Cannot select sources not available to a step."""
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+
+    d_foo_right = DedupeStep(
+        name="d_foo",
+        description="",
+        left=StepInput(prev_node=foo, select={foo: []}),
+        model_class=NaiveDeduper,
+        settings={},
+        truth=1,
+    )
+
+    # CASE 1: Reading from Source
+    with pytest.raises(ValueError, match="only select"):
+        StepInput(prev_node=foo, select={bar: []})
+
+    # CASE 2: Reading from previous step
+    with pytest.raises(ValueError, match="Cannot select"):
+        StepInput(prev_node=d_foo_right, select={bar: []})
+
+
+def test_model_step_validation(sqlite_warehouse: Engine):
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
+
+    d_foo = DedupeStep(
+        name="d_foo",
+        description="",
+        left=StepInput(prev_node=foo, select={foo: []}),
+        model_class=NaiveDeduper,
+        settings={},
+        truth=1,
+    )
+
+    foo_bar = LinkStep(
+        name="foo_bar",
+        description="",
+        left=StepInput(prev_node=d_foo, select={foo: []}, threshold=0.5),
+        right=StepInput(prev_node=bar, select={bar: []}, threshold=0.7),
+        model_class=DeterministicLinker,
+        settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        truth=1,
+    )
+
+    foo_bar_baz = LinkStep(
+        name="foo_bar_baz",
+        description="",
+        left=StepInput(prev_node=foo_bar, select={foo: [], bar: []}),
+        right=StepInput(prev_node=baz, select={baz: []}),
+        model_class=DeterministicLinker,
+        settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        truth=1,
+    )
+
+    # Inherit from a source directly
+    assert d_foo.sources == {str(foo.address)}
+
+    # Inherit one source from a previous step
+    assert foo_bar.sources == {str(foo.address), str(bar.address)}
+
+    # Inherit multiple sources from a previous step
+    assert foo_bar_baz.sources == {str(foo.address), str(bar.address), str(baz.address)}
+
+
 def test_dedupe_step_run(
     sqlite_warehouse: Engine,
 ):
@@ -36,6 +103,7 @@ def test_dedupe_step_run(
             left=StepInput(prev_node=foo, select={foo: []}, threshold=0.5),
             model_class=NaiveDeduper,
             settings={"id": "id", "unique_fields": []},
+            truth=1,
         )
 
         d_foo.run()
@@ -65,6 +133,7 @@ def test_dedupe_step_run(
 
         # Results are stored
         model_mock.run().to_matchbox.assert_called_once()
+        assert model_mock.truth == 1
 
 
 def test_link_step_run(
@@ -95,6 +164,7 @@ def test_link_step_run(
             right=StepInput(prev_node=bar, select={bar: []}, threshold=0.7),
             model_class=DeterministicLinker,
             settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+            truth=1,
         )
 
         foo_bar.run()
@@ -138,6 +208,7 @@ def test_link_step_run(
 
         # Results are stored
         model_mock.run().to_matchbox.assert_called_once()
+        assert model_mock.truth == 1
 
 
 @patch("matchbox.client.dags._handler.index")
@@ -159,6 +230,7 @@ def test_dag_runs(
         left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
+        truth=1,
     )
 
     # Structure:
@@ -168,17 +240,16 @@ def test_dag_runs(
         left=StepInput(
             prev_node=d_foo,
             select={foo: []},
-            cleaners={},
         ),
         right=StepInput(
             prev_node=bar,
             select={bar: []},
-            cleaners={},
         ),
         name="foo_bar",
         description="",
         model_class=DeterministicLinker,
         settings={},
+        truth=1,
     )
 
     # Structure: Linkers can take other linkers
@@ -197,6 +268,7 @@ def test_dag_runs(
         description="",
         model_class=DeterministicLinker,
         settings={},
+        truth=1,
     )
 
     # Assemble DAG
@@ -218,9 +290,6 @@ def test_dag_runs(
         foo_bar.name,
         foo_bar_baz.name,
     }
-    assert d_foo.sources == {foo.address}
-    assert foo_bar.sources == {foo.address, bar.address}
-    assert foo_bar_baz.sources == {foo.address, bar.address, baz.address}
 
     # Prepare DAG
     dag.prepare()
@@ -257,13 +326,12 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
         left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
+        truth=1,
     )
 
     dag = DAG()
     with pytest.raises(ValueError, match="Dependency"):
         dag.add_steps(d_foo)
-    # Sources are not added
-    assert not d_foo.sources
 
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
@@ -276,6 +344,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         left=StepInput(prev_node=foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
+        truth=1,
     )
     d_bar_wrong = DedupeStep(
         # Name clash!
@@ -284,6 +353,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         left=StepInput(prev_node=bar, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
+        truth=1,
     )
     dag = DAG()
     dag.add_sources(foo)
@@ -294,60 +364,6 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     assert dag.nodes["d_foo"] == d_foo
     # We didn't overwrite d_foo's dependencies
     assert dag.graph["d_foo"] == [str(foo.address)]
-    # Sources are not added
-    assert not d_bar_wrong.sources
-
-
-def test_dag_source_unavailable(sqlite_warehouse: Engine):
-    """Cannot select sources not available to a step."""
-    # Set up all nodes
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
-
-    d_foo_right = DedupeStep(
-        name="d_foo",
-        description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
-        model_class=NaiveDeduper,
-        settings={},
-    )
-
-    d_foo_wrong = DedupeStep(
-        name="d_foo",
-        description="",
-        # Previous node and select disagree
-        left=StepInput(prev_node=foo, select={bar: []}),
-        model_class=NaiveDeduper,
-        settings={},
-    )
-
-    bar_foo_wrong = LinkStep(
-        name="foo_bar",
-        description="",
-        left=StepInput(prev_node=bar, select={bar: []}),
-        # Previous node and select disagree
-        right=StepInput(prev_node=d_foo_right, select={bar: []}),
-        model_class=DeterministicLinker,
-        settings={},
-    )
-
-    # CASE 1: Reading from Source
-    dag = DAG()
-    dag.add_sources(foo)
-    with pytest.raises(ValueError, match="only select"):
-        dag.add_steps(d_foo_wrong)
-    # DAG is not modified by failed attempt
-    assert d_foo_wrong.name not in dag.graph and d_foo_wrong.name not in dag.nodes
-
-    # CASE 2: Reading from previous step
-    dag = DAG()
-    dag.add_sources(foo, bar)
-    dag.add_steps(d_foo_right)
-    with pytest.raises(ValueError, match="cannot select"):
-        dag.add_steps(bar_foo_wrong)
-    # DAG is not modified by failed attempt
-    assert bar_foo_wrong.name not in dag.graph and bar_foo_wrong.name not in dag.nodes
-    assert not bar_foo_wrong.sources
 
 
 def test_dag_disconnected(sqlite_warehouse: Engine):

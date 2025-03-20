@@ -1,11 +1,11 @@
 """Objects to define a DAG which indexes, deduplicates and links data."""
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any, Union
 
 from pandas import DataFrame
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from matchbox.client import _handler
 from matchbox.client.helpers.cleaner import process
@@ -13,9 +13,8 @@ from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
-from matchbox.client.results import Results
 from matchbox.common.logging import logger
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import Source
 
 DAGNode = Union["ModelStep", Source]
 
@@ -31,10 +30,27 @@ class StepInput(BaseModel):
     @property
     def name(self):
         """Resolution name for node generating this input for the next step."""
-        if isinstance(self.prev_node, ModelStep):
-            return self.prev_node.name
-        else:
+        if isinstance(self.prev_node, Source):
             return self.prev_node.resolution_name
+        else:
+            return self.prev_node.name
+
+    @model_validator(mode="after")
+    def validate_all_input(self) -> "StepInput":
+        """Verify select statement is valid given previous node."""
+        if isinstance(self.prev_node, Source):
+            if len(self.select) > 1 or list(self.select.keys())[0] != self.prev_node:
+                raise ValueError(
+                    f"Can only select from source {self.prev_node.address}"
+                )
+        else:
+            for source in self.select:
+                if str(source.address) not in self.prev_node.sources:
+                    raise ValueError(
+                        f"Cannot select {source.address} from {self.prev_node.name}."
+                        f"Available sources are {self.prev_node.sources}."
+                    )
+        return self
 
 
 class ModelStep(BaseModel, ABC):
@@ -44,7 +60,25 @@ class ModelStep(BaseModel, ABC):
     description: str
     left: StepInput
     settings: dict[str, Any]
-    sources: set[SourceAddress] = set()
+    truth: float
+    sources: set[str] = set()
+
+    @property
+    @abstractmethod
+    def inputs(self) -> list[StepInput]:
+        """Return all inputs to this step."""
+        raise NotImplementedError
+
+    @model_validator(mode="after")
+    def init_sources(self) -> "ModelStep":
+        """Add sources inherited from all inputs."""
+        for step_input in self.inputs:
+            if isinstance(step_input.prev_node, Source):
+                self.sources.add(str(step_input.prev_node.address))
+            else:
+                self.sources.update(step_input.prev_node.sources)
+
+        return self
 
     def query(self, step_input: StepInput) -> DataFrame:
         """Retrieve data for declared step input.
@@ -72,33 +106,26 @@ class DedupeStep(ModelStep):
 
     model_class: type[Deduper]
 
-    def deduplicate(self, df: DataFrame) -> Results:
-        """Define and run deduper on pre-processed data.
-
-        Args:
-            df: Pandas dataframe with cleaned data.
-
-        Returns:
-            Results from running the model.
-        """
-        model = make_model(
-            model_name=self.name,
-            description=self.description,
-            model_class=self.model_class,
-            model_settings=self.settings,
-            left_data=df,
-            left_resolution=self.left.name,
-        )
-
-        res = model.run()
-        return res
+    @property
+    def inputs(self) -> list[StepInput]:
+        """Return all inputs to this step."""
+        return [self.left]
 
     def run(self):
         """Run full deduping pipeline and store results."""
         df_raw = self.query(self.left)
         df_clean = process(df_raw, self.left.cleaners)
-        results = self.deduplicate(df_clean)
+        deduper = make_model(
+            model_name=self.name,
+            description=self.description,
+            model_class=self.model_class,
+            model_settings=self.settings,
+            left_data=df_clean,
+            left_resolution=self.left.name,
+        )
+        results = deduper.run()
         results.to_matchbox()
+        deduper.truth = self.truth
 
 
 class LinkStep(ModelStep):
@@ -107,24 +134,10 @@ class LinkStep(ModelStep):
     model_class: type[Linker]
     right: "StepInput"
 
-    def link(
-        self,
-        left_df: DataFrame,
-        right_df: DataFrame,
-    ) -> Results:
-        """Create linking model and pass it input dataframes."""
-        linker = make_model(
-            model_name=self.name,
-            description=self.description,
-            model_class=self.model_class,
-            model_settings=self.settings,
-            left_data=left_df,
-            left_resolution=self.left.name,
-            right_data=right_df,
-            right_resolution=self.right.name,
-        )
-
-        return linker.run()
+    @property
+    def inputs(self) -> list[StepInput]:
+        """Return all `StepInputs` to this step."""
+        return [self.left, self.right]
 
     def run(self):
         """Run whole linking step."""
@@ -134,8 +147,19 @@ class LinkStep(ModelStep):
         right_raw = self.query(self.right)
         right_clean = process(right_raw, self.right.cleaners)
 
-        res = self.link(left_clean, right_clean)
+        linker = linker = make_model(
+            model_name=self.name,
+            description=self.description,
+            model_class=self.model_class,
+            model_settings=self.settings,
+            left_data=left_clean,
+            left_resolution=self.left.name,
+            right_data=right_clean,
+            right_resolution=self.right.name,
+        )
+        res = linker.run()
         res.to_matchbox()
+        linker.truth = self.truth
 
 
 class DAG:
@@ -147,9 +171,14 @@ class DAG:
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
 
-    def _validate_node(self, name: str, node: DAGNode):
+    def _validate_node(self, name: str):
         if name in self.nodes:
             raise ValueError(f"Name '{name}' is already taken in the DAG")
+
+    def _validate_inputs(self, step: ModelStep):
+        for step_input in step.inputs:
+            if step_input.name not in self.nodes:
+                raise ValueError(f"Dependency {step_input.name} not added to DAG")
 
     def add_sources(self, *sources: Source):
         """Add sources to DAG.
@@ -158,7 +187,7 @@ class DAG:
             sources: All sources to add.
         """
         for source in sources:
-            self._validate_node(str(source.address), source)
+            self._validate_node(str(source.address))
             self.nodes[str(source.address)] = source
             self.graph[str(source.address)] = []
 
@@ -168,49 +197,11 @@ class DAG:
         Args:
             steps: Dedupe and link steps.
         """
-
-        def validate_input(step: ModelStep, step_input: StepInput):
-            """Validate and update available sources for step input."""
-            if step_input.name not in self.nodes:
-                raise ValueError(f"Dependency {step_input.name} not available")
-
-            prev_node = step_input.prev_node
-            # Before adding sources, validate select statements
-            if isinstance(prev_node, Source):
-                if (
-                    len(step_input.select) > 1
-                    or list(step_input.select.keys())[0] != prev_node
-                ):
-                    raise ValueError(f"Can only select from source {prev_node.address}")
-                step.sources.add(step_input.prev_node.address)
-            else:
-                for source in step_input.select:
-                    if source.address not in prev_node.sources:
-                        raise ValueError(
-                            f"Step {step.name} cannot select {source.address} "
-                            f"from {step_input.name}. Available sources are "
-                            f"{step_input.prev_node.sources}."
-                        )
-                step.sources.update(prev_node.sources)
-
         for step in steps:
-            self._validate_node(step.name, step)
-
-            try:
-                validate_input(step, step.left)
-
-                if isinstance(step, LinkStep):
-                    validate_input(step, step.right)
-            except ValueError as e:
-                # If the validation fails, reset this step's sources
-                step.sources = set()
-                raise e
-
-            # Only add to DAG after everything is validated
+            self._validate_node(step.name)
+            self._validate_inputs(step)
             self.nodes[step.name] = step
-            self.graph[step.name] = [step.left.name]
-            if isinstance(step, LinkStep):
-                self.graph[step.name].append(step.right.name)
+            self.graph[step.name] = [step_input.name for step_input in step.inputs]
 
     def prepare(self):
         """Determine order of execution of steps."""
