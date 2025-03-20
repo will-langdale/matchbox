@@ -90,7 +90,7 @@ class SourceTestkit(BaseModel):
 
     @property
     def name(self) -> str:
-        """Return the full name of the Source."""
+        """Return the resolution name of the Source."""
         return self.source.resolution_name
 
     @property
