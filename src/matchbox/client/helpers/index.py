@@ -35,7 +35,7 @@ def index(
         db_pk: the primary key of the source
         engine: the engine to connect to a data warehouse
         resolution_name: a custom resolution name
-            If missing, will the default for a `Source`
+            If missing, will use the default name for a `Source`
         columns: the columns to index
 
     Examples:

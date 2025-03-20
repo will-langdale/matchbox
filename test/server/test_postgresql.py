@@ -105,7 +105,7 @@ def test_benchmark_query_generation(
 
         sql_query = compile_query_sql(
             point_of_truth=point_of_truth,
-            source_address=dag.sources.get(source).source.address,
+            source_address=dag.sources[source].source.address,
         )
 
         assert isinstance(sql_query, str)

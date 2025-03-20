@@ -1,3 +1,4 @@
+import io
 import os
 import tempfile
 from contextlib import contextmanager
@@ -289,20 +290,17 @@ def postgres_warehouse() -> Generator[Engine, None, None]:
 
 
 @contextmanager
-def named_temp_file(filename):
+def named_temp_file(filename: str) -> Generator[io.BufferedWriter, None, None]:
     """
     Create a temporary file with a specific name that auto-deletes.
 
     Args:
         filename: Just the filename (not path) you want to use
     """
-    # Get the system's temp directory as a Path
     temp_dir = Path(tempfile.gettempdir())
-    # Create the full path with your desired name
     full_path = temp_dir / filename
-
     try:
-        with open(full_path, "w+b") as f:
+        with full_path.open(mode="wb") as f:
             yield f
     finally:
         if full_path.exists():

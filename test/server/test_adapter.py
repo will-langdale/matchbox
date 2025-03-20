@@ -359,9 +359,9 @@ class TestMatchboxBackend:
 
         with self.scenario(self.backend, "index") as dag:
             assert self.backend.data.count() == (
-                len(dag.sources.get("crn").entities)
-                + len(dag.sources.get("cdms").entities)
-                + len(dag.sources.get("duns").entities)
+                len(dag.sources["crn"].entities)
+                + len(dag.sources["cdms"].entities)
+                + len(dag.sources["duns"].entities)
             )
 
     def test_index_new_source(self):
