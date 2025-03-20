@@ -87,7 +87,7 @@ def generate_sources(
             "alias": pa.array(sources_alias, type=pa.string()),
             "full_name": pa.array(sources_full_names, type=pa.string()),
             "warehouse_hash": pa.array(warehouse_hashes, type=pa.binary()),
-            "id": pa.array(sources_id, type=pa.string()),
+            "db_pk": pa.array(sources_id, type=pa.string()),
         }
     )
 
@@ -110,7 +110,7 @@ def generate_sources(
     # Process each source and its columns
     for i, source_id in enumerate(sources_resolution_id):
         for j, (name, alias, type_val) in enumerate(
-            zip(column_names[i], column_aliases[i], column_types[i], strict=False)
+            zip(column_names[i], column_aliases[i], column_types[i], strict=True)
         ):
             column_ids.append(next_column_id)
             next_column_id += 1
@@ -290,7 +290,7 @@ def generate_result_tables(
         prob_max: maximum value for probabilities to be generated
 
     Returns:
-        Tuple with 1 list of top-level clusters, 4 PyArrow tables, for probabilities,
+        Tuple with 1 list of top-level clusters, 3 PyArrow tables, for probabilities,
         contains, and clusters, and the next ID to use for future calls
     """
     probs = generate_dummy_probabilities(

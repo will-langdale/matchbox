@@ -211,7 +211,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     alias = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
-    id = Column(TEXT, nullable=False)
+    db_pk = Column(TEXT, nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")

@@ -209,7 +209,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 return Source(
                     alias=source.alias,
                     address=address,
-                    db_pk=source.id,
+                    db_pk=source.db_pk,
                     columns=[
                         SourceColumn(
                             name=column.column_name,

@@ -171,7 +171,7 @@ def _resolve_cluster_hierarchy(
         # Get clusters valid across all resolutions in lineage
         valid_clusters = _union_valid_clusters(thresholds)
 
-        # Get base mapping of IDs to clusters using the new ClusterSourcePK table
+        # Get base mapping of IDs to clusters
         mapping_0 = (
             select(
                 Clusters.cluster_id.label("cluster_id"),

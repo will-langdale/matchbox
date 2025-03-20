@@ -147,7 +147,7 @@ def insert_dataset(
                 alias=source.alias,
                 full_name=source.address.full_name,
                 warehouse_hash=source.address.warehouse_hash,
-                id=source.db_pk,
+                db_pk=source.db_pk,
             )
 
             # Add columns directly through the relationship

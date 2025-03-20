@@ -13,12 +13,12 @@ There are two graph-like trees in place here.
 
 ```mermaid
 erDiagram
-    Sources {
+   Sources {
         bigint resolution_id PK,FK
         string alias
         string full_name
         bytes warehouse_hash
-        string id
+        string db_pk
     }
     SourceColumns {
         bigint column_id PK
@@ -45,12 +45,12 @@ erDiagram
     Probabilities {
         bigint resolution PK,FK
         bigint cluster PK,FK
-        float probability
+        smallint probability
     }
     Resolutions {
         bigint resolution_id PK
         bytes resolution_hash
-        enum type
+        string type
         string name
         string description
         float truth
@@ -66,8 +66,10 @@ erDiagram
     Sources ||--o{ SourceColumns : ""
     Sources ||--o{ Clusters : ""
     Clusters ||--o{ ClusterSourcePK : ""
-    Clusters ||--o{ Contains : "parent, child"
     Clusters ||--o{ Probabilities : ""
+    Clusters ||--o{ Contains : "parent"
+    Contains }o--|| Clusters : "child"
     Resolutions ||--o{ Probabilities : ""
-    Resolutions ||--o{ ResolutionFrom : "child, parent"
+    Resolutions ||--o{ ResolutionFrom : "parent"
+    ResolutionFrom }o--|| Resolutions : "child"
 ```
