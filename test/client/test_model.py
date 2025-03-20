@@ -20,7 +20,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxUnhandledServerResponse,
-    MatchboxUnparsedClientRequest,
 )
 from matchbox.common.factories.models import model_factory
 
@@ -221,7 +220,7 @@ def test_truth_getter(matchbox_api: MockRouter):
 
     # Mock the GET /models/{name}/truth endpoint
     route = matchbox_api.get(f"/models/{testkit.model.metadata.name}/truth").mock(
-        return_value=Response(200, json=0.9)
+        return_value=Response(200, json=90)
     )
 
     # Get truth
@@ -253,23 +252,16 @@ def test_truth_setter(matchbox_api: MockRouter):
 
     # Verify the API call
     assert route.called
-    assert float(route.calls.last.request.read()) == 0.9
+    assert float(route.calls.last.request.read()) == 90
 
 
 def test_truth_setter_validation_error(matchbox_api: MockRouter):
     """Test setting invalid truth values."""
     testkit = model_factory(model_type="linker")
 
-    # Mock the PATCH endpoint with a validation error
-    route = matchbox_api.patch(f"/models/{testkit.model.metadata.name}/truth").mock(
-        return_value=Response(422)
-    )
-
     # Attempt to set an invalid truth value
-    with pytest.raises(MatchboxUnparsedClientRequest):
+    with pytest.raises(ValueError):
         testkit.model.truth = 1.5
-
-    assert route.called
 
 
 def test_ancestors_getter(matchbox_api: MockRouter):
@@ -277,8 +269,8 @@ def test_ancestors_getter(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     ancestors_data = [
-        ModelAncestor(name="model1", truth=0.9).model_dump(),
-        ModelAncestor(name="model2", truth=0.8).model_dump(),
+        ModelAncestor(name="model1", truth=90).model_dump(),
+        ModelAncestor(name="model2", truth=80).model_dump(),
     ]
 
     # Mock the GET /models/{name}/ancestors endpoint
@@ -303,7 +295,7 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
         f"/models/{testkit.model.metadata.name}/ancestors_cache"
     ).mock(
         return_value=Response(
-            200, json=[ModelAncestor(name="model1", truth=0.9).model_dump()]
+            200, json=[ModelAncestor(name="model1", truth=90).model_dump()]
         )
     )
 
@@ -330,7 +322,7 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
     testkit.model.ancestors_cache = {"model2": 0.8}
     assert set_route.called
     assert json.loads(set_route.calls.last.request.content.decode()) == [
-        ModelAncestor(name="model2", truth=0.8).model_dump()
+        ModelAncestor(name="model2", truth=80).model_dump()
     ]
 
 
@@ -338,26 +330,9 @@ def test_ancestors_cache_set_error(matchbox_api: MockRouter):
     """Test error handling when setting ancestors cache."""
     testkit = model_factory(model_type="linker")
 
-    # Mock the POST endpoint with an error
-    route = matchbox_api.post(
-        f"/models/{testkit.model.metadata.name}/ancestors_cache"
-    ).mock(
-        return_value=Response(
-            500,
-            json=ModelOperationStatus(
-                success=False,
-                model_name=testkit.model.metadata.name,
-                operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
-                details="Database error",
-            ).model_dump(),
-        )
-    )
-
     # Attempt to set ancestors cache
-    with pytest.raises(MatchboxUnhandledServerResponse, match="Database error"):
-        testkit.model.ancestors_cache = {"model1": 0.9}
-
-    assert route.called
+    with pytest.raises(ValueError):
+        testkit.model.ancestors_cache = {"model1": 1.1}
 
 
 def test_delete_model(matchbox_api: MockRouter):

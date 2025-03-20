@@ -66,11 +66,11 @@ def test_hash_id_map():
     [
         # Test case 1: CDMS/CRN linker, CRN dataset
         pytest.param(
-            "deterministic_naive_test.crn_naive_test.cdms", "crn", id="cdms-crn_crn"
+            "probabilistic_naive_test.crn_naive_test.cdms", "crn", id="cdms-crn_crn"
         ),
         # Test case 2: CDMS/CRN linker, CDMS dataset
         pytest.param(
-            "deterministic_naive_test.crn_naive_test.cdms", "cdms", id="cdms-crn_cdms"
+            "probabilistic_naive_test.crn_naive_test.cdms", "cdms", id="cdms-crn_cdms"
         ),
         # Test case 3: CRN/DUNS linker, CRN dataset
         pytest.param(
