@@ -89,7 +89,7 @@ class FilteredProbabilities(BaseModel):
                 ).filter(
                     and_(
                         Resolutions.truth.isnot(None),
-                        Probabilities.probability > Resolutions.truth,
+                        Probabilities.probability >= Resolutions.truth,
                     )
                 )
             return query.scalar()
@@ -372,14 +372,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return get_model_results(engine=MBDB.get_engine(), resolution=resolution)
 
-    def set_model_truth(self, model: str, truth: float) -> None:  # noqa: D102
+    def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         with Session(MBDB.get_engine()) as session:
             session.add(resolution)
             resolution.truth = truth
             session.commit()
 
-    def get_model_truth(self, model: str) -> float:  # noqa: D102
+    def get_model_truth(self, model: str) -> int:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
         return resolution.truth
 
