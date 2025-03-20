@@ -56,7 +56,7 @@ class TestMatchboxBackend:
     def test_validate_ids(self):
         """Test validating data IDs."""
         with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
                 source_address=crn_testkit.source.address,
@@ -73,7 +73,7 @@ class TestMatchboxBackend:
     def test_validate_hashes(self):
         """Test validating data hashes."""
         with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
                 source_address=crn_testkit.source.address,
@@ -93,7 +93,7 @@ class TestMatchboxBackend:
     def test_cluster_id_to_hash(self):
         """Test getting ID to Cluster hash lookup from the database."""
         with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
                 source_address=crn_testkit.source.address,
@@ -113,7 +113,7 @@ class TestMatchboxBackend:
     def test_get_source(self):
         """Test querying data from the database."""
         with self.scenario(self.backend, "index") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             crn_retrieved = self.backend.get_source(crn_testkit.source.address)
             # Equality between the two is False because one lacks the Engine
@@ -201,8 +201,8 @@ class TestMatchboxBackend:
     def test_insert_model(self):
         """Test that models can be inserted."""
         with self.scenario(self.backend, "index") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
-            duns_testkit = dag.get_source_testkit("duns")
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
 
             # Test deduper insertion
             models_count = self.backend.models.count()
@@ -359,15 +359,15 @@ class TestMatchboxBackend:
 
         with self.scenario(self.backend, "index") as dag:
             assert self.backend.data.count() == (
-                len(dag.get_source_testkit("crn").entities)
-                + len(dag.get_source_testkit("cdms").entities)
-                + len(dag.get_source_testkit("duns").entities)
+                len(dag.sources.get("crn").entities)
+                + len(dag.sources.get("cdms").entities)
+                + len(dag.sources.get("duns").entities)
             )
 
     def test_index_new_source(self):
         """Test that indexing identical works."""
         with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.get_source_testkit("crn")
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             assert self.backend.clusters.count() == 0
 
@@ -386,7 +386,7 @@ class TestMatchboxBackend:
     def test_index_duplicate_clusters(self):
         """Test that indexing new data with duplicate hashes works."""
         with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.get_source_testkit("crn")
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             data_hashes_halved = crn_testkit.data_hashes.slice(
                 0, crn_testkit.data_hashes.num_rows // 2
@@ -402,7 +402,7 @@ class TestMatchboxBackend:
     def test_index_same_resolution(self):
         """Test that indexing same-name sources in different warehouses works."""
         with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.get_source_testkit("crn")
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             crn_source_1 = crn_testkit.source.model_copy(
                 update={
@@ -431,8 +431,8 @@ class TestMatchboxBackend:
     def test_index_different_resolution_same_hashes(self):
         """Test that indexing data with the same hashes but different sources works."""
         with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.get_source_testkit("crn")
-            duns_testkit: SourceTestkit = dag.get_source_testkit("duns")
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
+            duns_testkit: SourceTestkit = dag.sources.get("duns")
 
             self.backend.index(crn_testkit.source, crn_testkit.data_hashes)
             # Different source, same data
@@ -443,7 +443,7 @@ class TestMatchboxBackend:
     def test_query_only_source(self):
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "index") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             df_crn_sample = self.backend.query(
                 source_address=crn_testkit.source.address,
@@ -461,7 +461,7 @@ class TestMatchboxBackend:
     def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""
         with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
                 source_address=crn_testkit.source.address,
@@ -484,8 +484,8 @@ class TestMatchboxBackend:
         """Test querying data from a link point of truth."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            crn_testkit = dag.get_source_testkit("crn")
-            duns_testkit = dag.get_source_testkit("duns")
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
 
             df_crn = self.backend.query(
                 source_address=crn_testkit.source.address,
@@ -521,8 +521,8 @@ class TestMatchboxBackend:
         """Test that matching data works when the target has many IDs."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            crn_testkit = dag.get_source_testkit("crn")
-            duns_testkit = dag.get_source_testkit("duns")
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -553,8 +553,8 @@ class TestMatchboxBackend:
         """Test that matching data works when the source has more possible IDs."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            crn_testkit = dag.get_source_testkit("crn")
-            duns_testkit = dag.get_source_testkit("duns")
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -585,8 +585,8 @@ class TestMatchboxBackend:
         """Test that matching data works when the target has no IDs."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            crn_testkit = dag.get_source_testkit("crn")
-            duns_testkit = dag.get_source_testkit("duns")
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -617,8 +617,8 @@ class TestMatchboxBackend:
         """Test that matching data works when the supplied key doesn't exist."""
         with self.scenario(self.backend, "link") as dag:
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            crn_testkit = dag.get_source_testkit("crn")
-            duns_testkit = dag.get_source_testkit("duns")
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
 
             # Use a non-existent source primary key
             non_existent_pk = "foo"
@@ -662,7 +662,7 @@ class TestMatchboxBackend:
     def test_dump_and_restore(self):
         """Test that dumping and restoring the database works."""
         with self.scenario(self.backend, "link") as dag:
-            crn_testkit = dag.get_source_testkit("crn")
+            crn_testkit = dag.sources.get("crn")
 
             # Verify we have data
             pre_dump_datasets_count = self.backend.datasets.count()

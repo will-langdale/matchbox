@@ -1,5 +1,4 @@
 import pytest
-from sqlalchemy import Engine
 
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig
@@ -9,22 +8,6 @@ from matchbox.common.factories.sources import (
     linked_sources_factory,
     source_factory,
 )
-
-
-def test_dag_get_sources(sqlite_warehouse: Engine):
-    """DAG can retrieve source testkit using partial string match."""
-    foo1 = source_factory(full_name="foo")
-    foo2 = source_factory(full_name="foo", engine=sqlite_warehouse)
-
-    dag = TestkitDAG()
-    dag.add_source(foo1)
-
-    assert not dag.get_source_testkit("bar")
-    assert dag.get_source_testkit("foo") == foo1
-
-    dag.add_source(foo2)
-    with pytest.raises(ValueError, match="Multiple matches"):
-        dag.get_source_testkit("foo")
 
 
 @pytest.mark.parametrize(
@@ -284,12 +267,8 @@ def test_testkit_dag_multiple_linked_sources():
     # Check that each model uses the correct linked testkit
     assert linked1_key in sources_model1 and linked1_key not in sources_model2
     assert linked2_key in sources_model2 and linked2_key not in sources_model1
-    assert sources_model1[linked1_key] == {
-        linked1.sources["foo1"].source.resolution_name
-    }
-    assert sources_model2[linked2_key] == {
-        linked2.sources["bar1"].source.resolution_name
-    }
+    assert sources_model1[linked1_key] == {"foo1"}
+    assert sources_model2[linked2_key] == {"bar1"}
 
     # Test cross-linked model
     model3 = model_factory(
@@ -303,12 +282,8 @@ def test_testkit_dag_multiple_linked_sources():
 
     # Check that model3 uses both linked testkits
     assert linked1_key in sources_model3 and linked2_key in sources_model3
-    assert sources_model3[linked1_key] == {
-        linked1.sources["foo1"].source.resolution_name
-    }
-    assert sources_model3[linked2_key] == {
-        linked2.sources["bar1"].source.resolution_name
-    }
+    assert sources_model3[linked1_key] == {"foo1"}
+    assert sources_model3[linked2_key] == {"bar1"}
 
     # Test model using multiple sources from same linked testkit
     model4 = model_factory(
@@ -321,10 +296,7 @@ def test_testkit_dag_multiple_linked_sources():
     sources_model4 = dag.get_sources_for_model(model4.name)
 
     # Check that model4 uses both sources from linked1
-    assert sources_model4[linked1_key] == {
-        linked1.sources["foo1"].source.resolution_name,
-        linked1.sources["foo2"].source.resolution_name,
-    }
+    assert sources_model4[linked1_key] == {"foo1", "foo2"}
 
 
 def test_testkit_dag_out_of_order_models():

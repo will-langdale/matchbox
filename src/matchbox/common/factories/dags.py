@@ -16,10 +16,15 @@ class TestkitDAG(BaseModel):
 
     # Dependency graph tracking
     adjacency: dict[str, set[str]] = {}  # name -> direct dependencies
-    root_sources: dict[str, set[str]] = {}  # model -> root sources
+    root_source_addresses: dict[str, set[str]] = {}  # model -> root source addresses
 
     # Keep track of all used names to ensure uniqueness
     _all_names: set[str] = set()
+
+    @property
+    def source_address_to_name(self) -> dict[str, str]:
+        """Map source address string to source key."""
+        return {str(tk.source.address): name for name, tk in self.sources.items()}
 
     def _validate_unique_name(self, name: str) -> str:
         """Ensure a name is unique across all testkits."""
@@ -35,7 +40,7 @@ class TestkitDAG(BaseModel):
         missing_deps = [
             dep
             for dep in set(i for i in [left_res, right_res] if i is not None)
-            if dep not in self.sources and dep not in self.models
+            if dep not in self.source_address_to_name.keys() and dep not in self.models
         ]
         if missing_deps:
             raise ValueError(
@@ -44,15 +49,17 @@ class TestkitDAG(BaseModel):
             )
         return True
 
-    def _update_root_sources(self, model_name: str):
-        """Update root sources for a model."""
+    def _update_root_source_addresses(self, model_name: str):
+        """Update root source addresses for a model."""
         for dep_name in self.adjacency[model_name]:
-            if dep_name in self.sources:
+            if dep_name in self.source_address_to_name.keys():
                 # If dependency is a source, add it directly
-                self.root_sources[model_name].add(dep_name)
+                self.root_source_addresses[model_name].add(dep_name)
             elif dep_name in self.models:
                 # If dependency is a model, add all its root sources
-                self.root_sources[model_name].update(self.root_sources[dep_name])
+                self.root_source_addresses[model_name].update(
+                    self.root_source_addresses[dep_name]
+                )
 
     def add_source(self, testkit: SourceTestkit | LinkedSourcesTestkit):
         """Add a source testkit to the DAG."""
@@ -65,43 +72,20 @@ class TestkitDAG(BaseModel):
             self.linked[linked_key] = testkit
 
             # Add each source and track its association with the linked key
-            for source_testkit in testkit.sources.values():
-                address_str = self._validate_unique_name(
-                    str(source_testkit.source.address)
-                )
-                self.sources[address_str] = source_testkit
-                self.source_to_linked[address_str] = linked_key
+            for source_name, source_testkit in testkit.sources.items():
+                self._validate_unique_name(source_name)
+                self.sources[source_name] = source_testkit
+                self.source_to_linked[source_name] = linked_key
         else:
-            address_str = self._validate_unique_name(str(testkit.source.address))
-            self.sources[address_str] = testkit
-
-    def get_source_testkit(self, starts_with: str) -> SourceTestkit | None:
-        """Get source testkit from DAG given the beginning of its key.
-
-        Args:
-            starts_with: A string matching the left part of a DAG source key.
-
-        Returns:
-            The matching testkit if found, None otherwise.
-        """
-        matching = [
-            testkit
-            for source_name, testkit in self.sources.items()
-            if source_name.startswith(starts_with)
-        ]
-        if len(matching) == 0:
-            return None
-        if len(matching) > 1:
-            raise ValueError(f"Multiple matches for source starting with {starts_with}")
-
-        return matching[0]
+            source_name = self._validate_unique_name(testkit.name)
+            self.sources[source_name] = testkit
 
     def add_model(self, testkit: ModelTestkit):
         """Add a model testkit to the DAG."""
         model_name = self._validate_unique_name(testkit.name)
         self.models[model_name] = testkit
         self.adjacency[model_name] = set()
-        self.root_sources[model_name] = set()
+        self.root_source_addresses[model_name] = set()
 
         # Validate dependencies
         left_res = testkit.model.metadata.left_resolution
@@ -116,7 +100,7 @@ class TestkitDAG(BaseModel):
             self.adjacency[model_name].add(right_res)
 
         # Update root sources
-        self._update_root_sources(model_name)
+        self._update_root_source_addresses(model_name)
 
     def get_sources_for_model(self, model_name: str) -> dict[str | None, set[str]]:
         """Find the LinkedSourcesTestkit keys and specific source names for a model.
@@ -133,17 +117,20 @@ class TestkitDAG(BaseModel):
             return {None: set()}
 
         # Get root sources for this model
-        root_sources = self.root_sources.get(model_name, set())
+        root_source_addresses = self.root_source_addresses.get(model_name, set())
 
         result: dict[str | None, set[str]] = {}
 
+        source_names = [
+            self.source_address_to_name[address] for address in root_source_addresses
+        ]
         # Get standalone sources (sources without a linked testkit)
-        standalone_sources = {s for s in root_sources if s not in self.source_to_linked}
+        standalone_sources = {s for s in source_names if s not in self.source_to_linked}
         if standalone_sources:
             result[None] = standalone_sources
 
         # Find sources that have a linked testkit
-        linked_sources = {s for s in root_sources if s in self.source_to_linked}
+        linked_sources = {s for s in source_names if s in self.source_to_linked}
 
         if not linked_sources and not standalone_sources:
             return {None: set()}
