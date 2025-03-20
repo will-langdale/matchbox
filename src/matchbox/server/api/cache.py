@@ -9,6 +9,7 @@ import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
 
 from matchbox.common.dtos import BackendUploadType, ModelMetadata, UploadStatus
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 from matchbox.server.api.arrow import s3_to_recordbatch
 from matchbox.server.base import MatchboxDBAdapter
@@ -194,3 +195,9 @@ async def process_upload(
 
     except Exception as e:
         metadata_store.update_status(upload_id, "failed", details=str(e))
+        raise e
+    finally:
+        try:
+            client.delete_object(Bucket=bucket, Key=key)
+        except Exception as delete_error:
+            logger.error(f"Failed to delete S3 file {bucket}/{key}: {delete_error}")

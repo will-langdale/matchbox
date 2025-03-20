@@ -6,6 +6,7 @@ from unittest.mock import ANY, Mock, call, patch
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
@@ -28,7 +29,7 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server import app
-from matchbox.server.api.cache import MetadataStore
+from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.base import MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -219,6 +220,57 @@ def test_status_check_not_found(metadata_store: Mock):
     assert response.status_code == 400
     assert response.json()["status"] == "failed"
     assert "not found or expired" in response.json()["details"].lower()
+
+
+@pytest.mark.asyncio
+async def test_process_upload_deletes_file_on_failure(s3: S3Client):
+    """Test that files are deleted from S3 even when processing fails."""
+    # Setup
+    bucket = "test-bucket"
+    test_key = "test-upload-id.parquet"
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.index = Mock(side_effect=ValueError("Simulated processing failure"))
+
+    s3.create_bucket(
+        Bucket=bucket,
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Add parquet to S3 and verify
+    source_testkit = source_factory()
+    buffer = table_to_buffer(source_testkit.data_hashes)
+    s3.put_object(Bucket=bucket, Key=test_key, Body=buffer)
+
+    assert s3.head_object(Bucket=bucket, Key=test_key)
+
+    # Setup metadata store with test data
+    store = MetadataStore()
+    upload_id = store.cache_source(source_testkit.source)
+    store.update_status(upload_id, "awaiting_upload")
+
+    # Run the process, expecting it to fail
+    with pytest.raises(ValueError) as excinfo:
+        await process_upload(
+            backend=mock_backend,
+            upload_id=upload_id,
+            bucket=bucket,
+            key=test_key,
+            metadata_store=store,
+        )
+
+    assert "Simulated processing failure" in str(excinfo.value)
+
+    # Check that the status was updated to failed
+    status = store.get(upload_id).status
+    assert status.status == "failed", f"Expected status 'failed', got '{status.status}'"
+
+    # Verify file was deleted despite the failure
+    with pytest.raises(ClientError) as excinfo:
+        s3.head_object(Bucket=bucket, Key=test_key)
+    assert "404" in str(excinfo.value) or "NoSuchKey" in str(excinfo.value), (
+        f"File was not deleted: {str(excinfo.value)}"
+    )
 
 
 # Retrieval
@@ -502,6 +554,10 @@ async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
     assert call_args[1]["source"] == source_testkit.source  # Check source matches
     assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
 
+    # Verify file is deleted from S3 after processing
+    with pytest.raises(ClientError):
+        s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
+
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_get_resolution_graph(
@@ -745,6 +801,10 @@ async def test_complete_model_upload_process(
     response = client.get(f"/models/{testkit.model.metadata.name}/truth")
     assert response.status_code == 200
     assert response.json() == truth_value
+
+    # Verify file is deleted from S3 after processing
+    with pytest.raises(ClientError):
+        s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
