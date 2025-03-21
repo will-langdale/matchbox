@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import pyarrow as pa
 import pytest
 from httpx import Response
+from numpy import ndarray
 from pandas import DataFrame
 from respx import MockRouter
 from sqlalchemy import Engine
@@ -45,16 +46,23 @@ def test_cleaners():
 
 def test_process():
     crn = source_factory().query
+    # Duplicate column
+    crn = crn.append_column("company_name_again", crn.column("company_name"))
 
     cleaner_name = cleaner(
         function=company_name,
         arguments={"column": "company_name"},
     )
+    # I can add the same function twice
+    cleaner_name_again = cleaner(
+        function=company_name,
+        arguments={"column": "company_name_again"},
+    )
     cleaner_number = cleaner(
         function=company_number,
         arguments={"column": "crn"},
     )
-    cleaner_name_number = cleaners(cleaner_name, cleaner_number)
+    cleaner_name_number = cleaners(cleaner_name, cleaner_name_again, cleaner_number)
 
     df_name_cleaned = process(data=crn, pipeline=cleaner_name_number)
 
@@ -137,8 +145,8 @@ def test_select_non_indexed_columns(matchbox_api: MockRouter, sqlite_warehouse: 
     """Selecting columns not declared to backend generates warning."""
     source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
 
-    source: Source = source_testkit.source
-    source.columns = source.columns[:1]  # Don't index on one columns
+    source = source_testkit.source
+    source = source.model_copy(update={"columns": source.columns[:1]})
 
     matchbox_api.get(
         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"
@@ -341,6 +349,105 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
 
     # It also works with the selectors specified separately
     query([sels[0]], [sels[1]], limit=7)
+
+
+@pytest.mark.parametrize(
+    "combine_type",
+    ["set_agg", "explode"],
+)
+@patch.object(Source, "to_arrow")
+def test_query_combine_type(
+    to_arrow: Mock, combine_type: str, matchbox_api: MockRouter
+):
+    """Various ways of combining multiple sources are supported."""
+    # Mock API
+    matchbox_api.get("/query").mock(
+        side_effect=[
+            Response(
+                200,
+                content=table_to_buffer(
+                    pa.Table.from_pylist(
+                        [
+                            {"source_pk": "0", "id": 1},
+                            {"source_pk": "1", "id": 1},
+                            {"source_pk": "2", "id": 2},
+                        ],
+                        schema=SCHEMA_MB_IDS,
+                    )
+                ).read(),
+            ),
+            Response(
+                200,
+                content=table_to_buffer(
+                    pa.Table.from_pylist(
+                        [
+                            # Creating a duplicate value for the same Matchbox ID
+                            {"source_pk": "3", "id": 2},
+                            {"source_pk": "3", "id": 2},
+                            {"source_pk": "4", "id": 3},
+                        ],
+                        schema=SCHEMA_MB_IDS,
+                    )
+                ).read(),
+            ),
+        ]  # two sources to query
+    )
+
+    # Mock `Source.to_arrow`
+    to_arrow.side_effect = [
+        pa.Table.from_arrays(
+            [
+                pa.array(["0", "1", "2"], type=pa.large_string()),
+                pa.array([20, 40, 60], type=pa.int64()),
+            ],
+            names=["foo_pk", "foo_col"],
+        ),
+        pa.Table.from_arrays(
+            [
+                pa.array(["3", "4", "5"], type=pa.large_string()),
+                pa.array(["val1", "val2", "val3"], type=pa.large_string()),
+            ],
+            names=["bar_pk", "bar_col"],
+        ),
+    ]  # two sources to query
+
+    # Well-formed select from these mocks
+    sels = [
+        Selector(
+            source=Source(
+                address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
+                db_pk="pk",
+            ),
+        ),
+        Selector(
+            source=Source(
+                address=SourceAddress(full_name="bar", warehouse_hash=b"wh"),
+                db_pk="pk",
+            ),
+        ),
+    ]
+
+    # Validate results
+    results = query(sels, combine_type=combine_type)
+
+    if combine_type == "set_agg":
+        expected_len = 3
+        for _, row in results.drop(columns=["id"]).iterrows():
+            for cell in row.values:
+                assert isinstance(cell, ndarray)
+                # No duplicates
+                assert len(cell) == len(set(cell))
+    else:
+        expected_len = 5
+
+    assert len(results) == expected_len
+    assert {
+        "foo_pk",
+        "foo_col",
+        "bar_pk",
+        "bar_col",
+        "id",
+    } == set(results.columns)
 
 
 def test_query_404_resolution(matchbox_api: MockRouter):

@@ -6,6 +6,7 @@ from warnings import warn
 
 import pyarrow as pa
 from pandas import ArrowDtype, DataFrame
+from pyarrow import compute as pc
 from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine
 
@@ -178,6 +179,7 @@ def _query_batched(
 def query(
     *selectors: list[Selector],
     resolution_name: str | None = None,
+    combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_type: Literal["pandas", "arrow"] = "pandas",
     threshold: int | None = None,
     limit: int | None = None,
@@ -193,6 +195,15 @@ def query(
             If not set:
             * If querying a single source, it will use the source resolution
             * If querying 2 or more sources, it will look for a default resolution
+        combine_type: How to combine the data from different sources.
+            * If `concat`, concatenate all sources queried without any merging.
+                Multiple rows per ID, with null values where data isn't available
+            * If `explode`, outer join on Matchbox ID. Multiple rows per ID,
+                with one for every unique combination of data requested
+                across all sources
+            * If `set_agg`, join on Matchbox ID, group on Matchbox ID, then
+                aggregate to nested lists of unique values. One row per ID,
+                but all requested data is in nested arrays
         return_type: The form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): The threshold to use for creating clusters
@@ -238,6 +249,13 @@ def query(
             batch.head()
         ```
     """
+    # Validate arguments
+    if combine_type not in ("concat", "explode", "set_agg"):
+        raise ValueError(f"combine_type of {combine_type} not valid")
+
+    if return_type not in ("pandas", "arrow"):
+        raise ValueError(f"return_type of {return_type} not valid")
+
     if not selectors:
         raise ValueError("At least one selector must be specified")
 
@@ -306,8 +324,25 @@ def query(
             else:
                 tables.append(joined_table)
 
-        # Combine results
-        result = pa.concat_tables(tables, promote_options="default")
+        # Combine results based on combine_type
+        if combine_type == "concat":
+            result = pa.concat_tables(tables, promote_options="default")
+        else:
+            result = tables[0]
+            for table in tables[1:]:
+                result = result.join(table, keys=["id"], join_type="full outer")
+
+            if combine_type == "set_agg":
+                # Aggregate into lists
+                aggregate_rule = [
+                    (col, "distinct", pc.CountOptions(mode="only_valid"))
+                    for col in result.column_names
+                    if col != "id"
+                ]
+                result = result.group_by("id").aggregate(aggregate_rule)
+                # Recover original column names
+                rename_rule = {f"{col}_distinct": col for col, _, _ in aggregate_rule}
+                result = result.rename_columns(rename_rule)
 
         # Return in requested format
         if return_type == "arrow":

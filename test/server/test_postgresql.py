@@ -66,11 +66,11 @@ def test_hash_id_map():
     [
         # Test case 1: CDMS/CRN linker, CRN dataset
         pytest.param(
-            "deterministic_naive_test.crn_naive_test.cdms", "crn", id="cdms-crn_crn"
+            "probabilistic_naive_test.crn_naive_test.cdms", "crn", id="cdms-crn_crn"
         ),
         # Test case 2: CDMS/CRN linker, CDMS dataset
         pytest.param(
-            "deterministic_naive_test.crn_naive_test.cdms", "cdms", id="cdms-crn_cdms"
+            "probabilistic_naive_test.crn_naive_test.cdms", "cdms", id="cdms-crn_cdms"
         ),
         # Test case 3: CRN/DUNS linker, CRN dataset
         pytest.param(
@@ -142,7 +142,7 @@ def test_benchmark_match_query_generation(
 
         sql_match = compile_match_sql(
             source_pk=next(iter(source_entity.source_pks["duns"])),
-            source_name=duns_testkit.source.address.full_name,
+            resolution_name=str(duns_testkit.source.address),
             point_of_truth="deterministic_naive_test.crn_naive_test.duns",
         )
 

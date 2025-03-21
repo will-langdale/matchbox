@@ -10,6 +10,7 @@ import pyarrow as pa
 from pandas import DataFrame
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     PlainSerializer,
     PlainValidator,
@@ -29,7 +30,7 @@ from sqlalchemy import (
 from sqlalchemy.sql.selectable import Select
 from typing_extensions import Annotated
 
-from matchbox.common.db import sql_to_df
+from matchbox.common.db import fullname_to_prefix, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
@@ -43,6 +44,8 @@ R = TypeVar("R")
 
 class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     alias: str = Field(default_factory=lambda data: data["name"])
@@ -73,8 +76,14 @@ SerialisableBytes = Annotated[
 class SourceAddress(BaseModel):
     """A unique identifier for a dataset in a warehouse."""
 
+    model_config = ConfigDict(frozen=True)
+
     full_name: str
     warehouse_hash: SerialisableBytes
+
+    def __str__(self) -> str:
+        """Convert to a string."""
+        return self.full_name + "@" + hash_to_base64(self.warehouse_hash)
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
@@ -110,10 +119,13 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
 class Source(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
+    model_config = ConfigDict(frozen=True)
+
     address: SourceAddress
-    alias: str = Field(default_factory=lambda data: data["address"].full_name)
+    resolution_name: str = Field(default_factory=lambda data: str(data["address"]))
     db_pk: str
-    columns: list[SourceColumn] = []
+    # Columns need to be set at creation, or initialised with `.default_columns()`
+    columns: tuple[SourceColumn, ...] | None = None
 
     _engine: Engine | None = None
 
@@ -122,6 +134,19 @@ class Source(BaseModel):
         """The SQLAlchemy Engine used to connect to the dataset."""
         return self._engine
 
+    def __eq__(self, other: Any) -> bool:
+        """Custom equality which ignores engine."""
+        return (self.address, self.resolution_name, self.db_pk, self.columns) == (
+            other.address,
+            other.resolution_name,
+            other.db_pk,
+            other.columns,
+        )
+
+    def __hash__(self) -> int:
+        """Custom hash which ignores engine."""
+        return hash((self.address, self.resolution_name, self.db_pk, self.columns))
+
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the Source object."""
         if memo is None:
@@ -129,7 +154,7 @@ class Source(BaseModel):
 
         obj_copy = Source(
             address=deepcopy(self.address, memo),
-            alias=deepcopy(self.alias, memo),
+            resolution_name=deepcopy(self.resolution_name, memo),
             db_pk=deepcopy(self.db_pk, memo),
             columns=deepcopy(self.columns, memo),
         )
@@ -142,6 +167,14 @@ class Source(BaseModel):
 
     def set_engine(self, engine: Engine):
         """Adds engine, and use it to validate current columns."""
+        implied_address = SourceAddress.compose(
+            full_name=self.address.full_name, engine=engine
+        )
+        if implied_address != self.address:
+            raise ValueError(
+                "The engine must be the same that was used to index the source"
+            )
+
         self._engine = engine
         remote_columns = self._get_remote_columns()
         for col in self.columns:
@@ -160,25 +193,10 @@ class Source(BaseModel):
     def signature(self) -> bytes:
         """Generate a unique hash based on the table's metadata."""
         sorted_columns = sorted(self.columns, key=lambda c: c.alias)
-        schema_representation = f"{self.alias}: " + ",".join(
+        schema_representation = f"{self.resolution_name}: " + ",".join(
             f"{col.alias}:{col.type}" for col in sorted_columns
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
-
-    def _split_full_name(self) -> tuple[str | None, str]:
-        schema_name_list = self.address.full_name.replace('"', "").split(".")
-
-        if len(schema_name_list) == 1:
-            db_schema = None
-            db_table = schema_name_list[0]
-        elif len(schema_name_list) == 2:
-            db_schema = schema_name_list[0]
-            db_table = schema_name_list[1]
-        else:
-            raise ValueError(
-                f"Could not identify schema and table in {self.address.full_name}."
-            )
-        return db_schema, db_table
 
     def format_column(self, column: str) -> str:
         """Outputs a full SQLAlchemy column representation.
@@ -189,10 +207,7 @@ class Source(BaseModel):
         Returns:
             A string representing the table name and column
         """
-        db_schema, db_table = self._split_full_name()
-        if db_schema:
-            return f"{db_schema}_{db_table}_{column}"
-        return f"{db_table}_{column}"
+        return fullname_to_prefix(self.address.full_name) + column
 
     @needs_engine
     def _get_remote_columns(self) -> dict[str, str]:
@@ -203,19 +218,33 @@ class Source(BaseModel):
 
     @needs_engine
     def default_columns(self) -> "Source":
-        """Overwrites columns with all non-primary keys from source warehouse."""
+        """Returns a new source with default columns.
+
+        Default columns are all from the source warehouse other than `self.db_pk`.
+        All other attributes are copied, and its engine (if present) is set.
+        """
         remote_columns = self._get_remote_columns()
-        self.columns = [
+        columns_attribute = (
             SourceColumn(name=col_name, type=str(col_type))
             for col_name, col_type in remote_columns.items()
-        ]
+        )
 
-        return self
+        new_source = Source(
+            address=self.address,
+            resolution_name=self.resolution_name,
+            db_pk=self.db_pk,
+            columns=columns_attribute,
+        )
+
+        if self.engine:
+            new_source.set_engine(self.engine)
+
+        return new_source
 
     @needs_engine
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
-        db_schema, db_table = self._split_full_name()
+        db_schema, db_table = get_schema_table_names(self.address.full_name)
         metadata = MetaData(schema=db_schema)
         table = Table(db_table, metadata, autoload_with=self.engine)
         return table

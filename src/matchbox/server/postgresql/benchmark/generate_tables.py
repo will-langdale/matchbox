@@ -72,7 +72,7 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
         PyArrow sources table
     """
     sources_resolution_id = [dataset_start_id, dataset_start_id + 1]
-    sources_alias = ["alias1", "alias2"]
+    sources_resolution_names = ["source1@warehouse", "source2@warehouse"]
     sources_full_names = ["dbt.companies_house", "dbt.hmrc_exporters"]
     sources_id = ["company_number", "id"]
 
@@ -84,7 +84,7 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
     return pa.table(
         {
             "resolution_id": pa.array(sources_resolution_id, type=pa.uint64()),
-            "alias": pa.array(sources_alias, type=pa.string()),
+            "resolution_name": pa.array(sources_resolution_names, type=pa.string()),
             "full_name": pa.array(sources_full_names, type=pa.string()),
             "warehouse_hash": pa.array(warehouse_hashes, type=pa.binary()),
             "id": pa.array(sources_id, type=pa.string()),
@@ -159,14 +159,14 @@ def generate_resolution_from(dataset_start_id: int = 1) -> pa.Table:
         base_id + 4,
     ]
     resolution_level = [1, 2, 1, 1, 2, 1]
-    resolution_truth_cache = [None, None, 0.7, None, None, 0.7]
+    resolution_truth_cache = [None, None, 70, None, None, 70]
 
     return pa.table(
         {
             "parent": pa.array(resolution_parent, type=pa.uint64()),
             "child": pa.array(resolution_child, type=pa.uint64()),
             "level": pa.array(resolution_level, type=pa.uint32()),
-            "truth_cache": pa.array(resolution_truth_cache, type=pa.float64()),
+            "truth_cache": pa.array(resolution_truth_cache, type=pa.uint8()),
         }
     )
 

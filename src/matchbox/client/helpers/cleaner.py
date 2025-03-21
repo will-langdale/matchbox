@@ -15,7 +15,10 @@ def cleaner(function: Callable, arguments: dict) -> dict[str, dict[str, Any]]:
     Returns:
         A representation of the cleaner ready to be passed to the `cleaners()` function
     """
-    return {function.__name__: {"function": function, "arguments": arguments}}
+    if "column" not in arguments:
+        raise ValueError("`column` is a required argument")
+    cleaner_name = f"{function.__name__}_{arguments['column']}"
+    return {cleaner_name: {"function": function, "arguments": arguments}}
 
 
 def cleaners(*cleaner: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:

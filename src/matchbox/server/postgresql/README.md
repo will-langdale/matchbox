@@ -15,7 +15,7 @@ There are two graph-like trees in place here.
 erDiagram
     Sources {
         bigint resolution_id PK,FK
-        string alias
+        string resolution_name
         string full_name
         bytes warehouse_hash
         string id
@@ -36,7 +36,7 @@ erDiagram
     Probabilities {
         bigint resolution PK,FK
         bigint cluster PK,FK
-        float probability
+        smallint probability
     }
     Resolutions {
         bigint resolution_id PK,FK
@@ -44,13 +44,13 @@ erDiagram
         enum type
         string name
         string description
-        float truth
+        smallint truth
     }
     ResolutionFrom {
         bigint parent PK,FK
         bigint child PK,FK
         int level
-        float truth_cache
+        smallint truth_cache
     }
 
     Sources |o--|| Resolutions : ""

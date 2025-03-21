@@ -170,8 +170,13 @@ def match(
 # Data management
 
 
-def index(source: Source, data_hashes: Table) -> UploadStatus:
+def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     """Index a Source in Matchbox."""
+    if batch_size:
+        data_hashes = source.hash_data(iter_batches=True, batch_size=batch_size)
+    else:
+        data_hashes = source.hash_data()
+
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
@@ -262,13 +267,13 @@ def get_model_results(name: str) -> Table:
     return read_table(buffer)
 
 
-def set_model_truth(name: str, truth: float) -> ModelOperationStatus:
+def set_model_truth(name: str, truth: int) -> ModelOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
     res = CLIENT.patch(f"/models/{name}/truth", json=truth)
     return ModelOperationStatus.model_validate(res.json())
 
 
-def get_model_truth(name: str) -> float:
+def get_model_truth(name: str) -> int:
     """Get the truth threshold for a model in Matchbox."""
     res = CLIENT.get(f"/models/{name}/truth")
     return res.json()
