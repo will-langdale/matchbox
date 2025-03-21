@@ -1,5 +1,6 @@
 """Functions abstracting the interaction with the server API."""
 
+import os
 import time
 from collections.abc import Iterable
 from io import BytesIO
@@ -99,7 +100,14 @@ def create_client(settings: ClientSettings) -> httpx.Client:
     )
 
 
+def create_headers() -> dict:
+    """Creates headers for write endpoint api-key authorisation."""
+    api_key = os.environ.get("MATCHBOX_API_KEY")
+    return {"X-API-Key": api_key}
+
+
 CLIENT = create_client(settings=settings)
+headers = create_headers()
 
 # Retrieval
 
@@ -183,6 +191,7 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
     upload_res = CLIENT.post(
         f"/upload/{upload.id}",
         files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
+        headers=headers,
     )
 
     # Poll until complete with retry/timeout configuration
@@ -217,7 +226,7 @@ def get_resolution_graph() -> ResolutionGraph:
 
 def insert_model(model: ModelMetadata) -> ModelOperationStatus:
     """Insert a model in Matchbox."""
-    res = CLIENT.post("/models", json=model.model_dump())
+    res = CLIENT.post("/models", json=model.model_dump(), headers=headers)
     return ModelOperationStatus.model_validate(res.json())
 
 
@@ -231,7 +240,7 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
     buffer = table_to_buffer(table=results)
 
     # Initialise upload
-    metadata_res = CLIENT.post(f"/models/{name}/results")
+    metadata_res = CLIENT.post(f"/models/{name}/results", headers=headers)
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -239,6 +248,7 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
     upload_res = CLIENT.post(
         f"/upload/{upload.id}",
         files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
+        headers=headers,
     )
 
     # Poll until complete with retry/timeout configuration
@@ -264,7 +274,7 @@ def get_model_results(name: str) -> Table:
 
 def set_model_truth(name: str, truth: int) -> ModelOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
-    res = CLIENT.patch(f"/models/{name}/truth", json=truth)
+    res = CLIENT.patch(f"/models/{name}/truth", json=truth, headers=headers)
     return ModelOperationStatus.model_validate(res.json())
 
 
@@ -285,7 +295,9 @@ def set_model_ancestors_cache(
 ) -> ModelOperationStatus:
     """Set the ancestors cache for a model in Matchbox."""
     res = CLIENT.post(
-        f"/models/{name}/ancestors_cache", json=[a.model_dump() for a in ancestors]
+        f"/models/{name}/ancestors_cache",
+        json=[a.model_dump() for a in ancestors],
+        headers=headers,
     )
     return ModelOperationStatus.model_validate(res.json())
 
@@ -298,5 +310,5 @@ def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
 
 def delete_model(name: str, certain: bool = False) -> ModelOperationStatus:
     """Delete a model in Matchbox."""
-    res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
+    res = CLIENT.delete(f"/models/{name}", params={"certain": certain}, headers=headers)
     return ModelOperationStatus.model_validate(res.json())
