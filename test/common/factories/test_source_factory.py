@@ -211,16 +211,16 @@ def test_source_factory_mock_properties():
         assert column.alias == feature.name
         assert column.type == feature.sql_type
 
-    # Check default alias (should match full_name) and default pk
-    assert source_testkit.alias == full_name
+    # Check default resolution name and default pk
+    assert source_testkit.resolution_name == str(expected_address)
     assert source_testkit.db_pk == "pk"
 
     # Verify source properties are preserved through model_dump
     dump = source_testkit.model_dump()
     assert dump["address"]["full_name"] == full_name
-    assert dump["columns"] == [
+    assert dump["columns"] == tuple(
         {"name": f.name, "alias": f.name, "type": f.sql_type} for f in features
-    ]
+    )
 
 
 def test_entity_variations_tracking():

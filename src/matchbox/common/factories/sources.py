@@ -90,8 +90,8 @@ class SourceTestkit(BaseModel):
 
     @property
     def name(self) -> str:
-        """Return the full name of the Source."""
-        return self.source.address.full_name
+        """Return the resolution name of the Source."""
+        return self.source.resolution_name
 
     @property
     def mock(self) -> Mock:
@@ -125,7 +125,7 @@ class SourceTestkit(BaseModel):
 
         As the Source won't have an engine set by default, can be supplied.
         """
-        schema, table = get_schema_table_names(self.name)
+        schema, table = get_schema_table_names(self.source.address.full_name)
         self.data.to_pandas().drop("id", axis=1).to_sql(
             name=table,
             schema=schema,
@@ -449,10 +449,10 @@ def source_factory(
     source = Source(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
-        columns=[
+        columns=(
             SourceColumn(name=feature.name, type=feature.sql_type)
             for feature in features
-        ],
+        ),
     )
 
     return SourceTestkit(
@@ -637,10 +637,10 @@ def linked_sources_factory(
                 full_name=config.full_name, engine=config.engine
             ),
             db_pk="pk",
-            columns=[
+            columns=(
                 SourceColumn(name=feature.name, type=feature.sql_type)
                 for feature in config.features
-            ],
+            ),
         )
 
         # Add source to linked.sources

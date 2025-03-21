@@ -212,7 +212,7 @@ class TestMatchboxBackend:
                     name="dedupe_1",
                     description="Test deduper 1",
                     type=ModelType.DEDUPER,
-                    left_resolution=crn_testkit.source.alias,
+                    left_resolution=crn_testkit.source.resolution_name,
                 )
             )
             self.backend.insert_model(
@@ -220,7 +220,7 @@ class TestMatchboxBackend:
                     name="dedupe_2",
                     description="Test deduper 2",
                     type=ModelType.DEDUPER,
-                    left_resolution=duns_testkit.source.alias,
+                    left_resolution=duns_testkit.source.resolution_name,
                 )
             )
 
@@ -404,10 +404,23 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
-            crn_source_1 = crn_testkit.source
-            crn_source_1.address.warehouse_hash = b"bar1"
-            crn_source_2 = crn_testkit.source.model_copy(deep=True)
-            crn_source_2.address.warehouse_hash = b"bar2"
+            crn_source_1 = crn_testkit.source.model_copy(
+                update={
+                    "address": SourceAddress(
+                        full_name=crn_testkit.source.address.full_name,
+                        warehouse_hash=b"bar1",
+                    )
+                }
+            )
+            crn_source_2 = crn_testkit.source.model_copy(
+                deep=True,
+                update={
+                    "address": SourceAddress(
+                        full_name=crn_testkit.source.address.full_name,
+                        warehouse_hash=b"bar2",
+                    )
+                },
+            )
 
             self.backend.index(crn_source_1, crn_testkit.data_hashes)
             self.backend.index(crn_source_2, crn_testkit.data_hashes)

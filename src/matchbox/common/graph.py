@@ -3,7 +3,7 @@
 from enum import StrEnum
 
 import rustworkx as rx
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 DEFAULT_RESOLUTION = "__DEFAULT__"
 
@@ -19,24 +19,20 @@ class ResolutionNodeType(StrEnum):
 class ResolutionNode(BaseModel):
     """A node in a resolution graph."""
 
+    model_config = ConfigDict(frozen=True)
+
     id: int
     name: str
     type: ResolutionNodeType
-
-    def __hash__(self):
-        """Hash the node by its ID."""
-        return hash(self.id)
 
 
 class ResolutionEdge(BaseModel):
     """An edge in a resolution graph."""
 
+    model_config = ConfigDict(frozen=True)
+
     parent: int
     child: int
-
-    def __hash__(self):
-        """Hash the edge by the parent and child nodes."""
-        return hash((self.parent, self.child))
 
 
 class ResolutionGraph(BaseModel):
