@@ -118,7 +118,7 @@ def insert_dataset(
 
         # Check if resolution already exists
         existing_resolution = (
-            session.query(Resolutions).filter_by(name=source.alias).first()
+            session.query(Resolutions).filter_by(name=source.resolution_name).first()
         )
 
         if existing_resolution:
@@ -127,7 +127,7 @@ def insert_dataset(
             # Create new resolution
             resolution = Resolutions(
                 resolution_id=Resolutions.next_id(),
-                name=source.alias,
+                name=source.resolution_name,
                 resolution_hash=resolution_hash,
                 type=ResolutionNodeType.DATASET.value,
             )
@@ -144,7 +144,7 @@ def insert_dataset(
             # Create new source with relationship to resolution
             source_obj = Sources(
                 resolution_id=resolution.resolution_id,
-                alias=source.alias,
+                resolution_name=source.resolution_name,
                 full_name=source.address.full_name,
                 warehouse_hash=source.address.warehouse_hash,
                 db_pk=source.db_pk,
@@ -162,7 +162,6 @@ def insert_dataset(
                 source_obj.columns.append(source_column)
 
             session.add(source_obj)
-            session.flush()
 
             logger.info(
                 f"{source} added to Resolutions and Sources tables with columns"
@@ -275,7 +274,7 @@ def insert_model(
     description: str,
     engine: Engine,
 ) -> None:
-    """Writes a model to Matchbox with a default truth value of 1.0.
+    """Writes a model to Matchbox with a default truth value of 100.
 
     Args:
         model: Name of the new model
@@ -315,7 +314,7 @@ def insert_model(
                 type=ResolutionNodeType.MODEL.value,
                 name=model,
                 description=description,
-                truth=1.0,
+                truth=100,
             )
             .on_conflict_do_update(
                 index_elements=["resolution_hash"],

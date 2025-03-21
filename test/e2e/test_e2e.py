@@ -233,7 +233,7 @@ class TestE2EAnalyticalUser:
                     "unique_fields": feature_names,
                 },
                 left_data=cleaned,
-                left_resolution=source_name,
+                left_resolution=source_testkit.source.resolution_name,
             )
 
             # Run the deduper and store results
@@ -276,38 +276,40 @@ class TestE2EAnalyticalUser:
 
         for left_testkit, right_testkit, common_field in linking_pairs:
             # Get prefixes for column names
-            left_prefix = fullname_to_prefix(left_testkit.name)
-            right_prefix = fullname_to_prefix(right_testkit.name)
+            left_prefix = fullname_to_prefix(left_testkit.source.address.full_name)
+            right_prefix = fullname_to_prefix(right_testkit.source.address.full_name)
 
             # Query deduplicated data
             # PK included then dropped to create ClusterEntity objects for later diff
             left_raw_df = query(
                 select(
-                    {left_testkit.name: ["pk", common_field]},
+                    {left_testkit.source.address.full_name: ["pk", common_field]},
                     engine=self.warehouse_engine,
                     only_indexed=False,
                 ),
-                resolution_name=deduper_names[left_testkit.name],
+                resolution_name=deduper_names[left_testkit.source.address.full_name],
                 return_type="pandas",
             )
             left_clusters = query_to_cluster_entities(
                 query=left_raw_df,
-                source_pks={left_testkit.name: f"{left_prefix}pk"},
+                source_pks={left_testkit.source.address.full_name: f"{left_prefix}pk"},
             )
             left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
 
             right_raw_df = query(
                 select(
-                    {right_testkit.name: ["pk", common_field]},
+                    {right_testkit.source.address.full_name: ["pk", common_field]},
                     engine=self.warehouse_engine,
                     only_indexed=False,
                 ),
-                resolution_name=deduper_names[right_testkit.name],
+                resolution_name=deduper_names[right_testkit.source.address.full_name],
                 return_type="pandas",
             )
             right_clusters = query_to_cluster_entities(
                 query=right_raw_df,
-                source_pks={right_testkit.name: f"{right_prefix}pk"},
+                source_pks={
+                    right_testkit.source.address.full_name: f"{right_prefix}pk"
+                },
             )
             right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
 
@@ -321,7 +323,10 @@ class TestE2EAnalyticalUser:
             )
 
             # Create and run linker model
-            linker_name = f"linker_{left_testkit.name}_{right_testkit.name}"
+            linker_name = (
+                f"linker_{left_testkit.source.address.full_name}"
+                f"_{right_testkit.source.address.full_name}"
+            )
             linker = make_model(
                 model_name=linker_name,
                 description=f"Linking {left_testkit.name} and {right_testkit.name}",
@@ -332,9 +337,9 @@ class TestE2EAnalyticalUser:
                     "comparisons": comparison_clause,
                 },
                 left_data=left_cleaned,
-                left_resolution=deduper_names[left_testkit.name],
+                left_resolution=deduper_names[left_testkit.source.address.full_name],
                 right_data=right_cleaned,
-                right_resolution=deduper_names[right_testkit.name],
+                right_resolution=deduper_names[right_testkit.source.address.full_name],
             )
 
             # Run the linker and store results
@@ -345,7 +350,10 @@ class TestE2EAnalyticalUser:
                 probabilities=results.probabilities,
                 left_clusters=left_clusters,
                 right_clusters=right_clusters,
-                sources=[left_testkit.name, right_testkit.name],
+                sources=[
+                    left_testkit.source.address.full_name,
+                    right_testkit.source.address.full_name,
+                ],
                 threshold=0,
             )
 
@@ -365,7 +373,12 @@ class TestE2EAnalyticalUser:
             )
 
             # Store the linker resolution name for later use
-            linker_names[(left_testkit.name, right_testkit.name)] = linker_name
+            linker_names[
+                (
+                    left_testkit.source.address.full_name,
+                    right_testkit.source.address.full_name,
+                )
+            ] = linker_name
 
         # === FINAL LINKING PHASE ===
         # Now link the first linked pair (crn-duns) with the third source (cdms)

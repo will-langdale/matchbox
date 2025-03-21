@@ -110,6 +110,7 @@ class WeightedDeterministicLinker(Linker):
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
+        # Used below but ruff can't detect
         left_df = left.copy()  # noqa: F841
         right_df = right.copy()  # noqa: F841
 
@@ -122,7 +123,7 @@ class WeightedDeterministicLinker(Linker):
                     select distinct on (list_sort([raw.left_id, raw.right_id]))
                         raw.left_id,
                         raw.right_id,
-                        1 * {weighted_comparison.weight} as probability
+                        1.0 * {weighted_comparison.weight} as probability
                     from (
                         select
                             l.{self.settings.left_id} as left_id,
