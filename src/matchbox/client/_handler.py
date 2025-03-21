@@ -102,8 +102,11 @@ def create_client(settings: ClientSettings) -> httpx.Client:
 
 def create_headers() -> dict:
     """Creates headers for write endpoint api-key authorisation."""
+    headers = {}
     api_key = os.environ.get("MATCHBOX_API_KEY")
-    return {"X-API-Key": api_key}
+    if api_key is not None:
+        headers["A-API-Key"] = api_key
+    return headers
 
 
 CLIENT = create_client(settings=settings)
