@@ -196,6 +196,42 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
     )
 
 
+class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
+    """Table for storing source primary keys for clusters."""
+
+    __tablename__ = "cluster_source_pks"
+
+    # Columns
+    pk_id = Column(BIGINT, primary_key=True)
+    cluster_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
+    )
+    source_id = Column(
+        BIGINT, ForeignKey("sources.resolution_id", ondelete="CASCADE"), nullable=False
+    )
+    source_pk = Column(TEXT, nullable=False)
+
+    # Relationships
+    cluster = relationship("Clusters", back_populates="source_pks")
+    source = relationship("Sources", back_populates="cluster_source_pks")
+
+    # Constraints and indices
+    __table_args__ = (
+        Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
+        Index("ix_cluster_source_pks_source_pk", "source_pk"),
+        UniqueConstraint("pk_id", "source_id", name="unique_pk_source"),
+    )
+
+    @classmethod
+    def next_id(cls) -> int:
+        """Returns the next available cluster_id."""
+        with Session(MBDB.get_engine()) as session:
+            result = session.execute(
+                select(func.coalesce(func.max(cls.pk_id), 0))
+            ).scalar()
+            return result + 1
+
+
 class Sources(CountMixin, MBDB.MatchboxBase):
     """Table of sources of data for Matchbox."""
 
@@ -214,9 +250,16 @@ class Sources(CountMixin, MBDB.MatchboxBase):
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")
-    clusters = relationship("Clusters", back_populates="source")
     columns = relationship(
         "SourceColumns", back_populates="source", cascade="all, delete-orphan"
+    )
+    cluster_source_pks = relationship("ClusterSourcePK", back_populates="source")
+    clusters = relationship(
+        "Clusters",
+        secondary=ClusterSourcePK.__table__,
+        primaryjoin="Sources.resolution_id == ClusterSourcePK.source_id",
+        secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
+        viewonly=True,
     )
 
     # Constraints
@@ -252,37 +295,6 @@ class Contains(CountMixin, MBDB.MatchboxBase):
     )
 
 
-class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
-    """Table for storing source primary keys for clusters."""
-
-    __tablename__ = "cluster_source_pks"
-
-    # Columns
-    pk_id = Column(BIGINT, primary_key=True)
-    cluster_id = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
-    )
-    source_pk = Column(TEXT, nullable=False)
-
-    # Relationships
-    cluster = relationship("Clusters", back_populates="source_pks")
-
-    # Constraints and indices
-    __table_args__ = (
-        Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
-        Index("ix_cluster_source_pks_source_pk", "source_pk"),
-    )
-
-    @classmethod
-    def next_id(cls) -> int:
-        """Returns the next available cluster_id."""
-        with Session(MBDB.get_engine()) as session:
-            result = session.execute(
-                select(func.coalesce(func.max(cls.pk_id), 0))
-            ).scalar()
-            return result + 1
-
-
 class Clusters(CountMixin, MBDB.MatchboxBase):
     """Table of indexed data and clusters that match it."""
 
@@ -291,10 +303,8 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     # Columns
     cluster_id = Column(BIGINT, primary_key=True)
     cluster_hash = Column(BYTEA, nullable=False)
-    dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
 
     # Relationships
-    source = relationship("Sources", back_populates="clusters")
     source_pks = relationship(
         "ClusterSourcePK", back_populates="cluster", cascade="all, delete-orphan"
     )
@@ -307,6 +317,14 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         primaryjoin="Clusters.cluster_id == Contains.parent",
         secondaryjoin="Clusters.cluster_id == Contains.child",
         backref="parents",
+    )
+    # Add relationship to Sources through ClusterSourcePK
+    sources = relationship(
+        "Sources",
+        secondary=ClusterSourcePK.__table__,
+        primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
+        secondaryjoin="ClusterSourcePK.source_id == Sources.resolution_id",
+        viewonly=True,
     )
 
     # Constraints and indices

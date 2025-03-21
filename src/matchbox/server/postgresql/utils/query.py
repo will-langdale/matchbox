@@ -108,9 +108,11 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
 
     for resolution_id, threshold in lineage_thresholds.items():
         if threshold is None:
-            # This is a dataset - get all its clusters directly
-            resolution_valid = select(Clusters.cluster_id.label("cluster")).where(
-                Clusters.dataset == resolution_id
+            # This is a dataset - get all its clusters through ClusterSourcePK
+            resolution_valid = (
+                select(ClusterSourcePK.cluster_id.label("cluster"))
+                .where(ClusterSourcePK.source_id == resolution_id)
+                .distinct()
             )
         else:
             # This is a model - get clusters meeting threshold
@@ -181,7 +183,7 @@ def _resolve_cluster_hierarchy(
             .where(
                 and_(
                     Clusters.cluster_id.in_(select(valid_clusters.c.cluster)),
-                    Clusters.dataset == dataset_id,
+                    ClusterSourcePK.source_id == dataset_id,
                 )
             )
             .cte("mapping_0")
@@ -312,7 +314,7 @@ def _build_unnested_clusters() -> CTE:
     return (
         select(
             Clusters.cluster_id,
-            Clusters.dataset,
+            ClusterSourcePK.source_id.label("dataset"),
             ClusterSourcePK.source_pk,
         )
         .select_from(Clusters)

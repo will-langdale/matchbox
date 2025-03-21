@@ -24,6 +24,7 @@ from matchbox.server.postgresql.db import (
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
+    ClusterSourcePK,
     Contains,
     Probabilities,
     ResolutionFrom,
@@ -65,12 +66,22 @@ class FilteredClusters(BaseModel):
     def count(self) -> int:
         """Counts the number of clusters in the database."""
         with MBDB.get_session() as session:
-            query = session.query(func.count()).select_from(Clusters)
+            query = session.query(
+                func.count(func.distinct(Clusters.cluster_id))
+            ).select_from(Clusters)
+
             if self.has_dataset is not None:
                 if self.has_dataset:
-                    query = query.filter(Clusters.dataset.isnot(None))
+                    query = query.join(
+                        ClusterSourcePK,
+                        ClusterSourcePK.cluster_id == Clusters.cluster_id,
+                    )
                 else:
-                    query = query.filter(Clusters.dataset.is_(None))
+                    query = query.outerjoin(
+                        ClusterSourcePK,
+                        ClusterSourcePK.cluster_id == Clusters.cluster_id,
+                    ).filter(ClusterSourcePK.cluster_id.is_(None))
+
             return query.scalar()
 
 

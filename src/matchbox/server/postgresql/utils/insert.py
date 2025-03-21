@@ -180,7 +180,8 @@ def insert_dataset(
         # Filter out existing hashes
         existing_hashes_statement = (
             select(Clusters.cluster_hash)
-            .join(Sources)
+            .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
+            .join(Sources, Sources.resolution_id == ClusterSourcePK.source_id)
             .join(Resolutions)
             .where(
                 Resolutions.resolution_hash == hash_to_hex_decode(source.signature),
@@ -210,21 +211,20 @@ def insert_dataset(
                     for i, clus in enumerate(data_hashes.to_pylist()):
                         cluster_id = next_cluster_id + i
 
-                        # Add cluster record
                         cluster_records.append(
                             (
                                 cluster_id,  # cluster_id
                                 clus["hash"],  # cluster_hash
-                                resolution.resolution_id,  # dataset
                             )
                         )
 
-                        # Add pk records
+                        # Add pk records with source_id (formerly dataset)
                         for pk in clus["source_pk"]:
                             source_pk_records.append(
                                 (
                                     pk_id_counter,  # pk_id
                                     cluster_id,  # cluster_id
+                                    resolution.resolution_id,  # source_id
                                     pk,  # source_pk
                                 )
                             )
@@ -418,8 +418,10 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
     )
 
     # Subquery for source datasets
-    source_datasets = select(resolution_set.c.resolution_id).join(
-        Sources, Sources.resolution_id == resolution_set.c.resolution_id
+    source_datasets = (
+        select(ClusterSourcePK.cluster_id)
+        .join(Sources, Sources.resolution_id == ClusterSourcePK.source_id)
+        .where(Sources.resolution_id.in_(select(resolution_set.c.resolution_id)))
     )
 
     # Subquery for model resolutions
@@ -431,7 +433,7 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
 
     # Combine conditions
     final_query = base_query.where(
-        (Clusters.dataset.in_(source_datasets))
+        (Clusters.cluster_id.in_(source_datasets))
         | (Probabilities.resolution.in_(model_resolutions))
     )
 
@@ -497,8 +499,6 @@ def _results_to_insert_tables(
         {
             "cluster_id": pc.filter(hm.lookup["id"], hm.lookup["new"]),
             "cluster_hash": new_hashes,
-            "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
-            "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
         }
     )
 

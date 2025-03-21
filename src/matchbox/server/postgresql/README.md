@@ -31,11 +31,11 @@ erDiagram
     Clusters {
         bigint cluster_id PK
         bytes cluster_hash
-        bigint dataset FK
     }
     ClusterSourcePK {
         bigint pk_id PK
         bigint cluster_id FK
+        bigint source_id FK
         string source_pk
     }
     Contains {
@@ -64,7 +64,7 @@ erDiagram
 
     Sources |o--|| Resolutions : ""
     Sources ||--o{ SourceColumns : ""
-    Sources ||--o{ Clusters : ""
+    Sources ||--o{ ClusterSourcePK : ""
     Clusters ||--o{ ClusterSourcePK : ""
     Clusters ||--o{ Probabilities : ""
     Clusters ||--o{ Contains : "parent"
