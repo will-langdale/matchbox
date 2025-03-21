@@ -13,7 +13,7 @@ There are two graph-like trees in place here.
 
 ```mermaid
 erDiagram
-   Sources {
+    Sources {
         bigint resolution_id PK,FK
         string resolution_name
         string full_name
