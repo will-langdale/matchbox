@@ -94,6 +94,36 @@ def select(
     return selectors
 
 
+def _process_query_result(
+    data: pa.Table, selector: Selector, mb_ids: pa.Table
+) -> pa.Table:
+    """Process query results by joining with matchbox IDs and filtering fields.
+
+    Args:
+        data: The raw data from the source
+        selector: The selector with source and fields information
+        mb_ids: The matchbox IDs
+
+    Returns:
+        The processed table with joined matchbox IDs and filtered fields
+    """
+    # Join data with matchbox IDs
+    joined_table = data.join(
+        right_table=mb_ids,
+        keys=selector.source.format_column(selector.source.db_pk),
+        right_keys="source_pk",
+        join_type="inner",
+    )
+
+    # Apply field filtering if needed
+    if selector.fields:
+        keep_cols = ["id"] + [selector.source.format_column(f) for f in selector.fields]
+        match_cols = [col for col in joined_table.column_names if col in keep_cols]
+        return joined_table.select(match_cols)
+    else:
+        return joined_table
+
+
 def _query_batched(
     selectors: list[Selector],
     sub_limits: list[int | None],
@@ -133,24 +163,7 @@ def _query_batched(
         # Process and transform each batch
         def process_batches(batches, selector, mb_ids):
             for batch in batches:
-                # Join and select columns
-                joined_table = batch.join(
-                    right_table=mb_ids,
-                    keys=selector.source.format_column(selector.source.db_pk),
-                    right_keys="source_pk",
-                    join_type="inner",
-                )
-
-                if selector.fields:
-                    keep_cols = ["id"] + [
-                        selector.source.format_column(f) for f in selector.fields
-                    ]
-                    match_cols = [
-                        col for col in joined_table.column_names if col in keep_cols
-                    ]
-                    yield joined_table.select(match_cols)
-                else:
-                    yield joined_table
+                yield _process_query_result(batch, selector, mb_ids)
 
         selector_iters.append(process_batches(raw_batches, selector, mb_ids))
 
@@ -163,9 +176,7 @@ def _query_batched(
 
     # Convert each batch to the requested return type
     for batch in batches_iter:
-        if return_type == "arrow":
-            yield batch
-        elif return_type == "pandas":
+        if return_type == "pandas":
             yield batch.to_pandas(
                 use_threads=True,
                 split_blocks=True,
@@ -173,7 +184,7 @@ def _query_batched(
                 types_mapper=ArrowDtype,
             )
         else:
-            raise ValueError(f"return_type of {return_type} not valid")
+            yield batch
 
 
 def query(
@@ -296,33 +307,19 @@ def query(
                 threshold=threshold,
                 limit=sub_limit,
             )
+
             fields = None
             if selector.fields:
                 fields = list(set(selector.fields))
+
             raw_data = selector.source.to_arrow(
                 fields=fields,
                 pks=mb_ids["source_pk"].to_pylist(),
                 batch_size=batch_size,
             )
 
-            # Join and select columns
-            joined_table = raw_data.join(
-                right_table=mb_ids,
-                keys=selector.source.format_column(selector.source.db_pk),
-                right_keys="source_pk",
-                join_type="inner",
-            )
-
-            if selector.fields:
-                keep_cols = ["id"] + [
-                    selector.source.format_column(f) for f in selector.fields
-                ]
-                match_cols = [
-                    col for col in joined_table.column_names if col in keep_cols
-                ]
-                tables.append(joined_table.select(match_cols))
-            else:
-                tables.append(joined_table)
+            processed_table = _process_query_result(raw_data, selector, mb_ids)
+            tables.append(processed_table)
 
         # Combine results based on combine_type
         if combine_type == "concat":
@@ -345,17 +342,15 @@ def query(
                 result = result.rename_columns(rename_rule)
 
         # Return in requested format
-        if return_type == "arrow":
-            return result
-        elif return_type == "pandas":
+        if return_type == "pandas":
             return result.to_pandas(
                 use_threads=True,
                 split_blocks=True,
                 self_destruct=True,
                 types_mapper=ArrowDtype,
             )
-        else:
-            raise ValueError(f"return_type of {return_type} not valid")
+
+        return result
 
 
 def match(
