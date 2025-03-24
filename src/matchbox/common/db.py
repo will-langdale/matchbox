@@ -1,9 +1,8 @@
 """Common database utilities for Matchbox."""
 
-from typing import Any, Iterator, Literal, TypeVar, overload
+from typing import Any, Iterator, Literal, TypeVar, get_args, overload
 
 import polars as pl
-import pyarrow as pa
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
@@ -15,19 +14,6 @@ ReturnTypeStr = Literal["arrow", "pandas", "polars"]
 QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
 
 T = TypeVar("T")
-
-
-def _convert_large_binary_to_binary(table: pa.Table) -> pa.Table:
-    """Converts Arrow large_binary fields to binary type."""
-    new_fields = []
-    for field in table.schema:
-        if pa.types.is_large_binary(field.type):
-            new_fields.append(field.with_type(pa.binary()))
-        else:
-            new_fields.append(field)
-
-    new_schema = pa.schema(new_fields)
-    return table.cast(new_schema)
 
 
 @overload
@@ -144,6 +130,9 @@ def sql_to_df(
         ValueError: If the engine URL is not properly configured or if an unsupported
             return type is specified.
     """
+    if return_type not in get_args(ReturnTypeStr):
+        raise ValueError(f"return_type of {return_type} not valid")
+
     # Compile the SQLAlchemy statement to SQL string
     compiled_stmt = stmt.compile(
         dialect=engine.dialect, compile_kwargs={"literal_binds": True}
@@ -158,7 +147,7 @@ def sql_to_df(
         raise ValueError("Unable to obtain a valid connection string from the engine.")
 
     if iter_batches:
-        pl_batches = pl.read_database(
+        results = pl.read_database(
             query=sql_query,
             connection=engine,
             iter_batches=True,
@@ -167,44 +156,31 @@ def sql_to_df(
             execute_options=execute_options,
         )
 
-        if return_type == "polars":
-            return pl_batches
-        elif return_type == "arrow":
-            return (
-                _convert_large_binary_to_binary(batch.to_arrow())
-                for batch in pl_batches
-            )
-        elif return_type == "pandas":
-            return (batch.to_pandas() for batch in pl_batches)
-        else:
-            raise ValueError(f"Unsupported return_type: {return_type}")
-    else:
-        # Use the most efficient method for a single result
-        # Fall back if the URI method fails
-        try:
-            pl_result = pl.read_database_uri(
-                query=sql_query,
-                uri=url,
-                schema_overrides=schema_overrides,
-                execute_options=execute_options,
-            )
-        except Exception:
-            pl_result = pl.read_database(
-                query=sql_query,
-                connection=engine,
-                batch_size=batch_size,
-                schema_overrides=schema_overrides,
-                execute_options=execute_options,
-            )
+        match return_type:
+            case "polars":
+                return results
+            case "arrow":
+                return (batch.to_arrow() for batch in results)
+            case "pandas":
+                return (batch.to_pandas() for batch in results)
+            case _:
+                raise ValueError(f"Unsupported return_type: {return_type}")
 
-        if return_type == "polars":
-            return pl_result
-        elif return_type == "arrow":
-            arrow_table = pl_result.to_arrow()
-            return _convert_large_binary_to_binary(table=arrow_table)
-        elif return_type == "pandas":
-            return pl_result.to_pandas()
-        else:
+    results = pl.read_database_uri(
+        query=sql_query,
+        uri=url,
+        schema_overrides=schema_overrides,
+        execute_options=execute_options,
+    )
+
+    match return_type:
+        case "polars":
+            return results
+        case "arrow":
+            return results.to_arrow()
+        case "pandas":
+            return results.to_pandas()
+        case _:
             raise ValueError(f"Unsupported return_type: {return_type}")
 
 
