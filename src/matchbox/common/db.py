@@ -4,13 +4,15 @@ from typing import Any, Iterator, Literal, TypeVar, overload
 
 import polars as pl
 import pyarrow as pa
-from pandas import DataFrame
+from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
+from pyarrow import Table as ArrowTable
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
 from sqlalchemy.sql.selectable import Select
 
 ReturnTypeStr = Literal["arrow", "pandas", "polars"]
+QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
 
 T = TypeVar("T")
 
@@ -38,7 +40,7 @@ def sql_to_df(
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> pa.Table: ...
+) -> ArrowTable: ...
 
 
 @overload
@@ -51,7 +53,7 @@ def sql_to_df(
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> Iterator[pa.Table]: ...
+) -> Iterator[ArrowTable]: ...
 
 
 @overload
@@ -64,7 +66,7 @@ def sql_to_df(
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> DataFrame: ...
+) -> PandasDataFrame: ...
 
 
 @overload
@@ -77,7 +79,7 @@ def sql_to_df(
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> Iterator[DataFrame]: ...
+) -> Iterator[PandasDataFrame]: ...
 
 
 @overload
@@ -115,14 +117,7 @@ def sql_to_df(
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> (
-    pa.Table
-    | DataFrame
-    | PolarsDataFrame
-    | Iterator[pa.Table]
-    | Iterator[DataFrame]
-    | Iterator[PolarsDataFrame]
-):
+) -> QueryReturnType | Iterator[QueryReturnType]:
     """Executes the given SQLAlchemy statement using Polars.
 
     Args:
