@@ -204,7 +204,6 @@ async def upload_file(
         400: {"model": UploadStatus, **UploadStatus.status_400_examples()},
     },
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(validate_api_key)],
 )
 async def get_upload_status(
     upload_id: str,

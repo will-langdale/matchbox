@@ -1,5 +1,6 @@
 import logging
 from functools import partial
+from typing import Callable
 
 import pytest
 from httpx import Client
@@ -7,6 +8,7 @@ from pandas import DataFrame
 from sqlalchemy import Engine, text
 
 from matchbox import index, make_model, process, query
+from matchbox.client._handler import create_headers
 from matchbox.client.clean import steps
 from matchbox.client.clean.utils import cleaning_function
 from matchbox.client.helpers import cleaner, cleaners, select
@@ -33,10 +35,17 @@ class TestE2EAnalyticalUser:
     n_true_entities: int | None = None
 
     @pytest.fixture(autouse=True, scope="function")
-    def setup_environment(self, matchbox_client: Client, postgres_warehouse: Engine):
+    def setup_environment(
+        self,
+        matchbox_client: Client,
+        postgres_warehouse: Engine,
+        env_setter: Callable[[str, str], None],
+    ):
         """Set up warehouse and database using fixtures."""
         # Store fixtures as class attributes for use in tests with self.*
         n_true_entities = 100
+
+        env_setter("MATCHBOX_API_KEY", "matchbox-api-key")
 
         self.__class__.client = matchbox_client
         self.__class__.warehouse_engine = postgres_warehouse
@@ -121,7 +130,10 @@ class TestE2EAnalyticalUser:
             source_testkit.to_warehouse(engine=postgres_warehouse)
 
         # Clear matchbox database before test
-        response = matchbox_client.delete("/database", params={"certain": "true"})
+        response = matchbox_client.delete(
+            "/database", params={"certain": "true"}, headers=create_headers()
+        )
+
         assert response.status_code == 200, "Failed to clear matchbox database"
 
         yield
@@ -134,7 +146,9 @@ class TestE2EAnalyticalUser:
                 conn.commit()
 
         # Clear matchbox database after test
-        response = matchbox_client.delete("/database", params={"certain": "true"})
+        response = matchbox_client.delete(
+            "/database", params={"certain": "true"}, headers=create_headers()
+        )
         assert response.status_code == 200, "Failed to clear matchbox database"
 
     def test_e2e_deduplication_and_linking_pipeline(self):
