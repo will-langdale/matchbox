@@ -8,6 +8,7 @@ from matchbox.common.exceptions import MatchboxClientSettingsException
 class ClientSettings(BaseSettings):
     api_root: str
     timeout: float | None = None
+    api_key: str | None = None
     retry_delay: int = 5
     default_warehouse: str | None = None
 

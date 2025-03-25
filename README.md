@@ -86,7 +86,7 @@ The parts of matchbox intended for users and services to call a matchbox server,
 
 If the dataset isn't already in matchbox, it'll need to be indexed.
 
-API endpoints with write properties require API Key authentication. The API key should be stored in the client environment as a variable named `MB__CLIENT__API_KEY`.
+API endpoints with write properties require API Key authentication. The API key should be stored in the client environment or .env as a variable named `MB__CLIENT__API_KEY`.
 
 Pipelines using this part of matchbox will:
 

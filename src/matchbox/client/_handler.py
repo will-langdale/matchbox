@@ -1,6 +1,5 @@
 """Functions abstracting the interaction with the server API."""
 
-import os
 import time
 from collections.abc import Iterable
 from io import BytesIO
@@ -104,7 +103,7 @@ def create_client(settings: ClientSettings) -> httpx.Client:
 def create_headers() -> dict[str, SecretStr]:
     """Creates headers for write endpoint api-key authorisation."""
     headers = {}
-    api_key = os.environ.get("MB__CLIENT__API_KEY")
+    api_key = ClientSettings().api_key
     if api_key is not None:
         headers["X-API-Key"] = api_key
     return headers
