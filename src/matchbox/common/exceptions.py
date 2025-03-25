@@ -47,10 +47,6 @@ class MatchboxSourceColumnError(Exception):
     """Source columns diverge with the warehouse."""
 
 
-class MatchboxSourceEngineError(Exception):
-    """Engine must be available in Source."""
-
-
 class MatchboxSourceTableError(Exception):
     """Tables not found in your source data warehouse."""
 

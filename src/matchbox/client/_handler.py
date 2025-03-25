@@ -9,6 +9,7 @@ from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.client._settings import ClientSettings, settings
+from matchbox.client.helpers.selector import SourceReader
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
@@ -29,7 +30,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 
 URLEncodeHandledType = str | int | float | bytes
 
@@ -109,7 +110,7 @@ def query(
     resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
-) -> BytesIO:
+) -> Table:
     res = CLIENT.get(
         "/query",
         params=url_params(
@@ -170,17 +171,17 @@ def match(
 # Data management
 
 
-def index(source: Source, batch_size: int | None = None) -> UploadStatus:
-    """Index a Source in Matchbox."""
+def index(reader: SourceReader, batch_size: int | None = None) -> UploadStatus:
+    """Index a source in Matchbox."""
     if batch_size:
-        data_hashes = source.hash_data(iter_batches=True, batch_size=batch_size)
+        data_hashes = reader.hash_data(iter_batches=True, batch_size=batch_size)
     else:
-        data_hashes = source.hash_data()
+        data_hashes = reader.hash_data()
 
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
-    metadata_res = CLIENT.post("/sources", json=source.model_dump())
+    metadata_res = CLIENT.post("/sources", json=reader.source_config().model_dump())
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -204,11 +205,11 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     return status
 
 
-def get_source(address: SourceAddress) -> Source:
+def get_source_config(address: SourceAddress) -> SourceConfig:
     warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
     res = CLIENT.get(f"/sources/{warehouse_hash_b64}/{address.full_name}")
 
-    return Source.model_validate(res.json())
+    return SourceConfig.model_validate(res.json())
 
 
 def get_resolution_graph() -> ResolutionGraph:
