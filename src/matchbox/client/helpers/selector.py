@@ -2,13 +2,13 @@
 
 import itertools
 from typing import Iterator, Literal, get_args
-from warnings import warn
 
 import polars as pl
 import pyarrow as pa
 from pandas import ArrowDtype
 from pyarrow import Table as ArrowTable
 from pyarrow import compute as pc
+from pydantic import BaseModel
 from sqlalchemy import (
     Engine,
 )
@@ -23,86 +23,25 @@ from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.sources import Match, SourceAddress
 
 
-def select_one(
-    selection: str | dict[str, str],
-    engine: Engine | None = None,
-    only_indexed: bool = True,
-) -> SourceReader:
-    """From one engine, build and verifiy one `SourceReader` for an indexed source.
+class Selector(BaseModel):
+    """A full source name, an engine and optionally a subset of fields to select."""
 
-    Args:
-        selection: Full source name and optionally a subset of columns to select
-        engine: The engine to connect to the data warehouse hosting the source.
-            If not provided, will use a connection string from the
-            `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
-        only_indexed: Whether you intend to select indexed columns only. Will raise a
-            warning if True and non-indexed columns are selected. Defaults to True.
-            Non-indexed columns should only be selected if you're querying data for
-            a purpose other than matching
-
-    Returns:
-        A SourceReader object
-
-    Examples:
-        ```python
-        select_one("companies_house", engine=engine)
-        ```
-
-        ```python
-        select({"companies_house": ["crn"], engine=engine)
-        ```
-    """
-    engine = engine_fallback(engine)
-
-    if isinstance(selection, str):
-        source_address = SourceAddress.compose(engine, selection)
-        source = _handler.get_source_config(source_address)
-        fields = [col.name for col in source.columns]
-        return SourceReader(
-            engine=engine,
-            full_name=source_address.full_name,
-            db_pk=source.db_pk,
-            fields=fields,
-        )
-    elif isinstance(selection, dict):
-        for full_name, fields in selection.items():
-            source_address = SourceAddress.compose(engine, full_name)
-            source = _handler.get_source_config(source_address)
-            reader = SourceReader(
-                engine=engine,
-                full_name=source_address.full_name,
-                db_pk=source.db_pk,
-                fields=fields,
-            )
-            # Warn if selecting from non-indexed columns
-            selected_fields = set(fields)
-            indexed_fields = set(col.name for col in source.columns)
-            if (not selected_fields <= indexed_fields) and only_indexed:
-                warn(
-                    "You are selecting fields that are not indexed in Matchbox",
-                    stacklevel=2,
-                )
-            return reader
-    else:
-        raise ValueError("Selection specified in incorrect format")
+    full_name: str
+    engine: Engine
+    fields: list[str] | None = None
 
 
 def select(
     *selection: str | dict[str, str],
     engine: Engine | None = None,
-    only_indexed: bool = True,
-) -> list[SourceReader]:
-    """From one engine, build and verify a list of `SourceReader`s for indexed sources.
+) -> list[Selector]:
+    """From one engine, refer to a selection of source names and fields.
 
     Args:
         selection: Full source names and optionally a subset of columns to select
         engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
-        only_indexed: Whether you intend to select indexed columns only. Will raise a
-            warning if True and non-indexed columns are selected. Defaults to True.
-            Non-indexed columns should only be selected if you're querying data for
-            a purpose other than matching
 
     Returns:
         A list of SourceReader objects
@@ -118,13 +57,20 @@ def select(
     """
     engine = engine_fallback(engine)
 
-    readers = []
+    selectors = []
     for s in selection:
-        readers.append(
-            select_one(selection=s, engine=engine, only_indexed=only_indexed)
-        )
+        if isinstance(s, str):
+            selectors.append(Selector(full_name=s, engine=engine))
 
-    return readers
+        elif isinstance(selection, dict):
+            for full_name, fields in s.items():
+                selectors.append(
+                    Selector(full_name=full_name, fields=fields, engine=engine)
+                )
+        else:
+            raise ValueError("Selection specified in incorrect format")
+
+    return selectors
 
 
 def _process_query_result(
@@ -176,7 +122,7 @@ def _query_batched(
         )
 
         # Get batched data
-        raw_batches = reader.to_arrow(
+        raw_batches = reader.data(
             pks=mb_ids["source_pk"].to_pylist(),
             iter_batches=True,
             batch_size=batch_size,
@@ -213,7 +159,7 @@ def _query_batched(
 
 
 def query(
-    *readers: list[SourceReader],
+    *selectors: list[Selector],
     resolution_name: str | None = None,
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_type: ReturnTypeStr = "pandas",
@@ -221,16 +167,15 @@ def query(
     limit: int | None = None,
     batch_size: int | None = None,
     return_batches: bool = False,
+    only_indexed: bool = False,
 ) -> QueryReturnType | Iterator[QueryReturnType]:
     """Runs queries against the selected backend.
 
     Args:
-        readers: Each element in `readers` is the output of `select()`.
-            This allows querying sources coming from different engines
+        selectors: Each item is the output of `select()`.
+            Use one `select()` call per engine to use.
         resolution_name (optional): The name of the resolution point to query
-            If not set:
-            * If querying a single source, it will use the source resolution
-            * If querying 2 or more sources, it will look for a default resolution
+            If not set, it will look for a default resolution
         combine_type: How to combine the data from different sources.
             * If `concat`, concatenate all sources queried without any merging.
                 Multiple rows per ID, with null values where data isn't available
@@ -253,6 +198,10 @@ def query(
         return_batches (optional): If True, returns an iterator of batches instead of a
             single combined result, which is useful for processing large datasets with
             limited memory. Default is False.
+        only_indexed: Whether you intend to select indexed columns only. Will raise an
+            exception if True and non-indexed columns are selected. Defaults to False.
+            Non-indexed columns should only be selected if you're querying data for
+            a purpose other than matching.
 
     Returns:
         If return_batches is False:
@@ -292,12 +241,35 @@ def query(
     if return_type not in get_args(ReturnTypeStr):
         raise ValueError(f"return_type of {return_type} not valid")
 
-    if not readers:
+    if not selectors:
         raise ValueError("At least one source must be selected")
 
-    readers: list[SourceReader] = list(itertools.chain(*readers))
+    selectors: list[Selector] = list(itertools.chain(*selectors))
+    configs = [
+        _handler.get_source_config(
+            SourceAddress.compose(full_name=s.full_name, engine=s.engine)
+        )
+        for s in selectors
+    ]
 
-    if not resolution_name and len(readers) > 1:
+    readers: list[SourceReader] = []
+    for selector, config in zip(selectors, configs, strict=True):
+        selected_fields = set(selector.fields)
+        indexed_fields = set(col.name for col in config.columns)
+
+        if (not selected_fields <= indexed_fields) and only_indexed:
+            raise ValueError("Cannot select non-indexed columns with only_indexed=True")
+
+        readers.append(
+            SourceReader(
+                engine=selector.engine,
+                full_name=selector.full_name,
+                db_pk=config.db_pk,
+                fields=selector.fields,
+            )
+        )
+
+    if not resolution_name:
         resolution_name = DEFAULT_RESOLUTION
 
     # Divide the limit among readers
@@ -333,7 +305,7 @@ def query(
                 limit=sub_limit,
             )
 
-            raw_data = reader.to_arrow(
+            raw_data = reader.data(
                 pks=mb_ids["source_pk"].to_pylist(),
                 batch_size=batch_size,
             )

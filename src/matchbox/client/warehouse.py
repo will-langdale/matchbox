@@ -4,7 +4,6 @@ from typing import Any, Iterator, TypeVar
 
 import polars as pl
 import pyarrow as pa
-from pandas import DataFrame as PandasDataFrame
 from sqlalchemy import (
     LABEL_STYLE_TABLENAME_PLUS_COL,
     ColumnElement,
@@ -64,19 +63,25 @@ class SourceReader:
             engine: Engine to use in `SourceAddress` and to connect to warehouse.
             full_name: Full name of the source in the warehouse.
             db_pk: name of the field corresponding to the primary key for each row.
-            fields: optional sub-set of fields in the source.
+            fields: optional subset of fields in the source.
+                If not set, it will use all fields in the warehouse except for db_pk
         """
         self.engine = self.engine
         self.address = SourceAddress.compose(engine=engine, full_name=full_name)
         self.db_pk = db_pk
-        self.fields = fields
 
-        warehouse_fields = set(self.remote_fields().keys())
-        selected_fields = set(self.fields)
-        if not selected_fields <= warehouse_fields:
-            raise ValueError(
-                f"{selected_fields - warehouse_fields} not in {str(self.address)}"
-            )
+        warehouse_fields = set(self.remote_fields().keys()) - {self.db_pk}
+
+        if fields:
+            selected_fields = set(fields)
+            if not selected_fields <= warehouse_fields:
+                diff_fields = selected_fields - warehouse_fields
+                raise ValueError(
+                    f"{diff_fields} not selectable from {str(self.address)}"
+                )
+            self.fields = fields
+        else:
+            self.fields = (col_name for col_name in self.remote_fields().keys())
 
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
@@ -102,7 +107,7 @@ class SourceReader:
         limit: int | None = None,
     ) -> Select:
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
-        table = self.to_table()
+        table = self._to_table()
 
         def _get_field(col_name: str) -> ColumnElement:
             """Helper to get a column with proper casting and labeling for PKs."""
@@ -131,7 +136,7 @@ class SourceReader:
 
         return stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
 
-    def to_arrow(
+    def data(
         self,
         pks: list[T] | None = None,
         limit: int | None = None,
@@ -168,43 +173,6 @@ class SourceReader:
             execute_options=execute_options,
         )
 
-    def to_pandas(
-        self,
-        pks: list[T] | None = None,
-        limit: int | None = None,
-        *,
-        iter_batches: bool = False,
-        batch_size: int | None = None,
-        schema_overrides: dict[str, Any] | None = None,
-        execute_options: dict[str, Any] | None = None,
-    ) -> PandasDataFrame | Iterator[PandasDataFrame]:
-        """Returns the dataset as a pandas DataFrame or an iterator of DataFrames.
-
-        Args:
-            pks: List of primary keys to filter by. If None, retrieves all rows.
-            limit: Maximum number of rows to retrieve. If None, retrieves all rows.
-            iter_batches: If True, return an iterator that yields each batch separately.
-                If False, return a single DataFrame with all results.
-            batch_size: Indicate the size of each batch when processing data in batches.
-            schema_overrides: A dictionary mapping column names to dtypes.
-            execute_options: These options will be passed through into the underlying
-                query execution method as kwargs.
-
-        Returns:
-            If iter_batches is False: A pandas DataFrame containing the requested data.
-            If iter_batches is True: An iterator of pandas DataFrames.
-        """
-        stmt = self._select(pks=pks, limit=limit)
-        return sql_to_df(
-            stmt,
-            self.engine,
-            return_type="pandas",
-            iter_batches=iter_batches,
-            batch_size=batch_size,
-            schema_overrides=schema_overrides,
-            execute_options=execute_options,
-        )
-
     def hash_data(
         self,
         *,
@@ -227,7 +195,7 @@ class SourceReader:
         Returns:
             A PyArrow Table containing source primary keys and their hashes.
         """
-        source_table = self.to_table()
+        source_table = self._to_table()
         cols_to_index = tuple(self.fields)
 
         slct_stmt = sqlselect(
@@ -252,14 +220,11 @@ class SourceReader:
                 f"{c}🔥" + pl.col(c) + "🔥" for c in sorted(cols_to_index)
             ]
             batch = batch.with_columns(
-                pl.concat_str(str_concatenation).alias("raw_value")
+                pl.concat_str(str_concatenation).alias("value_concat")
             )
 
-            # TODO: add column names
-            batch = batch.with_columns((pl.col("raw_value")).alias("value_with_sig"))
-
             batch = batch.with_columns(
-                pl.col("value_with_sig")
+                pl.col("value_concat")
                 .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
                 .alias("hash")
             )
@@ -304,23 +269,18 @@ class SourceReader:
 
         Keys are field names and values field types.
         """
-        table = self.to_table()
+        table = self._to_table()
         return {
             col.name: col.type for col in table.columns if col.name not in self.db_pk
         }
 
     def source_config(self) -> SourceConfig:
-        """Returns a new SourceConfig.
-
-        If fields are set, it will use them to generate `SourceColumn`s.
-        Otherwise, it will use all fields in the source table except `self.db_pk`.
-        """
+        """Returns a new SourceConfig with parameters derived from this SourceReader."""
         columns = (
             SourceColumn(name=col_name, type=str(col_type))
             for col_name, col_type in self.remote_fields().items()
+            if col_name in self.fields
         )
-        if self.fields:
-            columns = (c for c in columns if c.name in self.fields)
 
         return SourceConfig(
             address=self.address,

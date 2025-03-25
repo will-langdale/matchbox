@@ -112,7 +112,7 @@ def sql_to_df(
             case "pandas":
                 return (batch.to_pandas() for batch in results)
 
-    results = pl.read_database_uri(
+    results: pl.DataFrame = pl.read_database_uri(
         query=sql_query,
         uri=url,
         schema_overrides=schema_overrides,
