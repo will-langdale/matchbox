@@ -4,7 +4,7 @@ from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.client.helpers.selector import SourceReader
-from matchbox.client.warehouse import _engine_fallback
+from matchbox.client.warehouse import engine_fallback
 
 
 def index(
@@ -36,7 +36,7 @@ def index(
         index("mb.test_orig", "id", engine=engine, batch_size=10_000)
         ```
     """
-    engine = _engine_fallback(engine)
+    engine = engine_fallback(engine)
     reader = SourceReader(
         engine=engine, full_name=full_name, db_pk=db_pk, fields=columns
     )
