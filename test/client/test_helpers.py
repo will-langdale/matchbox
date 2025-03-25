@@ -1,3 +1,4 @@
+from importlib.metadata import version
 from typing import Callable
 from unittest.mock import Mock, patch
 
@@ -10,6 +11,8 @@ from respx import MockRouter
 from sqlalchemy import Engine
 
 from matchbox import index, match, process, query
+from matchbox.client._handler import create_client
+from matchbox.client._settings import ClientSettings
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
@@ -78,6 +81,15 @@ def test_comparisons():
     )
 
     assert comparison_name_id is not None
+
+
+def test_create_client():
+    mock_settings = ClientSettings(api_root="http://example.com", timeout=20)
+    client = create_client(mock_settings)
+
+    assert client.headers.get("X-Matchbox-Client-Version") == version("matchbox_db")
+    assert client.base_url == mock_settings.api_root
+    assert client.timeout.read == mock_settings.timeout
 
 
 def test_select_default_engine(

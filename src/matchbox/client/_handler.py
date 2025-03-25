@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Iterable
+from importlib.metadata import version
 from io import BytesIO
 
 import httpx
@@ -92,10 +93,12 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
 def create_client(settings: ClientSettings) -> httpx.Client:
     """Create an HTTPX client with proper configuration."""
+    headers = {"X-Matchbox-Client-Version": version("matchbox_db")}
     return httpx.Client(
         base_url=settings.api_root,
         timeout=settings.timeout,
         event_hooks={"response": [handle_http_code]},
+        headers=headers,
     )
 
 
