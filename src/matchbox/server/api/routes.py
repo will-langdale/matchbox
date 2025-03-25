@@ -68,12 +68,11 @@ metadata_store = MetadataStore(expiry_minutes=30)
 
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
-API_KEY = APISettings().api_key
 
 
 def validate_api_key(api_key: str = Security(API_KEY_HEADER)):
     """Validate client API Key."""
-    if api_key != API_KEY:
+    if api_key != APISettings().api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API Key missing or invalid.",
