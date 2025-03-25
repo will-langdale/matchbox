@@ -51,7 +51,7 @@ class HashIDMap:
             self.lookup = pa.Table.from_arrays(
                 [
                     pa.array([], type=pa.uint64()),
-                    pa.array([], type=pa.binary()),
+                    pa.array([], type=pa.large_binary()),
                     pa.array([], type=pa.bool_()),
                 ],
                 names=["id", "hash", "new"],
@@ -459,7 +459,7 @@ def _results_to_insert_tables(
         engine=engine,
         return_type="arrow",
     )
-    lookup = lookup.cast(pa.schema([("hash", pa.binary()), ("id", pa.uint64())]))
+    lookup = lookup.cast(pa.schema([("hash", pa.large_binary()), ("id", pa.uint64())]))
 
     hm = HashIDMap(start=Clusters.next_id(), lookup=lookup)
 
@@ -478,7 +478,7 @@ def _results_to_insert_tables(
     hierarchy = to_hierarchical_clusters(
         probabilities=probs_with_ccs,
         hash_func=hash_values,
-        dtype=pa.binary,
+        dtype=pa.large_binary,
     )
 
     # Create Probabilities Arrow table to insert, containing all generated probabilities

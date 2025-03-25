@@ -54,7 +54,7 @@ if __name__ == "__main__":
         {
             "id": all_probs,
             "hash": pa.array(
-                [hash_data(p) for p in all_probs.to_pylist()], type=pa.binary()
+                [hash_data(p) for p in all_probs.to_pylist()], type=pa.large_binary()
             ),
         }
     )
@@ -79,5 +79,5 @@ if __name__ == "__main__":
             hierarchy = to_hierarchical_clusters(
                 probabilities=probs_with_ccs,
                 hash_func=hash_values,
-                dtype=pa.binary,
+                dtype=pa.large_binary,
             )
