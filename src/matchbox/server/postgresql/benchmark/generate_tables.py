@@ -86,7 +86,7 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
             "resolution_id": pa.array(sources_resolution_id, type=pa.uint64()),
             "resolution_name": pa.array(sources_resolution_names, type=pa.string()),
             "full_name": pa.array(sources_full_names, type=pa.string()),
-            "warehouse_hash": pa.array(warehouse_hashes, type=pa.binary()),
+            "warehouse_hash": pa.array(warehouse_hashes, type=pa.large_binary()),
             "id": pa.array(sources_id, type=pa.string()),
             "column_names": pa.array(column_names, type=pa.list_(pa.string())),
             "column_aliases": pa.array(column_aliases, type=pa.list_(pa.string())),
@@ -122,7 +122,9 @@ def generate_resolutions(dataset_start_id: int = 1) -> pa.Table:
     return pa.table(
         {
             "resolution_id": pa.array(resolutions_resolution_id, type=pa.uint64()),
-            "resolution_hash": pa.array(resolutions_resolution_hash, type=pa.binary()),
+            "resolution_hash": pa.array(
+                resolutions_resolution_hash, type=pa.large_binary()
+            ),
             "type": pa.array(resolutions_type, type=pa.string()),
             "name": pa.array(resolutions_name, type=pa.string()),
             "description": pa.array(resolutions_name, type=pa.string()),
@@ -193,7 +195,7 @@ def generate_cluster_source(
     return pa.table(
         {
             "cluster_id": pa.array(source, type=pa.uint64()),
-            "cluster_hash": pa.array(_hash_list_int(source), type=pa.binary()),
+            "cluster_hash": pa.array(_hash_list_int(source), type=pa.large_binary()),
             "dataset": pa.array([resolution_source] * len(source), type=pa.uint64()),
             "source_pk": pa.array(create_source_pk(source), type=pa.list_(pa.string())),
         }
@@ -243,7 +245,7 @@ def generate_result_tables(
         {
             "id": all_probs,
             "hash": pa.array(
-                [hash_data(p) for p in all_probs.to_pylist()], type=pa.binary()
+                [hash_data(p) for p in all_probs.to_pylist()], type=pa.large_binary()
             ),
         }
     )
@@ -265,7 +267,7 @@ def generate_result_tables(
     hierarchy = to_hierarchical_clusters(
         probabilities=probs_with_ccs,
         hash_func=hash_values,
-        dtype=pa.binary,
+        dtype=pa.large_binary,
     )
 
     # Shape into tables

@@ -18,7 +18,7 @@ T = TypeVar("T", bound=Hashable)
 
 def to_clusters(
     results: pa.Table,
-    dtype: pa.DataType = pa.binary,
+    dtype: pa.DataType = pa.large_binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
     """Converts probabilities into connected components formed at each threshold.
@@ -219,7 +219,7 @@ class DisjointSet(Generic[T]):
 
 def component_to_hierarchy(
     table: pa.Table,
-    dtype: pa.DataType = pa.binary,
+    dtype: pa.DataType = pa.large_binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
     """Convert pairwise probabilities into a hierarchical representation.
@@ -291,7 +291,7 @@ def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
-    dtype: pa.DataType = pa.binary,
+    dtype: pa.DataType = pa.large_binary,
     parallel: bool = True,
     timeout: int = 300,
     min_rows_per_worker: int = 1000,
