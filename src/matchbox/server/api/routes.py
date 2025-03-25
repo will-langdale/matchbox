@@ -70,7 +70,7 @@ metadata_store = MetadataStore(expiry_minutes=30)
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
 
 
-def validate_api_key(api_key: str = Security(API_KEY_HEADER)):
+def validate_api_key(api_key: str = Security(API_KEY_HEADER)) -> None:
     """Validate client API Key."""
     if api_key != APISettings().api_key:
         raise HTTPException(
