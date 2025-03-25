@@ -45,7 +45,7 @@ class TestE2EAnalyticalUser:
         # Store fixtures as class attributes for use in tests with self.*
         n_true_entities = 100
 
-        env_setter("MATCHBOX_API_KEY", "matchbox-api-key")
+        env_setter("MB__CLIENT__API_KEY", "matchbox-api-key")
 
         self.__class__.client = matchbox_client
         self.__class__.warehouse_engine = postgres_warehouse

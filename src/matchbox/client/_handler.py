@@ -8,6 +8,7 @@ from io import BytesIO
 import httpx
 from pyarrow import Table
 from pyarrow.parquet import read_table
+from pydantic import SecretStr
 
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
@@ -100,10 +101,10 @@ def create_client(settings: ClientSettings) -> httpx.Client:
     )
 
 
-def create_headers() -> dict:
+def create_headers() -> dict[str, SecretStr]:
     """Creates headers for write endpoint api-key authorisation."""
     headers = {}
-    api_key = os.environ.get("MATCHBOX_API_KEY")
+    api_key = os.environ.get("MB__CLIENT__API_KEY")
     if api_key is not None:
         headers["X-API-Key"] = api_key
     return headers
