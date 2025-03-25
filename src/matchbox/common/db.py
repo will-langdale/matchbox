@@ -20,78 +20,26 @@ T = TypeVar("T")
 def sql_to_df(
     stmt: Select,
     engine: Engine,
-    return_type: Literal["arrow"],
+    return_type: Literal["arrow", "pandas", "polars"],
     *,
     iter_batches: Literal[False] = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> ArrowTable: ...
+) -> QueryReturnType: ...
 
 
 @overload
 def sql_to_df(
     stmt: Select,
     engine: Engine,
-    return_type: Literal["arrow"],
+    return_type: Literal["arrow", "pandas", "polars"],
     *,
     iter_batches: Literal[True],
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
-) -> Iterator[ArrowTable]: ...
-
-
-@overload
-def sql_to_df(
-    stmt: Select,
-    engine: Engine,
-    return_type: Literal["pandas"],
-    *,
-    iter_batches: Literal[False] = False,
-    batch_size: int | None = None,
-    schema_overrides: dict[str, Any] | None = None,
-    execute_options: dict[str, Any] | None = None,
-) -> PandasDataFrame: ...
-
-
-@overload
-def sql_to_df(
-    stmt: Select,
-    engine: Engine,
-    return_type: Literal["pandas"],
-    *,
-    iter_batches: Literal[True],
-    batch_size: int | None = None,
-    schema_overrides: dict[str, Any] | None = None,
-    execute_options: dict[str, Any] | None = None,
-) -> Iterator[PandasDataFrame]: ...
-
-
-@overload
-def sql_to_df(
-    stmt: Select,
-    engine: Engine,
-    return_type: Literal["polars"],
-    *,
-    iter_batches: Literal[False] = False,
-    batch_size: int | None = None,
-    schema_overrides: dict[str, Any] | None = None,
-    execute_options: dict[str, Any] | None = None,
-) -> PolarsDataFrame: ...
-
-
-@overload
-def sql_to_df(
-    stmt: Select,
-    engine: Engine,
-    return_type: Literal["polars"],
-    *,
-    iter_batches: Literal[True],
-    batch_size: int | None = None,
-    schema_overrides: dict[str, Any] | None = None,
-    execute_options: dict[str, Any] | None = None,
-) -> Iterator[PolarsDataFrame]: ...
+) -> Iterator[QueryReturnType]: ...
 
 
 def sql_to_df(
@@ -163,8 +111,6 @@ def sql_to_df(
                 return (batch.to_arrow() for batch in results)
             case "pandas":
                 return (batch.to_pandas() for batch in results)
-            case _:
-                raise ValueError(f"Unsupported return_type: {return_type}")
 
     results = pl.read_database_uri(
         query=sql_query,
@@ -180,8 +126,6 @@ def sql_to_df(
             return results.to_arrow()
         case "pandas":
             return results.to_pandas()
-        case _:
-            raise ValueError(f"Unsupported return_type: {return_type}")
 
 
 def get_schema_table_names(full_name: str) -> tuple[str, str]:

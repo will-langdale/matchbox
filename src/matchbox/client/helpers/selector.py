@@ -1,17 +1,20 @@
 """Functions to select and retrieve data from the Matchbox server."""
 
 import itertools
-from typing import Iterator, Literal
+from typing import Iterator, Literal, get_args
 from warnings import warn
 
+import polars as pl
 import pyarrow as pa
-from pandas import ArrowDtype, DataFrame
+from pandas import ArrowDtype
+from pyarrow import Table as ArrowTable
 from pyarrow import compute as pc
 from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
+from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, Source, SourceAddress
@@ -95,8 +98,8 @@ def select(
 
 
 def _process_query_result(
-    data: pa.Table, selector: Selector, mb_ids: pa.Table
-) -> pa.Table:
+    data: ArrowTable, selector: Selector, mb_ids: ArrowTable
+) -> ArrowTable:
     """Process query results by joining with matchbox IDs and filtering fields.
 
     Args:
@@ -129,9 +132,9 @@ def _query_batched(
     sub_limits: list[int | None],
     resolution_name: str | None,
     threshold: int | None,
-    return_type: Literal["pandas", "arrow"],
+    return_type: ReturnTypeStr,
     batch_size: int | None,
-) -> Iterator[DataFrame] | Iterator[pa.Table]:
+) -> Iterator[QueryReturnType]:
     """Helper function that implements batched query processing.
 
     Returns an iterator yielding batches of results.
@@ -176,27 +179,30 @@ def _query_batched(
 
     # Convert each batch to the requested return type
     for batch in batches_iter:
-        if return_type == "pandas":
-            yield batch.to_pandas(
-                use_threads=True,
-                split_blocks=True,
-                self_destruct=True,
-                types_mapper=ArrowDtype,
-            )
-        else:
-            yield batch
+        match return_type:
+            case "pandas":
+                yield batch.to_pandas(
+                    use_threads=True,
+                    split_blocks=True,
+                    self_destruct=True,
+                    types_mapper=ArrowDtype,
+                )
+            case "polars":
+                yield pl.from_arrow(batch)
+            case "arrow":
+                yield batch
 
 
 def query(
     *selectors: list[Selector],
     resolution_name: str | None = None,
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
-    return_type: Literal["pandas", "arrow"] = "pandas",
+    return_type: ReturnTypeStr = "pandas",
     threshold: int | None = None,
     limit: int | None = None,
     batch_size: int | None = None,
     return_batches: bool = False,
-) -> DataFrame | pa.Table | Iterator[DataFrame] | Iterator[pa.Table]:
+) -> QueryReturnType | Iterator[QueryReturnType]:
     """Runs queries against the selected backend.
 
     Args:
@@ -231,7 +237,7 @@ def query(
 
     Returns:
         If return_batches is False:
-            Data in the requested return type (DataFrame or pa.Table)
+            Data in the requested return type (DataFrame or ArrowTable)
         If return_batches is True:
             An iterator yielding batches in the requested return type
 
@@ -264,7 +270,7 @@ def query(
     if combine_type not in ("concat", "explode", "set_agg"):
         raise ValueError(f"combine_type of {combine_type} not valid")
 
-    if return_type not in ("pandas", "arrow"):
+    if return_type not in get_args(ReturnTypeStr):
         raise ValueError(f"return_type of {return_type} not valid")
 
     if not selectors:
@@ -342,15 +348,18 @@ def query(
                 result = result.rename_columns(rename_rule)
 
         # Return in requested format
-        if return_type == "pandas":
-            return result.to_pandas(
-                use_threads=True,
-                split_blocks=True,
-                self_destruct=True,
-                types_mapper=ArrowDtype,
-            )
-
-        return result
+        match return_type:
+            case "pandas":
+                return result.to_pandas(
+                    use_threads=True,
+                    split_blocks=True,
+                    self_destruct=True,
+                    types_mapper=ArrowDtype,
+                )
+            case "polars":
+                return pl.from_arrow(result)
+            case "arrow":
+                return result
 
 
 def match(
