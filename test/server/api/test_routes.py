@@ -1,4 +1,5 @@
 import asyncio
+from importlib.metadata import version
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 from unittest.mock import ANY, Mock, call, patch
@@ -44,7 +45,9 @@ def test_healthcheck(test_client: TestClient):
     """Test the healthcheck endpoint."""
     response = test_client.get("/health")
     assert response.status_code == 200
-    OKMessage.model_validate(response.json())
+    response = OKMessage.model_validate(response.json())
+    assert response.status == "OK"
+    assert response.version == version("matchbox-db")
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")

@@ -253,6 +253,7 @@ def isolate_table(table: DeclarativeMeta) -> tuple[MetaData, Table]:
 
     Returns:
         A tuple of:
+
             * The isolated SQLAlchemy MetaData
             * A new SQLAlchemy Table instance with all columns and indices
     """

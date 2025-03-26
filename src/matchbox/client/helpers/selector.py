@@ -210,9 +210,11 @@ def query(
             This allows querying sources coming from different engines
         resolution_name (optional): The name of the resolution point to query
             If not set:
+
             * If querying a single source, it will use the source resolution
             * If querying 2 or more sources, it will look for a default resolution
         combine_type: How to combine the data from different sources.
+
             * If `concat`, concatenate all sources queried without any merging.
                 Multiple rows per ID, with null values where data isn't available
             * If `explode`, outer join on Matchbox ID. Multiple rows per ID,
