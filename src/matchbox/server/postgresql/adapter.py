@@ -203,10 +203,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     address=address,
                     db_pk=source.id,
                     columns=(
-                        SourceColumn(name=name, alias=alias, type=type_)
-                        for name, alias, type_ in zip(
+                        SourceColumn(name=name, type=type_)
+                        for name, type_ in zip(
                             source.column_names,
-                            source.column_aliases,
                             source.column_types,
                             strict=True,
                         )

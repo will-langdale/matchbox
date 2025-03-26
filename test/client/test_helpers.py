@@ -644,8 +644,8 @@ def test_index_success(
         pytest.param(["name", "age"], id="string_columns"),
         pytest.param(
             [
-                {"name": "name", "alias": "person_name", "type": "TEXT"},
-                {"name": "age", "alias": "person_age", "type": "BIGINT"},
+                {"name": "name", "type": "TEXT"},
+                {"name": "age", "type": "BIGINT"},
             ],
             id="dict_columns",
         ),

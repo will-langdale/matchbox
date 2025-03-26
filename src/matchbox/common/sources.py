@@ -48,7 +48,6 @@ class SourceColumn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    alias: str = Field(default_factory=lambda data: data["name"])
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
@@ -192,9 +191,9 @@ class Source(BaseModel):
     @property
     def signature(self) -> bytes:
         """Generate a unique hash based on the table's metadata."""
-        sorted_columns = sorted(self.columns, key=lambda c: c.alias)
+        sorted_columns = sorted(self.columns, key=lambda c: c.name)
         schema_representation = f"{self.resolution_name}: " + ",".join(
-            f"{col.alias}:{col.type}" for col in sorted_columns
+            f"{col.type}" for col in sorted_columns
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 

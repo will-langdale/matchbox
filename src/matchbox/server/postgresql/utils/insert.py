@@ -122,7 +122,6 @@ def insert_dataset(
         "warehouse_hash": source.address.warehouse_hash,
         "id": source.db_pk,
         "column_names": [col.name for col in source.columns],
-        "column_aliases": [col.alias for col in source.columns],
         "column_types": [col.type for col in source.columns],
     }
 
