@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
@@ -157,14 +157,7 @@ def insert_dataset(
 
         logger.info(f"{source} added to Sources table")
 
-        existing_hashes_statement = (
-            select(Clusters.cluster_hash)
-            .join(Sources)
-            .join(Resolutions)
-            .where(
-                Resolutions.name == source.resolution_name,
-            )
-        )
+        existing_hashes_statement = select(Clusters.cluster_hash)
         existing_hashes = sql_to_df(
             stmt=existing_hashes_statement,
             engine=engine,
@@ -176,27 +169,24 @@ def insert_dataset(
                 data_hashes,
                 pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
             )
-        try:
-            # Upsert into Clusters table
-            batch_ingest(
-                records=[
-                    (
-                        next_cluster_id + i,
-                        clus["hash"],
-                        source_data["resolution_id"],
-                        clus["source_pk"],
-                    )
-                    for i, clus in enumerate(data_hashes.to_pylist())
-                ],
-                table=Clusters,
-                conn=conn,
-                batch_size=batch_size,
-            )
 
-            conn.commit()
-        except IntegrityError as e:
-            # Some edge cases, defined in tests, are not implemented yet
-            raise NotImplementedError from e
+        # Upsert into Clusters table
+        batch_ingest(
+            records=[
+                (
+                    next_cluster_id + i,
+                    clus["hash"],
+                    source_data["resolution_id"],
+                    clus["source_pk"],
+                )
+                for i, clus in enumerate(data_hashes.to_pylist())
+            ],
+            table=Clusters,
+            conn=conn,
+            batch_size=batch_size,
+        )
+
+        conn.commit()
 
         logger.info(f"{source} added {len(data_hashes)} objects to Clusters table")
 
