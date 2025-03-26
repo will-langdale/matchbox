@@ -104,8 +104,9 @@ def create_client(settings: ClientSettings) -> httpx.Client:
 def create_headers(settings: ClientSettings) -> dict[str, str]:
     """Creates client headers."""
     headers = {"X-Matchbox-Client-Version": version("matchbox_db")}
-    if settings.api_key is not None:
-        headers["X-API-Key"] = settings.api_key
+    api_key = settings.api_key.get_secret_value()
+    if api_key is not None:
+        headers["X-API-Key"] = api_key
     return headers
 
 
