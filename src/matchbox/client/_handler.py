@@ -2,12 +2,12 @@
 
 import time
 from collections.abc import Iterable
+from importlib.metadata import version
 from io import BytesIO
 
 import httpx
 from pyarrow import Table
 from pyarrow.parquet import read_table
-from pydantic import SecretStr
 
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
@@ -97,16 +97,15 @@ def create_client(settings: ClientSettings) -> httpx.Client:
         base_url=settings.api_root,
         timeout=settings.timeout,
         event_hooks={"response": [handle_http_code]},
-        headers=create_headers(),
+        headers=create_headers(settings),
     )
 
 
-def create_headers() -> dict[str, SecretStr]:
-    """Creates headers for write endpoint api-key authorisation."""
-    headers = {}
-    api_key = ClientSettings().api_key
-    if api_key is not None:
-        headers["X-API-Key"] = api_key
+def create_headers(settings: ClientSettings) -> dict[str, str]:
+    """Creates client headers."""
+    headers = {"X-Matchbox-Client-Version": version("matchbox_db")}
+    if settings.api_key is not None:
+        headers["X-API-Key"] = settings.api_key
     return headers
 
 
@@ -182,9 +181,13 @@ def match(
 # Data management
 
 
-def index(source: Source) -> UploadStatus:
+def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     """Index a Source in Matchbox."""
-    data_hashes = source.hash_data()
+    if batch_size:
+        data_hashes = source.hash_data(iter_batches=True, batch_size=batch_size)
+    else:
+        data_hashes = source.hash_data()
+
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata

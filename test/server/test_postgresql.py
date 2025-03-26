@@ -30,7 +30,7 @@ def test_hash_id_map():
     lookup = pa.Table.from_arrays(
         [
             pa.array([1, 2], type=pa.uint64()),
-            pa.array([b"hash1", b"hash2"], type=pa.binary()),
+            pa.array([b"hash1", b"hash2"], type=pa.large_binary()),
         ],
         names=["id", "hash"],
     )
@@ -42,7 +42,7 @@ def test_hash_id_map():
     assert hashes.to_pylist() == [b"hash2", b"hash1"]
 
     # Test getting mix of existing and new hashes
-    input_hashes = pa.array([b"hash1", b"new_hash", b"hash2"], type=pa.binary())
+    input_hashes = pa.array([b"hash1", b"new_hash", b"hash2"], type=pa.large_binary())
     returned_ids = hash_map.get_ids(input_hashes)
 
     # Verify results
