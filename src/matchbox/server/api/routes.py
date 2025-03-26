@@ -127,6 +127,7 @@ async def upload_file(
     Status can be checked using the /upload/{upload_id}/status endpoint.
 
     Raises HTTP 400 if:
+
     * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
     * Upload is already being processed
     * Uploaded data doesn't match the metadata schema

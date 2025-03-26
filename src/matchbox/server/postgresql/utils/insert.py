@@ -382,6 +382,7 @@ def _results_to_insert_tables(
 
     Returns:
         A tuple containing:
+
             * A Clusters update Arrow table
             * A Contains update Arrow table
             * A Probabilities update Arrow table

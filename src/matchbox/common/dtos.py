@@ -1,6 +1,7 @@
 """Data transfer objects for Matchbox API."""
 
 from enum import StrEnum
+from importlib.metadata import version
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -11,7 +12,8 @@ from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 class OKMessage(BaseModel):
     """Generic HTTP OK response."""
 
-    status: str = "OK"
+    status: str = Field(default="OK")
+    version: str = Field(default_factory=lambda: version("matchbox-db"))
 
 
 class BackendCountableType(StrEnum):

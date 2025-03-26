@@ -228,6 +228,7 @@ def generate_rows(
     """Generate raw data rows. Adds an ID shared by unique rows, and a PK for every row.
 
     Returns a tuple of:
+
     * raw_data: Dictionary of column arrays for DataFrame creation
     * entity_pks: Maps SourceEntity.id to the set of PKs where that entity appears
     * id_pks: Maps each ID to the set of PKs where that row appears
