@@ -287,9 +287,13 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     assert len(original_hash) == 2
     assert len(original_hash.source_pk.iloc[0]) == 2
     assert len(original_hash.source_pk.iloc[1]) == 2
+
+    def sort_df(df: pd.DataFrame) -> pd.DataFrame:
+        return df.sort_values(by="hash").reset_index(drop=True)
+
     # Column order does not matter, column names do
-    assert original_hash.equals(reordered_hash)
-    assert not original_hash.equals(renamed_hash)
+    assert sort_df(original_hash).equals(sort_df(reordered_hash))
+    assert not sort_df(original_hash).equals(sort_df(renamed_hash))
 
 
 @pytest.mark.parametrize(
