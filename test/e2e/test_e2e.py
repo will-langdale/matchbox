@@ -1,6 +1,5 @@
 import logging
 from functools import partial
-from typing import Callable
 
 import pytest
 from httpx import Client
@@ -38,7 +37,6 @@ class TestE2EAnalyticalUser:
         self,
         matchbox_client: Client,
         postgres_warehouse: Engine,
-        env_setter: Callable[[str, str], None],
     ):
         """Set up warehouse and database using fixtures."""
         # Store fixtures as class attributes for use in tests with self.*

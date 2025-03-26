@@ -37,9 +37,6 @@ else:
     S3Client = Any
 
 
-headers = {"X-API-Key": "test-api-key"}
-
-
 # General
 
 
