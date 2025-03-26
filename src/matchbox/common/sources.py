@@ -406,8 +406,12 @@ class Source(BaseModel):
             for col_name in cols_to_index:
                 batch = batch.with_columns(pl.col(col_name).cast(pl.Utf8))
 
+            str_concatenation = [
+                f"{c}🔥" + pl.col(c).str.replace("🔥", "") + "🔥"
+                for c in sorted(cols_to_index)
+            ]
             batch = batch.with_columns(
-                pl.concat_str([pl.col(c) for c in cols_to_index]).alias("raw_value")
+                pl.concat_str(str_concatenation).alias("value_concat")
             )
 
             batch = batch.with_columns(
