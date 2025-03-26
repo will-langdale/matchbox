@@ -32,5 +32,5 @@ def env_setter() -> Generator[Callable[[str, str], None], None, None]:
 @pytest.fixture(scope="function")
 def test_client(env_setter: Callable[[str, str], None]) -> TestClient:
     env_setter("MB__API__API_KEY", "test-api-key")
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-api-key"})
     return client

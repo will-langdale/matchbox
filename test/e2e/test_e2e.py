@@ -8,7 +8,6 @@ from pandas import DataFrame
 from sqlalchemy import Engine, text
 
 from matchbox import index, make_model, process, query
-from matchbox.client._handler import create_headers
 from matchbox.client.clean import steps
 from matchbox.client.clean.utils import cleaning_function
 from matchbox.client.helpers import cleaner, cleaners, select
@@ -128,9 +127,7 @@ class TestE2EAnalyticalUser:
             source_testkit.to_warehouse(engine=postgres_warehouse)
 
         # Clear matchbox database before test
-        response = matchbox_client.delete(
-            "/database", params={"certain": "true"}, headers=create_headers()
-        )
+        response = matchbox_client.delete("/database", params={"certain": "true"})
 
         assert response.status_code == 200, "Failed to clear matchbox database"
 
@@ -144,9 +141,7 @@ class TestE2EAnalyticalUser:
                 conn.commit()
 
         # Clear matchbox database after test
-        response = matchbox_client.delete(
-            "/database", params={"certain": "true"}, headers=create_headers()
-        )
+        response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 
     def test_e2e_deduplication_and_linking_pipeline(self):

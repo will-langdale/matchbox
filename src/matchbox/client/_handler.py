@@ -97,6 +97,7 @@ def create_client(settings: ClientSettings) -> httpx.Client:
         base_url=settings.api_root,
         timeout=settings.timeout,
         event_hooks={"response": [handle_http_code]},
+        headers=create_headers(),
     )
 
 
@@ -187,9 +188,7 @@ def index(source: Source) -> UploadStatus:
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
-    metadata_res = CLIENT.post(
-        "/sources", json=source.model_dump(), headers=create_headers()
-    )
+    metadata_res = CLIENT.post("/sources", json=source.model_dump())
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -197,7 +196,6 @@ def index(source: Source) -> UploadStatus:
     upload_res = CLIENT.post(
         f"/upload/{upload.id}",
         files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
-        headers=create_headers(),
     )
 
     # Poll until complete with retry/timeout configuration
@@ -232,7 +230,7 @@ def get_resolution_graph() -> ResolutionGraph:
 
 def insert_model(model: ModelMetadata) -> ModelOperationStatus:
     """Insert a model in Matchbox."""
-    res = CLIENT.post("/models", json=model.model_dump(), headers=create_headers())
+    res = CLIENT.post("/models", json=model.model_dump())
     return ModelOperationStatus.model_validate(res.json())
 
 
@@ -246,7 +244,7 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
     buffer = table_to_buffer(table=results)
 
     # Initialise upload
-    metadata_res = CLIENT.post(f"/models/{name}/results", headers=create_headers())
+    metadata_res = CLIENT.post(f"/models/{name}/results")
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -254,7 +252,6 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
     upload_res = CLIENT.post(
         f"/upload/{upload.id}",
         files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
-        headers=create_headers(),
     )
 
     # Poll until complete with retry/timeout configuration
@@ -280,7 +277,7 @@ def get_model_results(name: str) -> Table:
 
 def set_model_truth(name: str, truth: int) -> ModelOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
-    res = CLIENT.patch(f"/models/{name}/truth", json=truth, headers=create_headers())
+    res = CLIENT.patch(f"/models/{name}/truth", json=truth)
     return ModelOperationStatus.model_validate(res.json())
 
 
@@ -303,7 +300,6 @@ def set_model_ancestors_cache(
     res = CLIENT.post(
         f"/models/{name}/ancestors_cache",
         json=[a.model_dump() for a in ancestors],
-        headers=create_headers(),
     )
     return ModelOperationStatus.model_validate(res.json())
 
@@ -316,7 +312,5 @@ def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
 
 def delete_model(name: str, certain: bool = False) -> ModelOperationStatus:
     """Delete a model in Matchbox."""
-    res = CLIENT.delete(
-        f"/models/{name}", params={"certain": certain}, headers=create_headers()
-    )
+    res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
     return ModelOperationStatus.model_validate(res.json())

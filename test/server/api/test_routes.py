@@ -90,7 +90,6 @@ def test_upload(
                 "application/octet-stream",
             ),
         },
-        headers=headers,
     )
 
     # Validate response
@@ -141,7 +140,6 @@ def test_upload_wrong_schema(
                 "application/octet-stream",
             ),
         },
-        headers=headers,
     )
 
     # Should fail before background task starts
@@ -192,7 +190,6 @@ def test_upload_already_processing(
     response = test_client.post(
         f"/upload/{update_id}",
         files={"file": ("test.parquet", b"dummy data", "application/octet-stream")},
-        headers=headers,
     )
 
     # Should return 400 with current status
@@ -216,7 +213,6 @@ def test_upload_already_queued(metadata_store: Mock, _: Mock, test_client: TestC
     response = test_client.post(
         f"/upload/{update_id}",
         files={"file": ("test.parquet", b"dummy data", "application/octet-stream")},
-        headers=headers,
     )
 
     # Should return 400 with current status
@@ -488,7 +484,8 @@ def test_add_source(get_backend: Mock, test_client: TestClient):
 
     # Make request
     response = test_client.post(
-        "/sources", json=source_testkit.source.model_dump(), headers=headers
+        "/sources",
+        json=source_testkit.source.model_dump(),
     )
 
     # Validate response
@@ -522,9 +519,7 @@ async def test_complete_source_upload_process(
     source_testkit = source_factory()
 
     # Step 1: Add source
-    response = test_client.post(
-        "/sources", json=source_testkit.source.model_dump(), headers=headers
-    )
+    response = test_client.post("/sources", json=source_testkit.source.model_dump())
     assert response.status_code == 202
     upload_id = response.json()["id"]
     assert response.json()["status"] == "awaiting_upload"
@@ -539,7 +534,6 @@ async def test_complete_source_upload_process(
                 "application/octet-stream",
             ),
         },
-        headers=headers,
     )
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
@@ -605,9 +599,7 @@ def test_insert_model(get_backend: Mock, test_client: TestClient):
     get_backend.return_value = mock_backend
 
     testkit = model_factory(name="test_model")
-    response = test_client.post(
-        "/models", json=testkit.model.metadata.model_dump(), headers=headers
-    )
+    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
 
     assert response.status_code == 201
     assert response.json() == {
@@ -626,9 +618,7 @@ def test_insert_model_error(get_backend: Mock, test_client: TestClient):
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
-    response = test_client.post(
-        "/models", json=testkit.model.metadata.model_dump(), headers=headers
-    )
+    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
 
     assert response.status_code == 500
     assert response.json()["success"] is False
@@ -704,7 +694,6 @@ def test_model_upload(
                 "application/octet-stream",
             ),
         },
-        headers=headers,
     )
 
     # Validate response
@@ -741,17 +730,13 @@ async def test_complete_model_upload_process(
     mock_backend.get_model_results = Mock(return_value=testkit.probabilities)
 
     # Step 1: Create model
-    response = test_client.post(
-        "/models", json=testkit.model.metadata.model_dump(), headers=headers
-    )
+    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
     assert response.status_code == 201
     assert response.json()["success"] is True
     assert response.json()["model_name"] == testkit.model.metadata.name
 
     # Step 2: Initialize results upload
-    response = test_client.post(
-        f"/models/{testkit.model.metadata.name}/results", headers=headers
-    )
+    response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
     assert response.status_code == 202
     upload_id = response.json()["id"]
     assert response.json()["status"] == "awaiting_upload"
@@ -766,7 +751,6 @@ async def test_complete_model_upload_process(
                 "application/octet-stream",
             ),
         },
-        headers=headers,
     )
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
@@ -830,7 +814,6 @@ async def test_complete_model_upload_process(
     response = test_client.patch(
         f"/models/{testkit.model.metadata.name}/truth",
         json=truth_value,
-        headers=headers,
     )
     assert response.status_code == 200
 
@@ -850,9 +833,7 @@ def test_set_results(get_backend: Mock, test_client: TestClient):
     mock_backend.get_model = Mock(return_value=testkit.model.metadata)
     get_backend.return_value = mock_backend
 
-    response = test_client.post(
-        f"/models/{testkit.model.metadata.name}/results", headers=headers
-    )
+    response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
 
     assert response.status_code == 202
     assert response.json()["status"] == "awaiting_upload"
@@ -865,7 +846,7 @@ def test_set_results_model_not_found(get_backend: Mock, test_client: TestClient)
     mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
     get_backend.return_value = mock_backend
 
-    response = test_client.post("/models/nonexistent-model/results", headers=headers)
+    response = test_client.post("/models/nonexistent-model/results")
 
     assert response.status_code == 404
     assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
@@ -891,7 +872,7 @@ def test_set_truth(get_backend: Mock, test_client: TestClient):
     get_backend.return_value = mock_backend
 
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=0.95, headers=headers
+        f"/models/{testkit.model.metadata.name}/truth", json=0.95
     )
 
     assert response.status_code == 200
@@ -910,13 +891,13 @@ def test_set_truth_invalid_value(get_backend: Mock, test_client: TestClient):
 
     # Test value > 1
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=1.5, headers=headers
+        f"/models/{testkit.model.metadata.name}/truth", json=1.5
     )
     assert response.status_code == 422
 
     # Test value < 0
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=-0.5, headers=headers
+        f"/models/{testkit.model.metadata.name}/truth", json=-0.5
     )
     assert response.status_code == 422
 
@@ -986,7 +967,6 @@ def test_set_ancestors_cache(get_backend: Mock, test_client: TestClient):
     response = test_client.patch(
         f"/models/{testkit.model.metadata.name}/ancestors_cache",
         json=[a.model_dump() for a in ancestors_data],
-        headers=headers,
     )
 
     assert response.status_code == 200
@@ -1051,9 +1031,7 @@ def test_model_patch_endpoints_404(
     get_backend.return_value = mock_backend
 
     # Make request
-    response = test_client.patch(
-        f"/models/nonexistent-model/{endpoint}", json=payload, headers=headers
-    )
+    response = test_client.patch(f"/models/nonexistent-model/{endpoint}", json=payload)
 
     # Verify response
     assert response.status_code == 404
@@ -1070,7 +1048,6 @@ def test_delete_model(get_backend: Mock, test_client: TestClient):
     response = test_client.delete(
         f"/models/{testkit.model.metadata.name}",
         params={"certain": True},
-        headers=headers,
     )
 
     assert response.status_code == 200
@@ -1091,9 +1068,7 @@ def test_delete_model_needs_confirmation(get_backend: Mock, test_client: TestCli
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
-    response = test_client.delete(
-        f"/models/{testkit.model.metadata.name}", headers=headers
-    )
+    response = test_client.delete(f"/models/{testkit.model.metadata.name}")
 
     assert response.status_code == 409
     assert response.json()["success"] is False
@@ -1117,7 +1092,7 @@ def test_delete_model_404(
 
     # Make request
     response = test_client.delete(
-        "/models/nonexistent-model", params={"certain": certain}, headers=headers
+        "/models/nonexistent-model", params={"certain": certain}
     )
 
     # Verify response
@@ -1171,9 +1146,7 @@ def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClien
     mock_backend.clear = Mock()
     get_backend.return_value = mock_backend
 
-    response = test_client.delete(
-        "/database", params={"certain": "true"}, headers=headers
-    )
+    response = test_client.delete("/database", params={"certain": "true"})
     assert response.status_code == 200
     OKMessage.model_validate(response.json())
 
@@ -1184,7 +1157,7 @@ def test_clear_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestC
     mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
     get_backend.return_value = mock_backend
 
-    response = test_client.delete("/database", headers=headers)
+    response = test_client.delete("/database")
     assert response.status_code == 409
     # We send some explanatory message
     assert response.content
@@ -1192,55 +1165,56 @@ def test_clear_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestC
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_api_key_authorisation(get_backend: MatchboxDBAdapter, test_client: TestClient):
-    missing_headers = {}
-    incorrect_headers = {"X-API-Key": "incorrect-api-key"}
+    # Incorrect API Key Value
+    test_client.headers["X-API-Key"] = "incorrect-api-key"
 
-    response = test_client.post("/upload/upload_id", headers=incorrect_headers)
+    response = test_client.post("/upload/upload_id")
     assert response.status_code == 401
     assert response.content == b'"API Key missing or invalid."'
 
-    response = test_client.post("/upload/upload_id", headers=missing_headers)
+    response = test_client.post("/sources")
+    assert response.status_code == 401
+    assert response.content == b'"API Key missing or invalid."'
+
+    response = test_client.post("/models")
+    assert response.status_code == 401
+    assert response.content == b'"API Key missing or invalid."'
+
+    response = response = test_client.patch("/models/model_name/truth")
+    assert response.status_code == 401
+    assert response.content == b'"API Key missing or invalid."'
+
+    response = test_client.delete("/models/model_name")
+    assert response.status_code == 401
+    assert response.content == b'"API Key missing or invalid."'
+
+    response = test_client.delete("/database")
+    assert response.status_code == 401
+    assert response.content == b'"API Key missing or invalid."'
+
+    # Missing API Key Value
+    test_client.headers.pop("X-API-Key")
+
+    response = test_client.post("/upload/upload_id")
     assert response.status_code == 403
     assert response.content == b'"Not authenticated"'
 
-    response = test_client.post("/sources", headers=incorrect_headers)
-    assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
-
-    response = test_client.post("/sources", headers=missing_headers)
+    response = test_client.post("/sources")
     assert response.status_code == 403
     assert response.content == b'"Not authenticated"'
 
-    response = test_client.post("/models", headers=incorrect_headers)
-    assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
-
-    response = test_client.post("/models", headers=missing_headers)
+    response = test_client.post("/models")
     assert response.status_code == 403
     assert response.content == b'"Not authenticated"'
 
-    response = response = test_client.patch(
-        "/models/model_name/truth", headers=incorrect_headers
-    )
-    assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
-
-    response = test_client.patch("/models/model_name/truth", headers=missing_headers)
+    response = response = test_client.patch("/models/model_name/truth")
     assert response.status_code == 403
     assert response.content == b'"Not authenticated"'
 
-    response = test_client.delete("/models/model_name", headers=incorrect_headers)
-    assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
-
-    response = test_client.delete("/models/model_name", headers=missing_headers)
+    response = test_client.delete("/models/model_name")
     assert response.status_code == 403
     assert response.content == b'"Not authenticated"'
 
-    response = test_client.delete("/database", headers=incorrect_headers)
-    assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
-
-    response = test_client.delete("/database", headers=missing_headers)
+    response = test_client.delete("/database")
     assert response.status_code == 403
     assert response.content == b'"Not authenticated"'
