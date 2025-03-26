@@ -50,15 +50,13 @@ def _generate_cache_key(
     return cache_key
 
 
-def _testkitdag_to_warehouse(warehouse_engine: Engine, dag: TestkitDAG) -> None:
+def _testkitdag_to_warehouse(dag: TestkitDAG) -> None:
     """Upload a TestkitDAG to a warehouse.
 
-    * Writes all data to the warehouse, replacing existing data
-    * Updates the engine of all sources in the DAG
+    Writes all data to the warehouse, replacing existing data
     """
     for source_testkit in dag.sources.values():
-        source_testkit.to_warehouse(warehouse_engine)
-        source_testkit.source.set_engine(warehouse_engine)
+        source_testkit.to_warehouse()
 
 
 def create_scenario_dag(
@@ -86,7 +84,7 @@ def create_scenario_dag(
     dag.add_source(linked)
 
     # 2. Write sources to warehouse
-    _testkitdag_to_warehouse(warehouse_engine, dag)
+    _testkitdag_to_warehouse(dag)
 
     # End here for bare database scenarios
     if scenario_type == "bare":
@@ -95,7 +93,7 @@ def create_scenario_dag(
     # 3. Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
-            source=source_testkit.source, data_hashes=source_testkit.data_hashes
+            source=source_testkit.source_config, data_hashes=source_testkit.data_hashes
         )
 
     # End here for index-only scenarios
@@ -104,12 +102,14 @@ def create_scenario_dag(
 
     # 4. Create and add deduplication models
     for testkit in dag.sources.values():
-        source = testkit.source
+        source = testkit.source_config
         model_name = f"naive_test.{source.address.full_name}"
 
         # Query the raw data
         source_query = backend.query(
-            source_address=linked.sources[source.address.full_name].source.address,
+            source_address=linked.sources[
+                source.address.full_name
+            ].source_config.address,
         )
 
         # Build model testkit using query data
@@ -141,17 +141,17 @@ def create_scenario_dag(
 
     # Query data for each resolution
     crn_query = backend.query(
-        source_address=linked.sources["crn"].source.address,
+        source_address=linked.sources["crn"].source_config.address,
         resolution_name=crn_model.name,
     )
 
     duns_query = backend.query(
-        source_address=linked.sources["duns"].source.address,
+        source_address=linked.sources["duns"].source_config.address,
         resolution_name=duns_model.name,
     )
 
     cdms_query = backend.query(
-        source_address=linked.sources["cdms"].source.address,
+        source_address=linked.sources["cdms"].source_config.address,
         resolution_name=cdms_model.name,
     )
 
@@ -199,11 +199,11 @@ def create_scenario_dag(
     # Create final join
     # Query the previous link's results
     crn_cdms_query_crn_only = backend.query(
-        source_address=linked.sources["crn"].source.address,
+        source_address=linked.sources["crn"].source_config.address,
         resolution_name=crn_cdms_name,
     ).rename_columns(["id", "source_pk_crn"])
     crn_cdms_query_cdms_only = backend.query(
-        source_address=linked.sources["cdms"].source.address,
+        source_address=linked.sources["cdms"].source_config.address,
         resolution_name=crn_cdms_name,
     ).rename_columns(["id", "source_pk_cdms"])
     crn_cdms_query = pa.concat_tables(
@@ -212,7 +212,7 @@ def create_scenario_dag(
     ).combine_chunks()
 
     duns_query_linked = backend.query(
-        source_address=linked.sources["duns"].source.address,
+        source_address=linked.sources["duns"].source_config.address,
         resolution_name=crn_duns_name,
     )
 
@@ -262,7 +262,7 @@ def setup_scenario(
 
         # Restore backend and write sources to warehouse
         backend.restore(clear=True, snapshot=snapshot)
-        _testkitdag_to_warehouse(warehouse, dag)
+        _testkitdag_to_warehouse(dag)
     else:
         # Create new TestkitDAG with proper backend integration
         dag = create_scenario_dag(backend, warehouse, scenario_type, n_entities, seed)

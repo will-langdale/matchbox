@@ -105,7 +105,7 @@ def test_benchmark_query_generation(
 
         sql_query = compile_query_sql(
             point_of_truth=point_of_truth,
-            source_address=dag.sources[source].source.address,
+            source_address=dag.sources[source].source_config.address,
         )
 
         assert isinstance(sql_query, str)
@@ -142,7 +142,7 @@ def test_benchmark_match_query_generation(
 
         sql_match = compile_match_sql(
             source_pk=next(iter(source_entity.source_pks["duns"])),
-            resolution_name=str(duns_testkit.source.address),
+            resolution_name=str(duns_testkit.source_config.address),
             point_of_truth="deterministic_naive_test.crn_naive_test.duns",
         )
 

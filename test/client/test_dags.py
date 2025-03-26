@@ -12,8 +12,8 @@ from matchbox.common.factories.sources import source_factory
 
 def test_step_input_validation(sqlite_warehouse: Engine):
     """Cannot select sources not available to a step."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).reader
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).reader
 
     d_foo_right = DedupeStep(
         name="d_foo",

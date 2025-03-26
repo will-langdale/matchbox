@@ -13,6 +13,7 @@ from faker import Faker
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, create_engine
 
+from matchbox.client.warehouse import SourceReader
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.db import get_schema_table_names
 from matchbox.common.factories.entities import (
@@ -25,7 +26,7 @@ from matchbox.common.factories.entities import (
     generate_entities,
     probabilities_to_results_entities,
 )
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import SourceColumn, SourceConfig
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -61,7 +62,7 @@ def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class SourceConfig(BaseModel):
+class SourceTestkitOptions(BaseModel):
     """Configuration for generating a source."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -78,7 +79,8 @@ class SourceTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: Source = Field(description="The real generated Source object.")
+    reader: SourceReader = Field(description="The client-side source reader.")
+
     features: tuple[FeatureConfig, ...] = Field(
         description="The features used to generate the data."
     )
@@ -91,22 +93,29 @@ class SourceTestkit(BaseModel):
     @property
     def name(self) -> str:
         """Return the resolution name of the Source."""
-        return self.source.resolution_name
+        return str(self.reader.address)
 
     @property
-    def mock(self) -> Mock:
-        """Create a mock Source object with this testkit's configuration."""
-        mock_source = create_autospec(self.source)
+    def source_config(self) -> SourceConfig:
+        """Generates SourceConfig without asking SourceReader."""
+        return SourceConfig(
+            address=self.reader.address,
+            resolution_name=self.name,
+            db_pk=self.reader.db_pk,
+            columns=[SourceColumn(name=f.name, type=f.sql_type) for f in self.features],
+        )
 
-        mock_source.set_engine.return_value = mock_source
-        mock_source.default_columns.return_value = mock_source
-        mock_source.hash_data.return_value = self.data_hashes
-        mock_source.to_table = self.data
+    @property
+    def mock_reader(self) -> Mock:
+        """Create a mock SourceReader with this testkit's configuration."""
+        mock = create_autospec(self.reader)
 
-        mock_source.model_dump.side_effect = self.source.model_dump
-        mock_source.model_dump_json.side_effect = self.source.model_dump_json
+        mock.hash_data.return_value = self.data_hashes
+        # By default there are no more warehouse columns than those indexed in the mock
+        mock.remote_fields.return_value = {f.name: f.sql_type for f in self.features}
+        mock.query.return_value = self.query
 
-        return mock_source
+        return mock
 
     @property
     def query(self) -> pa.Table:
@@ -120,16 +129,13 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["pk"]], names=["id", "source_pk"]
         )
 
-    def to_warehouse(self, engine: Engine | None) -> None:
-        """Write the data to the Source's engine.
-
-        As the Source won't have an engine set by default, can be supplied.
-        """
-        schema, table = get_schema_table_names(self.source.address.full_name)
+    def to_warehouse(self) -> None:
+        """Write the data to the SourceReader's engine."""
+        schema, table = get_schema_table_names(self.reader.address.full_name)
         self.data.to_pandas().drop("id", axis=1).to_sql(
             name=table,
             schema=schema,
-            con=engine or self.source.engine,
+            con=self.reader.engine,
             index=False,
             if_exists="replace",
         )
@@ -445,18 +451,15 @@ def source_factory(
         )
         for row_id, pks in row_pks.items()
     ]
-
-    source = Source(
-        address=SourceAddress.compose(full_name=full_name, engine=engine),
+    reader = SourceReader(
+        engine=engine,
+        full_name=full_name,
         db_pk="pk",
-        columns=(
-            SourceColumn(name=feature.name, type=feature.sql_type)
-            for feature in features
-        ),
+        fields=[f.name for f in features],
     )
 
     return SourceTestkit(
-        source=source,
+        reader=reader,
         features=features,
         data=data,
         data_hashes=data_hashes,
@@ -466,7 +469,7 @@ def source_factory(
 
 @cache
 def linked_sources_factory(
-    source_configs: tuple[SourceConfig, ...] | None = None,
+    testkit_options: tuple[SourceTestkitOptions, ...] | None = None,
     n_true_entities: int | None = None,
     engine: Engine | None = None,
     seed: int = 42,
@@ -474,12 +477,12 @@ def linked_sources_factory(
     """Generate a set of linked sources with tracked entities.
 
     Args:
-        source_configs: Optional tuple of source configurations
+        testkit_options: Optional tuple of source testkit configurations
         n_true_entities: Optional number of true entities to generate. If provided,
-            overrides any n_true_entities in source configs. If not provided, each
-            SourceConfig must specify its own n_true_entities.
+            overrides any n_true_entities in testkit options. If not provided, each
+            SourceTestkitOptions must specify its own n_true_entities.
         engine: Optional SQLAlchemy engine to use for all sources. If provided,
-            overrides any engine in source configs.
+            overrides any engine in testkit options.
         seed: Random seed for reproducibility
     """
     generator = Faker()
@@ -487,8 +490,8 @@ def linked_sources_factory(
 
     default_engine = create_engine("sqlite:///:memory:")
 
-    if source_configs is None:
-        # Use factory parameter or default for default configs
+    if testkit_options is None:
+        # Use factory parameter or default
         n_true_entities = n_true_entities if n_true_entities is not None else 10
 
         features = {
@@ -517,8 +520,8 @@ def linked_sources_factory(
             ),
         }
 
-        source_configs = (
-            SourceConfig(
+        testkit_options = (
+            SourceTestkitOptions(
                 full_name="crn",
                 engine=engine or default_engine,
                 features=(
@@ -533,7 +536,7 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities,
                 repetition=0,
             ),
-            SourceConfig(
+            SourceTestkitOptions(
                 full_name="duns",
                 engine=engine or default_engine,
                 features=(
@@ -543,7 +546,7 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities // 2,
                 repetition=0,
             ),
-            SourceConfig(
+            SourceTestkitOptions(
                 full_name="cdms",
                 engine=engine or default_engine,
                 features=(
@@ -556,48 +559,48 @@ def linked_sources_factory(
         )
     else:
         if n_true_entities is not None:
-            # Factory parameter provided - warn if configs have values set
-            config_entities = [config.n_true_entities for config in source_configs]
+            # Factory parameter provided - warn if options have values set
+            config_entities = [options.n_true_entities for options in testkit_options]
             if any(n is not None for n in config_entities):
                 warnings.warn(
-                    "Both source configs and linked_sources_factory specify "
+                    "Both testkit options and linked_sources_factory specify "
                     "n_true_entities. The factory parameter will be used.",
                     UserWarning,
                     stacklevel=2,
                 )
-            # Override all configs with factory parameter
-            source_configs = tuple(
-                SourceConfig(
-                    full_name=config.full_name,
-                    engine=engine or config.engine,
-                    features=config.features,
-                    repetition=config.repetition,
+            # Override all options with factory parameter
+            testkit_options = tuple(
+                SourceTestkitOptions(
+                    full_name=options.full_name,
+                    engine=engine or options.engine,
+                    features=options.features,
+                    repetition=options.repetition,
                     n_true_entities=n_true_entities,
                 )
-                for config in source_configs
+                for options in testkit_options
             )
         else:
-            # No factory parameter - check all configs have n_true_entities set
+            # No factory parameter - check all options have n_true_entities set
             missing_counts = [
-                config.full_name
-                for config in source_configs
-                if config.n_true_entities is None
+                options.full_name
+                for options in testkit_options
+                if options.n_true_entities is None
             ]
             if missing_counts:
                 raise ValueError(
                     "n_true_entities not set for sources: "
                     f"{', '.join(missing_counts)}. When factory n_true_entities is "
-                    "not provided, all configs must specify it."
+                    "not provided, all options must specify it."
                 )
 
     # Collect all unique features
     all_features = set()
-    for config in source_configs:
-        all_features.update(config.features)
+    for options in testkit_options:
+        all_features.update(options.features)
     all_features = tuple(sorted(all_features, key=lambda f: f.name))
 
     # Find maximum number of entities needed across all sources
-    max_entities = max(config.n_true_entities for config in source_configs)
+    max_entities = max(options.n_true_entities for options in testkit_options)
 
     # Generate all possible entities
     all_entities = generate_entities(
@@ -612,13 +615,13 @@ def linked_sources_factory(
     )
 
     # Generate sources
-    for config in source_configs:
+    for options in testkit_options:
         # Generate source data using seed entities
         data, data_hashes, entity_pks, row_pks = generate_source(
             generator=generator,
-            features=tuple(config.features),
-            n_true_entities=config.n_true_entities,
-            repetition=config.repetition,
+            features=tuple(options.features),
+            n_true_entities=options.n_true_entities,
+            repetition=options.repetition,
             seed_entities=all_entities,
         )
 
@@ -626,27 +629,23 @@ def linked_sources_factory(
         results_entities = [
             ClusterEntity(
                 id=row_id,
-                source_pks=EntityReference({config.full_name: frozenset(pks)}),
+                source_pks=EntityReference({options.full_name: frozenset(pks)}),
             )
             for row_id, pks in row_pks.items()
         ]
 
-        # Create source
-        source = Source(
-            address=SourceAddress.compose(
-                full_name=config.full_name, engine=config.engine
-            ),
+        # Create source reader
+        reader = SourceReader(
+            engine=options.engine,
+            full_name=options.full_name,
             db_pk="pk",
-            columns=(
-                SourceColumn(name=feature.name, type=feature.sql_type)
-                for feature in config.features
-            ),
+            fields=[f.name for f in options.features],
         )
 
-        # Add source to linked.sources
-        linked.sources[config.full_name] = SourceTestkit(
-            source=source,
-            features=tuple(config.features),
+        # Add reader to linked.sources
+        linked.sources[options.full_name] = SourceTestkit(
+            reader=reader,
+            features=tuple(options.features),
             data=data,
             data_hashes=data_hashes,
             entities=tuple(sorted(results_entities)),
@@ -655,6 +654,6 @@ def linked_sources_factory(
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
             entity = true_entity_lookup[entity_id]
-            entity.add_source_reference(config.full_name, pks)
+            entity.add_source_reference(options.full_name, pks)
 
     return linked

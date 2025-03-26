@@ -59,7 +59,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -76,7 +76,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -96,7 +96,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -115,9 +115,9 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "index") as dag:
             crn_testkit = dag.sources.get("crn")
 
-            crn_retrieved = self.backend.get_source(crn_testkit.source.address)
+            crn_retrieved = self.backend.get_source(crn_testkit.source_config.address)
             # Equality between the two is False because one lacks the Engine
-            assert crn_testkit.source.model_dump() == crn_retrieved.model_dump()
+            assert crn_testkit.source_config.model_dump() == crn_retrieved.model_dump()
 
             with pytest.raises(MatchboxSourceNotFoundError):
                 self.backend.get_source(
@@ -212,7 +212,7 @@ class TestMatchboxBackend:
                     name="dedupe_1",
                     description="Test deduper 1",
                     type=ModelType.DEDUPER,
-                    left_resolution=crn_testkit.source.resolution_name,
+                    left_resolution=crn_testkit.source_config.resolution_name,
                 )
             )
             self.backend.insert_model(
@@ -220,7 +220,7 @@ class TestMatchboxBackend:
                     name="dedupe_2",
                     description="Test deduper 2",
                     type=ModelType.DEDUPER,
-                    left_resolution=duns_testkit.source.resolution_name,
+                    left_resolution=duns_testkit.source_config.resolution_name,
                 )
             )
 
@@ -371,15 +371,15 @@ class TestMatchboxBackend:
 
             assert self.backend.clusters.count() == 0
 
-            self.backend.index(crn_testkit.source, crn_testkit.data_hashes)
+            self.backend.index(crn_testkit.source_config, crn_testkit.data_hashes)
 
-            crn_retrieved = self.backend.get_source(crn_testkit.source.address)
+            crn_retrieved = self.backend.get_source(crn_testkit.source_config.address)
 
             # Equality between the two is False because one lacks the Engine
-            assert crn_testkit.source.model_dump() == crn_retrieved.model_dump()
+            assert crn_testkit.source_config.model_dump() == crn_retrieved.model_dump()
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             # I can add it again with no consequences
-            self.backend.index(crn_testkit.source, crn_testkit.data_hashes)
+            self.backend.index(crn_testkit.source_config, crn_testkit.data_hashes)
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 1
 
@@ -393,9 +393,9 @@ class TestMatchboxBackend:
             )
 
             assert self.backend.data.count() == 0
-            self.backend.index(crn_testkit.source, data_hashes_halved)
+            self.backend.index(crn_testkit.source_config, data_hashes_halved)
             assert self.backend.data.count() == data_hashes_halved.num_rows
-            self.backend.index(crn_testkit.source, crn_testkit.data_hashes)
+            self.backend.index(crn_testkit.source_config, crn_testkit.data_hashes)
             assert self.backend.data.count() == crn_testkit.data_hashes.num_rows
             assert self.backend.source_resolutions.count() == 1
 
@@ -404,19 +404,19 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
-            crn_source_1 = crn_testkit.source.model_copy(
+            crn_source_1 = crn_testkit.source_config.model_copy(
                 update={
                     "address": SourceAddress(
-                        full_name=crn_testkit.source.address.full_name,
+                        full_name=crn_testkit.source_config.address.full_name,
                         warehouse_hash=b"bar1",
                     )
                 }
             )
-            crn_source_2 = crn_testkit.source.model_copy(
+            crn_source_2 = crn_testkit.source_config.model_copy(
                 deep=True,
                 update={
                     "address": SourceAddress(
-                        full_name=crn_testkit.source.address.full_name,
+                        full_name=crn_testkit.source_config.address.full_name,
                         warehouse_hash=b"bar2",
                     )
                 },
@@ -434,11 +434,11 @@ class TestMatchboxBackend:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
             duns_testkit: SourceTestkit = dag.sources.get("duns")
 
-            self.backend.index(crn_testkit.source, crn_testkit.data_hashes)
+            self.backend.index(crn_testkit.source_config, crn_testkit.data_hashes)
             # Different source, same data
             # TODO: this will now error, and it shouldn't
             with pytest.raises(NotImplementedError):
-                self.backend.index(duns_testkit.source, crn_testkit.data_hashes)
+                self.backend.index(duns_testkit.source_config, crn_testkit.data_hashes)
 
     def test_query_only_source(self):
         """Test querying data from a link point of truth."""
@@ -446,14 +446,16 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn_sample = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 limit=10,
             )
 
             assert isinstance(df_crn_sample, pa.Table)
             assert df_crn_sample.num_rows == 10
 
-            df_crn_full = self.backend.query(source_address=crn_testkit.source.address)
+            df_crn_full = self.backend.query(
+                source_address=crn_testkit.source_config.address
+            )
 
             assert df_crn_full.num_rows == crn_testkit.query.num_rows
             assert set(df_crn_full.column_names) == {"id", "source_pk"}
@@ -464,7 +466,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -488,7 +490,7 @@ class TestMatchboxBackend:
             duns_testkit = dag.sources.get("duns")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -497,7 +499,7 @@ class TestMatchboxBackend:
             assert set(df_crn.column_names) == {"id", "source_pk"}
 
             df_duns = self.backend.query(
-                source_address=duns_testkit.source.address,
+                source_address=duns_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -525,7 +527,7 @@ class TestMatchboxBackend:
             cdms_testkit = dag.sources.get("cdms")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -534,7 +536,7 @@ class TestMatchboxBackend:
             assert set(df_crn.column_names) == {"id", "source_pk"}
 
             df_cdms = self.backend.query(
-                source_address=cdms_testkit.source.address,
+                source_address=cdms_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -548,12 +550,12 @@ class TestMatchboxBackend:
 
             # Test query with threshold
             df_crn_threshold = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name=linker_name,
                 threshold=100,
             )
             df_cdms_threshold = self.backend.query(
-                source_address=cdms_testkit.source.address,
+                source_address=cdms_testkit.source_config.address,
                 resolution_name=linker_name,
                 threshold=100,
             )
@@ -589,15 +591,15 @@ class TestMatchboxBackend:
 
             res = self.backend.match(
                 source_pk=next(iter(source_entity.source_pks["duns"])),
-                source=duns_testkit.source.address,
-                targets=[crn_testkit.source.address],
+                source=duns_testkit.source_config.address,
+                targets=[crn_testkit.source_config.address],
                 resolution_name=linker_name,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == duns_testkit.source.address
-            assert res[0].target == crn_testkit.source.address
+            assert res[0].source == duns_testkit.source_config.address
+            assert res[0].target == crn_testkit.source_config.address
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.source_pks["duns"]
             assert res[0].target_id == source_entity.source_pks["crn"]
@@ -621,15 +623,15 @@ class TestMatchboxBackend:
 
             res = self.backend.match(
                 source_pk=next(iter(source_entity.source_pks["crn"])),
-                source=crn_testkit.source.address,
-                targets=[duns_testkit.source.address],
+                source=crn_testkit.source_config.address,
+                targets=[duns_testkit.source_config.address],
                 resolution_name=linker_name,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.address
-            assert res[0].target == duns_testkit.source.address
+            assert res[0].source == crn_testkit.source_config.address
+            assert res[0].target == duns_testkit.source_config.address
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.source_pks["crn"]
             assert res[0].target_id == source_entity.source_pks["duns"]
@@ -653,15 +655,15 @@ class TestMatchboxBackend:
 
             res = self.backend.match(
                 source_pk=next(iter(source_entity.source_pks["crn"])),
-                source=crn_testkit.source.address,
-                targets=[duns_testkit.source.address],
+                source=crn_testkit.source_config.address,
+                targets=[duns_testkit.source_config.address],
                 resolution_name=linker_name,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.address
-            assert res[0].target == duns_testkit.source.address
+            assert res[0].source == crn_testkit.source_config.address
+            assert res[0].target == duns_testkit.source_config.address
             assert res[0].cluster is not None
             assert res[0].source_id == source_entity.source_pks["crn"]
             assert res[0].target_id == source_entity.source_pks.get("duns", set())
@@ -678,15 +680,15 @@ class TestMatchboxBackend:
 
             res = self.backend.match(
                 source_pk=non_existent_pk,
-                source=crn_testkit.source.address,
-                targets=[duns_testkit.source.address],
+                source=crn_testkit.source_config.address,
+                targets=[duns_testkit.source_config.address],
                 resolution_name=linker_name,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.address
-            assert res[0].target == duns_testkit.source.address
+            assert res[0].source == crn_testkit.source_config.address
+            assert res[0].target == duns_testkit.source_config.address
             assert res[0].cluster is None
             assert res[0].source_id == set()
             assert res[0].target_id == set()
@@ -710,16 +712,16 @@ class TestMatchboxBackend:
 
             res = self.backend.match(
                 source_pk=next(iter(source_entity.source_pks["crn"])),
-                source=crn_testkit.source.address,
-                targets=[cdms_testkit.source.address],
+                source=crn_testkit.source_config.address,
+                targets=[cdms_testkit.source_config.address],
                 resolution_name=linker_name,
                 threshold=100,
             )
 
             assert len(res) == 1
             assert isinstance(res[0], Match)
-            assert res[0].source == crn_testkit.source.address
-            assert res[0].target == cdms_testkit.source.address
+            assert res[0].source == crn_testkit.source_config.address
+            assert res[0].target == cdms_testkit.source_config.address
             assert res[0].source_id == source_entity.source_pks["crn"]
             # Match does not return true target ids when threshold
             # exceeds match probability
@@ -771,7 +773,7 @@ class TestMatchboxBackend:
 
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
             sample_ids_before = df_crn_before["id"].to_pylist()[:5]  # Take first 5 IDs
@@ -805,7 +807,7 @@ class TestMatchboxBackend:
 
             # Verify specific data was restored correctly
             df_crn_after = self.backend.query(
-                source_address=crn_testkit.source.address,
+                source_address=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
             sample_ids_after = df_crn_after["id"].to_pylist()[:5]  # Take first 5 IDs

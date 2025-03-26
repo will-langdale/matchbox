@@ -38,7 +38,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.base import BackendManager, MatchboxDBAdapter
@@ -312,7 +312,7 @@ async def match(
 
 
 @app.post("/sources", status_code=status.HTTP_202_ACCEPTED)
-async def add_source(source: Source) -> UploadStatus:
+async def add_source(source: SourceConfig) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
     upload_id = metadata_store.cache_source(metadata=source)
     return metadata_store.get(cache_id=upload_id).status
@@ -326,7 +326,7 @@ async def get_source(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     warehouse_hash_b64: str,
     full_name: str,
-) -> Source:
+) -> SourceConfig:
     """Get a source from the backend."""
     address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
     try:

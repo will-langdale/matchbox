@@ -24,7 +24,9 @@ class TestkitDAG(BaseModel):
     @property
     def source_address_to_name(self) -> dict[str, str]:
         """Map source address string to source key."""
-        return {str(tk.source.address): name for name, tk in self.sources.items()}
+        return {
+            str(tk.source_config.address): name for name, tk in self.sources.items()
+        }
 
     def _validate_unique_name(self, name: str) -> str:
         """Ensure a name is unique across all testkits."""

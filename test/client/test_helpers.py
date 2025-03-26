@@ -13,6 +13,7 @@ from matchbox import index, match, process, query
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match, Selector
+from matchbox.client.warehouse import SourceReader
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
@@ -31,7 +32,7 @@ from matchbox.common.factories.sources import (
 )
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceAddress, SourceConfig
 
 
 def test_cleaners():
@@ -91,21 +92,17 @@ def test_select_default_engine(
 
     # Set up mocks and test data
     testkit = source_factory(full_name="bar", engine=sqlite_warehouse)
-    source = testkit.source
 
     matchbox_api.get(
-        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/bar"
-    ).mock(return_value=Response(200, content=source.model_dump_json()))
-
-    testkit.to_warehouse(engine=sqlite_warehouse)
+        f"/sources/{hash_to_base64(testkit.source_config.address.warehouse_hash)}/bar"
+    ).mock(return_value=Response(200, content=testkit.source_config.model_dump_json()))
 
     # Select sources
     selection = select("bar")
 
     # Check they contain what we expect
-    assert selection[0].source.model_dump() == source.model_dump()
-    # Check the engine is set by the selector
-    assert selection[0].source.engine.url == sqlite_warehouse.url
+    assert selection[0].source.model_dump()
+    assert selection[0].engine.url == sqlite_warehouse.url
 
 
 def test_select_missing_engine():
@@ -128,8 +125,8 @@ def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         f"/sources/{hash_to_base64(source2.address.warehouse_hash)}/cdms"
     ).mock(return_value=Response(200, content=source2.model_dump_json()))
 
-    linked.sources["crn"].to_warehouse(engine=sqlite_warehouse)
-    linked.sources["cdms"].to_warehouse(engine=sqlite_warehouse)
+    linked.sources["crn"].to_warehouse()
+    linked.sources["cdms"].to_warehouse()
 
     selection = select({"crn": ["company_name"]}, "cdms", engine=sqlite_warehouse)
 
@@ -141,44 +138,11 @@ def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     assert selection[1].source.engine == sqlite_warehouse
 
 
-def test_select_non_indexed_columns(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Selecting columns not declared to backend generates warning."""
-    source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
-
-    source = source_testkit.source
-    source = source.model_copy(update={"columns": source.columns[:1]})
-
-    matchbox_api.get(
-        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"
-    ).mock(return_value=Response(200, content=source.model_dump_json()))
-
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
-
-    with pytest.warns(Warning):
-        select({"foo": ["company_name", "crn"]}, engine=sqlite_warehouse)
-
-
-def test_select_missing_columns(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Selecting columns not in the warehouse errors."""
-    source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
-
-    source = source_testkit.source
-
-    matchbox_api.get(
-        f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"
-    ).mock(return_value=Response(200, content=source.model_dump_json()))
-
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
-
-    with pytest.raises(ValueError):
-        select(
-            {"foo": ["company_name", "non_existent_column"]}, engine=sqlite_warehouse
-        )
-
-
-@patch.object(Source, "to_arrow")
+@patch.object(SourceReader, "query")
 def test_query_no_resolution_ok_various_params(
-    to_arrow: Mock, matchbox_api: MockRouter
+    reader_query: Mock,
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
 ):
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
     # Mock API
@@ -197,8 +161,8 @@ def test_query_no_resolution_ok_various_params(
         )
     )
 
-    # Mock `Source.to_arrow`
-    to_arrow.return_value = pa.Table.from_arrays(
+    # Mock `Source.query()`
+    reader_query.return_value = pa.Table.from_arrays(
         [
             pa.array(["0", "1"], type=pa.large_string()),
             pa.array([1, 10], type=pa.int64()),
@@ -207,48 +171,47 @@ def test_query_no_resolution_ok_various_params(
         names=["foo_pk", "foo_a", "foo_b"],
     )
 
-    # Well-formed selector for these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    # Define selectors
+    selectors = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Tests with no optional params
-    results = query(sels)
+    results = query(selectors)
     assert len(results) == 2
     assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
-        "full_name": sels[0].source.address.full_name,
-        "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
+        "full_name": "foo",
+        "warehouse_hash_b64": hash_to_base64(
+            SourceAddress.compose(
+                engine=sqlite_warehouse, full_name="foo"
+            ).warehouse_hash
+        ),
     }
-    to_arrow.assert_called_once()
-    assert set(to_arrow.call_args.kwargs["fields"]) == {"a", "b"}
-    assert set(to_arrow.call_args.kwargs["pks"]) == {"0", "1"}
+    reader_query.assert_called_once()
+    assert set(reader_query.call_args.kwargs["fields"]) == {"a", "b"}
+    assert set(reader_query.call_args.kwargs["pks"]) == {"0", "1"}
 
     # Tests with optional params
-    results = query(sels, return_type="arrow", threshold=50, limit=2).to_pandas()
+    results = query(selectors, return_type="arrow", threshold=50, limit=2).to_pandas()
     assert len(results) == 2
     assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
-        "full_name": sels[0].source.address.full_name,
-        "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
+        "full_name": "foo",
+        "warehouse_hash_b64": hash_to_base64(
+            SourceAddress.compose(
+                engine=sqlite_warehouse, full_name="foo"
+            ).warehouse_hash
+        ),
         "threshold": "50",
         "limit": "2",
     }
 
 
-@patch.object(Source, "to_arrow")
-def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRouter):
+@patch.object(SourceReader, "query")
+def test_query_multiple_sources_with_limits(
+    reader_query: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
     """Tests that we can query multiple sources and distribute the limit among them."""
     # Mock API
     query_route = matchbox_api.get("/query").mock(
@@ -278,11 +241,11 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
                 ).read(),
             ),
         ]
-        * 2  # 2 calls to `query()` in this test, each querying server twice
+        * 2  # 2 calls to `matchbox.query()` in this test, each querying server twice
     )
 
-    # Mock `Source.to_arrow`
-    to_arrow.side_effect = [
+    # Mock `SourceReader.query`
+    reader_query.side_effect = [
         pa.Table.from_arrays(
             [
                 pa.array(["0", "1"], type=pa.large_string()),
@@ -298,30 +261,13 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
             ],
             names=["foo2_pk", "foo2_c"],
         ),
-    ] * 2  # 2 calls to `query()` in this test, each dealing with 2 sources
+    ] * 2  # 2 calls to `matchbox.query()` in this test, each dealing with 2 sources
 
     # Well-formed select from these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-        ),
-        Selector(
-            source=Source(
-                address=SourceAddress(full_name="foo2", warehouse_hash=b"bar2"),
-                db_pk="pk",
-            ),
-            fields=["c"],
-        ),
-    ]
+    selectors = select("foo", {"foo2": ["c"]}, engine=sqlite_warehouse)
 
     # Validate results
-    results = query(sels, limit=7)
+    results = query(selectors, limit=7)
     assert len(results) == 4
     assert {
         # All columns automatically selected for `foo`
@@ -335,29 +281,40 @@ def test_query_multiple_sources_with_limits(to_arrow: Mock, matchbox_api: MockRo
     } == set(results.columns)
 
     assert dict(query_route.calls[-2].request.url.params) == {
-        "full_name": sels[0].source.address.full_name,
-        "warehouse_hash_b64": hash_to_base64(sels[0].source.address.warehouse_hash),
+        "full_name": "foo",
+        "warehouse_hash_b64": hash_to_base64(
+            SourceAddress.compose(
+                full_name="foo", engine=sqlite_warehouse
+            ).warehouse_hash
+        ),
         "resolution_name": DEFAULT_RESOLUTION,
         "limit": "4",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
-        "full_name": sels[1].source.address.full_name,
-        "warehouse_hash_b64": hash_to_base64(sels[1].source.address.warehouse_hash),
+        "full_name": "foo2",
+        "warehouse_hash_b64": hash_to_base64(
+            SourceAddress.compose(
+                full_name="foo2", engine=sqlite_warehouse
+            ).warehouse_hash
+        ),
         "resolution_name": DEFAULT_RESOLUTION,
         "limit": "3",
     }
 
     # It also works with the selectors specified separately
-    query([sels[0]], [sels[1]], limit=7)
+    query(selectors[0], selectors[1], limit=7)
 
 
 @pytest.mark.parametrize(
     "combine_type",
     ["set_agg", "explode"],
 )
-@patch.object(Source, "to_arrow")
+@patch.object(SourceReader, "query")
 def test_query_combine_type(
-    to_arrow: Mock, combine_type: str, matchbox_api: MockRouter
+    reader_query: Mock,
+    combine_type: str,
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
 ):
     """Various ways of combining multiple sources are supported."""
     # Mock API
@@ -393,8 +350,8 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    # Mock `Source.to_arrow`
-    to_arrow.side_effect = [
+    # Mock `SourceReader.query()`
+    reader_query.side_effect = [
         pa.Table.from_arrays(
             [
                 pa.array(["0", "1", "2"], type=pa.large_string()),
@@ -412,23 +369,10 @@ def test_query_combine_type(
     ]  # two sources to query
 
     # Well-formed select from these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-                db_pk="pk",
-            ),
-        ),
-        Selector(
-            source=Source(
-                address=SourceAddress(full_name="bar", warehouse_hash=b"wh"),
-                db_pk="pk",
-            ),
-        ),
-    ]
+    selectors = select("foo", "bar", engine=sqlite_warehouse)
 
     # Validate results
-    results = query(sels, combine_type=combine_type)
+    results = query(selectors, combine_type=combine_type)
 
     if combine_type == "set_agg":
         expected_len = 3
@@ -450,7 +394,7 @@ def test_query_combine_type(
     } == set(results.columns)
 
 
-def test_query_404_resolution(matchbox_api: MockRouter):
+def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Mock API
     matchbox_api.get("/query").mock(
         return_value=Response(
@@ -463,25 +407,15 @@ def test_query_404_resolution(matchbox_api: MockRouter):
     )
 
     # Well-formed selector for these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+
+    selectors = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-        query(sels)
+        query(selectors)
 
 
-def test_query_404_source(matchbox_api: MockRouter):
+def test_query_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Mock API
     matchbox_api.get("/query").mock(
         return_value=Response(
@@ -494,22 +428,11 @@ def test_query_404_source(matchbox_api: MockRouter):
     )
 
     # Well-formed selector for these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    selectors = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
-        query(sels)
+        query(selectors)
 
 
 def test_query_with_batches(matchbox_api: MockRouter):
@@ -585,18 +508,13 @@ def test_query_with_batches(matchbox_api: MockRouter):
     assert len(remaining_batches) == 1
 
 
-@patch("matchbox.client.helpers.index.Source")
-def test_index_success(
-    MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
+def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Test successful indexing flow through the API."""
-    # Mock Source
-    source = source_factory(
+    # Mock SourceReader
+    testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
     )
-    mock_source_instance = source.mock
-    MockSource.return_value = mock_source_instance
 
     # Mock the initial source metadata upload
     source_route = matchbox_api.post("/sources").mock(
@@ -622,53 +540,51 @@ def test_index_success(
 
     # Call the index function
     index(
-        full_name=source.source.address.full_name,
-        db_pk=source.source.db_pk,
+        full_name=testkit.reader.address.full_name,
+        db_pk=testkit.reader.db_pk,
         engine=sqlite_warehouse,
+        # Specifying the fields means we avoid looking at the warehouse
+        columns=testkit.reader.fields,
     )
 
     # Verify the API calls
-    source_call = Source.model_validate_json(
+    source_call = SourceConfig.model_validate_json(
         source_route.calls.last.request.content.decode("utf-8")
     )
-    assert source_call == source.source
+    assert source_call == testkit.reader.source_config()
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@patch("matchbox.client.helpers.index.Source")
+@patch("matchbox.client.helpers.index.SourceReader")
 @pytest.mark.parametrize(
     "columns",
     [
         pytest.param(["name", "age"], id="string_columns"),
-        pytest.param(
-            [
-                {"name": "name", "alias": "person_name", "type": "TEXT"},
-                {"name": "age", "alias": "person_age", "type": "BIGINT"},
-            ],
-            id="dict_columns",
-        ),
         pytest.param(None, id="default_columns"),
     ],
 )
 def test_index_with_columns(
-    MockSource: Mock,
+    MockSourceReader: Mock,
     matchbox_api: MockRouter,
-    columns: list[str] | list[dict[str, str]],
+    columns: list[str] | None,
     sqlite_warehouse: Engine,
 ):
     """Test indexing with different column definition formats."""
     # Create source testkit and mock
-    source = source_factory(
+    testkit = source_factory(
         features=[
             {"name": "name", "base_generator": "name"},
             {"name": "age", "base_generator": "random_int"},
         ],
         engine=sqlite_warehouse,
     )
-    mock_source_instance = source.mock
-    MockSource.return_value = mock_source_instance
+    mock_reader_instance = testkit.mock_reader
+    # The mocked SourceReader class will return the testkit's mock reader.
+    # This stops columns being read from the warehouse when index creates a
+    # SourceReader without giving it fields
+    MockSourceReader.return_value = mock_reader_instance
 
     # Mock the API endpoints
     source_route = matchbox_api.post("/sources").mock(
@@ -693,40 +609,36 @@ def test_index_with_columns(
 
     # Call index with column definition
     index(
-        full_name=source.source.address.full_name,
-        db_pk=source.source.db_pk,
+        full_name=testkit.reader.address.full_name,
+        db_pk=testkit.reader.db_pk,
         engine=sqlite_warehouse,
         columns=columns,
     )
 
     # Verify API calls and source creation
     assert source_route.called
-    source_call = Source.model_validate_json(
+    source_call = SourceConfig.model_validate_json(
         source_route.calls.last.request.content.decode("utf-8")
     )
-    assert source_call == source.source
+    assert source_call == testkit.reader.source_config()
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
-    mock_source_instance.set_engine.assert_called_once_with(sqlite_warehouse)
+
     if columns:
-        mock_source_instance.default_columns.assert_not_called()
+        mock_reader_instance.remote_columns.assert_not_called()
     else:
-        mock_source_instance.default_columns.assert_called_once()
+        mock_reader_instance.remote_columns.assert_called_once()
 
 
 @patch("matchbox.client.helpers.index.Source")
-def test_index_upload_failure(
-    MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
+def test_index_upload_failure(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Test handling of upload failures."""
     # Mock Source
-    source = source_factory(
+    testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
     )
-    mock_source_instance = source.mock
-    MockSource.return_value = mock_source_instance
 
     # Mock successful source creation
     source_route = matchbox_api.post("/sources").mock(
@@ -756,16 +668,17 @@ def test_index_upload_failure(
     # Verify the error is propagated
     with pytest.raises(MatchboxServerFileError):
         index(
-            full_name=source.source.address.full_name,
-            db_pk=source.source.db_pk,
+            full_name=testkit.reader.address.full_name,
+            db_pk=testkit.reader.db_pk,
             engine=sqlite_warehouse,
+            columns=testkit.reader.fields,
         )
 
     # Verify API calls
-    source_call = Source.model_validate_json(
+    source_call = SourceConfig.model_validate_json(
         source_route.calls.last.request.content.decode("utf-8")
     )
-    assert source_call == source.source
+    assert source_call == testkit.reader.source_config()
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
@@ -773,23 +686,23 @@ def test_index_upload_failure(
 
 @patch("matchbox.client.helpers.index.Source")
 def test_index_with_batch_size(
-    MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
+    MockSourceReader: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Test that batch_size is passed correctly to hash_data when indexing."""
     # Mock Source
-    source = source_factory(
+    testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
     )
-    mock_source_instance = source.mock
+    mock_reader_instance = testkit.mock_reader
     # Mock hash_data to capture the batch_size parameter
-    mock_source_instance.hash_data.return_value = pa.table(
+    mock_reader_instance.hash_data.return_value = pa.table(
         {
             "source_pk": [["1", "2"]],
             "hash": pa.array([b"hash1"], type=pa.binary()),
         }
     )
-    MockSource.return_value = mock_source_instance
+    MockSourceReader.return_value = mock_reader_instance
 
     # Mock the API endpoints
     matchbox_api.post("/sources").mock(
@@ -814,19 +727,20 @@ def test_index_with_batch_size(
 
     # Call index with batch_size
     index(
-        full_name=source.source.address.full_name,
-        db_pk=source.source.db_pk,
+        full_name=testkit.reader.address.full_name,
+        db_pk=testkit.reader.db_pk,
         engine=sqlite_warehouse,
         batch_size=1000,
+        columns=testkit.reader.fields,
     )
 
     # Verify batch_size was passed to hash_data
-    mock_source_instance.hash_data.assert_called_once()
-    assert mock_source_instance.hash_data.call_args.kwargs["iter_batches"] is True
-    assert mock_source_instance.hash_data.call_args.kwargs["batch_size"] == 1000
+    mock_reader_instance.hash_data.assert_called_once()
+    assert mock_reader_instance.hash_data.call_args.kwargs["iter_batches"] is True
+    assert mock_reader_instance.hash_data.call_args.kwargs["batch_size"] == 1000
 
 
-def test_match_ok(matchbox_api: MockRouter):
+def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can perform the right call for matching."""
     # Set up mocks
     mock_match1 = Match(
@@ -853,43 +767,9 @@ def test_match_ok(matchbox_api: MockRouter):
     )
 
     # Use match function
-    source = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.source",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
-    target1 = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.target1",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
-
-    target2 = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.target2",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    source = select({"test.source": ["a", "b"]}, engine=sqlite_warehouse)
+    target1 = select({"test.target1": ["a", "b"]}, engine=sqlite_warehouse)
+    target2 = select({"test.target2": ["a", "b"]}, engine=sqlite_warehouse)
 
     res = match(
         target1,
@@ -917,7 +797,7 @@ def test_match_ok(matchbox_api: MockRouter):
     )
 
 
-def test_match_404_resolution(matchbox_api: MockRouter):
+def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a resolution not found error."""
     # Set up mocks
     matchbox_api.get("/match").mock(
@@ -931,30 +811,8 @@ def test_match_404_resolution(matchbox_api: MockRouter):
     )
 
     # Use match function
-    source = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.source",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
-    target = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.target1",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    source = select({"test.source": ["a", "b"]}, engine=sqlite_warehouse)
+    target = select({"test.target": ["a", "b"]}, engine=sqlite_warehouse)
 
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         match(
@@ -965,7 +823,7 @@ def test_match_404_resolution(matchbox_api: MockRouter):
         )
 
 
-def test_match_404_source(matchbox_api: MockRouter):
+def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a source not found error."""
     # Set up mocks
     matchbox_api.get("/match").mock(
@@ -979,30 +837,8 @@ def test_match_404_source(matchbox_api: MockRouter):
     )
 
     # Use match function
-    source = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.source",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
-    target = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.target1",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    source = select({"test.source": ["a", "b"]}, engine=sqlite_warehouse)
+    target = select({"test.target": ["a", "b"]}, engine=sqlite_warehouse)
 
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
         match(

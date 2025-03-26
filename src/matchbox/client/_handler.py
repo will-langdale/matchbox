@@ -9,7 +9,7 @@ from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.client._settings import ClientSettings, settings
-from matchbox.client.helpers.selector import SourceReader
+from matchbox.client.warehouse import SourceReader
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,

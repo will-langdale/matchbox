@@ -27,7 +27,7 @@ from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 from matchbox.server import app
 from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.base import MatchboxDBAdapter
@@ -439,16 +439,16 @@ def test_match_404_source(get_backend: Mock):
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_get_source(get_backend):
-    source_testkit = Source(
+    source_config = SourceConfig(
         address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="pk"
     )
     mock_backend = Mock()
-    mock_backend.get_source = Mock(return_value=source_testkit)
+    mock_backend.get_source = Mock(return_value=source_config)
     get_backend.return_value = mock_backend
 
     response = client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
     assert response.status_code == 200
-    assert Source.model_validate(response.json())
+    assert SourceConfig.model_validate(response.json())
 
 
 @patch("matchbox.server.base.BackendManager.get_backend")
@@ -473,7 +473,7 @@ def test_add_source(get_backend: Mock):
     source_testkit = source_factory()
 
     # Make request
-    response = client.post("/sources", json=source_testkit.source.model_dump())
+    response = client.post("/sources", json=source_testkit.source_config.model_dump())
 
     # Validate response
     assert UploadStatus.model_validate(response.json())
@@ -502,9 +502,14 @@ async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
 
     # Create test data
     source_testkit = source_factory()
+    # Using mock reader to avoid hitting the warehouse when reading column types
+    source_config = source_testkit.mock_reader.source_config()
 
     # Step 1: Add source
-    response = client.post("/sources", json=source_testkit.source.model_dump())
+    response = client.post(
+        "/sources",
+        json=source_config.model_dump(),
+    )
     assert response.status_code == 202
     upload_id = response.json()["id"]
     assert response.json()["status"] == "awaiting_upload"
@@ -551,7 +556,8 @@ async def test_complete_source_upload_process(get_backend: Mock, s3: S3Client):
     # Verify backend.index was called with correct arguments
     mock_backend.index.assert_called_once()
     call_args = mock_backend.index.call_args
-    assert call_args[1]["source"] == source_testkit.source  # Check source matches
+
+    assert call_args[1]["source"] == source_config  # Check source matches
     assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
 
     # Verify file is deleted from S3 after processing

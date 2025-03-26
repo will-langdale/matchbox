@@ -1,6 +1,6 @@
 """Utilities to interact with a data warehouse."""
 
-from typing import Any, Iterator, TypeVar
+from typing import Any, Iterator, Literal, TypeVar
 
 import polars as pl
 import pyarrow as pa
@@ -55,7 +55,7 @@ class SourceReader:
         engine: Engine,
         full_name: str,
         db_pk: str,
-        fields: list[str] | None = None,
+        fields: list[str] | Literal["*"],
     ):
         """Create new `SourceReader`.
 
@@ -63,27 +63,21 @@ class SourceReader:
             engine: Engine to use in `SourceAddress` and to connect to warehouse.
             full_name: Full name of the source in the warehouse.
             db_pk: name of the field corresponding to the primary key for each row.
-            fields: optional subset of fields in the source.
-                If not set, it will use all fields in the warehouse except for db_pk
+            fields: subset of fields in the source, or star symbol.
+                If the star symbol, it uses all fields in the warehouse except db_pk
         """
-        self.engine = self.engine
+        self.engine = engine
         self.address = SourceAddress.compose(engine=engine, full_name=full_name)
         self.db_pk = db_pk
 
-        warehouse_fields = set(self.remote_fields().keys()) - {self.db_pk}
-
-        if fields:
-            selected_fields = set(fields)
-            if not selected_fields <= warehouse_fields:
-                diff_fields = selected_fields - warehouse_fields
-                raise ValueError(
-                    f"{diff_fields} not selectable from {str(self.address)}"
-                )
+        if isinstance(fields, list):
             self.fields = fields
-        else:
+        elif fields == "*":
             self.fields = (col_name for col_name in self.remote_fields().keys())
+        else:
+            raise ValueError("fields must be a list of strings or the star symbol")
 
-    def to_table(self) -> Table:
+    def _to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
         db_schema, db_table = get_schema_table_names(self.address.full_name)
         metadata = MetaData(schema=db_schema)
@@ -107,6 +101,12 @@ class SourceReader:
         limit: int | None = None,
     ) -> Select:
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
+        selected_fields = set(self.fields)
+        warehouse_fields = set(self.remote_fields().keys()) - {self.db_pk}
+        if not selected_fields <= warehouse_fields:
+            diff_fields = selected_fields - warehouse_fields
+            raise ValueError(f"{diff_fields} not selectable from {str(self.address)}")
+
         table = self._to_table()
 
         def _get_field(col_name: str) -> ColumnElement:
@@ -117,12 +117,8 @@ class SourceReader:
                 return cast(col, String).label(label)
             return col
 
-        # Determine which columns to select
-        if self.fields:
-            fields = set(self.fields + self.db_pk)
-            select_cols = [_get_field(field) for field in fields]
-        else:
-            select_cols = [_get_field(col.name) for col in table.columns]
+        fields = set(self.fields + self.db_pk)
+        select_cols = [_get_field(field) for field in fields]
 
         stmt = sqlselect(*select_cols)
 
@@ -136,7 +132,7 @@ class SourceReader:
 
         return stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
 
-    def data(
+    def query(
         self,
         pks: list[T] | None = None,
         limit: int | None = None,

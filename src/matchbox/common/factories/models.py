@@ -31,8 +31,8 @@ from matchbox.common.factories.entities import (
     query_to_cluster_entities,
 )
 from matchbox.common.factories.sources import (
-    SourceConfig,
     SourceTestkit,
+    SourceTestkitOptions,
     linked_sources_factory,
 )
 from matchbox.common.transform import DisjointSet, graph_results
@@ -671,7 +671,7 @@ def model_factory(
             generating probabilities. Must be supplied if sources are given
         model_type: Type of the model, one of 'deduper' or 'linker'
             Defaults to deduper. Ignored if left_testkit or right_testkit are provided.
-        n_true_entities: Base number of entities to generate when using default configs.
+        n_true_entities: Base number of entities to generate when using default options.
             Defaults to 10. Ignored if left_testkit or right_testkit are provided.
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility
@@ -746,7 +746,7 @@ def model_factory(
 
         # Configure left source
         left_resolution = generator.unique.word()
-        left_config = SourceConfig(
+        left_options = SourceTestkitOptions(
             full_name="crn",
             engine=engine,
             features=(
@@ -762,11 +762,11 @@ def model_factory(
         )
 
         # Configure sources based on model type
-        source_configs = [left_config]
+        testkit_options = [left_options]
         if resolved_model_type == ModelType.LINKER:
             right_resolution = generator.unique.word()
-            source_configs.append(
-                SourceConfig(
+            testkit_options.append(
+                SourceTestkitOptions(
                     full_name="cdms",
                     features=(features["crn"], features["cdms"]),
                     repetition=1,
@@ -777,7 +777,7 @@ def model_factory(
 
         # Generate linked sources
         linked = linked_sources_factory(
-            source_configs=tuple(source_configs),
+            testkit_options=tuple(testkit_options),
             n_true_entities=n_true_entities,
             seed=seed,
         )

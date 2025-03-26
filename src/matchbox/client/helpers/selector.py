@@ -8,7 +8,7 @@ import pyarrow as pa
 from pandas import ArrowDtype
 from pyarrow import Table as ArrowTable
 from pyarrow import compute as pc
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
     Engine,
 )
@@ -26,9 +26,11 @@ from matchbox.common.sources import Match, SourceAddress
 class Selector(BaseModel):
     """A full source name, an engine and optionally a subset of fields to select."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     full_name: str
-    engine: Engine
     fields: list[str] | None = None
+    engine: Engine
 
 
 def select(

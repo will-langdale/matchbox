@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from matchbox.common.dtos import ModelAncestor, ModelMetadata
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -276,7 +276,7 @@ class MatchboxDBAdapter(ABC):
     # Data management
 
     @abstractmethod
-    def index(self, source: Source, data_hashes: Table) -> None:
+    def index(self, source: SourceConfig, data_hashes: Table) -> None:
         """Indexes to Matchbox a source dataset in your warehouse.
 
         Args:
@@ -286,7 +286,7 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_source(self, address: SourceAddress) -> Source:
+    def get_source(self, address: SourceAddress) -> SourceConfig:
         """Get a source from its name address.
 
         Args:

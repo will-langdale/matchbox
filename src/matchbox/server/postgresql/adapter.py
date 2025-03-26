@@ -15,7 +15,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
+from matchbox.common.sources import Match, SourceAddress, SourceColumn, SourceConfig
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -177,7 +177,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Data management
 
-    def index(self, source: Source, data_hashes: Table) -> None:  # noqa: D102
+    def index(self, source: SourceConfig, data_hashes: Table) -> None:  # noqa: D102
         insert_dataset(
             source=source,
             data_hashes=data_hashes,
@@ -185,7 +185,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
-    def get_source(self, address: SourceAddress) -> Source:  # noqa: D102
+    def get_source(self, address: SourceAddress) -> SourceConfig:  # noqa: D102
         with Session(MBDB.get_engine()) as session:
             source = (
                 session.query(Sources)
@@ -198,7 +198,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .first()
             )
             if source:
-                return Source(
+                return SourceConfig(
                     resolution_name=source.resolution_name,
                     address=address,
                     db_pk=source.id,

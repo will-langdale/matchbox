@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from matchbox.common.dtos import BackendUploadType, ModelMetadata, UploadStatus
 from matchbox.common.logging import logger
-from matchbox.common.sources import Source
+from matchbox.common.sources import SourceConfig
 from matchbox.server.api.arrow import s3_to_recordbatch
 from matchbox.server.base import MatchboxDBAdapter
 
@@ -20,7 +20,7 @@ class MetadataCacheEntry(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    metadata: Source | ModelMetadata
+    metadata: SourceConfig | ModelMetadata
     upload_type: BackendUploadType
     update_timestamp: datetime
     status: UploadStatus
@@ -56,7 +56,7 @@ class MetadataStore:
         if entry := self._store.get(cache_id):
             entry.update_timestamp = datetime.now()
 
-    def cache_source(self, metadata: Source) -> str:
+    def cache_source(self, metadata: SourceConfig) -> str:
         """Cache source metadata and return ID."""
         self._cleanup_if_needed()
         cache_id = str(uuid.uuid4())

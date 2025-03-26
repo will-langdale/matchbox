@@ -123,7 +123,7 @@ def test_source_factory_data_hashes_integrity():
     assert len(hashes_df["hash"].unique()) == expected_hash_groups
 
 
-def test_source_testkit_to_mock():
+def test_source_testkit_mock_reader():
     """Test that SourceTestkit.mock creates a correctly configured mock."""
     # Create a source testkit with some test data
     features = [
@@ -139,39 +139,26 @@ def test_source_testkit_to_mock():
     )
 
     # Create the mock
-    mock_source = source_testkit.mock
+    mock_reader = source_testkit.mock_reader
 
     # Test that method calls are tracked
-    mock_source.set_engine("test_engine")
-    mock_source.default_columns()
-    mock_source.hash_data()
+    mock_reader.remote_columns()
+    mock_reader.query()
+    mock_reader.hash_data()
 
-    mock_source.set_engine.assert_called_once_with("test_engine")
-    mock_source.default_columns.assert_called_once()
-    mock_source.hash_data.assert_called_once()
+    mock_reader.remote_columns.assert_called_once()
+    mock_reader.query.assert_called_once()
+    mock_reader.hash_data.assert_called_once()
 
     # Test method return values
-    assert mock_source.set_engine("test_engine") == mock_source
-    assert mock_source.default_columns() == mock_source
-    assert mock_source.hash_data() == source_testkit.data_hashes
+    assert len(mock_reader.remote_columns()) == len(source_testkit.reader.fields)
+    assert mock_reader.query() == mock_reader.query
+    assert mock_reader.hash_data() == source_testkit.data_hashes
 
-    # Test model dump methods
-    original_dump = source_testkit.source.model_dump()
-    mock_dump = mock_source.model_dump()
-    assert mock_dump == original_dump
-
-    original_json = source_testkit.source.model_dump_json()
-    mock_json = mock_source.model_dump_json()
-    assert mock_json == original_json
-
-    # Verify side effect functions were set correctly
-    mock_source.model_dump.assert_called_once()
-    mock_source.model_dump_json.assert_called_once()
-
-    # Test that to_table contains the correct data
-    assert mock_source.to_table == source_testkit.data
-    # Verify the number of rows matches what we created
-    assert mock_source.to_table.shape[0] == source_testkit.data.shape[0]
+    # Test derived source config
+    original_source_config = source_testkit.source_config.model_dump()
+    mock_source_config = mock_reader.source_config().model_dump()
+    assert mock_source_config == original_source_config
 
 
 def test_source_factory_mock_properties():
@@ -241,7 +228,7 @@ def test_entity_variations_tracking():
     ]
 
     source = source_factory(features=features, n_true_entities=2, seed=42)
-    source_name = source.source.address.full_name
+    source_name = source.reader.address.full_name
 
     # Process each ClusterEntity group
     for cluster_entity in source.entities:
@@ -288,7 +275,7 @@ def test_base_and_variation_entities():
     ]
 
     source = source_factory(features=features, n_true_entities=1, seed=42)
-    source_name = source.source.address.full_name
+    source_name = source.reader.address.full_name
 
     # Should have two ClusterEntity objects - one for base, one for variation
     assert len(source.entities) == 2
