@@ -93,16 +93,25 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
 def create_client(settings: ClientSettings) -> httpx.Client:
     """Create an HTTPX client with proper configuration."""
-    headers = {"X-Matchbox-Client-Version": version("matchbox_db")}
     return httpx.Client(
         base_url=settings.api_root,
         timeout=settings.timeout,
         event_hooks={"response": [handle_http_code]},
-        headers=headers,
+        headers=create_headers(settings),
     )
 
 
+def create_headers(settings: ClientSettings) -> dict[str, str]:
+    """Creates client headers."""
+    headers = {"X-Matchbox-Client-Version": version("matchbox_db")}
+    api_key = settings.api_key.get_secret_value()
+    if api_key is not None:
+        headers["X-API-Key"] = api_key
+    return headers
+
+
 CLIENT = create_client(settings=settings)
+
 
 # Retrieval
 
@@ -293,7 +302,8 @@ def set_model_ancestors_cache(
 ) -> ModelOperationStatus:
     """Set the ancestors cache for a model in Matchbox."""
     res = CLIENT.post(
-        f"/models/{name}/ancestors_cache", json=[a.model_dump() for a in ancestors]
+        f"/models/{name}/ancestors_cache",
+        json=[a.model_dump() for a in ancestors],
     )
     return ModelOperationStatus.model_validate(res.json())
 

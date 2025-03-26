@@ -33,7 +33,11 @@ class TestE2EAnalyticalUser:
     n_true_entities: int | None = None
 
     @pytest.fixture(autouse=True, scope="function")
-    def setup_environment(self, matchbox_client: Client, postgres_warehouse: Engine):
+    def setup_environment(
+        self,
+        matchbox_client: Client,
+        postgres_warehouse: Engine,
+    ):
         """Set up warehouse and database using fixtures."""
         # Store fixtures as class attributes for use in tests with self.*
         n_true_entities = 100
@@ -122,6 +126,7 @@ class TestE2EAnalyticalUser:
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
+
         assert response.status_code == 200, "Failed to clear matchbox database"
 
         yield
