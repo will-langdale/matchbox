@@ -10,7 +10,7 @@ from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import hash_values
+from matchbox.common.hash import hash_data, hash_values
 from matchbox.common.logging import WARNING, get_logger, logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
@@ -25,7 +25,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
+from matchbox.server.postgresql.utils.db import batch_ingest
 
 
 class HashIDMap:
@@ -109,7 +109,7 @@ def insert_dataset(
     db_logger = get_logger("sqlalchemy.engine")
     db_logger.setLevel(WARNING)
 
-    resolution_hash = source.signature
+    resolution_hash = hash_data(str(source.address))
 
     resolution_data = {
         "resolution_hash": resolution_hash,
@@ -162,7 +162,7 @@ def insert_dataset(
             .join(Sources)
             .join(Resolutions)
             .where(
-                Resolutions.resolution_hash == hash_to_hex_decode(source.signature),
+                Resolutions.name == source.resolution_name,
             )
         )
         existing_hashes = sql_to_df(
