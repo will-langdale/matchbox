@@ -1,3 +1,5 @@
+import copy
+
 import pandas as pd
 import pyarrow as pa
 import pytest
@@ -232,7 +234,8 @@ def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
 
 def test_source_hash_data(sqlite_warehouse: Engine):
     """A Source can output hashed versions of its rows."""
-    source_testkit = source_factory(
+    original = source_factory(
+        full_name="original",
         features=[
             {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
             {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
@@ -242,16 +245,51 @@ def test_source_hash_data(sqlite_warehouse: Engine):
         repetition=1,
     )
 
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
-    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+    reordered = copy.deepcopy(original)
+    reordered.source = original.source.model_copy(
+        update={
+            "address": original.source.address.model_copy(
+                update={"full_name": "reordered"}
+            ),
+            "columns": (original.source.columns[1], original.source.columns[0]),
+        }
+    )
 
-    res = source.hash_data().to_pandas()
-    assert len(res) == 2
-    assert len(res.source_pk.iloc[0]) == 2
-    assert len(res.source_pk.iloc[1]) == 2
+    renamed = copy.deepcopy(original)
+    renamed.data = renamed.data.rename_columns({"a": "x"})
+    renamed.source = original.source.model_copy(
+        update={
+            "address": original.source.address.model_copy(
+                update={"full_name": "renamed"}
+            ),
+            "columns": (
+                original.source.columns[0].model_copy(update={"name": "x"}),
+                original.source.columns[1],
+            ),
+        }
+    )
 
-    result = source.hash_data(iter_batches=True, batch_size=3)
-    assert isinstance(result, pa.Table)
+    original.to_warehouse(engine=sqlite_warehouse)
+    reordered.to_warehouse(engine=sqlite_warehouse)
+    renamed.to_warehouse(engine=sqlite_warehouse)
+
+    original_source = original.source.set_engine(sqlite_warehouse)
+    reordered_source = reordered.source.set_engine(sqlite_warehouse)
+    renamed_source = renamed.source.set_engine(sqlite_warehouse)
+
+    original_hash = original_source.hash_data(
+        iter_batches=True, batch_size=3
+    ).to_pandas()
+    reordered_hash = reordered_source.hash_data().to_pandas()
+    renamed_hash = renamed_source.hash_data().to_pandas()
+
+    # Hash have the right shape
+    assert len(original_hash) == 2
+    assert len(original_hash.source_pk.iloc[0]) == 2
+    assert len(original_hash.source_pk.iloc[1]) == 2
+    # Column order does not matter, column names do
+    assert original_hash.equals(reordered_hash)
+    assert not original_hash.equals(renamed_hash)
 
 
 @pytest.mark.parametrize(

@@ -415,7 +415,7 @@ class Source(BaseModel):
             )
 
             batch = batch.with_columns(
-                pl.col("raw_value")
+                pl.col("value_concat")
                 .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
                 .alias("hash")
             )
