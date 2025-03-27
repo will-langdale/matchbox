@@ -97,14 +97,16 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         right_table=mb_ids,
-        keys=selector.source.format_column(selector.source.db_pk),
+        keys=selector.address.format_column(selector.source.db_pk),
         right_keys="source_pk",
         join_type="inner",
     )
 
     # Apply field filtering if needed
     if selector.fields:
-        keep_cols = ["id"] + [selector.source.format_column(f) for f in selector.fields]
+        keep_cols = ["id"] + [
+            selector.address.format_column(f) for f in selector.fields
+        ]
         match_cols = [col for col in joined_table.column_names if col in keep_cols]
         return joined_table.select(match_cols)
     else:

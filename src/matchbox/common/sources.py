@@ -103,6 +103,17 @@ class SourceAddress(BaseModel):
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
 
+    def format_column(self, column: str) -> str:
+        """Outputs a full SQLAlchemy column representation.
+
+        Args:
+            column: the name of the column
+
+        Returns:
+            A string representing the table name and column
+        """
+        return fullname_to_prefix(self.full_name) + column
+
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator to check that engine is set."""
@@ -187,17 +198,6 @@ class Source(BaseModel):
         )
         return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
-    def format_column(self, column: str) -> str:
-        """Outputs a full SQLAlchemy column representation.
-
-        Args:
-            column: the name of the column
-
-        Returns:
-            A string representing the table name and column
-        """
-        return fullname_to_prefix(self.address.full_name) + column
-
     @needs_engine
     def _get_remote_columns(self) -> dict[str, str]:
         table = self.to_table()
@@ -274,7 +274,7 @@ class Source(BaseModel):
             """Helper to get a column with proper casting and labeling for PKs."""
             col = table.columns[col_name]
             if col_name == self.db_pk:
-                return cast(col, String).label(self.format_column(col_name))
+                return cast(col, String).label(self.address.format_column(col_name))
             return col
 
         # Determine which columns to select

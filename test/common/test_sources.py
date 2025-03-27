@@ -76,6 +76,15 @@ def test_source_address_compose():
     assert len(same_table_name_str) == 1
 
 
+def test_source_address_format_columns():
+    """Column names can get a standard prefix from a table name."""
+    address1 = SourceAddress(full_name="foo", warehouse_hash=b"bar")
+    address2 = SourceAddress(full_name="foo.bar", warehouse_hash=b"bar")
+
+    assert address1.format_column("col") == "foo_col"
+    assert address2.format_column("col") == "foo_bar_col"
+
+
 def test_source_set_engine(sqlite_warehouse: Engine):
     """Engine can be set on Source."""
     source_testkit = source_factory(
@@ -223,20 +232,6 @@ def test_source_hash_equality(sqlite_warehouse: Engine):
     assert source.engine != source_eq.engine
     assert source == source_eq
     assert hash(source) == hash(source_eq)
-
-
-def test_source_format_columns():
-    """Column names can get a standard prefix from a table name."""
-    source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="i"
-    )
-
-    source2 = Source(
-        address=SourceAddress(full_name="foo.bar", warehouse_hash=b"bar"), db_pk="i"
-    )
-
-    assert source1.format_column("col") == "foo_col"
-    assert source2.format_column("col") == "foo_bar_col"
 
 
 def test_source_default_columns(sqlite_warehouse: Engine):
