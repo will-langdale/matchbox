@@ -145,24 +145,6 @@ def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     assert selection[1].engine == sqlite_warehouse
 
 
-# def test_select_non_indexed_columns(matchbox_api: MockRouter,
-# sqlite_warehouse: Engine):
-#     """Selecting columns not declared to backend generates warning."""
-#     source_testkit = source_factory(full_name="foo", engine=sqlite_warehouse)
-
-#     source = source_testkit.source
-#     source = source.model_copy(update={"columns": source.columns[:1]})
-
-#     matchbox_api.get(
-#         f"/sources/{hash_to_base64(source.address.warehouse_hash)}/foo"
-#     ).mock(return_value=Response(200, content=source.model_dump_json()))
-
-#     source_testkit.to_warehouse(engine=sqlite_warehouse)
-
-#     with pytest.warns(Warning):
-#         select({"foo": ["company_name", "crn"]}, engine=sqlite_warehouse)
-
-
 def test_query_no_resolution_ok_various_params(
     matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
