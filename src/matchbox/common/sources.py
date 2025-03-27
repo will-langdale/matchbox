@@ -105,12 +105,25 @@ class SourceAddress(BaseModel):
 
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to ensure Engine is available to object."""
+    """Decorator to check Engine is set and uses it to validate columns."""
 
     @wraps(func)
     def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.engine:
             raise MatchboxSourceEngineError
+
+        remote_columns = self._get_remote_columns()
+        for col in self.columns:
+            if col.name not in remote_columns:
+                raise MatchboxSourceColumnError(
+                    f"Column {col.name} not available in {self.address.full_name}"
+                )
+            actual_type = str(remote_columns[col.name])
+            if actual_type != col.type:
+                raise MatchboxSourceColumnError(
+                    f"Type {actual_type} != {col.type} for {col.name}"
+                )
+
         return func(self, *args, **kwargs)
 
     return wrapper
@@ -171,22 +184,10 @@ class Source(BaseModel):
             full_name=self.address.full_name, engine=engine
         )
         if implied_address != self.address:
-            raise ValueError(
-                "The engine must be the same that was used to index the source"
-            )
+            raise ValueError("The engine does not match the source address.")
 
         self._engine = engine
-        remote_columns = self._get_remote_columns()
-        for col in self.columns:
-            if col.name not in remote_columns:
-                raise MatchboxSourceColumnError(
-                    f"Column {col.name} not available in {self.address.full_name}"
-                )
-            actual_type = str(remote_columns[col.name])
-            if actual_type != col.type:
-                raise MatchboxSourceColumnError(
-                    f"Type {actual_type} != {col.type} for {col.name}"
-                )
+
         return self
 
     @property
