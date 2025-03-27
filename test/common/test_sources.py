@@ -117,20 +117,27 @@ def test_source_check_columns(sqlite_warehouse: Engine):
     with pytest.raises(MatchboxSourceColumnError, match="Columns {'c'} not in"):
         source.check_columns(columns=["c"])
 
-    # Error is raised with missing column
-    with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
-        new_source = source_testkit.source.model_copy(
-            update={"columns": (SourceColumn(name="c", type="TEXT"),)}
-        ).set_engine(sqlite_warehouse)
+    # Error is raised with missing primary key
+    new_source = source_testkit.source.model_copy(update={"db_pk": "typo"}).set_engine(
+        sqlite_warehouse
+    )
+    with pytest.raises(
+        MatchboxSourceColumnError, match="Primary key typo not available"
+    ):
+        new_source.check_columns()
 
+    # Error is raised with missing column
+    new_source = source_testkit.source.model_copy(
+        update={"columns": (SourceColumn(name="c", type="TEXT"),)}
+    ).set_engine(sqlite_warehouse)
+    with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
         new_source.check_columns()
 
     # Error is raised with wrong type
+    new_source = source_testkit.source.model_copy(
+        update={"columns": (SourceColumn(name="b", type="TEXT"),)}
+    ).set_engine(sqlite_warehouse)
     with pytest.raises(MatchboxSourceColumnError, match="Type BIGINT != TEXT for b"):
-        new_source = source_testkit.source.model_copy(
-            update={"columns": (SourceColumn(name="b", type="TEXT"),)}
-        ).set_engine(sqlite_warehouse)
-
         new_source.check_columns()
 
 
