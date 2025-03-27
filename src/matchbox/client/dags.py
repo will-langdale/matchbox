@@ -99,6 +99,7 @@ class ModelStep(BaseModel, ABC):
             return_type="pandas",
             threshold=step_input.threshold,
             resolution_name=step_input.name,
+            only_indexed=True,
         )
 
         return df_raw
