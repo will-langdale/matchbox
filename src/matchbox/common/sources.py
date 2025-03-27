@@ -241,6 +241,9 @@ class Source(BaseModel):
     @needs_engine
     def check_columns(self) -> None:
         """Check that set columns are available in the warehouse and correctly typed."""
+        if not self.columns:
+            raise ValueError("Columns must be set before checking.")
+
         remote_columns = self._get_remote_columns()
         for col in self.columns:
             if col.name not in remote_columns:

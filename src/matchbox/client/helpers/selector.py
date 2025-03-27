@@ -148,22 +148,18 @@ def _source_query(
                 f"{selected_fields - warehouse_cols} not in {selector.address}"
             )
 
-        fields = None
-        if selector.fields:
-            fields = list(set(selector.fields))
+    iter_batches = False
+    if batch_size:
+        iter_batches = True
 
-        iter_batches = False
-        if batch_size:
-            iter_batches = True
+    raw_results = source.to_arrow(
+        fields=list(selected_fields) if selected_fields else None,
+        pks=mb_ids["source_pk"].to_pylist(),
+        iter_batches=iter_batches,
+        batch_size=batch_size,
+    )
 
-        raw_results = source.to_arrow(
-            fields=fields,
-            pks=mb_ids["source_pk"].to_pylist(),
-            iter_batches=iter_batches,
-            batch_size=batch_size,
-        )
-
-        return source, raw_results
+    return source, raw_results
 
 
 def _query_batched(
