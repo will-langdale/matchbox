@@ -8,7 +8,7 @@ import pyarrow as pa
 from pandas import ArrowDtype
 from pyarrow import Table as ArrowTable
 from pyarrow import compute as pc
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
@@ -16,14 +16,17 @@ from matchbox.client._settings import settings
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress
 
 
 class Selector(BaseModel):
     """A selector to choose a source and optionally a subset of columns to select."""
 
-    source: Source
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    address: SourceAddress
     fields: list[str] | None = None
+    engine: Engine
 
 
 def select(
@@ -64,21 +67,14 @@ def select(
     for s in selection:
         if isinstance(s, str):
             source_address = SourceAddress.compose(engine, s)
-            source = _handler.get_source(source_address).set_engine(engine)
-            selectors.append(Selector(source=source))
+            selectors.append(Selector(engine=engine, address=source_address))
         elif isinstance(s, dict):
             for full_name, fields in s.items():
                 source_address = SourceAddress.compose(engine, full_name)
-                source = _handler.get_source(source_address).set_engine(engine)
 
-                warehouse_cols = set(source.to_table().columns.keys())
-                selected_cols = set(fields)
-                if not selected_cols <= warehouse_cols:
-                    raise ValueError(
-                        f"{selected_cols - warehouse_cols} not in {source_address}"
-                    )
-
-                selectors.append(Selector(source=source, fields=fields))
+                selectors.append(
+                    Selector(engine=engine, address=source_address, fields=fields)
+                )
         else:
             raise ValueError("Selection specified in incorrect format")
 
@@ -115,6 +111,58 @@ def _process_query_result(
         return joined_table
 
 
+def _get_matchbox_ids(
+    source_address: SourceAddress,
+    resolution_name: str,
+    threshold: int | None = None,
+    limit: int | None = None,
+) -> ArrowTable:
+    """Get matchbox IDs for a source and resolution."""
+    mb_ids = _handler.query(
+        source_address=source_address,
+        resolution_name=resolution_name,
+        threshold=threshold,
+        limit=limit,
+    )
+
+    return mb_ids
+
+
+def _source_query(
+    selector: Selector,
+    mb_ids: ArrowTable,
+    batch_size: int | None = None,
+) -> ArrowTable | Iterator[ArrowTable]:
+    """From a Selector, query a source and join to matchbox IDs."""
+    source = _handler.get_source(selector.address).set_engine(selector.engine)
+
+    warehouse_cols = set(source.to_table().columns.keys())
+    selected_fields = None
+    if selector.fields:
+        selected_fields = set(selector.fields)
+        if not selected_fields <= warehouse_cols:
+            raise ValueError(
+                f"{selected_fields - warehouse_cols} not in {selector.address}"
+            )
+
+        fields = None
+        if selector.fields:
+            fields = list(set(selector.fields))
+
+        iter_batches = False
+        if batch_size:
+            iter_batches = True
+
+        raw_results = source.to_arrow(
+            fields=fields,
+            pks=mb_ids["source_pk"].to_pylist(),
+            iter_batches=iter_batches,
+            batch_size=batch_size,
+        )
+
+        return raw_results
+
+
 def _query_batched(
     selectors: list[Selector],
     sub_limits: list[int | None],
@@ -131,24 +179,15 @@ def _query_batched(
     selector_iters = []
 
     for selector, sub_limit in zip(selectors, sub_limits, strict=True):
-        # Get ids from matchbox
-        mb_ids = _handler.query(
-            source_address=selector.source.address,
+        mb_ids = _get_matchbox_ids(
+            source_address=selector.address,
             resolution_name=resolution_name,
             threshold=threshold,
             limit=sub_limit,
         )
 
-        fields = None
-        if selector.fields:
-            fields = list(set(selector.fields))
-
-        # Get batched data
-        raw_batches = selector.source.to_arrow(
-            fields=fields,
-            pks=mb_ids["source_pk"].to_pylist(),
-            iter_batches=True,
-            batch_size=batch_size,
+        raw_batches = _source_query(
+            selector=selector, mb_ids=mb_ids, batch_size=batch_size
         )
 
         # Process and transform each batch
@@ -266,7 +305,7 @@ def query(
     if not selectors:
         raise ValueError("At least one selector must be specified")
 
-    selectors = list(itertools.chain(*selectors))
+    selectors: list[Selector] = list(itertools.chain(*selectors))
 
     if not resolution_name and len(selectors) > 1:
         resolution_name = DEFAULT_RESOLUTION
@@ -297,22 +336,14 @@ def query(
         tables = []
         for selector, sub_limit in zip(selectors, sub_limits, strict=True):
             # Get ids from matchbox
-            mb_ids = _handler.query(
-                source_address=selector.source.address,
+            mb_ids = _get_matchbox_ids(
+                source_address=selector.address,
                 resolution_name=resolution_name,
                 threshold=threshold,
                 limit=sub_limit,
             )
 
-            fields = None
-            if selector.fields:
-                fields = list(set(selector.fields))
-
-            raw_data = selector.source.to_arrow(
-                fields=fields,
-                pks=mb_ids["source_pk"].to_pylist(),
-                batch_size=batch_size,
-            )
+            raw_data = _source_query(selector=selector, mb_ids=mb_ids)
 
             processed_table = _process_query_result(raw_data, selector, mb_ids)
             tables.append(processed_table)
