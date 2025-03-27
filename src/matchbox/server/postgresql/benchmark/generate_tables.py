@@ -77,7 +77,6 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
     sources_id = ["company_number", "id"]
 
     column_names = [["col1"], ["col2"]]
-    column_aliases = [["col1"], ["col2"]]
     column_types = [["TEXT"], ["TEXT"]]
     warehouse_hashes = [bytes("foo".encode("ascii"))] * 2
 
@@ -89,7 +88,6 @@ def generate_sources(dataset_start_id: int = 1) -> pa.Table:
             "warehouse_hash": pa.array(warehouse_hashes, type=pa.large_binary()),
             "id": pa.array(sources_id, type=pa.string()),
             "column_names": pa.array(column_names, type=pa.list_(pa.string())),
-            "column_aliases": pa.array(column_aliases, type=pa.list_(pa.string())),
             "column_types": pa.array(column_types, type=pa.list_(pa.string())),
         }
     )

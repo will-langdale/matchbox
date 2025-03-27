@@ -20,7 +20,6 @@ erDiagram
         bytes warehouse_hash
         string id
         array[string] column_names
-        array[string] column_aliases
         array[string] column_types
     }
     Clusters {
