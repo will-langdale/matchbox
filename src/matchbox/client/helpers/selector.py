@@ -2,7 +2,6 @@
 
 import itertools
 from typing import Iterator, Literal, get_args
-from warnings import warn
 
 import polars as pl
 import pyarrow as pa
@@ -30,7 +29,6 @@ class Selector(BaseModel):
 def select(
     *selection: str | dict[str, str],
     engine: Engine | None = None,
-    only_indexed: bool = True,
 ) -> list[Selector]:
     """From one engine, builds and verifies a list of selectors.
 
@@ -39,10 +37,6 @@ def select(
         engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
-        only_indexed: Whether you intend to select indexed columns only. Will raise a
-            warning if True and non-indexed columns are selected. Defaults to True.
-            Non-indexed columns should only be selected if you're querying data for
-            a purpose other than matching
 
     Returns:
         A list of Selector objects
@@ -84,12 +78,6 @@ def select(
                         f"{selected_cols - warehouse_cols} not in {source_address}"
                     )
 
-                indexed_cols = set(col.name for col in source.columns)
-                if (not selected_cols <= indexed_cols) and only_indexed:
-                    warn(
-                        "You are selecting columns that are not indexed in Matchbox",
-                        stacklevel=2,
-                    )
                 selectors.append(Selector(source=source, fields=fields))
         else:
             raise ValueError("Selection specified in incorrect format")
