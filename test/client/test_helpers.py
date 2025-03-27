@@ -291,7 +291,6 @@ def test_query_multiple_sources_with_limits(
         * 2  # 2 calls to `query()` in this test, each querying server twice
     )
 
-    # Well-formed select from these mocks
     sels = select("foo", {"foo2": ["c"]}, engine=sqlite_warehouse)
 
     # Validate results
@@ -401,7 +400,6 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    # Well-formed select from these mocks
     sels = select("foo", "bar", engine=sqlite_warehouse)
 
     # Validate results
@@ -477,7 +475,6 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         )
     )
 
-    # Well-formed selector for these mocks
     selectors = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
@@ -497,7 +494,6 @@ def test_query_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         )
     )
 
-    # Well-formed selector for these mocks
     sels = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
@@ -564,7 +560,6 @@ def test_query_with_batches(
         )
     )
 
-    # Well-formed selector for these mocks
     sels = select("foo", engine=sqlite_warehouse)
 
     # Test with return_batches=True
