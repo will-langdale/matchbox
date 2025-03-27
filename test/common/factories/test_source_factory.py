@@ -208,7 +208,6 @@ def test_source_factory_mock_properties():
     assert len(source_testkit.columns) == len(features)
     for feature, column in zip(features, source_testkit.columns, strict=False):
         assert column.name == feature.name
-        assert column.alias == feature.name
         assert column.type == feature.sql_type
 
     # Check default resolution name and default pk
@@ -219,7 +218,7 @@ def test_source_factory_mock_properties():
     dump = source_testkit.model_dump()
     assert dump["address"]["full_name"] == full_name
     assert dump["columns"] == tuple(
-        {"name": f.name, "alias": f.name, "type": f.sql_type} for f in features
+        {"name": f.name, "type": f.sql_type} for f in features
     )
 
 

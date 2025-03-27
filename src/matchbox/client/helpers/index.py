@@ -16,8 +16,7 @@ def _process_columns(
         return (SourceColumn(name=column) for column in columns)
 
     return (
-        SourceColumn(name=column["name"], alias=column["alias"], type=column["type"])
-        for column in columns
+        SourceColumn(name=column["name"], type=column["type"]) for column in columns
     )
 
 
@@ -54,8 +53,8 @@ def index(
             "id",
             engine=engine,
             columns=[
-                {"name": "name", "alias": "person_name", "type": "TEXT"},
-                {"name": "age", "alias": "person_age", "type": "BIGINT"},
+                {"name": "name", "type": "TEXT"},
+                {"name": "age", "type": "BIGINT"},
             ],
         )
         ```

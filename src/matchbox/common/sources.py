@@ -48,7 +48,6 @@ class SourceColumn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    alias: str = Field(default_factory=lambda data: data["name"])
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
@@ -188,15 +187,6 @@ class Source(BaseModel):
                     f"Type {actual_type} != {col.type} for {col.name}"
                 )
         return self
-
-    @property
-    def signature(self) -> bytes:
-        """Generate a unique hash based on the table's metadata."""
-        sorted_columns = sorted(self.columns, key=lambda c: c.alias)
-        schema_representation = f"{self.resolution_name}: " + ",".join(
-            f"{col.alias}:{col.type}" for col in sorted_columns
-        )
-        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
 
     def format_column(self, column: str) -> str:
         """Outputs a full SQLAlchemy column representation.
@@ -392,7 +382,6 @@ class Source(BaseModel):
         Returns:
             A PyArrow Table containing source primary keys and their hashes.
         """
-        signature_hex = self.signature.hex()
         source_table = self.to_table()
         cols_to_index = tuple([col.name for col in self.columns])
 
@@ -402,14 +391,14 @@ class Source(BaseModel):
         )
 
         def _process_batch(
-            batch: pl.DataFrame, cols_to_index: tuple, signature_hex: str
+            batch: pl.DataFrame,
+            cols_to_index: tuple,
         ) -> pl.DataFrame:
             """Process a single batch of data using Polars.
 
             Args:
                 batch: Polars DataFrame containing the data
                 cols_to_index: Columns to include in the hash
-                signature_hex: Signature to append to values before hashing
 
             Returns:
                 Polars DataFrame with hash and source_pk columns
@@ -417,18 +406,18 @@ class Source(BaseModel):
             for col_name in cols_to_index:
                 batch = batch.with_columns(pl.col(col_name).cast(pl.Utf8))
 
+            record_separator = "␞"
+            unit_separator = "␟"
+            str_concatenation = [
+                f"{c}{unit_separator}" + pl.col(c) + record_separator
+                for c in sorted(cols_to_index)
+            ]
             batch = batch.with_columns(
-                pl.concat_str([pl.col(c) for c in cols_to_index]).alias("raw_value")
+                pl.concat_str(str_concatenation).alias("value_concat")
             )
 
             batch = batch.with_columns(
-                (pl.col("raw_value") + " " + pl.lit(signature_hex)).alias(
-                    "value_with_sig"
-                )
-            )
-
-            batch = batch.with_columns(
-                pl.col("value_with_sig")
+                pl.col("value_concat")
                 .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
                 .alias("hash")
             )
@@ -449,7 +438,7 @@ class Source(BaseModel):
 
             all_results = []
             for batch in raw_batches:
-                batch_result = _process_batch(batch, cols_to_index, signature_hex)
+                batch_result = _process_batch(batch, cols_to_index)
                 all_results.append(batch_result)
 
             processed_df = pl.concat(all_results)
@@ -464,7 +453,7 @@ class Source(BaseModel):
                 execute_options=execute_options,
             )
 
-            processed_df = _process_batch(raw_result, cols_to_index, signature_hex)
+            processed_df = _process_batch(raw_result, cols_to_index)
 
         return processed_df.group_by("hash").agg(pl.col("source_pk")).to_arrow()
 

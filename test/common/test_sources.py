@@ -1,3 +1,5 @@
+import copy
+
 import pandas as pd
 import pyarrow as pa
 import pytest
@@ -106,108 +108,6 @@ def test_source_set_engine(sqlite_warehouse: Engine):
             update={"columns": (SourceColumn(name="b", type="TEXT"),)}
         )
         new_source.set_engine(sqlite_warehouse)
-
-
-def test_source_signature():
-    """Source signatures are generated correctly."""
-    # Column order doesn't matter
-    source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(
-            SourceColumn(name="a", type="TEXT"),
-            SourceColumn(name="b", type="TEXT"),
-        ),
-    )
-    source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(
-            SourceColumn(name="b", type="TEXT"),
-            SourceColumn(name="a", type="TEXT"),
-        ),
-    )
-    assert source1.signature == source2.signature
-
-    # Column type matters
-    source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="BIGINT"),),
-    )
-    assert source1.signature != source2.signature
-
-    # Table name matters
-    source1 = Source(
-        address=SourceAddress(full_name="bar", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    assert source1.signature != source2.signature
-
-    # Warehouse matters
-    source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh1"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh2"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    assert source1.signature != source2.signature
-
-    # Resolution name can be set manually
-    source1 = Source(
-        resolution_name="source@warehouse",
-        address=SourceAddress(full_name="bar", warehouse_hash=b"wh1"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    source2 = Source(
-        resolution_name="source@warehouse",
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh2"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    assert source1.signature == source2.signature
-
-    # Column name matters
-    source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", type="TEXT"),),
-    )
-    source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="b", type="TEXT"),),
-    )
-    assert source1.signature != source2.signature
-
-    # Alias supersedes column name
-    source1 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="a", alias="alias", type="TEXT"),),
-    )
-    source2 = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"wh"),
-        db_pk="i",
-        columns=(SourceColumn(name="b", alias="alias", type="TEXT"),),
-    )
-    assert source1.signature == source2.signature
 
 
 def test_source_hash_equality(sqlite_warehouse: Engine):
@@ -334,7 +234,8 @@ def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
 
 def test_source_hash_data(sqlite_warehouse: Engine):
     """A Source can output hashed versions of its rows."""
-    source_testkit = source_factory(
+    original = source_factory(
+        full_name="original",
         features=[
             {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
             {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
@@ -344,16 +245,55 @@ def test_source_hash_data(sqlite_warehouse: Engine):
         repetition=1,
     )
 
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
-    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+    reordered = copy.deepcopy(original)
+    reordered.source = original.source.model_copy(
+        update={
+            "address": original.source.address.model_copy(
+                update={"full_name": "reordered"}
+            ),
+            "columns": (original.source.columns[1], original.source.columns[0]),
+        }
+    )
 
-    res = source.hash_data().to_pandas()
-    assert len(res) == 2
-    assert len(res.source_pk.iloc[0]) == 2
-    assert len(res.source_pk.iloc[1]) == 2
+    renamed = copy.deepcopy(original)
+    renamed.data = renamed.data.rename_columns({"a": "x"})
+    renamed.source = original.source.model_copy(
+        update={
+            "address": original.source.address.model_copy(
+                update={"full_name": "renamed"}
+            ),
+            "columns": (
+                original.source.columns[0].model_copy(update={"name": "x"}),
+                original.source.columns[1],
+            ),
+        }
+    )
 
-    result = source.hash_data(iter_batches=True, batch_size=3)
-    assert isinstance(result, pa.Table)
+    original.to_warehouse(engine=sqlite_warehouse)
+    reordered.to_warehouse(engine=sqlite_warehouse)
+    renamed.to_warehouse(engine=sqlite_warehouse)
+
+    original_source = original.source.set_engine(sqlite_warehouse)
+    reordered_source = reordered.source.set_engine(sqlite_warehouse)
+    renamed_source = renamed.source.set_engine(sqlite_warehouse)
+
+    original_hash = original_source.hash_data(
+        iter_batches=True, batch_size=3
+    ).to_pandas()
+    reordered_hash = reordered_source.hash_data().to_pandas()
+    renamed_hash = renamed_source.hash_data().to_pandas()
+
+    # Hash have the right shape
+    assert len(original_hash) == 2
+    assert len(original_hash.source_pk.iloc[0]) == 2
+    assert len(original_hash.source_pk.iloc[1]) == 2
+
+    def sort_df(df: pd.DataFrame) -> pd.DataFrame:
+        return df.sort_values(by="hash").reset_index(drop=True)
+
+    # Column order does not matter, column names do
+    assert sort_df(original_hash).equals(sort_df(reordered_hash))
+    assert not sort_df(original_hash).equals(sort_df(renamed_hash))
 
 
 @pytest.mark.parametrize(

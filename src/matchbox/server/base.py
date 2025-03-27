@@ -235,6 +235,7 @@ class MatchboxDBAdapter(ABC):
     creates: Countable
     merges: Countable
     proposes: Countable
+    source_resolutions: Countable
 
     # Retrieval
 

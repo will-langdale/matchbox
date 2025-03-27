@@ -185,7 +185,6 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     warehouse_hash = Column(BYTEA, nullable=False)
     id = Column(TEXT, nullable=False)
     column_names = Column(ARRAY(TEXT), nullable=False)
-    column_aliases = Column(ARRAY(TEXT), nullable=False)
     column_types = Column(ARRAY(TEXT), nullable=False)
 
     # Relationships

@@ -4,13 +4,13 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import hash_values
+from matchbox.common.hash import hash_data, hash_values
 from matchbox.common.logging import WARNING, get_logger, logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
@@ -25,7 +25,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
+from matchbox.server.postgresql.utils.db import batch_ingest
 
 
 class HashIDMap:
@@ -109,7 +109,7 @@ def insert_dataset(
     db_logger = get_logger("sqlalchemy.engine")
     db_logger.setLevel(WARNING)
 
-    resolution_hash = source.signature
+    resolution_hash = hash_data(str(source.address))
 
     resolution_data = {
         "resolution_hash": resolution_hash,
@@ -122,7 +122,6 @@ def insert_dataset(
         "warehouse_hash": source.address.warehouse_hash,
         "id": source.db_pk,
         "column_names": [col.name for col in source.columns],
-        "column_aliases": [col.alias for col in source.columns],
         "column_types": [col.type for col in source.columns],
     }
 
@@ -158,14 +157,7 @@ def insert_dataset(
 
         logger.info(f"{source} added to Sources table")
 
-        existing_hashes_statement = (
-            select(Clusters.cluster_hash)
-            .join(Sources)
-            .join(Resolutions)
-            .where(
-                Resolutions.resolution_hash == hash_to_hex_decode(source.signature),
-            )
-        )
+        existing_hashes_statement = select(Clusters.cluster_hash)
         existing_hashes = sql_to_df(
             stmt=existing_hashes_statement,
             engine=engine,
@@ -177,27 +169,24 @@ def insert_dataset(
                 data_hashes,
                 pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
             )
-        try:
-            # Upsert into Clusters table
-            batch_ingest(
-                records=[
-                    (
-                        next_cluster_id + i,
-                        clus["hash"],
-                        source_data["resolution_id"],
-                        clus["source_pk"],
-                    )
-                    for i, clus in enumerate(data_hashes.to_pylist())
-                ],
-                table=Clusters,
-                conn=conn,
-                batch_size=batch_size,
-            )
 
-            conn.commit()
-        except IntegrityError as e:
-            # Some edge cases, defined in tests, are not implemented yet
-            raise NotImplementedError from e
+        # Upsert into Clusters table
+        batch_ingest(
+            records=[
+                (
+                    next_cluster_id + i,
+                    clus["hash"],
+                    source_data["resolution_id"],
+                    clus["source_pk"],
+                )
+                for i, clus in enumerate(data_hashes.to_pylist())
+            ],
+            table=Clusters,
+            conn=conn,
+            batch_size=batch_size,
+        )
+
+        conn.commit()
 
         logger.info(f"{source} added {len(data_hashes)} objects to Clusters table")
 
