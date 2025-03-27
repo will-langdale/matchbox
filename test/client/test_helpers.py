@@ -15,7 +15,7 @@ from matchbox.client._handler import create_client
 from matchbox.client._settings import ClientSettings
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
-from matchbox.client.helpers.selector import Match, Selector
+from matchbox.client.helpers.selector import Match
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.db import get_schema_table_names
 from matchbox.common.dtos import (
@@ -465,7 +465,7 @@ def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engi
         query(selectors, only_indexed=True)
 
 
-def test_query_404_resolution(matchbox_api: MockRouter):
+def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Mock API
     matchbox_api.get("/query").mock(
         return_value=Response(
@@ -478,25 +478,14 @@ def test_query_404_resolution(matchbox_api: MockRouter):
     )
 
     # Well-formed selector for these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    selectors = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-        query(sels)
+        query(selectors)
 
 
-def test_query_404_source(matchbox_api: MockRouter):
+def test_query_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Mock API
     matchbox_api.get("/query").mock(
         return_value=Response(
@@ -509,18 +498,7 @@ def test_query_404_source(matchbox_api: MockRouter):
     )
 
     # Well-formed selector for these mocks
-    sels = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="foo",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    sels = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
@@ -911,7 +889,7 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
 
 
-def test_match_404_resolution(matchbox_api: MockRouter):
+def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a resolution not found error."""
     # Set up mocks
     matchbox_api.get("/match").mock(
@@ -925,30 +903,8 @@ def test_match_404_resolution(matchbox_api: MockRouter):
     )
 
     # Use match function
-    source = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.source",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
-    target = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.target1",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    source = select({"test.source": ["a", "b"]}, engine=sqlite_warehouse)
+    target = select({"test.target1": ["a", "b"]}, engine=sqlite_warehouse)
 
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         match(
@@ -959,7 +915,7 @@ def test_match_404_resolution(matchbox_api: MockRouter):
         )
 
 
-def test_match_404_source(matchbox_api: MockRouter):
+def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a source not found error."""
     # Set up mocks
     matchbox_api.get("/match").mock(
@@ -973,30 +929,8 @@ def test_match_404_source(matchbox_api: MockRouter):
     )
 
     # Use match function
-    source = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.source",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
-    target = [
-        Selector(
-            source=Source(
-                address=SourceAddress(
-                    full_name="test.target1",
-                    warehouse_hash=b"bar",
-                ),
-                db_pk="pk",
-            ),
-            fields=["a", "b"],
-        )
-    ]
+    source = select({"test.source": ["a", "b"]}, engine=sqlite_warehouse)
+    target = select({"test.target1": ["a", "b"]}, engine=sqlite_warehouse)
 
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
         match(
