@@ -482,7 +482,8 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         query(selectors)
 
 
-def test_query_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+def test_query_404_source_query(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Handles source 404 error when querying."""
     # Mock API
     matchbox_api.get("/query").mock(
         return_value=Response(
@@ -497,6 +498,40 @@ def test_query_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     sels = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with no optional params
+    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+        query(sels)
+
+
+def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Handles source 404 error when retrieving source."""
+    # Mock API
+    address = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
+    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+
+    matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Source 42 not found",
+                entity=BackendRetrievableType.SOURCE,
+            ).model_dump(),
+        )
+    )
+
+    matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [{"source_pk": "0", "id": 1}],
+                    schema=SCHEMA_MB_IDS,
+                )
+            ).read(),
+        )
+    )
+
+    sels = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
+
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
         query(sels)
 
