@@ -419,10 +419,10 @@ def match(
     """
     if len(source) > 1:
         raise ValueError("Only one source can be matched at one time")
-    source = source[0].source.address
+    source = source[0].address
 
-    targets = list(itertools.chain(*targets))
-    targets = [t.source.address for t in targets]
+    targets: list[Selector] = list(itertools.chain(*targets))
+    targets = [t.address for t in targets]
 
     return _handler.match(
         targets=targets,
