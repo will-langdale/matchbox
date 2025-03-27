@@ -239,22 +239,35 @@ class Source(BaseModel):
         return table
 
     @needs_engine
-    def check_columns(self) -> None:
-        """Check that set columns are available in the warehouse and correctly typed."""
-        if not self.columns:
-            raise ValueError("Columns must be set before checking.")
+    def check_columns(self, columns: list[str] | None = None) -> None:
+        """Check that columns are available in the warehouse and correctly typed.
 
+        Args:
+            columns: List of column names to check. If None, it will check self.columns
+        """
         remote_columns = self._get_remote_columns()
-        for col in self.columns:
-            if col.name not in remote_columns:
+
+        if columns:
+            columns = set(columns)
+            remote_names = set(remote_columns.keys())
+            if not columns <= remote_names:
                 raise MatchboxSourceColumnError(
-                    f"Column {col.name} not available in {self.address.full_name}"
+                    f"Columns {columns - remote_names} not in {self.address}"
                 )
-            actual_type = str(remote_columns[col.name])
-            if actual_type != col.type:
-                raise MatchboxSourceColumnError(
-                    f"Type {actual_type} != {col.type} for {col.name}"
-                )
+        else:
+            if not self.columns:
+                raise ValueError("No columns passed, and none set on the Source.")
+
+            for col in self.columns:
+                if col.name not in remote_columns:
+                    raise MatchboxSourceColumnError(
+                        f"Column {col.name} not available in {self.address.full_name}"
+                    )
+                actual_type = str(remote_columns[col.name])
+                if actual_type != col.type:
+                    raise MatchboxSourceColumnError(
+                        f"Type {actual_type} != {col.type} for {col.name}"
+                    )
 
     def _select(
         self,
@@ -265,9 +278,9 @@ class Source(BaseModel):
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
         table = self.to_table()
 
+        # Ensure all set columns are available and the expected type
+        self.check_columns(columns=fields)
         if not fields:
-            # Ensure all set columns are available and the expected type
-            self.check_columns()
             fields = [col.name for col in self.columns]
 
         if self.db_pk not in fields:

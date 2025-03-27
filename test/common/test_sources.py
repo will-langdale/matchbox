@@ -111,6 +111,10 @@ def test_source_check_columns(sqlite_warehouse: Engine):
     source = source_testkit.source.set_engine(sqlite_warehouse)
     assert isinstance(source, Source)
 
+    # Error is raised with custom columns
+    with pytest.raises(MatchboxSourceColumnError, match="Columns {'c'} not in"):
+        source.check_columns(columns=["c"])
+
     # Error is raised with missing column
     with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
         new_source = source_testkit.source.model_copy(

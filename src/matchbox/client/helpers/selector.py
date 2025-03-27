@@ -139,21 +139,16 @@ def _source_query(
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source(selector.address).set_engine(selector.engine)
 
-    warehouse_cols = set(source.to_table().columns.keys())
     selected_fields = None
     if selector.fields:
-        selected_fields = set(selector.fields)
-        if not selected_fields <= warehouse_cols:
-            raise ValueError(
-                f"{selected_fields - warehouse_cols} not in {selector.address}"
-            )
+        selected_fields = list(set(selector.fields))
 
     iter_batches = False
     if batch_size:
         iter_batches = True
 
     raw_results = source.to_arrow(
-        fields=list(selected_fields) if selected_fields else None,
+        fields=selected_fields,
         pks=mb_ids["source_pk"].to_pylist(),
         iter_batches=iter_batches,
         batch_size=batch_size,
