@@ -16,7 +16,7 @@ from matchbox.client._settings import settings
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match, Source, SourceAddress
 
 
 class Selector(BaseModel):
@@ -82,7 +82,7 @@ def select(
 
 
 def _process_query_result(
-    data: ArrowTable, selector: Selector, mb_ids: ArrowTable
+    data: ArrowTable, selector: Selector, mb_ids: ArrowTable, db_pk: str
 ) -> ArrowTable:
     """Process query results by joining with matchbox IDs and filtering fields.
 
@@ -90,6 +90,7 @@ def _process_query_result(
         data: The raw data from the source
         selector: The selector with source and fields information
         mb_ids: The matchbox IDs
+        db_pk: The primary key of the source
 
     Returns:
         The processed table with joined matchbox IDs and filtered fields
@@ -97,7 +98,7 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         right_table=mb_ids,
-        keys=selector.address.format_column(selector.source.db_pk),
+        keys=selector.address.format_column(db_pk),
         right_keys="source_pk",
         join_type="inner",
     )
@@ -134,7 +135,7 @@ def _source_query(
     selector: Selector,
     mb_ids: ArrowTable,
     batch_size: int | None = None,
-) -> ArrowTable | Iterator[ArrowTable]:
+) -> tuple[Source, ArrowTable] | tuple[Source, Iterator[ArrowTable]]:
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source(selector.address).set_engine(selector.engine)
 
@@ -162,7 +163,7 @@ def _source_query(
             batch_size=batch_size,
         )
 
-        return raw_results
+        return source, raw_results
 
 
 def _query_batched(
@@ -188,16 +189,18 @@ def _query_batched(
             limit=sub_limit,
         )
 
-        raw_batches = _source_query(
+        source, raw_batches = _source_query(
             selector=selector, mb_ids=mb_ids, batch_size=batch_size
         )
 
         # Process and transform each batch
-        def process_batches(batches, selector, mb_ids):
+        def process_batches(batches, selector, mb_ids, db_pk):
             for batch in batches:
-                yield _process_query_result(batch, selector, mb_ids)
+                yield _process_query_result(batch, selector, mb_ids, db_pk=db_pk)
 
-        selector_iters.append(process_batches(raw_batches, selector, mb_ids))
+        selector_iters.append(
+            process_batches(raw_batches, selector, mb_ids, source.db_pk)
+        )
 
     # Chain iterators if multiple selectors
     if len(selector_iters) == 1:
@@ -345,9 +348,11 @@ def query(
                 limit=sub_limit,
             )
 
-            raw_data = _source_query(selector=selector, mb_ids=mb_ids)
+            source, raw_data = _source_query(selector=selector, mb_ids=mb_ids)
 
-            processed_table = _process_query_result(raw_data, selector, mb_ids)
+            processed_table = _process_query_result(
+                raw_data, selector, mb_ids, db_pk=source.db_pk
+            )
             tables.append(processed_table)
 
         # Combine results based on combine_type
