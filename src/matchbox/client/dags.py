@@ -90,7 +90,10 @@ class ModelStep(BaseModel, ABC):
         Returns:
             Pandas dataframe with retrieved results.
         """
-        selectors = [Selector(source=s, fields=f) for s, f in step_input.select.items()]
+        selectors = [
+            Selector(engine=s.engine, address=s.address, fields=f)
+            for s, f in step_input.select.items()
+        ]
         df_raw = query(
             selectors,
             return_type="pandas",
