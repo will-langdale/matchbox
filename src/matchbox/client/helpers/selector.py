@@ -135,9 +135,14 @@ def _source_query(
     selector: Selector,
     mb_ids: ArrowTable,
     batch_size: int | None = None,
+    only_indexed: bool = False,
 ) -> tuple[Source, ArrowTable] | tuple[Source, Iterator[ArrowTable]]:
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source(selector.address).set_engine(selector.engine)
+
+    indexed_columns = set([col.name for col in source.columns])
+    if only_indexed and selector.fields and not set(selector.fields) <= indexed_columns:
+        raise ValueError("Attempting to query unindexed columns.")
 
     selected_fields = None
     if selector.fields:
@@ -164,6 +169,7 @@ def _query_batched(
     threshold: int | None,
     return_type: ReturnTypeStr,
     batch_size: int | None,
+    only_indexed: bool,
 ) -> Iterator[QueryReturnType]:
     """Helper function that implements batched query processing.
 
@@ -181,7 +187,10 @@ def _query_batched(
         )
 
         source, raw_batches = _source_query(
-            selector=selector, mb_ids=mb_ids, batch_size=batch_size
+            selector=selector,
+            mb_ids=mb_ids,
+            batch_size=batch_size,
+            only_indexed=only_indexed,
         )
 
         # Process and transform each batch
@@ -225,6 +234,7 @@ def query(
     limit: int | None = None,
     batch_size: int | None = None,
     return_batches: bool = False,
+    only_indexed: bool = False,
 ) -> QueryReturnType | Iterator[QueryReturnType]:
     """Runs queries against the selected backend.
 
@@ -259,6 +269,9 @@ def query(
         return_batches (optional): If True, returns an iterator of batches instead of a
             single combined result, which is useful for processing large datasets with
             limited memory. Default is False.
+        only_indexed (optional): If True, it will raise an exception when attempting to
+            query un-indexed columns, which should never be done if querying for
+            subsequent matching. Default is False.
 
     Returns:
         If return_batches is False:
@@ -326,6 +339,7 @@ def query(
             threshold=threshold,
             return_type=return_type,
             batch_size=batch_size,
+            only_indexed=only_indexed,
         )
     else:
         # Process all data and return a single result
@@ -339,7 +353,9 @@ def query(
                 limit=sub_limit,
             )
 
-            source, raw_data = _source_query(selector=selector, mb_ids=mb_ids)
+            source, raw_data = _source_query(
+                selector=selector, mb_ids=mb_ids, only_indexed=only_indexed
+            )
 
             processed_table = _process_query_result(
                 raw_data, selector, mb_ids, db_pk=source.db_pk

@@ -445,6 +445,44 @@ def test_query_combine_type(
     } == set(results.columns)
 
 
+def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """We cannot query unindexed fields when only_indexed=True."""
+    # Mock data and source
+    data = DataFrame({"pk": ["0", "1"], "a": [1, 10], "b": ["2", "20"]})
+    address = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
+    source = Source(
+        address=address, db_pk="pk", columns=[SourceColumn(name="b", type="TEXT")]
+    ).set_engine(sqlite_warehouse)
+    to_warehouse(engine=sqlite_warehouse, data=data, address=address)
+    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+
+    # Mock API
+    matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
+        return_value=Response(
+            200,
+            json=source.model_dump(),
+        )
+    )
+
+    matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [{"source_pk": "0", "id": 1}],
+                    schema=SCHEMA_MB_IDS,
+                )
+            ).read(),
+        )
+    )
+
+    selectors = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
+
+    # Verify exception is raised
+    with pytest.raises(ValueError, match="unindexed"):
+        query(selectors, only_indexed=True)
+
+
 def test_query_404_resolution(matchbox_api: MockRouter):
     # Mock API
     matchbox_api.get("/query").mock(
