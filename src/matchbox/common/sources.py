@@ -105,24 +105,12 @@ class SourceAddress(BaseModel):
 
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to check Engine is set and uses it to validate columns."""
+    """Decorator to check that engine is set."""
 
     @wraps(func)
     def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.engine:
             raise MatchboxSourceEngineError
-
-        remote_columns = self._get_remote_columns()
-        for col in self.columns:
-            if col.name not in remote_columns:
-                raise MatchboxSourceColumnError(
-                    f"Column {col.name} not available in {self.address.full_name}"
-                )
-            actual_type = str(remote_columns[col.name])
-            if actual_type != col.type:
-                raise MatchboxSourceColumnError(
-                    f"Type {actual_type} != {col.type} for {col.name}"
-                )
 
         return func(self, *args, **kwargs)
 
@@ -250,6 +238,21 @@ class Source(BaseModel):
         table = Table(db_table, metadata, autoload_with=self.engine)
         return table
 
+    @needs_engine
+    def check_columns(self) -> None:
+        """Check that set columns are available in the warehouse and correctly typed."""
+        remote_columns = self._get_remote_columns()
+        for col in self.columns:
+            if col.name not in remote_columns:
+                raise MatchboxSourceColumnError(
+                    f"Column {col.name} not available in {self.address.full_name}"
+                )
+            actual_type = str(remote_columns[col.name])
+            if actual_type != col.type:
+                raise MatchboxSourceColumnError(
+                    f"Type {actual_type} != {col.type} for {col.name}"
+                )
+
     def _select(
         self,
         fields: list[str] | None = None,
@@ -260,6 +263,8 @@ class Source(BaseModel):
         table = self.to_table()
 
         if not fields:
+            # Ensure all set columns are available and the expected type
+            self.check_columns()
             fields = [col.name for col in self.columns]
 
         if self.db_pk not in fields:
@@ -393,6 +398,9 @@ class Source(BaseModel):
         Returns:
             A PyArrow Table containing source primary keys and their hashes.
         """
+        # Ensure all set columns are available and the expected type
+        self.check_columns()
+
         signature_hex = self.signature.hex()
         source_table = self.to_table()
         cols_to_index = tuple([col.name for col in self.columns])
