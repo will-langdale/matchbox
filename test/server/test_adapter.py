@@ -436,9 +436,9 @@ class TestMatchboxBackend:
 
             self.backend.index(crn_testkit.source, crn_testkit.data_hashes)
             # Different source, same data
-            # TODO: this will now error, and it shouldn't
-            with pytest.raises(NotImplementedError):
-                self.backend.index(duns_testkit.source, crn_testkit.data_hashes)
+            self.backend.index(duns_testkit.source, crn_testkit.data_hashes)
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            assert self.backend.source_resolutions.count() == 2
 
     def test_query_only_source(self):
         """Test querying data from a link point of truth."""
