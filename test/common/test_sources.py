@@ -1,6 +1,7 @@
 import copy
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pytest
 from pandas.testing import assert_frame_equal
@@ -294,6 +295,23 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     # Column order does not matter, column names do
     assert sort_df(original_hash).equals(sort_df(reordered_hash))
     assert not sort_df(original_hash).equals(sort_df(renamed_hash))
+
+
+def test_souce_hash_nulls():
+    """A Source can output hashed versions of rows with nulls."""
+    source_testkit = source_factory()
+    null_data = pl.DataFrame({"source_pk": ["a", "b"], "a": [1, None]})
+    hashed_data = source_testkit.source._process_batch(
+        batch=null_data, cols_to_index=("a",)
+    )
+
+    # No nulls in the hash column
+    assert hashed_data["hash"].is_null().sum() == 0
+
+    # Null PKs error
+    null_pks = pl.DataFrame({"source_pk": [None, None], "a": [1, 2]})
+    with pytest.raises(ValueError):
+        source_testkit.source._process_batch(batch=null_pks, cols_to_index=("a",))
 
 
 @pytest.mark.parametrize(
