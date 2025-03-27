@@ -359,47 +359,6 @@ class Source(BaseModel):
             execute_options=execute_options,
         )
 
-    def _process_batch(
-        self,
-        batch: pl.DataFrame,
-        cols_to_index: tuple,
-    ) -> pl.DataFrame:
-        """Process a single batch of data using Polars.
-
-        Args:
-            batch: Polars DataFrame containing the data
-            cols_to_index: Columns to include in the hash
-
-        Returns:
-            Polars DataFrame with hash and source_pk columns
-
-        Raises:
-            ValueError: If any source_pk values are null
-        """
-        if batch["source_pk"].is_null().any():
-            raise ValueError("source_pk column contains null values")
-
-        for col_name in cols_to_index:
-            batch = batch.with_columns(pl.col(col_name).cast(pl.Utf8).fill_null(""))
-
-        record_separator = "␞"
-        unit_separator = "␟"
-        str_concatenation = [
-            f"{c}{unit_separator}" + pl.col(c) + record_separator
-            for c in sorted(cols_to_index)
-        ]
-        batch = batch.with_columns(
-            pl.concat_str(str_concatenation).alias("value_concat")
-        )
-
-        batch = batch.with_columns(
-            pl.col("value_concat")
-            .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
-            .alias("hash")
-        )
-
-        return batch.select(["hash", "source_pk"])
-
     @needs_engine
     def hash_data(
         self,
@@ -431,6 +390,46 @@ class Source(BaseModel):
             source_table.c[self.db_pk].cast(String).label("source_pk"),
         )
 
+        def _process_batch(
+            batch: pl.DataFrame,
+            cols_to_index: tuple,
+        ) -> pl.DataFrame:
+            """Process a single batch of data using Polars.
+
+            Args:
+                batch: Polars DataFrame containing the data
+                cols_to_index: Columns to include in the hash
+
+            Returns:
+                Polars DataFrame with hash and source_pk columns
+
+            Raises:
+                ValueError: If any source_pk values are null
+            """
+            if batch["source_pk"].is_null().any():
+                raise ValueError("source_pk column contains null values")
+
+            for col_name in cols_to_index:
+                batch = batch.with_columns(pl.col(col_name).cast(pl.Utf8).fill_null(""))
+
+            record_separator = "␞"
+            unit_separator = "␟"
+            str_concatenation = [
+                f"{c}{unit_separator}" + pl.col(c) + record_separator
+                for c in sorted(cols_to_index)
+            ]
+            batch = batch.with_columns(
+                pl.concat_str(str_concatenation).alias("value_concat")
+            )
+
+            batch = batch.with_columns(
+                pl.col("value_concat")
+                .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
+                .alias("hash")
+            )
+
+            return batch.select(["hash", "source_pk"])
+
         if iter_batches:
             # Process in batches
             raw_batches = sql_to_df(
@@ -445,7 +444,7 @@ class Source(BaseModel):
 
             all_results = []
             for batch in raw_batches:
-                batch_result = self._process_batch(batch, cols_to_index)
+                batch_result = _process_batch(batch, cols_to_index)
                 all_results.append(batch_result)
 
             processed_df = pl.concat(all_results)
@@ -460,7 +459,7 @@ class Source(BaseModel):
                 execute_options=execute_options,
             )
 
-            processed_df = self._process_batch(raw_result, cols_to_index)
+            processed_df = _process_batch(raw_result, cols_to_index)
 
         return processed_df.group_by("hash").agg(pl.col("source_pk")).to_arrow()
 
