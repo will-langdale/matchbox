@@ -397,14 +397,8 @@ class TestE2EAnalyticalUser:
         # Query data from the first linked pair and the third source
         # PK included then dropped to create ClusterEntity objects for later diff
         left_raw_df = query(
-            select(
-                {crn_source: ["pk", "crn"]},
-                engine=self.warehouse_engine,
-            ),
-            select(
-                {duns_source: ["pk"]},
-                engine=self.warehouse_engine,
-            ),
+            select({crn_source: ["pk", "crn"]}, engine=self.warehouse_engine),
+            select({duns_source: ["pk"]}, engine=self.warehouse_engine),
             resolution_name=linker_names[first_pair],
             return_type="pandas",
         )
@@ -415,16 +409,12 @@ class TestE2EAnalyticalUser:
         left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
 
         right_raw_df = query(
-            select(
-                {cdms_source: ["pk", "crn"]},
-                engine=self.warehouse_engine,
-            ),
+            select({cdms_source: ["pk", "crn"]}, engine=self.warehouse_engine),
             resolution_name=deduper_names[cdms_source],
             return_type="pandas",
         )
         right_clusters = query_to_cluster_entities(
-            query=right_raw_df,
-            source_pks={cdms_source: f"{cdms_prefix}pk"},
+            query=right_raw_df, source_pks={cdms_source: f"{cdms_prefix}pk"}
         )
         right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
 

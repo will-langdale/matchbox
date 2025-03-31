@@ -140,11 +140,11 @@ def _source_query(
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source(selector.address).set_engine(selector.engine)
 
+    indexed_columns = set()
     if source.columns:
         indexed_columns = set([col.name for col in source.columns])
-    else:
-        # If only_indexed is True and source.columns is unset, we will raise
-        indexed_columns = set()
+
+    # If only_indexed is True and source.columns is unset, we will raise
     if only_indexed and selector.fields and not set(selector.fields) <= indexed_columns:
         raise ValueError("Attempting to query unindexed columns.")
 
@@ -152,14 +152,10 @@ def _source_query(
     if selector.fields:
         selected_fields = list(set(selector.fields))
 
-    iter_batches = False
-    if batch_size:
-        iter_batches = True
-
     raw_results = source.to_arrow(
         fields=selected_fields,
         pks=mb_ids["source_pk"].to_pylist(),
-        iter_batches=iter_batches,
+        iter_batches=bool(batch_size),
         batch_size=batch_size,
     )
 
