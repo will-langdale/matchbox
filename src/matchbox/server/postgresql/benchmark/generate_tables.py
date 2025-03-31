@@ -74,20 +74,22 @@ def generate_sources(
         Tuple of (sources_table, source_columns_table) as PyArrow tables
     """
     # Sources data
-    sources_resolution_id = [dataset_start_id, dataset_start_id + 1]
+    sources_id = [dataset_start_id, dataset_start_id + 1]
+    sources_resolution_id = sources_id
     sources_resolution_names = ["source1@warehouse", "source2@warehouse"]
     sources_full_names = ["dbt.companies_house", "dbt.hmrc_exporters"]
-    sources_id = ["company_number", "id"]
+    sources_db_pk = ["company_number", "id"]
     warehouse_hashes = [bytes("foo".encode("ascii"))] * 2
 
     # Create sources table without column arrays
     sources_table = pa.table(
         {
+            "source_id": pa.array(sources_id, type=pa.uint64()),
             "resolution_id": pa.array(sources_resolution_id, type=pa.uint64()),
             "resolution_name": pa.array(sources_resolution_names, type=pa.string()),
             "full_name": pa.array(sources_full_names, type=pa.string()),
             "warehouse_hash": pa.array(warehouse_hashes, type=pa.large_binary()),
-            "db_pk": pa.array(sources_id, type=pa.string()),
+            "db_pk": pa.array(sources_db_pk, type=pa.string()),
         }
     )
 
@@ -106,7 +108,7 @@ def generate_sources(
     next_column_id = 1
 
     # Process each source and its columns
-    for i, source_id in enumerate(sources_resolution_id):
+    for i, source_id in enumerate(sources_id):
         for j, (name, type_val) in enumerate(
             zip(column_names[i], column_types[i], strict=True)
         ):
@@ -212,7 +214,7 @@ def generate_resolution_from(dataset_start_id: int = 1) -> pa.Table:
 def generate_cluster_source(
     range_left: int,
     range_right: int,
-    resolution_source: int,
+    source_id: int,
     cluster_start_id: int = 0,
     pk_start_id: int = 0,  # Need to track the global pk_id to ensure uniqueness
 ) -> tuple[pa.Table, pa.Table]:
@@ -221,7 +223,7 @@ def generate_cluster_source(
     Args:
         range_left: first ID to generate
         range_right: last ID to generate, plus one
-        resolution_source: resolution ID for the source
+        source_id: source ID for the source
         cluster_start_id: Starting ID for clusters
         pk_start_id: Starting ID for primary keys
 
@@ -249,7 +251,7 @@ def generate_cluster_source(
         # Create a single source_pk entry for each cluster
         pk_ids.append(pk_start_id + i)
         cluster_ids.append(cluster_id)
-        source_ids.append(resolution_source)
+        source_ids.append(source_id)
         source_pks.append(str(cluster_id))
 
     cluster_source_pks_table = pa.table(
@@ -454,7 +456,7 @@ def generate_all_tables(
     clusters_source1, source_pks1 = generate_cluster_source(
         range_left=0,
         range_right=source_len,
-        resolution_source=dataset_start_id,
+        source_id=dataset_start_id,
         cluster_start_id=cluster_start_id,
         pk_start_id=pk_start_id,
     )
@@ -464,7 +466,7 @@ def generate_all_tables(
     clusters_source2, source_pks2 = generate_cluster_source(
         range_left=source_len,
         range_right=source_len * 2,
-        resolution_source=dataset_start_id + 1,
+        source_id=dataset_start_id + 1,
         cluster_start_id=cluster_start_id,
         pk_start_id=current_pk_id,
     )

@@ -178,7 +178,7 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
     column_id = Column(BIGINT, primary_key=True, autoincrement=True)
     source_id = Column(
         BIGINT,
-        ForeignKey("sources.resolution_id", ondelete="CASCADE"),
+        ForeignKey("sources.source_id", ondelete="CASCADE"),
         nullable=False,
     )
     column_index = Column(INTEGER, nullable=False)
@@ -206,7 +206,7 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
     source_id = Column(
-        BIGINT, ForeignKey("sources.resolution_id", ondelete="CASCADE"), nullable=False
+        BIGINT, ForeignKey("sources.source_id", ondelete="CASCADE"), nullable=False
     )
     source_pk = Column(TEXT, nullable=False)
 
@@ -237,10 +237,10 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
+    source_id = Column(BIGINT, autoincrement=True, primary_key=True)
     resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
     )
     resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)

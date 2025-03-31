@@ -112,7 +112,6 @@ def insert_dataset(
     db_logger.setLevel(WARNING)
 
     resolution_hash = hash_data(str(source.address))
-    resolution_id = None  # Store ID for later use
 
     with Session(engine) as session:
         logger.info(f"Adding {source}")
@@ -158,7 +157,7 @@ def insert_dataset(
         # Add columns directly through the relationship
         for idx, column in enumerate(source.columns):
             source_column = SourceColumns(
-                source_id=resolution.resolution_id,
+                source_id=source_obj.source_id,
                 column_index=idx,
                 column_name=column.name,
                 column_type=column.type,
@@ -170,8 +169,8 @@ def insert_dataset(
 
         logger.info(f"{source} added to Resolutions and Sources tables with columns")
 
-        # Store resolution_id and max primary keys for later use
-        resolution_id = resolution.resolution_id
+        # Store source_id and max primary keys for later use
+        source_id = source_obj.source_id
         next_cluster_id = Clusters.next_id()
         next_pk_id = ClusterSourcePK.next_id()
 
@@ -213,7 +212,7 @@ def insert_dataset(
                 (
                     pk_id_counter,  # pk_id
                     cluster_id,  # cluster_id
-                    resolution_id,  # source_id
+                    source_id,  # source_id
                     pk,  # source_pk
                 )
             )
