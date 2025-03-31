@@ -447,7 +447,9 @@ class Source(BaseModel):
                 raise ValueError("source_pk column contains null values")
 
             for col_name in cols_to_index:
-                batch = batch.with_columns(pl.col(col_name).cast(pl.Utf8).fill_null(""))
+                batch = batch.with_columns(
+                    pl.col(col_name).cast(pl.Utf8).fill_null("\x00")
+                )
 
             record_separator = "␞"
             unit_separator = "␟"

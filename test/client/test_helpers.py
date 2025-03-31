@@ -395,7 +395,7 @@ def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engi
     )
     # Drop one column
     source = testkit.source.model_copy(
-        update={"columns": [testkit.source.columns[0]]}
+        update={"columns": (testkit.source.columns[0],)}
     ).set_engine(sqlite_warehouse)
     address = source.address
     testkit.to_warehouse(engine=sqlite_warehouse)
