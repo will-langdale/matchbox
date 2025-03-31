@@ -312,11 +312,7 @@ def test_query_combine_type(
     """Various ways of combining multiple sources are supported."""
     # Dummy data and source
     testkit1 = source_from_tuple(
-        data_tuple=(
-            {"col": 20},
-            {"col": 40},
-            {"col": 60},
-        ),
+        data_tuple=({"col": 20}, {"col": 40}, {"col": 60}),
         data_pks=["0", "1", "2"],
         full_name="foo",
         engine=sqlite_warehouse,

@@ -396,10 +396,7 @@ def test_source_from_tuple():
     # Create a source from a tuple of values
 
     testkit = source_from_tuple(
-        data_tuple=(
-            {"a": 1, "b": "val"},
-            {"a": 2, "b": "val"},
-        ),
+        data_tuple=({"a": 1, "b": "val"}, {"a": 2, "b": "val"}),
         data_pks=["0", "1"],
     )
 

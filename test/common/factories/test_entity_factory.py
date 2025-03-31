@@ -151,7 +151,7 @@ def test_generate_entities_from_tuples():
 
     assert len(entities) == 2
     assert entities[0].base_values == data_tuple[0]
-    assert entities[0].base_values == data_tuple[1]
+    assert entities[1].base_values == data_tuple[1]
 
 
 @pytest.mark.parametrize(
