@@ -362,13 +362,15 @@ def test_query_404_source(get_backend: Mock, test_client: TestClient):
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_match(get_backend: Mock, test_client: TestClient):
+    foo_address = SourceAddress(full_name="foo", warehouse_hash=b"foo")
+    bar_address = SourceAddress(full_name="bar", warehouse_hash=b"bar")
     # Mock backend
     mock_matches = [
         Match(
             cluster=1,
-            source=SourceAddress(full_name="foo", warehouse_hash=b"foo"),
+            source=foo_address,
             source_id={"1"},
-            target=SourceAddress(full_name="bar", warehouse_hash=b"bar"),
+            target=bar_address,
             target_id={"a"},
         )
     ]
@@ -380,10 +382,10 @@ def test_match(get_backend: Mock, test_client: TestClient):
     response = test_client.get(
         "/match",
         params={
-            "target_full_names": ["foo"],
-            "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
-            "source_full_name": "bar",
-            "source_warehouse_hash_b64": hash_to_base64(b"bar"),
+            "target_full_names": [foo_address.full_name],
+            "target_warehouse_hashes_b64": [foo_address.warehouse_hash_b64],
+            "source_full_name": bar_address.full_name,
+            "source_warehouse_hash_b64": bar_address.warehouse_hash_b64,
             "source_pk": 1,
             "resolution_name": "res",
             "threshold": 50,
@@ -450,14 +452,15 @@ def test_match_404_source(get_backend: Mock, test_client: TestClient):
 
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_get_source(get_backend, test_client: TestClient):
-    source_testkit = Source(
-        address=SourceAddress(full_name="foo", warehouse_hash=b"bar"), db_pk="pk"
-    )
+    address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
+    source = Source(address=address, db_pk="pk")
     mock_backend = Mock()
-    mock_backend.get_source = Mock(return_value=source_testkit)
+    mock_backend.get_source = Mock(return_value=source)
     get_backend.return_value = mock_backend
 
-    response = test_client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
+    response = test_client.get(
+        f"/sources/{address.warehouse_hash_b64}/{address.full_name}"
+    )
     assert response.status_code == 200
     assert Source.model_validate(response.json())
 
