@@ -23,7 +23,6 @@ from matchbox.common.factories.entities import (
     SuffixRule,
     diff_results,
     generate_entities,
-    generate_entities_from_tuple,
     infer_sql_type_from_type,
     probabilities_to_results_entities,
 )
@@ -486,7 +485,7 @@ def source_from_tuple(
     if engine is None:
         engine = create_engine("sqlite:///:memory:")
 
-    base_entities = generate_entities_from_tuple(data_tuple=data_tuple)
+    base_entities = tuple(SourceEntity(base_values=row) for row in data_tuple)
 
     # Create source entities with references
     source_entities: list[SourceEntity] = []

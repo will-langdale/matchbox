@@ -11,7 +11,6 @@ from matchbox.common.factories.entities import (
     SourceEntity,
     diff_results,
     generate_entities,
-    generate_entities_from_tuple,
     probabilities_to_results_entities,
 )
 
@@ -142,16 +141,6 @@ def test_generate_entities(features: tuple[FeatureConfig, ...], n: int):
         assert all(f.name in entity.base_values for f in features)
         # Check all values are strings (given our test features)
         assert all(isinstance(v, str) for v in entity.base_values.values())
-
-
-def test_generate_entities_from_tuples():
-    """Test entity generation with different features and counts."""
-    data_tuple = ({"a": 1, "b": "val"}, {"a": 2, "b": "val"})
-    entities: tuple[SourceEntity] = generate_entities_from_tuple(data_tuple)
-
-    assert len(entities) == 2
-    assert entities[0].base_values == data_tuple[0]
-    assert entities[1].base_values == data_tuple[1]
 
 
 @pytest.mark.parametrize(

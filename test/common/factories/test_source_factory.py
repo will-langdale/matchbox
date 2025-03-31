@@ -394,14 +394,16 @@ def test_source_factory_id_generation():
 def test_source_from_tuple():
     """Test that source_factory can create a source from a tuple of values."""
     # Create a source from a tuple of values
-
+    data_tuple = ({"a": 1, "b": "val"}, {"a": 2, "b": "val"})
     testkit = source_from_tuple(
-        data_tuple=({"a": 1, "b": "val"}, {"a": 2, "b": "val"}),
-        data_pks=["0", "1"],
+        data_tuple=data_tuple, data_pks=["0", "1"], full_name="foo"
     )
 
-    # Verify the generated source has the expected properties
+    # Verify the generated testkit has the expected properties
     assert len(testkit.entities) == 2
+    assert set(testkit.entities[0].source_pks["foo"]) == {"0"}
+    assert set(testkit.entities[1].source_pks["foo"]) == {"1"}
+
     assert testkit.data.shape[0] == 2
     assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2

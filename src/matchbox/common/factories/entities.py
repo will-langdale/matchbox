@@ -539,17 +539,6 @@ def generate_entities(
     return tuple(entities)
 
 
-def generate_entities_from_tuple(
-    data_tuple: tuple[dict[str, Any], ...],
-) -> tuple[SourceEntity]:
-    """Generate base entities from tuple of rows."""
-    entities = []
-    for row in data_tuple:
-        entities.append(SourceEntity(base_values=row, source_pks=EntityReference()))
-
-    return tuple(entities)
-
-
 def probabilities_to_results_entities(
     probabilities: pa.Table,
     left_clusters: tuple[ClusterEntity, ...],
