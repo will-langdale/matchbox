@@ -23,7 +23,7 @@ dependencies = [
     "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",
     "rich>=13.9.4",
-    "polars-lts-cpu>=1.20.0",
+    "polars-lts-cpu>=1.26.0",
 ]
 
 [project.optional-dependencies]
