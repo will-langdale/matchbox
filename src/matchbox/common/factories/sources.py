@@ -526,7 +526,9 @@ def source_from_tuple(
     )
 
     raw_data = pa.Table.from_pylist(list(data_tuple))
-    data = raw_data.append_column("id", [entity_ids]).append_column("pk", data_pks)
+    raw_pks = pa.array(data_pks)
+
+    data = raw_data.append_column("id", [entity_ids]).append_column("pk", raw_pks)
 
     return SourceTestkit(
         source=source,

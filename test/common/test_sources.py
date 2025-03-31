@@ -9,7 +9,7 @@ from sqlalchemy import Engine, Table, create_engine
 from matchbox.client.helpers.selector import Match
 from matchbox.common.db import fullname_to_prefix
 from matchbox.common.exceptions import MatchboxSourceColumnError
-from matchbox.common.factories.sources import source_factory
+from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 
@@ -311,6 +311,38 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     # Column order does not matter, column names do
     assert sort_df(original_hash).equals(sort_df(reordered_hash))
     assert not sort_df(original_hash).equals(sort_df(renamed_hash))
+
+
+def test_source_hash_nulls(sqlite_warehouse: Engine):
+    """A Source can output hashed versions of rows with nulls."""
+    testkit = source_from_tuple(
+        data_tuple=({"a": 1.0}, {"a": None}),
+        data_pks=["a", "b"],
+        full_name="null_test",
+        engine=sqlite_warehouse,
+    )
+    source = testkit.source.set_engine(sqlite_warehouse)
+    testkit.to_warehouse(engine=sqlite_warehouse)
+
+    # Test hashing with nulls
+    hashed_data = source.hash_data()
+
+    # No nulls in the hash column
+    assert pa.compute.count(hashed_data["hash"], mode="only_null").as_py() == 0
+
+    # Test hashing with null PKs
+    null_pk_testkit = source_from_tuple(
+        data_tuple=({"a": 1}, {"a": 2}, {"a": 3}),
+        data_pks=["a", None, None],
+        full_name="null_pk_test",
+        engine=sqlite_warehouse,
+    )
+
+    # Null PKs should error
+    with pytest.raises(ValueError):
+        source_with_null_pks = null_pk_testkit.source.set_engine(sqlite_warehouse)
+        null_pk_testkit.to_warehouse(engine=sqlite_warehouse)
+        source_with_null_pks.hash_data()
 
 
 @pytest.mark.parametrize(
