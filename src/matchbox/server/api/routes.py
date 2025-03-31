@@ -11,10 +11,12 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Security,
     UploadFile,
     status,
 )
 from fastapi.responses import JSONResponse, Response
+from fastapi.security import APIKeyHeader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
@@ -41,7 +43,7 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import MetadataStore, process_upload
-from matchbox.server.base import BackendManager, MatchboxDBAdapter
+from matchbox.server.base import APISettings, BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -63,6 +65,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 metadata_store = MetadataStore(expiry_minutes=30)
+
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
+
+
+def validate_api_key(api_key: str = Security(API_KEY_HEADER)) -> None:
+    """Validate client API Key."""
+    if api_key != APISettings().api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key missing or invalid.",
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
+
 
 app = FastAPI(
     title="matchbox API",
@@ -97,6 +113,7 @@ async def healthcheck() -> OKMessage:
         400: {"model": UploadStatus, **UploadStatus.status_400_examples()},
     },
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(validate_api_key)],
 )
 async def upload_file(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -110,6 +127,7 @@ async def upload_file(
     Status can be checked using the /upload/{upload_id}/status endpoint.
 
     Raises HTTP 400 if:
+
     * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
     * Upload is already being processed
     * Uploaded data doesn't match the metadata schema
@@ -311,7 +329,11 @@ async def match(
 # Data management
 
 
-@app.post("/sources", status_code=status.HTTP_202_ACCEPTED)
+@app.post(
+    "/sources",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(validate_api_key)],
+)
 async def add_source(source: Source) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
     upload_id = metadata_store.cache_source(metadata=source)
@@ -360,6 +382,7 @@ async def get_resolutions(
         },
     },
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(validate_api_key)],
 )
 async def insert_model(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], model: ModelMetadata
@@ -407,6 +430,7 @@ async def get_model(
     "/models/{name}/results",
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(validate_api_key)],
 )
 async def set_results(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)], name: str
@@ -457,6 +481,7 @@ async def get_results(
             **ModelOperationStatus.status_500_examples(),
         },
     },
+    dependencies=[Depends(validate_api_key)],
 )
 async def set_truth(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -537,6 +562,7 @@ async def get_ancestors(
             **ModelOperationStatus.status_500_examples(),
         },
     },
+    dependencies=[Depends(validate_api_key)],
 )
 async def set_ancestors_cache(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -598,6 +624,7 @@ async def get_ancestors_cache(
             **ModelOperationStatus.status_409_examples(),
         },
     },
+    dependencies=[Depends(validate_api_key)],
 )
 async def delete_model(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
@@ -656,6 +683,7 @@ async def count_backend_items(
 @app.delete(
     "/database",
     responses={409: {"model": str}},
+    dependencies=[Depends(validate_api_key)],
 )
 async def clear_database(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],

@@ -48,9 +48,15 @@ def resolve_model_name(model: str, engine: Engine) -> Resolutions:
         MatchboxResolutionNotFoundError: If the model doesn't exist.
     """
     with Session(engine) as session:
-        if resolution := session.query(Resolutions).filter_by(name=model).first():
+        if (
+            resolution := session.query(Resolutions)
+            .filter_by(name=model, type="model")
+            .first()
+        ):
             return resolution
-        raise MatchboxResolutionNotFoundError(resolution_name=model)
+        raise MatchboxResolutionNotFoundError(
+            message=f"Resolution {model} not found or not of type 'model'."
+        )
 
 
 def get_resolution_graph(engine: Engine) -> ResolutionGraph:
@@ -261,6 +267,7 @@ def isolate_table(table: DeclarativeMeta) -> tuple[MetaData, Table]:
 
     Returns:
         A tuple of:
+
             * The isolated SQLAlchemy MetaData
             * A new SQLAlchemy Table instance with all columns and indices
     """

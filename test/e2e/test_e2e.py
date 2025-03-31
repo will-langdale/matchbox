@@ -33,7 +33,11 @@ class TestE2EAnalyticalUser:
     n_true_entities: int | None = None
 
     @pytest.fixture(autouse=True, scope="function")
-    def setup_environment(self, matchbox_client: Client, postgres_warehouse: Engine):
+    def setup_environment(
+        self,
+        matchbox_client: Client,
+        postgres_warehouse: Engine,
+    ):
         """Set up warehouse and database using fixtures."""
         # Store fixtures as class attributes for use in tests with self.*
         n_true_entities = 100
@@ -122,6 +126,7 @@ class TestE2EAnalyticalUser:
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
+
         assert response.status_code == 200, "Failed to clear matchbox database"
 
         yield
@@ -205,7 +210,6 @@ class TestE2EAnalyticalUser:
                     + [col.name for col in source_testkit.source.columns]
                 },
                 engine=self.warehouse_engine,
-                only_indexed=False,
             )
             raw_df = query(source_select, return_type="pandas")
             clusters = query_to_cluster_entities(
@@ -285,7 +289,6 @@ class TestE2EAnalyticalUser:
                 select(
                     {left_testkit.source.address.full_name: ["pk", common_field]},
                     engine=self.warehouse_engine,
-                    only_indexed=False,
                 ),
                 resolution_name=deduper_names[left_testkit.source.address.full_name],
                 return_type="pandas",
@@ -300,7 +303,6 @@ class TestE2EAnalyticalUser:
                 select(
                     {right_testkit.source.address.full_name: ["pk", common_field]},
                     engine=self.warehouse_engine,
-                    only_indexed=False,
                 ),
                 resolution_name=deduper_names[right_testkit.source.address.full_name],
                 return_type="pandas",
@@ -395,14 +397,8 @@ class TestE2EAnalyticalUser:
         # Query data from the first linked pair and the third source
         # PK included then dropped to create ClusterEntity objects for later diff
         left_raw_df = query(
-            select(
-                {crn_source: ["pk", "crn"]},
-                engine=self.warehouse_engine,
-                only_indexed=False,
-            ),
-            select(
-                {duns_source: ["pk"]}, engine=self.warehouse_engine, only_indexed=False
-            ),
+            select({crn_source: ["pk", "crn"]}, engine=self.warehouse_engine),
+            select({duns_source: ["pk"]}, engine=self.warehouse_engine),
             resolution_name=linker_names[first_pair],
             return_type="pandas",
         )
@@ -413,17 +409,12 @@ class TestE2EAnalyticalUser:
         left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
 
         right_raw_df = query(
-            select(
-                {cdms_source: ["pk", "crn"]},
-                engine=self.warehouse_engine,
-                only_indexed=False,
-            ),
+            select({cdms_source: ["pk", "crn"]}, engine=self.warehouse_engine),
             resolution_name=deduper_names[cdms_source],
             return_type="pandas",
         )
         right_clusters = query_to_cluster_entities(
-            query=right_raw_df,
-            source_pks={cdms_source: f"{cdms_prefix}pk"},
+            query=right_raw_df, source_pks={cdms_source: f"{cdms_prefix}pk"}
         )
         right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
 
@@ -485,7 +476,6 @@ class TestE2EAnalyticalUser:
                     cdms_source: ["pk", "crn", "cdms"],
                 },
                 engine=self.warehouse_engine,
-                only_indexed=False,
             ),
             resolution_name=final_linker_name,
             return_type="pandas",

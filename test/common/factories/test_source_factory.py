@@ -14,6 +14,7 @@ from matchbox.common.factories.entities import (
 from matchbox.common.factories.sources import (
     generate_rows,
     source_factory,
+    source_from_tuple,
 )
 from matchbox.common.sources import SourceAddress
 
@@ -208,7 +209,6 @@ def test_source_factory_mock_properties():
     assert len(source_testkit.columns) == len(features)
     for feature, column in zip(features, source_testkit.columns, strict=False):
         assert column.name == feature.name
-        assert column.alias == feature.name
         assert column.type == feature.sql_type
 
     # Check default resolution name and default pk
@@ -219,7 +219,7 @@ def test_source_factory_mock_properties():
     dump = source_testkit.model_dump()
     assert dump["address"]["full_name"] == full_name
     assert dump["columns"] == tuple(
-        {"name": f.name, "alias": f.name, "type": f.sql_type} for f in features
+        {"name": f.name, "type": f.sql_type} for f in features
     )
 
 
@@ -389,6 +389,26 @@ def test_source_factory_id_generation():
 
     # Different rows should have different IDs
     assert len(data_df["id"].unique()) == len(data_df["company_name"].unique())
+
+
+def test_source_from_tuple():
+    """Test that source_factory can create a source from a tuple of values."""
+    # Create a source from a tuple of values
+    data_tuple = ({"a": 1, "b": "val"}, {"a": 2, "b": "val"})
+    testkit = source_from_tuple(
+        data_tuple=data_tuple, data_pks=["0", "1"], full_name="foo"
+    )
+
+    # Verify the generated testkit has the expected properties
+    assert len(testkit.entities) == 2
+    assert set(testkit.entities[0].source_pks["foo"]) | set(
+        testkit.entities[1].source_pks["foo"]
+    ) == {"0", "1"}
+
+    assert testkit.data.shape[0] == 2
+    assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
+    assert testkit.data_hashes.shape[0] == 2
+    assert set(col.name for col in testkit.source.columns) == {"a", "b"}
 
 
 @pytest.mark.parametrize(

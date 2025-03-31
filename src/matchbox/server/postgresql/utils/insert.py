@@ -10,7 +10,7 @@ from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import hash_values
+from matchbox.common.hash import hash_data, hash_values
 from matchbox.common.logging import WARNING, get_logger, logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
@@ -27,7 +27,7 @@ from matchbox.server.postgresql.orm import (
     SourceColumns,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest, hash_to_hex_decode
+from matchbox.server.postgresql.utils.db import batch_ingest
 
 
 class HashIDMap:
@@ -111,7 +111,7 @@ def insert_dataset(
     db_logger = get_logger("sqlalchemy.engine")
     db_logger.setLevel(WARNING)
 
-    resolution_hash = source.signature
+    resolution_hash = hash_data(str(source.address))
 
     with Session(engine) as session:
         logger.info(f"Adding {source}")
@@ -156,7 +156,6 @@ def insert_dataset(
                     source_id=resolution.resolution_id,
                     column_index=idx,
                     column_name=column.name,
-                    column_alias=column.alias,
                     column_type=column.type,
                 )
                 source_obj.columns.append(source_column)
@@ -178,17 +177,8 @@ def insert_dataset(
         next_pk_id = ClusterSourcePK.next_id()
 
         # Filter out existing hashes
-        existing_hashes_statement = (
-            select(Clusters.cluster_hash)
-            .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
-            .join(Sources, Sources.resolution_id == ClusterSourcePK.source_id)
-            .join(Resolutions)
-            .where(
-                Resolutions.resolution_hash == hash_to_hex_decode(source.signature),
-            )
-        )
         existing_hashes = sql_to_df(
-            stmt=existing_hashes_statement,
+            stmt=select(Clusters.cluster_hash),
             engine=engine,
             return_type="arrow",
         )["cluster_hash"]
@@ -447,6 +437,7 @@ def _results_to_insert_tables(
 
     Returns:
         A tuple containing:
+
             * A Clusters update Arrow table
             * A Contains update Arrow table
             * A Probabilities update Arrow table

@@ -48,7 +48,6 @@ class SourceColumn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    alias: str = Field(default_factory=lambda data: data["name"])
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
@@ -83,7 +82,12 @@ class SourceAddress(BaseModel):
 
     def __str__(self) -> str:
         """Convert to a string."""
-        return self.full_name + "@" + hash_to_base64(self.warehouse_hash)
+        return self.full_name + "@" + self.warehouse_hash_b64
+
+    @property
+    def warehouse_hash_b64(self) -> str:
+        """Return warehouse hash as a base64 encoded string."""
+        return hash_to_base64(self.warehouse_hash)
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
@@ -103,14 +107,26 @@ class SourceAddress(BaseModel):
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
 
+    def format_column(self, column: str) -> str:
+        """Outputs a full SQLAlchemy column representation.
+
+        Args:
+            column: the name of the column
+
+        Returns:
+            A string representing the table name and column
+        """
+        return fullname_to_prefix(self.full_name) + column
+
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to ensure Engine is available to object."""
+    """Decorator to check that engine is set."""
 
     @wraps(func)
     def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.engine:
             raise MatchboxSourceEngineError
+
         return func(self, *args, **kwargs)
 
     return wrapper
@@ -171,49 +187,19 @@ class Source(BaseModel):
             full_name=self.address.full_name, engine=engine
         )
         if implied_address != self.address:
-            raise ValueError(
-                "The engine must be the same that was used to index the source"
-            )
+            raise ValueError("The engine does not match the source address.")
 
         self._engine = engine
-        remote_columns = self._get_remote_columns()
-        for col in self.columns:
-            if col.name not in remote_columns:
-                raise MatchboxSourceColumnError(
-                    f"Column {col.name} not available in {self.address.full_name}"
-                )
-            actual_type = str(remote_columns[col.name])
-            if actual_type != col.type:
-                raise MatchboxSourceColumnError(
-                    f"Type {actual_type} != {col.type} for {col.name}"
-                )
+
         return self
 
-    @property
-    def signature(self) -> bytes:
-        """Generate a unique hash based on the table's metadata."""
-        sorted_columns = sorted(self.columns, key=lambda c: c.alias)
-        schema_representation = f"{self.resolution_name}: " + ",".join(
-            f"{col.alias}:{col.type}" for col in sorted_columns
-        )
-        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
-
-    def format_column(self, column: str) -> str:
-        """Outputs a full SQLAlchemy column representation.
-
-        Args:
-            column: the name of the column
-
-        Returns:
-            A string representing the table name and column
-        """
-        return fullname_to_prefix(self.address.full_name) + column
-
     @needs_engine
-    def _get_remote_columns(self) -> dict[str, str]:
+    def _get_remote_columns(self, exclude_pk=False) -> dict[str, str]:
         table = self.to_table()
         return {
-            col.name: col.type for col in table.columns if col.name not in self.db_pk
+            col.name: col.type
+            for col in table.columns
+            if (col.name != self.db_pk) or (not exclude_pk)
         }
 
     @needs_engine
@@ -223,7 +209,7 @@ class Source(BaseModel):
         Default columns are all from the source warehouse other than `self.db_pk`.
         All other attributes are copied, and its engine (if present) is set.
         """
-        remote_columns = self._get_remote_columns()
+        remote_columns = self._get_remote_columns(exclude_pk=True)
         columns_attribute = (
             SourceColumn(name=col_name, type=str(col_type))
             for col_name, col_type in remote_columns.items()
@@ -249,6 +235,42 @@ class Source(BaseModel):
         table = Table(db_table, metadata, autoload_with=self.engine)
         return table
 
+    @needs_engine
+    def check_columns(self, columns: list[str] | None = None) -> None:
+        """Check that columns are available in the warehouse and correctly typed.
+
+        Args:
+            columns: List of column names to check. If None, it will check self.columns
+        """
+        remote_columns = self._get_remote_columns()
+
+        if self.db_pk not in remote_columns:
+            raise MatchboxSourceColumnError(
+                f"Primary key {self.db_pk} not available in {self.address}"
+            )
+
+        if columns:
+            columns = set(columns)
+            remote_names = set(remote_columns.keys())
+            if not columns <= remote_names:
+                raise MatchboxSourceColumnError(
+                    f"Columns {columns - remote_names} not in {self.address}"
+                )
+        else:
+            if not self.columns:
+                raise ValueError("No columns passed, and none set on the Source.")
+
+            for col in self.columns:
+                if col.name not in remote_columns:
+                    raise MatchboxSourceColumnError(
+                        f"Column {col.name} not available in {self.address.full_name}"
+                    )
+                actual_type = str(remote_columns[col.name])
+                if actual_type != col.type:
+                    raise MatchboxSourceColumnError(
+                        f"Type {actual_type} != {col.type} for {col.name}"
+                    )
+
     def _select(
         self,
         fields: list[str] | None = None,
@@ -258,6 +280,8 @@ class Source(BaseModel):
         """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
         table = self.to_table()
 
+        # Ensure all set columns are available and the expected type
+        self.check_columns(columns=fields)
         if not fields:
             fields = [col.name for col in self.columns]
 
@@ -268,7 +292,7 @@ class Source(BaseModel):
             """Helper to get a column with proper casting and labeling for PKs."""
             col = table.columns[col_name]
             if col_name == self.db_pk:
-                return cast(col, String).label(self.format_column(col_name))
+                return cast(col, String).label(self.address.format_column(col_name))
             return col
 
         # Determine which columns to select
@@ -392,7 +416,9 @@ class Source(BaseModel):
         Returns:
             A PyArrow Table containing source primary keys and their hashes.
         """
-        signature_hex = self.signature.hex()
+        # Ensure all set columns are available and the expected type
+        self.check_columns()
+
         source_table = self.to_table()
         cols_to_index = tuple([col.name for col in self.columns])
 
@@ -402,33 +428,41 @@ class Source(BaseModel):
         )
 
         def _process_batch(
-            batch: pl.DataFrame, cols_to_index: tuple, signature_hex: str
+            batch: pl.DataFrame,
+            cols_to_index: tuple,
         ) -> pl.DataFrame:
             """Process a single batch of data using Polars.
 
             Args:
                 batch: Polars DataFrame containing the data
                 cols_to_index: Columns to include in the hash
-                signature_hex: Signature to append to values before hashing
 
             Returns:
                 Polars DataFrame with hash and source_pk columns
+
+            Raises:
+                ValueError: If any source_pk values are null
             """
+            if batch["source_pk"].is_null().any():
+                raise ValueError("source_pk column contains null values")
+
             for col_name in cols_to_index:
-                batch = batch.with_columns(pl.col(col_name).cast(pl.Utf8))
-
-            batch = batch.with_columns(
-                pl.concat_str([pl.col(c) for c in cols_to_index]).alias("raw_value")
-            )
-
-            batch = batch.with_columns(
-                (pl.col("raw_value") + " " + pl.lit(signature_hex)).alias(
-                    "value_with_sig"
+                batch = batch.with_columns(
+                    pl.col(col_name).cast(pl.Utf8).fill_null("\x00")
                 )
+
+            record_separator = "␞"
+            unit_separator = "␟"
+            str_concatenation = [
+                f"{c}{unit_separator}" + pl.col(c) + record_separator
+                for c in sorted(cols_to_index)
+            ]
+            batch = batch.with_columns(
+                pl.concat_str(str_concatenation).alias("value_concat")
             )
 
             batch = batch.with_columns(
-                pl.col("value_with_sig")
+                pl.col("value_concat")
                 .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
                 .alias("hash")
             )
@@ -449,7 +483,7 @@ class Source(BaseModel):
 
             all_results = []
             for batch in raw_batches:
-                batch_result = _process_batch(batch, cols_to_index, signature_hex)
+                batch_result = _process_batch(batch, cols_to_index)
                 all_results.append(batch_result)
 
             processed_df = pl.concat(all_results)
@@ -464,7 +498,7 @@ class Source(BaseModel):
                 execute_options=execute_options,
             )
 
-            processed_df = _process_batch(raw_result, cols_to_index, signature_hex)
+            processed_df = _process_batch(raw_result, cols_to_index)
 
         return processed_df.group_by("hash").agg(pl.col("source_pk")).to_arrow()
 

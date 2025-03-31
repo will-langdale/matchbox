@@ -183,7 +183,6 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
     )
     column_index = Column(INTEGER, nullable=False)
     column_name = Column(TEXT, nullable=False)
-    column_alias = Column(TEXT, nullable=False)
     column_type = Column(TEXT, nullable=False)
 
     # Relationships

@@ -25,7 +25,6 @@ erDiagram
         bigint source_id FK
         int column_index
         string column_name
-        string column_alias
         string column_type
     }
     Clusters {

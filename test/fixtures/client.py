@@ -2,8 +2,10 @@ from os import environ
 from typing import Callable, Generator
 
 import pytest
+from fastapi.testclient import TestClient
 
 from matchbox.client._settings import settings as client_settings
+from matchbox.server import app
 
 
 @pytest.fixture(scope="function")
@@ -25,3 +27,10 @@ def env_setter() -> Generator[Callable[[str, str], None], None, None]:
         else:
             environ[var_name] = original_value
     client_settings.__init__()
+
+
+@pytest.fixture(scope="function")
+def test_client(env_setter: Callable[[str, str], None]) -> TestClient:
+    env_setter("MB__API__API_KEY", "test-api-key")
+    client = TestClient(app, headers={"X-API-Key": "test-api-key"})
+    return client

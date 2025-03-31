@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Iterable
+from importlib.metadata import version
 from io import BytesIO
 
 import httpx
@@ -96,10 +97,20 @@ def create_client(settings: ClientSettings) -> httpx.Client:
         base_url=settings.api_root,
         timeout=settings.timeout,
         event_hooks={"response": [handle_http_code]},
+        headers=create_headers(settings),
     )
 
 
+def create_headers(settings: ClientSettings) -> dict[str, str]:
+    """Creates client headers."""
+    headers = {"X-Matchbox-Client-Version": version("matchbox_db")}
+    if settings.api_key is not None:
+        headers["X-API-Key"] = settings.api_key.get_secret_value()
+    return headers
+
+
 CLIENT = create_client(settings=settings)
+
 
 # Retrieval
 
@@ -205,8 +216,7 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
 
 
 def get_source(address: SourceAddress) -> Source:
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
-    res = CLIENT.get(f"/sources/{warehouse_hash_b64}/{address.full_name}")
+    res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
 
     return Source.model_validate(res.json())
 
@@ -290,7 +300,8 @@ def set_model_ancestors_cache(
 ) -> ModelOperationStatus:
     """Set the ancestors cache for a model in Matchbox."""
     res = CLIENT.post(
-        f"/models/{name}/ancestors_cache", json=[a.model_dump() for a in ancestors]
+        f"/models/{name}/ancestors_cache",
+        json=[a.model_dump() for a in ancestors],
     )
     return ModelOperationStatus.model_validate(res.json())
 

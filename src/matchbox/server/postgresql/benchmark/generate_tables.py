@@ -93,7 +93,6 @@ def generate_sources(
 
     # Column data
     column_names = [["col1"], ["col2"]]
-    column_aliases = [["col1"], ["col2"]]
     column_types = [["TEXT"], ["TEXT"]]
 
     # Create flattened data for source_columns table
@@ -101,7 +100,6 @@ def generate_sources(
     source_ids = []
     column_indices = []
     column_name_values = []
-    column_alias_values = []
     column_type_values = []
 
     # Start with column_id = 1
@@ -109,15 +107,14 @@ def generate_sources(
 
     # Process each source and its columns
     for i, source_id in enumerate(sources_resolution_id):
-        for j, (name, alias, type_val) in enumerate(
-            zip(column_names[i], column_aliases[i], column_types[i], strict=True)
+        for j, (name, type_val) in enumerate(
+            zip(column_names[i], column_types[i], strict=True)
         ):
             column_ids.append(next_column_id)
             next_column_id += 1
             source_ids.append(source_id)
             column_indices.append(j)
             column_name_values.append(name)
-            column_alias_values.append(alias)
             column_type_values.append(type_val)
 
     # Create source_columns table
@@ -127,7 +124,6 @@ def generate_sources(
             "source_id": pa.array(source_ids, type=pa.uint64()),
             "column_index": pa.array(column_indices, type=pa.int32()),
             "column_name": pa.array(column_name_values, type=pa.string()),
-            "column_alias": pa.array(column_alias_values, type=pa.string()),
             "column_type": pa.array(column_type_values, type=pa.string()),
         }
     )

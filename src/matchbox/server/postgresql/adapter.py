@@ -224,7 +224,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     columns=[
                         SourceColumn(
                             name=column.column_name,
-                            alias=column.column_alias,
                             type=column.column_type,
                         )
                         for column in columns
