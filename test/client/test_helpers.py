@@ -34,7 +34,6 @@ from matchbox.common.factories.sources import (
     source_from_tuple,
 )
 from matchbox.common.graph import DEFAULT_RESOLUTION
-from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress
 
 
@@ -146,15 +145,11 @@ def test_query_no_resolution_ok_various_params(
     )
     source = testkit.source.set_engine(sqlite_warehouse)
     address = source.address
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
     testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
-    matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source.model_dump(),
-        )
+    matchbox_api.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}").mock(
+        return_value=Response(200, json=source.model_dump())
     )
 
     query_route = matchbox_api.get("/query").mock(
@@ -181,7 +176,7 @@ def test_query_no_resolution_ok_various_params(
 
     assert dict(query_route.calls.last.request.url.params) == {
         "full_name": address.full_name,
-        "warehouse_hash_b64": warehouse_hash_b64,
+        "warehouse_hash_b64": address.warehouse_hash_b64,
     }
 
     # Tests with optional params
@@ -191,7 +186,7 @@ def test_query_no_resolution_ok_various_params(
 
     assert dict(query_route.calls.last.request.url.params) == {
         "full_name": address.full_name,
-        "warehouse_hash_b64": warehouse_hash_b64,
+        "warehouse_hash_b64": address.warehouse_hash_b64,
         "threshold": "50",
         "limit": "2",
     }
@@ -210,7 +205,6 @@ def test_query_multiple_sources_with_limits(
     )
     source1 = testkit1.source.set_engine(sqlite_warehouse)
     address1 = source1.address
-    warehouse_hash_b64_1 = hash_to_base64(address1.warehouse_hash)
     testkit1.to_warehouse(engine=sqlite_warehouse)
 
     testkit2 = source_from_tuple(
@@ -221,23 +215,16 @@ def test_query_multiple_sources_with_limits(
     )
     source2 = testkit2.source.set_engine(sqlite_warehouse)
     address2 = source2.address
-    warehouse_hash_b64_2 = hash_to_base64(address2.warehouse_hash)
     testkit2.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
-    matchbox_api.get(f"/sources/{warehouse_hash_b64_1}/{address1.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source1.model_dump(),
-        )
-    )
+    matchbox_api.get(
+        f"/sources/{address1.warehouse_hash_b64}/{address1.full_name}"
+    ).mock(return_value=Response(200, json=source1.model_dump()))
 
-    matchbox_api.get(f"/sources/{warehouse_hash_b64_2}/{address2.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source2.model_dump(),
-        )
-    )
+    matchbox_api.get(
+        f"/sources/{address2.warehouse_hash_b64}/{address2.full_name}"
+    ).mock(return_value=Response(200, json=source2.model_dump()))
 
     query_route = matchbox_api.get("/query").mock(
         side_effect=[
@@ -287,13 +274,13 @@ def test_query_multiple_sources_with_limits(
 
     assert dict(query_route.calls[-2].request.url.params) == {
         "full_name": address1.full_name,
-        "warehouse_hash_b64": warehouse_hash_b64_1,
+        "warehouse_hash_b64": address1.warehouse_hash_b64,
         "resolution_name": DEFAULT_RESOLUTION,
         "limit": "4",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "full_name": address2.full_name,
-        "warehouse_hash_b64": warehouse_hash_b64_2,
+        "warehouse_hash_b64": address2.warehouse_hash_b64,
         "resolution_name": DEFAULT_RESOLUTION,
         "limit": "3",
     }
@@ -319,7 +306,6 @@ def test_query_combine_type(
     )
     source1 = testkit1.source.set_engine(sqlite_warehouse)
     address1 = source1.address
-    warehouse_hash_b64_1 = hash_to_base64(address1.warehouse_hash)
     testkit1.to_warehouse(engine=sqlite_warehouse)
 
     testkit2 = source_from_tuple(
@@ -330,23 +316,16 @@ def test_query_combine_type(
     )
     source2 = testkit2.source.set_engine(sqlite_warehouse)
     address2 = source2.address
-    warehouse_hash_b64_2 = hash_to_base64(address2.warehouse_hash)
     testkit2.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
-    matchbox_api.get(f"/sources/{warehouse_hash_b64_1}/{address1.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source1.model_dump(),
-        )
-    )
+    matchbox_api.get(
+        f"/sources/{address1.warehouse_hash_b64}/{address1.full_name}"
+    ).mock(return_value=Response(200, json=source1.model_dump()))
 
-    matchbox_api.get(f"/sources/{warehouse_hash_b64_2}/{address2.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source2.model_dump(),
-        )
-    )
+    matchbox_api.get(
+        f"/sources/{address2.warehouse_hash_b64}/{address2.full_name}"
+    ).mock(return_value=Response(200, json=source2.model_dump()))
 
     matchbox_api.get("/query").mock(
         side_effect=[
@@ -419,15 +398,11 @@ def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engi
         update={"columns": [testkit.source.columns[0]]}
     ).set_engine(sqlite_warehouse)
     address = source.address
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
     testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
-    matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source.model_dump(),
-        )
+    matchbox_api.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}").mock(
+        return_value=Response(200, json=source.model_dump())
     )
 
     matchbox_api.get("/query").mock(
@@ -492,14 +467,12 @@ def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine
     """Handles source 404 error when retrieving source."""
     # Mock API
     address = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
 
-    matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
+    matchbox_api.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}").mock(
         return_value=Response(
             404,
             json=NotFoundError(
-                details="Source 42 not found",
-                entity=BackendRetrievableType.SOURCE,
+                details="Source 42 not found", entity=BackendRetrievableType.SOURCE
             ).model_dump(),
         )
     )
@@ -509,8 +482,7 @@ def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine
             200,
             content=table_to_buffer(
                 pa.Table.from_pylist(
-                    [{"source_pk": "0", "id": 1}],
-                    schema=SCHEMA_MB_IDS,
+                    [{"source_pk": "0", "id": 1}], schema=SCHEMA_MB_IDS
                 )
             ).read(),
         )
@@ -539,7 +511,6 @@ def test_query_with_batches(
     source = source_testkit.source.set_engine(sqlite_warehouse)
     source_testkit.to_warehouse(engine=sqlite_warehouse)
     address = source.address
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
 
     schema = pa.schema(
         [
@@ -560,11 +531,8 @@ def test_query_with_batches(
     to_arrow_mock.side_effect = lambda *args, **kwargs: iter([mock_batch1, mock_batch2])
 
     # Mock API
-    matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
-        return_value=Response(
-            200,
-            json=source.model_dump(),
-        )
+    matchbox_api.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}").mock(
+        return_value=Response(200, json=source.model_dump())
     )
     matchbox_api.get("/query").mock(
         return_value=Response(
@@ -886,11 +854,9 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     assert len(res) == 2
     assert isinstance(res[0], Match)
     param_set = sorted(match_route.calls.last.request.url.params.multi_items())
-    expected_hash_b64 = hash_to_base64(
-        SourceAddress.compose(
-            full_name="irrelevant", engine=sqlite_warehouse
-        ).warehouse_hash
-    )
+    expected_hash_b64 = SourceAddress.compose(
+        full_name="irrelevant", engine=sqlite_warehouse
+    ).warehouse_hash_b64
     assert param_set == sorted(
         [
             ("target_full_names", "test.target1"),

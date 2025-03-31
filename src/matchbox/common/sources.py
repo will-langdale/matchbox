@@ -82,7 +82,12 @@ class SourceAddress(BaseModel):
 
     def __str__(self) -> str:
         """Convert to a string."""
-        return self.full_name + "@" + hash_to_base64(self.warehouse_hash)
+        return self.full_name + "@" + self.warehouse_hash_b64
+
+    @property
+    def warehouse_hash_b64(self) -> str:
+        """Return warehouse hash as a base64 encoded string."""
+        return hash_to_base64(self.warehouse_hash)
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
