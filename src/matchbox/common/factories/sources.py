@@ -82,7 +82,10 @@ class SourceTestkit(BaseModel):
 
     source: Source = Field(description="The real generated Source object.")
     features: tuple[FeatureConfig, ...] | None = Field(
-        description="The features used to generate the data.",
+        description=(
+            "The features used to generate the data. "
+            "If None, the source data was not generated, but set manually."
+        ),
         default=None,
     )
     data: pa.Table = Field(description="The PyArrow table of generated data.")
