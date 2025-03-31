@@ -17,7 +17,6 @@ from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.selector import Match
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.db import get_schema_table_names
 from matchbox.common.dtos import (
     BackendRetrievableType,
     BackendUploadType,
@@ -32,22 +31,11 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.sources import (
     linked_sources_factory,
     source_factory,
+    source_from_tuple,
 )
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
-
-
-def to_warehouse(engine: Engine, data: DataFrame, address: SourceAddress):
-    """Write data to the warehouse."""
-    schema, table = get_schema_table_names(address.full_name)
-    data.to_sql(
-        name=table,
-        schema=schema,
-        con=engine,
-        index=False,
-        if_exists="replace",
-    )
+from matchbox.common.sources import Source, SourceAddress
 
 
 def test_cleaners():
@@ -149,18 +137,17 @@ def test_query_no_resolution_ok_various_params(
     matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Tests that we can avoid passing resolution name, with a variety of parameters."""
-    # Mock data and source
-    data = DataFrame(
-        {
-            "pk": ["0", "1"],
-            "a": [1, 10],
-            "b": ["2", "20"],
-        }
+    # Dummy data and source
+    testkit = source_from_tuple(
+        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
+        data_pks=["0", "1"],
+        full_name="foo",
+        engine=sqlite_warehouse,
     )
-    address = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
-    source = Source(address=address, db_pk="pk").set_engine(sqlite_warehouse)
-    to_warehouse(engine=sqlite_warehouse, data=data, address=address)
+    source = testkit.source.set_engine(sqlite_warehouse)
+    address = source.address
     warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+    testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(
@@ -214,37 +201,28 @@ def test_query_multiple_sources_with_limits(
     matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Tests that we can query multiple sources and distribute the limit among them."""
-    # Mock data and source
-    data1 = DataFrame(
-        {
-            "pk": ["0", "1"],
-            "a": [1, 10],
-            "b": ["2", "20"],
-        }
+    # Dummy data and source
+    testkit1 = source_from_tuple(
+        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
+        data_pks=["0", "1"],
+        full_name="foo",
+        engine=sqlite_warehouse,
     )
-    address1 = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
-    source1 = Source(
-        address=address1,
-        db_pk="pk",
-        columns=[
-            SourceColumn(name="a", type="BIGINT"),
-            SourceColumn(name="b", type="TEXT"),
-        ],
-    ).set_engine(sqlite_warehouse)
-    to_warehouse(engine=sqlite_warehouse, data=data1, address=address1)
+    source1 = testkit1.source.set_engine(sqlite_warehouse)
+    address1 = source1.address
     warehouse_hash_b64_1 = hash_to_base64(address1.warehouse_hash)
+    testkit1.to_warehouse(engine=sqlite_warehouse)
 
-    data2 = DataFrame(
-        {
-            "pk": ["2", "3"],
-            "c": ["val", "val"],
-        }
+    testkit2 = source_from_tuple(
+        data_tuple=({"c": "val"}, {"c": "val"}),
+        data_pks=["2", "3"],
+        full_name="foo2",
+        engine=sqlite_warehouse,
     )
-    address2 = SourceAddress.compose(full_name="foo2", engine=sqlite_warehouse)
-    # We don't need to set columns as we're specifying them in the selector later
-    source2 = Source(address=address2, db_pk="pk").set_engine(sqlite_warehouse)
-    to_warehouse(engine=sqlite_warehouse, data=data2, address=address2)
+    source2 = testkit2.source.set_engine(sqlite_warehouse)
+    address2 = source2.address
     warehouse_hash_b64_2 = hash_to_base64(address2.warehouse_hash)
+    testkit2.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{warehouse_hash_b64_1}/{address1.full_name}").mock(
@@ -332,26 +310,32 @@ def test_query_combine_type(
     combine_type: str, matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Various ways of combining multiple sources are supported."""
-    # Mock data and sources
-    data1 = DataFrame({"pk": ["0", "1", "2"], "col": [20, 40, 60]})
-    address1 = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
-    source1 = Source(
-        address=address1,
-        db_pk="pk",
-        columns=[SourceColumn(name="col", type="BIGINT")],
-    ).set_engine(sqlite_warehouse)
-    to_warehouse(engine=sqlite_warehouse, data=data1, address=address1)
+    # Dummy data and source
+    testkit1 = source_from_tuple(
+        data_tuple=(
+            {"col": 20},
+            {"col": 40},
+            {"col": 60},
+        ),
+        data_pks=["0", "1", "2"],
+        full_name="foo",
+        engine=sqlite_warehouse,
+    )
+    source1 = testkit1.source.set_engine(sqlite_warehouse)
+    address1 = source1.address
     warehouse_hash_b64_1 = hash_to_base64(address1.warehouse_hash)
+    testkit1.to_warehouse(engine=sqlite_warehouse)
 
-    data2 = DataFrame({"pk": ["3", "4", "5"], "col": ["val1", "val2", "val3"]})
-    address2 = SourceAddress.compose(full_name="bar", engine=sqlite_warehouse)
-    source2 = Source(
-        address=address2,
-        db_pk="pk",
-        columns=[SourceColumn(name="col", type="TEXT")],
-    ).set_engine(sqlite_warehouse)
-    to_warehouse(engine=sqlite_warehouse, data=data2, address=address2)
+    testkit2 = source_from_tuple(
+        data_tuple=({"col": "val1"}, {"col": "val2"}, {"col": "val3"}),
+        data_pks=["3", "4", "5"],
+        full_name="bar",
+        engine=sqlite_warehouse,
+    )
+    source2 = testkit2.source.set_engine(sqlite_warehouse)
+    address2 = source2.address
     warehouse_hash_b64_2 = hash_to_base64(address2.warehouse_hash)
+    testkit2.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{warehouse_hash_b64_1}/{address1.full_name}").mock(
@@ -427,14 +411,20 @@ def test_query_combine_type(
 
 def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """We cannot query unindexed fields when only_indexed=True."""
-    # Mock data and source
-    data = DataFrame({"pk": ["0", "1"], "a": [1, 10], "b": ["2", "20"]})
-    address = SourceAddress.compose(full_name="foo", engine=sqlite_warehouse)
-    source = Source(
-        address=address, db_pk="pk", columns=[SourceColumn(name="b", type="TEXT")]
+    # Dummy data and source
+    testkit = source_from_tuple(
+        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
+        data_pks=["0", "1"],
+        full_name="foo",
+        engine=sqlite_warehouse,
+    )
+    # Drop one column
+    source = testkit.source.model_copy(
+        update={"columns": [testkit.source.columns[0]]}
     ).set_engine(sqlite_warehouse)
-    to_warehouse(engine=sqlite_warehouse, data=data, address=address)
+    address = source.address
     warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
+    testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{warehouse_hash_b64}/{address.full_name}").mock(

@@ -10,7 +10,7 @@ from collections import Counter
 from decimal import Decimal
 from functools import cache
 from random import getrandbits
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Type
 
 import pandas as pd
 import pyarrow as pa
@@ -89,6 +89,22 @@ class ReplaceRule(VariationRule):
         return "replace"
 
 
+def infer_sql_type_from_type(type_: Type) -> str:
+    """Infer an appropriate SQL type from a single type."""
+    type_map = {
+        str: "TEXT",
+        int: "BIGINT",
+        float: "FLOAT",
+        bool: "BOOLEAN",
+        datetime.datetime: "TIMESTAMP",
+        datetime.date: "DATE",
+        datetime.time: "TIME",
+        Decimal: "DECIMAL(10,2)",
+    }
+
+    return type_map.get(type_, "TEXT")
+
+
 def infer_sql_type(base: str, parameters: tuple) -> str:
     """Infer an appropriate SQL type from a Faker configuration.
 
@@ -119,18 +135,7 @@ def infer_sql_type(base: str, parameters: tuple) -> str:
     # Single type case
     python_type = next(iter(types_found))
 
-    type_map = {
-        str: "TEXT",
-        int: "BIGINT",
-        float: "FLOAT",
-        bool: "BOOLEAN",
-        datetime.datetime: "TIMESTAMP",
-        datetime.date: "DATE",
-        datetime.time: "TIME",
-        Decimal: "DECIMAL(10,2)",
-    }
-
-    return type_map.get(python_type, "TEXT")
+    return infer_sql_type_from_type(python_type)
 
 
 class FeatureConfig(BaseModel):
@@ -519,7 +524,7 @@ def generate_entities(
     features: tuple[FeatureConfig, ...],
     n: int,
 ) -> tuple[SourceEntity]:
-    """Generate base entities with their ground truth values."""
+    """Generate base entities with their ground truth values from generator."""
     entities = []
     for _ in range(n):
         base_values = {}
@@ -531,6 +536,17 @@ def generate_entities(
         entities.append(
             SourceEntity(base_values=base_values, source_pks=EntityReference())
         )
+    return tuple(entities)
+
+
+def generate_entities_from_tuple(
+    data_tuple: tuple[dict[str, Any], ...],
+) -> tuple[SourceEntity]:
+    """Generate base entities from tuple of rows."""
+    entities = []
+    for row in data_tuple:
+        entities.append(SourceEntity(base_values=row, source_pks=EntityReference()))
+
     return tuple(entities)
 
 
