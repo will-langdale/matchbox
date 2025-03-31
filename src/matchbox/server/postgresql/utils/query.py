@@ -1,6 +1,6 @@
 """Utilities for querying and matching in the PostgreSQL backend."""
 
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TypeVar
 
 import pyarrow as pa
 from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, union
@@ -20,11 +20,6 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
-
-if TYPE_CHECKING:
-    from polars import DataFrame as PolarsDataFrame
-else:
-    PolarsDataFrame = Any
 
 T = TypeVar("T")
 
