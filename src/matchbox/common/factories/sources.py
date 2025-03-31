@@ -3,7 +3,7 @@
 import warnings
 from functools import cache, wraps
 from itertools import product
-from typing import Callable, ParamSpec, TypeVar
+from typing import Any, Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 from uuid import uuid4
 
@@ -23,8 +23,10 @@ from matchbox.common.factories.entities import (
     SuffixRule,
     diff_results,
     generate_entities,
+    infer_sql_type_from_type,
     probabilities_to_results_entities,
 )
+from matchbox.common.hash import hash_values
 from matchbox.common.sources import Source, SourceAddress, SourceColumn
 
 P = ParamSpec("P")
@@ -79,8 +81,12 @@ class SourceTestkit(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     source: Source = Field(description="The real generated Source object.")
-    features: tuple[FeatureConfig, ...] = Field(
-        description="The features used to generate the data."
+    features: tuple[FeatureConfig, ...] | None = Field(
+        description=(
+            "The features used to generate the data. "
+            "If None, the source data was not generated, but set manually."
+        ),
+        default=None,
     )
     data: pa.Table = Field(description="The PyArrow table of generated data.")
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
@@ -391,7 +397,7 @@ def source_factory(
     repetition: int = 0,
     seed: int = 42,
 ) -> SourceTestkit:
-    """Generate a complete source testkit."""
+    """Generate a complete source testkit from configured features."""
     generator = Faker()
     generator.seed_instance(seed)
 
@@ -459,6 +465,71 @@ def source_factory(
     return SourceTestkit(
         source=source,
         features=features,
+        data=data,
+        data_hashes=data_hashes,
+        entities=tuple(sorted(results_entities)),
+    )
+
+
+def source_from_tuple(
+    data_tuple: tuple[dict[str, Any], ...],
+    data_pks: tuple[str],
+    full_name: str | None = None,
+    engine: Engine | None = None,
+    seed: int = 42,
+) -> SourceTestkit:
+    """Generate a complete source testkit from dummy data."""
+    generator = Faker()
+    generator.seed_instance(seed)
+
+    if full_name is None:
+        full_name = generator.unique.word()
+
+    if engine is None:
+        engine = create_engine("sqlite:///:memory:")
+
+    base_entities = tuple(SourceEntity(base_values=row) for row in data_tuple)
+
+    # Create source entities with references
+    source_entities: list[SourceEntity] = []
+    for entity, pk in zip(base_entities, data_pks, strict=True):
+        entity.add_source_reference(full_name, [pk])
+        source_entities.append(entity)
+    entity_ids = {entity.id for entity in source_entities}
+
+    # Create ClusterEntity objects from row_pks
+    results_entities = [
+        ClusterEntity(
+            id=entity_id,
+            source_pks=EntityReference({full_name: frozenset([pk])}),
+        )
+        for pk, entity_id in zip(data_pks, entity_ids, strict=True)
+    ]
+
+    source = Source(
+        address=SourceAddress.compose(full_name=full_name, engine=engine),
+        db_pk="pk",
+        columns=(
+            SourceColumn(name=k, type=infer_sql_type_from_type(type(v)))
+            for k, v in data_tuple[0].items()
+        ),
+    )
+
+    hashes = [hash_values(*row) for row in data_tuple]
+
+    data_hashes = pa.Table.from_pydict(
+        {
+            "source_pk": data_pks,
+            "hash": hashes,
+        },
+        schema=SCHEMA_INDEX,
+    )
+
+    raw_data = pa.Table.from_pylist(list(data_tuple))
+    data = raw_data.append_column("id", [entity_ids]).append_column("pk", data_pks)
+
+    return SourceTestkit(
+        source=source,
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),

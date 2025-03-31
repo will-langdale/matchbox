@@ -216,8 +216,7 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
 
 
 def get_source(address: SourceAddress) -> Source:
-    warehouse_hash_b64 = hash_to_base64(address.warehouse_hash)
-    res = CLIENT.get(f"/sources/{warehouse_hash_b64}/{address.full_name}")
+    res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
 
     return Source.model_validate(res.json())
 
