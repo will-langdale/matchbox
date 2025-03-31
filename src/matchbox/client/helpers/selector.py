@@ -114,23 +114,6 @@ def _process_query_result(
         return joined_table
 
 
-def _get_matchbox_ids(
-    source_address: SourceAddress,
-    resolution_name: str,
-    threshold: int | None = None,
-    limit: int | None = None,
-) -> ArrowTable:
-    """Get matchbox IDs for a source and resolution."""
-    mb_ids = _handler.query(
-        source_address=source_address,
-        resolution_name=resolution_name,
-        threshold=threshold,
-        limit=limit,
-    )
-
-    return mb_ids
-
-
 def _source_query(
     selector: Selector,
     mb_ids: ArrowTable,
@@ -179,7 +162,7 @@ def _query_batched(
     selector_iters = []
 
     for selector, sub_limit in zip(selectors, sub_limits, strict=True):
-        mb_ids = _get_matchbox_ids(
+        mb_ids = _handler.query(
             source_address=selector.address,
             resolution_name=resolution_name,
             threshold=threshold,
@@ -346,7 +329,7 @@ def query(
         tables = []
         for selector, sub_limit in zip(selectors, sub_limits, strict=True):
             # Get ids from matchbox
-            mb_ids = _get_matchbox_ids(
+            mb_ids = _handler.query(
                 source_address=selector.address,
                 resolution_name=resolution_name,
                 threshold=threshold,
