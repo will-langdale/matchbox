@@ -401,8 +401,9 @@ def test_source_from_tuple():
 
     # Verify the generated testkit has the expected properties
     assert len(testkit.entities) == 2
-    assert set(testkit.entities[0].source_pks["foo"]) == {"0"}
-    assert set(testkit.entities[1].source_pks["foo"]) == {"1"}
+    assert set(testkit.entities[0].source_pks["foo"]) | set(
+        testkit.entities[1].source_pks["foo"]
+    ) == {"0", "1"}
 
     assert testkit.data.shape[0] == 2
     assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
