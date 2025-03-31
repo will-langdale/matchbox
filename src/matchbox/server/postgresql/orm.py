@@ -252,7 +252,9 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     columns = relationship(
         "SourceColumns", back_populates="source", cascade="all, delete-orphan"
     )
-    cluster_source_pks = relationship("ClusterSourcePK", back_populates="source")
+    cluster_source_pks = relationship(
+        "ClusterSourcePK", back_populates="source", cascade="all, delete-orphan"
+    )
     clusters = relationship(
         "Clusters",
         secondary=ClusterSourcePK.__table__,
