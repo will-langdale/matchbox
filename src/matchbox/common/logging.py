@@ -1,6 +1,7 @@
 """Logging utilities."""
 
 import logging
+from typing import Final
 
 from rich.console import Console
 from rich.progress import (
@@ -12,18 +13,19 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+logger: Final[logging.Logger] = logging.getLogger("matchbox")
 """Logger for Matchbox.
 
 Used for all logging in the Matchbox library.
 """
-logger = logging.getLogger("matchbox")
 logger.addHandler(logging.NullHandler())
 
+
+console: Final[Console] = Console()
 """Console for Matchbox.
 
 Used for any CLI utilities in the Matchbox library.
 """
-console = Console()
 
 
 def build_progress_bar(console_: Console | None = None) -> Progress:
