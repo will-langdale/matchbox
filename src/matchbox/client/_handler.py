@@ -30,6 +30,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
+from matchbox.common.logging import logger
 from matchbox.common.sources import Match, Source, SourceAddress
 
 URLEncodeHandledType = str | int | float | bytes
@@ -121,6 +122,9 @@ def query(
     threshold: int | None = None,
     limit: int | None = None,
 ) -> BytesIO:
+    log_prefix = f"[Query {str(source_address)[:10]}]"
+    logger.debug(f"{log_prefix} Using {resolution_name}")
+
     res = CLIENT.get(
         "/query",
         params=url_params(
@@ -137,6 +141,8 @@ def query(
 
     buffer = BytesIO(res.content)
     table = read_table(buffer)
+
+    logger.debug(f"{log_prefix} Finished")
 
     if not table.schema.equals(SCHEMA_MB_IDS):
         raise MatchboxClientFileError(
@@ -158,6 +164,12 @@ def match(
     target_full_names = [t.full_name for t in targets]
     target_warehouse_hashes = [t.warehouse_hash for t in targets]
 
+    log_prefix = f"[Query {str(source)[:10]}]"
+    logger.debug(
+        f"{log_prefix} {source_pk} to "
+        f"{', '.join(str(t) for t in targets)} using {resolution_name}"
+    )
+
     res = CLIENT.get(
         "/match",
         params=url_params(
@@ -175,6 +187,8 @@ def match(
         ),
     )
 
+    logger.debug(f"{log_prefix} Finished")
+
     return [Match.model_validate(m) for m in res.json()]
 
 
@@ -183,6 +197,12 @@ def match(
 
 def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     """Index a Source in Matchbox."""
+    log_prefix = f"[Index {str(source.address)[:10]}]"
+
+    logger.debug(f"{log_prefix} Started with batch size {batch_size}")
+
+    logger.debug(f"{log_prefix} Retrieving and hashing")
+
     if batch_size:
         data_hashes = source.hash_data(iter_batches=True, batch_size=batch_size)
     else:
@@ -191,11 +211,15 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
+    logger.debug(f"{log_prefix} Uploading metadata")
+
     metadata_res = CLIENT.post("/sources", json=source.model_dump())
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
     # Upload data
+    logger.debug(f"{log_prefix} Uploading data")
+
     upload_res = CLIENT.post(
         f"/upload/{upload.id}",
         files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
@@ -207,15 +231,22 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
         status_res = CLIENT.get(f"/upload/{upload.id}/status")
         status = UploadStatus.model_validate(status_res.json())
 
+        logger.debug(f"{log_prefix} Uploading data: {status.status}")
+
         if status.status == "failed":
             raise MatchboxServerFileError(status.details)
 
         time.sleep(settings.retry_delay)
 
+    logger.debug(f"{log_prefix} Finished")
+
     return status
 
 
 def get_source(address: SourceAddress) -> Source:
+    log_prefix = f"[Source {str(address)[:10]}]"
+    logger.debug(f"{log_prefix} Retrieving")
+
     res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
 
     return Source.model_validate(res.json())
@@ -223,6 +254,9 @@ def get_source(address: SourceAddress) -> Source:
 
 def get_resolution_graph() -> ResolutionGraph:
     """Get the resolution graph from Matchbox."""
+    log_prefix = "[Visualisation]"
+    logger.debug(f"{log_prefix} Fetching resolution graph")
+
     res = CLIENT.get("/report/resolutions")
     return ResolutionGraph.model_validate(res.json())
 
@@ -232,17 +266,27 @@ def get_resolution_graph() -> ResolutionGraph:
 
 def insert_model(model: ModelMetadata) -> ModelOperationStatus:
     """Insert a model in Matchbox."""
+    log_prefix = f"[Model {model.name}]"
+    logger.debug(f"{log_prefix} Inserting metadata")
+
     res = CLIENT.post("/models", json=model.model_dump())
     return ModelOperationStatus.model_validate(res.json())
 
 
 def get_model(name: str) -> ModelMetadata:
+    """Get model metadata from Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Retrieving metadata")
+
     res = CLIENT.get(f"/models/{name}")
     return ModelMetadata.model_validate(res.json())
 
 
 def add_model_results(name: str, results: Table) -> UploadStatus:
     """Upload model results in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Uploading results")
+
     buffer = table_to_buffer(table=results)
 
     # Initialise upload
@@ -256,22 +300,31 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
         files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
     )
 
+    logger.debug(f"{log_prefix} Uploading data")
+
     # Poll until complete with retry/timeout configuration
     status = UploadStatus.model_validate(upload_res.json())
     while status.status not in ["complete", "failed"]:
         status_res = CLIENT.get(f"/upload/{upload.id}/status")
         status = UploadStatus.model_validate(status_res.json())
 
+        logger.debug(f"{log_prefix} Uploading data: {status.status}")
+
         if status.status == "failed":
             raise MatchboxServerFileError(status.details)
 
         time.sleep(settings.retry_delay)
+
+    logger.debug(f"{log_prefix} Finished")
 
     return status
 
 
 def get_model_results(name: str) -> Table:
     """Get model results from Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Retrieving results")
+
     res = CLIENT.get(f"/models/{name}/results")
     buffer = BytesIO(res.content)
     return read_table(buffer)
@@ -279,18 +332,27 @@ def get_model_results(name: str) -> Table:
 
 def set_model_truth(name: str, truth: int) -> ModelOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Setting truth value")
+
     res = CLIENT.patch(f"/models/{name}/truth", json=truth)
     return ModelOperationStatus.model_validate(res.json())
 
 
 def get_model_truth(name: str) -> int:
     """Get the truth threshold for a model in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Retrieving truth value")
+
     res = CLIENT.get(f"/models/{name}/truth")
     return res.json()
 
 
 def get_model_ancestors(name: str) -> list[ModelAncestor]:
     """Get the ancestors of a model in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Retrieving ancestors")
+
     res = CLIENT.get(f"/models/{name}/ancestors")
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
@@ -299,6 +361,9 @@ def set_model_ancestors_cache(
     name: str, ancestors: list[ModelAncestor]
 ) -> ModelOperationStatus:
     """Set the ancestors cache for a model in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Setting ancestors cached truth values")
+
     res = CLIENT.post(
         f"/models/{name}/ancestors_cache",
         json=[a.model_dump() for a in ancestors],
@@ -308,11 +373,17 @@ def set_model_ancestors_cache(
 
 def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
     """Get the ancestors cache for a model in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Getting ancestors cached truth values")
+
     res = CLIENT.get(f"/models/{name}/ancestors_cache")
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
 def delete_model(name: str, certain: bool = False) -> ModelOperationStatus:
     """Delete a model in Matchbox."""
+    log_prefix = f"[Model {name}]"
+    logger.debug(f"{log_prefix} Deleting")
+
     res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
     return ModelOperationStatus.model_validate(res.json())

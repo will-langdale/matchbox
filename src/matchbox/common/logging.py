@@ -23,27 +23,23 @@ DEBUG = logging.DEBUG
 NOTSET = logging.NOTSET
 
 
-logging.basicConfig(
-    level=INFO,
-    format="%(message)s",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
-
-
 def get_logger(name: str, custom_format: str = None) -> logging.Logger:
     """Get a logger instance."""
+    if name and not name.startswith("matchbox"):
+        name = f"matchbox.{name}"
+
     logger = logging.getLogger(name)
 
     if custom_format:
         logger.handlers.clear()
 
-        custom_handler = RichHandler(rich_tracebacks=True)
+        custom_handler = RichHandler(rich_tracebacks=True, markup=True, show_time=False)
         formatter = logging.Formatter(custom_format)
         custom_handler.setFormatter(formatter)
 
         logger.addHandler(custom_handler)
 
-        logger.propagate = False
+        logger.propagate = True
 
     return logger
 
