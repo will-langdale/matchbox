@@ -85,6 +85,11 @@ class SourceAddress(BaseModel):
         return self.full_name + "@" + self.warehouse_hash_b64
 
     @property
+    def pretty(self) -> str:
+        """Return a pretty representation of the address."""
+        return self.full_name + "@" + self.warehouse_hash_b64[:5] + "..."
+
+    @property
     def warehouse_hash_b64(self) -> str:
         """Return warehouse hash as a base64 encoded string."""
         return hash_to_base64(self.warehouse_hash)

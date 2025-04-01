@@ -1,7 +1,7 @@
 """Logging utilities."""
 
 import logging
-from typing import Final
+from typing import Any, Final
 
 from rich.console import Console
 from rich.progress import (
@@ -13,12 +13,39 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+
+class PrefixedLoggerAdapter(logging.LoggerAdapter):
+    """A logger adapter that supports adding a prefix enclosed in square brackets.
+
+    This adapter allows passing an optional prefix parameter to any logging call
+    without modifying the underlying logger.
+    """
+
+    def process(self, msg: Any, kwargs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        """Process the log message, adding a prefix if provided.
+
+        Args:
+            msg: The log message
+            kwargs: Additional arguments to the logging method
+
+        Returns:
+            Tuple of (modified_message, modified_kwargs)
+        """
+        prefix = kwargs.pop("prefix", None)
+
+        if prefix:
+            msg = f"[{prefix}] {msg}"
+
+        return msg, kwargs
+
+
 logger: Final[logging.Logger] = logging.getLogger("matchbox")
 """Logger for Matchbox.
 
 Used for all logging in the Matchbox library.
 """
 logger.addHandler(logging.NullHandler())
+logger = PrefixedLoggerAdapter(logger, {})
 
 
 console: Final[Console] = Console()
