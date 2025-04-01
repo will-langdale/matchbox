@@ -12,11 +12,17 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-"""Logger for Matchbox."""
+"""Logger for Matchbox.
+
+Used for all logging in the Matchbox library.
+"""
 logger = logging.getLogger("matchbox")
 logger.addHandler(logging.NullHandler())
 
-"""Console for Matchbox."""
+"""Console for Matchbox.
+
+Used for any CLI utilities in the Matchbox library.
+"""
 console = Console()
 
 
