@@ -143,7 +143,7 @@ def insert_dataset(
         if existing_source:
             logger.info(f"Deleting existing source: {source}")
             session.delete(existing_source)
-            session.commit()
+            session.flush()
 
         # Create new source with relationship to resolution
         source_obj = Sources(
