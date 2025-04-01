@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
@@ -19,10 +19,12 @@ from matchbox.common.transform import (
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
+    ClusterSourcePK,
     Contains,
     Probabilities,
     ResolutionFrom,
     Resolutions,
+    SourceColumns,
     Sources,
 )
 from matchbox.server.postgresql.utils.db import batch_ingest
@@ -111,84 +113,148 @@ def insert_dataset(
 
     resolution_hash = hash_data(str(source.address))
 
-    resolution_data = {
-        "resolution_hash": resolution_hash,
-        "type": ResolutionNodeType.DATASET.value,
-    }
-
-    source_data = {
-        "resolution_name": source.resolution_name,
-        "full_name": source.address.full_name,
-        "warehouse_hash": source.address.warehouse_hash,
-        "id": source.db_pk,
-        "column_names": [col.name for col in source.columns],
-        "column_types": [col.type for col in source.columns],
-    }
-
-    with engine.connect() as conn:
+    with Session(engine) as session:
         logger.info(f"Adding {source}")
 
-        # Generate existing max primary key values
-        next_cluster_id = Clusters.next_id()
-        with Session(engine) as session:
-            resolution_id = (
-                session.query(Resolutions.resolution_id)
-                .filter_by(name=source.resolution_name)
-                .scalar()
-            )
-
-        resolution_data["resolution_id"] = resolution_id or Resolutions.next_id()
-        source_data["resolution_id"] = resolution_data["resolution_id"]
-        resolution_data["name"] = source_data["resolution_name"]
-
-        # Upsert into Resolutions table
-        resolution_stmt = insert(Resolutions).values([resolution_data])
-        resolution_stmt = resolution_stmt.on_conflict_do_nothing()
-        conn.execute(resolution_stmt)
-
-        logger.info(f"{source} added to Resolutions table")
-
-        # Upsert into Sources table
-        sources_stmt = insert(Sources).values([source_data])
-        sources_stmt = sources_stmt.on_conflict_do_nothing()
-        conn.execute(sources_stmt)
-
-        conn.commit()
-
-        logger.info(f"{source} added to Sources table")
-
-        existing_hashes_statement = select(Clusters.cluster_hash)
-        existing_hashes = sql_to_df(
-            stmt=existing_hashes_statement,
-            engine=engine,
-            return_type="arrow",
-        )["cluster_hash"]
-
-        if existing_hashes:
-            data_hashes = pc.filter(
-                data_hashes,
-                pc.invert(pc.is_in(data_hashes["hash"], value_set=existing_hashes)),
-            )
-
-        # Upsert into Clusters table
-        batch_ingest(
-            records=[
-                (
-                    next_cluster_id + i,
-                    clus["hash"],
-                    source_data["resolution_id"],
-                    clus["source_pk"],
-                )
-                for i, clus in enumerate(data_hashes.to_pylist())
-            ],
-            table=Clusters,
-            conn=conn,
-            batch_size=batch_size,
+        # Check if resolution already exists
+        existing_resolution = (
+            session.query(Resolutions).filter_by(name=source.resolution_name).first()
         )
 
-        conn.commit()
+        if existing_resolution:
+            resolution = existing_resolution
+        else:
+            # Create new resolution
+            resolution = Resolutions(
+                resolution_id=Resolutions.next_id(),
+                name=source.resolution_name,
+                resolution_hash=resolution_hash,
+                type=ResolutionNodeType.DATASET.value,
+            )
+            session.add(resolution)
 
-        logger.info(f"{source} added {len(data_hashes)} objects to Clusters table")
+        # Check if source already exists
+        existing_source = (
+            session.query(Sources)
+            .filter_by(resolution_id=resolution.resolution_id)
+            .first()
+        )
+
+        if existing_source:
+            logger.info(f"Deleting existing source: {source}")
+            session.delete(existing_source)
+            session.flush()
+
+        # Create new source with relationship to resolution
+        source_obj = Sources(
+            resolution_id=resolution.resolution_id,
+            resolution_name=source.resolution_name,
+            full_name=source.address.full_name,
+            warehouse_hash=source.address.warehouse_hash,
+            db_pk=source.db_pk,
+        )
+
+        # Add columns directly through the relationship
+        for idx, column in enumerate(source.columns):
+            source_column = SourceColumns(
+                source_id=source_obj.source_id,
+                column_index=idx,
+                column_name=column.name,
+                column_type=column.type,
+            )
+            source_obj.columns.append(source_column)
+
+        session.add(source_obj)
+        session.commit()
+
+        logger.info(f"{source} added to Resolutions and Sources tables with columns")
+
+        # Store source_id and max primary keys for later use
+        source_id = source_obj.source_id
+        next_cluster_id = Clusters.next_id()
+        next_pk_id = ClusterSourcePK.next_id()
+
+    # Don't insert new hashes, but new PKs need existing hash IDs
+    existing_hash_lookup = sql_to_df(
+        stmt=select(Clusters.cluster_id, Clusters.cluster_hash),
+        engine=engine,
+        return_type="arrow",
+    )
+
+    # Create a dictionary for faster lookups
+    hash_to_id = {}
+    if len(existing_hash_lookup) > 0:
+        for i in range(len(existing_hash_lookup)):
+            hash_bytes = existing_hash_lookup["cluster_hash"][i].as_py()
+            cluster_id = existing_hash_lookup["cluster_id"][i].as_py()
+            hash_to_id[hash_bytes] = cluster_id
+
+    # Prepare records for both tables - new clusters and links
+    cluster_records = []
+    source_pk_records = []
+    pk_id_counter = next_pk_id
+
+    for clus in data_hashes.to_pylist():
+        hash_bytes = clus["hash"]
+
+        # Check if this hash already exists in the database
+        if hash_bytes in hash_to_id:
+            # Use existing cluster_id
+            cluster_id = hash_to_id[hash_bytes]
+        else:
+            # Create a new cluster
+            cluster_id = next_cluster_id + len(cluster_records)
+            cluster_records.append((cluster_id, hash_bytes))
+
+        # Add all source primary keys linking to this cluster
+        for pk in clus["source_pk"]:
+            source_pk_records.append(
+                (
+                    pk_id_counter,  # pk_id
+                    cluster_id,  # cluster_id
+                    source_id,  # source_id
+                    pk,  # source_pk
+                )
+            )
+            pk_id_counter += 1
+
+    # Insert new clusters and all source primary keys
+    try:
+        with engine.connect() as conn:
+            # Bulk insert into Clusters table (only new clusters)
+            if cluster_records:
+                batch_ingest(
+                    records=cluster_records,
+                    table=Clusters,
+                    conn=conn,
+                    batch_size=batch_size,
+                )
+                logger.info(
+                    f"{source} added {len(cluster_records)} objects to Clusters table"
+                )
+
+            # Bulk insert into ClusterSourcePK table (all links)
+            if source_pk_records:
+                batch_ingest(
+                    records=source_pk_records,
+                    table=ClusterSourcePK,
+                    conn=conn,
+                    batch_size=batch_size,
+                )
+                logger.info(
+                    f"{source} added {len(source_pk_records)} primary keys to "
+                    "ClusterSourcePK table"
+                )
+
+            # Commit both inserts in a single transaction
+            conn.commit()
+    except IntegrityError as e:
+        # Log the error and rollback
+        logger.warning(f"Error, rolling back: {e}")
+        conn.rollback()
+
+    if not cluster_records and not source_pk_records:
+        logger.info(f"No new records to add for {source}")
 
     logger.info(f"Finished {source}")
 
@@ -344,8 +410,10 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
     )
 
     # Subquery for source datasets
-    source_datasets = select(resolution_set.c.resolution_id).join(
-        Sources, Sources.resolution_id == resolution_set.c.resolution_id
+    source_datasets = (
+        select(ClusterSourcePK.cluster_id)
+        .join(Sources, Sources.resolution_id == ClusterSourcePK.source_id)
+        .where(Sources.resolution_id.in_(select(resolution_set.c.resolution_id)))
     )
 
     # Subquery for model resolutions
@@ -357,7 +425,7 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
 
     # Combine conditions
     final_query = base_query.where(
-        (Clusters.dataset.in_(source_datasets))
+        (Clusters.cluster_id.in_(source_datasets))
         | (Probabilities.resolution.in_(model_resolutions))
     )
 
@@ -424,8 +492,6 @@ def _results_to_insert_tables(
         {
             "cluster_id": pc.filter(hm.lookup["id"], hm.lookup["new"]),
             "cluster_hash": new_hashes,
-            "dataset": pa.nulls(len(new_hashes), type=pa.uint64()),
-            "source_pk": pa.nulls(len(new_hashes), type=pa.list_(pa.string())),
         }
     )
 

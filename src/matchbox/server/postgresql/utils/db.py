@@ -25,10 +25,12 @@ from matchbox.common.graph import (
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.orm import (
     Clusters,
+    ClusterSourcePK,
     Contains,
     Probabilities,
     ResolutionFrom,
     Resolutions,
+    SourceColumns,
     Sources,
 )
 
@@ -95,7 +97,9 @@ def dump(engine: Engine) -> MatchboxSnapshot:
         "resolutions": Resolutions,
         "resolution_from": ResolutionFrom,
         "sources": Sources,
+        "source_columns": SourceColumns,
         "clusters": Clusters,
+        "cluster_source_pks": ClusterSourcePK,
         "contains": Contains,
         "probabilities": Probabilities,
     }
@@ -145,7 +149,9 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
         "resolutions": Resolutions,
         "resolution_from": ResolutionFrom,
         "sources": Sources,
+        "source_columns": SourceColumns,
         "clusters": Clusters,
+        "cluster_source_pks": ClusterSourcePK,
         "contains": Contains,
         "probabilities": Probabilities,
     }
@@ -154,7 +160,9 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
         "resolutions",
         "resolution_from",
         "sources",
+        "source_columns",
         "clusters",
+        "cluster_source_pks",
         "contains",
         "probabilities",
     ]
