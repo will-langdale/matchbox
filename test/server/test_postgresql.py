@@ -188,7 +188,7 @@ def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_p
     ],
 )
 @pytest.mark.docker
-def test_benchmark_generate_tables_parameterized(
+def test_benchmark_generate_tables_parameterised(
     matchbox_postgres: MatchboxDBAdapter,
     cluster_start_id: int,
     dataset_start_id: int,
@@ -214,6 +214,12 @@ def test_benchmark_generate_tables_parameterized(
         # Test dataset IDs in cluster_source_pks table
         assert (
             set(pc.unique(results["cluster_source_pks"]["source_id"]).to_pylist())
+            == expected_datasets
+        )
+
+        # Test dataset IDs in source_columns table
+        assert (
+            set(pc.unique(results["source_columns"]["source_id"]).to_pylist())
             == expected_datasets
         )
 
