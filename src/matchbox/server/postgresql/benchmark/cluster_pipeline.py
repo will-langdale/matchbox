@@ -8,7 +8,7 @@ import pyarrow as pa
 
 from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import hash_data, hash_values
-from matchbox.common.logging import logger
+from matchbox.common.logging import console
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -33,7 +33,7 @@ def timer(description: str):
     else:
         time_str = f"{elapsed:.2f} seconds"
 
-    logger.info(f"{description} in {time_str}")
+    console.log(f"{description} in {time_str}")
 
 
 if __name__ == "__main__":
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     hm = HashIDMap(start=max(right_ids) + 1, lookup=lookup)
 
     with timer("Full pipeline completed"):
-        logger.info(f"Processing {len(probs):,} records")
+        console.log(f"Processing {len(probs):,} records")
 
         with timer("Added components"):
             probs_with_ccs = attach_components_to_probabilities(

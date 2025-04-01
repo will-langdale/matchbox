@@ -12,7 +12,7 @@ import pyarrow.parquet as pq
 
 from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import HASH_FUNC, hash_data, hash_values
-from matchbox.common.logging import get_console
+from matchbox.common.logging import console
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -446,8 +446,6 @@ def generate_all_tables(
     Returns:
         A dictionary where keys are table names and values are PyArrow tables
     """
-    console = get_console()
-
     console.log("Generating sources")
     resolutions = generate_resolutions(dataset_start_id)
     resolution_from = generate_resolution_from(dataset_start_id)
@@ -598,8 +596,6 @@ def main(
         generate_tables.py -s s -o data/v4 -d 1 -c 0
         ```
     """
-    console = get_console()
-
     if not output_dir:
         output_dir = Path.cwd() / "data" / "all_tables"
     if settings not in PRESETS:

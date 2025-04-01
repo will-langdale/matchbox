@@ -11,7 +11,7 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_data, hash_values
-from matchbox.common.logging import WARNING, get_logger, logger
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,
@@ -108,9 +108,6 @@ def insert_dataset(
     source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
 ) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
-    db_logger = get_logger("sqlalchemy.engine")
-    db_logger.setLevel(WARNING)
-
     resolution_hash = hash_data(str(source.address))
 
     with Session(engine) as session:
