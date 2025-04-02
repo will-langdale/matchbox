@@ -1,4 +1,5 @@
 import copy
+from typing import Any, Callable
 
 import pandas as pd
 import pyarrow as pa
@@ -192,8 +193,32 @@ def test_source_to_table(sqlite_warehouse: Engine):
     assert isinstance(source.to_table(), Table)
 
 
-def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
-    """Convert Source to Arrow table or Pandas dataframe with options."""
+@pytest.mark.parametrize(
+    ("converter", "to_pandas_fn"),
+    [
+        pytest.param(
+            lambda src, **kwargs: src.to_pandas(**kwargs),
+            lambda df: df,
+            id="pandas",
+        ),
+        pytest.param(
+            lambda src, **kwargs: src.to_arrow(**kwargs),
+            lambda arrow: arrow.to_pandas(),
+            id="arrow",
+        ),
+        pytest.param(
+            lambda src, **kwargs: src.to_polars(**kwargs),
+            lambda polars: polars.to_pandas(),
+            id="polars",
+        ),
+    ],
+)
+def test_source_conversion_methods(
+    sqlite_warehouse: Engine,
+    converter: Callable[[Any], Any],
+    to_pandas_fn: Callable[[Any], Any],
+):
+    """Check equivalence of Source to Arrow, Pandas or Polars, with options."""
     source_testkit = source_factory(
         features=[
             {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
@@ -210,40 +235,28 @@ def test_source_to_arrow_to_pandas(sqlite_warehouse: Engine):
     )
 
     # Test basic conversion
+    output = converter(source)
+    result_df = to_pandas_fn(output)
     assert_frame_equal(
-        expected_df_prefixed, source.to_pandas(), check_like=True, check_dtype=False
-    )
-    assert_frame_equal(
-        expected_df_prefixed,
-        source.to_arrow().to_pandas(),
-        check_like=True,
-        check_dtype=False,
+        expected_df_prefixed, result_df, check_like=True, check_dtype=False
     )
 
     # Test with limit parameter
+    output_limited = converter(source, limit=1)
+    result_df_limited = to_pandas_fn(output_limited)
     assert_frame_equal(
         expected_df_prefixed.iloc[:1],
-        source.to_pandas(limit=1),
-        check_like=True,
-        check_dtype=False,
-    )
-    assert_frame_equal(
-        expected_df_prefixed.iloc[:1],
-        source.to_arrow(limit=1).to_pandas(),
+        result_df_limited,
         check_like=True,
         check_dtype=False,
     )
 
     # Test with fields parameter
+    output_fields = converter(source, fields=["a"])
+    result_df_fields = to_pandas_fn(output_fields)
     assert_frame_equal(
         expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
-        source.to_pandas(fields=["a"]),
-        check_like=True,
-        check_dtype=False,
-    )
-    assert_frame_equal(
-        expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
-        source.to_arrow(fields=["a"]).to_pandas(),
+        result_df_fields,
         check_like=True,
         check_dtype=False,
     )
@@ -294,9 +307,7 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     reordered_source = reordered.source.set_engine(sqlite_warehouse)
     renamed_source = renamed.source.set_engine(sqlite_warehouse)
 
-    original_hash = original_source.hash_data(
-        iter_batches=True, batch_size=3
-    ).to_pandas()
+    original_hash = original_source.hash_data(batch_size=3).to_pandas()
     reordered_hash = reordered_source.hash_data().to_pandas()
     renamed_hash = renamed_source.hash_data().to_pandas()
 
@@ -368,7 +379,7 @@ def test_source_data_batching(method_name, return_type, sqlite_warehouse: Engine
 
     # Call the method with batching
     method = getattr(source, method_name)
-    batch_iterator = method(iter_batches=True, batch_size=3)
+    batch_iterator = method(return_batches=True, batch_size=3)
     batches = list(batch_iterator)
 
     # Verify we got the expected number of batches

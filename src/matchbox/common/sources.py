@@ -325,7 +325,7 @@ class Source(BaseModel):
         pks: list[T] | None = None,
         limit: int | None = None,
         *,
-        iter_batches: bool = False,
+        return_batches: bool = False,
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
@@ -336,23 +336,66 @@ class Source(BaseModel):
             fields: List of column names to retrieve. If None, retrieves all columns.
             pks: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
-            iter_batches: If True, return an iterator that yields each batch separately.
-                If False, return a single Table with all results.
+            return_batches:
+                * If True, return an iterator that yields each batch separately
+                * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
             schema_overrides: A dictionary mapping column names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
 
         Returns:
-            If iter_batches is False: A PyArrow Table containing the requested data.
-            If iter_batches is True: An iterator of PyArrow Tables.
+            * If return_batches is False: A PyArrow Table containing the requested data.
+            * If return_batches is True: An iterator of PyArrow Tables.
         """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(
             stmt,
             self._engine,
             return_type="arrow",
-            iter_batches=iter_batches,
+            return_batches=return_batches,
+            batch_size=batch_size,
+            schema_overrides=schema_overrides,
+            execute_options=execute_options,
+        )
+
+    @needs_engine
+    def to_polars(
+        self,
+        fields: list[str] | None = None,
+        pks: list[T] | None = None,
+        limit: int | None = None,
+        *,
+        return_batches: bool = False,
+        batch_size: int | None = None,
+        schema_overrides: dict[str, Any] | None = None,
+        execute_options: dict[str, Any] | None = None,
+    ) -> pa.Table | Iterator[pa.Table]:
+        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+
+        Args:
+            fields: List of column names to retrieve. If None, retrieves all columns.
+            pks: List of primary keys to filter by. If None, retrieves all rows.
+            limit: Maximum number of rows to retrieve. If None, retrieves all rows.
+            return_batches:
+                * If True, return an iterator that yields each batch separately
+                * If False, return a single Table with all results
+            batch_size: Indicate the size of each batch when processing data in batches.
+            schema_overrides: A dictionary mapping column names to dtypes.
+            execute_options: These options will be passed through into the underlying
+                query execution method as kwargs.
+
+        Returns:
+            * If return_batches is False: A Polars DataFrame containing the requested
+                data
+            * If return_batches is True: An iterator of Polars DataFrames.
+        """
+        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        return sql_to_df(
+            stmt,
+            self._engine,
+            return_type="polars",
+            return_batches=return_batches,
             batch_size=batch_size,
             schema_overrides=schema_overrides,
             execute_options=execute_options,
@@ -365,7 +408,7 @@ class Source(BaseModel):
         pks: list[T] | None = None,
         limit: int | None = None,
         *,
-        iter_batches: bool = False,
+        return_batches: bool = False,
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
@@ -376,23 +419,25 @@ class Source(BaseModel):
             fields: List of column names to retrieve. If None, retrieves all columns.
             pks: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
-            iter_batches: If True, return an iterator that yields each batch separately.
-                If False, return a single DataFrame with all results.
+            return_batches:
+                * If True, return an iterator that yields each batch separately
+                * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
             schema_overrides: A dictionary mapping column names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
 
         Returns:
-            If iter_batches is False: A pandas DataFrame containing the requested data.
-            If iter_batches is True: An iterator of pandas DataFrames.
+            * If return_batches is False: A pandas DataFrame containing the requested
+            data
+            * If return_batches is True: An iterator of pandas DataFrames
         """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(
             stmt,
             self._engine,
             return_type="pandas",
-            iter_batches=iter_batches,
+            return_batches=return_batches,
             batch_size=batch_size,
             schema_overrides=schema_overrides,
             execute_options=execute_options,
@@ -402,7 +447,6 @@ class Source(BaseModel):
     def hash_data(
         self,
         *,
-        iter_batches: bool = False,
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
@@ -410,10 +454,8 @@ class Source(BaseModel):
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.
 
         Args:
-            iter_batches: If True, process data in batches internally.
-                This is only used for internal processing and will still return a
-                single table.
-            batch_size: Indicate the size of each batch when processing data in batches.
+            batch_size: If set, process data in batches internally. Indicates the
+                size of each batch.
             schema_overrides: A dictionary mapping column names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
@@ -474,13 +516,13 @@ class Source(BaseModel):
 
             return batch.select(["hash", "source_pk"])
 
-        if iter_batches:
+        if bool(batch_size):
             # Process in batches
             raw_batches = sql_to_df(
                 slct_stmt,
                 self._engine,
                 return_type="polars",
-                iter_batches=True,
+                return_batches=True,
                 batch_size=batch_size,
                 schema_overrides=schema_overrides,
                 execute_options=execute_options,

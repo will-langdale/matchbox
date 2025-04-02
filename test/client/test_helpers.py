@@ -787,7 +787,6 @@ def test_index_with_batch_size(
 
     # Verify batch_size was passed to hash_data
     mock_source_instance.hash_data.assert_called_once()
-    assert mock_source_instance.hash_data.call_args.kwargs["iter_batches"] is True
     assert mock_source_instance.hash_data.call_args.kwargs["batch_size"] == 1000
 
 

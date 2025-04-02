@@ -117,7 +117,7 @@ def _process_query_result(
 def _source_query(
     selector: Selector,
     mb_ids: ArrowTable,
-    iter_batches: bool = False,
+    return_batches: bool = False,
     batch_size: int | None = None,
     only_indexed: bool = False,
 ) -> tuple[Source, ArrowTable] | tuple[Source, Iterator[ArrowTable]]:
@@ -139,7 +139,7 @@ def _source_query(
     raw_results = source.to_arrow(
         fields=selected_fields,
         pks=mb_ids["source_pk"].to_pylist(),
-        iter_batches=iter_batches,
+        return_batches=return_batches,
         batch_size=batch_size,
     )
 
@@ -173,7 +173,7 @@ def _query_batched(
         source, raw_batches = _source_query(
             selector=selector,
             mb_ids=mb_ids,
-            iter_batches=True,
+            return_batches=True,
             batch_size=batch_size,
             only_indexed=only_indexed,
         )
@@ -342,7 +342,7 @@ def query(
                 selector=selector,
                 mb_ids=mb_ids,
                 only_indexed=only_indexed,
-                iter_batches=False,
+                return_batches=False,
                 batch_size=batch_size,
             )
 

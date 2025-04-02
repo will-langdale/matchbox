@@ -22,7 +22,7 @@ def sql_to_df(
     engine: Engine,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
-    iter_batches: Literal[False] = False,
+    return_batches: Literal[False] = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
@@ -35,7 +35,7 @@ def sql_to_df(
     engine: Engine,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
-    iter_batches: Literal[True],
+    return_batches: Literal[True],
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
@@ -47,7 +47,7 @@ def sql_to_df(
     engine: Engine,
     return_type: ReturnTypeStr = "pandas",
     *,
-    iter_batches: bool = False,
+    return_batches: bool = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
@@ -59,7 +59,7 @@ def sql_to_df(
         engine (Engine): A SQLAlchemy Engine object for the database connection.
         return_type (str): The type of the return value. One of "arrow", "pandas",
             or "polars".
-        iter_batches (bool): If True, return an iterator that yields each batch
+        return_batches (bool): If True, return an iterator that yields each batch
             separately. If False, return a single DataFrame with all results.
             Default is False.
         batch_size (int | None): Indicate the size of each batch when processing
@@ -70,9 +70,9 @@ def sql_to_df(
             into the underlying query execution method as kwargs. Default is None.
 
     Returns:
-        If iter_batches is False: A dataframe of the query results in the specified
+        If return_batches is False: A dataframe of the query results in the specified
             format.
-        If iter_batches is True: An iterator of dataframes in the specified format.
+        If return_batches is True: An iterator of dataframes in the specified format.
 
     Raises:
         ValueError: If the engine URL is not properly configured or if an unsupported
@@ -112,7 +112,7 @@ def sql_to_df(
             execute_options=execute_options,
         )
 
-        if not iter_batches:
+        if not return_batches:
             return to_format(pl.concat(batches))
 
         return (to_format(batch) for batch in batches)
