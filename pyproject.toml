@@ -70,6 +70,7 @@ typing = [
 requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
+# Presence enables setuptools-scm
 [tool.setuptools_scm]
 
 
