@@ -39,13 +39,22 @@ class PrefixedLoggerAdapter(logging.LoggerAdapter):
         return msg, kwargs
 
 
-logger: Final[logging.Logger] = logging.getLogger("matchbox")
+logger: Final[PrefixedLoggerAdapter]
 """Logger for Matchbox.
 
 Used for all logging in the Matchbox library.
+
+Allows passing a prefix to any logging call.
+
+Examples:
+    ```python
+    log_prefix = f"Model {name}"
+    logger.debug("Inserting metadata", prefix=log_prefix)
+    logger.debug("Inserting data", prefix=log_prefix)
+    logger.info("Insert successful", prefix=log_prefix)
+    ```
 """
-logger.addHandler(logging.NullHandler())
-logger = PrefixedLoggerAdapter(logger, {})
+logger = PrefixedLoggerAdapter(logging.getLogger("matchbox"), {})
 
 
 console: Final[Console] = Console()
