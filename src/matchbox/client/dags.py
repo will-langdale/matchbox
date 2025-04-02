@@ -13,7 +13,6 @@ from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
-from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 
 DAGNode = Union["ModelStep", Source]
@@ -239,7 +238,5 @@ class DAG:
             node = self.nodes[step_name]
             if isinstance(node, Source):
                 _handler.index(source=node)
-                logger.info(f"Indexed {node.address.full_name}")
             else:
                 node.run()
-                logger.info(f"Run {node.name} model pipeline")

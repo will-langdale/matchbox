@@ -11,7 +11,7 @@ from sqlalchemy.sql.selectable import Select
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_data, hash_values
-from matchbox.common.logging import WARNING, get_logger, logger
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
     attach_components_to_probabilities,
@@ -108,13 +108,11 @@ def insert_dataset(
     source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
 ) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
-    db_logger = get_logger("sqlalchemy.engine")
-    db_logger.setLevel(WARNING)
-
+    log_prefix = f"Index {source.address.pretty}"
     resolution_hash = hash_data(str(source.address))
 
     with Session(engine) as session:
-        logger.info(f"Adding {source}")
+        logger.info("Begin", prefix=log_prefix)
 
         # Check if resolution already exists
         existing_resolution = (
@@ -141,7 +139,7 @@ def insert_dataset(
         )
 
         if existing_source:
-            logger.info(f"Deleting existing source: {source}")
+            logger.info("Deleting existing", prefix=log_prefix)
             session.delete(existing_source)
             session.flush()
 
@@ -167,7 +165,7 @@ def insert_dataset(
         session.add(source_obj)
         session.commit()
 
-        logger.info(f"{source} added to Resolutions and Sources tables with columns")
+        logger.info("Added to Resolutions, Sources, SourceColumns", prefix=log_prefix)
 
         # Store source_id and max primary keys for later use
         source_id = source_obj.source_id
@@ -230,7 +228,8 @@ def insert_dataset(
                     batch_size=batch_size,
                 )
                 logger.info(
-                    f"{source} added {len(cluster_records)} objects to Clusters table"
+                    f"Added {len(cluster_records)} objects to Clusters table",
+                    prefix=log_prefix,
                 )
 
             # Bulk insert into ClusterSourcePK table (all links)
@@ -242,21 +241,22 @@ def insert_dataset(
                     batch_size=batch_size,
                 )
                 logger.info(
-                    f"{source} added {len(source_pk_records)} primary keys to "
-                    "ClusterSourcePK table"
+                    f"Added {len(source_pk_records)} primary keys to "
+                    "ClusterSourcePK table",
+                    prefix=log_prefix,
                 )
 
             # Commit both inserts in a single transaction
             conn.commit()
     except IntegrityError as e:
         # Log the error and rollback
-        logger.warning(f"Error, rolling back: {e}")
+        logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
         conn.rollback()
 
     if not cluster_records and not source_pk_records:
-        logger.info(f"No new records to add for {source}")
+        logger.info("No new records to add", prefix=log_prefix)
 
-    logger.info(f"Finished {source}")
+    logger.info("Finished", prefix=log_prefix)
 
 
 def insert_model(
@@ -279,7 +279,8 @@ def insert_model(
         MatchboxResolutionNotFoundError: If the specified parent models don't exist.
         MatchboxResolutionNotFoundError: If the specified model doesn't exist.
     """
-    logger.info(f"[{model}] Registering model")
+    log_prefix = f"Model {model}"
+    logger.info("Registering", prefix=log_prefix)
     with Session(engine) as session:
         resolution_hash = hash_values(
             left.resolution_hash,
@@ -358,8 +359,8 @@ def insert_model(
         session.commit()
 
     status = "Inserted new" if not exists else "Updated existing"
-    logger.info(f"[{model}] {status} model with ID {resolution_id}")
-    logger.info(f"[{model}] Done!")
+    logger.info(f"{status} model with ID {resolution_id}", prefix=log_prefix)
+    logger.info("Done!", prefix=log_prefix)
 
 
 def _get_resolution_related_clusters(resolution_id: int) -> Select:
@@ -444,7 +445,8 @@ def _results_to_insert_tables(
             * A Contains update Arrow table
             * A Probabilities update Arrow table
     """
-    logger.info(f"[{resolution.name}] Wrangling data to insert tables")
+    log_prefix = f"Model {resolution.name}"
+    logger.info("Wrangling data to insert tables", prefix=log_prefix)
 
     # Create ID-Hash lookup for existing probabilities
     lookup = sql_to_df(
@@ -508,7 +510,7 @@ def _results_to_insert_tables(
         }
     )
 
-    logger.info(f"[{resolution.name}] Wrangling complete!")
+    logger.info("Wrangling complete!", prefix=log_prefix)
 
     return clusters, contains, probabilities
 
@@ -538,8 +540,9 @@ def insert_results(
     Raises:
         MatchboxResolutionNotFoundError: If the specified model doesn't exist.
     """
+    log_prefix = f"Model {resolution.name}"
     logger.info(
-        f"[{resolution.name}] Writing results data with batch size {batch_size:,}"
+        f"Writing results data with batch size {batch_size:,}", prefix=log_prefix
     )
 
     clusters, contains, probabilities = _results_to_insert_tables(
@@ -556,19 +559,19 @@ def insert_results(
             )
 
             session.commit()
-            logger.info(f"[{resolution.name}] Removed old probabilities")
+            logger.info("Removed old probabilities", prefix=log_prefix)
 
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(
-                f"[{resolution.name}] Failed to clear old probabilities: {str(e)}"
+                f"Failed to clear old probabilities: {str(e)}", prefix=log_prefix
             )
             raise
 
     with engine.connect() as conn:
         try:
             logger.info(
-                f"[{resolution.name}] Inserting {clusters.shape[0]:,} results objects"
+                f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
             )
 
             batch_ingest(
@@ -579,8 +582,9 @@ def insert_results(
             )
 
             logger.info(
-                f"[{resolution.name}] Successfully inserted {clusters.shape[0]} "
-                "objects into Clusters table"
+                f"Successfully inserted {clusters.shape[0]} "
+                "objects into Clusters table",
+                prefix=log_prefix,
             )
 
             batch_ingest(
@@ -591,8 +595,9 @@ def insert_results(
             )
 
             logger.info(
-                f"[{resolution.name}] Successfully inserted {contains.shape[0]} "
-                "objects into Contains table"
+                f"Successfully inserted {contains.shape[0]} "
+                "objects into Contains table",
+                prefix=log_prefix,
             )
 
             batch_ingest(
@@ -603,12 +608,13 @@ def insert_results(
             )
 
             logger.info(
-                f"[{resolution.name}] Successfully inserted "
-                f"{probabilities.shape[0]} objects into Probabilities table"
+                f"Successfully inserted "
+                f"{probabilities.shape[0]} objects into Probabilities table",
+                prefix=log_prefix,
             )
 
         except SQLAlchemyError as e:
-            logger.error(f"[{resolution.name}] Failed to insert data: {str(e)}")
+            logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
             raise
 
-    logger.info(f"[{resolution.name}] Insert operation complete!")
+    logger.info("Insert operation complete!", prefix=log_prefix)
