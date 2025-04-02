@@ -24,6 +24,7 @@ class StepInput(BaseModel):
     prev_node: DAGNode
     select: dict[Source, list[str]]
     cleaners: dict[str, dict[str, Any]] = {}
+    batch_size: int | None = None
     threshold: float | None = None
 
     @property
@@ -99,6 +100,8 @@ class ModelStep(BaseModel, ABC):
             threshold=step_input.threshold,
             resolution_name=step_input.name,
             only_indexed=True,
+            batch_size=step_input.batch_size,
+            return_batches=False,
         )
 
         return df_raw

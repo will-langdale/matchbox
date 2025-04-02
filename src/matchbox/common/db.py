@@ -94,8 +94,16 @@ def sql_to_df(
     if not isinstance(url, str):
         raise ValueError("Unable to obtain a valid connection string from the engine.")
 
-    if iter_batches:
-        results = pl.read_database(
+    def to_format(results: PolarsDataFrame) -> QueryReturnType:
+        if return_type == "polars":
+            return results
+        elif return_type == "arrow":
+            return results.to_arrow()
+        elif return_type == "pandas":
+            return results.to_pandas()
+
+    if bool(batch_size):
+        batches = pl.read_database(
             query=sql_query,
             connection=engine,
             iter_batches=True,
@@ -104,13 +112,10 @@ def sql_to_df(
             execute_options=execute_options,
         )
 
-        match return_type:
-            case "polars":
-                return results
-            case "arrow":
-                return (batch.to_arrow() for batch in results)
-            case "pandas":
-                return (batch.to_pandas() for batch in results)
+        if not iter_batches:
+            return to_format(pl.concat(batches))
+
+        return (to_format(batch) for batch in batches)
 
     results = pl.read_database_uri(
         query=sql_query,
@@ -119,13 +124,7 @@ def sql_to_df(
         execute_options=execute_options,
     )
 
-    match return_type:
-        case "polars":
-            return results
-        case "arrow":
-            return results.to_arrow()
-        case "pandas":
-            return results.to_pandas()
+    return to_format(results)
 
 
 def get_schema_table_names(full_name: str) -> tuple[str, str]:

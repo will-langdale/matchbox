@@ -494,43 +494,20 @@ def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine
         query(sels)
 
 
-@patch.object(Source, "to_arrow")
-def test_query_with_batches(
-    to_arrow_mock: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
-    """Tests that query correctly passes batching options to to_arrow."""
-    # Create mock source with a mocked to_arrow method
-    source_testkit = source_factory(
-        features=[
-            {"name": "a", "base_generator": "random_int"},
-            {"name": "b", "base_generator": "random_int"},
-        ],
+def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Tests that query correctly handles batching options using real warehouse data."""
+    # Create sources with actual data in the warehouse
+    source_testkit = source_from_tuple(
+        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
+        data_pks=["0", "1"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
     source = source_testkit.source.set_engine(sqlite_warehouse)
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
     address = source.address
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    schema = pa.schema(
-        [
-            pa.field("foo_pk", pa.large_string()),
-            pa.field("foo_a", pa.int64()),
-            pa.field("foo_b", pa.string()),
-        ]
-    )
-
-    mock_batch1 = pa.Table.from_pylist(
-        [{"foo_pk": "0", "foo_a": 1, "foo_b": "2"}], schema=schema
-    )
-
-    mock_batch2 = pa.Table.from_pylist(
-        [{"foo_pk": "1", "foo_a": 10, "foo_b": "20"}], schema=schema
-    )
-
-    to_arrow_mock.side_effect = lambda *args, **kwargs: iter([mock_batch1, mock_batch2])
-
-    # Mock API
+    # Mock API responses
     matchbox_api.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}").mock(
         return_value=Response(200, json=source.model_dump())
     )
@@ -549,25 +526,28 @@ def test_query_with_batches(
         )
     )
 
-    sels = select("foo", engine=sqlite_warehouse)
+    sels = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with return_batches=True
-    batch_iterator = query(
-        sels, return_batches=True, batch_size=1000, return_type="arrow"
-    )
+    batch_iterator = query(sels, return_batches=True, batch_size=1, return_type="arrow")
 
-    # Check first batch before verifying the call
+    # Check first batch
     first_batch = next(batch_iterator)
     assert isinstance(first_batch, pa.Table)
-
-    # Verify to_arrow was called with iter_batches=True
-    to_arrow_mock.assert_called_once()
-    assert to_arrow_mock.call_args.kwargs["iter_batches"] is True
-    assert to_arrow_mock.call_args.kwargs["batch_size"] == 1000
+    assert len(first_batch) == 1
+    assert {"foo_a", "foo_b", "id"} == set(first_batch.column_names)
 
     # Verify we can get the remaining batch
     remaining_batches = list(batch_iterator)
     assert len(remaining_batches) == 1
+
+    # Test with return_batches=False
+    results = query(sels, return_batches=False, batch_size=1000, return_type="arrow")
+
+    # Basic verification
+    assert isinstance(results, pa.Table)
+    assert len(results) == 2
+    assert {"foo_a", "foo_b", "id"} == set(results.column_names)
 
 
 @patch("matchbox.client.helpers.index.Source")

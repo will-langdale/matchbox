@@ -77,7 +77,15 @@ def test_model_step_validation(sqlite_warehouse: Engine):
     assert foo_bar_baz.sources == {str(foo.address), str(bar.address), str(baz.address)}
 
 
+@pytest.mark.parametrize(
+    "batched",
+    [
+        pytest.param(False, id="not batched"),
+        pytest.param(True, id="batched"),
+    ],
+)
 def test_dedupe_step_run(
+    batched: bool,
     sqlite_warehouse: Engine,
 ):
     """Tests that a dedupe step orchestrates lower-level API correctly."""
@@ -102,7 +110,12 @@ def test_dedupe_step_run(
         d_foo = DedupeStep(
             name="d_foo",
             description="",
-            left=StepInput(prev_node=foo, select={foo: []}, threshold=0.5),
+            left=StepInput(
+                prev_node=foo,
+                select={foo: []},
+                threshold=0.5,
+                batch_size=100 if batched else None,
+            ),
             model_class=NaiveDeduper,
             settings={"id": "id", "unique_fields": []},
             truth=1,
@@ -117,6 +130,8 @@ def test_dedupe_step_run(
             threshold=d_foo.left.threshold,
             resolution_name=d_foo.left.name,
             only_indexed=True,
+            batch_size=100 if batched else None,
+            return_batches=False,
         )
         # Data is pre-processed
         process_mock.assert_called_once_with(
@@ -139,7 +154,15 @@ def test_dedupe_step_run(
         assert model_mock.truth == 1
 
 
+@pytest.mark.parametrize(
+    "batched",
+    [
+        pytest.param(False, id="not batched"),
+        pytest.param(True, id="batched"),
+    ],
+)
 def test_link_step_run(
+    batched: bool,
     sqlite_warehouse: Engine,
 ):
     """Tests that a link step orchestrates lower-level API correctly."""
@@ -167,8 +190,18 @@ def test_link_step_run(
         foo_bar = LinkStep(
             name="foo_bar",
             description="",
-            left=StepInput(prev_node=foo, select={foo: []}, threshold=0.5),
-            right=StepInput(prev_node=bar, select={bar: []}, threshold=0.7),
+            left=StepInput(
+                prev_node=foo,
+                select={foo: []},
+                threshold=0.5,
+                batch_size=100 if batched else None,
+            ),
+            right=StepInput(
+                prev_node=bar,
+                select={bar: []},
+                threshold=0.7,
+                batch_size=100 if batched else None,
+            ),
             model_class=DeterministicLinker,
             settings={"left_id": "id", "right_id": "id", "comparisons": ""},
             truth=1,
@@ -184,6 +217,8 @@ def test_link_step_run(
             threshold=foo_bar.left.threshold,
             resolution_name=foo_bar.left.name,
             only_indexed=True,
+            batch_size=100 if batched else None,
+            return_batches=False,
         )
         assert query_mock.call_args_list[1] == call(
             [Selector(engine=sqlite_warehouse, address=bar.address, fields=[])],
@@ -191,6 +226,8 @@ def test_link_step_run(
             threshold=foo_bar.right.threshold,
             resolution_name=foo_bar.right.name,
             only_indexed=True,
+            batch_size=100 if batched else None,
+            return_batches=False,
         )
 
         # Data is pre-processed
