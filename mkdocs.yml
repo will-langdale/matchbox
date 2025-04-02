@@ -45,6 +45,9 @@ nav:
     - Hashing: api/common/hash.md
     - Logging: api/common/logging.md
     - Transform: api/common/transform.md
+    - Sources: api/common/sources.md
+    - DTOs: api/common/dtos.md
+    - Arrow: api/common/arrow.md
 - Contributing:
   - Guidelines: contributing.md
 

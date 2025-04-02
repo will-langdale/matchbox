@@ -6,8 +6,9 @@ from functools import wraps
 from typing import Any, Callable, Iterator, ParamSpec, TypeVar
 
 import polars as pl
-import pyarrow as pa
-from pandas import DataFrame
+from pandas import DataFrame as PandasDataframe
+from polars import DataFrame as PolarsDataFrame
+from pyarrow import Table as ArrowTable
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -329,7 +330,7 @@ class Source(BaseModel):
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
-    ) -> pa.Table | Iterator[pa.Table]:
+    ) -> ArrowTable | Iterator[ArrowTable]:
         """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
@@ -345,8 +346,10 @@ class Source(BaseModel):
                 query execution method as kwargs.
 
         Returns:
-            * If return_batches is False: A PyArrow Table containing the requested data.
-            * If return_batches is True: An iterator of PyArrow Tables.
+            The requested data in PyArrow format.
+
+                * If return_batches is False: a PyArrow Table
+                * If return_batches is True: an iterator of PyArrow Tables
         """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(
@@ -370,7 +373,7 @@ class Source(BaseModel):
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
-    ) -> pa.Table | Iterator[pa.Table]:
+    ) -> PolarsDataFrame | Iterator[PolarsDataFrame]:
         """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
@@ -386,9 +389,10 @@ class Source(BaseModel):
                 query execution method as kwargs.
 
         Returns:
-            * If return_batches is False: A Polars DataFrame containing the requested
-                data
-            * If return_batches is True: An iterator of Polars DataFrames.
+            The requested data in Polars format.
+
+                * If return_batches is False: a Polars DataFrame
+                * If return_batches is True: an iterator of Polars DataFrames
         """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(
@@ -412,7 +416,7 @@ class Source(BaseModel):
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
-    ) -> DataFrame | Iterator[DataFrame]:
+    ) -> PandasDataframe | Iterator[PandasDataframe]:
         """Returns the dataset as a pandas DataFrame or an iterator of DataFrames.
 
         Args:
@@ -428,9 +432,10 @@ class Source(BaseModel):
                 query execution method as kwargs.
 
         Returns:
-            * If return_batches is False: A pandas DataFrame containing the requested
-            data
-            * If return_batches is True: An iterator of pandas DataFrames
+            The requested data in Pandas format.
+
+                * If return_batches is False: a Pandas DataFrame
+                * If return_batches is True: an iterator of Pandas DataFrames
         """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
         return sql_to_df(
@@ -450,7 +455,7 @@ class Source(BaseModel):
         batch_size: int | None = None,
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
-    ) -> pa.Table:
+    ) -> ArrowTable:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.
 
         Args:
@@ -475,9 +480,9 @@ class Source(BaseModel):
         )
 
         def _process_batch(
-            batch: pl.DataFrame,
+            batch: PolarsDataFrame,
             cols_to_index: tuple,
-        ) -> pl.DataFrame:
+        ) -> PolarsDataFrame:
             """Process a single batch of data using Polars.
 
             Args:
