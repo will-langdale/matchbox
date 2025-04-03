@@ -79,7 +79,10 @@ class MatchboxDatabase:
         return self.SessionLocal()
 
     def get_adbc_connection(self) -> adbc_dbapi.Connection:
-        """Get a new ADBC connection."""
+        """Get a new ADBC connection.
+
+        The connection must be closed or used as a context manager.
+        """
         return adbc_dbapi.connect(self.connection_string(driver=False))
 
     def create_database(self):

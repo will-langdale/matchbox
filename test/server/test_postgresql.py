@@ -246,14 +246,13 @@ def test_benchmark_generate_tables_parameterised(
     )
     assert resolution_ids == expected_resolution_ids
 
-    conn = MBDB.get_adbc_connection()
-    with conn.cursor() as cur:
+    with MBDB.get_adbc_connection() as conn, conn.cursor() as cur:
         # Write to database
         for table_name, table_arrow in results.items():
             cur.adbc_ingest(
                 table_name, table_arrow, db_schema_name=schema, mode="append"
             )
-    conn.commit()
+        conn.commit()
 
     # Verify relationships in resolution_from table match dataset_start_id
     resolution_from = results["resolution_from"]

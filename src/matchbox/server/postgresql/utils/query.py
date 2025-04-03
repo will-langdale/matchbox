@@ -300,12 +300,13 @@ def query(
         if limit:
             id_query = id_query.limit(limit)
 
-        mb_ids = sql_to_df(
-            id_query,
-            engine,
-            adbc_connection=MBDB.get_adbc_connection(),
-            return_type="arrow",
-        )
+        with MBDB.get_adbc_connection() as conn:
+            mb_ids = sql_to_df(
+                id_query,
+                engine,
+                adbc_connection=conn,
+                return_type="arrow",
+            )
 
         return mb_ids
 

@@ -196,9 +196,10 @@ def get_model_results(resolution: Resolutions) -> Table:
         pairs.c.probability,
     )
 
-    return sql_to_df(
-        stmt=final_select,
-        engine=engine,
-        adbc_connection=MBDB.get_adbc_connection(),
-        return_type="arrow",
-    )
+    with MBDB.get_adbc_connection() as conn:
+        return sql_to_df(
+            stmt=final_select,
+            engine=engine,
+            adbc_connection=conn,
+            return_type="arrow",
+        )
