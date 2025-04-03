@@ -1,5 +1,7 @@
 """API routes for the Matchbox server."""
 
+import logging
+import sys
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
@@ -43,7 +45,7 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import MetadataStore, process_upload
-from matchbox.server.base import APISettings, BackendManager, MatchboxDBAdapter
+from matchbox.server.base import BackendManager, MatchboxDBAdapter
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -60,7 +62,40 @@ class ParquetResponse(Response):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Context manager for the FastAPI lifespan events."""
-    get_backend()
+    # Set up the backend
+    backend = get_backend()
+
+    # Define common formatter
+    formatter = logging.Formatter("[%(name)s %(levelname)s] %(message)s")
+
+    # Configure handler
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(backend.settings.log_level)
+    handler.setFormatter(formatter)
+
+    # Configure loggers with the same handler and formatter
+    loggers_to_configure = [
+        "matchbox",
+        "uvicorn",
+        "uvicorn.access",
+        "uvicorn.error",
+        "fastapi",
+        "httpx",
+        "httpcore",
+    ]
+
+    for logger_name in loggers_to_configure:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(backend.settings.log_level)
+        # Remove any existing handlers to avoid duplicates
+        if logger.handlers:
+            logger.handlers.clear()
+        logger.addHandler(handler)
+
+    # Set SQLAlchemy loggers
+    for sql_logger in ["sqlalchemy", "sqlalchemy.engine"]:
+        logging.getLogger(sql_logger).setLevel("WARNING")
+
     yield
 
 
@@ -68,16 +103,6 @@ metadata_store = MetadataStore(expiry_minutes=30)
 
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
-
-
-def validate_api_key(api_key: str = Security(API_KEY_HEADER)) -> None:
-    """Validate client API Key."""
-    if api_key != APISettings().api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key missing or invalid.",
-            headers={"WWW-Authenticate": "X-API-Key"},
-        )
 
 
 app = FastAPI(
@@ -96,6 +121,33 @@ async def http_exception_handler(request, exc):
 def get_backend() -> MatchboxDBAdapter:
     """Get the backend adapter."""
     return BackendManager.get_backend()
+
+
+def validate_api_key(
+    api_key: str = Security(API_KEY_HEADER),
+) -> None:
+    """Validate client API Key."""
+    backend = get_backend()
+
+    if not backend.settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key missing in server configuration.",
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
+
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key required but not provided.",
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
+    elif api_key != backend.settings.api_key.get_secret_value():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key invalid.",
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
 
 
 # General

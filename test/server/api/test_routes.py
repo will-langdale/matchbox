@@ -66,6 +66,7 @@ def test_upload(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
     s3.create_bucket(
@@ -120,6 +121,8 @@ def test_upload_wrong_schema(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
+
     get_backend.return_value = mock_backend
 
     # Create source with results schema instead of index
@@ -176,9 +179,14 @@ def test_upload_status_check(metadata_store: Mock, _: Mock, test_client: TestCli
 @patch("matchbox.server.base.BackendManager.get_backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
 def test_upload_already_processing(
-    metadata_store: Mock, _: Mock, test_client: TestClient
+    metadata_store: Mock, get_backend: Mock, test_client: TestClient
 ):
     """Test attempting to upload when status is already processing."""
+    # Setup
+    mock_backend = Mock()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
+    get_backend.return_value = mock_backend
+
     # Setup store with a processing entry
     store = MetadataStore()
     source_testkit = source_factory()
@@ -200,8 +208,15 @@ def test_upload_already_processing(
 
 @patch("matchbox.server.base.BackendManager.get_backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
-def test_upload_already_queued(metadata_store: Mock, _: Mock, test_client: TestClient):
+def test_upload_already_queued(
+    metadata_store: Mock, get_backend: Mock, test_client: TestClient
+):
     """Test attempting to upload when status is already queued."""
+    # Setup
+    mock_backend = Mock()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
+    get_backend.return_value = mock_backend
+
     # Setup store with a queued entry
     store = MetadataStore()
     source_testkit = source_factory()
@@ -482,6 +497,7 @@ def test_add_source(get_backend: Mock, test_client: TestClient):
     # Setup
     mock_backend = Mock()
     mock_backend.index = Mock(return_value=None)
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     source_testkit = source_factory()
@@ -510,6 +526,7 @@ async def test_complete_source_upload_process(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
 
@@ -600,6 +617,7 @@ def test_get_resolution_graph(
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_insert_model(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory(name="test_model")
@@ -619,6 +637,7 @@ def test_insert_model(get_backend: Mock, test_client: TestClient):
 def test_insert_model_error(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.insert_model = Mock(side_effect=Exception("Test error"))
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
@@ -672,6 +691,7 @@ def test_model_upload(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
     s3.create_bucket(
         Bucket="test-bucket",
@@ -717,6 +737,7 @@ async def test_complete_model_upload_process(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     mock_backend.set_model_results = Mock(return_value=None)
     get_backend.return_value = mock_backend
 
@@ -835,6 +856,7 @@ def test_set_results(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory()
     mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
@@ -848,6 +870,7 @@ def test_set_results_model_not_found(get_backend: Mock, test_client: TestClient)
     """Test setting results for a non-existent model."""
     mock_backend = Mock()
     mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.post("/models/nonexistent-model/results")
@@ -872,8 +895,10 @@ def test_get_results(get_backend: Mock, test_client: TestClient):
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_set_truth(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
-    testkit = model_factory()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
+
+    testkit = model_factory()
 
     response = test_client.patch(
         f"/models/{testkit.model.metadata.name}/truth", json=0.95
@@ -890,8 +915,10 @@ def test_set_truth(get_backend: Mock, test_client: TestClient):
 def test_set_truth_invalid_value(get_backend: Mock, test_client: TestClient):
     """Test setting an invalid truth value (outside 0-1 range)."""
     mock_backend = Mock()
-    testkit = model_factory()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
+
+    testkit = model_factory()
 
     # Test value > 1
     response = test_client.patch(
@@ -960,8 +987,10 @@ def test_get_ancestors_cache(get_backend: Mock, test_client: TestClient):
 def test_set_ancestors_cache(get_backend: Mock, test_client: TestClient):
     """Test setting the ancestors cache for a model."""
     mock_backend = Mock()
-    testkit = model_factory()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
+
+    testkit = model_factory()
 
     ancestors_data = [
         ModelAncestor(name="parent_model", truth=70),
@@ -1032,6 +1061,7 @@ def test_model_patch_endpoints_404(
     mock_backend = Mock()
     mock_method = getattr(mock_backend, f"set_model_{endpoint}")
     mock_method.side_effect = MatchboxResolutionNotFoundError()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     # Make request
@@ -1046,6 +1076,7 @@ def test_model_patch_endpoints_404(
 @patch("matchbox.server.base.BackendManager.get_backend")
 def test_delete_model(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
@@ -1069,6 +1100,7 @@ def test_delete_model_needs_confirmation(get_backend: Mock, test_client: TestCli
     mock_backend.delete_model = Mock(
         side_effect=MatchboxDeletionNotConfirmed(children=["dedupe1", "dedupe2"])
     )
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
@@ -1092,6 +1124,7 @@ def test_delete_model_404(
     # Setup backend mock
     mock_backend = Mock()
     mock_backend.delete_model.side_effect = MatchboxResolutionNotFoundError()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     # Make request
@@ -1148,6 +1181,7 @@ def test_count_backend_item(get_backend: MatchboxDBAdapter, test_client: TestCli
 def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.clear = Mock()
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.delete("/database", params={"certain": "true"})
@@ -1159,6 +1193,7 @@ def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClien
 def test_clear_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
+    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.delete("/database")
@@ -1174,27 +1209,27 @@ def test_api_key_authorisation(get_backend: MatchboxDBAdapter, test_client: Test
 
     response = test_client.post("/upload/upload_id")
     assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
+    assert response.content == b'"API Key invalid."'
 
     response = test_client.post("/sources")
     assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
+    assert response.content == b'"API Key invalid."'
 
     response = test_client.post("/models")
     assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
+    assert response.content == b'"API Key invalid."'
 
     response = response = test_client.patch("/models/model_name/truth")
     assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
+    assert response.content == b'"API Key invalid."'
 
     response = test_client.delete("/models/model_name")
     assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
+    assert response.content == b'"API Key invalid."'
 
     response = test_client.delete("/database")
     assert response.status_code == 401
-    assert response.content == b'"API Key missing or invalid."'
+    assert response.content == b'"API Key invalid."'
 
     # Missing API Key Value
     test_client.headers.pop("X-API-Key")

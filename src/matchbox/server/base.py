@@ -3,11 +3,7 @@
 import json
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Protocol,
-)
+from typing import TYPE_CHECKING, Any, Protocol
 
 import boto3
 from botocore.exceptions import ClientError
@@ -17,6 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from matchbox.common.dtos import ModelAncestor, ModelMetadata
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.logging import LogLevelType
 from matchbox.common.sources import Match, Source, SourceAddress
 
 if TYPE_CHECKING:
@@ -51,14 +48,6 @@ class MatchboxSnapshot(BaseModel):
 class MatchboxDatastoreSettings(BaseSettings):
     """Settings specific to the datastore configuration."""
 
-    model_config = SettingsConfigDict(
-        env_prefix="MB__DATASTORE__",
-        env_nested_delimiter="__",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
     host: str | None = None
     port: int | None = None
     access_key_id: SecretStr | None = None
@@ -84,7 +73,7 @@ class MatchboxDatastoreSettings(BaseSettings):
             "region_name": self.default_region,
         }
 
-        client = boto3.client("s3", **kwargs)
+        client: S3Client = boto3.client("s3", **kwargs)
 
         try:
             client.head_bucket(Bucket=self.cache_bucket_name)
@@ -103,11 +92,11 @@ class MatchboxDatastoreSettings(BaseSettings):
         return client
 
 
-class MatchboxSettings(BaseSettings):
+class MatchboxServerSettings(BaseSettings):
     """Settings for the Matchbox application."""
 
     model_config = SettingsConfigDict(
-        env_prefix="MB__",
+        env_prefix="MB__SERVER__",
         env_nested_delimiter="__",
         use_enum_values=True,
         env_file=".env",
@@ -118,20 +107,8 @@ class MatchboxSettings(BaseSettings):
     batch_size: int = Field(default=250_000)
     backend_type: MatchboxBackends
     datastore: MatchboxDatastoreSettings
-
-
-class APISettings(BaseSettings):
-    """Settings for the Matchbox API."""
-
-    api_key: str | None = None
-
-    model_config = SettingsConfigDict(
-        extra="ignore",
-        env_prefix="MB__API__",
-        env_nested_delimiter="__",
-        env_file=".env",
-        env_file_encoding="utf-8",
-    )
+    api_key: SecretStr | None = Field(default=None)
+    log_level: LogLevelType = "INFO"
 
 
 class BackendManager:
@@ -141,7 +118,7 @@ class BackendManager:
     _settings = None
 
     @classmethod
-    def initialise(cls, settings: "MatchboxSettings"):
+    def initialise(cls, settings: "MatchboxServerSettings"):
         """Initialise the backend with the given settings."""
         cls._settings = settings
 
@@ -157,14 +134,16 @@ class BackendManager:
         return cls._instance
 
     @classmethod
-    def get_settings(cls) -> "MatchboxSettings":
+    def get_settings(cls) -> "MatchboxServerSettings":
         """Get the backend settings."""
         if cls._settings is None:
             raise ValueError("BackendManager must be initialized with settings first")
         return cls._settings
 
 
-def get_backend_settings(backend_type: MatchboxBackends) -> type[MatchboxSettings]:
+def get_backend_settings(
+    backend_type: MatchboxBackends,
+) -> type[MatchboxServerSettings]:
     """Get the appropriate settings class based on the backend type."""
     if backend_type == MatchboxBackends.POSTGRES:
         from matchbox.server.postgresql import MatchboxPostgresSettings
@@ -186,14 +165,14 @@ def get_backend_class(backend_type: MatchboxBackends) -> type["MatchboxDBAdapter
         raise ValueError(f"Unsupported backend type: {backend_type}")
 
 
-def initialise_backend(settings: MatchboxSettings) -> None:
+def initialise_backend(settings: MatchboxServerSettings) -> None:
     """Utility function to initialise the Matchbox backend based on settings."""
     BackendManager.initialise(settings)
 
 
 def initialise_matchbox() -> None:
     """Initialise the Matchbox backend based on environment variables."""
-    base_settings = MatchboxSettings()
+    base_settings = MatchboxServerSettings()
 
     SettingsClass = get_backend_settings(base_settings.backend_type)
     settings = SettingsClass()
@@ -226,7 +205,7 @@ class ListableAndCountable(Countable, Listable):
 class MatchboxDBAdapter(ABC):
     """An abstract base class for Matchbox database adapters."""
 
-    settings: "MatchboxSettings"
+    settings: "MatchboxServerSettings"
 
     datasets: ListableAndCountable
     models: Countable
