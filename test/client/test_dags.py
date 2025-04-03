@@ -317,10 +317,17 @@ def test_dag_runs(
         truth=1,
     )
 
-    # Assemble DAG
+    # Assemble DAG with batch sizes
     dag = DAG()
 
-    dag.add_sources(foo, bar, baz)
+    dag.add_sources(foo, batch_size=100)
+    dag.add_sources(bar, baz, batch_size=200)
+
+    # Verify batch sizes are stored correctly
+    assert dag._index_batch_sizes[str(foo.address)] == 100
+    assert dag._index_batch_sizes[str(bar.address)] == 200
+    assert dag._index_batch_sizes[str(baz.address)] == 200
+
     assert set(dag.nodes.keys()) == {
         str(foo.address),
         str(bar.address),
@@ -353,6 +360,18 @@ def test_dag_runs(
     dag.run()
 
     assert handler_index.call_count == 3
+
+    # Verify sources and batch sizes passed to handler.index
+    calls = {
+        call.kwargs["source"]: call.kwargs["batch_size"]
+        for call in handler_index.call_args_list
+    }
+
+    assert calls[foo] == 100
+    assert calls[bar] == 200
+    assert calls[baz] == 200
+
+    # Verify the right sources were sent to index
     assert {
         handler_index.call_args_list[0].kwargs["source"],
         handler_index.call_args_list[1].kwargs["source"],

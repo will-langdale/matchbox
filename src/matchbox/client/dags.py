@@ -177,6 +177,8 @@ class DAG:
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
 
+        self._index_batch_sizes: dict[str, int | None] = {}
+
     def _validate_node(self, name: str):
         if name in self.nodes:
             raise ValueError(f"Name '{name}' is already taken in the DAG")
@@ -186,16 +188,18 @@ class DAG:
             if step_input.name not in self.nodes:
                 raise ValueError(f"Dependency {step_input.name} not added to DAG")
 
-    def add_sources(self, *sources: Source):
+    def add_sources(self, *sources: Source, batch_size: int | None = None):
         """Add sources to DAG.
 
         Args:
             sources: All sources to add.
+            batch_size: Batch size for indexing.
         """
         for source in sources:
             self._validate_node(str(source.address))
             self.nodes[str(source.address)] = source
             self.graph[str(source.address)] = []
+            self._index_batch_sizes[str(source.address)] = batch_size
 
     def add_steps(self, *steps: ModelStep):
         """Add dedupers and linkers to DAG, and register sources available to steps.
@@ -240,6 +244,8 @@ class DAG:
         for step_name in self.sequence:
             node = self.nodes[step_name]
             if isinstance(node, Source):
-                _handler.index(source=node)
+                _handler.index(
+                    source=node, batch_size=self._index_batch_sizes[step_name]
+                )
             else:
                 node.run()
