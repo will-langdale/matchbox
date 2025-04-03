@@ -163,7 +163,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
-            engine=MBDB.get_engine(),
             source_address=source_address,
             resolution_name=resolution_name,
             threshold=threshold,

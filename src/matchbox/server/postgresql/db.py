@@ -66,13 +66,6 @@ class MatchboxDatabase:
                 autocommit=False, autoflush=False, bind=self.engine
             )
 
-    def connect_adbc(self):
-        """Connect to the database using ADBC."""
-        if not self.adbc_connection:
-            self.adbc_connection = adbc_dbapi.connect(
-                self.connection_string(driver=False)
-            )
-
     def get_engine(self) -> Engine:
         """Get the database engine."""
         if not self.engine:
@@ -86,10 +79,8 @@ class MatchboxDatabase:
         return self.SessionLocal()
 
     def get_adbc_connection(self) -> adbc_dbapi.Connection:
-        """Get the ADBC connection."""
-        if not self.adbc_connection:
-            self.connect_adbc()
-        return self.adbc_connection
+        """Get a new ADBC connection."""
+        return adbc_dbapi.connect(self.connection_string(driver=False))
 
     def create_database(self):
         """Create the database."""

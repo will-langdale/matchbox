@@ -3,6 +3,7 @@
 from typing import Any, Iterator, Literal, TypeVar, get_args, overload
 
 import polars as pl
+from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
@@ -47,6 +48,7 @@ def sql_to_df(
     engine: Engine,
     return_type: ReturnTypeStr = "pandas",
     *,
+    adbc_connection: adbc_dbapi.Connection | None = None,
     return_batches: bool = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
@@ -59,6 +61,7 @@ def sql_to_df(
         engine (Engine): A SQLAlchemy Engine object for the database connection.
         return_type (str): The type of the return value. One of "arrow", "pandas",
             or "polars".
+        adbc_connection: An optional ADBC connection to speed-up your query.
         return_batches (bool): If True, return an iterator that yields each batch
             separately. If False, return a single DataFrame with all results.
             Default is False.
@@ -102,9 +105,11 @@ def sql_to_df(
         elif return_type == "pandas":
             return results.to_pandas()
 
+    connection = adbc_connection if adbc_connection else engine
+
     res = pl.read_database(
         query=sql_query,
-        connection=engine,
+        connection=connection,
         iter_batches=bool(batch_size),
         batch_size=batch_size,
         schema_overrides=schema_overrides,
