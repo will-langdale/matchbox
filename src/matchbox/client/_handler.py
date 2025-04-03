@@ -198,7 +198,7 @@ def match(
 def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     """Index a Source in Matchbox."""
     log_prefix = f"Index {source.address.pretty}"
-    log_batch = f"with batch size {batch_size}" if batch_size else "without batching"
+    log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
     logger.debug(f"Started {log_batch}", prefix=log_prefix)
 
     logger.debug("Retrieving and hashing", prefix=log_prefix)
