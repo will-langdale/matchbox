@@ -190,10 +190,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def index(self, source: Source, data_hashes: Table) -> None:  # noqa: D102
         insert_dataset(
-            source=source,
-            data_hashes=data_hashes,
-            engine=MBDB.get_engine(),
-            batch_size=self.settings.batch_size,
+            source=source, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
 
     def get_source(self, address: SourceAddress) -> Source:  # noqa: D102
@@ -386,7 +383,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_model_results(self, model: str) -> Table:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        return get_model_results(engine=MBDB.get_engine(), resolution=resolution)
+        return get_model_results(resolution=resolution)
 
     def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())

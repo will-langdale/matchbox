@@ -17,6 +17,7 @@ from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
 )
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourcePK,
@@ -104,13 +105,11 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(
-    source: Source, data_hashes: pa.Table, engine: Engine, batch_size: int
-) -> None:
+def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
     log_prefix = f"Index {source.address.pretty}"
     resolution_hash = hash_data(str(source.address))
-
+    engine = MBDB.get_engine()
     with Session(engine) as session:
         logger.info("Begin", prefix=log_prefix)
 
@@ -176,6 +175,7 @@ def insert_dataset(
     existing_hash_lookup = sql_to_df(
         stmt=select(Clusters.cluster_id, Clusters.cluster_hash),
         engine=engine,
+        adbc_connection=MBDB.get_adbc_connection(),
         return_type="arrow",
     )
 
@@ -452,6 +452,7 @@ def _results_to_insert_tables(
     lookup = sql_to_df(
         stmt=_get_resolution_related_clusters(resolution.resolution_id),
         engine=engine,
+        adbc_connection=MBDB.get_adbc_connection(),
         return_type="arrow",
     )
     lookup = lookup.cast(pa.schema([("hash", pa.large_binary()), ("id", pa.uint64())]))
