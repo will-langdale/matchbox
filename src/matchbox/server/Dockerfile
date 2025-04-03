@@ -25,6 +25,9 @@ COPY ./src/matchbox /code/src/matchbox
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching
 RUN --mount=type=cache,target=/root/.cache/uv \
+    # Determine package version dynamically from the git tag
+    --mount=source=.git,target=/code/.git,type=bind \
+    SETUPTOOLS_SCM_PRETEND_VERSION_FOR_MATCHBOX_DB=$(uv run python -m  setuptools_scm) \
     uv sync --frozen --all-extras --no-dev
 
 # Place executables in the environment at the front of the path
