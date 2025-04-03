@@ -102,29 +102,22 @@ def sql_to_df(
         elif return_type == "pandas":
             return results.to_pandas()
 
-    if bool(batch_size):
-        batches = pl.read_database(
-            query=sql_query,
-            connection=engine,
-            iter_batches=True,
-            batch_size=batch_size,
-            schema_overrides=schema_overrides,
-            execute_options=execute_options,
-        )
-
-        if not return_batches:
-            return to_format(pl.concat(batches))
-
-        return (to_format(batch) for batch in batches)
-
-    results = pl.read_database_uri(
+    res = pl.read_database(
         query=sql_query,
-        uri=url,
+        connection=engine,
+        iter_batches=bool(batch_size),
+        batch_size=batch_size,
         schema_overrides=schema_overrides,
         execute_options=execute_options,
     )
 
-    return to_format(results)
+    if not bool(batch_size):
+        return to_format(res)
+
+    if not return_batches:
+        return to_format(pl.concat(res))
+
+    return (to_format(batch) for batch in res)
 
 
 def get_schema_table_names(full_name: str) -> tuple[str, str]:

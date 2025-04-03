@@ -1,5 +1,6 @@
 """Matchbox PostgreSQL database connection."""
 
+from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -39,21 +40,37 @@ class MatchboxDatabase:
         self.settings = settings
         self.engine: Engine | None = None
         self.SessionLocal: sessionmaker | None = None
+        self.adbc_connection: adbc_dbapi.Connection | None = None
         self.MatchboxBase = declarative_base(
             metadata=MetaData(schema=settings.postgres.db_schema)
+        )
+
+    def connection_string(self, driver: bool = True) -> str:
+        """Get the connection string for PostgreSQL."""
+        driver_string = ""
+        if driver:
+            driver_string = "+psycopg"
+        return (
+            f"postgresql{driver_string}://{self.settings.postgres.user}:{self.settings.postgres.password}"
+            f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
+            f"{self.settings.postgres.database}"
         )
 
     def connect(self):
         """Connect to the database."""
         if not self.engine:
-            connection_string = (
-                f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
-                f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
-                f"{self.settings.postgres.database}"
+            self.engine = create_engine(
+                url=self.connection_string(), logging_name="mb_pg_db"
             )
-            self.engine = create_engine(url=connection_string, logging_name="mb_pg_db")
             self.SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=self.engine
+            )
+
+    def connect_adbc(self):
+        """Connect to the database using ADBC."""
+        if not self.adbc_connection:
+            self.adbc_connection = adbc_dbapi.connect(
+                self.connection_string(driver=False)
             )
 
     def get_engine(self) -> Engine:
@@ -67,6 +84,12 @@ class MatchboxDatabase:
         if not self.SessionLocal:
             self.connect()
         return self.SessionLocal()
+
+    def get_adbc_connection(self) -> adbc_dbapi.Connection:
+        """Get the ADBC connection."""
+        if not self.adbc_connection:
+            self.connect_adbc()
+        return self.adbc_connection
 
     def create_database(self):
         """Create the database."""
