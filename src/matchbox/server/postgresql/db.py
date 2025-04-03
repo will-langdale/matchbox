@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from matchbox.server.base import MatchboxBackends, MatchboxSettings
+from matchbox.server.base import MatchboxBackends, MatchboxServerSettings
 
 
 class MatchboxPostgresCoreSettings(BaseModel):
@@ -18,7 +18,7 @@ class MatchboxPostgresCoreSettings(BaseModel):
     db_schema: str
 
 
-class MatchboxPostgresSettings(MatchboxSettings):
+class MatchboxPostgresSettings(MatchboxServerSettings):
     """Settings for the Matchbox PostgreSQL backend.
 
     Inherits the core settings and adds the PostgreSQL-specific settings.

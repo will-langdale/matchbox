@@ -1,7 +1,7 @@
 """Logging utilities."""
 
 import logging
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from rich.console import Console
 from rich.progress import (
@@ -12,6 +12,9 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+
+LogLevelType = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+"""Type for all Python log levels."""
 
 
 class PrefixedLoggerAdapter(logging.LoggerAdapter):
