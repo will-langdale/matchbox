@@ -494,43 +494,20 @@ def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine
         query(sels)
 
 
-@patch.object(Source, "to_arrow")
-def test_query_with_batches(
-    to_arrow_mock: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
-    """Tests that query correctly passes batching options to to_arrow."""
-    # Create mock source with a mocked to_arrow method
-    source_testkit = source_factory(
-        features=[
-            {"name": "a", "base_generator": "random_int"},
-            {"name": "b", "base_generator": "random_int"},
-        ],
+def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Tests that query correctly handles batching options using real warehouse data."""
+    # Dummy data and source
+    source_testkit = source_from_tuple(
+        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
+        data_pks=["0", "1"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
     source = source_testkit.source.set_engine(sqlite_warehouse)
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
     address = source.address
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    schema = pa.schema(
-        [
-            pa.field("foo_pk", pa.large_string()),
-            pa.field("foo_a", pa.int64()),
-            pa.field("foo_b", pa.string()),
-        ]
-    )
-
-    mock_batch1 = pa.Table.from_pylist(
-        [{"foo_pk": "0", "foo_a": 1, "foo_b": "2"}], schema=schema
-    )
-
-    mock_batch2 = pa.Table.from_pylist(
-        [{"foo_pk": "1", "foo_a": 10, "foo_b": "20"}], schema=schema
-    )
-
-    to_arrow_mock.side_effect = lambda *args, **kwargs: iter([mock_batch1, mock_batch2])
-
-    # Mock API
+    # Mock API responses
     matchbox_api.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}").mock(
         return_value=Response(200, json=source.model_dump())
     )
@@ -549,25 +526,28 @@ def test_query_with_batches(
         )
     )
 
-    sels = select("foo", engine=sqlite_warehouse)
+    sels = select({"foo": ["a", "b"]}, engine=sqlite_warehouse)
 
     # Test with return_batches=True
-    batch_iterator = query(
-        sels, return_batches=True, batch_size=1000, return_type="arrow"
-    )
+    batch_iterator = query(sels, return_batches=True, batch_size=1, return_type="arrow")
 
-    # Check first batch before verifying the call
+    # Check first batch
     first_batch = next(batch_iterator)
     assert isinstance(first_batch, pa.Table)
-
-    # Verify to_arrow was called with iter_batches=True
-    to_arrow_mock.assert_called_once()
-    assert to_arrow_mock.call_args.kwargs["iter_batches"] is True
-    assert to_arrow_mock.call_args.kwargs["batch_size"] == 1000
+    assert len(first_batch) == 1
+    assert {"foo_a", "foo_b", "id"} == set(first_batch.column_names)
 
     # Verify we can get the remaining batch
     remaining_batches = list(batch_iterator)
     assert len(remaining_batches) == 1
+
+    # Test with return_batches=False
+    results = query(sels, return_batches=False, batch_size=1000, return_type="arrow")
+
+    # Basic verification
+    assert isinstance(results, pa.Table)
+    assert len(results) == 2
+    assert {"foo_a", "foo_b", "id"} == set(results.column_names)
 
 
 @patch("matchbox.client.helpers.index.Source")
@@ -756,28 +736,20 @@ def test_index_upload_failure(
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@patch("matchbox.client.helpers.index.Source")
-def test_index_with_batch_size(
-    MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
+def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Test that batch_size is passed correctly to hash_data when indexing."""
-    # Mock Source
-    source = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}],
+    # Dummy data and source
+    source_testkit = source_from_tuple(
+        data_tuple=({"company_name": "Company A"}, {"company_name": "Company B"}),
+        data_pks=["1", "2"],
+        full_name="test_companies",
         engine=sqlite_warehouse,
     )
-    mock_source_instance = source.mock
-    # Mock hash_data to capture the batch_size parameter
-    mock_source_instance.hash_data.return_value = pa.table(
-        {
-            "source_pk": [["1", "2"]],
-            "hash": pa.array([b"hash1"], type=pa.binary()),
-        }
-    )
-    MockSource.return_value = mock_source_instance
+    source = source_testkit.source.set_engine(sqlite_warehouse)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Mock the API endpoints
-    matchbox_api.post("/sources").mock(
+    source_route = matchbox_api.post("/sources").mock(
         return_value=Response(
             202,
             json=UploadStatus(
@@ -788,7 +760,7 @@ def test_index_with_batch_size(
         )
     )
 
-    matchbox_api.post("/upload/test-upload-id").mock(
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             202,
             json=UploadStatus(
@@ -797,18 +769,23 @@ def test_index_with_batch_size(
         )
     )
 
-    # Call index with batch_size
-    index(
-        full_name=source.source.address.full_name,
-        db_pk=source.source.db_pk,
-        engine=sqlite_warehouse,
-        batch_size=1000,
-    )
+    # Spy on the hash_data method to verify batch_size
+    with patch.object(Source, "hash_data", wraps=source.hash_data) as spy_hash_data:
+        # Call index with batch_size
+        index(
+            full_name=source.address.full_name,
+            db_pk=source.db_pk,
+            engine=sqlite_warehouse,
+            batch_size=1,
+        )
 
-    # Verify batch_size was passed to hash_data
-    mock_source_instance.hash_data.assert_called_once()
-    assert mock_source_instance.hash_data.call_args.kwargs["iter_batches"] is True
-    assert mock_source_instance.hash_data.call_args.kwargs["batch_size"] == 1000
+        # Verify batch_size was passed to hash_data
+        spy_hash_data.assert_called_once()
+        assert spy_hash_data.call_args.kwargs["batch_size"] == 1
+
+        # Verify endpoints were called only once, despite multiple batches
+        assert source_route.call_count == 1
+        assert upload_route.call_count == 1
 
 
 def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):

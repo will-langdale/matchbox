@@ -22,7 +22,7 @@ def sql_to_df(
     engine: Engine,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
-    iter_batches: Literal[False] = False,
+    return_batches: Literal[False] = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
@@ -35,7 +35,7 @@ def sql_to_df(
     engine: Engine,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
-    iter_batches: Literal[True],
+    return_batches: Literal[True],
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
@@ -47,7 +47,7 @@ def sql_to_df(
     engine: Engine,
     return_type: ReturnTypeStr = "pandas",
     *,
-    iter_batches: bool = False,
+    return_batches: bool = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
@@ -59,7 +59,7 @@ def sql_to_df(
         engine (Engine): A SQLAlchemy Engine object for the database connection.
         return_type (str): The type of the return value. One of "arrow", "pandas",
             or "polars".
-        iter_batches (bool): If True, return an iterator that yields each batch
+        return_batches (bool): If True, return an iterator that yields each batch
             separately. If False, return a single DataFrame with all results.
             Default is False.
         batch_size (int | None): Indicate the size of each batch when processing
@@ -70,9 +70,9 @@ def sql_to_df(
             into the underlying query execution method as kwargs. Default is None.
 
     Returns:
-        If iter_batches is False: A dataframe of the query results in the specified
+        If return_batches is False: A dataframe of the query results in the specified
             format.
-        If iter_batches is True: An iterator of dataframes in the specified format.
+        If return_batches is True: An iterator of dataframes in the specified format.
 
     Raises:
         ValueError: If the engine URL is not properly configured or if an unsupported
@@ -94,8 +94,16 @@ def sql_to_df(
     if not isinstance(url, str):
         raise ValueError("Unable to obtain a valid connection string from the engine.")
 
-    if iter_batches:
-        results = pl.read_database(
+    def to_format(results: PolarsDataFrame) -> QueryReturnType:
+        if return_type == "polars":
+            return results
+        elif return_type == "arrow":
+            return results.to_arrow()
+        elif return_type == "pandas":
+            return results.to_pandas()
+
+    if bool(batch_size):
+        batches = pl.read_database(
             query=sql_query,
             connection=engine,
             iter_batches=True,
@@ -104,13 +112,10 @@ def sql_to_df(
             execute_options=execute_options,
         )
 
-        match return_type:
-            case "polars":
-                return results
-            case "arrow":
-                return (batch.to_arrow() for batch in results)
-            case "pandas":
-                return (batch.to_pandas() for batch in results)
+        if not return_batches:
+            return to_format(pl.concat(batches))
+
+        return (to_format(batch) for batch in batches)
 
     results = pl.read_database_uri(
         query=sql_query,
@@ -119,13 +124,7 @@ def sql_to_df(
         execute_options=execute_options,
     )
 
-    match return_type:
-        case "polars":
-            return results
-        case "arrow":
-            return results.to_arrow()
-        case "pandas":
-            return results.to_pandas()
+    return to_format(results)
 
 
 def get_schema_table_names(full_name: str) -> tuple[str, str]:

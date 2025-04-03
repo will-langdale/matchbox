@@ -117,6 +117,7 @@ def _process_query_result(
 def _source_query(
     selector: Selector,
     mb_ids: ArrowTable,
+    return_batches: bool = False,
     batch_size: int | None = None,
     only_indexed: bool = False,
 ) -> tuple[Source, ArrowTable] | tuple[Source, Iterator[ArrowTable]]:
@@ -138,7 +139,7 @@ def _source_query(
     raw_results = source.to_arrow(
         fields=selected_fields,
         pks=mb_ids["source_pk"].to_pylist(),
-        iter_batches=bool(batch_size),
+        return_batches=return_batches,
         batch_size=batch_size,
     )
 
@@ -172,6 +173,7 @@ def _query_batched(
         source, raw_batches = _source_query(
             selector=selector,
             mb_ids=mb_ids,
+            return_batches=True,
             batch_size=batch_size,
             only_indexed=only_indexed,
         )
@@ -337,12 +339,20 @@ def query(
             )
 
             source, raw_data = _source_query(
-                selector=selector, mb_ids=mb_ids, only_indexed=only_indexed
+                selector=selector,
+                mb_ids=mb_ids,
+                only_indexed=only_indexed,
+                return_batches=False,
+                batch_size=batch_size,
             )
 
             processed_table = _process_query_result(
-                raw_data, selector, mb_ids, db_pk=source.db_pk
+                data=raw_data,
+                selector=selector,
+                mb_ids=mb_ids,
+                db_pk=source.db_pk,
             )
+
             tables.append(processed_table)
 
         # Combine results based on combine_type
