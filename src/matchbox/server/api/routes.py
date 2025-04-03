@@ -79,9 +79,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "uvicorn",
         "uvicorn.access",
         "uvicorn.error",
+        "uvicorn.asgi",
         "fastapi",
-        "httpx",
-        "httpcore",
     ]
 
     for logger_name in loggers_to_configure:
