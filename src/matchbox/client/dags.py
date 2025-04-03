@@ -16,6 +16,7 @@ from matchbox.client.models.models import make_model
 from matchbox.common.sources import Source
 
 DAGNode = Union["ModelStep", Source]
+"""Type of node in the DAG. Either a step or a source."""
 
 
 class StepInput(BaseModel):
@@ -85,7 +86,6 @@ class ModelStep(BaseModel, ABC):
 
         Args:
             step_input: Declared input to this DAG step.
-            engine: SQLAlchemy engine to use for retrieving the data.
 
         Returns:
             Pandas dataframe with retrieved results.

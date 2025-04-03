@@ -22,6 +22,7 @@ nav:
 - API reference:
   - Client:
     - Overview: api/client/index.md
+    - DAGs: api/client/dags.md
     - Clean: api/client/clean.md
     - Helpers: api/client/helpers.md
     - Models: api/client/models.md
