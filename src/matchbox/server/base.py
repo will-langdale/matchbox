@@ -165,9 +165,10 @@ def get_backend_class(backend_type: MatchboxBackends) -> type["MatchboxDBAdapter
         raise ValueError(f"Unsupported backend type: {backend_type}")
 
 
-def initialise_backend(settings: MatchboxServerSettings) -> None:
-    """Utility function to initialise the Matchbox backend based on settings."""
-    BackendManager.initialise(settings)
+def settings_to_backend(settings: MatchboxServerSettings) -> "MatchboxDBAdapter":
+    """Create backend adapter with injected settings."""
+    BackendClass = get_backend_class(settings.backend_type)
+    return BackendClass(settings)
 
 
 def initialise_matchbox() -> None:
@@ -177,7 +178,7 @@ def initialise_matchbox() -> None:
     SettingsClass = get_backend_settings(base_settings.backend_type)
     settings = SettingsClass()
 
-    initialise_backend(settings)
+    BackendManager.initialise(settings)
 
 
 class Countable(Protocol):

@@ -51,7 +51,7 @@ def test_healthcheck(test_client: TestClient):
     assert response.version == version("matchbox-db")
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 @patch("matchbox.server.api.routes.metadata_store")
 @patch("matchbox.server.api.routes.BackgroundTasks.add_task")
 def test_upload(
@@ -66,7 +66,6 @@ def test_upload(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
     s3.create_bucket(
@@ -106,7 +105,7 @@ def test_upload(
     mock_add_task.assert_called_once()  # Verify background task was queued
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 @patch("matchbox.server.api.routes.metadata_store")
 @patch("matchbox.server.api.routes.BackgroundTasks.add_task")
 def test_upload_wrong_schema(
@@ -121,8 +120,6 @@ def test_upload_wrong_schema(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
-
     get_backend.return_value = mock_backend
 
     # Create source with results schema instead of index
@@ -154,7 +151,7 @@ def test_upload_wrong_schema(
     mock_add_task.assert_not_called()  # Background task should not be queued
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")  # Stops real backend call
+@patch("matchbox.server.api.routes.settings_to_backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
 def test_upload_status_check(metadata_store: Mock, _: Mock, test_client: TestClient):
     """Test checking status of an upload using the status endpoint."""
@@ -176,17 +173,12 @@ def test_upload_status_check(metadata_store: Mock, _: Mock, test_client: TestCli
     metadata_store.update_status.assert_not_called()
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")  # Stops real backend call
+@patch("matchbox.server.api.routes.settings_to_backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
 def test_upload_already_processing(
-    metadata_store: Mock, get_backend: Mock, test_client: TestClient
+    metadata_store: Mock, _: Mock, test_client: TestClient
 ):
     """Test attempting to upload when status is already processing."""
-    # Setup
-    mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
-    get_backend.return_value = mock_backend
-
     # Setup store with a processing entry
     store = MetadataStore()
     source_testkit = source_factory()
@@ -206,17 +198,10 @@ def test_upload_already_processing(
     assert response.json()["status"] == "processing"
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")  # Stops real backend call
+@patch("matchbox.server.api.routes.settings_to_backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
-def test_upload_already_queued(
-    metadata_store: Mock, get_backend: Mock, test_client: TestClient
-):
+def test_upload_already_queued(metadata_store: Mock, _: Mock, test_client: TestClient):
     """Test attempting to upload when status is already queued."""
-    # Setup
-    mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
-    get_backend.return_value = mock_backend
-
     # Setup store with a queued entry
     store = MetadataStore()
     source_testkit = source_factory()
@@ -302,7 +287,7 @@ async def test_process_upload_deletes_file_on_failure(s3: S3Client):
 # Retrieval
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_query(get_backend: Mock, test_client: TestClient):
     # Mock backend
     mock_backend = Mock()
@@ -335,7 +320,7 @@ def test_query(get_backend: Mock, test_client: TestClient):
     assert table.schema.equals(SCHEMA_MB_IDS)
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_query_404_resolution(get_backend: Mock, test_client: TestClient):
     # Mock backend
     mock_backend = Mock()
@@ -355,7 +340,7 @@ def test_query_404_resolution(get_backend: Mock, test_client: TestClient):
     assert response.status_code == 404
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_query_404_source(get_backend: Mock, test_client: TestClient):
     # Mock backend
     mock_backend = Mock()
@@ -375,7 +360,7 @@ def test_query_404_source(get_backend: Mock, test_client: TestClient):
     assert response.status_code == 404
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_match(get_backend: Mock, test_client: TestClient):
     foo_address = SourceAddress(full_name="foo", warehouse_hash=b"foo")
     bar_address = SourceAddress(full_name="bar", warehouse_hash=b"bar")
@@ -412,7 +397,7 @@ def test_match(get_backend: Mock, test_client: TestClient):
     [Match.model_validate(m) for m in response.json()]
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_match_404_resolution(get_backend: Mock, test_client: TestClient):
     # Mock backend
     mock_backend = Mock()
@@ -437,7 +422,7 @@ def test_match_404_resolution(get_backend: Mock, test_client: TestClient):
     assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_match_404_source(get_backend: Mock, test_client: TestClient):
     # Mock backend
     mock_backend = Mock()
@@ -465,7 +450,7 @@ def test_match_404_source(get_backend: Mock, test_client: TestClient):
 # Data management
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_source(get_backend, test_client: TestClient):
     address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
     source = Source(address=address, db_pk="pk")
@@ -480,7 +465,7 @@ def test_get_source(get_backend, test_client: TestClient):
     assert Source.model_validate(response.json())
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_source_404(get_backend, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.get_source = Mock(side_effect=MatchboxSourceNotFoundError)
@@ -491,13 +476,12 @@ def test_get_source_404(get_backend, test_client: TestClient):
     assert response.json()["entity"] == BackendRetrievableType.SOURCE
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_add_source(get_backend: Mock, test_client: TestClient):
     """Test the source addition endpoint."""
     # Setup
     mock_backend = Mock()
     mock_backend.index = Mock(return_value=None)
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     source_testkit = source_factory()
@@ -517,7 +501,7 @@ def test_add_source(get_backend: Mock, test_client: TestClient):
 
 
 @pytest.mark.asyncio
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 async def test_complete_source_upload_process(
     get_backend: Mock, s3: S3Client, test_client: TestClient
 ):
@@ -526,7 +510,6 @@ async def test_complete_source_upload_process(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     mock_backend.index = Mock(return_value=None)
     get_backend.return_value = mock_backend
 
@@ -595,7 +578,7 @@ async def test_complete_source_upload_process(
         s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_resolution_graph(
     get_backend: MatchboxDBAdapter,
     resolution_graph: ResolutionGraph,
@@ -614,10 +597,9 @@ def test_get_resolution_graph(
 # Model management
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_insert_model(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory(name="test_model")
@@ -633,11 +615,10 @@ def test_insert_model(get_backend: Mock, test_client: TestClient):
     mock_backend.insert_model.assert_called_once_with(testkit.model.metadata)
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_insert_model_error(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.insert_model = Mock(side_effect=Exception("Test error"))
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
@@ -648,7 +629,7 @@ def test_insert_model_error(get_backend: Mock, test_client: TestClient):
     assert response.json()["details"] == "Test error"
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_model(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory(name="test_model", description="test description")
@@ -662,7 +643,7 @@ def test_get_model(get_backend: Mock, test_client: TestClient):
     assert response.json()["description"] == testkit.model.metadata.description
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_model_not_found(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
@@ -675,7 +656,7 @@ def test_get_model_not_found(get_backend: Mock, test_client: TestClient):
 
 
 @pytest.mark.parametrize("model_type", ["deduper", "linker"])
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 @patch("matchbox.server.api.routes.metadata_store")
 @patch("matchbox.server.api.routes.BackgroundTasks.add_task")
 def test_model_upload(
@@ -691,7 +672,6 @@ def test_model_upload(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
     s3.create_bucket(
         Bucket="test-bucket",
@@ -728,7 +708,7 @@ def test_model_upload(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_type", ["deduper", "linker"])
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 async def test_complete_model_upload_process(
     get_backend: Mock, s3: S3Client, model_type: str, test_client: TestClient
 ):
@@ -737,7 +717,6 @@ async def test_complete_model_upload_process(
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     mock_backend.set_model_results = Mock(return_value=None)
     get_backend.return_value = mock_backend
 
@@ -851,12 +830,11 @@ async def test_complete_model_upload_process(
         s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_set_results(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory()
     mock_backend.get_model = Mock(return_value=testkit.model.metadata)
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
@@ -865,12 +843,11 @@ def test_set_results(get_backend: Mock, test_client: TestClient):
     assert response.json()["status"] == "awaiting_upload"
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_set_results_model_not_found(get_backend: Mock, test_client: TestClient):
     """Test setting results for a non-existent model."""
     mock_backend = Mock()
     mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.post("/models/nonexistent-model/results")
@@ -879,7 +856,7 @@ def test_set_results_model_not_found(get_backend: Mock, test_client: TestClient)
     assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_results(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory()
@@ -892,13 +869,11 @@ def test_get_results(get_backend: Mock, test_client: TestClient):
     assert response.headers["content-type"] == "application/octet-stream"
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_set_truth(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
-    get_backend.return_value = mock_backend
-
     testkit = model_factory()
+    get_backend.return_value = mock_backend
 
     response = test_client.patch(
         f"/models/{testkit.model.metadata.name}/truth", json=0.95
@@ -911,14 +886,12 @@ def test_set_truth(get_backend: Mock, test_client: TestClient):
     )
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_set_truth_invalid_value(get_backend: Mock, test_client: TestClient):
     """Test setting an invalid truth value (outside 0-1 range)."""
     mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
-    get_backend.return_value = mock_backend
-
     testkit = model_factory()
+    get_backend.return_value = mock_backend
 
     # Test value > 1
     response = test_client.patch(
@@ -933,7 +906,7 @@ def test_set_truth_invalid_value(get_backend: Mock, test_client: TestClient):
     assert response.status_code == 422
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_truth(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory()
@@ -946,7 +919,7 @@ def test_get_truth(get_backend: Mock, test_client: TestClient):
     assert response.json() == 0.95
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_ancestors(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory()
@@ -964,7 +937,7 @@ def test_get_ancestors(get_backend: Mock, test_client: TestClient):
     assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_get_ancestors_cache(get_backend: Mock, test_client: TestClient):
     """Test retrieving the ancestors cache for a model."""
     mock_backend = Mock()
@@ -983,14 +956,12 @@ def test_get_ancestors_cache(get_backend: Mock, test_client: TestClient):
     assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_set_ancestors_cache(get_backend: Mock, test_client: TestClient):
     """Test setting the ancestors cache for a model."""
     mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
-    get_backend.return_value = mock_backend
-
     testkit = model_factory()
+    get_backend.return_value = mock_backend
 
     ancestors_data = [
         ModelAncestor(name="parent_model", truth=70),
@@ -1014,7 +985,7 @@ def test_set_ancestors_cache(get_backend: Mock, test_client: TestClient):
     "endpoint",
     ["results", "truth", "ancestors", "ancestors_cache"],
 )
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_model_get_endpoints_404(
     get_backend: Mock,
     endpoint: str,
@@ -1049,7 +1020,7 @@ def test_model_get_endpoints_404(
         ),
     ],
 )
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_model_patch_endpoints_404(
     get_backend: Mock,
     endpoint: str,
@@ -1061,7 +1032,6 @@ def test_model_patch_endpoints_404(
     mock_backend = Mock()
     mock_method = getattr(mock_backend, f"set_model_{endpoint}")
     mock_method.side_effect = MatchboxResolutionNotFoundError()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     # Make request
@@ -1073,10 +1043,9 @@ def test_model_patch_endpoints_404(
     assert error.entity == BackendRetrievableType.RESOLUTION
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_delete_model(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
@@ -1094,13 +1063,12 @@ def test_delete_model(get_backend: Mock, test_client: TestClient):
     }
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_delete_model_needs_confirmation(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.delete_model = Mock(
         side_effect=MatchboxDeletionNotConfirmed(children=["dedupe1", "dedupe2"])
     )
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     testkit = model_factory()
@@ -1116,7 +1084,7 @@ def test_delete_model_needs_confirmation(get_backend: Mock, test_client: TestCli
     "certain",
     [True, False],
 )
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_delete_model_404(
     get_backend: Mock, certain: bool, test_client: TestClient
 ) -> None:
@@ -1124,7 +1092,6 @@ def test_delete_model_404(
     # Setup backend mock
     mock_backend = Mock()
     mock_backend.delete_model.side_effect = MatchboxResolutionNotFoundError()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     # Make request
@@ -1141,7 +1108,7 @@ def test_delete_model_404(
 # Admin
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_count_all_backend_items(get_backend, test_client: TestClient):
     """Test the unparameterised entity counting endpoint."""
     entity_counts = {
@@ -1165,7 +1132,7 @@ def test_count_all_backend_items(get_backend, test_client: TestClient):
     assert response.json() == {"entities": entity_counts}
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_count_backend_item(get_backend: MatchboxDBAdapter, test_client: TestClient):
     """Test the parameterised entity counting endpoint."""
     mock_backend = Mock()
@@ -1177,11 +1144,10 @@ def test_count_backend_item(get_backend: MatchboxDBAdapter, test_client: TestCli
     assert response.json() == {"entities": {"models": 20}}
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.clear = Mock()
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.delete("/database", params={"certain": "true"})
@@ -1189,11 +1155,10 @@ def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClien
     OKMessage.model_validate(response.json())
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_clear_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
-    mock_backend.settings.api_key.get_secret_value.return_value = "test-api-key"
     get_backend.return_value = mock_backend
 
     response = test_client.delete("/database")
@@ -1202,7 +1167,7 @@ def test_clear_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestC
     assert response.content
 
 
-@patch("matchbox.server.base.BackendManager.get_backend")
+@patch("matchbox.server.api.routes.settings_to_backend")
 def test_api_key_authorisation(get_backend: MatchboxDBAdapter, test_client: TestClient):
     # Incorrect API Key Value
     test_client.headers["X-API-Key"] = "incorrect-api-key"

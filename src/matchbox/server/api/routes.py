@@ -45,7 +45,12 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import MetadataStore, process_upload
-from matchbox.server.base import BackendManager, MatchboxDBAdapter
+from matchbox.server.base import (
+    MatchboxDBAdapter,
+    MatchboxServerSettings,
+    get_backend_settings,
+    settings_to_backend,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -63,7 +68,7 @@ class ParquetResponse(Response):
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Context manager for the FastAPI lifespan events."""
     # Set up the backend
-    backend = get_backend()
+    backend = get_backend(get_settings())
 
     # Define common formatter
     formatter = logging.Formatter("[%(name)s %(levelname)s] %(message)s")
@@ -117,18 +122,26 @@ async def http_exception_handler(request, exc):
     return JSONResponse(content=exc.detail, status_code=exc.status_code)
 
 
-def get_backend() -> MatchboxDBAdapter:
-    """Get the backend adapter."""
-    return BackendManager.get_backend()
+def get_settings() -> MatchboxServerSettings:
+    """Get server settings."""
+    base_settings = MatchboxServerSettings()
+    SettingsClass = get_backend_settings(base_settings.backend_type)
+    return SettingsClass()
+
+
+def get_backend(
+    settings: Annotated[MatchboxServerSettings, Depends(get_settings)],
+) -> MatchboxDBAdapter:
+    """Get the backend adapter with injected settings."""
+    return settings_to_backend(settings)
 
 
 def validate_api_key(
+    settings: Annotated[MatchboxServerSettings, Depends(get_settings)],
     api_key: str = Security(API_KEY_HEADER),
 ) -> None:
-    """Validate client API Key."""
-    backend = get_backend()
-
-    if not backend.settings.api_key:
+    """Validate client API Key against settings."""
+    if not settings.api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API Key missing in server configuration.",
@@ -141,7 +154,7 @@ def validate_api_key(
             detail="API Key required but not provided.",
             headers={"WWW-Authenticate": "X-API-Key"},
         )
-    elif api_key != backend.settings.api_key.get_secret_value():
+    elif api_key != settings.api_key.get_secret_value():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API Key invalid.",
