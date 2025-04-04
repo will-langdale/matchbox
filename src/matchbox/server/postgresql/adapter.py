@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
-from sqlalchemy.orm import Session
 
 from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
@@ -194,7 +193,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         )
 
     def get_source(self, address: SourceAddress) -> Source:  # noqa: D102
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             source = (
                 session.query(Sources)
                 .where(
@@ -229,7 +228,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 raise MatchboxSourceNotFoundError(address=str(address))
 
     def validate_ids(self, ids: list[int]) -> None:  # noqa: D102
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             data_inner_join = (
                 session.query(Clusters)
                 .filter(
@@ -255,7 +254,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
     def validate_hashes(self, hashes: list[bytes]) -> None:  # noqa: D102
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             data_inner_join = (
                 session.query(Clusters)
                 .filter(
@@ -283,7 +282,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:  # noqa: D102
         initial_dict = {id: None for id in ids}
 
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             data_inner_join = (
                 session.query(Clusters)
                 .filter(
@@ -336,7 +335,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Model management
 
     def insert_model(self, model: ModelMetadata) -> None:  # noqa: D102
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             left_resolution = (
                 session.query(Resolutions)
                 .filter(Resolutions.name == model.left_resolution)
@@ -387,7 +386,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             session.add(resolution)
             resolution.truth = truth
             session.commit()
@@ -409,7 +408,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         ancestors_cache: list[ModelAncestor],
     ) -> None:
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             session.add(resolution)
             ancestor_names = [ancestor.name for ancestor in ancestors_cache]
             name_to_id = dict(
@@ -434,7 +433,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             session.add(resolution)
             query = (
                 select(Resolutions.name, ResolutionFrom.truth_cache)
@@ -450,7 +449,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def delete_model(self, model: str, certain: bool = False) -> None:  # noqa: D102
         resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session_context() as session:
             session.add(resolution)
             if certain:
                 delete_stmt = delete(Resolutions).where(
