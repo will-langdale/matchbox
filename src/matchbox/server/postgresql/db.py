@@ -40,14 +40,11 @@ class MatchboxPostgresSettings(MatchboxServerSettings):
 class MatchboxDatabase:
     """Matchbox PostgreSQL database connection with connection pooling."""
 
-    def __init__(
-        self, settings: "MatchboxPostgresSettings", eager_connect: bool = True
-    ) -> None:
+    def __init__(self, settings: "MatchboxPostgresSettings") -> None:
         """Initialise the database connection.
 
         Args:
             settings (MatchboxPostgresSettings): The PostgreSQL settings.
-            eager_connect (bool): If True, connect to the database immediately.
         """
         self.settings = settings
         self.engine: Engine | None = None
@@ -56,10 +53,6 @@ class MatchboxDatabase:
         self.MatchboxBase: Any = declarative_base(
             metadata=MetaData(schema=settings.postgres.db_schema)
         )
-
-        if eager_connect:
-            self.connect()
-            self.setup_adbc_pool()
 
     def connection_string(self, driver: bool = True) -> str:
         """Get the connection string for PostgreSQL."""
