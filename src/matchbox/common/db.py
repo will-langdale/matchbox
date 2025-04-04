@@ -3,13 +3,15 @@
 from typing import Any, Iterator, Literal, TypeVar, get_args, overload
 
 import polars as pl
+import sqlglot
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Engine
-from sqlalchemy.engine.url import URL
 from sqlalchemy.sql.selectable import Select
+from sqlglot.dialects import DIALECTS
 
 ReturnTypeStr = Literal["arrow", "pandas", "polars"]
 QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
@@ -17,13 +19,80 @@ QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
 T = TypeVar("T")
 
 
+def detect_dialect(connection: Engine | adbc_dbapi.Connection) -> str:
+    """Detect the SQLGlot dialect from the connection.
+
+    Args:
+        connection (Engine | adbc_dbapi.Connection): The SQLAlchemy Engine or ADBC
+            connection object.
+
+    Returns:
+        str: The detected SQLGlot dialect.
+
+    Raises:
+        ValueError: If the dialect cannot be detected.
+    """
+    if isinstance(connection, Engine):
+        dialect_name: str = connection.dialect.name
+    else:
+        dialect_name: str = connection.adbc_get_info()["driver_name"]
+
+    detected = [d.lower() for d in DIALECTS if d.lower() in dialect_name.lower()]
+    if len(detected) == 1:
+        return detected[0]
+    else:
+        raise ValueError(
+            "Could not detect single SQLGlot dialect from driver or dialect name: "
+            f"{dialect_name}, {', '.join(detected)}, {DIALECTS}"
+        )
+
+
+def compile_sql(
+    stmt: Select,
+    connection: Engine | adbc_dbapi.Connection,
+) -> str:
+    """Compile a SQLAlchemy statement to a SQL string.
+
+    When compiling for ADBC connections, we use PostgreSQL dialect as the default
+    because it adheres more closely to SQL standards and provides better compatibility
+    when transpiling to other dialects
+
+    Args:
+        stmt (Select): A SQLAlchemy Select statement to be compiled.
+        connection (Engine | adbc_dbapi.Connection): A SQLAlchemy Engine object or
+            ADBC connection.
+
+    Returns:
+        str: The compiled SQL string.
+    """
+    dialect = (
+        connection.dialect if isinstance(connection, Engine) else postgresql.dialect()
+    )
+
+    compiled_stmt = stmt.compile(
+        dialect=dialect,
+        compile_kwargs={"literal_binds": True},
+    )
+
+    if isinstance(connection, Engine):
+        # SQLAlchemy compiles for SQLAlchemy
+        return str(compiled_stmt)
+    else:
+        # SQLGlot transpiles for ADBC
+        target_dialect = detect_dialect(connection=connection)
+        return sqlglot.transpile(
+            sql=str(compiled_stmt),
+            read="postgres",
+            write=target_dialect,
+        )[0]
+
+
 @overload
 def sql_to_df(
     stmt: Select,
-    engine: Engine,
+    connection: Engine | adbc_dbapi.Connection,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
-    adbc_connection: adbc_dbapi.Connection | None = None,
     return_batches: Literal[False] = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
@@ -34,10 +103,9 @@ def sql_to_df(
 @overload
 def sql_to_df(
     stmt: Select,
-    engine: Engine,
+    connection: Engine | adbc_dbapi.Connection,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
-    adbc_connection: adbc_dbapi.Connection | None = None,
     return_batches: Literal[True],
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
@@ -46,24 +114,23 @@ def sql_to_df(
 
 
 def sql_to_df(
-    stmt: Select,
-    engine: Engine,
+    stmt: Select | str,
+    connection: Engine | adbc_dbapi.Connection,
     return_type: ReturnTypeStr = "pandas",
     *,
-    adbc_connection: adbc_dbapi.Connection | None = None,
     return_batches: bool = False,
     batch_size: int | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> QueryReturnType | Iterator[QueryReturnType]:
-    """Executes the given SQLAlchemy statement using Polars.
+    """Executes the given SQLAlchemy statement or SQL string using Polars.
 
     Args:
-        stmt (Select): A SQLAlchemy Select statement to be executed.
-        engine (Engine): A SQLAlchemy Engine object for the database connection.
+        stmt (Select | str): A SQLAlchemy Select statement or SQL string to be executed.
+        connection (Engine | adbc_dbapi.Connection): A SQLAlchemy Engine object or
+            ADBC connection.
         return_type (str): The type of the return value. One of "arrow", "pandas",
             or "polars".
-        adbc_connection: An optional ADBC connection to speed-up your query.
         return_batches (bool): If True, return an iterator that yields each batch
             separately. If False, return a single DataFrame with all results.
             Default is False.
@@ -80,24 +147,16 @@ def sql_to_df(
         If return_batches is True: An iterator of dataframes in the specified format.
 
     Raises:
-        ValueError: If the engine URL is not properly configured or if an unsupported
+        ValueError: If the connection is not properly configured or if an unsupported
             return type is specified.
     """
     if return_type not in get_args(ReturnTypeStr):
         raise ValueError(f"return_type of {return_type} not valid")
 
-    # Compile the SQLAlchemy statement to SQL string
-    compiled_stmt = stmt.compile(
-        dialect=engine.dialect, compile_kwargs={"literal_binds": True}
-    )
-    sql_query = str(compiled_stmt)
-
-    # Extract the connection URL from the engine
-    url: str | URL = engine.url
-    if isinstance(url, URL):
-        url = url.render_as_string(hide_password=False)
-    if not isinstance(url, str):
-        raise ValueError("Unable to obtain a valid connection string from the engine.")
+    if isinstance(stmt, str):
+        sql_query = stmt
+    else:
+        sql_query = compile_sql(stmt, connection)
 
     def to_format(results: PolarsDataFrame) -> QueryReturnType:
         if return_type == "polars":
@@ -106,8 +165,6 @@ def sql_to_df(
             return results.to_arrow()
         elif return_type == "pandas":
             return results.to_pandas()
-
-    connection = adbc_connection if adbc_connection else engine
 
     res = pl.read_database(
         query=sql_query,

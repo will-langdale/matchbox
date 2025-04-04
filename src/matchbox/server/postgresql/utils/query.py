@@ -302,9 +302,8 @@ def query(
 
         with MBDB.get_adbc_connection() as conn:
             mb_ids = sql_to_df(
-                id_query,
-                engine,
-                adbc_connection=conn,
+                stmt=id_query,
+                connection=conn,
                 return_type="arrow",
             )
 

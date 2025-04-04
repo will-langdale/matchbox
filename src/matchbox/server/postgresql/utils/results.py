@@ -199,7 +199,6 @@ def get_model_results(resolution: Resolutions) -> Table:
     with MBDB.get_adbc_connection() as conn:
         return sql_to_df(
             stmt=final_select,
-            engine=engine,
-            adbc_connection=conn,
+            connection=conn,
             return_type="arrow",
         )

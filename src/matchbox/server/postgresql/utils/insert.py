@@ -175,8 +175,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
     with MBDB.get_adbc_connection() as conn:
         existing_hash_lookup = sql_to_df(
             stmt=select(Clusters.cluster_id, Clusters.cluster_hash),
-            engine=engine,
-            adbc_connection=conn,
+            connection=conn,
             return_type="arrow",
         )
 
@@ -449,12 +448,11 @@ def _results_to_insert_tables(
     log_prefix = f"Model {resolution.name}"
     logger.info("Wrangling data to insert tables", prefix=log_prefix)
 
+    # Create ID-Hash lookup for existing probabilities
     with MBDB.get_adbc_connection() as conn:
-        # Create ID-Hash lookup for existing probabilities
         lookup = sql_to_df(
             stmt=_get_resolution_related_clusters(resolution.resolution_id),
-            engine=engine,
-            adbc_connection=conn,
+            connection=conn,
             return_type="arrow",
         )
     lookup = lookup.cast(pa.schema([("hash", pa.large_binary()), ("id", pa.uint64())]))
