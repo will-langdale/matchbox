@@ -175,6 +175,10 @@ def _process_selectors(
         )
         client_side_filtering = True
 
+    if any(sub_limit is None for sub_limit in sub_limits):
+        # No limit set for at least one selector
+        client_side_filtering = True
+
     # Create iterators for each selector
     selector_iters: list[Generator[PolarsDataFrame, None, None]] = []
 
@@ -197,6 +201,7 @@ def _process_selectors(
                 limit=None if client_side_filtering else sub_limit,
             )
         )
+
         source, raw_batches = _source_query(
             selector=selector,
             mb_ids=None if client_side_filtering else mb_ids,
