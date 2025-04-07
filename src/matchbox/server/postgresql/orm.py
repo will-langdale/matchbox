@@ -88,7 +88,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @property
     def ancestors(self) -> set["Resolutions"]:
         """Returns all ancestors (parents, grandparents, etc.) of this resolution."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             ancestor_query = (
                 select(Resolutions)
                 .select_from(Resolutions)
@@ -102,7 +102,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @property
     def descendants(self) -> set["Resolutions"]:
         """Returns descendants (children, grandchildren, etc.) of this resolution."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             descendant_query = (
                 select(Resolutions)
                 .select_from(Resolutions)
@@ -113,7 +113,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     def get_lineage(self) -> dict[int, float]:
         """Returns all ancestors and their cached truth values from this model."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             lineage_query = (
                 select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
                 .where(ResolutionFrom.child == self.resolution_id)
@@ -139,7 +139,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         if self.resolution_id == dataset.resolution_id:
             return {dataset.resolution_id: None}
 
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             path_query = (
                 select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
                 .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
@@ -162,7 +162,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def next_id(cls) -> int:
         """Returns the next available resolution_id."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             result = session.execute(
                 select(func.coalesce(func.max(cls.resolution_id), 0))
             ).scalar()
@@ -224,7 +224,7 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def next_id(cls) -> int:
         """Returns the next available cluster_id."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             result = session.execute(
                 select(func.coalesce(func.max(cls.pk_id), 0))
             ).scalar()
@@ -271,7 +271,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def list(cls) -> list["Sources"]:
         """Returns all sources in the database."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             return session.query(cls).all()
 
 
@@ -334,7 +334,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def next_id(cls) -> int:
         """Returns the next available cluster_id."""
-        with MBDB.get_session_context() as session:
+        with MBDB.get_session() as session:
             result = session.execute(
                 select(func.coalesce(func.max(cls.cluster_id), 0))
             ).scalar()
