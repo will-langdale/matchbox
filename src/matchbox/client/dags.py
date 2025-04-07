@@ -1,9 +1,9 @@
 """Objects to define a DAG which indexes, deduplicates and links data."""
 
 from abc import ABC, abstractmethod
-from collections import defaultdict
 from typing import Any, Union
 
+import rustworkx as rx
 from pandas import DataFrame
 from pydantic import BaseModel, model_validator
 
@@ -15,8 +15,34 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
 from matchbox.common.sources import Source
 
-DAGNode = Union["ModelStep", Source]
+DAGNode = Union["ModelStep", "IndexStep"]
 """Type of node in the DAG. Either a step or a source."""
+
+
+class IndexStep(BaseModel):
+    """Index step."""
+
+    source: Source
+    batch_size: int | None = None
+
+    @property
+    def name(self) -> str:
+        """Resolution name for this source."""
+        return str(self.source.address)
+
+    @property
+    def sources(self) -> set[str]:
+        """Return all sources to this step."""
+        return {self.name}
+
+    @property
+    def inputs(self) -> list["StepInput"]:
+        """Return all inputs to this step."""
+        return []
+
+    def run(self):
+        """Run indexing step."""
+        _handler.index(source=self.source, batch_size=self.batch_size)
 
 
 class StepInput(BaseModel):
@@ -31,18 +57,18 @@ class StepInput(BaseModel):
     @property
     def name(self):
         """Resolution name for node generating this input for the next step."""
-        if isinstance(self.prev_node, Source):
-            return self.prev_node.resolution_name
-        else:
-            return self.prev_node.name
+        return self.prev_node.name
 
     @model_validator(mode="after")
     def validate_all_input(self) -> "StepInput":
         """Verify select statement is valid given previous node."""
-        if isinstance(self.prev_node, Source):
-            if len(self.select) > 1 or list(self.select.keys())[0] != self.prev_node:
+        if isinstance(self.prev_node, IndexStep):
+            if (
+                len(self.select) > 1
+                or list(self.select.keys())[0] != self.prev_node.source
+            ):
                 raise ValueError(
-                    f"Can only select from source {self.prev_node.address}"
+                    f"Can only select from source {self.prev_node.source.address}"
                 )
         else:
             for source in self.select:
@@ -173,11 +199,8 @@ class DAG:
 
     def __init__(self):
         """Initialise DAG object."""
-        self.nodes: dict[str, DAGNode] = {}
-        self.graph: dict[str, list[str]] = {}
-        self.sequence: list[str] = []
-
-        self._index_batch_sizes: dict[str, int | None] = {}
+        self.nodes: dict[str, int] = {}  # Maps node name to rustworkx graph index
+        self.graph = rx.PyDiGraph(check_cycle=True)
 
     def _validate_node(self, name: str):
         if name in self.nodes:
@@ -188,64 +211,29 @@ class DAG:
             if step_input.name not in self.nodes:
                 raise ValueError(f"Dependency {step_input.name} not added to DAG")
 
-    def add_sources(self, *sources: Source, batch_size: int | None = None):
-        """Add sources to DAG.
-
-        Args:
-            sources: All sources to add.
-            batch_size: Batch size for indexing.
-        """
-        for source in sources:
-            self._validate_node(str(source.address))
-            self.nodes[str(source.address)] = source
-            self.graph[str(source.address)] = []
-            self._index_batch_sizes[str(source.address)] = batch_size
-
-    def add_steps(self, *steps: ModelStep):
-        """Add dedupers and linkers to DAG, and register sources available to steps.
-
-        Args:
-            steps: Dedupe and link steps.
-        """
+    def add_steps(self, *steps: DAGNode):
+        """Add steps to the DAG."""
         for step in steps:
             self._validate_node(step.name)
             self._validate_inputs(step)
-            self.nodes[step.name] = step
-            self.graph[step.name] = [step_input.name for step_input in step.inputs]
 
-    def prepare(self):
-        """Determine order of execution of steps."""
-        self.sequence = []
+            self.nodes[step.name] = self.graph.add_node(step)
 
-        inverse_graph = defaultdict(list)
-        for node in self.graph:
-            for neighbor in self.graph[node]:
-                inverse_graph[neighbor].append(node)
-        apex = {node for node in self.graph if node not in inverse_graph}
-        if len(apex) > 1:
-            raise ValueError("Some models or sources are disconnected")
-        else:
-            apex = apex.pop()
-
-        def depth_first(node: str, sequence: list):
-            sequence.append(node)
-            for neighbour in self.graph[node]:
-                if neighbour not in sequence:
-                    depth_first(neighbour, sequence)
-
-        inverse_sequence = []
-        depth_first(apex, inverse_sequence)
-        self.sequence = list(reversed(inverse_sequence))
+            for step_input in step.inputs:
+                self.graph.add_edge(
+                    self.nodes[step_input.name],
+                    self.nodes[step.name],
+                    None,
+                )
 
     def run(self):
-        """Run entire DAG."""
-        self.prepare()
+        """Run entire DAG by determining execution order and processing nodes."""
+        topo_indices = rx.topological_sort(self.graph)
+        if len(topo_indices) < len(self.nodes):
+            raise ValueError("Some models or sources are disconnected")
 
-        for step_name in self.sequence:
-            node = self.nodes[step_name]
-            if isinstance(node, Source):
-                _handler.index(
-                    source=node, batch_size=self._index_batch_sizes[step_name]
-                )
-            else:
-                node.run()
+        node_indices = self.graph.node_indices()
+
+        for i in topo_indices:
+            node = self.graph[node_indices[i]]
+            node.run()

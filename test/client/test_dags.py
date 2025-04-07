@@ -3,7 +3,7 @@ from unittest.mock import Mock, call, patch
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.client.dags import DAG, DedupeStep, LinkStep, StepInput
+from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
 from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
@@ -269,18 +269,22 @@ def test_dag_runs(
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
     baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
 
-    # Structure: Sources can be deduped
+    i_foo = IndexStep(source=foo, batch_size=100)
+    i_bar = IndexStep(source=bar, batch_size=200)
+    i_baz = IndexStep(source=baz, batch_size=200)
+
+    # Structure: IndexSteps can be deduped
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
+        left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
     )
 
     # Structure:
-    # - Sources can be passed directly to linkers
+    # - IndexSteps can be passed directly to linkers
     # - Or, linkers can take dedupers
     foo_bar = LinkStep(
         left=StepInput(
@@ -288,7 +292,7 @@ def test_dag_runs(
             select={foo: []},
         ),
         right=StepInput(
-            prev_node=bar,
+            prev_node=i_bar,
             select={bar: []},
         ),
         name="foo_bar",
@@ -306,7 +310,7 @@ def test_dag_runs(
             cleaners={},
         ),
         right=StepInput(
-            prev_node=baz,
+            prev_node=i_baz,
             select={baz: []},
             cleaners={},
         ),
@@ -320,13 +324,7 @@ def test_dag_runs(
     # Assemble DAG with batch sizes
     dag = DAG()
 
-    dag.add_sources(foo, batch_size=100)
-    dag.add_sources(bar, baz, batch_size=200)
-
-    # Verify batch sizes are stored correctly
-    assert dag._index_batch_sizes[str(foo.address)] == 100
-    assert dag._index_batch_sizes[str(bar.address)] == 200
-    assert dag._index_batch_sizes[str(baz.address)] == 200
+    dag.add_steps(i_foo, i_bar, i_baz)
 
     assert set(dag.nodes.keys()) == {
         str(foo.address),
@@ -335,6 +333,7 @@ def test_dag_runs(
     }
 
     dag.add_steps(d_foo, foo_bar, foo_bar_baz)
+
     assert set(dag.nodes.keys()) == {
         str(foo.address),
         str(bar.address),
@@ -343,18 +342,6 @@ def test_dag_runs(
         foo_bar.name,
         foo_bar_baz.name,
     }
-
-    # Prepare DAG
-    dag.prepare()
-    s_foo, s_bar, s_d_foo, s_foo_bar, s_foo_bar_baz = (
-        dag.sequence.index(str(foo.address)),
-        dag.sequence.index(str(bar.address)),
-        dag.sequence.index(d_foo.name),
-        dag.sequence.index(foo_bar.name),
-        dag.sequence.index(foo_bar_baz.name),
-    )
-    assert s_foo < s_d_foo < s_foo_bar < s_foo_bar_baz
-    assert s_bar < s_foo_bar < s_foo_bar_baz
 
     # Run DAG
     dag.run()
