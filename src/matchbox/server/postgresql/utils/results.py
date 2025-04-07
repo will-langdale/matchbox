@@ -16,6 +16,7 @@ from matchbox.server.postgresql.orm import (
     ResolutionFrom,
     Resolutions,
 )
+from matchbox.server.postgresql.utils.db import compile_sql
 
 
 class SourceInfo(NamedTuple):
@@ -198,7 +199,7 @@ def get_model_results(resolution: Resolutions) -> Table:
 
     with MBDB.get_adbc_connection() as conn:
         return sql_to_df(
-            stmt=final_select,
+            stmt=compile_sql(final_select),
             connection=conn,
             return_type="arrow",
         )

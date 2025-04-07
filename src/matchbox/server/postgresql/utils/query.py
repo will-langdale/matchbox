@@ -22,6 +22,7 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     Sources,
 )
+from matchbox.server.postgresql.utils.db import compile_sql
 
 T = TypeVar("T")
 
@@ -302,7 +303,7 @@ def query(
 
         with MBDB.get_adbc_connection() as conn:
             mb_ids = sql_to_df(
-                stmt=id_query,
+                stmt=compile_sql(id_query),
                 connection=conn,
                 return_type="arrow",
             )

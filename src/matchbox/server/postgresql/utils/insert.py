@@ -28,7 +28,7 @@ from matchbox.server.postgresql.orm import (
     SourceColumns,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest
+from matchbox.server.postgresql.utils.db import batch_ingest, compile_sql
 
 
 class HashIDMap:
@@ -174,7 +174,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
     # Don't insert new hashes, but new PKs need existing hash IDs
     with MBDB.get_adbc_connection() as conn:
         existing_hash_lookup = sql_to_df(
-            stmt=select(Clusters.cluster_id, Clusters.cluster_hash),
+            stmt=compile_sql(select(Clusters.cluster_id, Clusters.cluster_hash)),
             connection=conn,
             return_type="arrow",
         )
@@ -451,7 +451,9 @@ def _results_to_insert_tables(
     # Create ID-Hash lookup for existing probabilities
     with MBDB.get_adbc_connection() as conn:
         lookup = sql_to_df(
-            stmt=_get_resolution_related_clusters(resolution.resolution_id),
+            stmt=compile_sql(
+                _get_resolution_related_clusters(resolution.resolution_id)
+            ),
             connection=conn,
             return_type="arrow",
         )

@@ -3,15 +3,11 @@
 from typing import Any, Iterator, Literal, TypeVar, get_args, overload
 
 import polars as pl
-import sqlglot
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Engine
-from sqlalchemy.sql.selectable import Select
-from sqlglot.dialects import DIALECTS
 
 ReturnTypeStr = Literal["arrow", "pandas", "polars"]
 QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
@@ -19,77 +15,9 @@ QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
 T = TypeVar("T")
 
 
-def detect_dialect(connection: Engine | adbc_dbapi.Connection) -> str:
-    """Detect the SQLGlot dialect from the connection.
-
-    Args:
-        connection (Engine | adbc_dbapi.Connection): The SQLAlchemy Engine or ADBC
-            connection object.
-
-    Returns:
-        str: The detected SQLGlot dialect.
-
-    Raises:
-        ValueError: If the dialect cannot be detected.
-    """
-    if isinstance(connection, Engine):
-        dialect_name: str = connection.dialect.name
-    else:
-        dialect_name: str = connection.adbc_get_info()["driver_name"]
-
-    detected = [d.lower() for d in DIALECTS if d.lower() in dialect_name.lower()]
-    if len(detected) == 1:
-        return detected[0]
-    else:
-        raise ValueError(
-            "Could not detect single SQLGlot dialect from driver or dialect name: "
-            f"{dialect_name}, {', '.join(detected)}, {DIALECTS}"
-        )
-
-
-def compile_sql(
-    stmt: Select,
-    connection: Engine | adbc_dbapi.Connection,
-) -> str:
-    """Compile a SQLAlchemy statement to a SQL string.
-
-    When compiling for ADBC connections, we use PostgreSQL dialect as the default
-    because it adheres more closely to SQL standards and provides better compatibility
-    when transpiling to other dialects
-
-    Args:
-        stmt (Select): A SQLAlchemy Select statement to be compiled.
-        connection (Engine | adbc_dbapi.Connection): A SQLAlchemy Engine object or
-            ADBC connection.
-
-    Returns:
-        str: The compiled SQL string.
-    """
-    dialect = (
-        connection.dialect if isinstance(connection, Engine) else postgresql.dialect()
-    )
-
-    compiled_stmt = stmt.compile(
-        dialect=dialect,
-        compile_kwargs={"literal_binds": True},
-    )
-
-    if isinstance(connection, Engine):
-        # SQLAlchemy compiles for SQLAlchemy
-        return str(compiled_stmt)
-    else:
-        # SQLGlot transpiles for ADBC
-        target_dialect = detect_dialect(connection=connection)
-        return sqlglot.transpile(
-            sql=str(compiled_stmt),
-            read="postgres",
-            write=target_dialect,
-        )[0]
-
-
 @overload
 def sql_to_df(
-    stmt: Select,
+    stmt: str,
     connection: Engine | adbc_dbapi.Connection,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
@@ -102,7 +30,7 @@ def sql_to_df(
 
 @overload
 def sql_to_df(
-    stmt: Select,
+    stmt: str,
     connection: Engine | adbc_dbapi.Connection,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
@@ -114,7 +42,7 @@ def sql_to_df(
 
 
 def sql_to_df(
-    stmt: Select | str,
+    stmt: str,
     connection: Engine | adbc_dbapi.Connection,
     return_type: ReturnTypeStr = "pandas",
     *,
@@ -126,7 +54,7 @@ def sql_to_df(
     """Executes the given SQLAlchemy statement or SQL string using Polars.
 
     Args:
-        stmt (Select | str): A SQLAlchemy Select statement or SQL string to be executed.
+        stmt (str): A SQL string to be executed.
         connection (Engine | adbc_dbapi.Connection): A SQLAlchemy Engine object or
             ADBC connection.
         return_type (str): The type of the return value. One of "arrow", "pandas",
@@ -153,11 +81,6 @@ def sql_to_df(
     if return_type not in get_args(ReturnTypeStr):
         raise ValueError(f"return_type of {return_type} not valid")
 
-    if isinstance(stmt, str):
-        sql_query = stmt
-    else:
-        sql_query = compile_sql(stmt, connection)
-
     def to_format(results: PolarsDataFrame) -> QueryReturnType:
         if return_type == "polars":
             return results
@@ -167,7 +90,7 @@ def sql_to_df(
             return results.to_pandas()
 
     res = pl.read_database(
-        query=sql_query,
+        query=stmt,
         connection=connection,
         iter_batches=bool(batch_size),
         batch_size=batch_size,
