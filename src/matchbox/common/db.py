@@ -1,13 +1,17 @@
 """Common database utilities for Matchbox."""
 
-from typing import Any, Iterator, Literal, TypeVar, get_args, overload
+from typing import TYPE_CHECKING, Any, Iterator, Literal, TypeVar, get_args, overload
 
 import polars as pl
-from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from sqlalchemy.engine import Engine
+
+if TYPE_CHECKING:
+    from adbc_driver_postgresql.dbapi import Connection as ADBCConnection
+else:
+    ADBCConnection = Any
 
 ReturnTypeStr = Literal["arrow", "pandas", "polars"]
 QueryReturnType = ArrowTable | PandasDataFrame | PolarsDataFrame
@@ -18,7 +22,7 @@ T = TypeVar("T")
 @overload
 def sql_to_df(
     stmt: str,
-    connection: Engine | adbc_dbapi.Connection,
+    connection: Engine | ADBCConnection,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
     return_batches: Literal[False] = False,
@@ -31,7 +35,7 @@ def sql_to_df(
 @overload
 def sql_to_df(
     stmt: str,
-    connection: Engine | adbc_dbapi.Connection,
+    connection: Engine | ADBCConnection,
     return_type: Literal["arrow", "pandas", "polars"],
     *,
     return_batches: Literal[True],
@@ -43,7 +47,7 @@ def sql_to_df(
 
 def sql_to_df(
     stmt: str,
-    connection: Engine | adbc_dbapi.Connection,
+    connection: Engine | ADBCConnection,
     return_type: ReturnTypeStr = "pandas",
     *,
     return_batches: bool = False,
@@ -55,7 +59,7 @@ def sql_to_df(
 
     Args:
         stmt (str): A SQL string to be executed.
-        connection (Engine | adbc_dbapi.Connection): A SQLAlchemy Engine object or
+        connection (Engine | ADBCConnection): A SQLAlchemy Engine object or
             ADBC connection.
         return_type (str): The type of the return value. One of "arrow", "pandas",
             or "polars".
