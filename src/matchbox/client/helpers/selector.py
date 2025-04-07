@@ -348,6 +348,9 @@ def query(
     if not selectors:
         raise ValueError("At least one selector must be specified")
 
+    if return_batches and combine_type != "concat":
+        raise ValueError("Batching is only supported for `combine_type='concat'`")
+
     selectors: list[Selector] = list(itertools.chain(*selectors))
 
     if not resolution_name and len(selectors) > 1:
@@ -364,34 +367,31 @@ def query(
     else:
         sub_limits = [None] * len(selectors)
 
+    res = _process_selectors(
+        selectors=selectors,
+        sub_limits=sub_limits,
+        resolution_name=resolution_name,
+        threshold=threshold,
+        batch_size=batch_size,
+        only_indexed=only_indexed,
+    )
     if return_batches:
-        if combine_type != "concat":
-            raise logger.warning(
-                "Batching is only supported for `combine_type='concat'`"
-            )
-
         # Return an iterator of batches
-        return _query_batched(
-            selectors=selectors,
-            sub_limits=sub_limits,
-            resolution_name=resolution_name,
-            threshold=threshold,
-            return_type=return_type,
-            batch_size=batch_size,
-            only_indexed=only_indexed,
-        )
+        def generate_batches() -> Iterator[Generator[PolarsDataFrame, None, None]]:
+            for batch in res:
+                match return_type:
+                    case "pandas":
+                        yield batch.to_pandas()
+                    case "polars":
+                        yield batch
+                    case "arrow":
+                        yield batch.to_arrow()
+
+        return generate_batches
+
     else:
         # Process all data and return a single result
-        tables: list[PolarsDataFrame] = list(
-            _process_selectors(
-                selectors=selectors,
-                sub_limits=sub_limits,
-                resolution_name=resolution_name,
-                threshold=threshold,
-                batch_size=batch_size,
-                only_indexed=only_indexed,
-            )
-        )
+        tables: list[PolarsDataFrame] = list(res)
 
         # Make sure we have some results
         if not tables:
