@@ -1,13 +1,14 @@
-import logging
+"""Script to benchmark the full dummy data generation pipeline."""
+
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
 import pyarrow as pa
-from rich.logging import RichHandler
 
 from matchbox.common.factories.models import generate_dummy_probabilities
 from matchbox.common.hash import hash_data, hash_values
+from matchbox.common.logging import console
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -15,18 +16,12 @@ from matchbox.common.transform import (
 from matchbox.server.postgresql.benchmark.generate_tables import PRESETS
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
-pipeline_logger = logging.getLogger("mb_pipeline")
-
 ROOT = Path(__file__).parent.parent
 
 
 @contextmanager
 def timer(description: str):
+    """Context manager to time a block of code."""
     start = time.time()
     yield
     elapsed = time.time() - start
@@ -38,13 +33,15 @@ def timer(description: str):
     else:
         time_str = f"{elapsed:.2f} seconds"
 
-    pipeline_logger.info(f"{description} in {time_str}")
+    console.log(f"{description} in {time_str}")
 
 
 if __name__ == "__main__":
     config = PRESETS["l"]
-    left_ids = range(config["dedupe_components"])
-    right_ids = range(config["dedupe_components"], config["dedupe_components"] * 2)
+    left_ids = tuple(range(config["dedupe_components"]))
+    right_ids = tuple(
+        range(config["dedupe_components"], config["dedupe_components"] * 2)
+    )
     probs = generate_dummy_probabilities(
         left_ids, right_ids, [0.6, 1], config["link_components"], config["link_len"]
     )
@@ -57,7 +54,7 @@ if __name__ == "__main__":
         {
             "id": all_probs,
             "hash": pa.array(
-                [hash_data(p) for p in all_probs.to_pylist()], type=pa.binary()
+                [hash_data(p) for p in all_probs.to_pylist()], type=pa.large_binary()
             ),
         }
     )
@@ -65,7 +62,7 @@ if __name__ == "__main__":
     hm = HashIDMap(start=max(right_ids) + 1, lookup=lookup)
 
     with timer("Full pipeline completed"):
-        pipeline_logger.info(f"Processing {len(probs):,} records")
+        console.log(f"Processing {len(probs):,} records")
 
         with timer("Added components"):
             probs_with_ccs = attach_components_to_probabilities(
@@ -82,5 +79,5 @@ if __name__ == "__main__":
             hierarchy = to_hierarchical_clusters(
                 probabilities=probs_with_ccs,
                 hash_func=hash_values,
-                dtype=pa.binary,
+                dtype=pa.large_binary,
             )

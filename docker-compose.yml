@@ -31,25 +31,41 @@ services:
       - "${MB__DATASTORE_PORT:-9000}:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${MB__DATASTORE__ACCESS_KEY_ID}
-      MINIO_ROOT_PASSWORD: ${MB__DATASTORE__SECRET_ACCESS_KEY}
+      MINIO_ROOT_USER: ${MB__SERVER__DATASTORE__ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${MB__SERVER__DATASTORE__SECRET_ACCESS_KEY}
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 5
+  datadog-agent:
+    image: datadog/agent:7
+    profiles:
+      - monitoring
+    env_file:
+      - environments/datadog-agent-public.env
+      - environments/.datadog-agent-private.env
   api:
     build:
       context: .
       args:
         ENV_FILE: dev_docker.env
       dockerfile: src/matchbox/server/Dockerfile
+      target: dev
+    environment:
+      DD_AGENT_HOST: datadog-agent
     ports:
       - "8000:8000"
     depends_on:
-      - matchbox-postgres
-      - matchbox-storage
-    
+      matchbox-postgres:
+        condition: service_started
+        required: true
+      matchbox-storage:
+        condition: service_started
+        required: true
+      datadog-agent:
+        condition: service_healthy
+        required: false
     develop:
       # https://docs.docker.com/compose/file-watch/#compose-watch-versus-bind-mounts
       watch:

@@ -1,4 +1,6 @@
-from typing import List, Type
+"""A deduplication methodology based on a deterministic set of conditions."""
+
+from typing import Type
 
 import duckdb
 from pandas import ArrowDtype, DataFrame
@@ -8,27 +10,32 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 
 
 class NaiveSettings(DeduperSettings):
-    """A data class to enforce the Naive deduper's settings dictionary shape"""
+    """A data class to enforce the Naive deduper's settings dictionary shape."""
 
-    unique_fields: List[str] = Field(
+    unique_fields: list[str] = Field(
         description="A list of columns that will form a unique, deduplicated record"
     )
 
 
 class NaiveDeduper(Deduper):
+    """A simple deduper that deduplicates based on a set of boolean conditions."""
+
     settings: NaiveSettings
 
     _id_dtype: Type = None
 
     @classmethod
-    def from_settings(cls, id: str, unique_fields: List[str]) -> "NaiveDeduper":
+    def from_settings(cls, id: str, unique_fields: list[str]) -> "NaiveDeduper":
+        """Create a NaiveDeduper from a settings dictionary."""
         settings = NaiveSettings(id=id, unique_fields=unique_fields)
         return cls(settings=settings)
 
     def prepare(self, data: DataFrame) -> None:
+        """Prepare the deduper for deduplication."""
         pass
 
     def dedupe(self, data: DataFrame) -> DataFrame:
+        """Deduplicate the dataframe."""
         self._id_dtype = type(data[self.settings.id][0])
 
         df = data.copy()
@@ -48,7 +55,7 @@ class NaiveDeduper(Deduper):
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
                 raw.right_id,
-                1 as probability
+                1.0 as probability
             from (
                 select
                     l.{self.settings.id} as left_id,

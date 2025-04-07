@@ -1,12 +1,11 @@
-from dotenv import find_dotenv, load_dotenv
+"""Matchbox PostgreSQL database connection."""
+
+from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from matchbox.server.base import MatchboxBackends, MatchboxSettings
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
+from matchbox.server.base import MatchboxBackends, MatchboxServerSettings
 
 
 class MatchboxPostgresCoreSettings(BaseModel):
@@ -20,7 +19,7 @@ class MatchboxPostgresCoreSettings(BaseModel):
     db_schema: str
 
 
-class MatchboxPostgresSettings(MatchboxSettings):
+class MatchboxPostgresSettings(MatchboxServerSettings):
     """Settings for the Matchbox PostgreSQL backend.
 
     Inherits the core settings and adds the PostgreSQL-specific settings.
@@ -37,17 +36,22 @@ class MatchboxDatabase:
     """Matchbox PostgreSQL database connection."""
 
     def __init__(self, settings: MatchboxPostgresSettings):
+        """Initialise the database connection."""
         self.settings = settings
         self.engine: Engine | None = None
         self.SessionLocal: sessionmaker | None = None
+        self.adbc_connection: adbc_dbapi.Connection | None = None
         self.MatchboxBase = declarative_base(
             metadata=MetaData(schema=settings.postgres.db_schema)
         )
 
-    @property
-    def connection_string(self):
+    def connection_string(self, driver: bool = True) -> str:
+        """Get the connection string for PostgreSQL."""
+        driver_string = ""
+        if driver:
+            driver_string = "+psycopg"
         return (
-            f"postgresql://{self.settings.postgres.user}:{self.settings.postgres.password}"
+            f"postgresql{driver_string}://{self.settings.postgres.user}:{self.settings.postgres.password}"
             f"@{self.settings.postgres.host}:{self.settings.postgres.port}/"
             f"{self.settings.postgres.database}"
         )
@@ -56,7 +60,7 @@ class MatchboxDatabase:
         """Connect to the database."""
         if not self.engine:
             self.engine = create_engine(
-                url=self.connection_string, logging_name="mb_pg_db"
+                url=self.connection_string(), logging_name="matchbox.engine", echo=False
             )
             self.SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=self.engine
@@ -73,6 +77,13 @@ class MatchboxDatabase:
         if not self.SessionLocal:
             self.connect()
         return self.SessionLocal()
+
+    def get_adbc_connection(self) -> adbc_dbapi.Connection:
+        """Get a new ADBC connection.
+
+        The connection must be closed or used as a context manager.
+        """
+        return adbc_dbapi.connect(self.connection_string(driver=False))
 
     def create_database(self):
         """Create the database."""

@@ -1,3 +1,5 @@
+"""Functions and classes to define, run and register models."""
+
 from typing import Any, ParamSpec, TypeVar
 
 from pandas import DataFrame
@@ -23,6 +25,7 @@ class Model:
         left_data: DataFrame,
         right_data: DataFrame | None = None,
     ):
+        """Create a new model instance."""
         self.metadata = metadata
         self.model_instance = model_instance
         self.left_data = left_data
@@ -49,18 +52,21 @@ class Model:
     @property
     def truth(self) -> float:
         """Retrieve the truth threshold for the model."""
-        return _handler.get_model_truth(name=self.metadata.name)
+        truth = _handler.get_model_truth(name=self.metadata.name)
+        return _truth_int_to_float(truth)
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        _handler.set_model_truth(name=self.metadata.name, truth=truth)
+        _handler.set_model_truth(
+            name=self.metadata.name, truth=_truth_float_to_int(truth)
+        )
 
     @property
     def ancestors(self) -> dict[str, float]:
         """Retrieve the ancestors of the model."""
         return {
-            ancestor.name: ancestor.truth
+            ancestor.name: _truth_int_to_float(ancestor.truth)
             for ancestor in _handler.get_model_ancestors(name=self.metadata.name)
         }
 
@@ -68,7 +74,7 @@ class Model:
     def ancestors_cache(self) -> dict[str, float]:
         """Retrieve the ancestors cache of the model."""
         return {
-            ancestor.name: ancestor.truth
+            ancestor.name: _truth_int_to_float(ancestor.truth)
             for ancestor in _handler.get_model_ancestors_cache(name=self.metadata.name)
         }
 
@@ -78,7 +84,8 @@ class Model:
         _handler.set_model_ancestors_cache(
             name=self.metadata.name,
             ancestors=[
-                ModelAncestor(name=k, truth=v) for k, v in ancestors_cache.items()
+                ModelAncestor(name=k, truth=_truth_float_to_int(v))
+                for k, v in ancestors_cache.items()
             ],
         )
 
@@ -163,3 +170,19 @@ def make_model(
         left_data=left_data,
         right_data=right_data,
     )
+
+
+def _truth_float_to_int(truth: float) -> int:
+    """Convert user input float truth values to int."""
+    if isinstance(truth, float) and 0.0 <= truth <= 1.0:
+        return round(truth * 100)
+    else:
+        raise ValueError(f"Truth value {truth} not a valid probability")
+
+
+def _truth_int_to_float(truth: int) -> float:
+    """Convert backend int truth values to float."""
+    if isinstance(truth, int) and 0 <= truth <= 100:
+        return float(truth / 100)
+    else:
+        raise ValueError(f"Truth value {truth} not valid")

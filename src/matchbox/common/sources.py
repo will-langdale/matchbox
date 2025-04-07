@@ -1,11 +1,17 @@
-import json
-from functools import wraps
-from typing import Callable, ParamSpec, TypeVar
+"""Classes and functions for working with data sources in Matchbox."""
 
-import pyarrow as pa
-from pandas import DataFrame
+import json
+from copy import deepcopy
+from functools import wraps
+from typing import Any, Callable, Iterator, ParamSpec, TypeVar
+
+import polars as pl
+from pandas import DataFrame as PandasDataframe
+from polars import DataFrame as PolarsDataFrame
+from pyarrow import Table as ArrowTable
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     PlainSerializer,
     PlainValidator,
@@ -20,13 +26,11 @@ from sqlalchemy import (
     String,
     Table,
     cast,
-    func,
     select,
 )
-from sqlalchemy.sql.selectable import Select
 from typing_extensions import Annotated
 
-from matchbox.common.db import sql_to_df
+from matchbox.common.db import fullname_to_prefix, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
@@ -41,14 +45,16 @@ R = TypeVar("R")
 class SourceColumn(BaseModel):
     """A column in a dataset that can be indexed in the Matchbox database."""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
-    alias: str = Field(default_factory=lambda data: data["name"])
     type: str | None = Field(
         default=None, description="The type to cast the column to before hashing data."
     )
 
 
 def b64_bytes_validator(val: bytes | str) -> bytes:
+    """Ensure that a value is a base64 encoded string or bytes."""
     if isinstance(val, bytes):
         return val
     elif isinstance(val, str):
@@ -67,8 +73,26 @@ SerialisableBytes = Annotated[
 
 
 class SourceAddress(BaseModel):
+    """A unique identifier for a dataset in a warehouse."""
+
+    model_config = ConfigDict(frozen=True)
+
     full_name: str
     warehouse_hash: SerialisableBytes
+
+    def __str__(self) -> str:
+        """Convert to a string."""
+        return self.full_name + "@" + self.warehouse_hash_b64
+
+    @property
+    def pretty(self) -> str:
+        """Return a pretty representation of the address."""
+        return self.full_name + "@" + self.warehouse_hash_b64[:5] + "..."
+
+    @property
+    def warehouse_hash_b64(self) -> str:
+        """Return warehouse hash as a base64 encoded string."""
+        return hash_to_base64(self.warehouse_hash)
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
@@ -88,73 +112,6 @@ class SourceAddress(BaseModel):
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
 
-
-def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to ensure Engine is available to object."""
-
-    @wraps(func)
-    def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
-        if not self.engine:
-            raise MatchboxSourceEngineError
-        return func(self, *args, **kwargs)
-
-    return wrapper
-
-
-class Source(BaseModel):
-    """A dataset that can, or has been indexed on the backend."""
-
-    address: SourceAddress
-    alias: str = Field(default_factory=lambda data: data["address"].full_name)
-    db_pk: str
-    columns: list[SourceColumn] = []
-
-    _engine: Engine | None = None
-
-    @property
-    def engine(self) -> Engine | None:
-        return self._engine
-
-    def set_engine(self, engine: Engine):
-        """Adds engine, and use it to validate current columns"""
-        self._engine = engine
-        remote_columns = self._get_remote_columns()
-        for col in self.columns:
-            if col.name not in remote_columns:
-                raise MatchboxSourceColumnError(
-                    f"Column {col.name} not available in {self.address.full_name}"
-                )
-            actual_type = str(remote_columns[col.name])
-            if actual_type != col.type:
-                raise MatchboxSourceColumnError(
-                    f"Type {actual_type} != {col.type} for {col.name}"
-                )
-        return self
-
-    @property
-    def signature(self) -> bytes:
-        """Generate a unique hash based on the table's metadata."""
-        sorted_columns = sorted(self.columns, key=lambda c: c.alias)
-        schema_representation = f"{self.alias}: " + ",".join(
-            f"{col.alias}:{col.type}" for col in sorted_columns
-        )
-        return HASH_FUNC(schema_representation.encode("utf-8")).digest()
-
-    def _split_full_name(self) -> tuple[str | None, str]:
-        schema_name_list = self.address.full_name.replace('"', "").split(".")
-
-        if len(schema_name_list) == 1:
-            db_schema = None
-            db_table = schema_name_list[0]
-        elif len(schema_name_list) == 2:
-            db_schema = schema_name_list[0]
-            db_table = schema_name_list[1]
-        else:
-            raise ValueError(
-                f"Could not identify schema and table in {self.address.full_name}."
-            )
-        return db_schema, db_table
-
     def format_column(self, column: str) -> str:
         """Outputs a full SQLAlchemy column representation.
 
@@ -164,46 +121,172 @@ class Source(BaseModel):
         Returns:
             A string representing the table name and column
         """
-        db_schema, db_table = self._split_full_name()
-        if db_schema:
-            return f"{db_schema}_{db_table}_{column}"
-        return f"{db_table}_{column}"
+        return fullname_to_prefix(self.full_name) + column
 
-    @needs_engine
-    def _get_remote_columns(self) -> dict[str, str]:
-        table = self.to_table()
-        return {
-            col.name: col.type for col in table.columns if col.name not in self.db_pk
-        }
 
-    @needs_engine
-    def default_columns(self) -> "Source":
-        """Overwrites columns with all non-primary keys from source warehouse."""
-        remote_columns = self._get_remote_columns()
-        self.columns = [
-            SourceColumn(name=col_name, type=str(col_type))
-            for col_name, col_type in remote_columns.items()
-        ]
+def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to check that engine is set."""
+
+    @wraps(func)
+    def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
+        if not self.engine:
+            raise MatchboxSourceEngineError
+
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+class Source(BaseModel):
+    """A dataset that can, or has been indexed on the backend."""
+
+    model_config = ConfigDict(frozen=True)
+
+    address: SourceAddress
+    resolution_name: str = Field(default_factory=lambda data: str(data["address"]))
+    db_pk: str
+    # Columns need to be set at creation, or initialised with `.default_columns()`
+    columns: tuple[SourceColumn, ...] | None = None
+
+    _engine: Engine | None = None
+
+    @property
+    def engine(self) -> Engine | None:
+        """The SQLAlchemy Engine used to connect to the dataset."""
+        return self._engine
+
+    def __eq__(self, other: Any) -> bool:
+        """Custom equality which ignores engine."""
+        return (self.address, self.resolution_name, self.db_pk, self.columns) == (
+            other.address,
+            other.resolution_name,
+            other.db_pk,
+            other.columns,
+        )
+
+    def __hash__(self) -> int:
+        """Custom hash which ignores engine."""
+        return hash((self.address, self.resolution_name, self.db_pk, self.columns))
+
+    def __deepcopy__(self, memo=None):
+        """Create a deep copy of the Source object."""
+        if memo is None:
+            memo = {}
+
+        obj_copy = Source(
+            address=deepcopy(self.address, memo),
+            resolution_name=deepcopy(self.resolution_name, memo),
+            db_pk=deepcopy(self.db_pk, memo),
+            columns=deepcopy(self.columns, memo),
+        )
+
+        # Both objects should share the same engine
+        if self._engine is not None:
+            obj_copy._engine = self._engine
+
+        return obj_copy
+
+    def set_engine(self, engine: Engine):
+        """Adds engine, and use it to validate current columns."""
+        implied_address = SourceAddress.compose(
+            full_name=self.address.full_name, engine=engine
+        )
+        if implied_address != self.address:
+            raise ValueError("The engine does not match the source address.")
+
+        self._engine = engine
 
         return self
 
     @needs_engine
+    def _get_remote_columns(self, exclude_pk=False) -> dict[str, str]:
+        table = self.to_table()
+        return {
+            col.name: col.type
+            for col in table.columns
+            if (col.name != self.db_pk) or (not exclude_pk)
+        }
+
+    @needs_engine
+    def default_columns(self) -> "Source":
+        """Returns a new source with default columns.
+
+        Default columns are all from the source warehouse other than `self.db_pk`.
+        All other attributes are copied, and its engine (if present) is set.
+        """
+        remote_columns = self._get_remote_columns(exclude_pk=True)
+        columns_attribute = (
+            SourceColumn(name=col_name, type=str(col_type))
+            for col_name, col_type in remote_columns.items()
+        )
+
+        new_source = Source(
+            address=self.address,
+            resolution_name=self.resolution_name,
+            db_pk=self.db_pk,
+            columns=columns_attribute,
+        )
+
+        if self.engine:
+            new_source.set_engine(self.engine)
+
+        return new_source
+
+    @needs_engine
     def to_table(self) -> Table:
         """Returns the dataset as a SQLAlchemy Table object."""
-        db_schema, db_table = self._split_full_name()
+        db_schema, db_table = get_schema_table_names(self.address.full_name)
         metadata = MetaData(schema=db_schema)
         table = Table(db_table, metadata, autoload_with=self.engine)
         return table
+
+    @needs_engine
+    def check_columns(self, columns: list[str] | None = None) -> None:
+        """Check that columns are available in the warehouse and correctly typed.
+
+        Args:
+            columns: List of column names to check. If None, it will check self.columns
+        """
+        remote_columns = self._get_remote_columns()
+
+        if self.db_pk not in remote_columns:
+            raise MatchboxSourceColumnError(
+                f"Primary key {self.db_pk} not available in {self.address}"
+            )
+
+        if columns:
+            columns = set(columns)
+            remote_names = set(remote_columns.keys())
+            if not columns <= remote_names:
+                raise MatchboxSourceColumnError(
+                    f"Columns {columns - remote_names} not in {self.address}"
+                )
+        else:
+            if not self.columns:
+                raise ValueError("No columns passed, and none set on the Source.")
+
+            for col in self.columns:
+                if col.name not in remote_columns:
+                    raise MatchboxSourceColumnError(
+                        f"Column {col.name} not available in {self.address.full_name}"
+                    )
+                actual_type = str(remote_columns[col.name])
+                if actual_type != col.type:
+                    raise MatchboxSourceColumnError(
+                        f"Type {actual_type} != {col.type} for {col.name}"
+                    )
 
     def _select(
         self,
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
-    ) -> Select:
-        """Returns a SQLAlchemy Select object to retrieve data from the dataset."""
+    ) -> str:
+        """Returns a SQL query to retrieve data from the dataset."""
         table = self.to_table()
 
+        # Ensure all set columns are available and the expected type
+        self.check_columns(columns=fields)
         if not fields:
             fields = [col.name for col in self.columns]
 
@@ -211,10 +294,10 @@ class Source(BaseModel):
             fields.append(self.db_pk)
 
         def _get_column(col_name: str) -> ColumnElement:
-            """Helper to get a column with proper casting and labeling for PKs"""
+            """Helper to get a column with proper casting and labeling for PKs."""
             col = table.columns[col_name]
             if col_name == self.db_pk:
-                return cast(col, String).label(self.format_column(col_name))
+                return cast(col, String).label(self.address.format_column(col_name))
             return col
 
         # Determine which columns to select
@@ -233,7 +316,11 @@ class Source(BaseModel):
         if limit:
             stmt = stmt.limit(limit)
 
-        return stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
+        stmt = stmt.set_label_style(LABEL_STYLE_TABLENAME_PLUS_COL)
+
+        return stmt.compile(
+            dialect=self.engine.dialect, compile_kwargs={"literal_binds": True}
+        )
 
     @needs_engine
     def to_arrow(
@@ -241,10 +328,85 @@ class Source(BaseModel):
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
-    ) -> pa.Table:
-        """Returns the dataset as a PyArrow Table."""
+        *,
+        return_batches: bool = False,
+        batch_size: int | None = None,
+        schema_overrides: dict[str, Any] | None = None,
+        execute_options: dict[str, Any] | None = None,
+    ) -> ArrowTable | Iterator[ArrowTable]:
+        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+
+        Args:
+            fields: List of column names to retrieve. If None, retrieves all columns.
+            pks: List of primary keys to filter by. If None, retrieves all rows.
+            limit: Maximum number of rows to retrieve. If None, retrieves all rows.
+            return_batches:
+                * If True, return an iterator that yields each batch separately
+                * If False, return a single Table with all results
+            batch_size: Indicate the size of each batch when processing data in batches.
+            schema_overrides: A dictionary mapping column names to dtypes.
+            execute_options: These options will be passed through into the underlying
+                query execution method as kwargs.
+
+        Returns:
+            The requested data in PyArrow format.
+
+                * If return_batches is False: a PyArrow Table
+                * If return_batches is True: an iterator of PyArrow Tables
+        """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
-        return sql_to_df(stmt, self._engine, return_type="arrow")
+        return sql_to_df(
+            stmt,
+            self._engine,
+            return_type="arrow",
+            return_batches=return_batches,
+            batch_size=batch_size,
+            schema_overrides=schema_overrides,
+            execute_options=execute_options,
+        )
+
+    @needs_engine
+    def to_polars(
+        self,
+        fields: list[str] | None = None,
+        pks: list[T] | None = None,
+        limit: int | None = None,
+        *,
+        return_batches: bool = False,
+        batch_size: int | None = None,
+        schema_overrides: dict[str, Any] | None = None,
+        execute_options: dict[str, Any] | None = None,
+    ) -> PolarsDataFrame | Iterator[PolarsDataFrame]:
+        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+
+        Args:
+            fields: List of column names to retrieve. If None, retrieves all columns.
+            pks: List of primary keys to filter by. If None, retrieves all rows.
+            limit: Maximum number of rows to retrieve. If None, retrieves all rows.
+            return_batches:
+                * If True, return an iterator that yields each batch separately
+                * If False, return a single Table with all results
+            batch_size: Indicate the size of each batch when processing data in batches.
+            schema_overrides: A dictionary mapping column names to dtypes.
+            execute_options: These options will be passed through into the underlying
+                query execution method as kwargs.
+
+        Returns:
+            The requested data in Polars format.
+
+                * If return_batches is False: a Polars DataFrame
+                * If return_batches is True: an iterator of Polars DataFrames
+        """
+        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        return sql_to_df(
+            stmt,
+            self._engine,
+            return_type="polars",
+            return_batches=return_batches,
+            batch_size=batch_size,
+            schema_overrides=schema_overrides,
+            execute_options=execute_options,
+        )
 
     @needs_engine
     def to_pandas(
@@ -252,39 +414,148 @@ class Source(BaseModel):
         fields: list[str] | None = None,
         pks: list[T] | None = None,
         limit: int | None = None,
-    ) -> DataFrame:
-        """Returns the dataset as a pandas DataFrame."""
+        *,
+        return_batches: bool = False,
+        batch_size: int | None = None,
+        schema_overrides: dict[str, Any] | None = None,
+        execute_options: dict[str, Any] | None = None,
+    ) -> PandasDataframe | Iterator[PandasDataframe]:
+        """Returns the dataset as a pandas DataFrame or an iterator of DataFrames.
+
+        Args:
+            fields: List of column names to retrieve. If None, retrieves all columns.
+            pks: List of primary keys to filter by. If None, retrieves all rows.
+            limit: Maximum number of rows to retrieve. If None, retrieves all rows.
+            return_batches:
+                * If True, return an iterator that yields each batch separately
+                * If False, return a single Table with all results
+            batch_size: Indicate the size of each batch when processing data in batches.
+            schema_overrides: A dictionary mapping column names to dtypes.
+            execute_options: These options will be passed through into the underlying
+                query execution method as kwargs.
+
+        Returns:
+            The requested data in Pandas format.
+
+                * If return_batches is False: a Pandas DataFrame
+                * If return_batches is True: an iterator of Pandas DataFrames
+        """
         stmt = self._select(fields=fields, pks=pks, limit=limit)
-        return sql_to_df(stmt, self._engine, return_type="pandas")
+        return sql_to_df(
+            stmt,
+            self._engine,
+            return_type="pandas",
+            return_batches=return_batches,
+            batch_size=batch_size,
+            schema_overrides=schema_overrides,
+            execute_options=execute_options,
+        )
 
     @needs_engine
-    def hash_data(self) -> pa.Table:
-        """Retrieve and hash a dataset from its warehouse, ready to be inserted."""
+    def hash_data(
+        self,
+        *,
+        batch_size: int | None = None,
+        schema_overrides: dict[str, Any] | None = None,
+        execute_options: dict[str, Any] | None = None,
+    ) -> ArrowTable:
+        """Retrieve and hash a dataset from its warehouse, ready to be inserted.
+
+        Args:
+            batch_size: If set, process data in batches internally. Indicates the
+                size of each batch.
+            schema_overrides: A dictionary mapping column names to dtypes.
+            execute_options: These options will be passed through into the underlying
+                query execution method as kwargs.
+
+        Returns:
+            A PyArrow Table containing source primary keys and their hashes.
+        """
+        # Ensure all set columns are available and the expected type
+        self.check_columns()
+
         source_table = self.to_table()
         cols_to_index = tuple([col.name for col in self.columns])
 
         slct_stmt = select(
-            func.concat(*source_table.c[cols_to_index]).label("raw"),
+            *[source_table.c[col] for col in cols_to_index],
             source_table.c[self.db_pk].cast(String).label("source_pk"),
         )
 
-        raw_result = sql_to_df(slct_stmt, self._engine, "arrow")
+        def _process_batch(
+            batch: PolarsDataFrame,
+            cols_to_index: tuple,
+        ) -> PolarsDataFrame:
+            """Process a single batch of data using Polars.
 
-        grouped = raw_result.group_by("raw").aggregate([("source_pk", "list")])
-        grouped_data = pa.compute.binary_join_element_wise(
-            grouped["raw"], self.signature.hex(), " "
-        )
-        grouped_keys = grouped["source_pk_list"]
+            Args:
+                batch: Polars DataFrame containing the data
+                cols_to_index: Columns to include in the hash
 
-        return pa.table(
-            {
-                "source_pk": grouped_keys,
-                "hash": pa.array(
-                    [hash_data(d) for d in grouped_data.to_pylist()],
-                    type=pa.binary(),
-                ),
-            }
-        )
+            Returns:
+                Polars DataFrame with hash and source_pk columns
+
+            Raises:
+                ValueError: If any source_pk values are null
+            """
+            if batch["source_pk"].is_null().any():
+                raise ValueError("source_pk column contains null values")
+
+            for col_name in cols_to_index:
+                batch = batch.with_columns(
+                    pl.col(col_name).cast(pl.Utf8).fill_null("\x00")
+                )
+
+            record_separator = "␞"
+            unit_separator = "␟"
+            str_concatenation = [
+                f"{c}{unit_separator}" + pl.col(c) + record_separator
+                for c in sorted(cols_to_index)
+            ]
+            batch = batch.with_columns(
+                pl.concat_str(str_concatenation).alias("value_concat")
+            )
+
+            batch = batch.with_columns(
+                pl.col("value_concat")
+                .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
+                .alias("hash")
+            )
+
+            return batch.select(["hash", "source_pk"])
+
+        if bool(batch_size):
+            # Process in batches
+            raw_batches = sql_to_df(
+                slct_stmt,
+                self._engine,
+                return_type="polars",
+                return_batches=True,
+                batch_size=batch_size,
+                schema_overrides=schema_overrides,
+                execute_options=execute_options,
+            )
+
+            all_results = []
+            for batch in raw_batches:
+                batch_result = _process_batch(batch, cols_to_index)
+                all_results.append(batch_result)
+
+            processed_df = pl.concat(all_results)
+
+        else:
+            # Non-batched processing
+            raw_result = sql_to_df(
+                slct_stmt,
+                self._engine,
+                return_type="polars",
+                schema_overrides=schema_overrides,
+                execute_options=execute_options,
+            )
+
+            processed_df = _process_batch(raw_result, cols_to_index)
+
+        return processed_df.group_by("hash").agg(pl.col("source_pk")).to_arrow()
 
 
 class Match(BaseModel):
@@ -298,6 +569,7 @@ class Match(BaseModel):
 
     @model_validator(mode="after")
     def found_or_none(self) -> "Match":
+        """Ensure that a match has sources and a cluster if target was found."""
         if self.target_id and not (self.source_id and self.cluster):
             raise ValueError(
                 "A match must have sources and a cluster if target was found."

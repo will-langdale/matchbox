@@ -1,5 +1,5 @@
 {
-    "version": "0.2.1",
+    "version": "0.2.0",
     "configurations": [
         {
             "name": "Matchbox: Debug",
@@ -11,14 +11,10 @@
             "justMyCode": false,
             "env": {
                 "PYTEST_ADDOPTS": "--no-cov",
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}",
             },
             "python": "${workspaceFolder}/.venv/bin/python",
             "cwd": "${workspaceFolder}",
-            "args": [
-                "-v",
-                "-s"
-            ]
         },
         {
             "name": "Matchbox: Profile",

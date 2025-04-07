@@ -1,13 +1,13 @@
-from dotenv import find_dotenv, load_dotenv
+"""Matchbox."""
 
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
+from matchbox.common.exceptions import MatchboxClientSettingsException
+from matchbox.common.logging import logger
 
-# Environment variables must be loaded first for other imports to work
-
-from matchbox.client.helpers.cleaner import process  # NoQA: E402
-from matchbox.client.helpers.index import index  # NoQA: E402
-from matchbox.client.helpers.selector import match, query  # NoQA: E402
-from matchbox.client.models.models import make_model  # NoQA: E402
-
-__all__ = ("make_model", "process", "query", "match", "index")
+try:
+    # Environment variables must be loaded first for other imports to work
+    from matchbox.client import *  # noqa: E402, F403
+except MatchboxClientSettingsException:
+    logger.warning(
+        "Impossible to initialise client. "
+        "Please ignore if running in server mode. Otherwise, check your .env file.",
+    )

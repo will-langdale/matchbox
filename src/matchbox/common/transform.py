@@ -1,4 +1,5 @@
-import logging
+"""Functions to transform data between tabular and graph structures."""
+
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -8,22 +9,16 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import rustworkx as rx
-from dotenv import find_dotenv, load_dotenv
 
 from matchbox.common.hash import hash_values
-from matchbox.common.logging import build_progress_bar
+from matchbox.common.logging import build_progress_bar, logger
 
 T = TypeVar("T", bound=Hashable)
-
-logic_logger = logging.getLogger("mb_logic")
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 def to_clusters(
     results: pa.Table,
-    dtype: pa.DataType = pa.binary,
+    dtype: pa.DataType = pa.large_binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
     """Converts probabilities into connected components formed at each threshold.
@@ -175,17 +170,26 @@ class DisjointSet(Generic[T]):
     """
 
     def __init__(self):
+        """Initialize the disjoint set."""
         self.parent: dict[T, T] = {}
         self.rank: dict[T, int] = {}
 
     def _make_set(self, x: T) -> None:
+        """Create a new set with a single element x."""
         self.parent[x] = x
         self.rank[x] = 0
 
+    def add(self, x: T) -> None:
+        """Add a new element to the disjoint set."""
+        if x not in self.parent:
+            self._make_set(x)
+
     def union(self, x: T, y: T) -> None:
+        """Merge the sets containing elements x and y."""
         self._link(self._find(x), self._find(y))
 
     def _link(self, x: T, y: T) -> None:
+        """Merge the sets containing elements x and y."""
         if self.rank[x] > self.rank[y]:
             self.parent[y] = x
         else:
@@ -194,6 +198,7 @@ class DisjointSet(Generic[T]):
                 self.rank[y] += 1
 
     def _find(self, x: T) -> T:
+        """Return the representative element of the set containing x."""
         if x not in self.parent:
             self._make_set(x)
             return x
@@ -204,6 +209,7 @@ class DisjointSet(Generic[T]):
         return self.parent[x]
 
     def get_components(self) -> list[set[T]]:
+        """Return the connected components of the disjoint set."""
         components = defaultdict(set)
         for x in self.parent:
             root = self._find(x)
@@ -213,7 +219,7 @@ class DisjointSet(Generic[T]):
 
 def component_to_hierarchy(
     table: pa.Table,
-    dtype: pa.DataType = pa.binary,
+    dtype: pa.DataType = pa.large_binary,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
 ) -> pa.Table:
     """Convert pairwise probabilities into a hierarchical representation.
@@ -285,7 +291,7 @@ def to_hierarchical_clusters(
     probabilities: pa.Table,
     proc_func: Callable[[pa.Table, pa.DataType], pa.Table] = component_to_hierarchy,
     hash_func: Callable[[*tuple[T, ...]], T] = hash_values,
-    dtype: pa.DataType = pa.binary,
+    dtype: pa.DataType = pa.large_binary,
     parallel: bool = True,
     timeout: int = 300,
     min_rows_per_worker: int = 1000,
@@ -322,7 +328,7 @@ def to_hierarchical_clusters(
     n_cores = multiprocessing.cpu_count()
     n_components = len(components)
 
-    logic_logger.info(f"Processing {n_components:,} components using {n_cores} workers")
+    logger.info(f"Processing {n_components:,} components using {n_cores} workers")
 
     # Split table into separate component tables
     component_col = probabilities["component"]
@@ -370,12 +376,12 @@ def to_hierarchical_clusters(
                         results.append(result)
                         progress.update(process_task, advance=1)
                     except TimeoutError:
-                        logic_logger.error(
+                        logger.error(
                             f"Component processing timed out after {timeout} seconds"
                         )
                         raise
                     except Exception as e:
-                        logic_logger.error(f"Error processing component: {str(e)}")
+                        logger.error(f"Error processing component: {str(e)}")
                         raise
         else:
             results = [
@@ -384,11 +390,11 @@ def to_hierarchical_clusters(
                 if not progress.update(process_task, advance=1)
             ]
 
-    logic_logger.info(f"Completed processing {len(results):,} components successfully")
+    logger.info(f"Completed processing {len(results):,} components successfully")
 
     # Create empty table if no results
     if not results:
-        logic_logger.warning("No results to concatenate")
+        logger.warning("No results to concatenate")
         return pa.table(
             {
                 "parent": pa.array([], type=dtype()),

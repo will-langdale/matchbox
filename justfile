@@ -1,7 +1,3 @@
-# Make datasets table
-matchbox:
-    uv run python src/matchbox/admin.py --datasets datasets.toml
-
 # Delete all compiled Python files
 clean:
     find . -type f -name "*.py[co]" -delete
@@ -16,10 +12,22 @@ format:
 scan:
     bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo"
 
-# Run Python tests
-test:
-    docker compose up -d --wait
-    uv run pytest
+# Build and run all containers
+build:
+    docker compose up --build -d --wait
+
+# Run Python tests (usage: just test [local|docker])
+test ENV="":
+    #!/usr/bin/env bash
+    if [[ "{{ENV}}" == "local" ]]; then
+        uv run pytest -m "not docker"
+    elif [[ "{{ENV}}" == "docker" ]]; then
+        just build
+        uv run pytest -m "docker"
+    else
+        just build
+        uv run pytest
+    fi
 
 # Run a local documentation development server
 docs:

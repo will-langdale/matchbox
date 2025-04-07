@@ -1,13 +1,12 @@
-from typing import Any, Iterable
+import itertools
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from sqlalchemy import BIGINT, TEXT, Column, UniqueConstraint, text
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, text
 
-from matchbox.common.sources import Source
+from matchbox.common.factories.entities import SourceEntity
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.benchmark.generate_tables import (
@@ -19,11 +18,9 @@ from matchbox.server.postgresql.benchmark.query import (
     compile_query_sql,
 )
 from matchbox.server.postgresql.db import MBDB
-from matchbox.server.postgresql.mixin import CountMixin
-from matchbox.server.postgresql.utils.db import large_ingest
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
-from ..fixtures.db import SetupDatabaseCallable
+from ..fixtures.db import setup_scenario
 
 
 def test_hash_id_map():
@@ -32,7 +29,7 @@ def test_hash_id_map():
     lookup = pa.Table.from_arrays(
         [
             pa.array([1, 2], type=pa.uint64()),
-            pa.array([b"hash1", b"hash2"], type=pa.binary()),
+            pa.array([b"hash1", b"hash2"], type=pa.large_binary()),
         ],
         names=["id", "hash"],
     )
@@ -44,7 +41,7 @@ def test_hash_id_map():
     assert hashes.to_pylist() == [b"hash2", b"hash1"]
 
     # Test getting mix of existing and new hashes
-    input_hashes = pa.array([b"hash1", b"new_hash", b"hash2"], type=pa.binary())
+    input_hashes = pa.array([b"hash1", b"new_hash", b"hash2"], type=pa.large_binary())
     returned_ids = hash_map.get_ids(input_hashes)
 
     # Verify results
@@ -64,95 +61,103 @@ def test_hash_id_map():
 
 
 @pytest.mark.parametrize(
-    ("parameters"),
+    ("point_of_truth", "source"),
     [
         # Test case 1: CDMS/CRN linker, CRN dataset
-        {
-            "point_of_truth": "deterministic_naive_test.cdms_naive_test.crn",
-            "source_index": 0,  # CRN
-            "unique_ids": 1_000,
-            "unique_pks": 3_000,
-        },
+        pytest.param(
+            "probabilistic_naive_test.crn_naive_test.cdms", "crn", id="cdms-crn_crn"
+        ),
         # Test case 2: CDMS/CRN linker, CDMS dataset
-        {
-            "point_of_truth": "deterministic_naive_test.cdms_naive_test.crn",
-            "source_index": 2,  # CDMS
-            "unique_ids": 1_000,
-            "unique_pks": 2_000,
-        },
+        pytest.param(
+            "probabilistic_naive_test.crn_naive_test.cdms", "cdms", id="cdms-crn_cdms"
+        ),
         # Test case 3: CRN/DUNS linker, CRN dataset
-        {
-            "point_of_truth": "deterministic_naive_test.crn_naive_test.duns",
-            "source_index": 0,  # CRN
-            "unique_ids": 1_000,
-            "unique_pks": 3_000,
-        },
+        pytest.param(
+            "deterministic_naive_test.crn_naive_test.duns", "crn", id="crn-duns_crn"
+        ),
         # Test case 4: CRN/DUNS linker, DUNS dataset
-        {
-            "point_of_truth": "deterministic_naive_test.crn_naive_test.duns",
-            "source_index": 1,  # DUNS
-            "unique_ids": 500,
-            "unique_pks": 500,
-        },
+        pytest.param(
+            "deterministic_naive_test.crn_naive_test.duns", "duns", id="crn-duns_duns"
+        ),
     ],
-    ids=["cdms-crn_crn", "cdms-crn_cdms", "crn-duns_crn", "crn-duns_duns"],
 )
+@pytest.mark.docker
 def test_benchmark_query_generation(
-    setup_database: SetupDatabaseCallable,
     matchbox_postgres: MatchboxPostgres,
-    warehouse_data: list[Source],
-    parameters: dict[str, Any],
+    postgres_warehouse: Engine,
+    point_of_truth: str,
+    source: str,
 ):
-    setup_database(matchbox_postgres, warehouse_data, "link")
+    with setup_scenario(matchbox_postgres, "link", warehouse=postgres_warehouse) as dag:
+        engine = MBDB.get_engine()
 
-    engine = MBDB.get_engine()
-    point_of_truth = parameters["point_of_truth"]
-    idx = parameters["source_index"]
+        sources_dict = dag.get_sources_for_model(point_of_truth)
+        assert len(sources_dict) == 1
+        linked = dag.linked[next(iter(sources_dict))]
 
-    sql_query = compile_query_sql(
-        point_of_truth=point_of_truth,
-        source_address=warehouse_data[idx].address,
-    )
+        true_entities = linked.true_entity_subset(source)
+        true_pks = set(
+            itertools.chain.from_iterable(
+                s for e in true_entities for s in e.source_pks.values()
+            )
+        )
 
-    assert isinstance(sql_query, str)
+        sql_query = compile_query_sql(
+            point_of_truth=point_of_truth,
+            source_address=dag.sources[source].source.address,
+        )
 
-    with engine.connect() as conn:
-        res = conn.execute(text(sql_query)).all()
+        assert isinstance(sql_query, str)
 
-    df = pd.DataFrame(res, columns=["id", "pk"])
+        with engine.connect() as conn:
+            res = conn.execute(text(sql_query)).all()
 
-    assert df.id.nunique() == parameters["unique_ids"]
-    assert df.pk.nunique() == parameters["unique_pks"]
+        df = pd.DataFrame(res, columns=["id", "pk"])
+
+        assert df.id.nunique() == len(true_entities)
+        assert set(df.pk) == true_pks
 
 
+@pytest.mark.docker
 def test_benchmark_match_query_generation(
-    setup_database: SetupDatabaseCallable,
     matchbox_postgres: MatchboxPostgres,
-    warehouse_data: list[Source],
-    revolution_inc: dict[str, list[str]],
+    postgres_warehouse: Engine,
 ):
-    setup_database(matchbox_postgres, warehouse_data, "link")
+    with setup_scenario(matchbox_postgres, "link", warehouse=postgres_warehouse) as dag:
+        engine = MBDB.get_engine()
 
-    engine = MBDB.get_engine()
-    source_pks = revolution_inc["duns"]
-    target_pks = revolution_inc["crn"]
+        linker_name = "deterministic_naive_test.crn_naive_test.duns"
+        duns_testkit = dag.sources.get("duns")
 
-    sql_match = compile_match_sql(
-        source_pk=source_pks[0],
-        source_name=warehouse_data[1].address.full_name,  # DUNS
-        point_of_truth="deterministic_naive_test.crn_naive_test.duns",
-    )
+        sources_dict = dag.get_sources_for_model(linker_name)
+        assert len(sources_dict) == 1
+        linked = dag.linked[next(iter(sources_dict))]
 
-    assert isinstance(sql_match, str)
+        # A random one:many entity
+        source_entity: SourceEntity = linked.find_entities(
+            min_appearances={"crn": 2, "duns": 1},
+            max_appearances={"duns": 1},
+        )[0]
 
-    with engine.connect() as conn:
-        res = conn.execute(text(sql_match)).all()
+        sql_match = compile_match_sql(
+            source_pk=next(iter(source_entity.source_pks["duns"])),
+            resolution_name=str(duns_testkit.source.address),
+            point_of_truth="deterministic_naive_test.crn_naive_test.duns",
+        )
 
-    df = pd.DataFrame(res, columns=["cluster", "dataset", "source_pk"]).dropna()
+        assert isinstance(sql_match, str)
 
-    assert df.cluster.nunique() == 1
-    assert df.dataset.nunique() == 2
-    assert set(df.source_pk) == set(source_pks + target_pks)
+        with engine.connect() as conn:
+            res = conn.execute(text(sql_match)).all()
+
+        df = pd.DataFrame(res, columns=["cluster", "dataset", "source_pk"]).dropna()
+
+        assert df.cluster.nunique() == 1
+        assert df.dataset.nunique() == 2
+        assert (
+            set(df.source_pk)
+            == source_entity.source_pks["duns"] | source_entity.source_pks["crn"]
+        )
 
 
 @pytest.mark.parametrize(
@@ -176,13 +181,20 @@ def test_benchmark_result_tables(left_ids, right_ids, next_id, n_components, n_p
 @pytest.mark.parametrize(
     ("cluster_start_id", "dataset_start_id", "expected_datasets"),
     [
-        (0, 1, {1, 2, None}),  # Original test case
-        (1000, 1, {1, 2, None}),  # Different cluster start
-        (0, 3, {3, 4, None}),  # Different dataset start
-        (86475, 3, {3, 4, None}),  # Both different
+        (0, 1, {1, 2}),  # Original test case
+        (1000, 1, {1, 2}),  # Different cluster start
+        (0, 3, {3, 4}),  # Different dataset start
+        (86475, 3, {3, 4}),  # Both different
+    ],
+    ids=[
+        "original",
+        "different_cluster_start",
+        "different_dataset_start",
+        "both_different",
     ],
 )
-def test_benchmark_generate_tables_parameterized(
+@pytest.mark.docker
+def test_benchmark_generate_tables_parameterised(
     matchbox_postgres: MatchboxDBAdapter,
     cluster_start_id: int,
     dataset_start_id: int,
@@ -191,116 +203,70 @@ def test_benchmark_generate_tables_parameterized(
     schema = MBDB.MatchboxBase.metadata.schema
     matchbox_postgres.clear(certain=True)
 
-    def array_encode(array: Iterable[str]):
-        if not array:
-            return None
-        escaped_l = [f'"{s}"' for s in array]
-        list_rep = ", ".join(escaped_l)
-        return "{" + list_rep + "}"
-
-    with MBDB.get_engine().connect() as con:
-        results = generate_all_tables(
-            source_len=20,
-            dedupe_components=5,
-            dedupe_len=25,
-            link_components=5,
-            link_len=25,
-            cluster_start_id=cluster_start_id,
-            dataset_start_id=dataset_start_id,
-        )
-
-        # Test number of tables
-        assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
-
-        # Test dataset IDs
-        assert (
-            set(pc.unique(results["clusters"]["dataset"]).to_pylist())
-            == expected_datasets
-        )
-
-        # Test cluster IDs start correctly
-        min_cluster_id = min(results["clusters"]["cluster_id"].to_pylist())
-        assert min_cluster_id == cluster_start_id
-
-        # Test resolution IDs in sources
-        source_resolution_ids = set(results["sources"]["resolution_id"].to_pylist())
-        assert source_resolution_ids == {dataset_start_id, dataset_start_id + 1}
-
-        # Test resolution IDs in resolutions
-        resolution_ids = set(results["resolutions"]["resolution_id"].to_pylist())
-        expected_resolution_ids = set(
-            range(
-                dataset_start_id,
-                dataset_start_id + 5,  # We expect 5 resolutions
-            )
-        )
-        assert resolution_ids == expected_resolution_ids
-
-        # Write to database
-        for table_name, table_arrow in results.items():
-            df = table_arrow.to_pandas()
-            # Pandas' `to_sql` dislikes arrays
-            array_cols = ["source_pk", "column_types", "column_aliases", "column_names"]
-            active_array_cols = set(df.columns.tolist()).intersection(array_cols)
-            for col in active_array_cols:
-                df[col] = df[col].apply(array_encode)
-            # Pandas' `to_sql` dislikes large unsigned ints
-            for c in df.columns:
-                if df[c].dtype == "uint64":
-                    df[c] = df[c].astype("int64")
-            df.to_sql(
-                name=table_name, con=con, schema=schema, index=False, if_exists="append"
-            )
-
-        # Verify relationships in resolution_from table match dataset_start_id
-        resolution_from = results["resolution_from"]
-        parent_ids = set(resolution_from["parent"].to_pylist())
-        child_ids = set(resolution_from["child"].to_pylist())
-        all_ids = parent_ids.union(child_ids)
-        assert min(all_ids) >= dataset_start_id
-        assert max(all_ids) < dataset_start_id + 5  # We expect 5 resolutions
-
-        # Verify probabilities reference correct resolution IDs
-        prob_resolution_ids = set(results["probabilities"]["resolution"].to_pylist())
-        expected_model_ids = {
-            dataset_start_id + 2,  # dedupe1
-            dataset_start_id + 3,  # dedupe2
-            dataset_start_id + 4,  # link
-        }
-        assert prob_resolution_ids == expected_model_ids
-
-
-def test_large_ingest(matchbox_postgres: MatchboxPostgres):
-    with Session(MBDB.get_engine()) as session:
-        # Dummy table to ingest to
-        class DummyTable(CountMixin, MBDB.MatchboxBase):
-            __tablename__ = "dummytable"
-            foo = Column(BIGINT, primary_key=True)
-            bar = Column(TEXT, nullable=False)
-
-            __table_args__ = (UniqueConstraint("bar", name="dummy_unique_bar"),)
-
-        MBDB.MatchboxBase.metadata.create_all(
-            MBDB.get_engine(), tables=[DummyTable.__table__]
-        )
-
-        row1 = DummyTable(foo=1, bar="First dummy row")
-        session.add(row1)
-        session.commit()
-
-    # Dummy data to ingest
-    schema = pa.schema([("foo", pa.int64()), ("bar", pa.string())])
-    data = pa.Table.from_pylist(
-        [
-            {"foo": 10, "bar": "abc"},
-            {"foo": 11, "bar": "def"},
-        ],
-        schema=schema,
+    results = generate_all_tables(
+        source_len=20,
+        dedupe_components=5,
+        dedupe_len=25,
+        link_components=5,
+        link_len=25,
+        cluster_start_id=cluster_start_id,
+        dataset_start_id=dataset_start_id,
     )
 
-    large_ingest(data, DummyTable)
-    # TODO: check that constraints and indices are still there
-    # TODO: what happens if we ingest data that doesn't satisfy constraints?
-    # TODO: check temp table is deleted even when exceptions ae raised
+    # Test number of tables
+    assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
 
-    assert DummyTable.count() == 3
+    # Test dataset IDs in cluster_source_pks table
+    assert (
+        set(pc.unique(results["cluster_source_pks"]["source_id"]).to_pylist())
+        == expected_datasets
+    )
+
+    # Test dataset IDs in source_columns table
+    assert (
+        set(pc.unique(results["source_columns"]["source_id"]).to_pylist())
+        == expected_datasets
+    )
+
+    # Test cluster IDs start correctly
+    min_cluster_id = min(results["clusters"]["cluster_id"].to_pylist())
+    assert min_cluster_id == cluster_start_id
+
+    # Test resolution IDs in sources
+    source_resolution_ids = set(results["sources"]["resolution_id"].to_pylist())
+    assert source_resolution_ids == {dataset_start_id, dataset_start_id + 1}
+
+    # Test resolution IDs in resolutions
+    resolution_ids = set(results["resolutions"]["resolution_id"].to_pylist())
+    expected_resolution_ids = set(
+        range(
+            dataset_start_id,
+            dataset_start_id + 5,  # We expect 5 resolutions
+        )
+    )
+    assert resolution_ids == expected_resolution_ids
+
+    with MBDB.get_adbc_connection() as conn, conn.cursor() as cur:
+        # Write to database
+        for table_name, table_arrow in results.items():
+            cur.adbc_ingest(
+                table_name, table_arrow, db_schema_name=schema, mode="append"
+            )
+        conn.commit()
+
+    # Verify relationships in resolution_from table match dataset_start_id
+    resolution_from = results["resolution_from"]
+    parent_ids = set(resolution_from["parent"].to_pylist())
+    child_ids = set(resolution_from["child"].to_pylist())
+    all_ids = parent_ids.union(child_ids)
+    assert min(all_ids) >= dataset_start_id
+    assert max(all_ids) < dataset_start_id + 5  # We expect 5 resolutions
+
+    # Verify probabilities reference correct resolution IDs
+    prob_resolution_ids = set(results["probabilities"]["resolution"].to_pylist())
+    expected_model_ids = {
+        dataset_start_id + 2,  # dedupe1
+        dataset_start_id + 3,  # dedupe2
+        dataset_start_id + 4,  # link
+    }
+    assert prob_resolution_ids == expected_model_ids

@@ -1,3 +1,5 @@
+"""A simple in-memory cache of uploaded metadata and processing status."""
+
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
@@ -7,12 +9,16 @@ import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
 
 from matchbox.common.dtos import BackendUploadType, ModelMetadata, UploadStatus
+from matchbox.common.exceptions import MatchboxServerFileError
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 from matchbox.server.api.arrow import s3_to_recordbatch
 from matchbox.server.base import MatchboxDBAdapter
 
 
 class MetadataCacheEntry(BaseModel):
+    """Cache entry for uploaded metadata."""
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     metadata: Source | ModelMetadata
@@ -30,6 +36,7 @@ class MetadataStore:
     """
 
     def __init__(self, expiry_minutes: int = 30):
+        """Initialise the cache with an expiry time in minutes."""
         self._store: dict[str, MetadataCacheEntry] = {}
         self.expiry_minutes = expiry_minutes
 
@@ -124,8 +131,7 @@ class MetadataStore:
 async def heartbeat(
     metadata_store: MetadataStore, upload_id: str, interval_seconds: int = 300
 ):
-    """
-    Context manager that updates status with a heartbeat while the main operation runs.
+    """Context manager that updates status with a heartbeat.
 
     Args:
         metadata_store: Store for updating status
@@ -189,4 +195,29 @@ async def process_upload(
         metadata_store.update_status(upload_id, "complete")
 
     except Exception as e:
-        metadata_store.update_status(upload_id, "failed", details=str(e))
+        error_context = {
+            "upload_id": upload_id,
+            "upload_type": getattr(upload, "upload_type", "unknown"),
+            "metadata": getattr(upload, "metadata", "unknown"),
+            "bucket": bucket,
+            "key": key,
+        }
+        logger.error(
+            f"Upload processing failed with context: {error_context}", exc_info=True
+        )
+        details = (
+            f"Error: {e}. Context: "
+            f"Upload type: {getattr(upload, 'upload_type', 'unknown')}, "
+            f"Source: {getattr(upload, 'metadata', 'unknown')}"
+        )
+        metadata_store.update_status(
+            upload_id,
+            "failed",
+            details=details,
+        )
+        raise MatchboxServerFileError(message=details) from e
+    finally:
+        try:
+            client.delete_object(Bucket=bucket, Key=key)
+        except Exception as delete_error:
+            logger.error(f"Failed to delete S3 file {bucket}/{key}: {delete_error}")

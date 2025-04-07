@@ -1,33 +1,36 @@
 [project]
-name = "matchbox"
-version = "0.2.1"
-description = "A framework for orchestrating and comparing various company matching methodologies."
-authors = [{ name = "DDaTDataScienceTeam" }]
+name = "matchbox-db"
+dynamic = ["version"]
+description = "A framework for orchestrating and comparing data linking and deduplication methodologies."
+authors = [{ name="Department for Business and Trade" }]
 license = {file = "LICENSE"}
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "click>=8.1.7",
-    "connectorx>=0.3.3",
     "duckdb>=1.1.1",
+    "faker>=36.1.1",
+    "frozendict>=2.4.6",
     "httpx>=0.28.0",
     "matplotlib>=3.9.2",
     "pandas>=2.2.3",
-    "psycopg2>=2.9.10",
+    "psycopg[binary, pool]>=3.2.6",
     "pyarrow>=17.0.0",
     "pydantic-settings>=2.5.2",
     "pydantic>=2.9.2",
-    "python-dotenv>=1.0.1",
     "rustworkx>=0.15.1",
     "splink>=4.0.5,<4.1.0",
-    "sqlalchemy>=2.0.35",
+    "sqlalchemy[asyncio]>=2.0.35",
     "rich>=13.9.4",
+    "polars>=1.26.0",
+    "sqlglot[rs]>=26.12.1",
 ]
 
 [project.optional-dependencies]
 server = [
-    "adbc-driver-postgresql>=1.4.0",
+    "adbc-driver-postgresql>=1.5.0",
     "boto3>=1.35.99",
+    "ddtrace>=3.2.1",
     "fastapi[standard]>=0.115.0,<0.116.0",
     "pg-bulk-ingest>=0.0.54",
     "python-multipart>=0.0.18",
@@ -37,7 +40,7 @@ server = [
 [dependency-groups]
 dev = [
     "docker>=7.1.0",
-    "faker>=35.2.0",
+    "griffe-inherited-docstrings>=1.1.1",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",
     "mkdocs>=1.6.1",
@@ -46,6 +49,7 @@ dev = [
     "mkdocstrings[python]>=0.27.0",
     "moto[s3]>=5.0.26",
     "pre-commit>=3.8.0",
+    "psycopg2>=2.9.10",
     "pytest>=8.3.3",
     "pytest-asyncio>=0.25.2",
     "pytest-cov>=5.0.0",
@@ -57,9 +61,20 @@ dev = [
 ]
 typing = [
     "boto3-stubs[s3]>=1.35.99",
-    "polars>=1.11.0",
     "pyarrow-stubs>=17.16",
 ]
+
+[project.urls]
+"Documentation" = "https://uktrade.github.io/matchbox/"
+"Repository" = "https://github.com/uktrade/matchbox.git"
+
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+# Presence enables setuptools-scm
+[tool.setuptools_scm]
+
 
 [tool.uv]
 default-groups = ["dev", "typing"]
@@ -81,7 +96,7 @@ select = [
     "F",
     "I",
     "B",
-    # "D"
+    "D"
 ]
 ignore = []
 fixable = ["ALL"]
@@ -99,18 +114,24 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+docstring-code-format = true
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
-addopts = "-s -vv --cov=matchbox test/ --log-disable=pg_bulk_ingest"
-log_cli = false
-log_cli_level = "INFO"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+addopts = "--cov=matchbox test/ --log-disable=pg_bulk_ingest"
+norecursedirs = "src"
+log_cli = false  # Set to true to enable logs and individual tests
+log_cli_level = "DEBUG"  # Set to "INFO" to see less detailed logging
+log_cli_format = "%(asctime)s [%(levelname)s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%X"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
+    'ignore:.*TestkitDAG.*:pytest.PytestCollectionWarning',
     'ignore:.*__fields.*:pydantic.PydanticDeprecatedSince20:unittest.mock',
     'ignore:.*__fields_set__.*:pydantic.PydanticDeprecatedSince20:unittest.mock'
+]
+markers = [
+    "docker: marks tests that require resources in Docker to be available",
 ]

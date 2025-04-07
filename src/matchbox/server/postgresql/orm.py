@@ -1,6 +1,7 @@
+"""ORM classes for the Matchbox PostgreSQL database."""
+
 from sqlalchemy import (
     BIGINT,
-    FLOAT,
     INTEGER,
     SMALLINT,
     CheckConstraint,
@@ -11,8 +12,8 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, TEXT
-from sqlalchemy.orm import Session, relationship
+from sqlalchemy.dialects.postgresql import BYTEA, TEXT
+from sqlalchemy.orm import relationship
 
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.db import MBDB
@@ -36,7 +37,7 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
         primary_key=True,
     )
     level = Column(INTEGER, nullable=False)
-    truth_cache = Column(FLOAT, nullable=True)
+    truth_cache = Column(SMALLINT, nullable=True)
 
     # Constraints
     __table_args__ = (
@@ -59,12 +60,15 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     type = Column(TEXT, nullable=False)
     name = Column(TEXT, nullable=False)
     description = Column(TEXT)
-    truth = Column(FLOAT)
+    truth = Column(SMALLINT)
 
     # Relationships
     source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
     probabilities = relationship(
-        "Probabilities", back_populates="proposed_by", cascade="all, delete-orphan"
+        "Probabilities",
+        back_populates="proposed_by",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     children = relationship(
         "Resolutions",
@@ -87,7 +91,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @property
     def ancestors(self) -> set["Resolutions"]:
         """Returns all ancestors (parents, grandparents, etc.) of this resolution."""
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session() as session:
             ancestor_query = (
                 select(Resolutions)
                 .select_from(Resolutions)
@@ -101,7 +105,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @property
     def descendants(self) -> set["Resolutions"]:
         """Returns descendants (children, grandchildren, etc.) of this resolution."""
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session() as session:
             descendant_query = (
                 select(Resolutions)
                 .select_from(Resolutions)
@@ -112,7 +116,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     def get_lineage(self) -> dict[int, float]:
         """Returns all ancestors and their cached truth values from this model."""
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session() as session:
             lineage_query = (
                 select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
                 .where(ResolutionFrom.child == self.resolution_id)
@@ -138,7 +142,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         if self.resolution_id == dataset.resolution_id:
             return {dataset.resolution_id: None}
 
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session() as session:
             path_query = (
                 select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
                 .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
@@ -161,9 +165,71 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def next_id(cls) -> int:
         """Returns the next available resolution_id."""
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session() as session:
             result = session.execute(
                 select(func.coalesce(func.max(cls.resolution_id), 0))
+            ).scalar()
+            return result + 1
+
+
+class SourceColumns(CountMixin, MBDB.MatchboxBase):
+    """Table for storing column details for Sources."""
+
+    __tablename__ = "source_columns"
+
+    # Columns
+    column_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    source_id = Column(
+        BIGINT,
+        ForeignKey("sources.source_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    column_index = Column(INTEGER, nullable=False)
+    column_name = Column(TEXT, nullable=False)
+    column_type = Column(TEXT, nullable=False)
+
+    # Relationships
+    source = relationship("Sources", back_populates="columns")
+
+    # Constraints and indices
+    __table_args__ = (
+        UniqueConstraint("source_id", "column_index", name="unique_column_index"),
+        Index("ix_source_columns_source_id", "source_id"),
+    )
+
+
+class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
+    """Table for storing source primary keys for clusters."""
+
+    __tablename__ = "cluster_source_pks"
+
+    # Columns
+    pk_id = Column(BIGINT, primary_key=True)
+    cluster_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
+    )
+    source_id = Column(
+        BIGINT, ForeignKey("sources.source_id", ondelete="CASCADE"), nullable=False
+    )
+    source_pk = Column(TEXT, nullable=False)
+
+    # Relationships
+    cluster = relationship("Clusters", back_populates="source_pks")
+    source = relationship("Sources", back_populates="cluster_source_pks")
+
+    # Constraints and indices
+    __table_args__ = (
+        Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
+        Index("ix_cluster_source_pks_source_pk", "source_pk"),
+        UniqueConstraint("pk_id", "source_id", name="unique_pk_source"),
+    )
+
+    @classmethod
+    def next_id(cls) -> int:
+        """Returns the next available cluster_id."""
+        with MBDB.get_session() as session:
+            result = session.execute(
+                select(func.coalesce(func.max(cls.pk_id), 0))
             ).scalar()
             return result + 1
 
@@ -174,22 +240,37 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
+    source_id = Column(BIGINT, autoincrement=True, primary_key=True)
     resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
     )
-    alias = Column(TEXT, nullable=False)
+    resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
-    id = Column(TEXT, nullable=False)
-    column_names = Column(ARRAY(TEXT), nullable=False)
-    column_aliases = Column(ARRAY(TEXT), nullable=False)
-    column_types = Column(ARRAY(TEXT), nullable=False)
+    db_pk = Column(TEXT, nullable=False)
 
     # Relationships
     dataset_resolution = relationship("Resolutions", back_populates="source")
-    clusters = relationship("Clusters", back_populates="source")
+    columns = relationship(
+        "SourceColumns",
+        back_populates="source",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    cluster_source_pks = relationship(
+        "ClusterSourcePK",
+        back_populates="source",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    clusters = relationship(
+        "Clusters",
+        secondary=ClusterSourcePK.__table__,
+        primaryjoin="Sources.resolution_id == ClusterSourcePK.source_id",
+        secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
+        viewonly=True,
+    )
 
     # Constraints
     __table_args__ = (
@@ -198,7 +279,8 @@ class Sources(CountMixin, MBDB.MatchboxBase):
 
     @classmethod
     def list(cls) -> list["Sources"]:
-        with Session(MBDB.get_engine()) as session:
+        """Returns all sources in the database."""
+        with MBDB.get_session() as session:
             return session.query(cls).all()
 
 
@@ -231,16 +313,19 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     # Columns
     cluster_id = Column(BIGINT, primary_key=True)
     cluster_hash = Column(BYTEA, nullable=False)
-    dataset = Column(BIGINT, ForeignKey("sources.resolution_id"), nullable=True)
-    # Uses array as source data may have identical rows. We can't control this
-    # Must be indexed or PostgreSQL incorrectly tries to use nested joins
-    # when retrieving small datasets in query() -- extremely slow
-    source_pk = Column(ARRAY(TEXT), index=True, nullable=True)
 
     # Relationships
-    source = relationship("Sources", back_populates="clusters")
+    source_pks = relationship(
+        "ClusterSourcePK",
+        back_populates="cluster",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     probabilities = relationship(
-        "Probabilities", back_populates="proposes", cascade="all, delete-orphan"
+        "Probabilities",
+        back_populates="proposes",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     children = relationship(
         "Clusters",
@@ -249,17 +334,22 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Clusters.cluster_id == Contains.child",
         backref="parents",
     )
+    # Add relationship to Sources through ClusterSourcePK
+    sources = relationship(
+        "Sources",
+        secondary=ClusterSourcePK.__table__,
+        primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
+        secondaryjoin="ClusterSourcePK.source_id == Sources.resolution_id",
+        viewonly=True,
+    )
 
     # Constraints and indices
-    __table_args__ = (
-        Index("ix_clusters_id_gin", source_pk, postgresql_using="gin"),
-        UniqueConstraint("cluster_hash", name="clusters_hash_key"),
-    )
+    __table_args__ = (UniqueConstraint("cluster_hash", name="clusters_hash_key"),)
 
     @classmethod
     def next_id(cls) -> int:
         """Returns the next available cluster_id."""
-        with Session(MBDB.get_engine()) as session:
+        with MBDB.get_session() as session:
             result = session.execute(
                 select(func.coalesce(func.max(cls.cluster_id), 0))
             ).scalar()

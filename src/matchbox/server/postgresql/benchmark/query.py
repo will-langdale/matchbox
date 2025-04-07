@@ -1,3 +1,5 @@
+"""Benchmarking utilities for the PostgreSQL backend."""
+
 from sqlalchemy.orm import Session
 
 from matchbox.common.sources import SourceAddress
@@ -54,7 +56,7 @@ def compile_query_sql(point_of_truth: str, source_address: SourceAddress) -> str
     return str(compiled_stmt) + ";"
 
 
-def compile_match_sql(source_pk: str, source_name: str, point_of_truth: str) -> str:
+def compile_match_sql(source_pk: str, resolution_name: str, point_of_truth: str) -> str:
     """Compiles a the SQL for match() based on a single point of truth and dataset.
 
     Note this only tests the query that retrieves all valid matches for the supplied
@@ -63,7 +65,7 @@ def compile_match_sql(source_pk: str, source_name: str, point_of_truth: str) -> 
 
     Args:
         source_pk: The name of the primary key of the source table
-        source_name: The name of the source table, like "dbt.companies"
+        resolution_name: The resolution name of the source table
         point_of_truth: The name of the resolution to use, like "linker_1"
 
     Returns:
@@ -73,7 +75,9 @@ def compile_match_sql(source_pk: str, source_name: str, point_of_truth: str) -> 
 
     with Session(engine) as session:
         dataset_resolution = (
-            session.query(Resolutions).filter(Resolutions.name == source_name).first()
+            session.query(Resolutions)
+            .filter(Resolutions.name == resolution_name)
+            .first()
         )
 
         match_query = _build_match_query(

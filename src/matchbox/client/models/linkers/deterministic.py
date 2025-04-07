@@ -1,3 +1,5 @@
+"""A linking methodology based on a deterministic set of conditions."""
+
 from typing import Type
 
 import duckdb
@@ -9,7 +11,7 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
 
 class DeterministicSettings(LinkerSettings):
-    """A data class to enforce the Deterministic linker's settings dictionary shape"""
+    """A data class to enforce the Deterministic linker's settings dictionary shape."""
 
     comparisons: str = Field(
         description="""
@@ -28,11 +30,14 @@ class DeterministicSettings(LinkerSettings):
     @field_validator("comparisons")
     @classmethod
     def validate_comparison(cls, v: str) -> str:
+        """Validate the comparison string."""
         comp_val = comparison(v)
         return comp_val
 
 
 class DeterministicLinker(Linker):
+    """A deterministic linker that links based on a set of boolean conditions."""
+
     settings: DeterministicSettings
 
     _id_dtype_l: Type = None
@@ -42,26 +47,30 @@ class DeterministicLinker(Linker):
     def from_settings(
         cls, left_id: str, right_id: str, comparisons: str
     ) -> "DeterministicLinker":
+        """Create a DeterministicLinker from a settings dictionary."""
         settings = DeterministicSettings(
             left_id=left_id, right_id=right_id, comparisons=comparisons
         )
         return cls(settings=settings)
 
     def prepare(self, left: DataFrame, right: DataFrame) -> None:
+        """Prepare the linker for linking."""
         pass
 
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+        """Link the left and right dataframes."""
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
-        left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
-        right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
+        # Used below but ruff can't detect
+        left_df = left.copy()  # noqa: F841
+        right_df = right.copy()  # noqa: F841
 
         sql = f"""
             select distinct on (list_sort([raw.left_id, raw.right_id]))
                 raw.left_id,
                 raw.right_id,
-                1 as probability
+                1.0 as probability
             from (
                 select
                     l.{self.settings.left_id} as left_id,

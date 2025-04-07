@@ -9,6 +9,7 @@ nav:
   - Use cases: use-cases.md
 - Client:
   - Installation: client/install.md
+  - Explore resolutions: client/explore_resolutions.md
   - Retrieve: client/query-data.md
   - Link and deduplicate: client/link-data.md
   - API: 
@@ -21,6 +22,7 @@ nav:
 - API reference:
   - Client:
     - Overview: api/client/index.md
+    - DAGs: api/client/dags.md
     - Clean: api/client/clean.md
     - Helpers: api/client/helpers.md
     - Models: api/client/models.md
@@ -35,11 +37,18 @@ nav:
     - Overview: api/common/index.md
     - Database: api/common/db.md
     - Exceptions: api/common/exceptions.md
-    - Factories: api/common/factories.md
+    - Factories: 
+      - Overview: api/common/factories/index.md
+      - Entities: api/common/factories/entities.md
+      - Sources: api/common/factories/sources.md
+      - Models: api/common/factories/models.md
     - Graph: api/common/graph.md
     - Hashing: api/common/hash.md
     - Logging: api/common/logging.md
     - Transform: api/common/transform.md
+    - Sources: api/common/sources.md
+    - DTOs: api/common/dtos.md
+    - Arrow: api/common/arrow.md
 - Contributing:
   - Guidelines: contributing.md
 
@@ -81,6 +90,7 @@ markdown_extensions:
   - attr_list
   - admonition
   - md_in_html
+  - smarty
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
@@ -101,8 +111,8 @@ markdown_extensions:
       permalink: true
 
 plugins:
-  - autorefs
   - search
+  - autorefs
   - mkdocstrings:
       default_handler: python
       handlers:
@@ -112,6 +122,8 @@ plugins:
           - https://typing-extensions.readthedocs.io/en/latest/objects.inv
           paths: [src]
           options:
+            extensions:
+              - griffe_inherited_docstrings
             docstring_options:
               ignore_init_summary: true
             preload_modules: [matchbox]
@@ -122,7 +134,9 @@ plugins:
             merge_init_into_class: true
             parameter_headings: true
             separate_signature: true
-            show_bases: false
+            show_docstring_inheritance: true
+            show_bases: true
+            show_inheritance: true
             show_inheritance_diagram: true
             show_root_heading: true
             show_root_full_path: false

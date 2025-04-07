@@ -1,4 +1,6 @@
-from typing import List, Type
+"""A linking methodology that applies different weights to field comparisons."""
+
+from typing import Any, Type
 
 import duckdb
 from pandas import ArrowDtype, DataFrame
@@ -34,6 +36,7 @@ class WeightedComparison(BaseModel):
     @field_validator("comparison")
     @classmethod
     def validate_comparison(cls, v: str) -> str:
+        """Validate the comparison string."""
         comp_val = comparison(v)
         return comp_val
 
@@ -46,15 +49,15 @@ class WeightedDeterministicSettings(LinkerSettings):
         ...     left_id: "hash",
         ...     right_id: "hash",
         ...     weighted_comparisons: [
-        ...         ("l.company_name = r.company_name", .7),
-        ...         ("l.postcode = r.postcode", .7),
-        ...         ("l.company_id = r.company_id", 1)
+        ...         ("l.company_name = r.company_name", 0.7),
+        ...         ("l.postcode = r.postcode", 0.7),
+        ...         ("l.company_id = r.company_id", 1),
         ...     ],
-        ...     threshold: 0.8
+        ...     threshold: 0.8,
         ... }
     """
 
-    weighted_comparisons: List[WeightedComparison] = Field(
+    weighted_comparisons: list[WeightedComparison] = Field(
         description="A list of tuples in the form of a comparison, and a weight."
     )
     threshold: float = Field(
@@ -70,6 +73,8 @@ class WeightedDeterministicSettings(LinkerSettings):
 
 
 class WeightedDeterministicLinker(Linker):
+    """A deterministic linker that applies different weights to field comparisons."""
+
     settings: WeightedDeterministicSettings
 
     _id_dtype_l: Type = None
@@ -77,14 +82,19 @@ class WeightedDeterministicLinker(Linker):
 
     @classmethod
     def from_settings(
-        cls, left_id: str, right_id: str, weighted_comparisons: List, threshold: float
+        cls,
+        left_id: str,
+        right_id: str,
+        weighted_comparisons: list[dict[str, Any]],
+        threshold: float,
     ) -> "WeightedDeterministicLinker":
+        """Create a WeightedDeterministicLinker from a settings dictionary."""
         settings = WeightedDeterministicSettings(
             left_id=left_id,
             right_id=right_id,
             # No change in weighted_comparisons data, just validates the input list
             weighted_comparisons=[
-                WeightedComparison(comparison=comparison[0], weight=comparison[1])
+                WeightedComparison.model_validate(comparison)
                 for comparison in weighted_comparisons
             ],
             threshold=threshold,
@@ -92,14 +102,17 @@ class WeightedDeterministicLinker(Linker):
         return cls(settings=settings)
 
     def prepare(self, left: DataFrame, right: DataFrame) -> None:
+        """Prepare the linker for linking."""
         pass
 
     def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+        """Link the left and right dataframes."""
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
-        left_df = left.copy()  # NoQA: F841. It's used below but ruff can't detect
-        right_df = right.copy()  # NoQA: F841. It's used below but ruff can't detect
+        # Used below but ruff can't detect
+        left_df = left.copy()  # noqa: F841
+        right_df = right.copy()  # noqa: F841
 
         match_subquery = []
         weights = []
@@ -110,7 +123,7 @@ class WeightedDeterministicLinker(Linker):
                     select distinct on (list_sort([raw.left_id, raw.right_id]))
                         raw.left_id,
                         raw.right_id,
-                        1 * {weighted_comparison.weight} as probability
+                        1.0 * {weighted_comparison.weight} as probability
                     from (
                         select
                             l.{self.settings.left_id} as left_id,

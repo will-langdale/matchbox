@@ -1,7 +1,8 @@
+"""A linking methodology leveraging Splink."""
+
 import ast
 import inspect
-import logging
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Type
 
 import pyarrow as pa
 from pandas import DataFrame
@@ -11,18 +12,18 @@ from splink import Linker as SplinkLibLinkerClass
 from splink.internals.linker_components.training import LinkerTraining
 
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
-
-logic_logger = logging.getLogger("mb_logic")
+from matchbox.common.logging import logger
 
 
 class SplinkLinkerFunction(BaseModel):
     """A method of splink.Linker.training used to train the linker."""
 
     function: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
 
     @model_validator(mode="after")
     def validate_function_and_arguments(self) -> "SplinkLinkerFunction":
+        """Ensure the function and arguments are valid."""
         if not hasattr(LinkerTraining, self.function):
             raise ValueError(
                 f"Function {self.function} not found as method of Splink Linker class"
@@ -57,7 +58,7 @@ class SplinkSettings(LinkerSettings):
         """,
     )
 
-    linker_training_functions: List[SplinkLinkerFunction] = Field(
+    linker_training_functions: list[SplinkLinkerFunction] = Field(
         description="""
             A list of dictionaries where keys are the names of methods for
             splink.Linker.training and values are dictionaries encoding the arguments of
@@ -118,7 +119,7 @@ class SplinkSettings(LinkerSettings):
                 ... )         
         """
     )
-    threshold: Optional[float] = Field(
+    threshold: float | None = Field(
         default=None,
         description="""
             The probability above which matches will be kept.
@@ -134,6 +135,7 @@ class SplinkSettings(LinkerSettings):
 
     @model_validator(mode="after")
     def check_ids_match(self) -> "SplinkSettings":
+        """Ensure left_id and right_id match."""
         l_id = self.left_id
         r_id = self.right_id
         if l_id is not None and r_id is not None and l_id != r_id:
@@ -145,17 +147,21 @@ class SplinkSettings(LinkerSettings):
 
     @model_validator(mode="after")
     def check_link_only(self) -> "SplinkSettings":
+        """Ensure link_type is set to "link_only"."""
         if self.linker_settings.link_type != "link_only":
             raise ValueError('link_type must be set to "link_only"')
         return self
 
     @model_validator(mode="after")
     def add_enforced_settings(self) -> "SplinkSettings":
+        """Ensure ID is the only field we link on."""
         self.linker_settings.unique_id_column_name = self.left_id
         return self
 
 
 class SplinkLinker(Linker):
+    """A linker that leverages Bayesian record linkage using Splink."""
+
     settings: SplinkSettings
 
     _linker: SplinkLibLinkerClass = None
@@ -167,10 +173,11 @@ class SplinkLinker(Linker):
         cls,
         left_id: str,
         right_id: str,
-        linker_training_functions: List[Dict[str, Any]],
+        linker_training_functions: list[dict[str, Any]],
         linker_settings: SettingsCreator,
         threshold: float,
     ) -> "SplinkLinker":
+        """Create a SplinkLinker from a settings dictionary."""
         settings = SplinkSettings(
             left_id=left_id,
             right_id=right_id,
@@ -183,6 +190,7 @@ class SplinkLinker(Linker):
         return cls(settings=settings)
 
     def prepare(self, left: DataFrame, right: DataFrame) -> None:
+        """Prepare the linker for linking."""
         if (set(left.columns) != set(right.columns)) or not left.dtypes.equals(
             right.dtypes
         ):
@@ -216,8 +224,9 @@ class SplinkLinker(Linker):
             proc_func(**func.arguments)
 
     def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
+        """Link the left and right dataframes."""
         if left is not None or right is not None:
-            logic_logger.warning(
+            logger.warning(
                 "Left and right data are declared in .prepare() for SplinkLinker. "
                 "These values will be ignored"
             )

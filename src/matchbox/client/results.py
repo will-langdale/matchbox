@@ -1,10 +1,10 @@
-import logging
+"""Objects representing the results of running a model client-side."""
+
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
 import pyarrow as pa
 import pyarrow.compute as pc
-from dotenv import find_dotenv, load_dotenv
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -20,11 +20,6 @@ else:
 T = TypeVar("T", bound=Hashable)
 P = ParamSpec("P")
 R = TypeVar("R")
-
-logic_logger = logging.getLogger("mb_logic")
-
-dotenv_path = find_dotenv(usecwd=True)
-load_dotenv(dotenv_path)
 
 
 def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:
@@ -69,7 +64,7 @@ class Results(BaseModel):
     def check_probabilities(cls, value: pa.Table | DataFrame) -> pa.Table:
         """Verifies the probabilities table contains the expected fields."""
         if isinstance(value, DataFrame):
-            value = pa.Table.from_pandas(value)
+            value = pa.Table.from_pandas(value, preserve_index=False)
 
         if not isinstance(value, pa.Table):
             raise ValueError("Expected a pandas DataFrame or pyarrow Table.")
@@ -81,16 +76,51 @@ class Results(BaseModel):
         if table_fields - optional_fields != expected_fields:
             raise ValueError(f"Expected {expected_fields}. \nFound {table_fields}.")
 
-        # If a process produces floats, we multiply by 100 and coerce to uint8
-        if pa.types.is_floating(value["probability"].type):
+        # Define the schema based on whether 'id' is present
+        has_id = "id" in table_fields
+        schema_fields = (
+            [
+                ("id", pa.uint64()),
+                ("left_id", pa.uint64()),
+                ("right_id", pa.uint64()),
+                ("probability", pa.uint8()),
+            ]
+            if has_id
+            else [
+                ("left_id", pa.uint64()),
+                ("right_id", pa.uint64()),
+                ("probability", pa.uint8()),
+            ]
+        )
+        target_schema = pa.schema(schema_fields)
+
+        # Handle empty tables
+        if value.num_rows == 0:
+            empty_arrays = [pa.array([], type=field.type) for field in target_schema]
+            return pa.Table.from_arrays(
+                empty_arrays, names=[field.name for field in target_schema]
+            )
+
+        # Process probability field if it contains floating-point or decimal values
+        probability_type = value["probability"].type
+        if any(
+            [
+                pa.types.is_floating(probability_type),
+                pa.types.is_decimal(probability_type),
+            ]
+        ):
             probability_uint8 = pc.cast(
-                pc.multiply(value["probability"], 100),
+                pc.round(pc.multiply(value["probability"], 100)),
                 options=pc.CastOptions(
-                    target_type=pa.uint8(), allow_float_truncate=True
+                    target_type=pa.uint8(),
+                    allow_float_truncate=True,
+                    allow_decimal_truncate=True,
                 ),
             )
 
-            if pc.max(probability_uint8).as_py() > 100:
+            # Check max value only if the table is not empty
+            max_prob = pc.max(probability_uint8)
+            if max_prob is not None and max_prob.as_py() > 100:
                 p_max = pc.max(value["probability"]).as_py()
                 p_min = pc.min(value["probability"]).as_py()
                 raise ValueError(f"Probability range misconfigured: [{p_min}, {p_max}]")
@@ -101,27 +131,7 @@ class Results(BaseModel):
                 column=probability_uint8,
             )
 
-        if "id" in table_fields:
-            return value.cast(
-                pa.schema(
-                    [
-                        ("id", pa.uint64()),
-                        ("left_id", pa.uint64()),
-                        ("right_id", pa.uint64()),
-                        ("probability", pa.uint8()),
-                    ]
-                )
-            )
-
-        return value.cast(
-            pa.schema(
-                [
-                    ("left_id", pa.uint64()),
-                    ("right_id", pa.uint64()),
-                    ("probability", pa.uint8()),
-                ]
-            )
-        )
+        return value.cast(target_schema)
 
     def _merge_with_source_data(
         self,

@@ -1,4 +1,7 @@
+"""Data transfer objects for Matchbox API."""
+
 from enum import StrEnum
+from importlib.metadata import version
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -6,7 +9,16 @@ from pydantic import BaseModel, Field
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 
 
+class OKMessage(BaseModel):
+    """Generic HTTP OK response."""
+
+    status: str = Field(default="OK")
+    version: str = Field(default_factory=lambda: version("matchbox-db"))
+
+
 class BackendCountableType(StrEnum):
+    """Enumeration of supported backend countable types."""
+
     DATASETS = "datasets"
     MODELS = "models"
     DATA = "data"
@@ -17,21 +29,28 @@ class BackendCountableType(StrEnum):
 
 
 class ModelResultsType(StrEnum):
+    """Enumeration of supported model results types."""
+
     PROBABILITIES = "probabilities"
     CLUSTERS = "clusters"
 
 
 class BackendRetrievableType(StrEnum):
+    """Enumeration of supported backend retrievable types."""
+
     SOURCE = "source"
     RESOLUTION = "resolution"
 
 
 class BackendUploadType(StrEnum):
+    """Enumeration of supported backend upload types."""
+
     INDEX = "index"
     RESULTS = "results"
 
     @property
     def schema(self):
+        """Get the schema for the upload type."""
         return {
             BackendUploadType.INDEX: SCHEMA_INDEX,
             BackendUploadType.RESULTS: SCHEMA_RESULTS,
@@ -68,8 +87,8 @@ class ModelAncestor(BaseModel):
     """A model's ancestor and its truth value."""
 
     name: str = Field(..., description="Name of the ancestor model")
-    truth: float | None = Field(
-        default=None, description="Truth threshold value", ge=0.0, le=1.0
+    truth: int | None = Field(
+        default=None, description="Truth threshold value", ge=0, le=100, strict=True
     )
 
 
@@ -83,6 +102,7 @@ class ModelOperationStatus(BaseModel):
 
     @classmethod
     def status_409_examples(cls) -> dict:
+        """Examples for 409 status code."""
         return {
             "content": {
                 "application/json": {
@@ -112,6 +132,7 @@ class ModelOperationStatus(BaseModel):
 
     @classmethod
     def status_500_examples(cls) -> dict:
+        """Examples for 500 status code."""
         return {
             "content": {
                 "application/json": {
@@ -133,14 +154,8 @@ class ModelOperationStatus(BaseModel):
         }
 
 
-class HealthCheck(BaseModel):
-    """Response model to validate and return when performing a health check."""
-
-    status: str = "OK"
-
-
 class CountResult(BaseModel):
-    """Response model for count results"""
+    """Response model for count results."""
 
     entities: dict[BackendCountableType, int]
 
@@ -165,12 +180,14 @@ class UploadStatus(BaseModel):
     }
 
     def get_http_code(self, status: bool) -> int:
+        """Get the HTTP status code for the upload status."""
         if self.status == "failed":
             return 400
         return self._status_code_mapping[self.status]
 
     @classmethod
     def status_400_examples(cls) -> dict:
+        """Examples for 400 status code."""
         return {
             "content": {
                 "application/json": {
@@ -204,7 +221,7 @@ class UploadStatus(BaseModel):
 
 
 class NotFoundError(BaseModel):
-    """API error for a 404 status code"""
+    """API error for a 404 status code."""
 
     details: str
     entity: BackendRetrievableType
