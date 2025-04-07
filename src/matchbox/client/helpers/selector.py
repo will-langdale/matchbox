@@ -150,7 +150,7 @@ def _source_query(
 
 def _process_selectors(
     selectors: list[Selector],
-    sub_limits: list[int | None],
+    sub_limits: list[int] | list[None],
     resolution_name: str | None,
     threshold: int | None,
     batch_size: int | None,
@@ -165,18 +165,14 @@ def _process_selectors(
     limit_threshold: int = 1_000
     client_side_filtering: bool = False
 
-    if any(
-        (sub_limit is not None and sub_limit > limit_threshold)
-        for sub_limit in sub_limits
-    ):
+    if not isinstance(sub_limits[0], int):
+        # List of None: no limit specified
+        client_side_filtering = True
+    elif any(sub_limit > limit_threshold for sub_limit in sub_limits):
         logger.warning(
             f"Limit is above {limit_threshold:,} threshold for "
             "filtering warehouse-side. Filtering client-side."
         )
-        client_side_filtering = True
-
-    if any(sub_limit is None for sub_limit in sub_limits):
-        # No limit set for at least one selector
         client_side_filtering = True
 
     # Create iterators for each selector
@@ -233,7 +229,7 @@ def _process_selectors(
 
 def _query_batched(
     selectors: list[Selector],
-    sub_limits: list[int | None],
+    sub_limits: list[int] | list[None],
     resolution_name: str | None,
     threshold: int | None,
     return_type: ReturnTypeStr,
