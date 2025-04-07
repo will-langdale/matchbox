@@ -227,38 +227,6 @@ def _process_selectors(
     return batches_iter
 
 
-def _query_batched(
-    selectors: list[Selector],
-    sub_limits: list[int] | list[None],
-    resolution_name: str | None,
-    threshold: int | None,
-    return_type: ReturnTypeStr,
-    batch_size: int | None,
-    only_indexed: bool,
-) -> Iterator[Generator[PolarsDataFrame, None, None]]:
-    """Helper function that implements batched query processing.
-
-    Returns an iterator yielding batches of results.
-    """
-    batches_iter: Iterator[PolarsDataFrame] = _process_selectors(
-        selectors=selectors,
-        sub_limits=sub_limits,
-        resolution_name=resolution_name,
-        threshold=threshold,
-        batch_size=batch_size,
-        only_indexed=only_indexed,
-    )
-
-    for batch in batches_iter:
-        match return_type:
-            case "pandas":
-                yield batch.to_pandas()
-            case "polars":
-                yield batch
-            case "arrow":
-                yield batch.to_arrow()
-
-
 def query(
     *selectors: list[Selector],
     resolution_name: str | None = None,
@@ -378,6 +346,7 @@ def query(
     if return_batches:
         # Return an iterator of batches
         def generate_batches() -> Iterator[Generator[PolarsDataFrame, None, None]]:
+            """Yield batches of data in the requested format."""
             for batch in res:
                 match return_type:
                     case "pandas":
@@ -387,7 +356,7 @@ def query(
                     case "arrow":
                         yield batch.to_arrow()
 
-        return generate_batches
+        return generate_batches()
 
     else:
         # Process all data and return a single result
@@ -395,31 +364,24 @@ def query(
 
         # Make sure we have some results
         if not tables:
-            empty_result = pl.DataFrame()
-            match return_type:
-                case "pandas":
-                    return empty_result.to_pandas()
-                case "polars":
-                    return empty_result
-                case "arrow":
-                    return empty_result.to_arrow()
-
-        # Combine results based on combine_type
-        if combine_type == "concat":
-            result = pl.concat(tables, how="diagonal")
+            result = pl.DataFrame()
         else:
-            result = tables[0]
-            for table in tables[1:]:
-                result = result.join(table, on="id", how="full", coalesce=True)
+            # Combine results based on combine_type
+            if combine_type == "concat":
+                result = pl.concat(tables, how="diagonal")
+            else:
+                result = tables[0]
+                for table in tables[1:]:
+                    result = result.join(table, on="id", how="full", coalesce=True)
 
-            result = result.select(["id", pl.all().exclude("id")])
+                result = result.select(["id", pl.all().exclude("id")])
 
-            if combine_type == "set_agg":
-                # Aggregate into lists
-                agg_expressions = [
-                    pl.col(col).unique() for col in result.columns if col != "id"
-                ]
-                result = result.group_by("id").agg(agg_expressions)
+                if combine_type == "set_agg":
+                    # Aggregate into lists
+                    agg_expressions = [
+                        pl.col(col).unique() for col in result.columns if col != "id"
+                    ]
+                    result = result.group_by("id").agg(agg_expressions)
 
         # Return in requested format
         match return_type:
