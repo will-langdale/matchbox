@@ -60,7 +60,7 @@ class MatchboxDatabase:
         """Connect to the database."""
         if not self.engine:
             self.engine = create_engine(
-                url=self.connection_string(), logging_name="matchbox.engine"
+                url=self.connection_string(), logging_name="matchbox.engine", echo=False
             )
             self.SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=self.engine

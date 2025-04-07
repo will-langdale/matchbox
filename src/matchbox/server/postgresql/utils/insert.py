@@ -228,7 +228,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
                     batch_size=batch_size,
                 )
                 logger.info(
-                    f"Added {len(cluster_records)} objects to Clusters table",
+                    f"Added {len(cluster_records):,} objects to Clusters table",
                     prefix=log_prefix,
                 )
 
@@ -241,7 +241,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
                     batch_size=batch_size,
                 )
                 logger.info(
-                    f"Added {len(source_pk_records)} primary keys to "
+                    f"Added {len(source_pk_records):,} primary keys to "
                     "ClusterSourcePK table",
                     prefix=log_prefix,
                 )
@@ -585,7 +585,7 @@ def insert_results(
             )
 
             logger.info(
-                f"Successfully inserted {clusters.shape[0]} "
+                f"Successfully inserted {clusters.shape[0]:,} "
                 "objects into Clusters table",
                 prefix=log_prefix,
             )
@@ -598,7 +598,7 @@ def insert_results(
             )
 
             logger.info(
-                f"Successfully inserted {contains.shape[0]} "
+                f"Successfully inserted {contains.shape[0]:,} "
                 "objects into Contains table",
                 prefix=log_prefix,
             )
@@ -612,7 +612,7 @@ def insert_results(
 
             logger.info(
                 f"Successfully inserted "
-                f"{probabilities.shape[0]} objects into Probabilities table",
+                f"{probabilities.shape[0]:,} objects into Probabilities table",
                 prefix=log_prefix,
             )
 
