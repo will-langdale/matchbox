@@ -5,15 +5,14 @@ import contextlib
 import cProfile
 import io
 import pstats
-from datetime import datetime
+import uuid
 from itertools import islice
 from typing import Any, Callable, Iterable
 
-import adbc_driver_postgresql.dbapi
 import pyarrow as pa
 from pg_bulk_ingest import Delete, Upsert, ingest
 from sqlalchemy import Engine, Index, MetaData, Table, inspect, select
-from sqlalchemy.dialects import postgresql, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 from sqlalchemy.sql import Select
@@ -342,10 +341,12 @@ def batch_ingest(
 
 # TODO: replace batch_ingest with large_ingest across the codebase
 # TODO: allow custom subset selection before table copy
-def large_ingest(data: pa.Table, table_class: DeclarativeMeta):
+def large_ingest(
+    data: pa.Table, table_class: DeclarativeMeta, max_chunksize: int | None = None
+):
     """Saves a PyArrow Table to PostgreSQL using ADBC."""
     with (
-        adbc_driver_postgresql.dbapi.connect(MBDB.connection_string) as conn,
+        MBDB.get_adbc_connection() as conn,
         conn.cursor() as cursor,
         MBDB.get_session() as session,
     ):
@@ -354,23 +355,15 @@ def large_ingest(data: pa.Table, table_class: DeclarativeMeta):
 
         try:
             # Create temp table
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            temp_table_name = f"{table.name}_tmp_{timestamp}"
+            temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
             temp_table = Table(
                 temp_table_name, metadata, *[c.copy() for c in table.columns]
             )
             temp_table.create(session.bind)
 
-            # Copy old records to temp table
-            insert_stmt = temp_table.insert().from_select(
-                [c.name for c in table.columns], table.select()
-            )
-            session.execute(insert_stmt)
-            session.commit()
-
-            # Add new records
+            # Add new records to temp table
             batch_reader = pa.RecordBatchReader.from_batches(
-                data.schema, data.to_batches()
+                data.schema, data.to_batches(max_chunksize=max_chunksize)
             )
             cursor.adbc_ingest(
                 table_name=temp_table_name,
@@ -379,22 +372,14 @@ def large_ingest(data: pa.Table, table_class: DeclarativeMeta):
                 db_schema_name=table.schema,
             )
             conn.commit()
-            with session.begin():
-                # TODO: need to deal with inbound foreign keys ahead of table dropping
-                # Swap temp and original table
-                table.drop(session.bind)
-                session.execute(
-                    text(
-                        f"""ALTER TABLE {table.schema}.{temp_table_name}
-                        RENAME TO {table.name};
-                        """
-                    )
-                )
-                # TODO: this won't deal with constraits
-                # Re-apply indices
-                for idx in table.indexes:
-                    # TODO: can we do better? It's expensive to re-create all indices
-                    idx.create(session.bind)
+
+            # Copy new records to original table
+            insert_stmt = table.insert().from_select(
+                [c.name for c in temp_table.columns], temp_table.select()
+            )
+            session.execute(insert_stmt)
+            session.commit()
+
         except Exception as e:
             temp_table.drop(session.bind, checkfirst=True)
             raise e
