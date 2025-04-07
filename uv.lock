@@ -1296,7 +1296,7 @@ wheels = [
 
 [[package]]
 name = "matchbox-db"
-version = "0.2.5.dev100+ga832f38.d20250407"
+version = "0.2.5.dev101+g3395822.d20250407"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
