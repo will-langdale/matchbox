@@ -498,3 +498,78 @@ def test_dag_disconnected(sqlite_warehouse: Engine):
 
     with pytest.raises(ValueError, match="disconnected"):
         dag.prepare()
+
+
+def test_dag_draw(sqlite_warehouse: Engine):
+    """Test that the draw method produces a correct string representation of the DAG."""
+    # Set up a simple DAG
+    dag = DAG()
+
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
+
+    i_foo, i_bar, i_baz = dag.add_sources(foo, bar, baz)
+
+    d_foo = DedupeStep(
+        name="d_foo",
+        description="",
+        left=StepInput(prev_node=i_foo, select={foo: []}),
+        model_class=NaiveDeduper,
+        settings={},
+        truth=1,
+    )
+
+    foo_bar = LinkStep(
+        left=StepInput(prev_node=d_foo, select={foo: []}),
+        right=StepInput(prev_node=i_bar, select={bar: []}),
+        name="foo_bar",
+        description="",
+        model_class=DeterministicLinker,
+        settings={},
+        truth=1,
+    )
+
+    foo_bar_baz = LinkStep(
+        left=StepInput(prev_node=foo_bar, select={foo: [], bar: []}),
+        right=StepInput(prev_node=i_baz, select={baz: []}),
+        name="foo_bar_baz",
+        description="",
+        model_class=DeterministicLinker,
+        settings={},
+        truth=1,
+    )
+
+    dag.add_steps(d_foo, foo_bar, foo_bar_baz)
+
+    # Prepare the DAG and draw it
+    dag.prepare()
+    tree_str = dag.draw()
+
+    # Verify the structure
+    lines = tree_str.strip().split("\n")
+
+    # The root node should be first
+    assert lines[0] == "foo_bar_baz"
+
+    # Check that all nodes are present
+    node_names = [
+        str(foo.address),
+        str(bar.address),
+        str(baz.address),
+        d_foo.name,
+        foo_bar.name,
+        foo_bar_baz.name,
+    ]
+
+    for node in node_names:
+        # Either the node name is at the start of a line or after the tree characters
+        node_present = any(line.endswith(node) for line in lines)
+        assert node_present, f"Node {node} not found in the tree representation"
+
+    # Check that tree has correct formatting with tree characters
+    tree_chars = ["└──", "├──", "│"]
+    has_tree_chars = any(char in tree_str for char in tree_chars)
+    assert has_tree_chars, (
+        "Tree representation doesn't use expected formatting characters"
+    )

@@ -217,6 +217,31 @@ class DAG:
             if step_input.name not in self.nodes:
                 raise ValueError(f"Dependency {step_input.name} not added to DAG")
 
+    def _build_inverse_graph(self) -> tuple[dict[str, list[str]], str]:
+        """Build inverse graph and find the apex node.
+
+        Returns:
+            tuple: (inverse_graph, apex_node)
+
+                * inverse_graph: Dictionary mapping nodes to their parent nodes
+                * apex_node: The root node of the DAG
+
+        Raises:
+            ValueError: If the DAG has multiple disconnected components
+        """
+        inverse_graph = defaultdict(list)
+        for node in self.graph:
+            for neighbor in self.graph[node]:
+                inverse_graph[neighbor].append(node)
+
+        apex_nodes = {node for node in self.graph if node not in inverse_graph}
+        if len(apex_nodes) > 1:
+            raise ValueError("Some models or sources are disconnected")
+        elif not apex_nodes:
+            raise ValueError("No root node found, DAG might contain cycles")
+        else:
+            return inverse_graph, apex_nodes.pop()
+
     def add_sources(
         self, *sources: Source, batch_size: int | None = None
     ) -> tuple[IndexStep]:
@@ -248,15 +273,7 @@ class DAG:
         """Determine order of execution of steps."""
         self.sequence = []
 
-        inverse_graph = defaultdict(list)
-        for node in self.graph:
-            for neighbor in self.graph[node]:
-                inverse_graph[neighbor].append(node)
-        apex = {node for node in self.graph if node not in inverse_graph}
-        if len(apex) > 1:
-            raise ValueError("Some models or sources are disconnected")
-        else:
-            apex = apex.pop()
+        _, apex = self._build_inverse_graph()
 
         def depth_first(node: str, sequence: list):
             sequence.append(node)
@@ -267,6 +284,36 @@ class DAG:
         inverse_sequence = []
         depth_first(apex, inverse_sequence)
         self.sequence = list(reversed(inverse_sequence))
+
+    def draw(self) -> str:
+        """Create a string representation of the DAG as a tree structure."""
+        _, root_name = self._build_inverse_graph()
+        result = [root_name]
+        visited = set([root_name])
+
+        def format_children(node: str, prefix=""):
+            """Recursively format the children of a node."""
+            children = []
+            # Get all outgoing edges from this node
+            for target in self.graph.get(node, []):
+                if target not in visited:
+                    children.append(target)
+                    visited.add(target)
+
+            # Format each child
+            for i, child in enumerate(children):
+                is_last = i == len(children) - 1
+
+                if is_last:
+                    result.append(f"{prefix}└── {child}")
+                    format_children(child, prefix + "    ")
+                else:
+                    result.append(f"{prefix}├── {child}")
+                    format_children(child, prefix + "│   ")
+
+        format_children(root_name)
+
+        return "\n".join(result)
 
     def run(self, start: str | None = None):
         """Run entire DAG."""
