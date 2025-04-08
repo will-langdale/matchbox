@@ -316,19 +316,24 @@ class DAG:
         _, root_name = self._build_inverse_graph()
         skipped = skipped or []
 
+        def _get_node_status(node_name: str) -> str:
+            """Determine the status indicator for a node."""
+            if node_name in skipped:
+                return "⏭️"
+            elif doing and node_name == doing:
+                return "🔄"
+            elif (
+                (node := self.nodes.get(node_name))
+                and node.last_run
+                and node.last_run > start_time
+            ):
+                return "✅"
+            else:
+                return "⏸️"
+
         # Add status indicator if start_time is provided
         if start_time is not None:
-            node = self.nodes.get(root_name)
-
-            if root_name in skipped:
-                status = "⏭️"
-            elif doing and root_name == doing:
-                status = "🔄"
-            elif node and node.last_run and node.last_run > start_time:
-                status = "✅"
-            else:
-                status = "⏸️"
-
+            status = _get_node_status(root_name)
             result = [f"{status} {root_name}"]
         else:
             result = [root_name]
@@ -350,21 +355,7 @@ class DAG:
 
                 # Add status indicator if start_time is provided
                 if start_time is not None:
-                    child_node = self.nodes.get(child)
-
-                    if child in skipped:
-                        status = "⏭️"
-                    elif doing and child == doing:
-                        status = "🔄"
-                    elif (
-                        child_node
-                        and child_node.last_run
-                        and child_node.last_run > start_time
-                    ):
-                        status = "✅"
-                    else:
-                        status = "⏸️"
-
+                    status = _get_node_status(child)
                     child_display = f"{status} {child}"
                 else:
                     child_display = child
