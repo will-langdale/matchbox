@@ -13,6 +13,7 @@ from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 
 DAGNode = Union["ModelStep", "IndexStep"]
@@ -221,8 +222,8 @@ class DAG:
 
             for step_input in step.inputs:
                 self.graph.add_edge(
-                    self.nodes[step_input.name],
                     self.nodes[step.name],
+                    self.nodes[step_input.name],
                     None,
                 )
 
@@ -232,8 +233,46 @@ class DAG:
         if len(topo_indices) < len(self.nodes):
             raise ValueError("Some models or sources are disconnected")
 
+        logger.info("Running DAG: \n" + self.draw())
+
         node_indices = self.graph.node_indices()
 
         for i in topo_indices:
             node = self.graph[node_indices[i]]
             node.run()
+
+    def draw(self) -> str:
+        """Create a string representation of a rustworkx DAG as a tree structure."""
+        topo_indices = rx.topological_sort(self.graph)
+        if len(topo_indices) < len(self.nodes):
+            raise ValueError("Some models or sources are disconnected")
+
+        root_node = topo_indices[0]
+        root_name = self.graph.get_node_data(root_node).name
+        result = [root_name]
+
+        visited = set([root_node])
+
+        def format_children(node: int, prefix=""):
+            """Recursively format the children of a node."""
+            children = []
+            for edge in self.graph.out_edges(node):
+                _, target, _ = edge
+                if target not in visited:
+                    children.append(target)
+                    visited.add(target)
+
+            for i, child in enumerate(children):
+                is_last = i == len(children) - 1
+                child_name = self.graph.get_node_data(child).name
+
+                if is_last:
+                    result.append(f"{prefix}└── {child_name}")
+                    format_children(child, prefix + "    ")
+                else:
+                    result.append(f"{prefix}├── {child_name}")
+                    format_children(child, prefix + "│   ")
+
+        format_children(root_node)
+
+        return "\n".join(result)
