@@ -300,51 +300,67 @@ def test_large_ingest(
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
     # Initialise DummyTable to which we'll ingest
+    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
+        __tablename__ = "dummytable"
+        foo = Column(BIGINT, primary_key=True)
+        bar = Column(TEXT, nullable=False)
+        baz = Column(TEXT, nullable=False)
+
+        __table_args__ = (UniqueConstraint("bar", name="dummy_unique_bar"),)
+
+    metadata.create_all(engine, tables=[DummyTable.__table__])
+
+    # Initialise with one original row
     with MBDB.get_session() as session:
-
-        class DummyTable(CountMixin, declarative_base(metadata=metadata)):
-            __tablename__ = "dummytable"
-            foo = Column(BIGINT, primary_key=True)
-            bar = Column(TEXT, nullable=False)
-
-            __table_args__ = (UniqueConstraint("bar", name="dummy_unique_bar"),)
-
-        metadata.create_all(engine, tables=[DummyTable.__table__])
-
         metadata.reflect(engine)
         original_tables = len(metadata.tables)
 
-        row1 = DummyTable(foo=1, bar="original bar")
+        row1 = DummyTable(foo=1, bar="original bar", baz="original baz")
         session.add(row1)
         session.commit()
 
     # Ingest valid data
     large_ingest(
         data=pa.Table.from_pylist(
-            [{"foo": new_id, "bar": "new bar"}],
+            [{"foo": new_id, "bar": "new bar", "baz": "new baz"}],
         ),
         table_class=DummyTable,
         update_columns=update_columns,
         max_chunksize=100,
     )
 
-    # Whether it was appended or upserted, the new value is in the table
+    # New number of rows as expected
     assert DummyTable.count() == new_expected_rows
-    with MBDB.get_session() as session:
-        bar_value = (
-            session.query(DummyTable.bar).filter(DummyTable.foo == new_id).scalar()
-        )
-    assert bar_value == "new bar"
 
-    # No lingering temp tables (clearing is needed for dropped tables)
-    metadata.clear()
+    # If upserting, only specified columns are updated
+    if update_columns:
+
+        def new_col_value(col_name):
+            with MBDB.get_session() as session:
+                return (
+                    session.query(getattr(DummyTable, col_name))
+                    .filter(DummyTable.foo == new_id)
+                    .scalar()
+                )
+
+        for col_name in update_columns:
+            assert "new" in new_col_value(col_name)
+
+        pk = set(DummyTable.__table__.primary_key.columns.keys())
+        non_pk = set(DummyTable.__table__.columns.keys()) - pk
+        remaining = non_pk - set(update_columns)
+        for col_name in remaining:
+            assert "original" in new_col_value(col_name)
+
+    # No lingering temp tables
+    metadata.clear()  # metadata does not automatically notice table drops
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
 
     # Successful ingestion preserved constraints
     with pytest.raises(integrity_error_class):
         large_ingest(
-            pa.Table.from_pylist([{"foo": 20, "bar": "new bar"}]),
+            pa.Table.from_pylist([{"foo": 20, "bar": "new bar", "baz": "new baz"}]),
             DummyTable,
             update_columns=update_columns,
         )
@@ -364,15 +380,12 @@ def test_large_ingest_autoincrement(
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
     # Initialise DummyTable to which we'll ingest
-    with MBDB.get_session() as session:
+    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
+        __tablename__ = "dummytable"
+        foo = Column(BIGINT, primary_key=True)
+        bar = Column(TEXT, nullable=False)
 
-        class DummyTable(CountMixin, declarative_base(metadata=metadata)):
-            __tablename__ = "dummytable"
-            foo = Column(BIGINT, primary_key=True)
-            bar = Column(TEXT, nullable=False)
-
-        metadata.create_all(engine, tables=[DummyTable.__table__])
-        session.commit()
+    metadata.create_all(engine, tables=[DummyTable.__table__])
 
     # Ingest without ID when the table is empty
     large_ingest(data=pa.Table.from_pylist([{"bar": "bar1"}]), table_class=DummyTable)
