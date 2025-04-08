@@ -15,8 +15,34 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
 from matchbox.common.sources import Source
 
-DAGNode = Union["ModelStep", Source]
-"""Type of node in the DAG. Either a step or a source."""
+DAGNode = Union["IndexStep", "ModelStep"]
+"""Type of node in the DAG. Either an indexing or model step."""
+
+
+class IndexStep(BaseModel):
+    """Index step."""
+
+    source: Source
+    batch_size: int | None = None
+
+    @property
+    def name(self) -> str:
+        """Resolution name for this source."""
+        return str(self.source.address)
+
+    @property
+    def sources(self) -> set[str]:
+        """Return all sources to this step."""
+        return {self.name}
+
+    @property
+    def inputs(self) -> list["StepInput"]:
+        """Return all inputs to this step."""
+        return []
+
+    def run(self):
+        """Run indexing step."""
+        _handler.index(source=self.source, batch_size=self.batch_size)
 
 
 class StepInput(BaseModel):
@@ -39,10 +65,13 @@ class StepInput(BaseModel):
     @model_validator(mode="after")
     def validate_all_input(self) -> "StepInput":
         """Verify select statement is valid given previous node."""
-        if isinstance(self.prev_node, Source):
-            if len(self.select) > 1 or list(self.select.keys())[0] != self.prev_node:
+        if isinstance(self.prev_node, IndexStep):
+            if (
+                len(self.select) > 1
+                or list(self.select.keys())[0] != self.prev_node.source
+            ):
                 raise ValueError(
-                    f"Can only select from source {self.prev_node.address}"
+                    f"Can only select from source {self.prev_node.source.address}"
                 )
         else:
             for source in self.select:
@@ -177,31 +206,33 @@ class DAG:
         self.graph: dict[str, list[str]] = {}
         self.sequence: list[str] = []
 
-        self._index_batch_sizes: dict[str, int | None] = {}
-
-    def _validate_node(self, name: str):
+    def _validate_node(self, name: str) -> None:
+        """Validate that a node name is unique in the DAG."""
         if name in self.nodes:
             raise ValueError(f"Name '{name}' is already taken in the DAG")
 
-    def _validate_inputs(self, step: ModelStep):
+    def _validate_inputs(self, step: ModelStep) -> None:
+        """Validate that all inputs to a step are already in the DAG."""
         for step_input in step.inputs:
             if step_input.name not in self.nodes:
                 raise ValueError(f"Dependency {step_input.name} not added to DAG")
 
-    def add_sources(self, *sources: Source, batch_size: int | None = None):
+    def add_sources(
+        self, *sources: Source, batch_size: int | None = None
+    ) -> tuple[IndexStep]:
         """Add sources to DAG.
 
         Args:
             sources: All sources to add.
             batch_size: Batch size for indexing.
         """
-        for source in sources:
-            self._validate_node(str(source.address))
-            self.nodes[str(source.address)] = source
-            self.graph[str(source.address)] = []
-            self._index_batch_sizes[str(source.address)] = batch_size
+        index_steps = tuple(
+            IndexStep(source=source, batch_size=batch_size) for source in sources
+        )
+        self.add_steps(*index_steps)
+        return index_steps
 
-    def add_steps(self, *steps: ModelStep):
+    def add_steps(self, *steps: ModelStep) -> None:
         """Add dedupers and linkers to DAG, and register sources available to steps.
 
         Args:
@@ -213,7 +244,7 @@ class DAG:
             self.nodes[step.name] = step
             self.graph[step.name] = [step_input.name for step_input in step.inputs]
 
-    def prepare(self):
+    def prepare(self) -> None:
         """Determine order of execution of steps."""
         self.sequence = []
 
@@ -250,9 +281,4 @@ class DAG:
 
         for step_name in self.sequence[start_index:]:
             node = self.nodes[step_name]
-            if isinstance(node, Source):
-                _handler.index(
-                    source=node, batch_size=self._index_batch_sizes[step_name]
-                )
-            else:
-                node.run()
+            node.run()
