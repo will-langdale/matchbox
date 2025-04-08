@@ -4,7 +4,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from sqlalchemy import BIGINT, TEXT, Column, Engine, UniqueConstraint, text
+from sqlalchemy import BIGINT, TEXT, Column, Engine, MetaData, UniqueConstraint, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from matchbox.common.factories.entities import SourceEntity
@@ -277,7 +278,10 @@ def test_benchmark_generate_tables_parameterised(
 
 @pytest.mark.docker
 def test_large_ingest(matchbox_postgres: MatchboxPostgres):
-    with Session(MBDB.get_engine()) as session:
+    engine = MBDB.get_engine()
+    metadata: MetaData = MBDB.MatchboxBase.metadata
+
+    with Session(engine) as session:
         # Dummy table to ingest to
         class DummyTable(CountMixin, MBDB.MatchboxBase):
             __tablename__ = "dummytable"
@@ -286,27 +290,39 @@ def test_large_ingest(matchbox_postgres: MatchboxPostgres):
 
             __table_args__ = (UniqueConstraint("bar", name="dummy_unique_bar"),)
 
-        MBDB.MatchboxBase.metadata.create_all(
-            MBDB.get_engine(), tables=[DummyTable.__table__]
-        )
+        metadata.create_all(engine, tables=[DummyTable.__table__])
+
+        original_tables = len(metadata.tables)
 
         row1 = DummyTable(foo=1, bar="First dummy row")
         session.add(row1)
         session.commit()
 
-    # Dummy data to ingest
-    schema = pa.schema([("foo", pa.int64()), ("bar", pa.string())])
-    data = pa.Table.from_pylist(
-        [
-            {"foo": 10, "bar": "abc"},
-            {"foo": 11, "bar": "def"},
-        ],
-        schema=schema,
+    large_ingest(
+        pa.Table.from_pylist(
+            [
+                {"foo": 10, "bar": "abc"},
+                {"foo": 11, "bar": "def"},
+            ],
+        ),
+        DummyTable,
     )
 
-    large_ingest(data, DummyTable)
-    # TODO: check that constraints and indices are still there
-    # TODO: what happens if we ingest data that doesn't satisfy constraints?
-    # TODO: check temp table is deleted even when exceptions ae raised
-
     assert DummyTable.count() == 3
+    # Tables being dropped is not reflected unless we clear
+    metadata.clear()
+    metadata.reflect(engine)
+    assert len(metadata.tables) == original_tables
+
+    # Previous ingestion preserved constraints
+    with pytest.raises(IntegrityError):
+        large_ingest(
+            pa.Table.from_pylist([{"foo": 10, "bar": "abc"}]),
+            DummyTable,
+        )
+
+    # Nothing has changed
+    assert DummyTable.count() == 3
+    metadata.clear()
+    metadata.reflect(engine)
+    assert len(metadata.tables) == original_tables

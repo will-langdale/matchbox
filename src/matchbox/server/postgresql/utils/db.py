@@ -380,6 +380,6 @@ def large_ingest(
             session.execute(insert_stmt)
             session.commit()
 
-        except Exception as e:
+        finally:
+            # Drop temp table
             temp_table.drop(session.bind, checkfirst=True)
-            raise e
