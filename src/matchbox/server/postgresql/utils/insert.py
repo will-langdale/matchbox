@@ -605,7 +605,6 @@ def insert_results(
             data=probabilities,
             table_class=Probabilities,
             max_chunksize=batch_size,
-            update_columns=["probability"],
         )
 
         logger.info(

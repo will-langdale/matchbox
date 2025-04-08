@@ -7,6 +7,7 @@ import pytest
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from sqlalchemy import BIGINT, TEXT, Column, Engine, MetaData, UniqueConstraint, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import declarative_base
 
 from matchbox.common.factories.entities import SourceEntity
 from matchbox.server import MatchboxDBAdapter
@@ -294,13 +295,14 @@ def test_large_ingest(
     new_expected_rows: int,
     integrity_error_class: Exception,
 ):
+    """Test successful and unsuccessful large ingestions with all columns."""
     engine = MBDB.get_engine()
-    metadata: MetaData = MBDB.MatchboxBase.metadata
+    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
     # Initialise DummyTable to which we'll ingest
     with MBDB.get_session() as session:
 
-        class DummyTable(CountMixin, MBDB.MatchboxBase):
+        class DummyTable(CountMixin, declarative_base(metadata=metadata)):
             __tablename__ = "dummytable"
             foo = Column(BIGINT, primary_key=True)
             bar = Column(TEXT, nullable=False)
@@ -309,6 +311,7 @@ def test_large_ingest(
 
         metadata.create_all(engine, tables=[DummyTable.__table__])
 
+        metadata.reflect(engine)
         original_tables = len(metadata.tables)
 
         row1 = DummyTable(foo=1, bar="original bar")
@@ -350,6 +353,3 @@ def test_large_ingest(
     metadata.clear()
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
-
-    # Prevent the matchbox_postgres fixture creating a DummyTable when it's reset
-    metadata.remove(DummyTable.__table__)
