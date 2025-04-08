@@ -289,7 +289,7 @@ def test_benchmark_generate_tables_parameterised(
     ids=["direct_copy", "upsert"],
 )
 def test_large_ingest(
-    matchbox_postgres: MatchboxPostgres,
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
     update_columns: list[str] | None,
     new_id: int,
     new_expected_rows: int,
@@ -325,6 +325,7 @@ def test_large_ingest(
         ),
         table_class=DummyTable,
         update_columns=update_columns,
+        max_chunksize=100,
     )
 
     # Whether it was appended or upserted, the new value is in the table
@@ -353,3 +354,38 @@ def test_large_ingest(
     metadata.clear()
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
+
+
+def test_large_ingest_autoincrement(
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+):
+    """Test large ingestions with autoincrement IDs."""
+    engine = MBDB.get_engine()
+    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
+
+    # Initialise DummyTable to which we'll ingest
+    with MBDB.get_session() as session:
+
+        class DummyTable(CountMixin, declarative_base(metadata=metadata)):
+            __tablename__ = "dummytable"
+            foo = Column(BIGINT, primary_key=True)
+            bar = Column(TEXT, nullable=False)
+
+        metadata.create_all(engine, tables=[DummyTable.__table__])
+        session.commit()
+
+    # Ingest without ID when the table is empty
+    large_ingest(data=pa.Table.from_pylist([{"bar": "bar1"}]), table_class=DummyTable)
+    # And when it has one row
+    large_ingest(data=pa.Table.from_pylist([{"bar": "bar2"}]), table_class=DummyTable)
+
+    # New row ingested correctly
+    assert DummyTable.count() == 2
+    with MBDB.get_session() as session:
+        first_id = (
+            session.query(DummyTable.bar).filter(DummyTable.bar == "bar1").scalar()
+        )
+        second_id = (
+            session.query(DummyTable.bar).filter(DummyTable.bar == "bar2").scalar()
+        )
+    assert first_id < second_id
