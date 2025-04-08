@@ -4,9 +4,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from sqlalchemy import BIGINT, TEXT, Column, Engine, MetaData, UniqueConstraint, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 from matchbox.common.factories.entities import SourceEntity
 from matchbox.server import MatchboxDBAdapter
@@ -277,12 +277,29 @@ def test_benchmark_generate_tables_parameterised(
 
 
 @pytest.mark.docker
-def test_large_ingest(matchbox_postgres: MatchboxPostgres):
+@pytest.mark.parametrize(
+    ("update_columns", "new_id", "new_expected_rows", "integrity_error_class"),
+    (
+        # When not upserting, ADBC's copy will raise
+        [None, 2, 2, ADBCProgrammingError],
+        # When upserting, SQLAlchemy's insert will raise
+        [["bar"], 1, 1, IntegrityError],
+    ),
+    ids=["direct_copy", "upsert"],
+)
+def test_large_ingest(
+    matchbox_postgres: MatchboxPostgres,
+    update_columns: list[str] | None,
+    new_id: int,
+    new_expected_rows: int,
+    integrity_error_class: Exception,
+):
     engine = MBDB.get_engine()
     metadata: MetaData = MBDB.MatchboxBase.metadata
 
-    with Session(engine) as session:
-        # Dummy table to ingest to
+    # Initialise DummyTable to which we'll ingest
+    with MBDB.get_session() as session:
+
         class DummyTable(CountMixin, MBDB.MatchboxBase):
             __tablename__ = "dummytable"
             foo = Column(BIGINT, primary_key=True)
@@ -294,35 +311,45 @@ def test_large_ingest(matchbox_postgres: MatchboxPostgres):
 
         original_tables = len(metadata.tables)
 
-        row1 = DummyTable(foo=1, bar="First dummy row")
+        row1 = DummyTable(foo=1, bar="original bar")
         session.add(row1)
         session.commit()
 
+    # Ingest valid data
     large_ingest(
-        pa.Table.from_pylist(
-            [
-                {"foo": 10, "bar": "abc"},
-                {"foo": 11, "bar": "def"},
-            ],
+        data=pa.Table.from_pylist(
+            [{"foo": new_id, "bar": "new bar"}],
         ),
-        DummyTable,
+        table_class=DummyTable,
+        update_columns=update_columns,
     )
 
-    assert DummyTable.count() == 3
-    # Tables being dropped is not reflected unless we clear
+    # Whether it was appended or upserted, the new value is in the table
+    assert DummyTable.count() == new_expected_rows
+    with MBDB.get_session() as session:
+        bar_value = (
+            session.query(DummyTable.bar).filter(DummyTable.foo == new_id).scalar()
+        )
+    assert bar_value == "new bar"
+
+    # No lingering temp tables (clearing is needed for dropped tables)
     metadata.clear()
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
 
-    # Previous ingestion preserved constraints
-    with pytest.raises(IntegrityError):
+    # Successful ingestion preserved constraints
+    with pytest.raises(integrity_error_class):
         large_ingest(
-            pa.Table.from_pylist([{"foo": 10, "bar": "abc"}]),
+            pa.Table.from_pylist([{"foo": 20, "bar": "new bar"}]),
             DummyTable,
+            update_columns=update_columns,
         )
 
-    # Nothing has changed
-    assert DummyTable.count() == 3
+    # Failed ingestion has no effect
+    assert DummyTable.count() == new_expected_rows
     metadata.clear()
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
+
+    # Prevent the matchbox_postgres fixture creating a DummyTable when it's reset
+    metadata.remove(DummyTable.__table__)

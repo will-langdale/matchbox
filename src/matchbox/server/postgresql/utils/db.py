@@ -10,9 +10,12 @@ from itertools import islice
 from typing import Any, Callable, Iterable
 
 import pyarrow as pa
+from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pg_bulk_ingest import Delete, Upsert, ingest
+from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine, Index, MetaData, Table, inspect, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 from sqlalchemy.sql import Select
@@ -341,45 +344,82 @@ def batch_ingest(
 
 # TODO: replace batch_ingest with large_ingest across the codebase
 # TODO: allow custom subset selection before table copy
-def large_ingest(
-    data: pa.Table, table_class: DeclarativeMeta, max_chunksize: int | None = None
+
+
+def _copy_to_table(
+    table_name: str,
+    schema_name: str,
+    data: ArrowTable,
+    connection: adbc_dbapi.Connection,
+    max_chunksize: int | None = None,
 ):
-    """Saves a PyArrow Table to PostgreSQL using ADBC."""
+    batch_reader = pa.RecordBatchReader.from_batches(
+        data.schema, data.to_batches(max_chunksize=max_chunksize)
+    )
+
+    with connection.cursor() as cursor:
+        cursor.adbc_ingest(
+            table_name=table_name,
+            data=batch_reader,
+            mode="append",
+            db_schema_name=schema_name,
+        )
+        connection.commit()
+
+
+def large_ingest(
+    data: pa.Table,
+    table_class: DeclarativeMeta,
+    max_chunksize: int | None = None,
+    update_columns: list[str] | None = None,
+):
+    """Append a PyArrow dataframe to a PostgreSQL table using ADBC."""
     with (
         MBDB.get_adbc_connection() as conn,
-        conn.cursor() as cursor,
         MBDB.get_session() as session,
     ):
         table: Table = table_class.__table__
         metadata = table.metadata
 
-        try:
-            # Create temp table
-            temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
-            temp_table = Table(
-                temp_table_name, metadata, *[c.copy() for c in table.columns]
+        if not update_columns:
+            _copy_to_table(
+                table_name=table.name,
+                schema_name=table.schema,
+                data=data,
+                connection=conn,
+                max_chunksize=max_chunksize,
             )
-            temp_table.create(session.bind)
+        # Upserting requires using a temp table
+        else:
+            try:
+                # Create temp table
+                temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
+                temp_table = Table(
+                    temp_table_name, metadata, *[c.copy() for c in table.columns]
+                )
+                temp_table.create(session.bind)
 
-            # Add new records to temp table
-            batch_reader = pa.RecordBatchReader.from_batches(
-                data.schema, data.to_batches(max_chunksize=max_chunksize)
-            )
-            cursor.adbc_ingest(
-                table_name=temp_table_name,
-                data=batch_reader,
-                mode="append",
-                db_schema_name=table.schema,
-            )
-            conn.commit()
+                # Add new records to temp table
+                _copy_to_table(
+                    table_name=temp_table_name,
+                    schema_name=table.schema,
+                    data=data,
+                    connection=conn,
+                    max_chunksize=max_chunksize,
+                )
 
-            # Copy new records to original table
-            insert_stmt = table.insert().from_select(
-                [c.name for c in temp_table.columns], temp_table.select()
-            )
-            session.execute(insert_stmt)
-            session.commit()
+                # Copy new records to original table
+                insert_stmt = insert(table).from_select(
+                    [c.name for c in temp_table.columns], temp_table.select()
+                )
+                upsert_stmt = insert_stmt.on_conflict_do_update(
+                    index_elements=[c.name for c in table.primary_key.columns],
+                    set_={c: getattr(insert_stmt.excluded, c) for c in update_columns},
+                )
 
-        finally:
-            # Drop temp table
-            temp_table.drop(session.bind, checkfirst=True)
+                session.execute(upsert_stmt)
+                session.commit()
+
+            finally:
+                # Drop temp table
+                temp_table.drop(session.bind, checkfirst=True)
