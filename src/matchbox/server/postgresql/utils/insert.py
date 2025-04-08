@@ -1,5 +1,6 @@
 """Utilities for inserting data into the PostgreSQL backend."""
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
@@ -491,6 +492,9 @@ def _results_to_insert_tables(
         }
     )
 
+    # Probabilities will have duplicates because hierarchy tracks all parent-child edges
+    probabilities = pl.from_arrow(probabilities).unique().to_arrow()
+
     # Create Clusters Arrow table to insert, containing only new clusters
     new_hashes = pc.filter(hm.lookup["hash"], hm.lookup["new"])
     clusters = pa.table(
@@ -597,10 +601,7 @@ def insert_results(
             f"Successfully inserted {contains.shape[0]:,} objects into Contains table",
             prefix=log_prefix,
         )
-        probabilities = probabilities.to_pandas().drop_duplicates()
-        probabilities = pa.Table.from_pandas(probabilities).select(
-            ["resolution", "cluster", "probability"]
-        )
+
         large_ingest(
             data=probabilities,
             table_class=Probabilities,
