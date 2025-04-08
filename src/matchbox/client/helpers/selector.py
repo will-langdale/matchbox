@@ -165,8 +165,7 @@ def _process_selectors(
     limit_threshold: int = 1_000
     client_side_filtering: bool = False
 
-    if not isinstance(sub_limits[0], int):
-        # List of None: no limit specified
+    if sub_limits[0] is None:
         client_side_filtering = True
     elif any(sub_limit > limit_threshold for sub_limit in sub_limits):
         logger.warning(
