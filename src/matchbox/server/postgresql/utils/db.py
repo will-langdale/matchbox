@@ -6,13 +6,11 @@ import cProfile
 import io
 import pstats
 import uuid
-from itertools import islice
-from typing import Any, Callable, Iterable
 
 import pyarrow as pa
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Engine, Index, MetaData, Table, inspect, select
+from sqlalchemy import Engine, Table, inspect, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import DeclarativeMeta, Session
@@ -249,69 +247,6 @@ def compile_sql(stmt: Select) -> str:
     )
 
 
-def batched(iterable: Iterable, n: int) -> Iterable:
-    """Batch data into lists of length n. The last batch may be shorter."""
-    it = iter(iterable)
-    while True:
-        batch = list(islice(it, n))
-        if not batch:
-            return
-        yield batch
-
-
-def data_to_batch(
-    records: list[tuple], table: Table, batch_size: int
-) -> Callable[[str], tuple[Any]]:
-    """Constructs a batches function for any dataframe and table."""
-
-    def _batches(
-        high_watermark,  # noqa: ARG001
-    ) -> Iterable[tuple[None, None, Iterable[tuple[Table, tuple]]]]:
-        # high_watermark required for pg_bulk_ingest
-        for batch in batched(records, batch_size):
-            yield None, None, ((table, t) for t in batch)
-
-    return _batches
-
-
-def isolate_table(table: DeclarativeMeta) -> tuple[MetaData, Table]:
-    """Creates an isolated copy of a SQLAlchemy table.
-
-    This is used to prevent pg_bulk_ingest from attempting to drop unrelated tables
-    in the same schema. The function creates a new Table instance with:
-
-    * A fresh MetaData instance
-    * Copied columns
-    * Recreated indices properly bound to the new table
-
-    Args:
-        table: The DeclarativeMeta class whose table should be isolated
-
-    Returns:
-        A tuple of:
-
-            * The isolated SQLAlchemy MetaData
-            * A new SQLAlchemy Table instance with all columns and indices
-    """
-    isolated_metadata = MetaData(schema=table.__table__.schema)
-
-    isolated_table = Table(
-        table.__table__.name,
-        isolated_metadata,
-        *[c._copy() for c in table.__table__.columns],
-        schema=table.__table__.schema,
-    )
-
-    for idx in table.__table__.indexes:
-        Index(
-            idx.name,
-            *[isolated_table.c[col.name] for col in idx.columns],
-            **{k: v for k, v in idx.kwargs.items()},
-        )
-
-    return isolated_metadata, isolated_table
-
-
 def _copy_to_table(
     table_name: str,
     schema_name: str,
@@ -339,7 +274,15 @@ def large_ingest(
     max_chunksize: int | None = None,
     update_columns: list[str] | None = None,
 ):
-    """Append a PyArrow dataframe to a PostgreSQL table using ADBC."""
+    """Append a PyArrow table to a PostgreSQL table using ADBC.
+
+    Args:
+        data: A PyArrow table to write.
+        table_class: The SQLAlchemy ORM class for the table to write to.
+        max_chunksize: Size of data chunks to be read and copied.
+        update_columns: Columns to update when upserting.
+            If not specified it will error if primary keys clash.
+    """
     with (
         MBDB.get_adbc_connection() as conn,
         MBDB.get_session() as session,
