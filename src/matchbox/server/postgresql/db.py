@@ -123,7 +123,7 @@ class MatchboxDatabase:
 
         conn = self._adbc_pool.connect()
         try:
-            yield conn.connection
+            yield conn.driver_connection
         finally:
             conn.close()
 
