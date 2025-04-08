@@ -1,3 +1,4 @@
+import datetime
 from unittest.mock import Mock, call, patch
 
 import pytest
@@ -546,6 +547,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
     dag.prepare()
     tree_str = dag.draw()
 
+    # Test 1: Drawing without timestamps (original behavior)
+    tree_str = dag.draw()
+
     # Verify the structure
     lines = tree_str.strip().split("\n")
 
@@ -572,4 +576,58 @@ def test_dag_draw(sqlite_warehouse: Engine):
     has_tree_chars = any(char in tree_str for char in tree_chars)
     assert has_tree_chars, (
         "Tree representation doesn't use expected formatting characters"
+    )
+
+    # Test 2: Drawing with timestamps (status indicators)
+    # Set d_foo as processing and foo_bar as completed
+    start_time = datetime.datetime.now()
+    doing = "d_foo"
+    foo_bar.last_run = datetime.datetime.now()
+
+    # Draw the DAG with status indicators
+    tree_str_with_status = dag.draw(start_time=start_time, doing=doing)
+    status_lines = tree_str_with_status.strip().split("\n")
+
+    # Verify status indicators are present
+    status_indicators = ["✅", "🔄", "⏸️"]
+    assert any(indicator in tree_str_with_status for indicator in status_indicators)
+
+    # Check specific statuses: foo_bar done, d_foo working, others awaiting
+    for line in status_lines:
+        if "foo_bar" in line and "foo_bar_baz" not in line:
+            assert "✅" in line
+        elif "d_foo" in line:
+            assert "🔄" in line
+        elif any(
+            address in line
+            for address in [str(foo.address), str(bar.address), str(baz.address)]
+        ):
+            assert "⏸️" in line
+
+    # Test 3: Check that node names are still present with status indicators
+    for node in node_names:
+        node_present = any(node in line for line in status_lines)
+        assert node_present, (
+            f"Node {node} not found in the tree representation with status indicators"
+        )
+
+    # Test 4: Drawing with skipped nodes
+    skipped_nodes = [str(foo.address), d_foo.name]
+    tree_str_with_skipped = dag.draw(
+        start_time=start_time, doing=doing, skipped=skipped_nodes
+    )
+    skipped_lines = tree_str_with_skipped.strip().split("\n")
+
+    # Check that skipped nodes have the skipped indicator
+    for line in skipped_lines:
+        if any(skipped in line for skipped in skipped_nodes):
+            assert "⏭️" in line
+
+    # Test all status indicators together
+    doing = "foo_bar_baz"
+    tree_str_all_statuses = dag.draw(
+        start_time=start_time, doing=doing, skipped=skipped_nodes
+    )
+    assert all(
+        indicator in tree_str_all_statuses for indicator in ["✅", "🔄", "⏸️", "⏭️"]
     )

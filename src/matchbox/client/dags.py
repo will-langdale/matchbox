@@ -1,5 +1,6 @@
 """Objects to define a DAG which indexes, deduplicates and links data."""
 
+import datetime
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any, Union
@@ -13,6 +14,7 @@ from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
+from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 
 DAGNode = Union["IndexStep", "ModelStep"]
@@ -24,6 +26,7 @@ class IndexStep(BaseModel):
 
     source: Source
     batch_size: int | None = None
+    last_run: datetime.datetime | None = None
 
     @property
     def name(self) -> str:
@@ -92,6 +95,7 @@ class ModelStep(BaseModel, ABC):
     settings: dict[str, Any]
     truth: float
     sources: set[str] = set()
+    last_run: datetime.datetime | None = None
 
     @property
     @abstractmethod
@@ -285,10 +289,50 @@ class DAG:
         depth_first(apex, inverse_sequence)
         self.sequence = list(reversed(inverse_sequence))
 
-    def draw(self) -> str:
-        """Create a string representation of the DAG as a tree structure."""
+    def draw(
+        self,
+        start_time: datetime.datetime | None = None,
+        doing: str | None = None,
+        skipped: list[str] | None = None,
+    ) -> str:
+        """Create a string representation of the DAG as a tree structure.
+
+        If `start_time` is provided, it will show the status of each node
+        based on the last run time. The status indicators are:
+
+        * ✅ Done
+        * 🔄 Working
+        * ⏸️ Awaiting
+        * ⏭️ Skipped
+
+        Args:
+            start_time: Start time of the DAG run. Used to calculate node status.
+            doing: Name of the node currently being processed (if any).
+            skipped: List of node names that were skipped.
+
+        Returns:
+            String representation of the DAG with status indicators.
+        """
         _, root_name = self._build_inverse_graph()
-        result = [root_name]
+        skipped = skipped or []
+
+        # Add status indicator if start_time is provided
+        if start_time is not None:
+            node = self.nodes.get(root_name)
+
+            if root_name in skipped:
+                status = "⏭️"
+            elif doing and root_name == doing:
+                status = "🔄"
+            elif node and node.last_run and node.last_run > start_time:
+                status = "✅"
+            else:
+                status = "⏸️"
+
+            result = [f"{status} {root_name}"]
+        else:
+            result = [root_name]
+
         visited = set([root_name])
 
         def format_children(node: str, prefix=""):
@@ -304,11 +348,32 @@ class DAG:
             for i, child in enumerate(children):
                 is_last = i == len(children) - 1
 
+                # Add status indicator if start_time is provided
+                if start_time is not None:
+                    child_node = self.nodes.get(child)
+
+                    if child in skipped:
+                        status = "⏭️"
+                    elif doing and child == doing:
+                        status = "🔄"
+                    elif (
+                        child_node
+                        and child_node.last_run
+                        and child_node.last_run > start_time
+                    ):
+                        status = "✅"
+                    else:
+                        status = "⏸️"
+
+                    child_display = f"{status} {child}"
+                else:
+                    child_display = child
+
                 if is_last:
-                    result.append(f"{prefix}└── {child}")
+                    result.append(f"{prefix}└── {child_display}")
                     format_children(child, prefix + "    ")
                 else:
-                    result.append(f"{prefix}├── {child}")
+                    result.append(f"{prefix}├── {child_display}")
                     format_children(child, prefix + "│   ")
 
         format_children(root_name)
@@ -316,16 +381,42 @@ class DAG:
         return "\n".join(result)
 
     def run(self, start: str | None = None):
-        """Run entire DAG."""
+        """Run entire DAG.
+
+        Args:
+            start: Name of the step to start from (if not from the beginning)
+        """
         self.prepare()
 
-        start_index = 0
+        start_time = datetime.datetime.now()
+
+        # Identify skipped nodes
+        skipped_nodes = []
         if start:
             try:
                 start_index = self.sequence.index(start)
+                skipped_nodes = self.sequence[:start_index]
             except ValueError as e:
                 raise ValueError(f"Step {start} not in DAG") from e
+        else:
+            start_index = 0
+
+        logger.info("\n" + self.draw(start_time=start_time, skipped=skipped_nodes))
 
         for step_name in self.sequence[start_index:]:
             node = self.nodes[step_name]
-            node.run()
+
+            try:
+                logger.info(
+                    "\n"
+                    + self.draw(
+                        start_time=start_time, doing=node.name, skipped=skipped_nodes
+                    )
+                )
+                node.run()
+                node.last_run = datetime.datetime.now()
+            except Exception as e:
+                logger.error(f"❌ {node.name} failed: {e}")
+                raise e
+
+        logger.info("\n" + self.draw(start_time=start_time, skipped=skipped_nodes))
