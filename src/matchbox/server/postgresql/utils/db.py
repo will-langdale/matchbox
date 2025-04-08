@@ -11,12 +11,10 @@ from typing import Any, Callable, Iterable
 
 import pyarrow as pa
 from adbc_driver_postgresql import dbapi as adbc_dbapi
-from pg_bulk_ingest import Delete, Upsert, ingest
 from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine, Index, MetaData, Table, inspect, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import DeclarativeMeta, Session
 from sqlalchemy.sql import Select
 
@@ -312,38 +310,6 @@ def isolate_table(table: DeclarativeMeta) -> tuple[MetaData, Table]:
         )
 
     return isolated_metadata, isolated_table
-
-
-def batch_ingest(
-    records: list[tuple[Any]],
-    table: DeclarativeMeta,
-    conn: Connection,
-    batch_size: int,
-) -> None:
-    """Batch ingest records into a database table.
-
-    We isolate the table and metadata as pg_bulk_ingest will try and drop unrelated
-    tables if they're in the same schema.
-    """
-    isolated_metadata, isolated_table = isolate_table(table=table)
-
-    fn_batch = data_to_batch(
-        records=records,
-        table=isolated_table,
-        batch_size=batch_size,
-    )
-
-    ingest(
-        conn=conn,
-        metadata=isolated_metadata,
-        batches=fn_batch,
-        upsert=Upsert.IF_PRIMARY_KEY,
-        delete=Delete.OFF,
-    )
-
-
-# TODO: replace batch_ingest with large_ingest across the codebase
-# TODO: allow custom subset selection before table copy
 
 
 def _copy_to_table(

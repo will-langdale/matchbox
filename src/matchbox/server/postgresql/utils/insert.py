@@ -28,7 +28,7 @@ from matchbox.server.postgresql.orm import (
     SourceColumns,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest, compile_sql
+from matchbox.server.postgresql.utils.db import compile_sql, large_ingest
 
 
 class HashIDMap:
@@ -202,17 +202,19 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         else:
             # Create a new cluster
             cluster_id = next_cluster_id + len(cluster_records)
-            cluster_records.append((cluster_id, hash_bytes))
+            cluster_records.append(
+                {"cluster_id": cluster_id, "cluster_hash": hash_bytes}
+            )
 
         # Add all source primary keys linking to this cluster
         for pk in clus["source_pk"]:
             source_pk_records.append(
-                (
-                    pk_id_counter,  # pk_id
-                    cluster_id,  # cluster_id
-                    source_id,  # source_id
-                    pk,  # source_pk
-                )
+                {
+                    "pk_id": pk_id_counter,
+                    "cluster_id": cluster_id,
+                    "source_id": source_id,
+                    "source_pk": pk,
+                }
             )
             pk_id_counter += 1
 
@@ -221,11 +223,10 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         with engine.connect() as conn:
             # Bulk insert into Clusters table (only new clusters)
             if cluster_records:
-                batch_ingest(
-                    records=cluster_records,
-                    table=Clusters,
-                    conn=conn,
-                    batch_size=batch_size,
+                large_ingest(
+                    data=pa.Table.from_pylist(cluster_records),
+                    table_class=Clusters,
+                    max_chunksize=batch_size,
                 )
                 logger.info(
                     f"Added {len(cluster_records):,} objects to Clusters table",
@@ -234,11 +235,10 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
 
             # Bulk insert into ClusterSourcePK table (all links)
             if source_pk_records:
-                batch_ingest(
-                    records=source_pk_records,
-                    table=ClusterSourcePK,
-                    conn=conn,
-                    batch_size=batch_size,
+                large_ingest(
+                    data=pa.Table.from_pylist(source_pk_records),
+                    table_class=ClusterSourcePK,
+                    max_chunksize=batch_size,
                 )
                 logger.info(
                     f"Added {len(source_pk_records):,} primary keys to "
@@ -571,53 +571,51 @@ def insert_results(
             )
             raise
 
-    with engine.connect() as conn:
-        try:
-            logger.info(
-                f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
-            )
+    try:
+        logger.info(
+            f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
+        )
 
-            batch_ingest(
-                records=[tuple(c.values()) for c in clusters.to_pylist()],
-                table=Clusters,
-                conn=conn,
-                batch_size=batch_size,
-            )
+        large_ingest(
+            data=clusters,
+            table_class=Clusters,
+            max_chunksize=batch_size,
+        )
 
-            logger.info(
-                f"Successfully inserted {clusters.shape[0]:,} "
-                "objects into Clusters table",
-                prefix=log_prefix,
-            )
+        logger.info(
+            f"Successfully inserted {clusters.shape[0]:,} objects into Clusters table",
+            prefix=log_prefix,
+        )
 
-            batch_ingest(
-                records=[tuple(c.values()) for c in contains.to_pylist()],
-                table=Contains,
-                conn=conn,
-                batch_size=batch_size,
-            )
+        large_ingest(
+            data=contains,
+            table_class=Contains,
+            max_chunksize=batch_size,
+        )
 
-            logger.info(
-                f"Successfully inserted {contains.shape[0]:,} "
-                "objects into Contains table",
-                prefix=log_prefix,
-            )
+        logger.info(
+            f"Successfully inserted {contains.shape[0]:,} objects into Contains table",
+            prefix=log_prefix,
+        )
+        probabilities = probabilities.to_pandas().drop_duplicates()
+        probabilities = pa.Table.from_pandas(probabilities).select(
+            ["resolution", "cluster", "probability"]
+        )
+        large_ingest(
+            data=probabilities,
+            table_class=Probabilities,
+            max_chunksize=batch_size,
+            update_columns=["probability"],
+        )
 
-            batch_ingest(
-                records=[tuple(c.values()) for c in probabilities.to_pylist()],
-                table=Probabilities,
-                conn=conn,
-                batch_size=batch_size,
-            )
+        logger.info(
+            f"Successfully inserted "
+            f"{probabilities.shape[0]:,} objects into Probabilities table",
+            prefix=log_prefix,
+        )
 
-            logger.info(
-                f"Successfully inserted "
-                f"{probabilities.shape[0]:,} objects into Probabilities table",
-                prefix=log_prefix,
-            )
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
-            raise
+    except SQLAlchemyError as e:
+        logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
+        raise
 
     logger.info("Insert operation complete!", prefix=log_prefix)
