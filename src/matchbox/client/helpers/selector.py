@@ -113,11 +113,9 @@ def _process_query_result(
 
 def _source_query(
     selector: Selector,
-    mb_ids: PolarsDataFrame | None = None,
     return_batches: bool = False,
     batch_size: int | None = None,
     only_indexed: bool = False,
-    limit: int | None = None,
 ) -> tuple[Source, Iterator[PolarsDataFrame]]:
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source(selector.address).set_engine(selector.engine)
@@ -136,10 +134,8 @@ def _source_query(
 
     raw_results = source.to_polars(
         fields=selected_fields,
-        pks=mb_ids["source_pk"].to_list() if mb_ids is not None else None,
         return_batches=return_batches,
         batch_size=batch_size,
-        limit=limit,
     )
 
     if isinstance(raw_results, PolarsDataFrame):
@@ -150,7 +146,6 @@ def _source_query(
 
 def _process_selectors(
     selectors: list[Selector],
-    sub_limits: list[int] | list[None],
     resolution_name: str | None,
     threshold: int | None,
     batch_size: int | None,
@@ -162,18 +157,6 @@ def _process_selectors(
 
     For batched queries, yield from it.
     """
-    limit_threshold: int = 1_000
-    client_side_filtering: bool = False
-
-    if sub_limits[0] is None:
-        client_side_filtering = True
-    elif any(sub_limit > limit_threshold for sub_limit in sub_limits):
-        logger.warning(
-            f"Limit is above {limit_threshold:,} threshold for "
-            "filtering warehouse-side. Filtering client-side."
-        )
-        client_side_filtering = True
-
     # Create iterators for each selector
     selector_iters: list[Generator[PolarsDataFrame, None, None]] = []
 
@@ -187,23 +170,20 @@ def _process_selectors(
         for batch in batches:
             yield _process_query_result(batch, selector, mb_ids, db_pk=db_pk)
 
-    for selector, sub_limit in zip(selectors, sub_limits, strict=True):
+    for selector in selectors:
         mb_ids = pl.from_arrow(
             _handler.query(
                 source_address=selector.address,
                 resolution_name=resolution_name,
                 threshold=threshold,
-                limit=None if client_side_filtering else sub_limit,
             )
         )
 
         source, raw_batches = _source_query(
             selector=selector,
-            mb_ids=None if client_side_filtering else mb_ids,
             return_batches=True,
             batch_size=batch_size,
             only_indexed=only_indexed,
-            limit=sub_limit if client_side_filtering else None,
         )
 
         # Process and transform each batch
@@ -232,7 +212,6 @@ def query(
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_type: ReturnTypeStr = "pandas",
     threshold: int | None = None,
-    limit: int | None = None,
     batch_size: int | None = None,
     return_batches: bool = False,
     only_indexed: bool = False,
@@ -263,7 +242,6 @@ def query(
             If None, uses the resolutions' default threshold
             If an integer, uses that threshold for the specified resolution, and the
             resolution's cached thresholds for its ancestors
-        limit (optional): The number to use in a limit clause. Useful for testing
         batch_size (optional): The size of each batch when fetching data from the
             warehouse, which helps reduce memory usage and load on the database.
             Default is None.
@@ -323,20 +301,8 @@ def query(
     if not resolution_name and len(selectors) > 1:
         resolution_name = DEFAULT_RESOLUTION
 
-    # Divide the limit among selectors
-    if limit:
-        n_selectors = len(selectors)
-        sub_limit_base = limit // n_selectors
-        sub_limit_remainder = limit % n_selectors
-        sub_limits = [sub_limit_base + 1] * sub_limit_remainder + [sub_limit_base] * (
-            n_selectors - sub_limit_remainder
-        )
-    else:
-        sub_limits = [None] * len(selectors)
-
     res = _process_selectors(
         selectors=selectors,
-        sub_limits=sub_limits,
         resolution_name=resolution_name,
         threshold=threshold,
         batch_size=batch_size,
