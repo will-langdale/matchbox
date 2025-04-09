@@ -325,6 +325,13 @@ def test_large_ingest_simple(
     assert DummyTable.count() == 2
     assert len(metadata.tables) == original_tables
 
+    # Columns not available in the target table are rejected
+    with pytest.raises(ValueError, match="does not have columns"):
+        large_ingest(
+            data=pa.Table.from_pylist([{"pk": 10, "bar": "val3"}]),
+            table_class=DummyTable,
+        )
+
 
 @pytest.mark.docker
 def test_large_ingest_upsert_custom_update(

@@ -301,6 +301,11 @@ def large_ingest(
         table: Table = table_class.__table__
         metadata = table.metadata
 
+        table_columns = [c.name for c in table.columns]
+        col_diff = set(data.column_names) - set(table_columns)
+        if len(col_diff) > 0:
+            raise ValueError(f"Table {table.name} does not have columns {col_diff}")
+
         if not update_columns and not upsert_keys:
             try:
                 _copy_to_table(
@@ -339,9 +344,7 @@ def large_ingest(
             upsert_keys = upsert_keys or pk_names
 
             if not update_columns:
-                update_columns = [
-                    c.name for c in table.columns if c.name not in upsert_keys
-                ]
+                update_columns = [c for c in table_columns if c not in upsert_keys]
             try:
                 # Create temp table
                 temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
