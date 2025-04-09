@@ -1,9 +1,10 @@
+import datetime
 from unittest.mock import Mock, call, patch
 
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.client.dags import DAG, DedupeStep, LinkStep, StepInput
+from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
 from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
@@ -15,10 +16,12 @@ def test_step_input_validation(sqlite_warehouse: Engine):
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
 
+    i_foo = IndexStep(source=foo)
+
     d_foo_right = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
+        left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
@@ -26,7 +29,7 @@ def test_step_input_validation(sqlite_warehouse: Engine):
 
     # CASE 1: Reading from Source
     with pytest.raises(ValueError, match="only select"):
-        StepInput(prev_node=foo, select={bar: []})
+        StepInput(prev_node=i_foo, select={bar: []})
 
     # CASE 2: Reading from previous step
     with pytest.raises(ValueError, match="Cannot select"):
@@ -38,10 +41,14 @@ def test_model_step_validation(sqlite_warehouse: Engine):
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
     baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
 
+    i_foo = IndexStep(source=foo)
+    i_bar = IndexStep(source=bar)
+    i_baz = IndexStep(source=baz)
+
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
+        left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
@@ -51,7 +58,7 @@ def test_model_step_validation(sqlite_warehouse: Engine):
         name="foo_bar",
         description="",
         left=StepInput(prev_node=d_foo, select={foo: []}, threshold=0.5),
-        right=StepInput(prev_node=bar, select={bar: []}, threshold=0.7),
+        right=StepInput(prev_node=i_bar, select={bar: []}, threshold=0.7),
         model_class=DeterministicLinker,
         settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         truth=1,
@@ -61,7 +68,7 @@ def test_model_step_validation(sqlite_warehouse: Engine):
         name="foo_bar_baz",
         description="",
         left=StepInput(prev_node=foo_bar, select={foo: [], bar: []}),
-        right=StepInput(prev_node=baz, select={baz: []}),
+        right=StepInput(prev_node=i_baz, select={baz: []}),
         model_class=DeterministicLinker,
         settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         truth=1,
@@ -75,6 +82,30 @@ def test_model_step_validation(sqlite_warehouse: Engine):
 
     # Inherit multiple sources from a previous step
     assert foo_bar_baz.sources == {str(foo.address), str(bar.address), str(baz.address)}
+
+
+@patch("matchbox.client.dags._handler.index")
+def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
+    """Tests that an index step correctly calls the index handler."""
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source.set_engine(
+        sqlite_warehouse
+    )
+
+    # Test with batch size
+    batch_size = 100
+
+    i_foo = IndexStep(source=foo, batch_size=batch_size)
+    i_foo.run()
+
+    handler_index_mock.assert_called_once_with(source=foo, batch_size=batch_size)
+
+    # Test without batch size
+    handler_index_mock.reset_mock()
+
+    i_foo_no_batch = IndexStep(source=foo, batch_size=None)
+    i_foo_no_batch.run()
+
+    handler_index_mock.assert_called_once_with(source=foo, batch_size=None)
 
 
 @pytest.mark.parametrize(
@@ -107,11 +138,14 @@ def test_dedupe_step_run(
         foo = source_factory(
             full_name="foo", engine=sqlite_warehouse
         ).source.set_engine(sqlite_warehouse)
+
+        i_foo = IndexStep(source=foo)
+
         d_foo = DedupeStep(
             name="d_foo",
             description="",
             left=StepInput(
-                prev_node=foo,
+                prev_node=i_foo,
                 select={foo: []},
                 threshold=0.5,
                 batch_size=100 if batched else None,
@@ -187,17 +221,21 @@ def test_link_step_run(
         bar = source_factory(
             full_name="bar", engine=sqlite_warehouse
         ).source.set_engine(sqlite_warehouse)
+
+        i_foo = IndexStep(source=foo)
+        i_bar = IndexStep(source=bar)
+
         foo_bar = LinkStep(
             name="foo_bar",
             description="",
             left=StepInput(
-                prev_node=foo,
+                prev_node=i_foo,
                 select={foo: []},
                 threshold=0.5,
                 batch_size=100 if batched else None,
             ),
             right=StepInput(
-                prev_node=bar,
+                prev_node=i_bar,
                 select={bar: []},
                 threshold=0.7,
                 batch_size=100 if batched else None,
@@ -264,23 +302,38 @@ def test_dag_runs(
     link_run: Mock, dedupe_run: Mock, handler_index: Mock, sqlite_warehouse: Engine
 ):
     """A legal DAG can be built and run."""
+    # Assemble DAG
+    dag = DAG()
+
     # Set up constituents
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
     baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
 
-    # Structure: Sources can be deduped
+    # Structure: Sources can be added directly, with and without IndexStep
+    i_foo = IndexStep(source=foo, batch_size=100)
+    dag.add_steps(i_foo)
+
+    i_bar, i_baz = dag.add_sources(bar, baz, batch_size=200)
+
+    assert set(dag.nodes.keys()) == {
+        str(foo.address),
+        str(bar.address),
+        str(baz.address),
+    }
+
+    # Structure: IndexSteps can be deduped
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
+        left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
     )
 
     # Structure:
-    # - Sources can be passed directly to linkers
+    # - IndexSteps can be passed directly to linkers
     # - Or, linkers can take dedupers
     foo_bar = LinkStep(
         left=StepInput(
@@ -288,7 +341,7 @@ def test_dag_runs(
             select={foo: []},
         ),
         right=StepInput(
-            prev_node=bar,
+            prev_node=i_bar,
             select={bar: []},
         ),
         name="foo_bar",
@@ -306,7 +359,7 @@ def test_dag_runs(
             cleaners={},
         ),
         right=StepInput(
-            prev_node=baz,
+            prev_node=i_baz,
             select={baz: []},
             cleaners={},
         ),
@@ -316,23 +369,6 @@ def test_dag_runs(
         settings={},
         truth=1,
     )
-
-    # Assemble DAG with batch sizes
-    dag = DAG()
-
-    dag.add_sources(foo, batch_size=100)
-    dag.add_sources(bar, baz, batch_size=200)
-
-    # Verify batch sizes are stored correctly
-    assert dag._index_batch_sizes[str(foo.address)] == 100
-    assert dag._index_batch_sizes[str(bar.address)] == 200
-    assert dag._index_batch_sizes[str(baz.address)] == 200
-
-    assert set(dag.nodes.keys()) == {
-        str(foo.address),
-        str(bar.address),
-        str(baz.address),
-    }
 
     dag.add_steps(d_foo, foo_bar, foo_bar_baz)
     assert set(dag.nodes.keys()) == {
@@ -398,10 +434,13 @@ def test_dag_runs(
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
     """Steps cannot be added before their dependencies."""
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+
+    i_foo = IndexStep(source=foo)
+
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
+        left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
@@ -416,10 +455,14 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     """Names across sources and steps must be unique."""
     foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+
+    i_foo = IndexStep(source=foo)
+    i_bar = IndexStep(source=bar)
+
     d_foo = DedupeStep(
         name="d_foo",
         description="",
-        left=StepInput(prev_node=foo, select={foo: []}),
+        left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
@@ -428,16 +471,18 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         # Name clash!
         name="d_foo",
         description="",
-        left=StepInput(prev_node=bar, select={bar: []}),
+        left=StepInput(prev_node=i_bar, select={bar: []}),
         model_class=NaiveDeduper,
         settings={},
         truth=1,
     )
+
     dag = DAG()
-    dag.add_sources(foo)
-    dag.add_steps(d_foo)
+    dag.add_steps(i_foo, d_foo)
+
     with pytest.raises(ValueError, match="already taken"):
         dag.add_steps(d_bar_wrong)
+
     # DAG is not modified by failed attempt
     assert dag.nodes["d_foo"] == d_foo
     # We didn't overwrite d_foo's dependencies
@@ -450,7 +495,139 @@ def test_dag_disconnected(sqlite_warehouse: Engine):
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
 
     dag = DAG()
-    dag.add_sources(foo, bar)
+    _ = dag.add_sources(foo, bar)
 
     with pytest.raises(ValueError, match="disconnected"):
         dag.prepare()
+
+
+def test_dag_draw(sqlite_warehouse: Engine):
+    """Test that the draw method produces a correct string representation of the DAG."""
+    # Set up a simple DAG
+    dag = DAG()
+
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
+
+    i_foo, i_bar, i_baz = dag.add_sources(foo, bar, baz)
+
+    d_foo = DedupeStep(
+        name="d_foo",
+        description="",
+        left=StepInput(prev_node=i_foo, select={foo: []}),
+        model_class=NaiveDeduper,
+        settings={},
+        truth=1,
+    )
+
+    foo_bar = LinkStep(
+        left=StepInput(prev_node=d_foo, select={foo: []}),
+        right=StepInput(prev_node=i_bar, select={bar: []}),
+        name="foo_bar",
+        description="",
+        model_class=DeterministicLinker,
+        settings={},
+        truth=1,
+    )
+
+    foo_bar_baz = LinkStep(
+        left=StepInput(prev_node=foo_bar, select={foo: [], bar: []}),
+        right=StepInput(prev_node=i_baz, select={baz: []}),
+        name="foo_bar_baz",
+        description="",
+        model_class=DeterministicLinker,
+        settings={},
+        truth=1,
+    )
+
+    dag.add_steps(d_foo, foo_bar, foo_bar_baz)
+
+    # Prepare the DAG and draw it
+    dag.prepare()
+    tree_str = dag.draw()
+
+    # Test 1: Drawing without timestamps (original behavior)
+    tree_str = dag.draw()
+
+    # Verify the structure
+    lines = tree_str.strip().split("\n")
+
+    # The root node should be first
+    assert lines[0] == "foo_bar_baz"
+
+    # Check that all nodes are present
+    node_names = [
+        str(foo.address),
+        str(bar.address),
+        str(baz.address),
+        d_foo.name,
+        foo_bar.name,
+        foo_bar_baz.name,
+    ]
+
+    for node in node_names:
+        # Either the node name is at the start of a line or after the tree characters
+        node_present = any(line.endswith(node) for line in lines)
+        assert node_present, f"Node {node} not found in the tree representation"
+
+    # Check that tree has correct formatting with tree characters
+    tree_chars = ["└──", "├──", "│"]
+    has_tree_chars = any(char in tree_str for char in tree_chars)
+    assert has_tree_chars, (
+        "Tree representation doesn't use expected formatting characters"
+    )
+
+    # Test 2: Drawing with timestamps (status indicators)
+    # Set d_foo as processing and foo_bar as completed
+    start_time = datetime.datetime.now()
+    doing = "d_foo"
+    foo_bar.last_run = datetime.datetime.now()
+
+    # Draw the DAG with status indicators
+    tree_str_with_status = dag.draw(start_time=start_time, doing=doing)
+    status_lines = tree_str_with_status.strip().split("\n")
+
+    # Verify status indicators are present
+    status_indicators = ["✅", "🔄", "⏸️"]
+    assert any(indicator in tree_str_with_status for indicator in status_indicators)
+
+    # Check specific statuses: foo_bar done, d_foo working, others awaiting
+    for line in status_lines:
+        if "foo_bar" in line and "foo_bar_baz" not in line:
+            assert "✅" in line
+        elif "d_foo" in line:
+            assert "🔄" in line
+        elif any(
+            address in line
+            for address in [str(foo.address), str(bar.address), str(baz.address)]
+        ):
+            assert "⏸️" in line
+
+    # Test 3: Check that node names are still present with status indicators
+    for node in node_names:
+        node_present = any(node in line for line in status_lines)
+        assert node_present, (
+            f"Node {node} not found in the tree representation with status indicators"
+        )
+
+    # Test 4: Drawing with skipped nodes
+    skipped_nodes = [str(foo.address), d_foo.name]
+    tree_str_with_skipped = dag.draw(
+        start_time=start_time, doing=doing, skipped=skipped_nodes
+    )
+    skipped_lines = tree_str_with_skipped.strip().split("\n")
+
+    # Check that skipped nodes have the skipped indicator
+    for line in skipped_lines:
+        if any(skipped in line for skipped in skipped_nodes):
+            assert "⏭️" in line
+
+    # Test all status indicators together
+    doing = "foo_bar_baz"
+    tree_str_all_statuses = dag.draw(
+        start_time=start_time, doing=doing, skipped=skipped_nodes
+    )
+    assert all(
+        indicator in tree_str_all_statuses for indicator in ["✅", "🔄", "⏸️", "⏭️"]
+    )
