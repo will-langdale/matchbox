@@ -8,15 +8,18 @@ import pstats
 import uuid
 
 import pyarrow as pa
+from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine, Table, inspect, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeMeta, Session
 from sqlalchemy.sql import Select
 
 from matchbox.common.exceptions import (
+    MatchboxDatabaseWriteError,
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import (
@@ -291,13 +294,17 @@ def large_ingest(
         metadata = table.metadata
 
         if not update_columns:
-            _copy_to_table(
-                table_name=table.name,
-                schema_name=table.schema,
-                data=data,
-                connection=conn,
-                max_chunksize=max_chunksize,
-            )
+            try:
+                _copy_to_table(
+                    table_name=table.name,
+                    schema_name=table.schema,
+                    data=data,
+                    connection=conn,
+                    max_chunksize=max_chunksize,
+                )
+            except ADBCProgrammingError as e:
+                raise MatchboxDatabaseWriteError from e
+
         # Upserting requires using a temp table
         else:
             try:
@@ -328,6 +335,9 @@ def large_ingest(
 
                 session.execute(upsert_stmt)
                 session.commit()
+
+            except (ADBCProgrammingError, IntegrityError) as e:
+                raise MatchboxDatabaseWriteError from e
 
             finally:
                 # Drop temp table

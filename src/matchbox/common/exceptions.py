@@ -174,3 +174,10 @@ class MatchboxDeletionNotConfirmed(Exception):
             )
 
         super().__init__(message)
+
+
+# -- Adapter DB exceptions --
+
+
+class MatchboxDatabaseWriteError(Exception):
+    """Could not be written to the backend DB, likely due to a constraint violation."""

@@ -4,11 +4,10 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from sqlalchemy import BIGINT, TEXT, Column, Engine, MetaData, UniqueConstraint, text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base
 
+from matchbox.common.exceptions import MatchboxDatabaseWriteError
 from matchbox.common.factories.entities import SourceEntity
 from matchbox.server import MatchboxDBAdapter
 from matchbox.server.postgresql import MatchboxPostgres
@@ -279,12 +278,10 @@ def test_benchmark_generate_tables_parameterised(
 
 @pytest.mark.docker
 @pytest.mark.parametrize(
-    ("update_columns", "new_id", "new_expected_rows", "integrity_error_class"),
+    ("update_columns", "new_id", "new_expected_rows"),
     (
-        # When not upserting, ADBC's copy will raise
-        [None, 2, 2, ADBCProgrammingError],
-        # When upserting, SQLAlchemy's insert will raise
-        [["bar"], 1, 1, IntegrityError],
+        [None, 2, 2],
+        [["bar"], 1, 1],
     ),
     ids=["direct_copy", "upsert"],
 )
@@ -293,7 +290,6 @@ def test_large_ingest(
     update_columns: list[str] | None,
     new_id: int,
     new_expected_rows: int,
-    integrity_error_class: Exception,
 ):
     """Test successful and unsuccessful large ingestions with all columns."""
     engine = MBDB.get_engine()
@@ -358,7 +354,7 @@ def test_large_ingest(
     assert len(metadata.tables) == original_tables
 
     # Successful ingestion preserved constraints
-    with pytest.raises(integrity_error_class):
+    with pytest.raises(MatchboxDatabaseWriteError):
         large_ingest(
             pa.Table.from_pylist([{"foo": 20, "bar": "new bar", "baz": "new baz"}]),
             DummyTable,
