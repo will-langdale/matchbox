@@ -96,7 +96,7 @@ def create_client(settings: ClientSettings) -> httpx.Client:
     """Create an HTTPX client with proper configuration."""
     return httpx.Client(
         base_url=settings.api_root,
-        timeout=settings.timeout,
+        timeout=httpx.Timeout(60 * 30, connect=settings.timeout, pool=settings.timeout),
         event_hooks={"response": [handle_http_code]},
         headers=create_headers(settings),
     )
