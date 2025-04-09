@@ -14,7 +14,7 @@ scan:
 
 # Build and run all containers
 build:
-    docker compose --env-file=environments/dev_docker.env up --build -d --wait
+    docker compose --env-file=environments/server.env up --build -d --wait
 
 # Run Python tests (usage: just test [local|docker])
 test ENV="":

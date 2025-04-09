@@ -39,8 +39,7 @@ ENTRYPOINT ["ddtrace-run"]
 
 FROM base AS dev
 
-COPY ./environments/$ENV_FILE /code/$ENV_FILE
-RUN grep -v 'MB__CLIENT__' /code/$ENV_FILE > /code/.env && rm /code/$ENV_FILE
+COPY ./environments/$ENV_FILE /code/.env
 CMD ["fastapi", "dev", "--host", "0.0.0.0", "src/matchbox/server/api"]
 
 

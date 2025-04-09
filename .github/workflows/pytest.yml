@@ -35,9 +35,12 @@ jobs:
       - name: Install the project
         run: uv sync --all-extras --dev
 
+      - name: Copy environment variables
+        run: cp environments/development.env .env
+
       - name: Run DBs and API
         run: |
-          docker compose --env-file=environments/dev_docker.env up -d --wait
+          docker compose --env-file=environments/server.env up -d --wait
 
       - name: Run pytest
         run: |
