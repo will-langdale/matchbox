@@ -353,7 +353,7 @@ def test_large_ingest(
             assert "original" in new_col_value(col_name)
 
     # No lingering temp tables
-    metadata.clear()  # metadata does not automatically notice table drops
+    metadata.clear()  # clear all Table objects from this MetaData -- doesn't touch DB
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
 
@@ -382,6 +382,7 @@ def test_large_ingest_autoincrement(
     # Initialise DummyTable to which we'll ingest
     class DummyTable(CountMixin, declarative_base(metadata=metadata)):
         __tablename__ = "dummytable"
+        # primary_key=True implements auto-incremented IDs
         foo = Column(BIGINT, primary_key=True)
         bar = Column(TEXT, nullable=False)
 
