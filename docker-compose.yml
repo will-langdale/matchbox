@@ -28,7 +28,7 @@ services:
       - matchbox_store:/data
     command: server --console-address ":9001" /data
     ports:
-      - "${MB__DATASTORE_PORT:-9000}:9000"
+      - "${MB__SERVER__DATASTORE__PORT:-9000}:9000"
       - "9001:9001"
     environment:
       MINIO_ROOT_USER: ${MB__SERVER__DATASTORE__ACCESS_KEY_ID}
@@ -49,7 +49,7 @@ services:
     build:
       context: .
       args:
-        ENV_FILE: dev_docker.env
+        ENV_FILE: server.env
       dockerfile: src/matchbox/server/Dockerfile
       target: dev
     environment:
