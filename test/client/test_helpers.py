@@ -89,7 +89,10 @@ def test_create_client():
 
     assert client.headers.get("X-Matchbox-Client-Version") == version("matchbox_db")
     assert client.base_url == mock_settings.api_root
-    assert client.timeout.read == mock_settings.timeout
+    assert client.timeout.connect == mock_settings.timeout
+    assert client.timeout.pool == mock_settings.timeout
+    assert client.timeout.read == 60 * 30
+    assert client.timeout.write == 60 * 30
 
 
 def test_select_default_engine(
