@@ -280,19 +280,19 @@ def large_ingest(
 ):
     """Append a PyArrow table to a PostgreSQL table using ADBC.
 
-    It will either copy directly (and error if violating primary key constraints),
+    It will either copy directly (and error if primary key constraints are violated),
     or it can be run in upsert mode by using a staging table, which is slower.
 
     Args:
         data: A PyArrow table to write.
         table_class: The SQLAlchemy ORM class for the table to write to.
         max_chunksize: Size of data chunks to be read and copied.
-        upsert_keys: Columns
+        upsert_keys: Columns used as keys for "on conflict do update".
             If passed, it will run ingest in slower upsert mode.
-            If not passed and `update_columns` is passed, will use upsert on PKs.
+            If not passed and `update_columns` is passed, defaults to primary keys.
         update_columns: Columns to update when upserting.
             If passed, it will run ingest in slower upsert mode.
-            If not passed and `upsert_keys` is, will use all other non-PK columns.
+            If not passed and `upsert_keys` is passed, defaults to all other columns.
     """
     with (
         MBDB.get_adbc_connection() as conn,

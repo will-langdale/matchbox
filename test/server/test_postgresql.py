@@ -280,7 +280,7 @@ def test_benchmark_generate_tables_parameterised(
 def test_large_ingest_simple(
     matchbox_postgres: MatchboxPostgres,  # will drop dummy table
 ):
-    """Test append-only mode of large ingest"""
+    """Test append-only mode of large ingest."""
     engine = MBDB.get_engine()
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
