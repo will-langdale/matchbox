@@ -275,16 +275,24 @@ def large_ingest(
     data: pa.Table,
     table_class: DeclarativeMeta,
     max_chunksize: int | None = None,
+    upsert_keys: list[str] | None = None,
     update_columns: list[str] | None = None,
 ):
     """Append a PyArrow table to a PostgreSQL table using ADBC.
+
+    It will either copy directly (and error if violating primary key constraints),
+    or it can be run in upsert mode by using a staging table, which is slower.
 
     Args:
         data: A PyArrow table to write.
         table_class: The SQLAlchemy ORM class for the table to write to.
         max_chunksize: Size of data chunks to be read and copied.
+        upsert_keys: Columns
+            If passed, it will run ingest in slower upsert mode.
+            If not passed and `update_columns` is passed, will use upsert on PKs.
         update_columns: Columns to update when upserting.
-            If not specified it will error if primary keys clash.
+            If passed, it will run ingest in slower upsert mode.
+            If not passed and `upsert_keys` is, will use all other non-PK columns.
     """
     with (
         MBDB.get_adbc_connection() as conn,
@@ -293,7 +301,7 @@ def large_ingest(
         table: Table = table_class.__table__
         metadata = table.metadata
 
-        if not update_columns:
+        if not update_columns and not upsert_keys:
             try:
                 _copy_to_table(
                     table_name=table.name,
@@ -305,8 +313,35 @@ def large_ingest(
             except ADBCProgrammingError as e:
                 raise MatchboxDatabaseWriteError from e
 
-        # Upserting requires using a temp table
+        # Upsert mode (slower)
         else:
+            pk_names = [c.name for c in table.primary_key.columns]
+
+            # Validate upsert arguments
+            if (
+                update_columns
+                and upsert_keys
+                and (len(set(update_columns) & set(upsert_keys)) > 0)
+            ):
+                raise ValueError("Cannot update a custom upsert key")
+
+            if (
+                update_columns
+                and not upsert_keys
+                and (len(set(update_columns) & set(pk_names)) > 0)
+            ):
+                raise ValueError(
+                    "Cannot update a primary key without "
+                    "setting a different custom upsert key"
+                )
+
+            # If necessary, set defaults for upsert variables
+            upsert_keys = upsert_keys or pk_names
+
+            if not update_columns:
+                update_columns = [
+                    c.name for c in table.columns if c.name not in upsert_keys
+                ]
             try:
                 # Create temp table
                 temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
@@ -329,7 +364,7 @@ def large_ingest(
                     [c.name for c in temp_table.columns], temp_table.select()
                 )
                 upsert_stmt = insert_stmt.on_conflict_do_update(
-                    index_elements=[c.name for c in table.primary_key.columns],
+                    index_elements=upsert_keys,
                     set_={c: getattr(insert_stmt.excluded, c) for c in update_columns},
                 )
 

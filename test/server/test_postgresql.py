@@ -277,32 +277,161 @@ def test_benchmark_generate_tables_parameterised(
 
 
 @pytest.mark.docker
-@pytest.mark.parametrize(
-    ("update_columns", "new_id", "new_expected_rows"),
-    (
-        [None, 2, 2],
-        [["bar"], 1, 1],
-    ),
-    ids=["direct_copy", "upsert"],
-)
-def test_large_ingest(
+def test_large_ingest_simple(
     matchbox_postgres: MatchboxPostgres,  # will drop dummy table
-    update_columns: list[str] | None,
-    new_id: int,
-    new_expected_rows: int,
 ):
-    """Test successful and unsuccessful large ingestions with all columns."""
+    """Test append-only mode of large ingest"""
     engine = MBDB.get_engine()
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
     # Initialise DummyTable to which we'll ingest
     class DummyTable(CountMixin, declarative_base(metadata=metadata)):
         __tablename__ = "dummytable"
-        foo = Column(BIGINT, primary_key=True)
-        bar = Column(TEXT, nullable=False)
-        baz = Column(TEXT, nullable=False)
+        pk = Column(BIGINT, primary_key=True)
+        foo = Column(TEXT, nullable=False)
 
-        __table_args__ = (UniqueConstraint("bar", name="dummy_unique_bar"),)
+    metadata.create_all(engine, tables=[DummyTable.__table__])
+    metadata.reflect(engine)
+    original_tables = len(metadata.tables)
+
+    # Ingest data with manual PK and chunking
+    large_ingest(
+        data=pa.Table.from_pylist(
+            [{"pk": 0, "foo": "val1"}],
+        ),
+        table_class=DummyTable,
+        max_chunksize=100,
+    )
+
+    # Ingest data without PK and no chunking
+    large_ingest(data=pa.Table.from_pylist([{"foo": "val2"}]), table_class=DummyTable)
+
+    # Both rows were fine
+    assert DummyTable.count() == 2
+    with MBDB.get_session() as session:
+        second_id = (
+            session.query(DummyTable.pk).filter(DummyTable.foo == "val2").scalar()
+        )
+    assert 0 < second_id
+
+    # By default, upserting not allowed
+    with pytest.raises(MatchboxDatabaseWriteError):
+        large_ingest(
+            data=pa.Table.from_pylist([{"pk": 0, "foo": "val3"}]),
+            table_class=DummyTable,
+        )
+
+    # Failed ingestion has no effect
+    assert DummyTable.count() == 2
+    assert len(metadata.tables) == original_tables
+
+
+@pytest.mark.docker
+def test_large_ingest_upsert_custom_update(
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+):
+    """Test large ingest with upsertion and custom columns to update."""
+    engine = MBDB.get_engine()
+    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
+
+    # Initialise DummyTable to which we'll ingest
+    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
+        __tablename__ = "dummytable"
+        pk = Column(BIGINT, primary_key=True)
+        foo = Column(TEXT, nullable=False)
+        bar = Column(TEXT, nullable=False)
+
+        __table_args__ = (UniqueConstraint("foo", name="unique_foo"),)
+
+    metadata.create_all(engine, tables=[DummyTable.__table__])
+    metadata.reflect(engine)
+    original_tables = len(metadata.tables)
+
+    # Initialise with one original row
+    with MBDB.get_session() as session:
+        row1 = DummyTable(pk=1, foo="original foo", bar="original bar")
+        session.add(row1)
+        session.commit()
+
+    # Some choices of parameters are not allowed
+    with pytest.raises(ValueError, match="Cannot update a custom upsert key"):
+        large_ingest(
+            data=pa.Table.from_pylist([{"pk": 1, "foo": "new foo", "bar": "new bar"}]),
+            table_class=DummyTable,
+            update_columns=["foo"],
+            upsert_keys=["foo"],
+        )
+
+    with pytest.raises(ValueError, match="different custom upsert key"):
+        large_ingest(
+            data=pa.Table.from_pylist([{"pk": 1, "foo": "new foo", "bar": "new bar"}]),
+            table_class=DummyTable,
+            update_columns=["pk"],
+        )
+
+    # Ingest updated data
+    large_ingest(
+        data=pa.Table.from_pylist([{"pk": 1, "foo": "new foo", "bar": "new bar"}]),
+        table_class=DummyTable,
+        update_columns=["foo"],
+    )
+
+    # Number of rows unchanged
+    assert DummyTable.count() == 1
+
+    # Only foo has changed
+    with MBDB.get_session() as session:
+        new_foo = session.query(DummyTable.foo).filter(DummyTable.pk == 1).scalar()
+        new_bar = session.query(DummyTable.bar).filter(DummyTable.pk == 1).scalar()
+    assert "new" in new_foo
+    assert "original" in new_bar
+
+    # No lingering temp tables
+    metadata.clear()  # clear all Table objects from this MetaData, doesn't touch DB
+    metadata.reflect(engine)
+    assert len(metadata.tables) == original_tables
+
+    # Cannot update column when constraints violated
+    with pytest.raises(MatchboxDatabaseWriteError):
+        large_ingest(
+            pa.Table.from_pylist([{"pk": 2, "foo": "new foo", "bar": "new bar"}]),
+            DummyTable,
+            update_columns=["foo"],
+        )
+
+    # Failed ingestion has no effect
+    assert DummyTable.count() == 1
+    metadata.clear()
+    metadata.reflect(engine)
+    assert len(metadata.tables) == original_tables
+
+    # Constraints are not violated when upserting
+    large_ingest(
+        pa.Table.from_pylist([{"pk": 1, "foo": "new foo", "bar": "new bar"}]),
+        DummyTable,
+        update_columns=["foo"],
+    )
+
+    # Nothing changed still
+    assert DummyTable.count() == 1
+
+
+@pytest.mark.docker
+def test_large_ingest_upsert_custom_key(
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+):
+    """Test large ingest with upsertion on custom keys."""
+    engine = MBDB.get_engine()
+    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
+
+    # Initialise DummyTable to which we'll ingest
+    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
+        __tablename__ = "dummytable"
+        pk = Column(BIGINT, primary_key=True)
+        other_key = Column(TEXT, nullable=False)
+        foo = Column(TEXT, nullable=False)
+
+        __table_args__ = (UniqueConstraint("other_key", name="unique_other_key"),)
 
     metadata.create_all(engine, tables=[DummyTable.__table__])
 
@@ -311,91 +440,33 @@ def test_large_ingest(
         metadata.reflect(engine)
         original_tables = len(metadata.tables)
 
-        row1 = DummyTable(foo=1, bar="original bar", baz="original baz")
+        row1 = DummyTable(pk=1, other_key="a", foo="original foo")
         session.add(row1)
         session.commit()
 
-    # Ingest valid data
+    # Ingest updated data
     large_ingest(
-        data=pa.Table.from_pylist(
-            [{"foo": new_id, "bar": "new bar", "baz": "new baz"}],
-        ),
+        data=pa.Table.from_pylist([{"pk": 2, "other_key": "a", "foo": "new foo"}]),
         table_class=DummyTable,
-        update_columns=update_columns,
-        max_chunksize=100,
+        upsert_keys=["other_key"],
     )
 
-    # New number of rows as expected
-    assert DummyTable.count() == new_expected_rows
+    # Number of rows unchanged
+    assert DummyTable.count() == 1
 
-    # If upserting, only specified columns are updated
-    if update_columns:
+    with MBDB.get_session() as session:
+        new_foo = (
+            session.query(DummyTable.foo).filter(DummyTable.other_key == "a").scalar()
+        )
+        new_pk = (
+            session.query(DummyTable.pk).filter(DummyTable.other_key == "a").scalar()
+        )
 
-        def new_col_value(col_name):
-            with MBDB.get_session() as session:
-                return (
-                    session.query(getattr(DummyTable, col_name))
-                    .filter(DummyTable.foo == new_id)
-                    .scalar()
-                )
-
-        for col_name in update_columns:
-            assert "new" in new_col_value(col_name)
-
-        pk = set(DummyTable.__table__.primary_key.columns.keys())
-        non_pk = set(DummyTable.__table__.columns.keys()) - pk
-        remaining = non_pk - set(update_columns)
-        for col_name in remaining:
-            assert "original" in new_col_value(col_name)
+    # We can update standard columns and primary keys
+    assert "new" in new_foo
+    assert new_pk == 2
 
     # No lingering temp tables
-    metadata.clear()  # clear all Table objects from this MetaData -- doesn't touch DB
+    metadata.clear()  # clear all Table objects from this MetaData, doesn't touch DB
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
-
-    # Successful ingestion preserved constraints
-    with pytest.raises(MatchboxDatabaseWriteError):
-        large_ingest(
-            pa.Table.from_pylist([{"foo": 20, "bar": "new bar", "baz": "new baz"}]),
-            DummyTable,
-            update_columns=update_columns,
-        )
-
-    # Failed ingestion has no effect
-    assert DummyTable.count() == new_expected_rows
-    metadata.clear()
-    metadata.reflect(engine)
-    assert len(metadata.tables) == original_tables
-
-
-def test_large_ingest_autoincrement(
-    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
-):
-    """Test large ingestions with autoincrement IDs."""
-    engine = MBDB.get_engine()
-    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
-
-    # Initialise DummyTable to which we'll ingest
-    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
-        __tablename__ = "dummytable"
-        # primary_key=True implements auto-incremented IDs
-        foo = Column(BIGINT, primary_key=True)
-        bar = Column(TEXT, nullable=False)
-
-    metadata.create_all(engine, tables=[DummyTable.__table__])
-
-    # Ingest without ID when the table is empty
-    large_ingest(data=pa.Table.from_pylist([{"bar": "bar1"}]), table_class=DummyTable)
-    # And when it has one row
-    large_ingest(data=pa.Table.from_pylist([{"bar": "bar2"}]), table_class=DummyTable)
-
-    # New row ingested correctly
-    assert DummyTable.count() == 2
-    with MBDB.get_session() as session:
-        first_id = (
-            session.query(DummyTable.bar).filter(DummyTable.bar == "bar1").scalar()
-        )
-        second_id = (
-            session.query(DummyTable.bar).filter(DummyTable.bar == "bar2").scalar()
-        )
-    assert first_id < second_id
