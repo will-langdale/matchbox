@@ -207,7 +207,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             if source:
                 columns = (
                     session.query(SourceColumns)
-                    .filter(SourceColumns.source_id == source.resolution_id)
+                    .filter(SourceColumns.source_id == source.source_id)
                     .order_by(SourceColumns.column_index)
                     .all()
                 )
