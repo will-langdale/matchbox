@@ -323,18 +323,10 @@ def large_ingest(
             pk_names = [c.name for c in table.primary_key.columns]
 
             # Validate upsert arguments
-            if (
-                update_columns
-                and upsert_keys
-                and (len(set(update_columns) & set(upsert_keys)) > 0)
-            ):
+            if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
                 raise ValueError("Cannot update a custom upsert key")
 
-            if (
-                update_columns
-                and not upsert_keys
-                and (len(set(update_columns) & set(pk_names)) > 0)
-            ):
+            if len(set(update_columns or []) & set(pk_names)) > 0:
                 raise ValueError(
                     "Cannot update a primary key without "
                     "setting a different custom upsert key"
