@@ -1,5 +1,6 @@
 """Utilities for inserting data into the PostgreSQL backend."""
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import Engine, delete, exists, select, union
@@ -28,7 +29,7 @@ from matchbox.server.postgresql.orm import (
     SourceColumns,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import batch_ingest, compile_sql
+from matchbox.server.postgresql.utils.db import compile_sql, large_ingest
 
 
 class HashIDMap:
@@ -173,59 +174,68 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
 
     # Don't insert new hashes, but new PKs need existing hash IDs
     with MBDB.get_adbc_connection() as conn:
-        existing_hash_lookup = sql_to_df(
+        existing_hash_lookup: pl.DataFrame = sql_to_df(
             stmt=compile_sql(select(Clusters.cluster_id, Clusters.cluster_hash)),
             connection=conn,
-            return_type="arrow",
+            return_type="polars",
         )
 
-    # Create a dictionary for faster lookups
-    hash_to_id = {}
-    if len(existing_hash_lookup) > 0:
-        for i in range(len(existing_hash_lookup)):
-            hash_bytes = existing_hash_lookup["cluster_hash"][i].as_py()
-            cluster_id = existing_hash_lookup["cluster_id"][i].as_py()
-            hash_to_id[hash_bytes] = cluster_id
-
-    # Prepare records for both tables - new clusters and links
-    cluster_records = []
-    source_pk_records = []
-    pk_id_counter = next_pk_id
-
-    for clus in data_hashes.to_pylist():
-        hash_bytes = clus["hash"]
-
-        # Check if this hash already exists in the database
-        if hash_bytes in hash_to_id:
-            # Use existing cluster_id
-            cluster_id = hash_to_id[hash_bytes]
-        else:
-            # Create a new cluster
-            cluster_id = next_cluster_id + len(cluster_records)
-            cluster_records.append((cluster_id, hash_bytes))
-
-        # Add all source primary keys linking to this cluster
-        for pk in clus["source_pk"]:
-            source_pk_records.append(
-                (
-                    pk_id_counter,  # pk_id
-                    cluster_id,  # cluster_id
-                    source_id,  # source_id
-                    pk,  # source_pk
-                )
+    data_hashes: pl.DataFrame = pl.from_arrow(data_hashes)
+    if existing_hash_lookup.is_empty():
+        new_hashes = data_hashes.select("hash").unique()
+    else:
+        new_hashes = (
+            data_hashes.select("hash")
+            .unique()
+            .join(
+                other=existing_hash_lookup,
+                left_on="hash",
+                right_on="cluster_hash",
+                how="anti",
             )
-            pk_id_counter += 1
+        )
+
+    # Create new cluster records with sequential IDs
+    cluster_records = (
+        new_hashes.with_row_index("cluster_id")
+        .with_columns(
+            [
+                (pl.col("cluster_id") + next_cluster_id)
+                .cast(pl.Int64)
+                .alias("cluster_id")
+            ]
+        )
+        .rename({"hash": "cluster_hash"})
+    )
+
+    # Create a combined lookup with both existing and new mappings
+    lookup = pl.concat([existing_hash_lookup, cluster_records], how="vertical")
+
+    # Add cluster_id values to data hashes
+    hashes_with_ids = data_hashes.join(lookup, left_on="hash", right_on="cluster_hash")
+
+    # Explode source_pk and add required columns
+    source_pk_records = (
+        hashes_with_ids.select(["cluster_id", "source_pk"])
+        .explode("source_pk")
+        .with_row_index("pk_id")
+        .with_columns(
+            [
+                (pl.col("pk_id") + next_pk_id).alias("pk_id"),
+                pl.lit(source_id, dtype=pl.Int64).alias("source_id"),
+            ]
+        )
+    )
 
     # Insert new clusters and all source primary keys
     try:
         with engine.connect() as conn:
             # Bulk insert into Clusters table (only new clusters)
-            if cluster_records:
-                batch_ingest(
-                    records=cluster_records,
-                    table=Clusters,
-                    conn=conn,
-                    batch_size=batch_size,
+            if not cluster_records.is_empty():
+                large_ingest(
+                    data=cluster_records.to_arrow(),
+                    table_class=Clusters,
+                    max_chunksize=batch_size,
                 )
                 logger.info(
                     f"Added {len(cluster_records):,} objects to Clusters table",
@@ -233,12 +243,11 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
                 )
 
             # Bulk insert into ClusterSourcePK table (all links)
-            if source_pk_records:
-                batch_ingest(
-                    records=source_pk_records,
-                    table=ClusterSourcePK,
-                    conn=conn,
-                    batch_size=batch_size,
+            if not source_pk_records.is_empty():
+                large_ingest(
+                    data=source_pk_records.to_arrow(),
+                    table_class=ClusterSourcePK,
+                    max_chunksize=batch_size,
                 )
                 logger.info(
                     f"Added {len(source_pk_records):,} primary keys to "
@@ -253,7 +262,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
         conn.rollback()
 
-    if not cluster_records and not source_pk_records:
+    if cluster_records.is_empty() and source_pk_records.is_empty():
         logger.info("No new records to add", prefix=log_prefix)
 
     logger.info("Finished", prefix=log_prefix)
@@ -491,6 +500,9 @@ def _results_to_insert_tables(
         }
     )
 
+    # Probabilities will have duplicates because hierarchy tracks all parent-child edges
+    probabilities = pl.from_arrow(probabilities).unique().to_arrow()
+
     # Create Clusters Arrow table to insert, containing only new clusters
     new_hashes = pc.filter(hm.lookup["hash"], hm.lookup["new"])
     clusters = pa.table(
@@ -571,53 +583,47 @@ def insert_results(
             )
             raise
 
-    with engine.connect() as conn:
-        try:
-            logger.info(
-                f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
-            )
+    try:
+        logger.info(
+            f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
+        )
 
-            batch_ingest(
-                records=[tuple(c.values()) for c in clusters.to_pylist()],
-                table=Clusters,
-                conn=conn,
-                batch_size=batch_size,
-            )
+        large_ingest(
+            data=clusters,
+            table_class=Clusters,
+            max_chunksize=batch_size,
+        )
 
-            logger.info(
-                f"Successfully inserted {clusters.shape[0]:,} "
-                "objects into Clusters table",
-                prefix=log_prefix,
-            )
+        logger.info(
+            f"Successfully inserted {clusters.shape[0]:,} objects into Clusters table",
+            prefix=log_prefix,
+        )
 
-            batch_ingest(
-                records=[tuple(c.values()) for c in contains.to_pylist()],
-                table=Contains,
-                conn=conn,
-                batch_size=batch_size,
-            )
+        large_ingest(
+            data=contains,
+            table_class=Contains,
+            max_chunksize=batch_size,
+        )
 
-            logger.info(
-                f"Successfully inserted {contains.shape[0]:,} "
-                "objects into Contains table",
-                prefix=log_prefix,
-            )
+        logger.info(
+            f"Successfully inserted {contains.shape[0]:,} objects into Contains table",
+            prefix=log_prefix,
+        )
 
-            batch_ingest(
-                records=[tuple(c.values()) for c in probabilities.to_pylist()],
-                table=Probabilities,
-                conn=conn,
-                batch_size=batch_size,
-            )
+        large_ingest(
+            data=probabilities,
+            table_class=Probabilities,
+            max_chunksize=batch_size,
+        )
 
-            logger.info(
-                f"Successfully inserted "
-                f"{probabilities.shape[0]:,} objects into Probabilities table",
-                prefix=log_prefix,
-            )
+        logger.info(
+            f"Successfully inserted "
+            f"{probabilities.shape[0]:,} objects into Probabilities table",
+            prefix=log_prefix,
+        )
 
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
-            raise
+    except SQLAlchemyError as e:
+        logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
+        raise
 
     logger.info("Insert operation complete!", prefix=log_prefix)

@@ -5,17 +5,21 @@ import contextlib
 import cProfile
 import io
 import pstats
-from itertools import islice
-from typing import Any, Callable, Iterable
+import uuid
 
-from pg_bulk_ingest import Delete, Upsert, ingest
-from sqlalchemy import Engine, Index, MetaData, Table, inspect, select
+import pyarrow as pa
+from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
+from adbc_driver_postgresql import dbapi as adbc_dbapi
+from pyarrow import Table as ArrowTable
+from sqlalchemy import Engine, Table, inspect, select
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.engine.base import Connection
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeMeta, Session
 from sqlalchemy.sql import Select
 
 from matchbox.common.exceptions import (
+    MatchboxDatabaseWriteError,
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import (
@@ -25,6 +29,7 @@ from matchbox.common.graph import (
     ResolutionNodeType,
 )
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
+from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourcePK,
@@ -245,92 +250,125 @@ def compile_sql(stmt: Select) -> str:
     )
 
 
-def batched(iterable: Iterable, n: int) -> Iterable:
-    """Batch data into lists of length n. The last batch may be shorter."""
-    it = iter(iterable)
-    while True:
-        batch = list(islice(it, n))
-        if not batch:
-            return
-        yield batch
+def _copy_to_table(
+    table_name: str,
+    schema_name: str,
+    data: ArrowTable,
+    connection: adbc_dbapi.Connection,
+    max_chunksize: int | None = None,
+):
+    batch_reader = pa.RecordBatchReader.from_batches(
+        data.schema, data.to_batches(max_chunksize=max_chunksize)
+    )
+
+    with connection.cursor() as cursor:
+        cursor.adbc_ingest(
+            table_name=table_name,
+            data=batch_reader,
+            mode="append",
+            db_schema_name=schema_name,
+        )
+        connection.commit()
 
 
-def data_to_batch(
-    records: list[tuple], table: Table, batch_size: int
-) -> Callable[[str], tuple[Any]]:
-    """Constructs a batches function for any dataframe and table."""
+def large_ingest(
+    data: pa.Table,
+    table_class: DeclarativeMeta,
+    max_chunksize: int | None = None,
+    upsert_keys: list[str] | None = None,
+    update_columns: list[str] | None = None,
+):
+    """Append a PyArrow table to a PostgreSQL table using ADBC.
 
-    def _batches(
-        high_watermark,  # noqa: ARG001
-    ) -> Iterable[tuple[None, None, Iterable[tuple[Table, tuple]]]]:
-        # high_watermark required for pg_bulk_ingest
-        for batch in batched(records, batch_size):
-            yield None, None, ((table, t) for t in batch)
-
-    return _batches
-
-
-def isolate_table(table: DeclarativeMeta) -> tuple[MetaData, Table]:
-    """Creates an isolated copy of a SQLAlchemy table.
-
-    This is used to prevent pg_bulk_ingest from attempting to drop unrelated tables
-    in the same schema. The function creates a new Table instance with:
-
-    * A fresh MetaData instance
-    * Copied columns
-    * Recreated indices properly bound to the new table
+    It will either copy directly (and error if primary key constraints are violated),
+    or it can be run in upsert mode by using a staging table, which is slower.
 
     Args:
-        table: The DeclarativeMeta class whose table should be isolated
-
-    Returns:
-        A tuple of:
-
-            * The isolated SQLAlchemy MetaData
-            * A new SQLAlchemy Table instance with all columns and indices
+        data: A PyArrow table to write.
+        table_class: The SQLAlchemy ORM class for the table to write to.
+        max_chunksize: Size of data chunks to be read and copied.
+        upsert_keys: Columns used as keys for "on conflict do update".
+            If passed, it will run ingest in slower upsert mode.
+            If not passed and `update_columns` is passed, defaults to primary keys.
+        update_columns: Columns to update when upserting.
+            If passed, it will run ingest in slower upsert mode.
+            If not passed and `upsert_keys` is passed, defaults to all other columns.
     """
-    isolated_metadata = MetaData(schema=table.__table__.schema)
+    with (
+        MBDB.get_adbc_connection() as conn,
+        MBDB.get_session() as session,
+    ):
+        table: Table = table_class.__table__
+        metadata = table.metadata
 
-    isolated_table = Table(
-        table.__table__.name,
-        isolated_metadata,
-        *[c._copy() for c in table.__table__.columns],
-        schema=table.__table__.schema,
-    )
+        table_columns = [c.name for c in table.columns]
+        col_diff = set(data.column_names) - set(table_columns)
+        if len(col_diff) > 0:
+            raise ValueError(f"Table {table.name} does not have columns {col_diff}")
 
-    for idx in table.__table__.indexes:
-        Index(
-            idx.name,
-            *[isolated_table.c[col.name] for col in idx.columns],
-            **{k: v for k, v in idx.kwargs.items()},
-        )
+        if not update_columns and not upsert_keys:
+            try:
+                _copy_to_table(
+                    table_name=table.name,
+                    schema_name=table.schema,
+                    data=data,
+                    connection=conn,
+                    max_chunksize=max_chunksize,
+                )
+            except ADBCProgrammingError as e:
+                raise MatchboxDatabaseWriteError from e
 
-    return isolated_metadata, isolated_table
+        # Upsert mode (slower)
+        else:
+            pk_names = [c.name for c in table.primary_key.columns]
 
+            # Validate upsert arguments
+            if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
+                raise ValueError("Cannot update a custom upsert key")
 
-def batch_ingest(
-    records: list[tuple[Any]],
-    table: DeclarativeMeta,
-    conn: Connection,
-    batch_size: int,
-) -> None:
-    """Batch ingest records into a database table.
+            if len(set(update_columns or []) & set(pk_names)) > 0:
+                raise ValueError(
+                    "Cannot update a primary key without "
+                    "setting a different custom upsert key"
+                )
 
-    We isolate the table and metadata as pg_bulk_ingest will try and drop unrelated
-    tables if they're in the same schema.
-    """
-    isolated_metadata, isolated_table = isolate_table(table=table)
+            # If necessary, set defaults for upsert variables
+            upsert_keys = upsert_keys or pk_names
 
-    fn_batch = data_to_batch(
-        records=records,
-        table=isolated_table,
-        batch_size=batch_size,
-    )
+            if not update_columns:
+                update_columns = [c for c in table_columns if c not in upsert_keys]
+            try:
+                # Create temp table
+                temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
+                temp_table = Table(
+                    temp_table_name, metadata, *[c.copy() for c in table.columns]
+                )
+                temp_table.create(session.bind)
 
-    ingest(
-        conn=conn,
-        metadata=isolated_metadata,
-        batches=fn_batch,
-        upsert=Upsert.IF_PRIMARY_KEY,
-        delete=Delete.OFF,
-    )
+                # Add new records to temp table
+                _copy_to_table(
+                    table_name=temp_table_name,
+                    schema_name=table.schema,
+                    data=data,
+                    connection=conn,
+                    max_chunksize=max_chunksize,
+                )
+
+                # Copy new records to original table
+                insert_stmt = insert(table).from_select(
+                    [c.name for c in temp_table.columns], temp_table.select()
+                )
+                upsert_stmt = insert_stmt.on_conflict_do_update(
+                    index_elements=upsert_keys,
+                    set_={c: getattr(insert_stmt.excluded, c) for c in update_columns},
+                )
+
+                session.execute(upsert_stmt)
+                session.commit()
+
+            except (ADBCProgrammingError, IntegrityError) as e:
+                raise MatchboxDatabaseWriteError from e
+
+            finally:
+                # Drop temp table
+                temp_table.drop(session.bind, checkfirst=True)
