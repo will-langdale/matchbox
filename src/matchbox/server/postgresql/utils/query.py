@@ -27,6 +27,26 @@ from matchbox.server.postgresql.utils.db import compile_sql
 T = TypeVar("T")
 
 
+def _get_dataset_source(
+    source_name_address: SourceAddress, session: Session
+) -> Sources:
+    """Converts the named address of source to a Sources ORM object."""
+    source = (
+        session.query(Sources)
+        .filter(
+            Sources.full_name == source_name_address.full_name,
+            Sources.warehouse_hash == source_name_address.warehouse_hash,
+        )
+        .first()
+    )
+    if source is None:
+        raise MatchboxSourceNotFoundError(
+            address=str(source_name_address),
+        )
+
+    return source
+
+
 def _get_dataset_resolution(
     source_name_address: SourceAddress, session: Session
 ) -> Resolutions:
@@ -108,7 +128,8 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
             # This is a dataset - get all its clusters through ClusterSourcePK
             resolution_valid = (
                 select(ClusterSourcePK.cluster_id.label("cluster"))
-                .where(ClusterSourcePK.source_id == resolution_id)
+                .join(Sources, Sources.source_id == ClusterSourcePK.source_id)
+                .where(Sources.resolution_id == resolution_id)
                 .distinct()
             )
         else:
@@ -130,16 +151,16 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
 
 
 def _resolve_cluster_hierarchy(
-    dataset_id: int,
-    resolution: Resolutions,
+    dataset_source: Sources,
+    truth_resolution: Resolutions,
     engine: Engine,
     threshold: int | None = None,
 ) -> Select:
     """Resolves the final cluster assignments for all records in a dataset.
 
     Args:
-        dataset_id: ID of the dataset to query
-        resolution: Resolution object representing the point of truth
+        dataset_source: Source object of the dataset to query
+        truth_resolution: Resolution object representing the point of truth
         engine: Engine for database connection
         threshold: Optional threshold value
 
@@ -148,12 +169,12 @@ def _resolve_cluster_hierarchy(
         hash is the ultimate parent cluster hash and id is the original record ID
     """
     with Session(engine) as session:
-        dataset_resolution = session.get(Resolutions, dataset_id)
+        dataset_resolution = session.get(Resolutions, dataset_source.resolution_id)
         if dataset_resolution is None:
             raise MatchboxSourceNotFoundError()
 
         try:
-            lineage_truths = resolution.get_lineage_to_dataset(
+            lineage_truths = truth_resolution.get_lineage_to_dataset(
                 dataset=dataset_resolution
             )
         except ValueError as e:
@@ -163,7 +184,7 @@ def _resolve_cluster_hierarchy(
 
         thresholds = _resolve_thresholds(
             lineage_truths=lineage_truths,
-            resolution=resolution,
+            resolution=truth_resolution,
             threshold=threshold,
         )
 
@@ -180,7 +201,7 @@ def _resolve_cluster_hierarchy(
             .where(
                 and_(
                     Clusters.cluster_id.in_(select(valid_clusters.c.cluster)),
-                    ClusterSourcePK.source_id == dataset_id,
+                    ClusterSourcePK.source_id == dataset_source.source_id,
                 )
             )
             .cte("mapping_0")
@@ -278,22 +299,23 @@ def query(
     """
     engine = MBDB.get_engine()
     with Session(engine) as session:
-        dataset_resolution = _get_dataset_resolution(source_address, session)
+        dataset_source = _get_dataset_source(source_address, session)
+        dataset_resolution = session.get(Resolutions, dataset_source.resolution_id)
 
         if resolution_name:
-            resolution = (
+            truth_resolution = (
                 session.query(Resolutions)
                 .filter(Resolutions.name == resolution_name)
                 .first()
             )
-            if resolution is None:
+            if truth_resolution is None:
                 raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
         else:
-            resolution = dataset_resolution
+            truth_resolution = dataset_resolution
 
         id_query = _resolve_cluster_hierarchy(
-            dataset_id=dataset_resolution.resolution_id,
-            resolution=resolution,
+            dataset_source=dataset_source,
+            truth_resolution=truth_resolution,
             threshold=threshold,
             engine=engine,
         )
@@ -468,21 +490,9 @@ def _build_hierarchy_down(
     return hierarchy_down.union_all(recursive)
 
 
-def _get_target_resolutions(
-    targets: list[SourceAddress], session: Session
-) -> list[tuple[Resolutions, str]]:
-    """Get target resolutions with source address."""
-    target_resolutions = []
-    for t in targets:
-        target_resolution = _get_dataset_resolution(t, session)
-        target_resolutions.append((target_resolution, t))
-
-    return target_resolutions
-
-
 def _build_match_query(
     source_pk: str,
-    source_resolution_id: int,
+    dataset_source: Sources,
     resolution_name: str,
     session: Session,
     threshold: int | None = None,
@@ -508,7 +518,7 @@ def _build_match_query(
 
     # Build the query components
     unnested = _build_unnested_clusters()
-    source_cluster = _find_source_cluster(unnested, source_resolution_id, source_pk)
+    source_cluster = _find_source_cluster(unnested, dataset_source.source_id, source_pk)
     hierarchy_up = _build_hierarchy_up(source_cluster, valid_clusters)
     highest = _find_highest_parent(hierarchy_up)
     hierarchy_down = _build_hierarchy_down(highest, unnested, valid_clusters)
@@ -548,11 +558,11 @@ def match(
     """
     with Session(engine) as session:
         # Get all matches for source_pk in all possible targets
-        dataset_resolution = _get_dataset_resolution(source, session)
+        dataset_source = _get_dataset_source(source, session)
 
         match_stmt = _build_match_query(
             source_pk=source_pk,
-            source_resolution_id=dataset_resolution.resolution_id,
+            dataset_source=dataset_source,
             resolution_name=resolution_name,
             session=session,
             threshold=threshold,
@@ -560,30 +570,25 @@ def match(
 
         matches = session.execute(match_stmt).all()
 
-        # Return matches in target resolutions only
-        target_resolutions = _get_target_resolutions(targets, session)
-
+        # Return matches in target sources only
         cluster = None
-        matches_by_dataset: dict[int, set] = {}
-        for cluster_id, dataset_id, id_in_source in matches:
+        matches_by_source_id: dict[int, set] = {}
+        for cluster_id, source_id, id_in_source in matches:
             if cluster is None:
                 cluster = cluster_id
-            if dataset_id not in matches_by_dataset:
-                matches_by_dataset[dataset_id] = set()
-            matches_by_dataset[dataset_id].add(id_in_source)
+            if source_id not in matches_by_source_id:
+                matches_by_source_id[source_id] = set()
+            matches_by_source_id[source_id].add(id_in_source)
 
         result = []
-        for target_resolution, target_address in target_resolutions:
+        for target_address in targets:
+            target_source = _get_dataset_source(target_address, session)
             match_obj = Match(
                 cluster=cluster,
                 source=source,
-                source_id=matches_by_dataset.get(
-                    dataset_resolution.resolution_id, set()
-                ),
+                source_id=matches_by_source_id.get(dataset_source.source_id, set()),
                 target=target_address,
-                target_id=matches_by_dataset.get(
-                    target_resolution.resolution_id, set()
-                ),
+                target_id=matches_by_source_id.get(target_source.source_id, set()),
             )
             result.append(match_obj)
 

@@ -304,7 +304,7 @@ async def get_upload_status(
     "/query",
     responses={404: {"model": NotFoundError}},
 )
-async def query(
+def query(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     full_name: str,
     warehouse_hash_b64: str,
@@ -346,7 +346,7 @@ async def query(
     "/match",
     responses={404: {"model": NotFoundError}},
 )
-async def match(
+def match(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     target_full_names: Annotated[list[str], Query()],
     target_warehouse_hashes_b64: Annotated[list[str], Query()],

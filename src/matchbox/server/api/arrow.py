@@ -1,6 +1,6 @@
 """Arrow utility functions for the Matchbox server."""
 
-from typing import TYPE_CHECKING, Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, Generator
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -62,9 +62,9 @@ async def table_to_s3(
     return key
 
 
-async def s3_to_recordbatch(
+def s3_to_recordbatch(
     client: S3Client, bucket: str, key: str, batch_size: int = 1000
-) -> AsyncGenerator[pa.RecordBatch, None]:
+) -> Generator[pa.RecordBatch, None, None]:
     """Download a PyArrow Table from S3 and stream it as RecordBatches."""
     response = client.get_object(Bucket=bucket, Key=key)
     buffer = pa.BufferReader(response["Body"].read())

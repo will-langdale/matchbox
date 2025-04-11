@@ -162,7 +162,7 @@ async def heartbeat(
                 pass
 
 
-async def process_upload(
+def process_upload(
     backend: MatchboxDBAdapter,
     upload_id: str,
     bucket: str,
@@ -178,19 +178,16 @@ async def process_upload(
         data = pa.Table.from_batches(
             [
                 batch
-                async for batch in s3_to_recordbatch(
-                    client=client, bucket=bucket, key=key
-                )
+                for batch in s3_to_recordbatch(client=client, bucket=bucket, key=key)
             ]
         )
 
-        async with heartbeat(metadata_store, upload_id):
-            if upload.upload_type == BackendUploadType.INDEX:
-                backend.index(source=upload.metadata, data_hashes=data)
-            elif upload.upload_type == BackendUploadType.RESULTS:
-                backend.set_model_results(model=upload.metadata.name, results=data)
-            else:
-                raise ValueError(f"Unknown upload type: {upload.upload_type}")
+        if upload.upload_type == BackendUploadType.INDEX:
+            backend.index(source=upload.metadata, data_hashes=data)
+        elif upload.upload_type == BackendUploadType.RESULTS:
+            backend.set_model_results(model=upload.metadata.name, results=data)
+        else:
+            raise ValueError(f"Unknown upload type: {upload.upload_type}")
 
         metadata_store.update_status(upload_id, "complete")
 

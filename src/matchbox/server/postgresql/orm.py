@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     ForeignKey,
+    Identity,
     Index,
     UniqueConstraint,
     func,
@@ -178,7 +179,7 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "source_columns"
 
     # Columns
-    column_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    column_id = Column(BIGINT, primary_key=True)
     source_id = Column(
         BIGINT,
         ForeignKey("sources.source_id", ondelete="CASCADE"),
@@ -240,10 +241,9 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
-    source_id = Column(BIGINT, autoincrement=True, primary_key=True)
+    source_id = Column(BIGINT, Identity(start=1), primary_key=True)
     resolution_id = Column(
-        BIGINT,
-        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        BIGINT, ForeignKey("resolutions.resolution_id", ondelete="CASCADE")
     )
     resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
@@ -267,7 +267,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     clusters = relationship(
         "Clusters",
         secondary=ClusterSourcePK.__table__,
-        primaryjoin="Sources.resolution_id == ClusterSourcePK.source_id",
+        primaryjoin="Sources.source_id == ClusterSourcePK.source_id",
         secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
         viewonly=True,
     )
@@ -339,7 +339,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         "Sources",
         secondary=ClusterSourcePK.__table__,
         primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
-        secondaryjoin="ClusterSourcePK.source_id == Sources.resolution_id",
+        secondaryjoin="ClusterSourcePK.source_id == Sources.source_id",
         viewonly=True,
     )
 

@@ -72,7 +72,7 @@ async def test_file_to_s3(s3: S3Client):
     response_table = pa.Table.from_batches(
         [
             batch
-            async for batch in s3_to_recordbatch(
+            for batch in s3_to_recordbatch(
                 client=s3, bucket="test-bucket", key=upload_id
             )
         ]

@@ -145,7 +145,7 @@ def test_benchmark_match_query_generation(
 
         sql_match = compile_match_sql(
             source_pk=next(iter(source_entity.source_pks["duns"])),
-            resolution_name=str(duns_testkit.source.address),
+            source_address=duns_testkit.source.address,
             point_of_truth="deterministic_naive_test.crn_naive_test.duns",
         )
 
