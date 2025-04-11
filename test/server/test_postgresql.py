@@ -477,3 +477,50 @@ def test_large_ingest_upsert_custom_key(
     metadata.clear()  # clear all Table objects from this MetaData, doesn't touch DB
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
+
+
+@pytest.mark.docker
+def test_sync_schema(
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+):
+    """Test the basic functionality of the schema synchronization."""
+    engine = MBDB.get_engine()
+    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
+
+    # First sync to ensure we start with a clean state
+    MBDB.sync_schema()
+
+    # Count original tables for later comparison
+    with engine.connect() as conn:
+        original_tables = conn.dialect.get_table_names(
+            conn, schema=MBDB.settings.postgres.db_schema
+        )
+        original_tables_count = len(original_tables)
+
+    # Create a dummy table that's not part of the ORM
+    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
+        __tablename__ = "dummytable_schema_test"
+        pk = Column(BIGINT, primary_key=True)
+        foo = Column(TEXT, nullable=False)
+
+    # Create the table in the database
+    metadata.create_all(engine, tables=[DummyTable.__table__])
+
+    # Verify the table was created
+    with engine.connect() as conn:
+        tables = conn.dialect.get_table_names(
+            conn, schema=MBDB.settings.postgres.db_schema
+        )
+        assert "dummytable_schema_test" in tables
+        assert len(tables) == original_tables_count + 1
+
+    # Now run sync_schema - should detect the schema difference and recreate
+    MBDB.sync_schema()
+
+    # Verify the dummy table is gone (schema was recreated)
+    with engine.connect() as conn:
+        tables = conn.dialect.get_table_names(
+            conn, schema=MBDB.settings.postgres.db_schema
+        )
+        assert "dummytable_schema_test" not in tables
+        assert len(tables) == original_tables_count

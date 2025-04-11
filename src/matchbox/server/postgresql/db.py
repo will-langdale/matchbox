@@ -4,11 +4,14 @@ from contextlib import contextmanager
 from typing import Any, Generator
 
 from adbc_driver_postgresql import dbapi as adbc_dbapi
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
+from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxBackends, MatchboxServerSettings
 
 
@@ -152,6 +155,38 @@ class MatchboxDatabase:
         self._reset_connections()
 
         self.create_database()
+
+    def sync_schema(self):
+        """Synchronise the database schema with the ORM.
+
+        If any differences are detected, drop and recreate the database.
+        """
+        engine = self.get_engine()
+
+        # Check if schema exists, create if not
+        with engine.connect() as conn:
+            schemas = conn.dialect.get_schema_names(conn)
+            if self.settings.postgres.db_schema not in schemas:
+                self.create_database()
+                return
+
+        # Compare schema with ORM, drop and recreate if different
+        with engine.connect() as conn:
+            opts = {
+                "compare_type": True,
+                "compare_server_default": True,
+                "include_schemas": True,
+            }
+            context = MigrationContext.configure(conn, opts=opts)
+
+            diff = compare_metadata(context, self.MatchboxBase.metadata)
+
+            if diff:
+                logger.warning(
+                    "Schema mismatch detected. Dropping and recreating database. \n"
+                    f"Diff: {diff}"
+                )
+                self.clear_database()
 
 
 # Global database instance -- everything should use this
