@@ -139,7 +139,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Initialise the PostgreSQL adapter."""
         self.settings = settings
         MBDB.settings = settings
-        MBDB.create_database()
+        MBDB.sync_schema()
 
         self.datasets = Sources
         self.models = FilteredResolutions(datasets=False, humans=False, models=True)
