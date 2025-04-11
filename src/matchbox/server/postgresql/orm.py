@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     Index,
+    Sequence,
     UniqueConstraint,
     func,
     select,
@@ -240,7 +241,12 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "sources"
 
     # Columns
-    source_id = Column(BIGINT, autoincrement=True, primary_key=True)
+    source_id = Column(
+        BIGINT,
+        Sequence("sources_source_id_seq", start=1, increment=1),
+        autoincrement=True,
+        primary_key=True,
+    )
     resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
@@ -267,7 +273,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     clusters = relationship(
         "Clusters",
         secondary=ClusterSourcePK.__table__,
-        primaryjoin="Sources.resolution_id == ClusterSourcePK.source_id",
+        primaryjoin="Sources.source_id == ClusterSourcePK.source_id",
         secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
         viewonly=True,
     )
@@ -339,7 +345,7 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         "Sources",
         secondary=ClusterSourcePK.__table__,
         primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
-        secondaryjoin="ClusterSourcePK.source_id == Sources.resolution_id",
+        secondaryjoin="ClusterSourcePK.source_id == Sources.source_id",
         viewonly=True,
     )
 

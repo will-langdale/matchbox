@@ -27,24 +27,23 @@ def compile_query_sql(point_of_truth: str, source_address: SourceAddress) -> str
     engine = MBDB.get_engine()
 
     with Session(engine) as session:
-        point_of_truth_resolution = (
+        truth_resolution = (
             session.query(Resolutions)
             .filter(Resolutions.name == point_of_truth)
             .first()
         )
-        dataset_id = (
-            session.query(Resolutions.resolution_id)
-            .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
+        dataset_source = (
+            session.query(Sources)
             .filter(
                 Sources.full_name == source_address.full_name,
                 Sources.warehouse_hash == source_address.warehouse_hash,
             )
-            .scalar()
+            .first()
         )
 
         id_query = _resolve_cluster_hierarchy(
-            dataset_id=dataset_id,
-            resolution=point_of_truth_resolution,
+            dataset_source=dataset_source,
+            truth_resolution=truth_resolution,
             threshold=None,
             engine=engine,
         )
@@ -56,7 +55,9 @@ def compile_query_sql(point_of_truth: str, source_address: SourceAddress) -> str
     return str(compiled_stmt) + ";"
 
 
-def compile_match_sql(source_pk: str, resolution_name: str, point_of_truth: str) -> str:
+def compile_match_sql(
+    source_pk: str, source_address: SourceAddress, point_of_truth: str
+) -> str:
     """Compiles a the SQL for match() based on a single point of truth and dataset.
 
     Note this only tests the query that retrieves all valid matches for the supplied
@@ -65,7 +66,7 @@ def compile_match_sql(source_pk: str, resolution_name: str, point_of_truth: str)
 
     Args:
         source_pk: The name of the primary key of the source table
-        resolution_name: The resolution name of the source table
+        source_address: The address of the source to use
         point_of_truth: The name of the resolution to use, like "linker_1"
 
     Returns:
@@ -74,15 +75,18 @@ def compile_match_sql(source_pk: str, resolution_name: str, point_of_truth: str)
     engine = MBDB.get_engine()
 
     with Session(engine) as session:
-        dataset_resolution = (
-            session.query(Resolutions)
-            .filter(Resolutions.name == resolution_name)
+        dataset_source = (
+            session.query(Sources)
+            .filter(
+                Sources.full_name == source_address.full_name,
+                Sources.warehouse_hash == source_address.warehouse_hash,
+            )
             .first()
         )
 
         match_query = _build_match_query(
             source_pk=source_pk,
-            source_resolution_id=dataset_resolution.resolution_id,
+            dataset_source=dataset_source,
             resolution_name=point_of_truth,
             session=session,
             threshold=None,

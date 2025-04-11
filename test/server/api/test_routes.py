@@ -233,8 +233,7 @@ def test_status_check_not_found(metadata_store: Mock, test_client: TestClient):
     assert "not found or expired" in response.json()["details"].lower()
 
 
-@pytest.mark.asyncio
-async def test_process_upload_deletes_file_on_failure(s3: S3Client):
+def test_process_upload_deletes_file_on_failure(s3: S3Client):
     """Test that files are deleted from S3 even when processing fails."""
     # Setup
     bucket = "test-bucket"
@@ -262,7 +261,7 @@ async def test_process_upload_deletes_file_on_failure(s3: S3Client):
 
     # Run the process, expecting it to fail
     with pytest.raises(MatchboxServerFileError) as excinfo:
-        await process_upload(
+        process_upload(
             backend=mock_backend,
             upload_id=upload_id,
             bucket=bucket,

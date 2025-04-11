@@ -149,17 +149,15 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
             full_name=source.address.full_name,
             warehouse_hash=source.address.warehouse_hash,
             db_pk=source.db_pk,
+            columns=[
+                SourceColumns(
+                    column_index=idx,
+                    column_name=column.name,
+                    column_type=column.type,
+                )
+                for idx, column in enumerate(source.columns)
+            ],
         )
-
-        # Add columns directly through the relationship
-        for idx, column in enumerate(source.columns):
-            source_column = SourceColumns(
-                source_id=source_obj.source_id,
-                column_index=idx,
-                column_name=column.name,
-                column_type=column.type,
-            )
-            source_obj.columns.append(source_column)
 
         session.add(source_obj)
         session.commit()
@@ -413,7 +411,7 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
     # Subquery for source datasets
     source_datasets = (
         select(ClusterSourcePK.cluster_id)
-        .join(Sources, Sources.resolution_id == ClusterSourcePK.source_id)
+        .join(Sources, Sources.source_id == ClusterSourcePK.source_id)
         .where(Sources.resolution_id.in_(select(resolution_set.c.resolution_id)))
     )
 
