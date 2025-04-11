@@ -490,18 +490,6 @@ def _build_hierarchy_down(
     return hierarchy_down.union_all(recursive)
 
 
-def _get_target_sources(
-    targets: list[SourceAddress], session: Session
-) -> list[tuple[Sources, str]]:
-    """Get target resolutions with source address."""
-    target_sources: list[tuple[Sources, str]] = []
-    for t in targets:
-        target_source = _get_dataset_source(t, session)
-        target_sources.append((target_source, t))
-
-    return target_sources
-
-
 def _build_match_query(
     source_pk: str,
     dataset_source: Sources,
@@ -582,9 +570,7 @@ def match(
 
         matches = session.execute(match_stmt).all()
 
-        # Return matches in target resolutions only
-        target_sources = _get_target_sources(targets, session)
-
+        # Return matches in target sources only
         cluster = None
         matches_by_source_id: dict[int, set] = {}
         for cluster_id, source_id, id_in_source in matches:
@@ -595,7 +581,8 @@ def match(
             matches_by_source_id[source_id].add(id_in_source)
 
         result = []
-        for target_source, target_address in target_sources:
+        for target_address in targets:
+            target_source = _get_dataset_source(target_address, session)
             match_obj = Match(
                 cluster=cluster,
                 source=source,
