@@ -171,11 +171,18 @@ class MatchboxDatabase:
                 return
 
         # Compare schema with ORM, drop and recreate if different
+        def _include_name(name: str, type_: str, _: dict[str, str]) -> bool:
+            if type_ == "schema":
+                return name == self.settings.postgres.db_schema
+            else:
+                return True
+
         with engine.connect() as conn:
             opts = {
                 "compare_type": True,
                 "compare_server_default": True,
                 "include_schemas": True,
+                "include_names": _include_name,
             }
             context = MigrationContext.configure(conn, opts=opts)
 

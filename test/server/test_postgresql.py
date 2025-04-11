@@ -483,44 +483,78 @@ def test_large_ingest_upsert_custom_key(
 def test_sync_schema(
     matchbox_postgres: MatchboxPostgres,  # will drop dummy table
 ):
-    """Test the basic functionality of the schema synchronization."""
+    """Test the basic functionality of the schema synchronisation.
+
+    * Syncing the schema removes tables not in the ORM
+    * Syncing the schema does not remove tables in other schemas
+    """
     engine = MBDB.get_engine()
-    metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
+    our_schema = MBDB.settings.postgres.db_schema
+    other_schema = "test_other_schema"
 
     # First sync to ensure we start with a clean state
     MBDB.sync_schema()
 
-    # Count original tables for later comparison
+    # Create another schema for testing
     with engine.connect() as conn:
-        original_tables = conn.dialect.get_table_names(
-            conn, schema=MBDB.settings.postgres.db_schema
-        )
-        original_tables_count = len(original_tables)
+        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {other_schema}"))
+        conn.commit()
 
-    # Create a dummy table that's not part of the ORM
-    class DummyTable(CountMixin, declarative_base(metadata=metadata)):
-        __tablename__ = "dummytable_schema_test"
+        # Verify both schemas exist
+        schemas = conn.dialect.get_schema_names(conn)
+        assert our_schema in schemas
+        assert other_schema in schemas
+
+        # Count original tables in our schema
+        our_tables = conn.dialect.get_table_names(conn, schema=our_schema)
+        our_tables_count = len(our_tables)
+
+    # Create a table in our schema (that's not in the ORM)
+    our_metadata = MetaData(schema=our_schema)
+
+    class DummyTableOurs(CountMixin, declarative_base(metadata=our_metadata)):
+        __tablename__ = "dummytable_our_schema"
         pk = Column(BIGINT, primary_key=True)
         foo = Column(TEXT, nullable=False)
 
-    # Create the table in the database
-    metadata.create_all(engine, tables=[DummyTable.__table__])
+    # Create a table in the other schema
+    other_metadata = MetaData(schema=other_schema)
 
-    # Verify the table was created
+    class DummyTableOther(declarative_base(metadata=other_metadata)):
+        __tablename__ = "dummytable_other_schema"
+        pk = Column(BIGINT, primary_key=True)
+        foo = Column(TEXT, nullable=False)
+
+    # Create both tables in the database
+    our_metadata.create_all(engine, tables=[DummyTableOurs.__table__])
+    other_metadata.create_all(engine, tables=[DummyTableOther.__table__])
+
+    # Verify the tables were created
     with engine.connect() as conn:
-        tables = conn.dialect.get_table_names(
-            conn, schema=MBDB.settings.postgres.db_schema
-        )
-        assert "dummytable_schema_test" in tables
-        assert len(tables) == original_tables_count + 1
+        # Check our schema
+        our_tables = conn.dialect.get_table_names(conn, schema=our_schema)
+        assert "dummytable_our_schema" in our_tables
+        assert len(our_tables) == our_tables_count + 1
 
-    # Now run sync_schema - should detect the schema difference and recreate
+        # Check other schema
+        other_tables = conn.dialect.get_table_names(conn, schema=other_schema)
+        assert "dummytable_other_schema" in other_tables
+
+    # Now run sync_schema - should detect differences only in our schema
     MBDB.sync_schema()
 
-    # Verify the dummy table is gone (schema was recreated)
+    # Verify only our schema's table was removed, other schema's table remains
     with engine.connect() as conn:
-        tables = conn.dialect.get_table_names(
-            conn, schema=MBDB.settings.postgres.db_schema
-        )
-        assert "dummytable_schema_test" not in tables
-        assert len(tables) == original_tables_count
+        # Our schema should be recreated, table gone
+        our_tables = conn.dialect.get_table_names(conn, schema=our_schema)
+        assert "dummytable_our_schema" not in our_tables
+        assert len(our_tables) == our_tables_count
+
+        # Other schema should be untouched
+        other_tables = conn.dialect.get_table_names(conn, schema=other_schema)
+        assert "dummytable_other_schema" in other_tables
+
+    # Clean up other schema
+    with engine.connect() as conn:
+        conn.execute(text(f"DROP SCHEMA {other_schema} CASCADE"))
+        conn.commit()
