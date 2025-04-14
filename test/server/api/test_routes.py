@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
+    APISettings,
     BackendRetrievableType,
     ModelAncestor,
     ModelOperationType,
@@ -31,6 +32,7 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.api.cache import MetadataStore, process_upload
+from matchbox.server.api.routes import get_settings
 from matchbox.server.base import MatchboxDBAdapter
 
 if TYPE_CHECKING:
@@ -49,6 +51,41 @@ def test_healthcheck(test_client: TestClient):
     response = OKMessage.model_validate(response.json())
     assert response.status == "OK"
     assert response.version == version("matchbox-db")
+
+
+@patch("matchbox.server.api.routes.settings_to_backend")
+def test_get_settings_endpoint(get_backend: Mock, test_client: TestClient):
+    """Test /admin/settings returns current settings."""
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+
+    test_client.headers["X-API-Key"] = "test-api-key"
+    response = test_client.get("/admin/settings")
+
+    assert response.status_code == 200
+    assert APISettings.model_validate(response.json())
+
+
+@patch("matchbox.server.api.routes.settings_to_backend")
+def test_update_settings_endpoint(get_backend: Mock, test_client: TestClient):
+    """Test /admin/settings updates global settings."""
+    mock_backend = Mock()
+    get_backend.return_value = mock_backend
+
+    # Define new settings
+    new_settings = {"batch_size": 500, "log_level": "DEBUG", "log_sql": True}
+
+    test_client.headers["X-API-Key"] = "test-api-key"
+    response = test_client.post("/admin/settings", json=new_settings)
+
+    assert response.status_code == 200
+    assert APISettings.model_validate(response.json()) == APISettings(**new_settings)
+
+    # Verify settings were actually updated
+    current_settings = get_settings()
+    assert current_settings.batch_size == 500
+    assert current_settings.log_level == "DEBUG"
+    assert current_settings.log_sql is True
 
 
 @patch("matchbox.server.api.routes.settings_to_backend")

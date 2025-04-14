@@ -4,7 +4,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from importlib.metadata import version
-from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
+from typing import Annotated, AsyncGenerator
 
 from fastapi import (
     BackgroundTasks,
@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
+    APISettings,
     BackendCountableType,
     BackendRetrievableType,
     BackendUploadType,
@@ -51,11 +52,6 @@ from matchbox.server.base import (
     get_backend_settings,
     settings_to_backend,
 )
-
-if TYPE_CHECKING:
-    from mypy_boto3_s3.client import S3Client
-else:
-    S3Client = Any
 
 
 class ParquetResponse(Response):
@@ -107,6 +103,7 @@ metadata_store = MetadataStore(expiry_minutes=30)
 
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
+SETTINGS: MatchboxServerSettings | None = None
 
 
 app = FastAPI(
@@ -124,9 +121,14 @@ async def http_exception_handler(request, exc):
 
 def get_settings() -> MatchboxServerSettings:
     """Get server settings."""
-    base_settings = MatchboxServerSettings()
-    SettingsClass = get_backend_settings(base_settings.backend_type)
-    return SettingsClass()
+    global SETTINGS
+
+    if SETTINGS is None:
+        base_settings = MatchboxServerSettings()
+        SettingsClass = get_backend_settings(base_settings.backend_type)
+        SETTINGS = SettingsClass()
+
+    return SETTINGS
 
 
 def get_backend(
@@ -169,6 +171,41 @@ def validate_api_key(
 async def healthcheck() -> OKMessage:
     """Perform a health check and return the status."""
     return OKMessage()
+
+
+@app.get("/admin/settings", dependencies=[Depends(validate_api_key)])
+async def get_user_settings(
+    settings: Annotated[MatchboxServerSettings, Depends(get_settings)],
+) -> APISettings:
+    """Get user-facing server settings."""
+    return APISettings(
+        batch_size=settings.batch_size,
+        log_level=settings.log_level,
+        log_sql=settings.log_sql,
+    )
+
+
+@app.post("/admin/settings", dependencies=[Depends(validate_api_key)])
+async def update_settings(
+    updated_settings: APISettings,
+) -> APISettings:
+    """Update user-facing server settings."""
+    global SETTINGS
+
+    settings = get_settings()
+
+    if updated_settings.batch_size is not None:
+        settings.batch_size = updated_settings.batch_size
+    if updated_settings.log_level is not None:
+        settings.log_level = updated_settings.log_level
+    if updated_settings.log_sql is not None:
+        settings.log_sql = updated_settings.log_sql
+
+    return APISettings(
+        batch_size=settings.batch_size,
+        log_level=settings.log_level,
+        log_sql=settings.log_sql,
+    )
 
 
 @app.post(
