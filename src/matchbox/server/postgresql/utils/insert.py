@@ -3,7 +3,7 @@
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import Engine, delete, exists, select, union
+from sqlalchemy import Engine, delete, exists, select, union, union_all
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -405,39 +405,39 @@ def _get_resolution_related_clusters(resolution_id: int) -> Select:
         .where(ResolutionFrom.child != resolution_id)
     )
 
-    resolution_set = union(
+    resolution_set = union_all(
         direct_resolution, parent_resolutions, sibling_resolutions
     ).cte("resolution_set")
 
-    # Main query
-    base_query = (
+    # Dataset resolutions
+    dataset_clusters = (
         select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
-        .distinct()
         .select_from(Clusters)
-        .join(Probabilities, Probabilities.cluster == Clusters.cluster_id, isouter=True)
-    )
-
-    # Subquery for source datasets
-    source_datasets = (
-        select(ClusterSourcePK.cluster_id)
+        .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
         .join(Sources, Sources.source_id == ClusterSourcePK.source_id)
-        .where(Sources.resolution_id.in_(select(resolution_set.c.resolution_id)))
+        .join(resolution_set, Sources.resolution_id == resolution_set.c.resolution_id)
     )
 
-    # Subquery for model resolutions
-    model_resolutions = select(resolution_set.c.resolution_id).where(
-        ~exists()
-        .select_from(Sources)
-        .where(Sources.resolution_id == resolution_set.c.resolution_id)
+    # Model resolutions
+    model_resolutions = (
+        select(resolution_set.c.resolution_id)
+        .select_from(resolution_set)
+        .where(
+            ~exists()
+            .select_from(Sources)
+            .where(Sources.resolution_id == resolution_set.c.resolution_id)
+        )
     )
 
-    # Combine conditions
-    final_query = base_query.where(
-        (Clusters.cluster_id.in_(source_datasets))
-        | (Probabilities.resolution.in_(model_resolutions))
+    model_clusters = (
+        select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
+        .select_from(Clusters)
+        .join(Probabilities, Probabilities.cluster == Clusters.cluster_id)
+        .where(Probabilities.resolution.in_(model_resolutions))
     )
 
-    return final_query
+    # Combine both results with union and distinct
+    return union(dataset_clusters, model_clusters)
 
 
 def _results_to_insert_tables(
@@ -469,6 +469,8 @@ def _results_to_insert_tables(
     hm = HashIDMap(start=Clusters.next_id(), lookup=lookup)
 
     # Join hashes, probabilities and components
+    logger.debug("Attaching components to hashes", prefix=log_prefix)
+
     probs_with_ccs = attach_components_to_probabilities(
         pa.table(
             {
@@ -480,6 +482,8 @@ def _results_to_insert_tables(
     )
 
     # Calculate hierarchies
+    logger.debug("Computing hierarchies", prefix=log_prefix)
+
     hierarchy = to_hierarchical_clusters(
         probabilities=probs_with_ccs,
         hash_func=hash_values,
@@ -487,6 +491,8 @@ def _results_to_insert_tables(
     )
 
     # Create Probabilities Arrow table to insert, containing all generated probabilities
+    logger.debug("Filtering to target table shapes", prefix=log_prefix)
+
     probabilities = pa.table(
         {
             "resolution": pa.array(
