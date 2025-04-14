@@ -219,7 +219,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .filter(Resolutions.name == resolution_name)
                 .first()
             )
-            # Find all sources matching a resolution in scope
+            # Find all resolutions in scope (selected + ancestors)
             relevant_resolutions = (
                 session.query(Resolutions)
                 .filter(
@@ -232,6 +232,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 )
                 .subquery()
             )
+
+            # Find all sources matching a resolution in scope
             res_sources: list[Sources] = (
                 session.query(Sources)
                 .join(
