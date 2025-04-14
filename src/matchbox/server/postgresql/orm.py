@@ -17,6 +17,9 @@ from sqlalchemy.dialects.postgresql import BYTEA, TEXT
 from sqlalchemy.orm import relationship
 
 from matchbox.common.graph import ResolutionNodeType
+from matchbox.common.sources import Source as CommonSource
+from matchbox.common.sources import SourceAddress
+from matchbox.common.sources import SourceColumn as CommonSourceCoulmn
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -278,10 +281,35 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     )
 
     @classmethod
-    def list(cls) -> list["Sources"]:
+    def list_all(cls) -> list["Sources"]:
         """Returns all sources in the database."""
         with MBDB.get_session() as session:
             return session.query(cls).all()
+
+    def to_common_source(self) -> list[CommonSource]:
+        """Convert ORM source to a matchbox.common Source object."""
+        with MBDB.get_session() as session:
+            columns: list[SourceColumns] = (
+                session.query(SourceColumns)
+                .filter(SourceColumns.source_id == self.source_id)
+                .order_by(SourceColumns.column_index)
+                .all()
+            )
+
+        return CommonSource(
+            resolution_name=self.resolution_name,
+            address=SourceAddress(
+                full_name=self.full_name, warehouse_hash=self.warehouse_hash
+            ),
+            db_pk=self.db_pk,
+            columns=[
+                CommonSourceCoulmn(
+                    name=column.column_name,
+                    type=column.column_type,
+                )
+                for column in columns
+            ],
+        )
 
 
 class Contains(CountMixin, MBDB.MatchboxBase):

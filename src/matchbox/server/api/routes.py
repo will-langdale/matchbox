@@ -426,6 +426,26 @@ async def get_source(
         ) from e
 
 
+@app.get(
+    "/sources",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_resolution_sources(
+    backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
+    resolution_name: str,
+) -> list[Source]:
+    """Get all sources in scope for a resolution."""
+    try:
+        return backend.get_resolution_sources(resolution_name=resolution_name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+
 @app.get("/report/resolutions")
 async def get_resolutions(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
