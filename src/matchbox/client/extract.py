@@ -51,8 +51,9 @@ def sql_interface(
 
     Returns:
         A tuple of 3 items containing:
-            * A table mapping from Matchbox IDs to all source PKs
-            * A table mapping sources and columns to column names in the view
+
+            * A PyArrow table mapping from Matchbox IDs to all source PKs
+            * A PyArrow table mapping sources and columns to column names in the view
             * The DQL definition of a view to use for querying results in SQL
 
     """
