@@ -192,7 +192,7 @@ class Countable(Protocol):
 class Listable(Protocol):
     """A protocol for objects that can be listed."""
 
-    def list(self) -> list[str]:
+    def list_all(self) -> list[str]:
         """Lists the items in the object."""
         ...
 
@@ -282,13 +282,28 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def get_source(self, address: SourceAddress) -> Source:
-        """Get a source from its name address.
+        """Get a source from its address.
 
         Args:
             address: The name address for the source
 
         Returns:
             A Source object
+        """
+        ...
+
+    @abstractmethod
+    def get_resolution_sources(
+        self,
+        resolution_name: str,
+    ) -> list[Source]:
+        """Get a list of sources queriable from a resolution.
+
+        Args:
+            resolution_name: Name of the resolution to query.
+
+        Returns:
+            List of relevant Source objects.
         """
         ...
 

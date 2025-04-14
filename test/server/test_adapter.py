@@ -44,7 +44,7 @@ class TestMatchboxBackend:
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""
         with self.scenario(self.backend, "index"):
-            assert isinstance(self.backend.datasets.list(), list)
+            assert isinstance(self.backend.datasets.list_all(), list)
             assert isinstance(self.backend.datasets.count(), int)
             assert isinstance(self.backend.models.count(), int)
             assert isinstance(self.backend.data.count(), int)
@@ -126,6 +126,26 @@ class TestMatchboxBackend:
                     )
                 )
 
+    def test_get_resolution_sources(self):
+        """Test retrieving sources available to a resolution."""
+        with self.scenario(self.backend, "link") as dag:
+            crn, duns = dag.sources["crn"], dag.sources["duns"]
+            dedupe_sources = self.backend.get_resolution_sources(
+                resolution_name="naive_test.crn"
+            )
+            link_sources = self.backend.get_resolution_sources(
+                resolution_name="deterministic_naive_test.crn_naive_test.duns"
+            )
+
+            assert {s.resolution_name for s in dedupe_sources} == {
+                crn.source.resolution_name
+            }
+
+            assert {s.resolution_name for s in link_sources} == {
+                crn.source.resolution_name,
+                duns.source.resolution_name,
+            }
+
     def test_get_resolution_graph(self):
         """Test getting the resolution graph."""
         graph = self.backend.get_resolution_graph()
@@ -147,7 +167,7 @@ class TestMatchboxBackend:
             assert isinstance(model, ModelMetadata)
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_model(model="nonexistant")
+                self.backend.get_model(model="nonexistent")
 
     def test_delete_model(self):
         """

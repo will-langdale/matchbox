@@ -14,7 +14,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Match, Source, SourceAddress, SourceColumn
+from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -28,7 +28,6 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     ResolutionFrom,
     Resolutions,
-    SourceColumns,
     Sources,
 )
 from matchbox.server.postgresql.utils.db import (
@@ -194,7 +193,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_source(self, address: SourceAddress) -> Source:  # noqa: D102
         with MBDB.get_session() as session:
-            source = (
+            source: Sources = (
                 session.query(Sources)
                 .where(
                     and_(
@@ -205,27 +204,44 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .first()
             )
             if source:
-                columns = (
-                    session.query(SourceColumns)
-                    .filter(SourceColumns.source_id == source.source_id)
-                    .order_by(SourceColumns.column_index)
-                    .all()
-                )
-
-                return Source(
-                    resolution_name=source.resolution_name,
-                    address=address,
-                    db_pk=source.db_pk,
-                    columns=[
-                        SourceColumn(
-                            name=column.column_name,
-                            type=column.column_type,
-                        )
-                        for column in columns
-                    ],
-                )
+                return source.to_common_source()
             else:
                 raise MatchboxSourceNotFoundError(address=str(address))
+
+    def get_resolution_sources(  # noqa: D102
+        self,
+        resolution_name: str,
+    ) -> list[Source]:
+        with MBDB.get_session() as session:
+            # Find resolution by name
+            resolution: Resolutions = (
+                session.query(Resolutions)
+                .filter(Resolutions.name == resolution_name)
+                .first()
+            )
+            # Find all sources matching a resolution in scope
+            relevant_resolutions = (
+                session.query(Resolutions)
+                .filter(
+                    Resolutions.resolution_id.in_(
+                        [
+                            res.resolution_id
+                            for res in resolution.ancestors.union([resolution])
+                        ]
+                    )
+                )
+                .subquery()
+            )
+            res_sources: list[Sources] = (
+                session.query(Sources)
+                .join(
+                    relevant_resolutions,
+                    Sources.resolution_id == relevant_resolutions.c.resolution_id,
+                )
+                .all()
+            )
+
+            return [s.to_common_source() for s in res_sources]
 
     def validate_ids(self, ids: list[int]) -> None:  # noqa: D102
         with MBDB.get_session() as session:
