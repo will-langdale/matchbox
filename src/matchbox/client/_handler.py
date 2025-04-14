@@ -121,7 +121,7 @@ def query(
     resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
-) -> BytesIO:
+) -> Table:
     log_prefix = f"Query {source_address.pretty}"
     logger.debug(f"Using {resolution_name}", prefix=log_prefix)
 
@@ -247,6 +247,15 @@ def get_source(address: SourceAddress) -> Source:
     res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
 
     return Source.model_validate(res.json())
+
+
+def get_resolution_sources(resolution_name: str) -> list[Source]:
+    log_prefix = f"Resolution {resolution_name}"
+    logger.debug("Retrieving", prefix=log_prefix)
+
+    res = CLIENT.get("/sources", params={"resolution_name": resolution_name})
+
+    return [Source.model_validate(s) for s in res.json()]
 
 
 def get_resolution_graph() -> ResolutionGraph:

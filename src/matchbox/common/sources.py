@@ -199,7 +199,8 @@ class Source(BaseModel):
         return self
 
     @needs_engine
-    def _get_remote_columns(self, exclude_pk=False) -> dict[str, str]:
+    def get_remote_columns(self, exclude_pk=False) -> dict[str, str]:
+        """Returns a dictionary of column names and SQLAlchemy types."""
         table = self.to_table()
         return {
             col.name: col.type
@@ -214,7 +215,7 @@ class Source(BaseModel):
         Default columns are all from the source warehouse other than `self.db_pk`.
         All other attributes are copied, and its engine (if present) is set.
         """
-        remote_columns = self._get_remote_columns(exclude_pk=True)
+        remote_columns = self.get_remote_columns(exclude_pk=True)
         columns_attribute = (
             SourceColumn(name=col_name, type=str(col_type))
             for col_name, col_type in remote_columns.items()
@@ -247,7 +248,7 @@ class Source(BaseModel):
         Args:
             columns: List of column names to check. If None, it will check self.columns
         """
-        remote_columns = self._get_remote_columns()
+        remote_columns = self.get_remote_columns()
 
         if self.db_pk not in remote_columns:
             raise MatchboxSourceColumnError(

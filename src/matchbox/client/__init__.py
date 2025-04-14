@@ -3,7 +3,7 @@
 from matchbox.client import dags, visualisation
 from matchbox.client.helpers.cleaner import process
 from matchbox.client.helpers.index import index
-from matchbox.client.helpers.selector import match, query
+from matchbox.client.helpers.selector import match, query, select
 from matchbox.client.models.models import make_model
 
 __all__ = (
@@ -13,5 +13,6 @@ __all__ = (
     "index",
     "match",
     "query",
+    "select",
     "make_model",
 )
