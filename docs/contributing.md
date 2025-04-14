@@ -79,3 +79,7 @@ We commit as frequently as possible. We keep our commits as atomic as possible. 
 
 !!! warning
     Pre-commit **must** be turned on. Any secrets you commit to the repo are your own responsibility.
+
+### AI
+
+In order to help reviewers prioritise their time appropriately, we expect any use of AI to be declared in your PR comment.

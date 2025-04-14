@@ -1,18 +1,22 @@
-# Context
+<!-- Give high level context to this PR -->
 
-## Changes proposed in this pull request
+## 🛠️ Changes proposed in this pull request
 
-* [List the main changes you've made]
+* <!-- List the main changes you've made -->
 
-## Guidance to review
+## 👀 Guidance to review
 
-[Help reviewers know where to focus their efforts, or flag controversial decisions]
+<!-- Help reviewers know where to focus their efforts, or flag controversial decisions -->
 
-## Relevant links
+## 🤖 AI declaration
 
-* [List any useful links]
+<!-- Declare code where AI was used, and how you ensured its quality -->
 
-## Checklist:
+## 🔗 Relevant links
+
+* <!-- List any useful links] -->
+
+## ✅ Checklist:
 
 - [ ] My code follows the style guidelines of this project
 - [ ] New and existing unit tests pass locally with my changes
