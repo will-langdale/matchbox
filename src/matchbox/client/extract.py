@@ -1,7 +1,7 @@
 """Functions to extract data out of the Matchbox server."""
 
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, String, func, select, text
 
 from matchbox.client import _handler
 from matchbox.common.sources import Source, SourceAddress
@@ -25,7 +25,8 @@ def _create_view_definition(
     for table_name, db_pk in db_pks.items():
         query = query.join(
             text(table_name),
-            text(f"{table_name}.{db_pk} = {mapping_table}.{table_name}_{db_pk}"),
+            func.cast(text(f"{table_name}.{db_pk}"), String)
+            == func.cast(text(f"{mapping_table}.{table_name}_{db_pk}"), String),
             isouter=True,
         )
 

@@ -18,7 +18,7 @@ def test_sql_interface(
     foo = source_from_tuple(
         full_name="foo",
         engine=sqlite_warehouse,
-        data_pks=["1", "2", "3"],
+        data_pks=[1, 2, 3],
         data_tuple=({"col": 0}, {"col": 1}, {"col": 2}),
     )
     bar = source_from_tuple(
@@ -40,10 +40,10 @@ def test_sql_interface(
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
     df_expected = pl.DataFrame(
         [
-            {"foo_pk": "1", "bar_pk": "a", "foo_col": 0, "bar_col": 10},
-            {"foo_pk": "2", "bar_pk": None, "foo_col": 1, "bar_col": None},
-            {"foo_pk": "3", "bar_pk": "b", "foo_col": 2, "bar_col": 11},
-            {"foo_pk": "3", "bar_pk": "c", "foo_col": 2, "bar_col": 12},
+            {"foo_pk": 1, "bar_pk": "a", "foo_col": 0, "bar_col": 10},
+            {"foo_pk": 2, "bar_pk": None, "foo_col": 1, "bar_col": None},
+            {"foo_pk": 3, "bar_pk": "b", "foo_col": 2, "bar_col": 11},
+            {"foo_pk": 3, "bar_pk": "c", "foo_col": 2, "bar_col": 12},
         ]
     )
 

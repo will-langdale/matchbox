@@ -473,7 +473,7 @@ def source_factory(
 
 def source_from_tuple(
     data_tuple: tuple[dict[str, Any], ...],
-    data_pks: tuple[str],
+    data_pks: tuple[Any],
     full_name: str | None = None,
     engine: Engine | None = None,
     seed: int = 42,
@@ -519,7 +519,8 @@ def source_from_tuple(
 
     data_hashes = pa.Table.from_pydict(
         {
-            "source_pk": data_pks,
+            # Assumes that string conversion will be the same as the SQL warehouse's
+            "source_pk": [str(dpk) for dpk in data_pks],
             "hash": hashes,
         },
         schema=SCHEMA_INDEX,
