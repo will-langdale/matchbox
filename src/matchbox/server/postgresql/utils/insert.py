@@ -453,6 +453,8 @@ def _results_to_insert_tables(
     hierarchy_new = hierarchy.filter(
         pa.compute.is_in(hierarchy["parent"], value_set=new_hashes)
     )
+    hierarchy_new = pl.from_arrow(hierarchy_new).unique().to_arrow()
+
     contains = pa.table(
         {
             "parent": hm.get_ids(hierarchy_new["parent"]),
