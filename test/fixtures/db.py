@@ -17,8 +17,9 @@ from sqlalchemy import Engine, create_engine
 from matchbox.client._handler import create_client
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.factories.dags import TestkitDAG
+from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
-from matchbox.common.factories.sources import linked_sources_factory
+from matchbox.common.factories.sources import SourceConfig, linked_sources_factory
 from matchbox.server.base import (
     MatchboxDatastoreSettings,
     MatchboxDBAdapter,
@@ -296,13 +297,91 @@ def create_link_scenario(
     return dag
 
 
+@register_scenario("convergent")
+def create_convergent_scenario(
+    backend: MatchboxDBAdapter,
+    warehouse_engine: Engine,
+    n_entities: int = 10,
+    seed: int = 42,
+    **kwargs,
+) -> TestkitDAG:
+    """Create a convergent TestkitDAG scenario.
+
+    This is where two Sources index almost identically. TestkitDAG contains two
+    indexed sources with repetition, and two naive dedupe models that haven't yet
+    had their results inserted.
+    """
+    dag = TestkitDAG()
+
+    # Create linked sources
+    company_name_feature = FeatureConfig(
+        name="company_name", base_generator="company"
+    ).add_variations(SuffixRule(suffix=" UK"))
+
+    foo_a_source = SourceConfig(
+        full_name="foo_a",
+        engine=warehouse_engine,
+        features=(company_name_feature,),
+        drop_base=False,
+        n_true_entities=n_entities,
+        repetition=1,
+    )
+
+    linked = linked_sources_factory(
+        source_configs=(
+            foo_a_source,
+            foo_a_source.model_copy(update={"full_name": "foo_b"}),
+        )
+    )
+
+    dag.add_source(linked)
+
+    # Write sources to warehouse
+    _testkitdag_to_warehouse(warehouse_engine, dag)
+
+    # Index sources in backend
+    for source_testkit in dag.sources.values():
+        backend.index(
+            source=source_testkit.source, data_hashes=source_testkit.data_hashes
+        )
+
+    # Create and add deduplication models
+    for testkit in dag.sources.values():
+        source = testkit.source
+        model_name = f"naive_test.{source.address.full_name}"
+
+        # Query the raw data
+        source_query = backend.query(
+            source_address=linked.sources[source.address.full_name].source.address,
+        )
+
+        # Build model testkit using query data
+        model_testkit = query_to_model_factory(
+            left_resolution=source.resolution_name,
+            left_query=source_query,
+            left_source_pks={source.address.full_name: "source_pk"},
+            true_entities=tuple(linked.true_entities),
+            name=model_name,
+            description=f"Deduplication of {source.address.full_name}",
+            prob_range=(1.0, 1.0),
+            seed=seed,
+        )
+
+        assert model_testkit.probabilities.num_rows > 0
+
+        # Add to DAG
+        dag.add_model(model_testkit)
+
+    return dag
+
+
 _DATABASE_SNAPSHOTS_CACHE: dict[str, tuple[TestkitDAG, MatchboxSnapshot]] = {}
 
 
 @contextmanager
 def setup_scenario(
     backend: MatchboxDBAdapter,
-    scenario_type: Literal["bare", "index", "dedupe", "link"],
+    scenario_type: Literal["bare", "index", "dedupe", "link", "convergent"],
     warehouse: Engine,
     n_entities: int = 10,
     seed: int = 42,

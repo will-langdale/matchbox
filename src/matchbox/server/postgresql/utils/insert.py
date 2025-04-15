@@ -3,11 +3,10 @@
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import Engine, delete, exists, select, union, union_all
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
@@ -370,76 +369,6 @@ def insert_model(
     logger.info("Done!", prefix=log_prefix)
 
 
-def _get_resolution_related_clusters(resolution_id: int) -> Select:
-    """Get cluster hashes and IDs for a resolution, its parents, and siblings.
-
-    * When a parent is a dataset, retrieves the data via the Sources table.
-    * When a parent is a model, retrieves the data via the Probabilities table.
-
-    This corresponds to all possible existing clusters that a resolution might ever be
-    able to link together, or propose.
-
-    Args:
-        resolution_id: The ID of the resolution to query
-
-    Returns:
-        List of tuples containing (cluster_hash, cluster_id)
-    """
-    direct_resolution = select(Resolutions.resolution_id).where(
-        Resolutions.resolution_id == resolution_id
-    )
-
-    parent_resolutions = select(ResolutionFrom.parent).where(
-        ResolutionFrom.child == resolution_id
-    )
-
-    sibling_resolutions = (
-        select(ResolutionFrom.child)
-        .where(
-            ResolutionFrom.parent.in_(
-                select(ResolutionFrom.parent).where(
-                    ResolutionFrom.child == resolution_id
-                )
-            )
-        )
-        .where(ResolutionFrom.child != resolution_id)
-    )
-
-    resolution_set = union_all(
-        direct_resolution, parent_resolutions, sibling_resolutions
-    ).cte("resolution_set")
-
-    # Dataset resolutions
-    dataset_clusters = (
-        select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
-        .select_from(Clusters)
-        .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
-        .join(Sources, Sources.source_id == ClusterSourcePK.source_id)
-        .join(resolution_set, Sources.resolution_id == resolution_set.c.resolution_id)
-    )
-
-    # Model resolutions
-    model_resolutions = (
-        select(resolution_set.c.resolution_id)
-        .select_from(resolution_set)
-        .where(
-            ~exists()
-            .select_from(Sources)
-            .where(Sources.resolution_id == resolution_set.c.resolution_id)
-        )
-    )
-
-    model_clusters = (
-        select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
-        .select_from(Clusters)
-        .join(Probabilities, Probabilities.cluster == Clusters.cluster_id)
-        .where(Probabilities.resolution.in_(model_resolutions))
-    )
-
-    # Combine both results with union and distinct
-    return union(dataset_clusters, model_clusters)
-
-
 def _results_to_insert_tables(
     resolution: Resolutions, probabilities: pa.Table, engine: Engine
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
@@ -459,7 +388,9 @@ def _results_to_insert_tables(
     with MBDB.get_adbc_connection() as conn:
         lookup = sql_to_df(
             stmt=compile_sql(
-                _get_resolution_related_clusters(resolution.resolution_id)
+                select(
+                    Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id")
+                )
             ),
             connection=conn,
             return_type="arrow",
