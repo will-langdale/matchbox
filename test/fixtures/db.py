@@ -368,12 +368,12 @@ def matchbox_postgres(
     adapter = MatchboxPostgres(settings=matchbox_settings)
 
     # Clean up the Matchbox database before each test, just in case
-    adapter.clear(certain=True)
+    adapter.drop(certain=True)
 
     yield adapter
 
     # Clean up the Matchbox database after each test
-    adapter.clear(certain=True)
+    adapter.drop(certain=True)
 
 
 # Mock AWS fixtures

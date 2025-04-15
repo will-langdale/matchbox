@@ -20,6 +20,8 @@ ARG ENV_FILE
 COPY ./uv.lock /code/uv.lock
 COPY ./pyproject.toml /code/pyproject.toml
 COPY ./src/matchbox /code/src/matchbox
+COPY ./alembic.ini /code/alembic.ini
+COPY ./alembic /code/alembic
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching

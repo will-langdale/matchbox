@@ -1171,7 +1171,7 @@ def test_count_backend_item(get_backend: MatchboxDBAdapter, test_client: TestCli
 
 
 @patch("matchbox.server.api.routes.settings_to_backend")
-def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClient):
+def test_delete_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.clear = Mock()
     get_backend.return_value = mock_backend
@@ -1182,7 +1182,7 @@ def test_clear_backend_ok(get_backend: MatchboxDBAdapter, test_client: TestClien
 
 
 @patch("matchbox.server.api.routes.settings_to_backend")
-def test_clear_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestClient):
+def test_delete_backend_errors(get_backend: MatchboxDBAdapter, test_client: TestClient):
     mock_backend = Mock()
     mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
     get_backend.return_value = mock_backend

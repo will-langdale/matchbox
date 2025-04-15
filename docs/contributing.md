@@ -18,7 +18,7 @@ This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated
 
 To install all dependencies for this project, run:
 
-```cnosole
+```shell
 uv sync --all-extras
 ```
 
@@ -49,6 +49,23 @@ If you're running tests with some other method, such as your IDE or pytest direc
 ```shell
 docker compose up -d --wait
 ```
+
+## Database Migrations
+
+Migrations are managed by [alembic](https://alembic.sqlalchemy.org/en/latest/). If you have made an alteration to the database through the ORM code (but not yet applied this), and if you have run `docker compose up` to ensure the database container is running, then you can create a new migration script by running:
+
+```shell
+uv run alembic revision --autogenerate -m "< enter descriptive message >"
+```
+
+To auto-detect the difference between the ORM and the database container. You should then check `alembic/versions/` for the new migration script - verify that the autogenerate matches your expectations (see the documentation for known failure modes). Then apply with:
+
+```shell
+uv run alembic upgrade head
+```
+
+Noting that the special name "head" refers to the latest migration script. You can similarly upgrade or downgrade to any specific migration script by referencing its revision ID; "base" is also used to refer to the earliest migration script. Note you should not make alterations to the database through other mechanisms (such as directly running SQL commands) as this will conflict with the completeness of the migration scripts. In such a case it would be best to `uv run alembic downgrade base` followed by `uv run alembic upgrade head` to effectively refresh and restore the current expected "head" state, and then create a migration script for your planned changes.
+
 
 ## Debugging
 

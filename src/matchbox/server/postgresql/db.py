@@ -1,18 +1,26 @@
 """Matchbox PostgreSQL database connection."""
 
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Generator
 
 from adbc_driver_postgresql import dbapi as adbc_dbapi
+from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, MetaData, create_engine, text
+from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxBackends, MatchboxServerSettings
+
+ALEMBIC_INI_PATH = (Path(__file__).parents[4] / "alembic.ini").resolve()
+
+
+alembic_cfg = Config(ALEMBIC_INI_PATH)
 
 
 class MatchboxPostgresCoreSettings(BaseModel):
@@ -131,46 +139,40 @@ class MatchboxDatabase:
             conn.close()
 
     def create_database(self):
-        """Create the database."""
-        with self.get_engine().connect() as conn:
-            conn.execute(
-                text(f"CREATE SCHEMA IF NOT EXISTS {self.settings.postgres.db_schema};")
-            )
-            conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
-            conn.commit()
-
-        self.MatchboxBase.metadata.create_all(self.get_engine())
+        """Create the database and all tables expected in the schema."""
+        # Check if schema exists, create if not
+        command.upgrade(alembic_cfg, "head")
 
     def clear_database(self):
-        """Clear the database."""
+        """Delete all rows in every table in the database schema."""
         with self.get_engine().connect() as conn:
-            conn.execute(
-                text(
-                    f"DROP SCHEMA IF EXISTS {self.settings.postgres.db_schema} CASCADE;"
-                )
-            )
+            for table in self.MatchboxBase.metadata.sorted_tables:
+                conn.execute(table.delete())
             conn.commit()
 
+    def drop_database(self):
+        """Drop all tables in the database schema and re-recreate them."""
+        command.downgrade(alembic_cfg, "base")
         self._reset_connections()
-
         self.create_database()
 
-    def sync_schema(self):
-        """Synchronise the database schema with the ORM.
+    def verify_schema(self):
+        """Verify the database schema live is in sync with the ORM.
 
-        If any differences are detected, drop and recreate the database.
+        If any differences are detected, log this as an error.
+
+        NOTE: this was originally implemented prior to alembic. In principle alembic
+        is best placed to manage any such diff, and this remains for now only as an
+        informative aid and could be removed.
         """
         engine = self.get_engine()
 
-        # Check if schema exists, create if not
         with engine.connect() as conn:
             schemas = conn.dialect.get_schema_names(conn)
             if self.settings.postgres.db_schema not in schemas:
                 self.create_database()
-                return
 
-        # Compare schema with ORM, drop and recreate if different
+        # Compare schema with ORM
         def _include_name(name: str, type_: str, _: dict[str, str]) -> bool:
             if type_ == "schema":
                 return name == self.settings.postgres.db_schema
@@ -189,11 +191,9 @@ class MatchboxDatabase:
             diff = compare_metadata(context, self.MatchboxBase.metadata)
 
             if diff:
-                logger.warning(
-                    "Schema mismatch detected. Dropping and recreating database. \n"
-                    f"Diff: {diff}"
-                )
-                self.clear_database()
+                logger.warning(f"Schema mismatch detected. \nDiff: {diff}")
+            else:
+                logger.info("Schema matches expected.")
 
 
 # Global database instance -- everything should use this

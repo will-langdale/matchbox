@@ -114,6 +114,10 @@ class TestE2EAnalyticalUser:
             seed=42,  # For reproducibility
         )
 
+        # Clear matchbox database before test
+        response = matchbox_client.delete("/database", params={"certain": "true"})
+        assert response.status_code == 200, "Failed to clear matchbox database"
+
         # Use a separate schema to avoid conflict with legacy test data
         # TODO: Remove once legacy tests are refactored
         with postgres_warehouse.connect() as conn:
@@ -123,11 +127,6 @@ class TestE2EAnalyticalUser:
         # Setup code - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
             source_testkit.to_warehouse(engine=postgres_warehouse)
-
-        # Clear matchbox database before test
-        response = matchbox_client.delete("/database", params={"certain": "true"})
-
-        assert response.status_code == 200, "Failed to clear matchbox database"
 
         yield
 

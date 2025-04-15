@@ -216,7 +216,6 @@ def test_benchmark_generate_tables_parameterised(
         cluster_start_id=cluster_start_id,
         dataset_start_id=dataset_start_id,
     )
-
     # Test number of tables
     assert len(results) == len(MBDB.MatchboxBase.metadata.tables)
 
@@ -477,84 +476,3 @@ def test_large_ingest_upsert_custom_key(
     metadata.clear()  # clear all Table objects from this MetaData, doesn't touch DB
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
-
-
-@pytest.mark.docker
-def test_sync_schema(
-    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
-):
-    """Test the basic functionality of the schema synchronisation.
-
-    * Syncing the schema removes tables not in the ORM
-    * Syncing the schema does not remove tables in other schemas
-    """
-    engine = MBDB.get_engine()
-    our_schema = MBDB.settings.postgres.db_schema
-    other_schema = "test_other_schema"
-
-    # First sync to ensure we start with a clean state
-    MBDB.sync_schema()
-
-    # Create another schema for testing
-    with engine.connect() as conn:
-        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {other_schema}"))
-        conn.commit()
-
-        # Verify both schemas exist
-        schemas = conn.dialect.get_schema_names(conn)
-        assert our_schema in schemas
-        assert other_schema in schemas
-
-        # Count original tables in our schema
-        our_tables = conn.dialect.get_table_names(conn, schema=our_schema)
-        our_tables_count = len(our_tables)
-
-    # Create a table in our schema (that's not in the ORM)
-    our_metadata = MetaData(schema=our_schema)
-
-    class DummyTableOurs(CountMixin, declarative_base(metadata=our_metadata)):
-        __tablename__ = "dummytable_our_schema"
-        pk = Column(BIGINT, primary_key=True)
-        foo = Column(TEXT, nullable=False)
-
-    # Create a table in the other schema
-    other_metadata = MetaData(schema=other_schema)
-
-    class DummyTableOther(declarative_base(metadata=other_metadata)):
-        __tablename__ = "dummytable_other_schema"
-        pk = Column(BIGINT, primary_key=True)
-        foo = Column(TEXT, nullable=False)
-
-    # Create both tables in the database
-    our_metadata.create_all(engine, tables=[DummyTableOurs.__table__])
-    other_metadata.create_all(engine, tables=[DummyTableOther.__table__])
-
-    # Verify the tables were created
-    with engine.connect() as conn:
-        # Check our schema
-        our_tables = conn.dialect.get_table_names(conn, schema=our_schema)
-        assert "dummytable_our_schema" in our_tables
-        assert len(our_tables) == our_tables_count + 1
-
-        # Check other schema
-        other_tables = conn.dialect.get_table_names(conn, schema=other_schema)
-        assert "dummytable_other_schema" in other_tables
-
-    # Now run sync_schema - should detect differences only in our schema
-    MBDB.sync_schema()
-
-    # Verify only our schema's table was removed, other schema's table remains
-    with engine.connect() as conn:
-        # Our schema should be recreated, table gone
-        our_tables = conn.dialect.get_table_names(conn, schema=our_schema)
-        assert "dummytable_our_schema" not in our_tables
-        assert len(our_tables) == our_tables_count
-
-        # Other schema should be untouched
-        other_tables = conn.dialect.get_table_names(conn, schema=other_schema)
-        assert "dummytable_other_schema" in other_tables
-
-    # Clean up other schema
-    with engine.connect() as conn:
-        conn.execute(text(f"DROP SCHEMA {other_schema} CASCADE"))
-        conn.commit()

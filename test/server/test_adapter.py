@@ -745,8 +745,8 @@ class TestMatchboxBackend:
             # exceeds match probability
             assert len(res[0].target_id) < len(source_entity.source_pks["cdms"])
 
-    def test_clear(self):
-        """Test clearing the database."""
+    def test_delete(self):
+        """Test deleting all rows in the database."""
         with self.scenario(self.backend, "dedupe"):
             assert self.backend.datasets.count() > 0
             assert self.backend.data.count() > 0
@@ -766,7 +766,7 @@ class TestMatchboxBackend:
             assert self.backend.merges.count() == 0
             assert self.backend.proposes.count() == 0
 
-    def test_dump_and_restore(self):
+    def test_delete_and_restore(self):
         """Test that dumping and restoring the database works."""
         with self.scenario(self.backend, "link") as dag:
             crn_testkit = dag.sources.get("crn")
