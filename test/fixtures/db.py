@@ -3,7 +3,7 @@ import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Literal
+from typing import TYPE_CHECKING, Any, Callable, Generator, Literal
 
 import boto3
 import pyarrow as pa
@@ -35,18 +35,42 @@ else:
 # Database scenario fixtures and helper functions
 
 
+ScenarioBuilder = Callable[[MatchboxDBAdapter, Engine, int, int], TestkitDAG]
+
+SCENARIO_REGISTRY: dict[str, ScenarioBuilder] = {}
+
+
+def register_scenario(name: str) -> Callable[[ScenarioBuilder], ScenarioBuilder]:
+    """Decorator to register a new scenario builder function."""
+
+    def decorator(func: ScenarioBuilder) -> ScenarioBuilder:
+        SCENARIO_REGISTRY[name] = func
+        return func
+
+    return decorator
+
+
 def _generate_cache_key(
     backend: MatchboxDBAdapter,
     scenario_type: Literal["bare", "index", "dedupe", "link"],
     warehouse: Engine,
     n_entities: int = 10,
     seed: int = 42,
+    **kwargs: dict[str, Any],
 ) -> str:
     """Generate a unique hash based on input parameters"""
+    extra_params = (
+        "_".join(f"{k}_{v}" for k, v in sorted(kwargs.items())) if kwargs else ""
+    )
+
     cache_key = (
         f"{warehouse.url}_{backend.__class__.__name__}_"
         f"{scenario_type}_{n_entities}_{seed}"
     )
+
+    if extra_params:
+        cache_key += f"_{extra_params}"
+
     return cache_key
 
 
@@ -61,48 +85,67 @@ def _testkitdag_to_warehouse(warehouse_engine: Engine, dag: TestkitDAG) -> None:
         source_testkit.source.set_engine(warehouse_engine)
 
 
-def create_scenario_dag(
+@register_scenario("bare")
+def create_bare_scenario(
     backend: MatchboxDBAdapter,
     warehouse_engine: Engine,
-    scenario_type: Literal["bare", "index", "dedupe", "link"],
     n_entities: int = 10,
     seed: int = 42,
+    **kwargs,
 ) -> TestkitDAG:
-    """Create a TestkitDAG representing a test scenario with backend integration.
-
-    This approach first creates source data, writes it to backend and warehouse,
-    then builds models by querying the backend to ensure ID alignment.
-    """
-    # Validate inputs
-    if scenario_type not in ["bare", "index", "dedupe", "link"]:
-        raise ValueError(f"Invalid scenario: {scenario_type}")
-
+    """Create a bare TestkitDAG scenario."""
     dag = TestkitDAG()
 
-    # 1. Create linked sources
+    # Create linked sources
     linked = linked_sources_factory(
         n_true_entities=n_entities, seed=seed, engine=warehouse_engine
     )
     dag.add_source(linked)
 
-    # 2. Write sources to warehouse
+    # Write sources to warehouse
     _testkitdag_to_warehouse(warehouse_engine, dag)
 
-    # End here for bare database scenarios
-    if scenario_type == "bare":
-        return dag
+    return dag
 
-    # 3. Index sources in backend
+
+@register_scenario("index")
+def create_index_scenario(
+    backend: MatchboxDBAdapter,
+    warehouse_engine: Engine,
+    n_entities: int = 10,
+    seed: int = 42,
+    **kwargs,
+) -> TestkitDAG:
+    """Create an index TestkitDAG scenario."""
+    # First create the bare scenario
+    dag = create_bare_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+
+    # Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
             source=source_testkit.source, data_hashes=source_testkit.data_hashes
         )
 
-    # End here for index-only scenarios
-    if scenario_type == "index":
-        return dag
+    return dag
 
-    # 4. Create and add deduplication models
+
+@register_scenario("dedupe")
+def create_dedupe_scenario(
+    backend: MatchboxDBAdapter,
+    warehouse_engine: Engine,
+    n_entities: int = 10,
+    seed: int = 42,
+    **kwargs,
+) -> TestkitDAG:
+    """Create a dedupe TestkitDAG scenario."""
+    # First create the index scenario
+    dag = create_index_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+
+    # Get the linked sources
+    linked_key = next(iter(dag.linked.keys()))
+    linked = dag.linked[linked_key]
+
+    # Create and add deduplication models
     for testkit in dag.sources.values():
         source = testkit.source
         model_name = f"naive_test.{source.address.full_name}"
@@ -129,12 +172,26 @@ def create_scenario_dag(
         backend.set_model_results(model=model_name, results=model_testkit.probabilities)
         dag.add_model(model_testkit)
 
-    # End here for dedupe-only scenarios
-    if scenario_type == "dedupe":
-        return dag
+    return dag
 
-    # 5. Create linking models
-    # First create CRN-DUNS link
+
+@register_scenario("link")
+def create_link_scenario(
+    backend: MatchboxDBAdapter,
+    warehouse_engine: Engine,
+    n_entities: int = 10,
+    seed: int = 42,
+    **kwargs,
+) -> TestkitDAG:
+    """Create a link TestkitDAG scenario."""
+    # First create the dedupe scenario
+    dag = create_dedupe_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+
+    # Get the linked sources
+    linked_key = next(iter(dag.linked.keys()))
+    linked = dag.linked[linked_key]
+
+    # Extract models for linking
     crn_model = dag.models["naive_test.crn"]
     duns_model = dag.models["naive_test.duns"]
     cdms_model = dag.models["naive_test.cdms"]
@@ -249,10 +306,16 @@ def setup_scenario(
     warehouse: Engine,
     n_entities: int = 10,
     seed: int = 42,
+    **kwargs: dict[str, Any],
 ) -> Generator[TestkitDAG, None, None]:
     """Context manager for creating TestkitDAG scenarios."""
+    if scenario_type not in SCENARIO_REGISTRY:
+        raise ValueError(f"Unknown scenario type: {scenario_type}")
+
     # Generate cache key for backend snapshot
-    cache_key = _generate_cache_key(backend, scenario_type, warehouse, n_entities, seed)
+    cache_key = _generate_cache_key(
+        backend, scenario_type, warehouse, n_entities, seed, **kwargs
+    )
 
     # Check if we have a backend snapshot cached
     if cache_key in _DATABASE_SNAPSHOTS_CACHE:
@@ -265,14 +328,16 @@ def setup_scenario(
         _testkitdag_to_warehouse(warehouse, dag)
     else:
         # Create new TestkitDAG with proper backend integration
-        dag = create_scenario_dag(backend, warehouse, scenario_type, n_entities, seed)
+        scenario_builder = SCENARIO_REGISTRY[scenario_type]
+        dag = scenario_builder(backend, warehouse, n_entities, seed, **kwargs)
 
         # Cache the snapshot and DAG
         _DATABASE_SNAPSHOTS_CACHE[cache_key] = (dag, backend.dump())
 
-    yield dag
-
-    backend.clear(certain=True)
+    try:
+        yield dag
+    finally:
+        backend.clear(certain=True)
 
 
 # Warehouse database fixtures
