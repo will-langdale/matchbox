@@ -53,26 +53,19 @@ def register_scenario(name: str) -> Callable[[ScenarioBuilder], ScenarioBuilder]
 
 def _generate_cache_key(
     backend: MatchboxDBAdapter,
-    scenario_type: Literal["bare", "index", "dedupe", "link"],
+    scenario_type: str,
     warehouse: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs: dict[str, Any],
 ) -> str:
     """Generate a unique hash based on input parameters"""
-    extra_params = (
-        "_".join(f"{k}_{v}" for k, v in sorted(kwargs.items())) if kwargs else ""
-    )
+    if scenario_type not in SCENARIO_REGISTRY:
+        raise ValueError(f"Unknown scenario type: {scenario_type}")
 
-    cache_key = (
+    return (
         f"{warehouse.url}_{backend.__class__.__name__}_"
         f"{scenario_type}_{n_entities}_{seed}"
     )
-
-    if extra_params:
-        cache_key += f"_{extra_params}"
-
-    return cache_key
 
 
 def _testkitdag_to_warehouse(warehouse_engine: Engine, dag: TestkitDAG) -> None:
@@ -92,7 +85,6 @@ def create_bare_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs,
 ) -> TestkitDAG:
     """Create a bare TestkitDAG scenario."""
     dag = TestkitDAG()
@@ -115,11 +107,10 @@ def create_index_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs,
 ) -> TestkitDAG:
     """Create an index TestkitDAG scenario."""
     # First create the bare scenario
-    dag = create_bare_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag = create_bare_scenario(backend, warehouse_engine, n_entities, seed)
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
@@ -136,11 +127,10 @@ def create_dedupe_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs,
 ) -> TestkitDAG:
     """Create a dedupe TestkitDAG scenario."""
     # First create the index scenario
-    dag = create_index_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag = create_index_scenario(backend, warehouse_engine, n_entities, seed)
 
     # Get the linked sources
     linked_key = next(iter(dag.linked.keys()))
@@ -182,11 +172,10 @@ def create_link_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs,
 ) -> TestkitDAG:
     """Create a link TestkitDAG scenario."""
     # First create the dedupe scenario
-    dag = create_dedupe_scenario(backend, warehouse_engine, n_entities, seed, **kwargs)
+    dag = create_dedupe_scenario(backend, warehouse_engine, n_entities, seed)
 
     # Get the linked sources
     linked_key = next(iter(dag.linked.keys()))
@@ -303,7 +292,6 @@ def create_convergent_scenario(
     warehouse_engine: Engine,
     n_entities: int = 10,
     seed: int = 42,
-    **kwargs,
 ) -> TestkitDAG:
     """Create a convergent TestkitDAG scenario.
 
