@@ -11,7 +11,7 @@ import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Engine, Table, inspect, select
+from sqlalchemy import Column, Engine, Table, inspect, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -340,9 +340,11 @@ def large_ingest(
             try:
                 # Create temp table
                 temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
-                temp_table = Table(
-                    temp_table_name, metadata, *[c.copy() for c in table.columns]
-                )
+                temp_cols = [
+                    Column(c.name, c.type, primary_key=c.primary_key)
+                    for c in table.columns
+                ]
+                temp_table = Table(temp_table_name, metadata, *temp_cols)
                 temp_table.create(session.bind)
 
                 # Add new records to temp table

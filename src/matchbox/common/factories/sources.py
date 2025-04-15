@@ -5,7 +5,6 @@ from functools import cache, wraps
 from itertools import product
 from typing import Any, Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
-from uuid import uuid4
 
 import pandas as pd
 import pyarrow as pa
@@ -230,7 +229,9 @@ def generate_rows(
     generator: Faker,
     selected_entities: tuple[SourceEntity, ...],
     features: tuple[FeatureConfig, ...],
-) -> tuple[dict[str, list], dict[int, list[str]], dict[int, list[str]]]:
+) -> tuple[
+    dict[str, list], dict[int, list[str]], dict[int, list[str]], dict[int, bytes]
+]:
     """Generate raw data rows. Adds an ID shared by unique rows, and a PK for every row.
 
     Returns a tuple of:
@@ -238,6 +239,7 @@ def generate_rows(
     * raw_data: Dictionary of column arrays for DataFrame creation
     * entity_pks: Maps SourceEntity.id to the set of PKs where that entity appears
     * id_pks: Maps each ID to the set of PKs where that row appears
+    * id_hashes: Maps each ID to its hash value
 
     For example, if this is the raw data:
 
@@ -276,17 +278,20 @@ def generate_rows(
     # Track entity locations and row identities
     entity_pks = {entity.id: [] for entity in selected_entities}
     id_pks = {}
+    id_hashes = {}
     value_to_id = {}
 
     def add_row(entity_id: int, values: tuple) -> None:
         """Add a row of data, handling IDs and PKs."""
         pk = str(generator.uuid4())
         entity_pks[entity_id].append(pk)
+        row_hash = hash_values(*(str(v) for v in values))
 
         if values not in value_to_id:
             mb_id = generator.random_number(digits=16)
             value_to_id[values] = mb_id
             id_pks[mb_id] = []
+            id_hashes[mb_id] = row_hash
 
         row_id = value_to_id[values]
         id_pks[row_id].append(pk)
@@ -315,7 +320,7 @@ def generate_rows(
         for values in product(*possible_values):
             add_row(entity.id, values)
 
-    return raw_data, entity_pks, id_pks
+    return raw_data, entity_pks, id_pks, id_hashes
 
 
 @cache
@@ -345,7 +350,7 @@ def generate_source(
         )
 
     # Generate initial data
-    raw_data, entity_pks, row_pks = generate_rows(
+    raw_data, entity_pks, row_pks, id_hashes = generate_rows(
         generator, selected_entities, features
     )
 
@@ -360,9 +365,9 @@ def generate_source(
     # Create hash groups
     source_pks = []
     hashes = []
-    for group_pks in row_pks.values():
+    for row_id, group_pks in row_pks.items():
         source_pks.append(list(group_pks))
-        hashes.append(str(uuid4()).encode())
+        hashes.append(id_hashes[row_id])
 
     data_hashes = pa.Table.from_pydict(
         {

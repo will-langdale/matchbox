@@ -520,7 +520,9 @@ def test_generate_rows(
 ):
     """Test generate_rows correctly tracks entities and row identities."""
     generator = Faker(seed=42)
-    raw_data, entity_pks, id_pks = generate_rows(generator, selected_entities, features)
+    raw_data, entity_pks, id_pks, id_hashes = generate_rows(
+        generator, selected_entities, features
+    )
 
     # Check arrays have consistent lengths
     n_rows = len(raw_data["pk"])
@@ -559,6 +561,7 @@ def test_generate_rows(
         assert not raw_data["pk"]
         assert not entity_pks
         assert not id_pks
+        assert not id_hashes
 
     # Verify core variation behavior
     for entity in selected_entities:
@@ -610,3 +613,27 @@ def test_generate_rows(
         # Multiply all counts together to get total combinations
         expected_rows = functools.reduce(lambda x, y: x * y, variation_counts, 1)
         assert len(entity_pks[entity.id]) == expected_rows
+
+    # Verify hashing functionality
+    # Each unique row should have a unique hash
+    assert len(id_hashes) == len(id_pks)
+    assert set(id_hashes.keys()) == set(id_pks.keys())
+
+    # Create a map from values to hash
+    values_to_hash = {}
+    for i in range(n_rows):
+        values = tuple(raw_data[f.name][i] for f in features)
+        row_id = raw_data["id"][i]
+        hash_value = id_hashes[row_id]
+
+        # First encounter of these values, store the hash
+        if values not in values_to_hash:
+            values_to_hash[values] = hash_value
+        # If we've seen these values before, make sure the hash matches
+        else:
+            assert values_to_hash[values] == hash_value
+
+    # Check that different data produces different hashes
+    if len(unique_values) > 1:
+        unique_hashes = set(values_to_hash.values())
+        assert len(unique_hashes) == len(unique_values)

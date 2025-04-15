@@ -838,7 +838,7 @@ async def test_complete_model_upload_process(
         assert testkit.model.metadata.right_resolution is None
 
     # Verify the model truth can be set and retrieved
-    truth_value = 0.85
+    truth_value = 85
     mock_backend.get_model_truth = Mock(return_value=truth_value)
 
     response = test_client.patch(
@@ -902,13 +902,13 @@ def test_set_truth(get_backend: Mock, test_client: TestClient):
     get_backend.return_value = mock_backend
 
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=0.95
+        f"/models/{testkit.model.metadata.name}/truth", json=95
     )
 
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        model=testkit.model.metadata.name, truth=0.95
+        model=testkit.model.metadata.name, truth=95
     )
 
 
@@ -919,15 +919,15 @@ def test_set_truth_invalid_value(get_backend: Mock, test_client: TestClient):
     testkit = model_factory()
     get_backend.return_value = mock_backend
 
-    # Test value > 1
+    # Test value > 100
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=1.5
+        f"/models/{testkit.model.metadata.name}/truth", json=150
     )
     assert response.status_code == 422
 
     # Test value < 0
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=-0.5
+        f"/models/{testkit.model.metadata.name}/truth", json=-50
     )
     assert response.status_code == 422
 
@@ -936,13 +936,13 @@ def test_set_truth_invalid_value(get_backend: Mock, test_client: TestClient):
 def test_get_truth(get_backend: Mock, test_client: TestClient):
     mock_backend = Mock()
     testkit = model_factory()
-    mock_backend.get_model_truth = Mock(return_value=0.95)
+    mock_backend.get_model_truth = Mock(return_value=95)
     get_backend.return_value = mock_backend
 
     response = test_client.get(f"/models/{testkit.model.metadata.name}/truth")
 
     assert response.status_code == 200
-    assert response.json() == 0.95
+    assert response.json() == 95
 
 
 @patch("matchbox.server.api.routes.settings_to_backend")
@@ -1036,7 +1036,7 @@ def test_model_get_endpoints_404(
 @pytest.mark.parametrize(
     ("endpoint", "payload"),
     [
-        ("truth", 0.95),
+        ("truth", 95),
         (
             "ancestors_cache",
             [

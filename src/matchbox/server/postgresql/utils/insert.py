@@ -3,11 +3,10 @@
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import Engine, delete, exists, select, union
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
@@ -370,76 +369,6 @@ def insert_model(
     logger.info("Done!", prefix=log_prefix)
 
 
-def _get_resolution_related_clusters(resolution_id: int) -> Select:
-    """Get cluster hashes and IDs for a resolution, its parents, and siblings.
-
-    * When a parent is a dataset, retrieves the data via the Sources table.
-    * When a parent is a model, retrieves the data via the Probabilities table.
-
-    This corresponds to all possible existing clusters that a resolution might ever be
-    able to link together, or propose.
-
-    Args:
-        resolution_id: The ID of the resolution to query
-
-    Returns:
-        List of tuples containing (cluster_hash, cluster_id)
-    """
-    direct_resolution = select(Resolutions.resolution_id).where(
-        Resolutions.resolution_id == resolution_id
-    )
-
-    parent_resolutions = select(ResolutionFrom.parent).where(
-        ResolutionFrom.child == resolution_id
-    )
-
-    sibling_resolutions = (
-        select(ResolutionFrom.child)
-        .where(
-            ResolutionFrom.parent.in_(
-                select(ResolutionFrom.parent).where(
-                    ResolutionFrom.child == resolution_id
-                )
-            )
-        )
-        .where(ResolutionFrom.child != resolution_id)
-    )
-
-    resolution_set = union(
-        direct_resolution, parent_resolutions, sibling_resolutions
-    ).cte("resolution_set")
-
-    # Main query
-    base_query = (
-        select(Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id"))
-        .distinct()
-        .select_from(Clusters)
-        .join(Probabilities, Probabilities.cluster == Clusters.cluster_id, isouter=True)
-    )
-
-    # Subquery for source datasets
-    source_datasets = (
-        select(ClusterSourcePK.cluster_id)
-        .join(Sources, Sources.source_id == ClusterSourcePK.source_id)
-        .where(Sources.resolution_id.in_(select(resolution_set.c.resolution_id)))
-    )
-
-    # Subquery for model resolutions
-    model_resolutions = select(resolution_set.c.resolution_id).where(
-        ~exists()
-        .select_from(Sources)
-        .where(Sources.resolution_id == resolution_set.c.resolution_id)
-    )
-
-    # Combine conditions
-    final_query = base_query.where(
-        (Clusters.cluster_id.in_(source_datasets))
-        | (Probabilities.resolution.in_(model_resolutions))
-    )
-
-    return final_query
-
-
 def _results_to_insert_tables(
     resolution: Resolutions, probabilities: pa.Table, engine: Engine
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
@@ -459,7 +388,9 @@ def _results_to_insert_tables(
     with MBDB.get_adbc_connection() as conn:
         lookup = sql_to_df(
             stmt=compile_sql(
-                _get_resolution_related_clusters(resolution.resolution_id)
+                select(
+                    Clusters.cluster_hash.label("hash"), Clusters.cluster_id.label("id")
+                )
             ),
             connection=conn,
             return_type="arrow",
@@ -469,6 +400,8 @@ def _results_to_insert_tables(
     hm = HashIDMap(start=Clusters.next_id(), lookup=lookup)
 
     # Join hashes, probabilities and components
+    logger.debug("Attaching components to hashes", prefix=log_prefix)
+
     probs_with_ccs = attach_components_to_probabilities(
         pa.table(
             {
@@ -480,6 +413,8 @@ def _results_to_insert_tables(
     )
 
     # Calculate hierarchies
+    logger.debug("Computing hierarchies", prefix=log_prefix)
+
     hierarchy = to_hierarchical_clusters(
         probabilities=probs_with_ccs,
         hash_func=hash_values,
@@ -487,6 +422,8 @@ def _results_to_insert_tables(
     )
 
     # Create Probabilities Arrow table to insert, containing all generated probabilities
+    logger.debug("Filtering to target table shapes", prefix=log_prefix)
+
     probabilities = pa.table(
         {
             "resolution": pa.array(
@@ -516,6 +453,8 @@ def _results_to_insert_tables(
     hierarchy_new = hierarchy.filter(
         pa.compute.is_in(hierarchy["parent"], value_set=new_hashes)
     )
+    hierarchy_new = pl.from_arrow(hierarchy_new).unique().to_arrow()
+
     contains = pa.table(
         {
             "parent": hm.get_ids(hierarchy_new["parent"]),

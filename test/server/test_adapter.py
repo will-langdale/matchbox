@@ -272,7 +272,7 @@ class TestMatchboxBackend:
 
             assert self.backend.models.count() == models_count + 3
 
-    def test_model_results(self):
+    def test_model_results_basic(self):
         """Test that a model's results data can be set and retrieved."""
         with self.scenario(self.backend, "dedupe"):
             # Retrieve
@@ -311,6 +311,15 @@ class TestMatchboxBackend:
 
             # Check difference
             assert len(pre_results) != len(post_results)
+
+    def test_model_results_shared_clusters(self):
+        """Test that model results data can be inserted when clusters are shared."""
+        with self.scenario(self.backend, "convergent") as dag:
+            for model_testkit in dag.models.values():
+                self.backend.insert_model(model=model_testkit.model.metadata)
+                self.backend.set_model_results(
+                    model=model_testkit.name, results=model_testkit.probabilities
+                )
 
     def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""
