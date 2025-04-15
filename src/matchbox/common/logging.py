@@ -1,6 +1,9 @@
 """Logging utilities."""
 
+import datetime
+import json
 import logging
+from importlib.metadata import version
 from typing import Any, Final, Literal
 
 from rich.console import Console
@@ -81,3 +84,35 @@ def build_progress_bar(console_: Console | None = None) -> Progress:
         TimeRemainingColumn(),
         console=console_,
     )
+
+
+class ASIMFormatter(logging.Formatter):
+    """Format logging with ASIM standard fields."""
+
+    def format(self, record):
+        """Convert logs to JSON."""
+        log_time = datetime.datetime.utcfromtimestamp(record.created).isoformat()
+        return json.dumps(
+            {
+                "EventMessage": record.getMessage(),
+                "EventCount": 1,
+                "EventStartTime": log_time,
+                "EventEndTime": log_time,
+                "EventType": record.name,
+                "EventResult": "NA",
+                "EventSeverity": {
+                    "DEBUG": "Informational",
+                    "INFO": "Informational",
+                    "WARNING": "Low",
+                    "ERROR": "Medium",
+                    "CRITICAL": "High",
+                }[record.levelname],
+                "EventOriginalSeverity": record.levelname,
+                "EventSchema": "ProcessEvent",
+                "EventSchemaVersion": "0.1.4",
+                "ActingAppType": "Fastapi",
+                "AdditionalFields": {
+                    "MatchboxVersion": version("matchbox_db"),
+                },
+            }
+        )
