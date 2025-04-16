@@ -1,6 +1,12 @@
-# 🔥 Matchbox DB
+<p align="center">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/matchbox-logo-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="docs/assets/matchbox-logo-light.svg">
+      <img alt="Shows the Matchbox logo in light or dark color mode." src="docs/assets/matchbox-logo-light.svg">
+    </picture>
+</p>
 
-Record matching is a chore. Matchbox is a match pipeline orchestration tool that aims to:
+Record matching is a chore. 🔥Matchbox is a match pipeline orchestration tool that aims to:
 
 * Make matching an iterative, collaborative, measurable problem
 * Compose sources, dedupers and linkers and make the results very easy to query
@@ -8,17 +14,21 @@ Record matching is a chore. Matchbox is a match pipeline orchestration tool that
 * Allow matching pipelines to run iteratively
 * Support batch and real-time matching 
 
-Matchbox doesn't store raw data, instead indexing the data in your warehouse and leaving permissioning at the level of the user, service or pipeline. 
+Matchbox doesn't store raw data, instead indexing the data in your warehouse and leaving permissioning at the level of the user, service or pipeline.
+
+To get started, read our [full documentation](https://uktrade.github.io/matchbox/).
 
 ## Installation
+
 To install the matchbox client:
-```
+
+```shell
 pip install "matchbox-db"
 ```
 
 To install the full package, including the server features:
 
-```
+```shell
 pip install "matchbox-db[server]"
 ```
 
@@ -26,7 +36,7 @@ pip install "matchbox-db[server]"
 
 To run the server locally, run:
 
-```bash
+```shell
 docker compose up --build
 ```
 
@@ -34,7 +44,7 @@ docker compose up --build
 
 1. Run:
 
-   ```
+   ```shell
    cp ./environments/datadog-agent-private-sample.env ./environments/.datadog-agent-private.env
    ```
 
@@ -43,7 +53,7 @@ docker compose up --build
 
 3. Run the server using:
 
-   ```bash
+   ```shell
    docker compose --profile monitoring up --build
    ```
 
@@ -69,38 +79,6 @@ docker compose up --build
 * Enrich other services with data generated in yours without giving away any permissioning powers
 * Empower your users to label matched entities and let other services use that information
 
-## Structure
-
-> [!CAUTION]
-> Some of the below is aspirational. Matchbox is in alpha and under heavy construction.
-
-The project is loosely formed into a client/server structure.
-
-### Server
-
-The parts of matchbox intended for deployment. Allows different backends as long as they can meet the standards of the adapter and tests.
-
-### Client
-
-The parts of matchbox intended for users and services to call a matchbox server, and to insert matched data in the right structure.
-
-If the dataset isn't already in matchbox, it'll need to be indexed.
-
-API endpoints with write properties require API Key authentication. The API key should be stored in the client environment or .env as a variable named `MB__CLIENT__API_KEY`.
-
-Pipelines using this part of matchbox will:
-
-1. Use `matchbox.query()` to retrieve source data from the perspective of a particular resolution point
-2. Use `matchbox.process()` to clean the data with standardised processes
-3. Use `matchbox.make_model()` with `matchbox.dedupers` and `matchbox.linkers` to create a new model
-4. Generate probabilistic model outputs using `model.run()`
-5. Upload the probabilites to matchbox with `results.to_matchbox()`
-6. Label data, or use existing data, to decide the probability threshold that you're willing to consider "truth" for your new model
-7. Use `model.roc_curve()` and other tools to make your decision
-8. Update `model.truth` to codify it
-
-With the truth threshold set to `1.0` by default, deterministic methodologies are ready for others to use from step five!
-
 ## Development
 
-See our full development guide and coding standards in [CONTRIBUTING.md](./docs/contributing.md)
+See our full development guide and coding standards on our [contribution guide](https://uktrade.github.io/matchbox/contributing/).
