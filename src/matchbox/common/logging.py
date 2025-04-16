@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+from functools import cached_property
 from importlib.metadata import version
 from typing import Any, Final, Literal
 
@@ -89,6 +90,22 @@ def build_progress_bar(console_: Console | None = None) -> Progress:
 class ASIMFormatter(logging.Formatter):
     """Format logging with ASIM standard fields."""
 
+    @cached_property
+    def matchbox_version(self):
+        """Cached matchbox version."""
+        return version("matchbox_db")
+
+    @cached_property
+    def event_severity(self):
+        """Event severity level lookup."""
+        return {
+            "DEBUG": "Informational",
+            "INFO": "Informational",
+            "WARNING": "Low",
+            "ERROR": "Medium",
+            "CRITICAL": "High",
+        }
+
     def format(self, record):
         """Convert logs to JSON."""
         log_time = datetime.datetime.utcfromtimestamp(record.created).isoformat()
@@ -100,19 +117,14 @@ class ASIMFormatter(logging.Formatter):
                 "EventEndTime": log_time,
                 "EventType": record.name,
                 "EventResult": "NA",
-                "EventSeverity": {
-                    "DEBUG": "Informational",
-                    "INFO": "Informational",
-                    "WARNING": "Low",
-                    "ERROR": "Medium",
-                    "CRITICAL": "High",
-                }[record.levelname],
+                "EventSeverity": self.event_severity[record.levelname],
                 "EventOriginalSeverity": record.levelname,
                 "EventSchema": "ProcessEvent",
                 "EventSchemaVersion": "0.1.4",
-                "ActingAppType": "Fastapi",
+                "EventVendor": "Matchbox",
+                "EventProduct": "Matchbox",
                 "AdditionalFields": {
-                    "MatchboxVersion": version("matchbox_db"),
+                    "MatchboxVersion": self.matchbox_version,
                 },
             }
         )
