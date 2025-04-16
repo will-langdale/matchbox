@@ -15,7 +15,7 @@ nav:
   - API: 
     - Overview: api/client/index.md
 - Server:
-  - Install: server/install.md
+  - Installation: server/install.md
   - Deploy: server/deploy.md
   - API: 
     - Overview: api/server/index.md

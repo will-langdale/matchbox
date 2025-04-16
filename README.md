@@ -32,31 +32,7 @@ To install the full package, including the server features:
 pip install "matchbox-db[server]"
 ```
 
-## Running the server locally
-
-To run the server locally, run:
-
-```shell
-docker compose up --build
-```
-
-## Running the server locally with Datadog (monitoring) integration
-
-1. Run:
-
-   ```shell
-   cp ./environments/datadog-agent-private-sample.env ./environments/.datadog-agent-private.env
-   ```
-
-2. Populate the newly-created ` ./environments/.datadog-agent-private.env` with a Datadog API key.
-
-
-3. Run the server using:
-
-   ```shell
-   docker compose --profile monitoring up --build
-   ```
-
+To run the server, see the [server installation documentation](https://uktrade.github.io/matchbox/server/install/).
 
 ## Use cases
 
