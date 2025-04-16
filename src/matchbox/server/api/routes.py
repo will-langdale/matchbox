@@ -74,11 +74,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Define common formatter
     formatter = ASIMFormatter()
 
-    # Configure handler
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(backend.settings.log_level)
-    handler.setFormatter(formatter)
-
     # Configure loggers with the same handler and formatter
     loggers_to_configure = [
         "matchbox",
@@ -90,6 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ]
 
     for logger_name in loggers_to_configure:
+        # Configure handler
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(backend.settings.log_level)
+        handler.setFormatter(formatter)
+
         logger = logging.getLogger(logger_name)
         logger.setLevel(backend.settings.log_level)
         # Remove any existing handlers to avoid duplicates
