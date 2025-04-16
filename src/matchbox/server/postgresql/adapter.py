@@ -138,7 +138,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         """Initialise the PostgreSQL adapter."""
         self.settings = settings
         MBDB.settings = settings
-        MBDB.sync_schema()
+        MBDB.run_migrations()
+        MBDB.verify_schema()
 
         self.datasets = Sources
         self.models = FilteredResolutions(datasets=False, humans=False, models=True)
@@ -325,13 +326,23 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def dump(self) -> MatchboxSnapshot:  # noqa: D102
         return dump(engine=MBDB.get_engine())
 
+    def drop(self, certain: bool = False) -> None:  # noqa: D102
+        if certain:
+            MBDB.drop_database()
+        else:
+            raise MatchboxDeletionNotConfirmed(
+                "This operation will drop the entire database and recreate it."
+                "It's not expected to be used as part normal operations."
+                "If you're sure you want to continue, rerun with certain=True"
+            )
+
     def clear(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.clear_database()
         else:
             raise MatchboxDeletionNotConfirmed(
-                "This operation will drop the entire database. "
-                "It's principally used for testing. \n\n"
+                "This operation will drop all rows in the database but not the "
+                "tables themselves. It's primarily used to reset following tests."
                 "If you're sure you want to continue, rerun with certain=True"
             )
 
@@ -349,6 +360,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
             snapshot=snapshot,
             batch_size=self.settings.batch_size,
         )
+
+    def verify(self) -> None:  # noqa: D102
+        MBDB.verify_schema()
 
     # Model management
 

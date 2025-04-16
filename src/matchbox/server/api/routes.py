@@ -772,10 +772,15 @@ async def count_backend_items(
 async def clear_database(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     certain: Annotated[
-        bool, Query(description="Confirm deletion of all data in the database")
+        bool,
+        Query(
+            description=(
+                "Confirm deletion of all data in the database whilst retaining tables"
+            )
+        ),
     ] = False,
 ) -> OKMessage:
-    """Clear all data from the backend."""
+    """Delete all data from the backend whilst retaining tables."""
     try:
         backend.clear(certain=certain)
         return OKMessage()

@@ -117,17 +117,12 @@ class TestE2EAnalyticalUser:
         # Use a separate schema to avoid conflict with legacy test data
         # TODO: Remove once legacy tests are refactored
         with postgres_warehouse.connect() as conn:
-            conn.execute(text("create schema if not exists e2e;"))
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS e2e;"))
             conn.commit()
 
         # Setup code - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
             source_testkit.to_warehouse(engine=postgres_warehouse)
-
-        # Clear matchbox database before test
-        response = matchbox_client.delete("/database", params={"certain": "true"})
-
-        assert response.status_code == 200, "Failed to clear matchbox database"
 
         yield
 
@@ -136,9 +131,8 @@ class TestE2EAnalyticalUser:
         with postgres_warehouse.connect() as conn:
             for source_name in self.linked_testkit.sources:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
-                conn.commit()
-
-        # Clear matchbox database after test
+            conn.execute(text("DROP SCHEMA IF EXISTS e2e CASCADE;"))
+            conn.commit()
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 

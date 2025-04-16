@@ -20,6 +20,10 @@ ARG ENV_FILE
 COPY ./uv.lock /code/uv.lock
 COPY ./pyproject.toml /code/pyproject.toml
 COPY ./src/matchbox /code/src/matchbox
+COPY ./src/matchbox/server/postgresql/alembic.ini /code/src/matchbox/server/postgresql/alembic.ini
+COPY ./src/matchbox/server/postgresql/alembic /code/src/matchbox/server/postgresql/alembic
+
+ENV ALEMBIC_CONFIG="/code/src/matchbox/server/postgresql/alembic.ini"
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching
@@ -38,7 +42,6 @@ ENTRYPOINT ["ddtrace-run"]
 # Local development stage: with locally-specified environment variables and hot reloading
 
 FROM base AS dev
-
 COPY ./environments/$ENV_FILE /code/.env
 CMD ["fastapi", "dev", "--host", "0.0.0.0", "src/matchbox/server/api"]
 
@@ -46,6 +49,5 @@ CMD ["fastapi", "dev", "--host", "0.0.0.0", "src/matchbox/server/api"]
 # Production stage: no environment variables (they come from the infrastructure) and no hot reloading
 
 FROM base AS prod
-
 # Uses `--host 0.0.0.0` to allow access from outside the container
-CMD ["fastapi", "run", "--host", "0.0.0.0", "src/matchbox/server/api"]
+CMD ["fastapi", "dev", "--host", "0.0.0.0", "src/matchbox/server/api"]

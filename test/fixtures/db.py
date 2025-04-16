@@ -9,6 +9,7 @@ import boto3
 import pyarrow as pa
 import pytest
 import respx
+from alembic.config import Config
 from httpx import Client
 from moto import mock_aws
 from respx import MockRouter
@@ -473,8 +474,15 @@ def matchbox_datastore() -> MatchboxDatastoreSettings:
 
 
 @pytest.fixture(scope="session")
+def alembic_config() -> Config:
+    """Alembic config fixture."""
+    return Config("test/fixtures/test-fixture-alembic.ini")
+
+
+@pytest.fixture(scope="session")
 def matchbox_settings(
     matchbox_datastore: MatchboxDatastoreSettings,
+    alembic_config: Config,
 ) -> MatchboxPostgresSettings:
     """Settings for the Matchbox database."""
     return MatchboxPostgresSettings(
@@ -488,6 +496,7 @@ def matchbox_settings(
             "db_schema": "mb",
         },
         datastore=matchbox_datastore,
+        alembic_config=alembic_config,
     )
 
 
@@ -500,12 +509,12 @@ def matchbox_postgres(
     adapter = MatchboxPostgres(settings=matchbox_settings)
 
     # Clean up the Matchbox database before each test, just in case
-    adapter.clear(certain=True)
+    adapter.drop(certain=True)
 
     yield adapter
 
     # Clean up the Matchbox database after each test
-    adapter.clear(certain=True)
+    adapter.drop(certain=True)
 
 
 # Mock AWS fixtures
