@@ -91,12 +91,12 @@ class ASIMFormatter(logging.Formatter):
     """Format logging with ASIM standard fields."""
 
     @cached_property
-    def matchbox_version(self):
+    def matchbox_version(self) -> str:
         """Cached matchbox version."""
         return version("matchbox_db")
 
     @cached_property
-    def event_severity(self):
+    def event_severity(self) -> dict[str, str]:
         """Event severity level lookup."""
         return {
             "DEBUG": "Informational",
@@ -106,7 +106,7 @@ class ASIMFormatter(logging.Formatter):
             "CRITICAL": "High",
         }
 
-    def format(self, record):
+    def format(self, record) -> str:
         """Convert logs to JSON."""
         log_time = datetime.datetime.utcfromtimestamp(record.created).isoformat()
         return json.dumps(
