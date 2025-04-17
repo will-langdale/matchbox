@@ -359,11 +359,20 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def clear(self, certain: bool) -> None:
-        """Clears all data from the database.
+    def drop(self, certain: bool) -> None:
+        """Hard clear the database by dropping all tables and re-creating.
 
         Args:
-            certain: Whether to clear the database without confirmation.
+            certain: Whether to drop the database without confirmation.
+        """
+        ...
+
+    @abstractmethod
+    def clear(self, certain: bool) -> None:
+        """Soft clear the database by deleting all rows but retaining tables.
+
+        Args:
+            certain: Whether to delete the database without confirmation.
         """
         ...
 
@@ -379,6 +388,11 @@ class MatchboxDBAdapter(ABC):
         Raises:
             TypeError: If the snapshot is not compatible with PostgreSQL
         """
+        ...
+
+    @abstractmethod
+    def verify(self) -> None:
+        """Checks the database schema against expected and logs outcome."""
         ...
 
     # Model management

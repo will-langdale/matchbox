@@ -119,7 +119,7 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
-addopts = "--cov=matchbox test/ --log-disable=pg_bulk_ingest"
+addopts = "--cov=matchbox test/"
 norecursedirs = "src"
 log_cli = false  # Set to true to enable logs and individual tests
 log_cli_level = "DEBUG"  # Set to "INFO" to see less detailed logging
@@ -128,9 +128,11 @@ log_cli_date_format = "%X"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
-    'ignore:.*TestkitDAG.*:pytest.PytestCollectionWarning',
-    'ignore:.*__fields.*:pydantic.PydanticDeprecatedSince20:unittest.mock',
-    'ignore:.*__fields_set__.*:pydantic.PydanticDeprecatedSince20:unittest.mock'
+    "ignore:.*TestkitDAG.*:pytest.PytestCollectionWarning",
+    "ignore:.*__fields__.*:pydantic.PydanticDeprecatedSince20:unittest.mock",
+    "ignore:.*__fields_set__.*:pydantic.PydanticDeprecatedSince20:unittest.mock",
+    "ignore:.*model_fields.*:pydantic.PydanticDeprecatedSince211:unittest.mock",
+    "ignore:.*model_computed_fields.*:pydantic.PydanticDeprecatedSince211:unittest.mock",
 ]
 markers = [
     "docker: marks tests that require resources in Docker to be available",

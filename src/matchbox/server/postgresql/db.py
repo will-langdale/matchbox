@@ -1,13 +1,23 @@
 """Matchbox PostgreSQL database connection."""
 
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Generator
 
 from adbc_driver_postgresql import dbapi as adbc_dbapi
+from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, MetaData, create_engine, text
+from sqlalchemy import (
+    URL,
+    Engine,
+    MetaData,
+    create_engine,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
@@ -24,6 +34,25 @@ class MatchboxPostgresCoreSettings(BaseModel):
     password: str
     database: str
     db_schema: str
+    alembic_config: Path = Field(
+        default=Path("src/matchbox/server/postgresql/alembic.ini")
+    )
+
+    def get_alembic_config(self) -> Config:
+        """Get the Alembic config."""
+        config = Config(self.alembic_config)
+        db_url = URL.create(
+            "postgresql+psycopg",
+            username=self.user,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.database,
+        )
+        config.set_main_option(
+            "sqlalchemy.url", db_url.render_as_string(hide_password=False)
+        )
+        return config
 
 
 class MatchboxPostgresSettings(MatchboxServerSettings):
@@ -52,6 +81,7 @@ class MatchboxDatabase:
         self.MatchboxBase = declarative_base(
             metadata=MetaData(schema=settings.postgres.db_schema)
         )
+        self.alembic_config = settings.postgres.get_alembic_config()
 
     def connection_string(self, driver: bool = True) -> str:
         """Get the connection string for PostgreSQL."""
@@ -130,47 +160,63 @@ class MatchboxDatabase:
         finally:
             conn.close()
 
-    def create_database(self):
-        """Create the database."""
-        with self.get_engine().connect() as conn:
-            conn.execute(
-                text(f"CREATE SCHEMA IF NOT EXISTS {self.settings.postgres.db_schema};")
+    def run_migrations(self):
+        """Create the database and all tables expected in the schema."""
+        alembic_version = self._look_for_alembic_version()
+        engine = self.get_engine()
+        logger.info("Determinded alembic in use so upgrading to head")
+        if alembic_version is not None:
+            command.upgrade(self.alembic_config, "head")
+        else:
+            logger.info(
+                "Determinded alembic not in use so dropping schema if it "
+                "exists prior to upgrading to head. "
             )
-            conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
-            conn.commit()
-
-        self.MatchboxBase.metadata.create_all(self.get_engine())
+            with engine.connect() as conn:
+                conn.execute(text("DROP SCHEMA IF EXISTS mb CASCADE;"))
+                conn.commit()
+            command.upgrade(self.alembic_config, "head")
 
     def clear_database(self):
-        """Clear the database."""
+        """Delete all rows in every table in the database schema."""
         with self.get_engine().connect() as conn:
-            conn.execute(
-                text(
-                    f"DROP SCHEMA IF EXISTS {self.settings.postgres.db_schema} CASCADE;"
-                )
-            )
+            for table in self.MatchboxBase.metadata.sorted_tables:
+                conn.execute(table.delete())
             conn.commit()
 
-        self._reset_connections()
+    def drop_database(self):
+        """Drop all tables in the database schema and re-recreate them."""
+        command.downgrade(self.alembic_config, "base")
+        command.upgrade(self.alembic_config, "head")
 
-        self.create_database()
+    def _look_for_alembic_version(self) -> bool:
+        engine = self.get_engine()
+        inspector = inspect(engine)
+        alembic_version_table = "alembic_version" in inspector.get_table_names(
+            schema="public"
+        )
+        if alembic_version_table:
+            with engine.connect() as conn:
+                result = conn.execute(
+                    text("SELECT version_num FROM public.alembic_version;")
+                )
+                alembic_version = result.scalar()
+        else:
+            alembic_version = None
+        return alembic_version
 
-    def sync_schema(self):
-        """Synchronise the database schema with the ORM.
+    def verify_schema(self):
+        """Verify the database schema live is in sync with the ORM.
 
-        If any differences are detected, drop and recreate the database.
+        If any differences are detected, log this as an error.
+
+        NOTE: this was originally implemented prior to alembic. In principle alembic
+        is best placed to manage any such diff, and this remains for now only as an
+        informative aid and could be removed.
         """
         engine = self.get_engine()
 
-        # Check if schema exists, create if not
-        with engine.connect() as conn:
-            schemas = conn.dialect.get_schema_names(conn)
-            if self.settings.postgres.db_schema not in schemas:
-                self.create_database()
-                return
-
-        # Compare schema with ORM, drop and recreate if different
+        # Compare schema with ORM
         def _include_name(name: str, type_: str, _: dict[str, str]) -> bool:
             if type_ == "schema":
                 return name == self.settings.postgres.db_schema
@@ -189,11 +235,9 @@ class MatchboxDatabase:
             diff = compare_metadata(context, self.MatchboxBase.metadata)
 
             if diff:
-                logger.warning(
-                    "Schema mismatch detected. Dropping and recreating database. \n"
-                    f"Diff: {diff}"
-                )
-                self.clear_database()
+                logger.warning(f"Schema mismatch detected. \nDiff: {diff}")
+            else:
+                logger.info("Schema matches expected.")
 
 
 # Global database instance -- everything should use this

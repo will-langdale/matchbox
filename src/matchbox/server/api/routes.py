@@ -42,6 +42,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
+from matchbox.common.logging import ASIMFormatter
 from matchbox.common.sources import Match, Source, SourceAddress
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import MetadataStore, process_upload
@@ -71,12 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     backend = get_backend(get_settings())
 
     # Define common formatter
-    formatter = logging.Formatter("[%(name)s %(levelname)s] %(message)s")
-
-    # Configure handler
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(backend.settings.log_level)
-    handler.setFormatter(formatter)
+    formatter = ASIMFormatter()
 
     # Configure loggers with the same handler and formatter
     loggers_to_configure = [
@@ -89,6 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ]
 
     for logger_name in loggers_to_configure:
+        # Configure handler
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(backend.settings.log_level)
+        handler.setFormatter(formatter)
+
         logger = logging.getLogger(logger_name)
         logger.setLevel(backend.settings.log_level)
         # Remove any existing handlers to avoid duplicates
@@ -772,10 +773,15 @@ async def count_backend_items(
 async def clear_database(
     backend: Annotated[MatchboxDBAdapter, Depends(get_backend)],
     certain: Annotated[
-        bool, Query(description="Confirm deletion of all data in the database")
+        bool,
+        Query(
+            description=(
+                "Confirm deletion of all data in the database whilst retaining tables"
+            )
+        ),
     ] = False,
 ) -> OKMessage:
-    """Clear all data from the backend."""
+    """Delete all data from the backend whilst retaining tables."""
     try:
         backend.clear(certain=certain)
         return OKMessage()

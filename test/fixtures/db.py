@@ -473,10 +473,10 @@ def matchbox_datastore() -> MatchboxDatastoreSettings:
 
 
 @pytest.fixture(scope="session")
-def matchbox_settings(
+def matchbox_postgres_settings(
     matchbox_datastore: MatchboxDatastoreSettings,
 ) -> MatchboxPostgresSettings:
-    """Settings for the Matchbox database."""
+    """Settings for the Matchbox PostgreSQL database."""
     return MatchboxPostgresSettings(
         batch_size=250_000,
         postgres={
@@ -486,6 +486,7 @@ def matchbox_settings(
             "password": "matchbox_password",
             "database": "matchbox",
             "db_schema": "mb",
+            "alembic_config": "src/matchbox/server/postgresql/alembic.ini",
         },
         datastore=matchbox_datastore,
     )
@@ -493,19 +494,19 @@ def matchbox_settings(
 
 @pytest.fixture(scope="function")
 def matchbox_postgres(
-    matchbox_settings: MatchboxPostgresSettings,
+    matchbox_postgres_settings: MatchboxPostgresSettings,
 ) -> Generator[MatchboxPostgres, None, None]:
     """The Matchbox PostgreSQL database."""
 
-    adapter = MatchboxPostgres(settings=matchbox_settings)
+    adapter = MatchboxPostgres(settings=matchbox_postgres_settings)
 
     # Clean up the Matchbox database before each test, just in case
-    adapter.clear(certain=True)
+    adapter.drop(certain=True)
 
     yield adapter
 
     # Clean up the Matchbox database after each test
-    adapter.clear(certain=True)
+    adapter.drop(certain=True)
 
 
 # Mock AWS fixtures
