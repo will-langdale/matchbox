@@ -44,7 +44,6 @@ jobs:
 
       - name: Run pytest
         run: |
-          uv run alembic --config "src/matchbox/server/postgresql/alembic.ini" upgrade head
           uv run pytest
 
       - name: Dump docker logs

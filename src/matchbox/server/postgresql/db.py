@@ -81,6 +81,7 @@ class MatchboxDatabase:
         self.MatchboxBase = declarative_base(
             metadata=MetaData(schema=settings.postgres.db_schema)
         )
+        self.alembic_config = settings.postgres.get_alembic_config()
 
     def connection_string(self, driver: bool = True) -> str:
         """Get the connection string for PostgreSQL."""
@@ -161,21 +162,20 @@ class MatchboxDatabase:
 
     def run_migrations(self):
         """Create the database and all tables expected in the schema."""
-        alembic_cfg = self.settings.postgres.get_alembic_config()
         alembic_version = self._look_for_alembic_version()
         engine = self.get_engine()
         logger.info("Determinded alembic in use so upgrading to head")
         if alembic_version is not None:
-            command.upgrade(alembic_cfg, "head")
+            command.upgrade(self.alembic_config, "head")
         else:
             logger.info(
                 "Determinded alembic not in use so dropping schema if it "
-                "exists prior to upgrading to head."
+                "exists prior to upgrading to head. "
             )
             with engine.connect() as conn:
                 conn.execute(text("DROP SCHEMA IF EXISTS mb CASCADE;"))
                 conn.commit()
-            command.upgrade(alembic_cfg, "head")
+            command.upgrade(self.alembic_config, "head")
 
     def clear_database(self):
         """Delete all rows in every table in the database schema."""
@@ -186,9 +186,8 @@ class MatchboxDatabase:
 
     def drop_database(self):
         """Drop all tables in the database schema and re-recreate them."""
-        alembic_cfg = self.settings.postgres.get_alembic_config()
-        command.downgrade(alembic_cfg, "base")
-        command.upgrade(alembic_cfg, "head")
+        command.downgrade(self.alembic_config, "base")
+        command.upgrade(self.alembic_config, "head")
 
     def _look_for_alembic_version(self) -> bool:
         engine = self.get_engine()
