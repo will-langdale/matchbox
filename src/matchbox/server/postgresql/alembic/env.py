@@ -12,8 +12,13 @@ fileConfig(context.config.config_file_name, disable_existing_loggers=False)
 
 def run_migrations_online() -> None:
     """Run migrations based on SQLAlchemy ('offline' refers to raw SQL mode)."""
+    config_section = context.config.get_section(context.config.config_ini_section) or {}
+    config_section["sqlalchemy.url"] = (
+        MBDB.settings.postgres.get_alembic_config().get_main_option("sqlalchemy.url")
+    )
+
     connectable = engine_from_config(
-        context.config.get_section(context.config.config_ini_section),
+        config_section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
