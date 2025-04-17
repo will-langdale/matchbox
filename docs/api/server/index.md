@@ -4,12 +4,18 @@
     options:
         show_root_heading: true
         show_root_full_path: true
-        show_root_docstring: true
         members_order: source
         show_if_no_docstring: true
         docstring_style: google
         show_signature_annotations: true
         separate_signature: true
+        extra:
+            show_root_docstring: true
+            selection:
+                members:
+                    - "*"
+                submodules:
+                    - "base"
         filters:
             - "!^[A-Z]$"  # Excludes single-letter uppercase variables (like T, P, R)
             - "!^_"       # Excludes private attributes
@@ -17,22 +23,18 @@
             - "!_path$"    # Excludes path variables
             - "!model_config" # Excludes Pydantic configuration
             - "!app$"    # Excludes FastAPI app
-        selection:
-            members:
-                - "*"
-            submodules:
-                - "base"
 
 ::: matchbox.server.base
     options:
         show_root_heading: true
         show_root_full_path: true
-        show_root_docstring: true
         members_order: source
         show_if_no_docstring: true
         docstring_style: google
         show_signature_annotations: true
         separate_signature: true
+        extra:
+            show_root_docstring: true
         filters:
             - "!^[A-Z]$"  # Excludes single-letter uppercase variables (like T, P, R)
             - "!^_"       # Excludes private attributes

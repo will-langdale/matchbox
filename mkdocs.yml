@@ -55,8 +55,8 @@ nav:
 
 theme:
   name: material
-  logo: assets/matchbox-light.png
-  favicon: assets/matchbox-dark.png
+  logo: assets/matchbox-icon.svg
+  favicon: assets/matchbox-icon-dark.png
   features:
     - content.code.copy
     - navigation.sections
@@ -74,17 +74,17 @@ theme:
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: black
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
-        icon: material/weather-sunny
+        icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: black
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
-        icon: material/weather-night
+        icon: material/brightness-4
         name: Switch to system preference
 
 markdown_extensions:
@@ -109,6 +109,7 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.blocks.caption
   - toc:
       permalink: true
 
@@ -149,11 +150,11 @@ plugins:
               show_docstring_inheritance: true
               show_inheritance: true
 
-copyright: >
-  <a href="https://www.flaticon.com/free-icons/ignite" title="ignite icons">Ignite icons created by edt.im - Flaticon</a>
-
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/uktrade/matchbox
   generator: false
+
+extra_css:
+  - stylesheets/extra.css

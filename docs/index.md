@@ -3,6 +3,11 @@ hide:
   - toc
 ---
 
+<figure markdown="span">
+  ![The Matchbox logo in light mode](./assets/matchbox-logo-light.svg#only-light){ width="500" }
+  ![The Matchbox logo in dark mode](./assets/matchbox-logo-dark.svg#only-dark){ width="500" }
+</figure>
+
 <div class="grid cards" markdown>
 
 - :material-run-fast:{ .lg .middle } **Getting started**
