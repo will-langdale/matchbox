@@ -25,6 +25,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.execute("DROP SCHEMA IF EXISTS mb CASCADE;")
+    op.execute("DROP SCHEMA IF EXISTS mb CASCADE")
     op.execute('DROP EXTENSION IF EXISTS "uuid-ossp"')
     op.execute('DROP EXTENSION IF EXISTS "pgcrypto"')

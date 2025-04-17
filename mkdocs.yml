@@ -15,7 +15,7 @@ nav:
   - API: 
     - Overview: api/client/index.md
 - Server:
-  - Install: server/install.md
+  - Installation: server/install.md
   - Deploy: server/deploy.md
   - API: 
     - Overview: api/server/index.md
@@ -28,6 +28,7 @@ nav:
     - Models: api/client/models.md
     - Results: api/client/results.md
     - Visualisation: api/client/visualisation.md
+    - Extract: api/client/extract.md
   - Server: 
     - Overview: api/server/index.md
     - API: api/server/api.md
@@ -97,6 +98,7 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.details
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -117,7 +119,7 @@ plugins:
       default_handler: python
       handlers:
         python:
-          import:
+          inventories:
           - https://docs.python.org/3/objects.inv
           - https://typing-extensions.readthedocs.io/en/latest/objects.inv
           paths: [src]
@@ -134,11 +136,8 @@ plugins:
             merge_init_into_class: true
             parameter_headings: true
             separate_signature: true
-            show_docstring_inheritance: true
             show_bases: true
-            show_inheritance: true
             show_inheritance_diagram: true
-            show_root_heading: true
             show_root_full_path: false
             show_source: false
             show_signature_annotations: true
@@ -146,6 +145,9 @@ plugins:
             show_symbol_type_toc: true
             signature_crossrefs: true
             summary: true
+            extra:
+              show_docstring_inheritance: true
+              show_inheritance: true
 
 copyright: >
   <a href="https://www.flaticon.com/free-icons/ignite" title="ignite icons">Ignite icons created by edt.im - Flaticon</a>
