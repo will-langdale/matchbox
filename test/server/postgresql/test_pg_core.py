@@ -24,7 +24,7 @@ from matchbox.server.postgresql.mixin import CountMixin
 from matchbox.server.postgresql.utils.db import large_ingest
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
-from ..fixtures.db import setup_scenario
+from ...fixtures.db import setup_scenario
 
 
 def test_hash_id_map():

@@ -124,6 +124,11 @@ class TestE2EAnalyticalUser:
         for source_testkit in self.linked_testkit.sources.values():
             source_testkit.to_warehouse(engine=postgres_warehouse)
 
+        # Clear matchbox database before test
+        response = matchbox_client.delete("/database", params={"certain": "true"})
+
+        assert response.status_code == 200, "Failed to clear matchbox database"
+
         yield
 
         # Teardown code
@@ -133,6 +138,7 @@ class TestE2EAnalyticalUser:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
             conn.execute(text("DROP SCHEMA IF EXISTS e2e CASCADE;"))
             conn.commit()
+
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 

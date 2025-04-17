@@ -18,11 +18,13 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.execute("CREATE SCHEMA mb;")
-    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
-    op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
+    op.execute("CREATE SCHEMA mb")
+    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
+    op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.execute("DROP SCHEMA mb CASCADE;")
+    op.execute("DROP SCHEMA IF EXISTS mb CASCADE;")
+    op.execute('DROP EXTENSION IF EXISTS "uuid-ossp"')
+    op.execute('DROP EXTENSION IF EXISTS "pgcrypto"')

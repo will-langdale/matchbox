@@ -1,7 +1,7 @@
 """Matchbox PostgreSQL database connection."""
 
-import os
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Generator
 
 from adbc_driver_postgresql import dbapi as adbc_dbapi
@@ -27,6 +27,13 @@ class MatchboxPostgresCoreSettings(BaseModel):
     password: str
     database: str
     db_schema: str
+    alembic_config: Path = Field(
+        default=Path("src/matchbox/server/postgresql/alembic.ini")
+    )
+
+    def get_alembic_config(self) -> Config:
+        """Get the Alembic config."""
+        return Config(self.alembic_config)
 
 
 class MatchboxPostgresSettings(MatchboxServerSettings):
@@ -36,8 +43,6 @@ class MatchboxPostgresSettings(MatchboxServerSettings):
     """
 
     backend_type: MatchboxBackends = MatchboxBackends.POSTGRES
-
-    alembic_config: Config = Config(os.getenv("ALEMBIC_CONFIG"))
 
     postgres: MatchboxPostgresCoreSettings = Field(
         default_factory=MatchboxPostgresCoreSettings
@@ -137,7 +142,7 @@ class MatchboxDatabase:
 
     def run_migrations(self):
         """Create the database and all tables expected in the schema."""
-        alembic_cfg = self.settings.alembic_config
+        alembic_cfg = self.settings.postgres.get_alembic_config()
         alembic_version = self._look_for_alembic_version()
         engine = self.get_engine()
         logger.info("Determinded alembic in use so upgrading to head")
@@ -146,7 +151,7 @@ class MatchboxDatabase:
         else:
             logger.info(
                 "Determinded alembic not in use so dropping schema if it "
-                "exists prior to upgrading to head"
+                "exists prior to upgrading to head."
             )
             with engine.connect() as conn:
                 conn.execute(text("DROP SCHEMA IF EXISTS mb CASCADE;"))
@@ -162,7 +167,7 @@ class MatchboxDatabase:
 
     def drop_database(self):
         """Drop all tables in the database schema and re-recreate them."""
-        alembic_cfg = self.settings.alembic_config
+        alembic_cfg = self.settings.postgres.get_alembic_config()
         command.downgrade(alembic_cfg, "base")
         command.upgrade(alembic_cfg, "head")
 

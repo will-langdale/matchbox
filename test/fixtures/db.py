@@ -9,7 +9,6 @@ import boto3
 import pyarrow as pa
 import pytest
 import respx
-from alembic.config import Config
 from httpx import Client
 from moto import mock_aws
 from respx import MockRouter
@@ -474,17 +473,10 @@ def matchbox_datastore() -> MatchboxDatastoreSettings:
 
 
 @pytest.fixture(scope="session")
-def alembic_config() -> Config:
-    """Alembic config fixture."""
-    return Config("test/fixtures/test-fixture-alembic.ini")
-
-
-@pytest.fixture(scope="session")
-def matchbox_settings(
+def matchbox_postgres_settings(
     matchbox_datastore: MatchboxDatastoreSettings,
-    alembic_config: Config,
 ) -> MatchboxPostgresSettings:
-    """Settings for the Matchbox database."""
+    """Settings for the Matchbox PostgreSQL database."""
     return MatchboxPostgresSettings(
         batch_size=250_000,
         postgres={
@@ -494,19 +486,19 @@ def matchbox_settings(
             "password": "matchbox_password",
             "database": "matchbox",
             "db_schema": "mb",
+            "alembic_config": "src/matchbox/server/postgresql/alembic.ini",
         },
         datastore=matchbox_datastore,
-        alembic_config=alembic_config,
     )
 
 
 @pytest.fixture(scope="function")
 def matchbox_postgres(
-    matchbox_settings: MatchboxPostgresSettings,
+    matchbox_postgres_settings: MatchboxPostgresSettings,
 ) -> Generator[MatchboxPostgres, None, None]:
     """The Matchbox PostgreSQL database."""
 
-    adapter = MatchboxPostgres(settings=matchbox_settings)
+    adapter = MatchboxPostgres(settings=matchbox_postgres_settings)
 
     # Clean up the Matchbox database before each test, just in case
     adapter.drop(certain=True)

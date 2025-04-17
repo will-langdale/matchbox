@@ -30,11 +30,19 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
+    def _include_name(name: str, type_: str, _: dict[str, str]) -> bool:
+        """Ensure only Matchbox's schema is used to generate diffs."""
+        if type_ == "schema":
+            return name == MBDB.settings.postgres.db_schema
+        else:
+            return True
+
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
+            include_name=_include_name,
             compare_server_default=True,
         )
 
