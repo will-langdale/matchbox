@@ -10,7 +10,14 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, MetaData, create_engine, inspect, text
+from sqlalchemy import (
+    URL,
+    Engine,
+    MetaData,
+    create_engine,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
@@ -33,7 +40,19 @@ class MatchboxPostgresCoreSettings(BaseModel):
 
     def get_alembic_config(self) -> Config:
         """Get the Alembic config."""
-        return Config(self.alembic_config)
+        config = Config(self.alembic_config)
+        db_url = URL.create(
+            "postgresql+psycopg",
+            username=self.user,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.database,
+        )
+        config.set_main_option(
+            "sqlalchemy.url", db_url.render_as_string(hide_password=False)
+        )
+        return config
 
 
 class MatchboxPostgresSettings(MatchboxServerSettings):

@@ -20,8 +20,6 @@ ARG ENV_FILE
 COPY ./uv.lock /code/uv.lock
 COPY ./pyproject.toml /code/pyproject.toml
 COPY ./src/matchbox /code/src/matchbox
-COPY ./src/matchbox/server/postgresql/alembic.ini /code/src/matchbox/server/postgresql/alembic.ini
-COPY ./src/matchbox/server/postgresql/alembic /code/src/matchbox/server/postgresql/alembic
 
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching

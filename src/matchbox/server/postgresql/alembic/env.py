@@ -3,23 +3,11 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import URL, engine_from_config, pool
+from sqlalchemy import engine_from_config, pool
 
 from matchbox.server.postgresql.db import MBDB
 
-config = context.config
-fileConfig(config.config_file_name, disable_existing_loggers=False)
-
-db_url = URL.create(
-    "postgresql+psycopg",
-    username=MBDB.settings.postgres.user,
-    password=MBDB.settings.postgres.password,
-    host=MBDB.settings.postgres.host,
-    port=MBDB.settings.postgres.port,
-    database=MBDB.settings.postgres.database,
-)
-config.set_main_option("sqlalchemy.url", db_url.render_as_string(hide_password=False))
-target_metadata = MBDB.MatchboxBase.metadata
+fileConfig(context.config.config_file_name, disable_existing_loggers=False)
 
 
 def run_migrations_online() -> None:
@@ -40,7 +28,7 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
-            target_metadata=target_metadata,
+            target_metadata=MBDB.MatchboxBase.metadata,
             include_schemas=True,
             include_name=_include_name,
             compare_server_default=True,
