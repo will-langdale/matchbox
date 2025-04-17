@@ -25,3 +25,11 @@ repos:
       entry: uv run mkdocs build --strict
       language: system
       pass_filenames: false
+
+    # Check for missing migrations
+    - id: alembic
+      name: Alembic
+      description: "Check for missing migrations"
+      entry: just migration-check
+      language: system
+      pass_filenames: false
