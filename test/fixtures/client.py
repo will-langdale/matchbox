@@ -1,8 +1,10 @@
 from os import environ
 from typing import Callable, Generator
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from matchbox.client._settings import settings as client_settings
 from matchbox.server import app
@@ -30,9 +32,12 @@ def env_setter() -> Generator[Callable[[str, str], None], None, None]:
 
 
 @pytest.fixture(scope="function")
-def test_client(
-    env_setter: Callable[[str, str], None],
-) -> Generator[TestClient, None, None]:
-    env_setter("MB__SERVER__API_KEY", "test-api-key")
-    client = TestClient(app, headers={"X-API-Key": "test-api-key"})
-    return client
+def test_client() -> Generator[TestClient, None, None]:
+    """Return a configured TestClient with patched backend and settings."""
+    with (
+        patch("matchbox.server.api.routes.settings") as mock_settings,
+        patch("matchbox.server.api.routes.backend") as _,
+    ):
+        mock_settings.api_key = SecretStr("test-api-key")
+        client = TestClient(app, headers={"X-API-Key": "test-api-key"})
+        yield client
