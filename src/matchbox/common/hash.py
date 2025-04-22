@@ -6,6 +6,7 @@ from typing import TypeVar
 from uuid import UUID
 
 import polars as pl
+import polars.expr as plx
 import polars_hash as plh
 import pyarrow as pa
 from pandas import DataFrame, Series
@@ -92,13 +93,30 @@ def hash_arrow_table(table: pa.Table) -> bytes:
     columns: list[str] = sorted(df.columns)
     df = df.select(columns)
 
-    row_hashes = (
+    # Explode list columns
+    for col in columns:
+        if isinstance(df.schema[col], pl.List):
+            df = df.explode(col)
+
+    # Coerce to UTF-8
+    expr_list: list[plx.Expr] = []
+    for col in columns:
+        if isinstance(df.schema[col], pl.Binary):
+            expr_list.append(pl.col(col).fill_null("\x00").bin.encode("hex").alias(col))
+        else:
+            expr_list.append(pl.col(col).cast(pl.Utf8).fill_null("\x00"))
+
+    # Hash rows by concatenating all columns
+    row_hashes: pl.Series = (
         df.sort(by=columns)
-        .select(plh.concat_str(*columns).nchash.xxh3_128().alias("row_hash"))
+        .with_columns(expr_list)
+        .select(
+            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+        )
         .sort("row_hash")
     )
 
-    all_hashes = b"".join(row_hashes["row_hash"].to_list())
+    all_hashes: bytes = b"".join(row_hashes["row_hash"].to_list())
 
     return HASH_FUNC(all_hashes).digest()
 

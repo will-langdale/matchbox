@@ -3,14 +3,14 @@
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import hash_data, hash_values
+from matchbox.common.hash import hash_arrow_table, hash_data, hash_values
 from matchbox.common.logging import logger
 from matchbox.common.sources import Source
 from matchbox.common.transform import (
@@ -109,6 +109,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
     """Indexes a dataset from your data warehouse within Matchbox."""
     log_prefix = f"Index {source.address.pretty}"
     resolution_hash = hash_data(str(source.address))
+    content_hash = hash_arrow_table(data_hashes)
     engine = MBDB.get_engine()
     with Session(engine) as session:
         logger.info("Begin", prefix=log_prefix)
@@ -120,12 +121,17 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
 
         if existing_resolution:
             resolution = existing_resolution
+            # Check if the content hash is the same
+            if resolution.content_hash == content_hash:
+                logger.info("Dataset matches index. Finished", prefix=log_prefix)
+                return
         else:
             # Create new resolution
             resolution = Resolutions(
                 resolution_id=Resolutions.next_id(),
                 name=source.resolution_name,
                 resolution_hash=resolution_hash,
+                content_hash=content_hash,
                 type=ResolutionNodeType.DATASET.value,
             )
             session.add(resolution)
@@ -497,6 +503,12 @@ def insert_results(
         f"Writing results data with batch size {batch_size:,}", prefix=log_prefix
     )
 
+    # Check if the content hash is the same
+    content_hash = hash_arrow_table(results)
+    if resolution.content_hash == content_hash:
+        logger.info("Results already uploaded. Finished", prefix=log_prefix)
+        return
+
     clusters, contains, probabilities = _results_to_insert_tables(
         resolution=resolution, probabilities=results, engine=engine
     )
@@ -504,11 +516,18 @@ def insert_results(
     with Session(engine) as session:
         try:
             # Clear existing probabilities for this resolution
-            session.execute(
-                delete(Probabilities).where(
-                    Probabilities.resolution == resolution.resolution_id
-                )
+            stmt = delete(Probabilities).where(
+                Probabilities.resolution == resolution.resolution_id
             )
+            session.execute(stmt)
+
+            # Update the resolution's content hash
+            stmt = (
+                update(Resolutions)
+                .where(Resolutions.resolution_id == resolution.resolution_id)
+                .values(content_hash=content_hash)
+            )
+            session.execute(stmt)
 
             session.commit()
             logger.info("Removed old probabilities", prefix=log_prefix)
@@ -516,7 +535,8 @@ def insert_results(
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(
-                f"Failed to clear old probabilities: {str(e)}", prefix=log_prefix
+                f"Failed to clear old probabilities or update content hash: {str(e)}",
+                prefix=log_prefix,
             )
             raise
 
