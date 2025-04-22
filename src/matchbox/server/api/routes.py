@@ -409,6 +409,25 @@ async def get_source(
         ) from e
 
 
+@app.get(
+    "/sources",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_resolution_sources(
+    resolution_name: str,
+) -> list[Source]:
+    """Get all sources in scope for a resolution."""
+    try:
+        return backend.get_resolution_sources(resolution_name=resolution_name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+
 @app.get("/report/resolutions")
 async def get_resolutions() -> ResolutionGraph:
     """Get the resolution graph."""
@@ -714,10 +733,15 @@ async def count_backend_items(
 )
 async def clear_database(
     certain: Annotated[
-        bool, Query(description="Confirm deletion of all data in the database")
+        bool,
+        Query(
+            description=(
+                "Confirm deletion of all data in the database whilst retaining tables"
+            )
+        ),
     ] = False,
 ) -> OKMessage:
-    """Clear all data from the backend."""
+    """Delete all data from the backend whilst retaining tables."""
     try:
         backend.clear(certain=certain)
         return OKMessage()

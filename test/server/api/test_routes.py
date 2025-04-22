@@ -451,6 +451,29 @@ def test_get_source_404(mock_backend: Mock, test_client: TestClient):
 
 
 @patch("matchbox.server.api.routes.backend")
+def test_get_resolution_sources(mock_backend: Mock, test_client: TestClient):
+    source = source_factory().source
+
+    mock_backend.get_resolution_sources = Mock(return_value=[source])
+
+    response = test_client.get("/sources", params={"resolution_name": "foo"})
+    assert response.status_code == 200
+    for s in response.json():
+        assert Source.model_validate(s)
+
+
+@patch("matchbox.server.api.routes.backend")
+def test_get_resolution_sources_404(mock_backend: Mock, test_client: TestClient):
+    mock_backend.get_resolution_sources = Mock(
+        side_effect=MatchboxResolutionNotFoundError
+    )
+
+    response = test_client.get("/sources", params={"resolution_name": "foo"})
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+
+@patch("matchbox.server.api.routes.backend")
 def test_add_source(mock_backend: Mock, test_client: TestClient):
     """Test the source addition endpoint."""
     mock_backend.index = Mock(return_value=None)
