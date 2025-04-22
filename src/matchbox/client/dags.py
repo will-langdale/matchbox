@@ -375,11 +375,12 @@ class DAG:
 
         return "\n".join(result)
 
-    def run(self, start: str | None = None):
+    def run(self, start: str | None = None, finish: str | None = None):
         """Run entire DAG.
 
         Args:
             start: Name of the step to start from (if not from the beginning)
+            finish: Name of the step to finish at (if not to the end)
         """
         self.prepare()
 
@@ -396,7 +397,17 @@ class DAG:
         else:
             start_index = 0
 
-        for step_name in self.sequence[start_index:]:
+        # Determine end index
+        if finish:
+            try:
+                end_index = self.sequence.index(finish) + 1
+                skipped_nodes.extend(self.sequence[end_index:])
+            except ValueError as e:
+                raise ValueError(f"Step {finish} not in DAG") from e
+        else:
+            end_index = len(self.sequence)
+
+        for step_name in self.sequence[start_index:end_index]:
             node = self.nodes[step_name]
 
             try:

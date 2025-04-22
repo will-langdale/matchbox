@@ -5,6 +5,10 @@ import hashlib
 from typing import TypeVar
 from uuid import UUID
 
+import polars as pl
+import polars.expr as plx
+import polars_hash as plh
+import pyarrow as pa
 from pandas import DataFrame, Series
 
 T = TypeVar("T")
@@ -65,6 +69,56 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
         hashed_vals.update(val.digest())
 
     return hashed_vals.digest()
+
+
+def hash_arrow_table(table: pa.Table) -> bytes:
+    """Computes a content hash of an Arrow table invariant to row and column order.
+
+    This is used to content-address an Arrow table for caching.
+
+    Uses a non-cryptographic hash function (xxh3) to compute the hash of the table's
+    contents for speed, then cryptographically hashes the result.
+
+    Args:
+        table: The pyarrow Table to hash
+
+    Returns:
+        Bytes representing the content hash of the table
+    """
+    df = pl.from_arrow(table)
+
+    if df.height == 0:
+        return b"empty_table_hash"
+
+    columns: list[str] = sorted(df.columns)
+    df = df.select(columns)
+
+    # Explode list columns
+    for col in columns:
+        if isinstance(df.schema[col], pl.List):
+            df = df.explode(col)
+
+    # Coerce to UTF-8
+    expr_list: list[plx.Expr] = []
+    for col in columns:
+        if isinstance(df.schema[col], pl.Binary):
+            expr_list.append(pl.col(col).fill_null("\x00").bin.encode("hex").alias(col))
+        else:
+            expr_list.append(pl.col(col).cast(pl.Utf8).fill_null("\x00"))
+
+    # Hash rows by concatenating all columns
+    row_hashes: pl.Series = (
+        df.sort(by=columns)
+        .with_columns(expr_list)
+        .select(
+            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+        )
+        .sort("row_hash")
+    )
+
+    all_hashes: bytes = b"".join(row_hashes["row_hash"].to_list())
+
+    return HASH_FUNC(all_hashes).digest()
 
 
 def columns_to_value_ordered_hash(data: DataFrame, columns: list[str]) -> Series:

@@ -61,6 +61,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     # Columns
     resolution_id = Column(BIGINT, primary_key=True)
     resolution_hash = Column(BYTEA, nullable=False)
+    content_hash = Column(BYTEA, nullable=True)
     type = Column(TEXT, nullable=False)
     name = Column(TEXT, nullable=False)
     description = Column(TEXT)
