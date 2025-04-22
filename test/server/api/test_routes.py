@@ -146,9 +146,8 @@ def test_upload_wrong_schema(
     mock_add_task.assert_not_called()  # Background task should not be queued
 
 
-@patch("matchbox.server.api.routes.backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
-def test_upload_status_check(metadata_store: Mock, _: Mock, test_client: TestClient):
+def test_upload_status_check(metadata_store: Mock, test_client: TestClient):
     """Test checking status of an upload using the status endpoint."""
     # Setup store with a processing entry
     store = MetadataStore()
@@ -168,11 +167,8 @@ def test_upload_status_check(metadata_store: Mock, _: Mock, test_client: TestCli
     metadata_store.update_status.assert_not_called()
 
 
-@patch("matchbox.server.api.routes.backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
-def test_upload_already_processing(
-    metadata_store: Mock, _: Mock, test_client: TestClient
-):
+def test_upload_already_processing(metadata_store: Mock, test_client: TestClient):
     """Test attempting to upload when status is already processing."""
     # Setup store with a processing entry
     store = MetadataStore()
@@ -193,9 +189,8 @@ def test_upload_already_processing(
     assert response.json()["status"] == "processing"
 
 
-@patch("matchbox.server.api.routes.backend")  # Stops real backend call
 @patch("matchbox.server.api.routes.metadata_store")
-def test_upload_already_queued(metadata_store: Mock, _: Mock, test_client: TestClient):
+def test_upload_already_queued(metadata_store: Mock, test_client: TestClient):
     """Test attempting to upload when status is already queued."""
     # Setup store with a queued entry
     store = MetadataStore()
@@ -789,7 +784,7 @@ async def test_complete_model_upload_process(
         assert testkit.model.metadata.right_resolution is None
 
     # Verify the model truth can be set and retrieved
-    truth_value = 0.85
+    truth_value = 85
     mock_backend.get_model_truth = Mock(return_value=truth_value)
 
     response = test_client.patch(
@@ -845,13 +840,13 @@ def test_set_truth(mock_backend: Mock, test_client: TestClient):
     testkit = model_factory()
 
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=0.95
+        f"/models/{testkit.model.metadata.name}/truth", json=95
     )
 
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        model=testkit.model.metadata.name, truth=0.95
+        model=testkit.model.metadata.name, truth=95
     )
 
 
@@ -862,13 +857,13 @@ def test_set_truth_invalid_value(mock_backend: Mock, test_client: TestClient):
 
     # Test value > 1
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=1.5
+        f"/models/{testkit.model.metadata.name}/truth", json=150
     )
     assert response.status_code == 422
 
     # Test value < 0
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=-0.5
+        f"/models/{testkit.model.metadata.name}/truth", json=-50
     )
     assert response.status_code == 422
 
@@ -876,12 +871,12 @@ def test_set_truth_invalid_value(mock_backend: Mock, test_client: TestClient):
 @patch("matchbox.server.api.routes.backend")
 def test_get_truth(mock_backend: Mock, test_client: TestClient):
     testkit = model_factory()
-    mock_backend.get_model_truth = Mock(return_value=0.95)
+    mock_backend.get_model_truth = Mock(return_value=95)
 
     response = test_client.get(f"/models/{testkit.model.metadata.name}/truth")
 
     assert response.status_code == 200
-    assert response.json() == 0.95
+    assert response.json() == 95
 
 
 @patch("matchbox.server.api.routes.backend")
@@ -967,7 +962,7 @@ def test_model_get_endpoints_404(
 @pytest.mark.parametrize(
     ("endpoint", "payload"),
     [
-        ("truth", 0.95),
+        ("truth", 95),
         (
             "ancestors_cache",
             [
@@ -998,8 +993,7 @@ def test_model_patch_endpoints_404(
     assert error.entity == BackendRetrievableType.RESOLUTION
 
 
-@patch("matchbox.server.api.routes.backend")
-def test_delete_model(_: Mock, test_client: TestClient):
+def test_delete_model(test_client: TestClient):
     testkit = model_factory()
     response = test_client.delete(
         f"/models/{testkit.model.metadata.name}",
@@ -1107,8 +1101,7 @@ def test_clear_backend_errors(mock_backend: Mock, test_client: TestClient):
     assert response.content
 
 
-@patch("matchbox.server.api.routes.backend")
-def test_api_key_authorisation(_: Mock, test_client: TestClient):
+def test_api_key_authorisation(test_client: TestClient):
     # Incorrect API Key Value
     test_client.headers["X-API-Key"] = "incorrect-api-key"
 

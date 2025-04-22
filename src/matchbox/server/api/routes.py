@@ -541,7 +541,7 @@ async def get_results(name: str) -> ParquetResponse:
 )
 async def set_truth(
     name: str,
-    truth: Annotated[float, Body(ge=0.0, le=1.0)],
+    truth: Annotated[int, Body(ge=0, le=100)],
 ) -> ModelOperationStatus:
     """Set truth data for a model."""
     try:
