@@ -430,6 +430,32 @@ def test_dag_runs(
     assert dedupe_run.call_count == 0
     assert link_run.call_count == 2
 
+    # Reset mocks to test the finish argument
+    handler_index.reset_mock()
+    dedupe_run.reset_mock()
+    link_run.reset_mock()
+
+    # Run DAG with finish at foo_bar step (should not execute foo_bar_baz)
+    dag.run(finish="foo_bar")
+
+    # Verify steps up to foo_bar were executed but foo_bar_baz was not
+    assert handler_index.call_count == 3
+    assert dedupe_run.call_count == 1
+    assert link_run.call_count == 1
+
+    # Reset mocks again to test combining start and finish
+    handler_index.reset_mock()
+    dedupe_run.reset_mock()
+    link_run.reset_mock()
+
+    # Run from d_foo to foo_bar (skipping sources at start and foo_bar_baz at end)
+    dag.run(start="d_foo", finish="foo_bar")
+
+    # Verify only the specified segment was executed
+    assert handler_index.call_count == 0
+    assert dedupe_run.call_count == 1
+    assert link_run.call_count == 1
+
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
     """Steps cannot be added before their dependencies."""
