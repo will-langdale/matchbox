@@ -131,10 +131,12 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
                 resolution_id=Resolutions.next_id(),
                 name=source.resolution_name,
                 resolution_hash=resolution_hash,
-                content_hash=content_hash,
                 type=ResolutionNodeType.DATASET.value,
             )
             session.add(resolution)
+
+        # Store resolution ID for later use
+        resolution_id: int = resolution.resolution_id
 
         # Check if source already exists
         existing_source = (
@@ -264,6 +266,16 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         # Log the error and rollback
         logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
         conn.rollback()
+
+    # Insert successful, safe to update the resolution's content hash
+    with Session(engine) as session:
+        if not source_pk_records.is_empty():
+            stmt = (
+                update(Resolutions)
+                .where(Resolutions.resolution_id == resolution_id)
+                .values(content_hash=content_hash)
+            )
+            session.execute(stmt)
 
     if cluster_records.is_empty() and source_pk_records.is_empty():
         logger.info("No new records to add", prefix=log_prefix)
@@ -521,14 +533,6 @@ def insert_results(
             )
             session.execute(stmt)
 
-            # Update the resolution's content hash
-            stmt = (
-                update(Resolutions)
-                .where(Resolutions.resolution_id == resolution.resolution_id)
-                .values(content_hash=content_hash)
-            )
-            session.execute(stmt)
-
             session.commit()
             logger.info("Removed old probabilities", prefix=log_prefix)
 
@@ -582,5 +586,15 @@ def insert_results(
     except SQLAlchemyError as e:
         logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
         raise
+
+    # Insert successful, safe to update the resolution's content hash
+    with Session(engine) as session:
+        stmt = (
+            update(Resolutions)
+            .where(Resolutions.resolution_id == resolution.resolution_id)
+            .values(content_hash=content_hash)
+        )
+        session.execute(stmt)
+        session.commit()
 
     logger.info("Insert operation complete!", prefix=log_prefix)
