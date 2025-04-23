@@ -47,27 +47,6 @@ def _get_dataset_source(
     return source
 
 
-def _get_dataset_resolution(
-    source_name_address: SourceAddress, session: Session
-) -> Resolutions:
-    """Converts the the named address of source to a Resolutions ORM object."""
-    dataset_resolution = (
-        session.query(Resolutions)
-        .join(Sources, Sources.resolution_id == Resolutions.resolution_id)
-        .filter(
-            Sources.full_name == source_name_address.full_name,
-            Sources.warehouse_hash == source_name_address.warehouse_hash,
-        )
-        .first()
-    )
-    if dataset_resolution is None:
-        raise MatchboxSourceNotFoundError(
-            address=str(source_name_address),
-        )
-
-    return dataset_resolution
-
-
 def _resolve_thresholds(
     lineage_truths: dict[str, float],
     resolution: Resolutions,
@@ -147,7 +126,16 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
         # Handle empty lineage case
         return select(cast(null(), BIGINT).label("cluster")).where(False)
 
-    return valid_clusters.cte("valid_clusters")
+    return valid_clusters.cte("valid_clusters").prefix_with("MATERIALIZED")
+
+
+def _build_valid_contains(valid_clusters_cte: CTE, name: str) -> CTE:
+    """Filters the Contains table to only include relationships with valid parents."""
+    valid_contains = select(Contains.child, Contains.parent).where(
+        Contains.parent.in_(select(valid_clusters_cte.c.cluster))
+    )
+
+    return valid_contains.cte(name).prefix_with("MATERIALIZED")
 
 
 def _resolve_cluster_hierarchy(
@@ -188,11 +176,12 @@ def _resolve_cluster_hierarchy(
             threshold=threshold,
         )
 
-        # Get clusters valid across all resolutions in lineage
+        # Get clusters and contains valid across all resolutions in lineage
         valid_clusters = _union_valid_clusters(thresholds)
+        valid_contains = _build_valid_contains(valid_clusters, name="valid_contains")
 
         # Get base mapping of IDs to clusters
-        mapping_0 = (
+        mapping_base = (
             select(
                 Clusters.cluster_id.label("cluster_id"),
                 ClusterSourcePK.source_pk.label("source_pk"),
@@ -204,21 +193,25 @@ def _resolve_cluster_hierarchy(
                     ClusterSourcePK.source_id == dataset_source.source_id,
                 )
             )
-            .cte("mapping_0")
+            .cte("mapping_base")
+            .prefix_with("MATERIALIZED")
         )
 
         # Build recursive hierarchy CTE
         hierarchy = (
             # Base case: direct parents
             select(
-                mapping_0.c.cluster_id.label("original_cluster"),
-                mapping_0.c.cluster_id.label("child"),
-                Contains.parent.label("parent"),
+                mapping_base.c.cluster_id.label("original_cluster"),
+                mapping_base.c.cluster_id.label("child"),
+                valid_contains.c.parent.label("parent"),
                 literal(1).label("level"),
             )
-            .select_from(mapping_0)
-            .join(Contains, Contains.child == mapping_0.c.cluster_id)
-            .where(Contains.parent.in_(select(valid_clusters.c.cluster)))
+            .select_from(mapping_base)
+            .join(
+                valid_contains,
+                valid_contains.c.child == mapping_base.c.cluster_id,
+                isouter=True,
+            )
             .cte("hierarchy", recursive=True)
         )
 
@@ -227,12 +220,12 @@ def _resolve_cluster_hierarchy(
             select(
                 hierarchy.c.original_cluster,
                 hierarchy.c.parent.label("child"),
-                Contains.parent.label("parent"),
+                valid_contains.c.parent.label("parent"),
                 (hierarchy.c.level + 1).label("level"),
             )
             .select_from(hierarchy)
-            .join(Contains, Contains.child == hierarchy.c.parent)
-            .where(Contains.parent.in_(select(valid_clusters.c.cluster)))
+            .join(valid_contains, valid_contains.c.child == hierarchy.c.parent)
+            .where(hierarchy.c.parent.is_not(None))  # Only recurse on non-leaf nodes
         )
 
         hierarchy = hierarchy.union_all(recursive)
@@ -252,15 +245,15 @@ def _resolve_cluster_hierarchy(
         # Final mapping with coalesced results
         final_mapping = (
             select(
-                mapping_0.c.source_pk,
+                mapping_base.c.source_pk,
                 func.coalesce(
-                    highest_parents.c.highest_parent, mapping_0.c.cluster_id
+                    highest_parents.c.highest_parent, mapping_base.c.cluster_id
                 ).label("final_parent"),
             )
-            .select_from(mapping_0)
+            .select_from(mapping_base)
             .join(
                 highest_parents,
-                highest_parents.c.original_cluster == mapping_0.c.cluster_id,
+                highest_parents.c.original_cluster == mapping_base.c.cluster_id,
                 isouter=True,
             )
             .cte("final_mapping")
@@ -344,6 +337,7 @@ def _build_unnested_clusters() -> CTE:
         .select_from(Clusters)
         .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
         .cte("unnested_clusters")
+        .prefix_with("MATERIALIZED")
     )
 
 
@@ -373,21 +367,27 @@ def _build_hierarchy_up(
         source_cluster: Subquery that finds starting cluster
         valid_clusters: Optional CTE of valid clusters to filter by
     """
+    # Pre-filter Contains table if valid_clusters is provided
+    contains_table = Contains
+    child_col = Contains.child
+    parent_col = Contains.parent
+
+    if valid_clusters is not None:
+        contains_table = _build_valid_contains(valid_clusters, name="valid_contains_up")
+        child_col = contains_table.c.child
+        parent_col = contains_table.c.parent
+
     # Base case: direct parents
     base = (
         select(
             source_cluster.label("original_cluster"),
             source_cluster.label("child"),
-            Contains.parent.label("parent"),
+            parent_col.label("parent"),
             literal(1).label("level"),
         )
-        .select_from(Contains)
-        .where(Contains.child == source_cluster)
+        .select_from(contains_table)
+        .where(child_col == source_cluster)
     )
-
-    # Add valid clusters filter if provided
-    if valid_clusters is not None:
-        base = base.where(Contains.parent.in_(select(valid_clusters.c.cluster)))
 
     hierarchy_up = base.cte("hierarchy_up", recursive=True)
 
@@ -396,18 +396,12 @@ def _build_hierarchy_up(
         select(
             hierarchy_up.c.original_cluster,
             hierarchy_up.c.parent.label("child"),
-            Contains.parent.label("parent"),
+            parent_col.label("parent"),
             (hierarchy_up.c.level + 1).label("level"),
         )
         .select_from(hierarchy_up)
-        .join(Contains, Contains.child == hierarchy_up.c.parent)
+        .join(contains_table, child_col == hierarchy_up.c.parent)
     )
-
-    # Add valid clusters filter to recursive part if provided
-    if valid_clusters is not None:
-        recursive = recursive.where(
-            Contains.parent.in_(select(valid_clusters.c.cluster))
-        )
 
     return hierarchy_up.union_all(recursive)
 
@@ -432,28 +426,36 @@ def _build_hierarchy_down(
         unnested_clusters: CTE with unnested cluster IDs
         valid_clusters: Optional CTE of valid clusters to filter by
     """
+    # Pre-filter Contains table if valid_clusters is provided
+    contains_table = Contains
+    child_col = Contains.child
+    parent_col = Contains.parent
+
+    if valid_clusters is not None:
+        contains_table = _build_valid_contains(
+            valid_clusters, name="valid_contains_down"
+        )
+        child_col = contains_table.c.child
+        parent_col = contains_table.c.parent
+
     # Base case: Get both direct children and their IDs
     base = (
         select(
             highest_parent.label("parent"),
-            Contains.child.label("child"),
+            child_col.label("child"),
             literal(1).label("level"),
             unnested_clusters.c.dataset.label("dataset"),
             unnested_clusters.c.source_pk.label("source_pk"),
         )
-        .select_from(Contains)
+        .select_from(contains_table)
         .join_from(
-            Contains,
+            contains_table,
             unnested_clusters,
-            unnested_clusters.c.cluster_id == Contains.child,
+            unnested_clusters.c.cluster_id == child_col,
             isouter=True,
         )
-        .where(Contains.parent == highest_parent)
+        .where(parent_col == highest_parent)
     )
-
-    # Add valid clusters filter if provided
-    if valid_clusters is not None:
-        base = base.where(Contains.child.in_(select(valid_clusters.c.cluster)))
 
     hierarchy_down = base.cte("hierarchy_down", recursive=True)
 
@@ -461,7 +463,7 @@ def _build_hierarchy_down(
     recursive = (
         select(
             hierarchy_down.c.parent,
-            Contains.child.label("child"),
+            child_col.label("child"),
             (hierarchy_down.c.level + 1).label("level"),
             unnested_clusters.c.dataset.label("dataset"),
             unnested_clusters.c.source_pk.label("source_pk"),
@@ -469,23 +471,17 @@ def _build_hierarchy_down(
         .select_from(hierarchy_down)
         .join_from(
             hierarchy_down,
-            Contains,
-            Contains.parent == hierarchy_down.c.child,
+            contains_table,
+            parent_col == hierarchy_down.c.child,
         )
         .join_from(
-            Contains,
+            contains_table,
             unnested_clusters,
-            unnested_clusters.c.cluster_id == Contains.child,
+            unnested_clusters.c.cluster_id == child_col,
             isouter=True,
         )
         .where(hierarchy_down.c.source_pk.is_(None))  # Only recurse on non-leaf nodes
     )
-
-    # Add valid clusters filter to recursive part if provided
-    if valid_clusters is not None:
-        recursive = recursive.where(
-            Contains.child.in_(select(valid_clusters.c.cluster))
-        )
 
     return hierarchy_down.union_all(recursive)
 
