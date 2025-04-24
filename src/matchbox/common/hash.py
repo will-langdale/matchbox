@@ -96,7 +96,7 @@ def process_column_for_hashing(col_name: str, schema_type: pl.DataType) -> plx.E
     elif isinstance(schema_type, pl.Object):
         return (
             pl.col(col_name)
-            .map_elements(lambda x: str(x))
+            .map_elements(lambda x: str(x), return_dtype=pl.Utf8)
             .fill_null("\x00")
             .alias(col_name)
         )
