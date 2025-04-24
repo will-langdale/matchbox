@@ -35,7 +35,13 @@ from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
 )
-from matchbox.common.hash import HASH_FUNC, base64_to_hash, hash_data, hash_to_base64
+from matchbox.common.hash import (
+    HASH_FUNC,
+    HashMethod,
+    base64_to_hash,
+    hash_rows,
+    hash_to_base64,
+)
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -502,28 +508,17 @@ class Source(BaseModel):
             if batch["source_pk"].is_null().any():
                 raise ValueError("source_pk column contains null values")
 
-            for col_name in cols_to_index:
-                batch = batch.with_columns(
-                    pl.col(col_name).cast(pl.Utf8).fill_null("\x00")
-                )
-
-            record_separator = "␞"
-            unit_separator = "␟"
-            str_concatenation = [
-                f"{c}{unit_separator}" + pl.col(c) + record_separator
-                for c in sorted(cols_to_index)
-            ]
-            batch = batch.with_columns(
-                pl.concat_str(str_concatenation).alias("value_concat")
+            row_hashes = hash_rows(
+                df=batch,
+                columns=list(sorted(cols_to_index)),
+                method=HashMethod.SHA256,
             )
 
-            batch = batch.with_columns(
-                pl.col("value_concat")
-                .map_elements(lambda x: hash_data(x), return_dtype=pl.Binary)
-                .alias("hash")
+            result = batch.with_columns(row_hashes.alias("hash")).select(
+                ["hash", "source_pk"]
             )
 
-            return batch.select(["hash", "source_pk"])
+            return result
 
         if bool(batch_size):
             # Process in batches

@@ -1,6 +1,10 @@
-import pyarrow as pa
+import uuid
 
-from matchbox.common.hash import IntMap, hash_arrow_table
+import polars as pl
+import pyarrow as pa
+import pytest
+
+from matchbox.common.hash import HashMethod, IntMap, hash_arrow_table, hash_rows
 
 
 def test_intmap_basic():
@@ -50,7 +54,43 @@ def test_intmap_unordered():
     assert a == b
 
 
-def test_hash_arrow_table():
+@pytest.mark.parametrize(
+    ["method"],
+    [
+        pytest.param(HashMethod.SHA256, id="sha256"),
+        pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
+    ],
+)
+def test_hash_rows(method: HashMethod):
+    data = pl.DataFrame(
+        {
+            "string_col": ["abc", "def", "ghi"],
+            "int_col": [1, 2, 3],
+            "float_col": [1.1, 2.2, 3.3],
+            "struct_col": [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}, {"a": 3, "b": "z"}],
+            "object_col": [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()],
+            "binary_col": [b"data1", b"data2", b"data3"],
+        }
+    )
+
+    assert isinstance(data["string_col"].dtype, pl.String)
+    assert isinstance(data["int_col"].dtype, pl.Int64)
+    assert isinstance(data["float_col"].dtype, pl.Float64)
+    assert isinstance(data["struct_col"].dtype, pl.Struct)
+    assert isinstance(data["object_col"].dtype, pl.Object)
+    assert isinstance(data["binary_col"].dtype, pl.Binary)
+
+    hash_rows(data, columns=data.columns, method=method)
+
+
+@pytest.mark.parametrize(
+    ["method"],
+    [
+        pytest.param(HashMethod.SHA256, id="sha256"),
+        pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
+    ],
+)
+def test_hash_arrow_table(method: HashMethod):
     a = pa.Table.from_pydict(
         {
             "a": [1, 2, 3],
@@ -121,17 +161,17 @@ def test_hash_arrow_table():
         }
     )
 
-    h_a = hash_arrow_table(a)
-    h_a1 = hash_arrow_table(a)
-    h_b = hash_arrow_table(b)
-    h_c = hash_arrow_table(c)
-    h_d = hash_arrow_table(d)
-    h_e = hash_arrow_table(e)
-    h_f = hash_arrow_table(f)
-    h_g = hash_arrow_table(g)
-    h_h = hash_arrow_table(h)
-    h_i = hash_arrow_table(i)
-    h_j = hash_arrow_table(j)
+    h_a = hash_arrow_table(a, method=method)
+    h_a1 = hash_arrow_table(a, method=method)
+    h_b = hash_arrow_table(b, method=method)
+    h_c = hash_arrow_table(c, method=method)
+    h_d = hash_arrow_table(d, method=method)
+    h_e = hash_arrow_table(e, method=method)
+    h_f = hash_arrow_table(f, method=method)
+    h_g = hash_arrow_table(g, method=method)
+    h_h = hash_arrow_table(h, method=method)
+    h_i = hash_arrow_table(i, method=method)
+    h_j = hash_arrow_table(j, method=method)
 
     # Basic type check
     assert isinstance(h_a, bytes)
@@ -144,3 +184,80 @@ def test_hash_arrow_table():
     assert h_a != h_j
     # List type table should be consistent regardless of column order
     assert h_h == h_i
+
+
+@pytest.mark.parametrize(
+    ["method"],
+    [
+        pytest.param(HashMethod.SHA256, id="sha256"),
+        pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
+    ],
+)
+def test_struct_json_hashing(method: HashMethod):
+    """Test that struct/JSON data can be properly hashed."""
+
+    # Basic struct test
+    a = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"name": "Alice", "age": 30},
+                {"name": "Bob", "age": 25},
+                {"name": "Charlie", "age": 35},
+            ],
+        }
+    )
+
+    assert isinstance(pl.from_arrow(a)["metadata"].dtype, pl.Struct)
+
+    # Same data but different struct serialization
+    b = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"age": 30, "name": "Alice"},
+                {"age": 25, "name": "Bob"},
+                {"age": 35, "name": "Charlie"},
+            ],
+        }
+    )
+
+    # Different data in structs
+    c = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"name": "Alice", "age": 31},  # Changed age
+                {"name": "Bob", "age": 25},
+                {"name": "Charlie", "age": 35},
+            ],
+        }
+    )
+
+    # Nested structs
+    d = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"name": "Alice", "details": {"city": "New York", "active": True}},
+                {"name": "Bob", "details": {"city": "Boston", "active": False}},
+                {"name": "Charlie", "details": {"city": "Chicago", "active": True}},
+            ],
+        }
+    )
+
+    # Test basic struct hashing
+    h_a = hash_arrow_table(a, method=method)
+    h_a1 = hash_arrow_table(a, method=method)
+    h_b = hash_arrow_table(b, method=method)
+    h_c = hash_arrow_table(c, method=method)
+    h_d = hash_arrow_table(d, method=method)
+
+    # Basic type check
+    assert isinstance(h_a, bytes)
+
+    # Basic equality check
+    assert h_a == h_a1 == h_b
+    # Difference checks
+    assert h_a != h_c
+    assert h_a != h_d
