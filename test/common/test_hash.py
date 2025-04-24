@@ -67,7 +67,7 @@ def test_hash_rows(method: HashMethod):
             "string_col": ["abc", "def", "ghi"],
             "int_col": [1, 2, 3],
             "float_col": [1.1, 2.2, 3.3],
-            "struct_col": [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}, {"a": 3, "b": "z"}],
+            "struct_col": [{"a": 1, "b": "x"}, {"a": 2, "b": None}, {"a": 3, "b": "z"}],
             "object_col": [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()],
             "binary_col": [b"data1", b"data2", b"data3"],
         }
