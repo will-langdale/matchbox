@@ -1,8 +1,10 @@
+import uuid
+
 import polars as pl
 import pyarrow as pa
 import pytest
 
-from matchbox.common.hash import HashMethod, IntMap, hash_arrow_table
+from matchbox.common.hash import HashMethod, IntMap, hash_arrow_table, hash_rows
 
 
 def test_intmap_basic():
@@ -53,13 +55,42 @@ def test_intmap_unordered():
 
 
 @pytest.mark.parametrize(
-    ["hash_method"],
+    ["method"],
     [
         pytest.param(HashMethod.SHA256, id="sha256"),
         pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
     ],
 )
-def test_hash_arrow_table(hash_method: HashMethod):
+def test_hash_rows(method: HashMethod):
+    data = pl.DataFrame(
+        {
+            "string_col": ["abc", "def", "ghi"],
+            "int_col": [1, 2, 3],
+            "float_col": [1.1, 2.2, 3.3],
+            "struct_col": [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}, {"a": 3, "b": "z"}],
+            "object_col": [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()],
+            "binary_col": [b"data1", b"data2", b"data3"],
+        }
+    )
+
+    assert isinstance(data["string_col"].dtype, pl.String)
+    assert isinstance(data["int_col"].dtype, pl.Int64)
+    assert isinstance(data["float_col"].dtype, pl.Float64)
+    assert isinstance(data["struct_col"].dtype, pl.Struct)
+    assert isinstance(data["object_col"].dtype, pl.Object)
+    assert isinstance(data["binary_col"].dtype, pl.Binary)
+
+    hash_rows(data, columns=data.columns, method=method)
+
+
+@pytest.mark.parametrize(
+    ["method"],
+    [
+        pytest.param(HashMethod.SHA256, id="sha256"),
+        pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
+    ],
+)
+def test_hash_arrow_table(method: HashMethod):
     a = pa.Table.from_pydict(
         {
             "a": [1, 2, 3],
@@ -130,17 +161,17 @@ def test_hash_arrow_table(hash_method: HashMethod):
         }
     )
 
-    h_a = hash_arrow_table(a, hash_method=hash_method)
-    h_a1 = hash_arrow_table(a, hash_method=hash_method)
-    h_b = hash_arrow_table(b, hash_method=hash_method)
-    h_c = hash_arrow_table(c, hash_method=hash_method)
-    h_d = hash_arrow_table(d, hash_method=hash_method)
-    h_e = hash_arrow_table(e, hash_method=hash_method)
-    h_f = hash_arrow_table(f, hash_method=hash_method)
-    h_g = hash_arrow_table(g, hash_method=hash_method)
-    h_h = hash_arrow_table(h, hash_method=hash_method)
-    h_i = hash_arrow_table(i, hash_method=hash_method)
-    h_j = hash_arrow_table(j, hash_method=hash_method)
+    h_a = hash_arrow_table(a, method=method)
+    h_a1 = hash_arrow_table(a, method=method)
+    h_b = hash_arrow_table(b, method=method)
+    h_c = hash_arrow_table(c, method=method)
+    h_d = hash_arrow_table(d, method=method)
+    h_e = hash_arrow_table(e, method=method)
+    h_f = hash_arrow_table(f, method=method)
+    h_g = hash_arrow_table(g, method=method)
+    h_h = hash_arrow_table(h, method=method)
+    h_i = hash_arrow_table(i, method=method)
+    h_j = hash_arrow_table(j, method=method)
 
     # Basic type check
     assert isinstance(h_a, bytes)
@@ -156,13 +187,13 @@ def test_hash_arrow_table(hash_method: HashMethod):
 
 
 @pytest.mark.parametrize(
-    ["hash_method"],
+    ["method"],
     [
         pytest.param(HashMethod.SHA256, id="sha256"),
         pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
     ],
 )
-def test_struct_json_hashing(hash_method: HashMethod):
+def test_struct_json_hashing(method: HashMethod):
     """Test that struct/JSON data can be properly hashed."""
 
     # Basic struct test
@@ -216,11 +247,11 @@ def test_struct_json_hashing(hash_method: HashMethod):
     )
 
     # Test basic struct hashing
-    h_a = hash_arrow_table(a, hash_method=hash_method)
-    h_a1 = hash_arrow_table(a, hash_method=hash_method)
-    h_b = hash_arrow_table(b, hash_method=hash_method)
-    h_c = hash_arrow_table(c, hash_method=hash_method)
-    h_d = hash_arrow_table(d, hash_method=hash_method)
+    h_a = hash_arrow_table(a, method=method)
+    h_a1 = hash_arrow_table(a, method=method)
+    h_b = hash_arrow_table(b, method=method)
+    h_c = hash_arrow_table(c, method=method)
+    h_d = hash_arrow_table(d, method=method)
 
     # Basic type check
     assert isinstance(h_a, bytes)

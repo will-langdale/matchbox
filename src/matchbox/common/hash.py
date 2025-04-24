@@ -93,13 +93,20 @@ def process_column_for_hashing(col_name: str, schema_type: pl.DataType) -> plx.E
         return pl.col(col_name).fill_null("\x00").bin.encode("hex").alias(col_name)
     elif isinstance(schema_type, pl.Struct):
         return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
+    elif isinstance(schema_type, pl.Object):
+        return (
+            pl.col(col_name)
+            .map_elements(lambda x: str(x))
+            .fill_null("\x00")
+            .alias(col_name)
+        )
     else:
         return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
 
 
 def hash_rows(
     df: pl.DataFrame, columns: list[str], method: HashMethod = HashMethod.XXH3_128
-) -> list[bytes]:
+) -> pl.Series:
     """Hash all rows in a dataframe.
 
     Args:
@@ -116,23 +123,23 @@ def hash_rows(
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
             plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
-        ).sort("row_hash")
-        return row_hashes["row_hash"].to_list()
+        )
+        return row_hashes["row_hash"]
     elif method == HashMethod.SHA256:
         row_hashes = df_processed.select(
             plh.concat_str(*columns, separator="␞")
             .chash.sha2_256()
             .str.decode("hex")
             .alias("row_hash")
-        ).sort("row_hash")
-        return row_hashes["row_hash"].to_list()
+        )
+        return row_hashes["row_hash"]
     else:
         raise ValueError(f"Unsupported hash method: {method}")
 
 
 def hash_arrow_table(
     table: pa.Table,
-    hash_method: HashMethod = HashMethod.XXH3_128,
+    method: HashMethod = HashMethod.XXH3_128,
 ) -> bytes:
     """Computes a content hash of an Arrow table invariant to row and column order.
 
@@ -140,7 +147,7 @@ def hash_arrow_table(
 
     Args:
         table: The pyarrow Table to hash
-        hash_method: The method to use for hashing rows (XXH3_128 or SHA256)
+        method: The method to use for hashing rows (XXH3_128 or SHA256)
 
     Returns:
         Bytes representing the content hash of the table
@@ -160,9 +167,9 @@ def hash_arrow_table(
 
     df = df.sort(by=columns)
 
-    row_hashes = hash_rows(df, columns, method=hash_method)
+    row_hashes = hash_rows(df, columns, method=method)
 
-    all_hashes: bytes = b"".join(row_hashes)
+    all_hashes: bytes = b"".join(row_hashes.sort().to_list())
 
     return HASH_FUNC(all_hashes).digest()
 
