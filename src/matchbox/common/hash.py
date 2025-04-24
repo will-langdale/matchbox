@@ -92,7 +92,7 @@ def process_column_for_hashing(col_name: str, schema_type: pl.DataType) -> plx.E
     if isinstance(schema_type, pl.Binary):
         return pl.col(col_name).fill_null("\x00").bin.encode("hex").alias(col_name)
     elif isinstance(schema_type, pl.Struct):
-        return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
+        return pl.col(col_name).struct.json_encode().fill_null("\x00").alias(col_name)
     elif isinstance(schema_type, pl.Object):
         return (
             pl.col(col_name)
