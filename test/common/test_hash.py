@@ -1,6 +1,8 @@
+import polars as pl
 import pyarrow as pa
+import pytest
 
-from matchbox.common.hash import IntMap, hash_arrow_table
+from matchbox.common.hash import HashMethod, IntMap, hash_arrow_table
 
 
 def test_intmap_basic():
@@ -50,7 +52,14 @@ def test_intmap_unordered():
     assert a == b
 
 
-def test_hash_arrow_table():
+@pytest.mark.parametrize(
+    ["hash_method"],
+    [
+        pytest.param(HashMethod.SHA256, id="sha256"),
+        pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
+    ],
+)
+def test_hash_arrow_table(hash_method: HashMethod):
     a = pa.Table.from_pydict(
         {
             "a": [1, 2, 3],
@@ -121,17 +130,17 @@ def test_hash_arrow_table():
         }
     )
 
-    h_a = hash_arrow_table(a)
-    h_a1 = hash_arrow_table(a)
-    h_b = hash_arrow_table(b)
-    h_c = hash_arrow_table(c)
-    h_d = hash_arrow_table(d)
-    h_e = hash_arrow_table(e)
-    h_f = hash_arrow_table(f)
-    h_g = hash_arrow_table(g)
-    h_h = hash_arrow_table(h)
-    h_i = hash_arrow_table(i)
-    h_j = hash_arrow_table(j)
+    h_a = hash_arrow_table(a, hash_method=hash_method)
+    h_a1 = hash_arrow_table(a, hash_method=hash_method)
+    h_b = hash_arrow_table(b, hash_method=hash_method)
+    h_c = hash_arrow_table(c, hash_method=hash_method)
+    h_d = hash_arrow_table(d, hash_method=hash_method)
+    h_e = hash_arrow_table(e, hash_method=hash_method)
+    h_f = hash_arrow_table(f, hash_method=hash_method)
+    h_g = hash_arrow_table(g, hash_method=hash_method)
+    h_h = hash_arrow_table(h, hash_method=hash_method)
+    h_i = hash_arrow_table(i, hash_method=hash_method)
+    h_j = hash_arrow_table(j, hash_method=hash_method)
 
     # Basic type check
     assert isinstance(h_a, bytes)
@@ -144,3 +153,80 @@ def test_hash_arrow_table():
     assert h_a != h_j
     # List type table should be consistent regardless of column order
     assert h_h == h_i
+
+
+@pytest.mark.parametrize(
+    ["hash_method"],
+    [
+        pytest.param(HashMethod.SHA256, id="sha256"),
+        pytest.param(HashMethod.XXH3_128, id="xxh3_128"),
+    ],
+)
+def test_struct_json_hashing(hash_method: HashMethod):
+    """Test that struct/JSON data can be properly hashed."""
+
+    # Basic struct test
+    a = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"name": "Alice", "age": 30},
+                {"name": "Bob", "age": 25},
+                {"name": "Charlie", "age": 35},
+            ],
+        }
+    )
+
+    assert isinstance(pl.from_arrow(a)["metadata"].dtype, pl.Struct)
+
+    # Same data but different struct serialization
+    b = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"age": 30, "name": "Alice"},
+                {"age": 25, "name": "Bob"},
+                {"age": 35, "name": "Charlie"},
+            ],
+        }
+    )
+
+    # Different data in structs
+    c = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"name": "Alice", "age": 31},  # Changed age
+                {"name": "Bob", "age": 25},
+                {"name": "Charlie", "age": 35},
+            ],
+        }
+    )
+
+    # Nested structs
+    d = pa.Table.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "metadata": [
+                {"name": "Alice", "details": {"city": "New York", "active": True}},
+                {"name": "Bob", "details": {"city": "Boston", "active": False}},
+                {"name": "Charlie", "details": {"city": "Chicago", "active": True}},
+            ],
+        }
+    )
+
+    # Test basic struct hashing
+    h_a = hash_arrow_table(a, hash_method=hash_method)
+    h_a1 = hash_arrow_table(a, hash_method=hash_method)
+    h_b = hash_arrow_table(b, hash_method=hash_method)
+    h_c = hash_arrow_table(c, hash_method=hash_method)
+    h_d = hash_arrow_table(d, hash_method=hash_method)
+
+    # Basic type check
+    assert isinstance(h_a, bytes)
+
+    # Basic equality check
+    assert h_a == h_a1 == h_b
+    # Difference checks
+    assert h_a != h_c
+    assert h_a != h_d

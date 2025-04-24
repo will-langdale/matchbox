@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+from enum import StrEnum
 from typing import TypeVar
 from uuid import UUID
 
@@ -15,6 +16,13 @@ T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 
 HASH_FUNC = hashlib.sha256
+
+
+class HashMethod(StrEnum):
+    """Supported hash methods for row hashing."""
+
+    XXH3_128 = "xxh3_128"
+    SHA256 = "sha256"
 
 
 def hash_to_base64(hash: bytes) -> str:
@@ -71,16 +79,68 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
     return hashed_vals.digest()
 
 
-def hash_arrow_table(table: pa.Table) -> bytes:
+def process_column_for_hashing(col_name: str, schema_type: pl.DataType) -> plx.Expr:
+    """Process a column for hashing based on its type.
+
+    Args:
+        col_name: The column name
+        schema_type: The polars schema type of the column
+
+    Returns:
+        A polars expression for processing the column
+    """
+    if isinstance(schema_type, pl.Binary):
+        return pl.col(col_name).fill_null("\x00").bin.encode("hex").alias(col_name)
+    elif isinstance(schema_type, pl.Struct):
+        return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
+    else:
+        return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
+
+
+def hash_rows(
+    df: pl.DataFrame, columns: list[str], method: HashMethod = HashMethod.XXH3_128
+) -> list[bytes]:
+    """Hash all rows in a dataframe.
+
+    Args:
+        df: The DataFrame to hash rows from
+        columns: The column names to include in the hash
+        method: The hash method to use
+
+    Returns:
+        List of row hashes as bytes
+    """
+    expr_list = [process_column_for_hashing(col, df.schema[col]) for col in columns]
+    df_processed = df.with_columns(expr_list)
+
+    if method == HashMethod.XXH3_128:
+        row_hashes = df_processed.select(
+            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+        ).sort("row_hash")
+        return row_hashes["row_hash"].to_list()
+    elif method == HashMethod.SHA256:
+        row_hashes = df_processed.select(
+            plh.concat_str(*columns, separator="␞")
+            .chash.sha2_256()
+            .str.decode("hex")
+            .alias("row_hash")
+        ).sort("row_hash")
+        return row_hashes["row_hash"].to_list()
+    else:
+        raise ValueError(f"Unsupported hash method: {method}")
+
+
+def hash_arrow_table(
+    table: pa.Table,
+    hash_method: HashMethod = HashMethod.XXH3_128,
+) -> bytes:
     """Computes a content hash of an Arrow table invariant to row and column order.
 
     This is used to content-address an Arrow table for caching.
 
-    Uses a non-cryptographic hash function (xxh3) to compute the hash of the table's
-    contents for speed, then cryptographically hashes the result.
-
     Args:
         table: The pyarrow Table to hash
+        hash_method: The method to use for hashing rows (XXH3_128 or SHA256)
 
     Returns:
         Bytes representing the content hash of the table
@@ -98,25 +158,11 @@ def hash_arrow_table(table: pa.Table) -> bytes:
         if isinstance(df.schema[col], pl.List):
             df = df.explode(col)
 
-    # Coerce to UTF-8
-    expr_list: list[plx.Expr] = []
-    for col in columns:
-        if isinstance(df.schema[col], pl.Binary):
-            expr_list.append(pl.col(col).fill_null("\x00").bin.encode("hex").alias(col))
-        else:
-            expr_list.append(pl.col(col).cast(pl.Utf8).fill_null("\x00"))
+    df = df.sort(by=columns)
 
-    # Hash rows by concatenating all columns
-    row_hashes: pl.Series = (
-        df.sort(by=columns)
-        .with_columns(expr_list)
-        .select(
-            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
-        )
-        .sort("row_hash")
-    )
+    row_hashes = hash_rows(df, columns, method=hash_method)
 
-    all_hashes: bytes = b"".join(row_hashes["row_hash"].to_list())
+    all_hashes: bytes = b"".join(row_hashes)
 
     return HASH_FUNC(all_hashes).digest()
 
