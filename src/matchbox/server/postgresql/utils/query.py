@@ -359,23 +359,21 @@ def _find_source_cluster(
 
 
 def _build_hierarchy_up(
-    source_cluster: Select, valid_clusters: CTE | None = None
+    source_cluster: Select,
+    contains_table: CTE | Contains,
 ) -> CTE:
     """Build recursive CTE that finds all parent clusters.
 
     Args:
         source_cluster: Subquery that finds starting cluster
-        valid_clusters: Optional CTE of valid clusters to filter by
+        contains_table: Contains or CTE of valid clusters to filter by
     """
-    # Pre-filter Contains table if valid_clusters is provided
-    contains_table = Contains
-    child_col = Contains.child
-    parent_col = Contains.parent
-
-    if valid_clusters is not None:
-        contains_table = _build_valid_contains(valid_clusters, name="valid_contains_up")
+    if isinstance(contains_table, CTE):
         child_col = contains_table.c.child
         parent_col = contains_table.c.parent
+    else:
+        child_col = contains_table.child
+        child_col = contains_table.parent
 
     # Base case: direct parents
     base = (
@@ -417,26 +415,21 @@ def _find_highest_parent(hierarchy_up: CTE) -> Select:
 
 
 def _build_hierarchy_down(
-    highest_parent: Select, unnested_clusters: CTE, valid_clusters: CTE | None = None
+    highest_parent: Select, unnested_clusters: CTE, contains_table: CTE | Contains
 ) -> CTE:
     """Build recursive CTE that finds all child clusters and their IDs.
 
     Args:
         highest_parent: Subquery that finds top cluster
         unnested_clusters: CTE with unnested cluster IDs
-        valid_clusters: Optional CTE of valid clusters to filter by
+        contains_table: Contains or CTE of valid clusters to filter by
     """
-    # Pre-filter Contains table if valid_clusters is provided
-    contains_table = Contains
-    child_col = Contains.child
-    parent_col = Contains.parent
-
-    if valid_clusters is not None:
-        contains_table = _build_valid_contains(
-            valid_clusters, name="valid_contains_down"
-        )
+    if isinstance(contains_table, CTE):
         child_col = contains_table.c.child
         parent_col = contains_table.c.parent
+    else:
+        child_col = contains_table.child
+        child_col = contains_table.parent
 
     # Base case: Get both direct children and their IDs
     base = (
@@ -512,12 +505,17 @@ def _build_match_query(
     # Get valid clusters across all resolutions
     valid_clusters = _union_valid_clusters(thresholds)
 
+    # Pre-filter Contains table if valid_clusters is provided
+    contains_table = Contains
+    if valid_clusters is not None:
+        contains_table = _build_valid_contains(valid_clusters, name="valid_contains_up")
+
     # Build the query components
     unnested = _build_unnested_clusters()
     source_cluster = _find_source_cluster(unnested, dataset_source.source_id, source_pk)
-    hierarchy_up = _build_hierarchy_up(source_cluster, valid_clusters)
+    hierarchy_up = _build_hierarchy_up(source_cluster, contains_table)
     highest = _find_highest_parent(hierarchy_up)
-    hierarchy_down = _build_hierarchy_down(highest, unnested, valid_clusters)
+    hierarchy_down = _build_hierarchy_down(highest, unnested, contains_table)
 
     # Get all matched IDs
     final_stmt = (
