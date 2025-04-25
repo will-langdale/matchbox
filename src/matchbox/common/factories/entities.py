@@ -105,7 +105,7 @@ def infer_sql_type_from_type(type_: Type) -> str:
     return type_map.get(type_, "TEXT")
 
 
-def infer_sql_type(base: str, parameters: tuple) -> str:
+def infer_sql_type(base: str, parameters: tuple | None) -> str:
     """Infer an appropriate SQL type from a Faker configuration.
 
     Args:
@@ -117,6 +117,7 @@ def infer_sql_type(base: str, parameters: tuple) -> str:
     """
     generator = Faker()
     value_generator = getattr(generator, base)
+    parameters = {} if not parameters else dict(parameters)
     examples = [value_generator(**dict(parameters)) for _ in range(5)]
 
     # Get the types of all non-None examples
@@ -145,8 +146,8 @@ class FeatureConfig(BaseModel):
 
     name: str
     base_generator: str
-    parameters: tuple = Field(
-        default_factory=tuple,
+    parameters: tuple | None = Field(
+        default=None,
         description=(
             "Parameters for the generator. A tuple of tuples passed to the generator."
         ),
@@ -531,7 +532,8 @@ def generate_entities(
         for feature in features:
             generator_func = generator.unique if feature.unique else generator
             value_generator = getattr(generator_func, feature.base_generator)
-            base_values[feature.name] = value_generator(**dict(feature.parameters))
+            parameters = {} if not feature.parameters else dict(feature.parameters)
+            base_values[feature.name] = value_generator(**parameters)
 
         entities.append(
             SourceEntity(base_values=base_values, source_pks=EntityReference())

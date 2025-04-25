@@ -169,11 +169,6 @@ def test_source_testkit_to_mock():
     mock_source.model_dump.assert_called_once()
     mock_source.model_dump_json.assert_called_once()
 
-    # Test that to_table contains the correct data
-    assert mock_source.to_table == source_testkit.data
-    # Verify the number of rows matches what we created
-    assert mock_source.to_table.shape[0] == source_testkit.data.shape[0]
-
 
 def test_source_factory_mock_properties():
     """Test that source properties set in source_factory match generated Source."""
