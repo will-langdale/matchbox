@@ -1,5 +1,6 @@
 import polars as pl
 import pyarrow as pa
+import pytest
 from httpx import Response
 from polars.testing import assert_frame_equal
 from respx import MockRouter
@@ -7,10 +8,11 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.client.extract import primary_keys_map
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.exceptions import MatchboxSourceNotFoundError
 from matchbox.common.factories.sources import source_from_tuple
 
 
-def test_sql_interface(
+def test_primary_keys_map(
     sqlite_warehouse: Engine,
     matchbox_api: MockRouter,
 ):
@@ -23,12 +25,6 @@ def test_sql_interface(
     )
     bar = source_from_tuple(
         full_name="bar",
-        engine=sqlite_warehouse,
-        data_pks=["a", "b", "c"],
-        data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
-    )
-    different_engine_source = source_from_tuple(
-        full_name="baz",
         engine=create_engine("sqlite:///:memory:"),
         data_pks=["a", "b", "c"],
         data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
@@ -38,7 +34,7 @@ def test_sql_interface(
     bar.to_warehouse(sqlite_warehouse)
 
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
-    expected_mapping = pl.DataFrame(
+    expected_foo_bar_mapping = pl.DataFrame(
         [
             {"id": 1, "foo_pk": "1", "bar_pk": "a"},
             {"id": 2, "foo_pk": "2", "bar_pk": None},
@@ -47,6 +43,9 @@ def test_sql_interface(
         ]
     )
 
+    # When selecting single source, we won't explode
+    expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_pk"]).unique()
+
     # Mock API
     matchbox_api.get("/sources").mock(
         return_value=Response(
@@ -54,12 +53,10 @@ def test_sql_interface(
             json=[
                 foo.source.model_dump(),
                 bar.source.model_dump(),
-                different_engine_source.source.model_dump(),
             ],
         )
     )
 
-    # We don't expect a query call for the third source
     matchbox_api.get("/query", params={"full_name": "foo"}).mock(
         return_value=Response(
             200,
@@ -92,12 +89,28 @@ def test_sql_interface(
         )
     )
 
-    # Call extracting method
-    mapping = primary_keys_map(resolution_name="companies", engine=sqlite_warehouse)
+    # Case 0: no sources are found
+    with pytest.raises(MatchboxSourceNotFoundError):
+        primary_keys_map(
+            resolution_name="companies", engine=create_engine("postgresql://")
+        )
+
+    # Case 1: apply engine filter, and retrieve single table
+    foo_mapping = primary_keys_map(resolution_name="companies", engine=sqlite_warehouse)
 
     assert_frame_equal(
-        pl.from_arrow(mapping),
-        expected_mapping,
+        pl.from_arrow(foo_mapping),
+        expected_foo_mapping,
+        check_row_order=False,
+        check_column_order=False,
+    )
+
+    # Case 2: without engine filter, and retrieve multiple tables
+    foo_bar_mapping = primary_keys_map(resolution_name="companies")
+
+    assert_frame_equal(
+        pl.from_arrow(foo_bar_mapping),
+        expected_foo_bar_mapping,
         check_row_order=False,
         check_column_order=False,
     )

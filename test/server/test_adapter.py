@@ -146,6 +146,9 @@ class TestMatchboxBackend:
                 duns.source.resolution_name,
             }
 
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution_sources(resolution_name="nonexistent")
+
     def test_get_resolution_graph(self):
         """Test getting the resolution graph."""
         graph = self.backend.get_resolution_graph()
