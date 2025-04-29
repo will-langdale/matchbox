@@ -425,7 +425,7 @@ class TestE2EAnalyticalUser:
         right_cleaned = _clean_company_name(right_df, cdms_prefix)
 
         # Create and run final linker with the common "crn" field
-        final_linker_name = "final_linker"
+        final_linker_name = "__DEFAULT__"
         final_linker = make_model(
             model_name=final_linker_name,
             description="Final linking of all sources",

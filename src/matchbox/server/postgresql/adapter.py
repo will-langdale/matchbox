@@ -215,11 +215,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
     ) -> list[Source]:
         with MBDB.get_session() as session:
             # Find resolution by name
-            resolution: Resolutions = (
+            resolution: Resolutions | None = (
                 session.query(Resolutions)
                 .filter(Resolutions.name == resolution_name)
                 .first()
             )
+            if not resolution:
+                raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
             # Find all resolutions in scope (selected + ancestors)
             relevant_resolutions = (
                 session.query(Resolutions)
