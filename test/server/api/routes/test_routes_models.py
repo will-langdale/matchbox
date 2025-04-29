@@ -1,0 +1,496 @@
+import asyncio
+from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock, patch
+
+import pytest
+from botocore.exceptions import ClientError
+from fastapi.testclient import TestClient
+
+from matchbox.common.arrow import table_to_buffer
+from matchbox.common.dtos import (
+    BackendRetrievableType,
+    ModelAncestor,
+    ModelOperationType,
+    NotFoundError,
+)
+from matchbox.common.exceptions import (
+    MatchboxDeletionNotConfirmed,
+    MatchboxResolutionNotFoundError,
+)
+from matchbox.common.factories.models import model_factory
+from matchbox.server.api.cache import MetadataStore
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+else:
+    S3Client = Any
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_insert_model(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory(name="test_model")
+    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "success": True,
+        "model_name": "test_model",
+        "operation": ModelOperationType.INSERT.value,
+        "details": None,
+    }
+    mock_backend.insert_model.assert_called_once_with(testkit.model.metadata)
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_insert_model_error(mock_backend: Mock, test_client: TestClient):
+    mock_backend.insert_model = Mock(side_effect=Exception("Test error"))
+
+    testkit = model_factory()
+    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
+
+    assert response.status_code == 500
+    assert response.json()["success"] is False
+    assert response.json()["details"] == "Test error"
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_get_model(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory(name="test_model", description="test description")
+    mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+
+    response = test_client.get("/models/test_model")
+
+    assert response.status_code == 200
+    assert response.json()["name"] == testkit.model.metadata.name
+    assert response.json()["description"] == testkit.model.metadata.description
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_get_model_not_found(mock_backend: Mock, test_client: TestClient):
+    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+
+    response = test_client.get("/models/nonexistent")
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+
+@pytest.mark.parametrize("model_type", ["deduper", "linker"])
+@patch("matchbox.server.api.main.backend")
+@patch("matchbox.server.api.main.metadata_store")
+@patch("matchbox.server.api.main.BackgroundTasks.add_task")
+def test_model_upload(
+    mock_add_task: Mock,
+    metadata_store: Mock,
+    mock_backend: Mock,
+    s3: S3Client,
+    model_type: str,
+    test_client: TestClient,
+):
+    """Test uploading different types of files."""
+    # Setup
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
+
+    # Create test data with specified model type
+    testkit = model_factory(model_type=model_type)
+
+    # Setup metadata store
+    store = MetadataStore()
+    upload_id = store.cache_model(testkit.model.metadata)
+
+    metadata_store.get.side_effect = store.get
+    metadata_store.update_status.side_effect = store.update_status
+
+    # Make request
+    response = test_client.post(
+        f"/upload/{upload_id}",
+        files={
+            "file": (
+                "data.parquet",
+                table_to_buffer(testkit.probabilities),
+                "application/octet-stream",
+            ),
+        },
+    )
+
+    # Validate response
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    mock_add_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_type", ["deduper", "linker"])
+async def test_complete_model_upload_process(
+    s3: S3Client, model_type: str, test_client: TestClient
+):
+    """Test the complete upload process for models from creation through processing."""
+    # Setup the backend
+    mock_backend = Mock()
+    mock_backend.settings.datastore.get_client.return_value = s3
+    mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+    mock_backend.set_model_results = Mock(return_value=None)
+
+    with (
+        patch("matchbox.server.api.routers.models.backend", mock_backend),
+        patch("matchbox.server.api.main.backend", mock_backend),
+    ):
+        # Create test bucket
+        s3.create_bucket(
+            Bucket="test-bucket",
+            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+        )
+
+        # Create test data with specified model type
+        testkit = model_factory(model_type=model_type)
+
+        # Set up the mock to return the actual model metadata and data
+        mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+        mock_backend.get_model_results = Mock(return_value=testkit.probabilities)
+
+        # Step 1: Create model
+        response = test_client.post("/models", json=testkit.model.metadata.model_dump())
+        assert response.status_code == 201
+        assert response.json()["success"] is True
+        assert response.json()["model_name"] == testkit.model.metadata.name
+
+        # Step 2: Initialize results upload
+        response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
+        assert response.status_code == 202
+        upload_id = response.json()["id"]
+        assert response.json()["status"] == "awaiting_upload"
+
+        # Step 3: Upload results file with real background tasks
+        response = test_client.post(
+            f"/upload/{upload_id}",
+            files={
+                "file": (
+                    "results.parquet",
+                    table_to_buffer(testkit.probabilities),
+                    "application/octet-stream",
+                ),
+            },
+        )
+        assert response.status_code == 202
+        assert response.json()["status"] == "queued"
+
+        # Step 4: Poll status until complete or timeout
+        max_attempts = 10
+        current_attempt = 0
+        status = None
+
+        while current_attempt < max_attempts:
+            response = test_client.get(f"/upload/{upload_id}/status")
+            assert response.status_code == 200
+
+            status = response.json()["status"]
+            if status == "complete":
+                break
+            elif status == "failed":
+                pytest.fail(f"Upload failed: {response.json().get('details')}")
+            elif status in ["processing", "queued"]:
+                await asyncio.sleep(0.1)  # Small delay between polls
+            else:
+                pytest.fail(f"Unexpected status: {status}")
+
+            current_attempt += 1
+
+        assert current_attempt < max_attempts, (
+            "Timed out waiting for processing to complete"
+        )
+        assert status == "complete"
+        assert response.status_code == 200
+
+        # Step 5: Verify results were stored correctly
+        mock_backend.set_model_results.assert_called_once()
+        call_args = mock_backend.set_model_results.call_args
+        assert (
+            call_args[1]["model"] == testkit.model.metadata.name
+        )  # Check model name matches
+        assert call_args[1]["results"].equals(
+            testkit.probabilities
+        )  # Check results data matches
+
+        # Step 6: Verify we can retrieve the results
+        response = test_client.get(f"/models/{testkit.model.metadata.name}/results")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/octet-stream"
+
+        # Step 7: Additional model-specific verifications
+        if model_type == "linker":
+            # For linker models, verify left and right resolutions are set
+            assert testkit.model.metadata.left_resolution is not None
+            assert testkit.model.metadata.right_resolution is not None
+        else:
+            # For deduper models, verify only left resolution is set
+            assert testkit.model.metadata.left_resolution is not None
+            assert testkit.model.metadata.right_resolution is None
+
+        # Verify the model truth can be set and retrieved
+        truth_value = 85
+        mock_backend.get_model_truth = Mock(return_value=truth_value)
+
+        response = test_client.patch(
+            f"/models/{testkit.model.metadata.name}/truth",
+            json=truth_value,
+        )
+        assert response.status_code == 200
+
+        response = test_client.get(f"/models/{testkit.model.metadata.name}/truth")
+        assert response.status_code == 200
+        assert response.json() == truth_value
+
+        # Verify file is deleted from S3 after processing
+        with pytest.raises(ClientError):
+            s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_set_results(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory()
+    mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+
+    response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "awaiting_upload"
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_set_results_model_not_found(mock_backend: Mock, test_client: TestClient):
+    """Test setting results for a non-existent model."""
+    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+
+    response = test_client.post("/models/nonexistent-model/results")
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_get_results(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory()
+    mock_backend.get_model_results = Mock(return_value=testkit.probabilities)
+
+    response = test_client.get(f"/models/{testkit.model.metadata.name}/results")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_set_truth(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory()
+
+    response = test_client.patch(
+        f"/models/{testkit.model.metadata.name}/truth", json=95
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    mock_backend.set_model_truth.assert_called_once_with(
+        model=testkit.model.metadata.name, truth=95
+    )
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_set_truth_invalid_value(mock_backend: Mock, test_client: TestClient):
+    """Test setting an invalid truth value (outside 0-1 range)."""
+    testkit = model_factory()
+
+    # Test value > 1
+    response = test_client.patch(
+        f"/models/{testkit.model.metadata.name}/truth", json=150
+    )
+    assert response.status_code == 422
+
+    # Test value < 0
+    response = test_client.patch(
+        f"/models/{testkit.model.metadata.name}/truth", json=-50
+    )
+    assert response.status_code == 422
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_get_truth(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory()
+    mock_backend.get_model_truth = Mock(return_value=95)
+
+    response = test_client.get(f"/models/{testkit.model.metadata.name}/truth")
+
+    assert response.status_code == 200
+    assert response.json() == 95
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_get_ancestors(mock_backend: Mock, test_client: TestClient):
+    testkit = model_factory()
+    mock_ancestors = [
+        ModelAncestor(name="parent_model", truth=70),
+        ModelAncestor(name="grandparent_model", truth=97),
+    ]
+    mock_backend.get_model_ancestors = Mock(return_value=mock_ancestors)
+
+    response = test_client.get(f"/models/{testkit.model.metadata.name}/ancestors")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_get_ancestors_cache(mock_backend: Mock, test_client: TestClient):
+    """Test retrieving the ancestors cache for a model."""
+    testkit = model_factory()
+    mock_ancestors = [
+        ModelAncestor(name="parent_model", truth=70),
+        ModelAncestor(name="grandparent_model", truth=80),
+    ]
+    mock_backend.get_model_ancestors_cache = Mock(return_value=mock_ancestors)
+
+    response = test_client.get(f"/models/{testkit.model.metadata.name}/ancestors_cache")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert [ModelAncestor.model_validate(a) for a in response.json()] == mock_ancestors
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_set_ancestors_cache(mock_backend: Mock, test_client: TestClient):
+    """Test setting the ancestors cache for a model."""
+    testkit = model_factory()
+
+    ancestors_data = [
+        ModelAncestor(name="parent_model", truth=70),
+        ModelAncestor(name="grandparent_model", truth=80),
+    ]
+
+    response = test_client.patch(
+        f"/models/{testkit.model.metadata.name}/ancestors_cache",
+        json=[a.model_dump() for a in ancestors_data],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["operation"] == ModelOperationType.UPDATE_ANCESTOR_CACHE
+    mock_backend.set_model_ancestors_cache.assert_called_once_with(
+        model=testkit.model.metadata.name, ancestors_cache=ancestors_data
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["results", "truth", "ancestors", "ancestors_cache"],
+)
+@patch("matchbox.server.api.routers.models.backend")
+def test_model_get_endpoints_404(
+    mock_backend: Mock,
+    endpoint: str,
+    test_client: TestClient,
+) -> None:
+    """Test 404 responses for model GET endpoints when model doesn't exist."""
+    # Setup backend mock
+    mock_method = getattr(mock_backend, f"get_model_{endpoint}")
+    mock_method.side_effect = MatchboxResolutionNotFoundError()
+
+    # Make request
+    response = test_client.get(f"/models/nonexistent-model/{endpoint}")
+
+    # Verify response
+    assert response.status_code == 404
+    error = NotFoundError.model_validate(response.json())
+    assert error.entity == BackendRetrievableType.RESOLUTION
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "payload"),
+    [
+        ("truth", 95),
+        (
+            "ancestors_cache",
+            [
+                ModelAncestor(name="parent_model", truth=70).model_dump(),
+                ModelAncestor(name="grandparent_model", truth=80).model_dump(),
+            ],
+        ),
+    ],
+)
+@patch("matchbox.server.api.routers.models.backend")
+def test_model_patch_endpoints_404(
+    mock_backend: Mock,
+    endpoint: str,
+    payload: float | list[dict[str, Any]],
+    test_client: TestClient,
+) -> None:
+    """Test 404 responses for model PATCH endpoints when model doesn't exist."""
+    # Setup backend mock
+    mock_method = getattr(mock_backend, f"set_model_{endpoint}")
+    mock_method.side_effect = MatchboxResolutionNotFoundError()
+
+    # Make request
+    response = test_client.patch(f"/models/nonexistent-model/{endpoint}", json=payload)
+
+    # Verify response
+    assert response.status_code == 404
+    error = NotFoundError.model_validate(response.json())
+    assert error.entity == BackendRetrievableType.RESOLUTION
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_delete_model(_: Mock, test_client: TestClient):
+    testkit = model_factory()
+    response = test_client.delete(
+        f"/models/{testkit.model.metadata.name}",
+        params={"certain": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "model_name": testkit.model.metadata.name,
+        "operation": ModelOperationType.DELETE,
+        "details": None,
+    }
+
+
+@patch("matchbox.server.api.routers.models.backend")
+def test_delete_model_needs_confirmation(mock_backend: Mock, test_client: TestClient):
+    mock_backend.delete_model = Mock(
+        side_effect=MatchboxDeletionNotConfirmed(children=["dedupe1", "dedupe2"])
+    )
+
+    testkit = model_factory()
+    response = test_client.delete(f"/models/{testkit.model.metadata.name}")
+
+    assert response.status_code == 409
+    assert response.json()["success"] is False
+    message = response.json()["details"]
+    assert "dedupe1" in message and "dedupe2" in message
+
+
+@pytest.mark.parametrize(
+    "certain",
+    [True, False],
+)
+@patch("matchbox.server.api.routers.models.backend")
+def test_delete_model_404(
+    mock_backend: Mock, certain: bool, test_client: TestClient
+) -> None:
+    """Test 404 response when trying to delete a non-existent model."""
+    # Setup backend mock
+    mock_backend.delete_model.side_effect = MatchboxResolutionNotFoundError()
+
+    # Make request
+    response = test_client.delete(
+        "/models/nonexistent-model", params={"certain": certain}
+    )
+
+    # Verify response
+    assert response.status_code == 404
+    error = NotFoundError.model_validate(response.json())
+    assert error.entity == BackendRetrievableType.RESOLUTION

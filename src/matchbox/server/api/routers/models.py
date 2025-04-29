@@ -1,0 +1,305 @@
+"""Model API routes for the Matchbox server."""
+
+from typing import Annotated
+
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+)
+
+from matchbox.common.arrow import table_to_buffer
+from matchbox.common.dtos import (
+    BackendRetrievableType,
+    ModelAncestor,
+    ModelMetadata,
+    ModelOperationStatus,
+    ModelOperationType,
+    NotFoundError,
+    UploadStatus,
+)
+from matchbox.common.exceptions import (
+    MatchboxDeletionNotConfirmed,
+    MatchboxResolutionNotFoundError,
+)
+from matchbox.server.api.dependencies import (
+    ParquetResponse,
+    backend,
+    metadata_store,
+    validate_api_key,
+)
+
+router = APIRouter(prefix="/models", tags=["models"])
+
+
+@router.post(
+    "/",
+    responses={
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(validate_api_key)],
+)
+async def insert_model(model: ModelMetadata) -> ModelOperationStatus:
+    """Insert a model into the backend."""
+    try:
+        backend.insert_model(model)
+        return ModelOperationStatus(
+            success=True,
+            model_name=model.name,
+            operation=ModelOperationType.INSERT,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=model.name,
+                operation=ModelOperationType.INSERT,
+                details=str(e),
+            ).model_dump(),
+        ) from e
+
+
+@router.get(
+    "/{name}",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_model(name: str) -> ModelMetadata:
+    """Get a model from the backend."""
+    try:
+        return backend.get_model(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+
+@router.post(
+    "/{name}/results",
+    responses={404: {"model": NotFoundError}},
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(validate_api_key)],
+)
+async def set_results(name: str) -> UploadStatus:
+    """Create an upload task for model results."""
+    try:
+        metadata = backend.get_model(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+    upload_id = metadata_store.cache_model(metadata=metadata)
+    return metadata_store.get(cache_id=upload_id).status
+
+
+@router.get(
+    "/{name}/results",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_results(name: str) -> ParquetResponse:
+    """Download results for a model as a parquet file."""
+    try:
+        res = backend.get_model_results(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+    buffer = table_to_buffer(res)
+    return ParquetResponse(buffer.getvalue())
+
+
+@router.patch(
+    "/{name}/truth",
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+    dependencies=[Depends(validate_api_key)],
+)
+async def set_truth(
+    name: str,
+    truth: Annotated[int, Body(ge=0, le=100)],
+) -> ModelOperationStatus:
+    """Set truth data for a model."""
+    try:
+        backend.set_model_truth(model=name, truth=truth)
+        return ModelOperationStatus(
+            success=True,
+            model_name=name,
+            operation=ModelOperationType.UPDATE_TRUTH,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=name,
+                operation=ModelOperationType.UPDATE_TRUTH,
+                details=str(e),
+            ).model_dump(),
+        ) from e
+
+
+@router.get(
+    "/{name}/truth",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_truth(name: str) -> float:
+    """Get truth data for a model."""
+    try:
+        return backend.get_model_truth(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+
+@router.get(
+    "/{name}/ancestors",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_ancestors(name: str) -> list[ModelAncestor]:
+    """Get the ancestors for a model."""
+    try:
+        return backend.get_model_ancestors(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+
+@router.patch(
+    "/{name}/ancestors_cache",
+    responses={
+        404: {"model": NotFoundError},
+        500: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_500_examples(),
+        },
+    },
+    dependencies=[Depends(validate_api_key)],
+)
+async def set_ancestors_cache(
+    name: str,
+    ancestors: list[ModelAncestor],
+):
+    """Update the cached ancestors for a model."""
+    try:
+        backend.set_model_ancestors_cache(model=name, ancestors_cache=ancestors)
+        return ModelOperationStatus(
+            success=True,
+            model_name=name,
+            operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=name,
+                operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+                details=str(e),
+            ).model_dump(),
+        ) from e
+
+
+@router.get(
+    "/{name}/ancestors_cache",
+    responses={404: {"model": NotFoundError}},
+)
+async def get_ancestors_cache(name: str) -> list[ModelAncestor]:
+    """Get the cached ancestors for a model."""
+    try:
+        return backend.get_model_ancestors_cache(model=name)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+
+
+@router.delete(
+    "/{name}",
+    responses={
+        404: {"model": NotFoundError},
+        409: {
+            "model": ModelOperationStatus,
+            **ModelOperationStatus.status_409_examples(),
+        },
+    },
+    dependencies=[Depends(validate_api_key)],
+)
+async def delete_model(
+    name: str,
+    certain: Annotated[
+        bool, Query(description="Confirm deletion of the model")
+    ] = False,
+) -> ModelOperationStatus:
+    """Delete a model from the backend."""
+    try:
+        backend.delete_model(model=name, certain=certain)
+        return ModelOperationStatus(
+            success=True,
+            model_name=name,
+            operation=ModelOperationType.DELETE,
+        )
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendRetrievableType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except MatchboxDeletionNotConfirmed as e:
+        raise HTTPException(
+            status_code=409,
+            detail=ModelOperationStatus(
+                success=False,
+                model_name=name,
+                operation=ModelOperationType.DELETE,
+                details=str(e),
+            ).model_dump(),
+        ) from e

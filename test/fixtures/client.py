@@ -35,8 +35,8 @@ def env_setter() -> Generator[Callable[[str, str], None], None, None]:
 def test_client() -> Generator[TestClient, None, None]:
     """Return a configured TestClient with patched backend and settings."""
     with (
-        patch("matchbox.server.api.routes.settings") as mock_settings,
-        patch("matchbox.server.api.routes.backend") as _,
+        patch("matchbox.server.api.dependencies.settings") as mock_settings,
+        patch("matchbox.server.api.dependencies.backend") as _,
     ):
         mock_settings.api_key = SecretStr("test-api-key")
         client = TestClient(app, headers={"X-API-Key": "test-api-key"})
