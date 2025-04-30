@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import wraps
 from typing import (
-    TYPE_CHECKING,
     Annotated,
     Any,
     Callable,
@@ -43,12 +42,6 @@ from sqlalchemy import (
     cast,
     select,
 )
-
-if TYPE_CHECKING:
-    from adbc_driver_postgresql.dbapi import Connection as ADBCConnection
-else:
-    ADBCConnection = Any
-
 
 from matchbox.common.db import fullname_to_prefix, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
@@ -152,8 +145,7 @@ class RelationalDBLocation(Location):
         exclude=True,
         default=None,
         description=(
-            "The credentials for a relational database are a SQLAlchemy "
-            "Engine or ADBC Connection."
+            "The credentials for a relational database are a SQLAlchemy Engine."
         ),
     )
 
