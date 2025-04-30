@@ -26,6 +26,8 @@ from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.api.cache import MetadataStore, process_upload
+from matchbox.server.api.dependencies import backend, metadata_store
+from matchbox.server.api.main import app
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -45,18 +47,15 @@ def test_healthcheck(test_client: TestClient):
     assert response.version == version("matchbox-db")
 
 
-@patch("matchbox.server.api.main.backend")
-@patch("matchbox.server.api.main.metadata_store")
 @patch("matchbox.server.api.main.BackgroundTasks.add_task")
 def test_upload(
     mock_add_task: Mock,
-    metadata_store: Mock,
-    mock_backend: Mock,
     s3: S3Client,
     test_client: TestClient,
 ):
     """Test uploading a file, happy path."""
     # Setup
+    mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
     mock_backend.index = Mock(return_value=None)
@@ -68,10 +67,15 @@ def test_upload(
     source_testkit = source_factory()
 
     # Mock the metadata store
+    mock_metadata_store = Mock()
     store = MetadataStore()
     update_id = store.cache_source(source_testkit.source)
-    metadata_store.get.side_effect = store.get
-    metadata_store.update_status.side_effect = store.update_status
+    mock_metadata_store.get.side_effect = store.get
+    mock_metadata_store.update_status.side_effect = store.update_status
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
+    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
 
     # Make request with mocked background task
     response = test_client.post(
@@ -90,25 +94,22 @@ def test_upload(
     assert response.status_code == 202, response.json()
     assert response.json()["status"] == "queued"  # Updated to check for queued status
     # Check both status updates were called in correct order
-    assert metadata_store.update_status.call_args_list == [
+    assert mock_metadata_store.update_status.call_args_list == [
         call(update_id, "queued"),
     ]
     mock_backend.index.assert_not_called()  # Index happens in background
     mock_add_task.assert_called_once()  # Verify background task was queued
 
 
-@patch("matchbox.server.api.main.backend")
-@patch("matchbox.server.api.main.metadata_store")
 @patch("matchbox.server.api.main.BackgroundTasks.add_task")
 def test_upload_wrong_schema(
     mock_add_task: Mock,
-    metadata_store: Mock,
-    mock_backend: Mock,
     s3: S3Client,
     test_client: TestClient,
 ):
     """Test uploading a file with wrong schema."""
     # Setup
+    mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
 
@@ -116,10 +117,15 @@ def test_upload_wrong_schema(
     source_testkit = source_factory()
 
     # Setup store
+    mock_metadata_store = Mock()
     store = MetadataStore()
     update_id = store.cache_source(source_testkit.source)
-    metadata_store.get.side_effect = store.get
-    metadata_store.update_status.side_effect = store.update_status
+    mock_metadata_store.get.side_effect = store.get
+    mock_metadata_store.update_status.side_effect = store.update_status
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
+    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
 
     # Make request with actual data instead of the hashes -- wrong schema
     response = test_client.post(
@@ -137,21 +143,26 @@ def test_upload_wrong_schema(
     assert response.status_code == 400
     assert response.json()["status"] == "failed"
     assert "schema mismatch" in response.json()["details"].lower()
-    metadata_store.update_status.assert_called_with(update_id, "failed", details=ANY)
+    mock_metadata_store.update_status.assert_called_with(
+        update_id, "failed", details=ANY
+    )
     mock_add_task.assert_not_called()  # Background task should not be queued
 
 
-@patch("matchbox.server.api.main.metadata_store")
-def test_upload_status_check(metadata_store: Mock, test_client: TestClient):
+def test_upload_status_check(test_client: TestClient):
     """Test checking status of an upload using the status endpoint."""
     # Setup store with a processing entry
+    mock_metadata_store = Mock()
     store = MetadataStore()
     source_testkit = source_factory()
     update_id = store.cache_source(source_testkit.source)
     store.update_status(update_id, "processing")
 
-    metadata_store.get.side_effect = store.get
-    metadata_store.update_status.side_effect = store.update_status
+    mock_metadata_store.get.side_effect = store.get
+    mock_metadata_store.update_status.side_effect = store.update_status
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
 
     # Check status using GET endpoint
     response = test_client.get(f"/upload/{update_id}/status")
@@ -159,19 +170,22 @@ def test_upload_status_check(metadata_store: Mock, test_client: TestClient):
     # Should return current status
     assert response.status_code == 200
     assert response.json()["status"] == "processing"
-    metadata_store.update_status.assert_not_called()
+    mock_metadata_store.update_status.assert_not_called()
 
 
-@patch("matchbox.server.api.main.metadata_store")
-def test_upload_already_processing(metadata_store: Mock, test_client: TestClient):
+def test_upload_already_processing(test_client: TestClient):
     """Test attempting to upload when status is already processing."""
     # Setup store with a processing entry
+    mock_metadata_store = Mock()
     store = MetadataStore()
     source_testkit = source_factory()
     update_id = store.cache_source(source_testkit.source)
     store.update_status(update_id, "processing")
 
-    metadata_store.get.side_effect = store.get
+    mock_metadata_store.get.side_effect = store.get
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
 
     # Attempt upload
     response = test_client.post(
@@ -184,16 +198,19 @@ def test_upload_already_processing(metadata_store: Mock, test_client: TestClient
     assert response.json()["status"] == "processing"
 
 
-@patch("matchbox.server.api.main.metadata_store")
-def test_upload_already_queued(metadata_store: Mock, test_client: TestClient):
+def test_upload_already_queued(test_client: TestClient):
     """Test attempting to upload when status is already queued."""
     # Setup store with a queued entry
+    mock_metadata_store = Mock()
     store = MetadataStore()
     source_testkit = source_factory()
     update_id = store.cache_source(source_testkit.source)
     store.update_status(update_id, "queued")
 
-    metadata_store.get.side_effect = store.get
+    mock_metadata_store.get.side_effect = store.get
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
 
     # Attempt upload
     response = test_client.post(
@@ -206,10 +223,13 @@ def test_upload_already_queued(metadata_store: Mock, test_client: TestClient):
     assert response.json()["status"] == "queued"
 
 
-@patch("matchbox.server.api.main.metadata_store")
-def test_status_check_not_found(metadata_store: Mock, test_client: TestClient):
+def test_status_check_not_found(test_client: TestClient):
     """Test checking status for non-existent upload ID."""
-    metadata_store.get.return_value = None
+    mock_metadata_store = Mock()
+    mock_metadata_store.get.return_value = None
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
 
     response = test_client.get("/upload/nonexistent-id/status")
 
@@ -271,9 +291,9 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
 # Retrieval
 
 
-@patch("matchbox.server.api.main.backend")
-def test_query(mock_backend: Mock, test_client: TestClient):
+def test_query(test_client: TestClient):
     # Mock backend
+    mock_backend = Mock()
     mock_backend.query = Mock(
         return_value=pa.Table.from_pylist(
             [
@@ -283,6 +303,9 @@ def test_query(mock_backend: Mock, test_client: TestClient):
             schema=SCHEMA_MB_IDS,
         )
     )
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     # Hit endpoint
     response = test_client.get(
@@ -302,10 +325,13 @@ def test_query(mock_backend: Mock, test_client: TestClient):
     assert table.schema.equals(SCHEMA_MB_IDS)
 
 
-@patch("matchbox.server.api.main.backend")
-def test_query_404_resolution(mock_backend: Mock, test_client: TestClient):
+def test_query_404_resolution(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.query = Mock(side_effect=MatchboxResolutionNotFoundError())
 
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
+
     # Hit endpoint
     response = test_client.get(
         "/query",
@@ -319,10 +345,13 @@ def test_query_404_resolution(mock_backend: Mock, test_client: TestClient):
     assert response.status_code == 404
 
 
-@patch("matchbox.server.api.main.backend")
-def test_query_404_source(mock_backend: Mock, test_client: TestClient):
+def test_query_404_source(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.query = Mock(side_effect=MatchboxSourceNotFoundError())
 
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
+
     # Hit endpoint
     response = test_client.get(
         "/query",
@@ -336,8 +365,8 @@ def test_query_404_source(mock_backend: Mock, test_client: TestClient):
     assert response.status_code == 404
 
 
-@patch("matchbox.server.api.main.backend")
-def test_match(mock_backend: Mock, test_client: TestClient):
+def test_match(test_client: TestClient):
+    mock_backend = Mock()
     foo_address = SourceAddress(full_name="foo", warehouse_hash=b"foo")
     bar_address = SourceAddress(full_name="bar", warehouse_hash=b"bar")
 
@@ -351,6 +380,9 @@ def test_match(mock_backend: Mock, test_client: TestClient):
         )
     ]
     mock_backend.match = Mock(return_value=mock_matches)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     # Hit endpoint
     response = test_client.get(
@@ -371,9 +403,12 @@ def test_match(mock_backend: Mock, test_client: TestClient):
     [Match.model_validate(m) for m in response.json()]
 
 
-@patch("matchbox.server.api.main.backend")
-def test_match_404_resolution(mock_backend: Mock, test_client: TestClient):
+def test_match_404_resolution(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.match = Mock(side_effect=MatchboxResolutionNotFoundError())
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     # Hit endpoint
     response = test_client.get(
@@ -393,9 +428,12 @@ def test_match_404_resolution(mock_backend: Mock, test_client: TestClient):
     assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
 
 
-@patch("matchbox.server.api.main.backend")
-def test_match_404_source(mock_backend: Mock, test_client: TestClient):
+def test_match_404_source(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.match = Mock(side_effect=MatchboxSourceNotFoundError())
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     # Hit endpoint
     response = test_client.get(
@@ -418,9 +456,9 @@ def test_match_404_source(mock_backend: Mock, test_client: TestClient):
 # Admin
 
 
-@patch("matchbox.server.api.main.backend")
-def test_count_all_backend_items(mock_backend: Mock, test_client: TestClient):
+def test_count_all_backend_items(test_client: TestClient):
     """Test the unparameterised entity counting endpoint."""
+    mock_backend = Mock()
     entity_counts = {
         "datasets": 1,
         "models": 2,
@@ -435,33 +473,45 @@ def test_count_all_backend_items(mock_backend: Mock, test_client: TestClient):
         mock_e.count = Mock(return_value=c)
         setattr(mock_backend, e, mock_e)
 
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
+
     response = test_client.get("/database/count")
     assert response.status_code == 200
     assert response.json() == {"entities": entity_counts}
 
 
-@patch("matchbox.server.api.main.backend")
-def test_count_backend_item(mock_backend: Mock, test_client: TestClient):
+def test_count_backend_item(test_client: TestClient):
     """Test the parameterised entity counting endpoint."""
+    mock_backend = Mock()
     mock_backend.models.count = Mock(return_value=20)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/database/count", params={"entity": "models"})
     assert response.status_code == 200
     assert response.json() == {"entities": {"models": 20}}
 
 
-@patch("matchbox.server.api.main.backend")
-def test_clear_backend_ok(mock_backend: Mock, test_client: TestClient):
+def test_clear_backend_ok(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.clear = Mock()
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.delete("/database", params={"certain": "true"})
     assert response.status_code == 200
     OKMessage.model_validate(response.json())
 
 
-@patch("matchbox.server.api.main.backend")
-def test_clear_backend_errors(mock_backend: Mock, test_client: TestClient):
+def test_clear_backend_errors(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.clear = Mock(side_effect=MatchboxDeletionNotConfirmed)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.delete("/database")
     assert response.status_code == 409
@@ -525,14 +575,15 @@ def test_api_key_authorisation(test_client: TestClient):
     assert response.content == b'"Not authenticated"'
 
 
-@patch("matchbox.server.api.main.backend")
 def test_get_resolution_graph(
-    mock_backend: Mock,
-    resolution_graph: ResolutionGraph,
-    test_client: TestClient,
+    resolution_graph: ResolutionGraph, test_client: TestClient
 ):
     """Test the resolution graph report endpoint."""
+    mock_backend = Mock()
     mock_backend.get_resolution_graph = Mock(return_value=resolution_graph)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/report/resolutions")
     assert response.status_code == 200

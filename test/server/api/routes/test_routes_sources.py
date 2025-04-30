@@ -1,6 +1,6 @@
 import asyncio
 from typing import TYPE_CHECKING, Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -18,6 +18,8 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.sources import Source, SourceAddress
+from matchbox.server.api.dependencies import backend
+from matchbox.server.api.main import app
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -25,11 +27,14 @@ else:
     S3Client = Any
 
 
-@patch("matchbox.server.api.routers.sources.backend")
-def test_get_source(mock_backend: Mock, test_client: TestClient):
+def test_get_source(test_client: TestClient):
     address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
     source = Source(address=address, db_pk="pk")
+    mock_backend = Mock()
     mock_backend.get_source = Mock(return_value=source)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get(
         f"/sources/{address.warehouse_hash_b64}/{address.full_name}"
@@ -38,20 +43,26 @@ def test_get_source(mock_backend: Mock, test_client: TestClient):
     assert Source.model_validate(response.json())
 
 
-@patch("matchbox.server.api.routers.sources.backend")
-def test_get_source_404(mock_backend: Mock, test_client: TestClient):
+def test_get_source_404(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.get_source = Mock(side_effect=MatchboxSourceNotFoundError)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
     assert response.status_code == 404
     assert response.json()["entity"] == BackendRetrievableType.SOURCE
 
 
-@patch("matchbox.server.api.routers.sources.backend")
-def test_get_resolution_sources(mock_backend: Mock, test_client: TestClient):
+def test_get_resolution_sources(test_client: TestClient):
     source = source_factory().source
 
+    mock_backend = Mock()
     mock_backend.get_resolution_sources = Mock(return_value=[source])
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/sources", params={"resolution_name": "foo"})
     assert response.status_code == 200
@@ -59,21 +70,27 @@ def test_get_resolution_sources(mock_backend: Mock, test_client: TestClient):
         assert Source.model_validate(s)
 
 
-@patch("matchbox.server.api.routers.sources.backend")
-def test_get_resolution_sources_404(mock_backend: Mock, test_client: TestClient):
+def test_get_resolution_sources_404(test_client: TestClient):
+    mock_backend = Mock()
     mock_backend.get_resolution_sources = Mock(
         side_effect=MatchboxResolutionNotFoundError
     )
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/sources", params={"resolution_name": "foo"})
     assert response.status_code == 404
     assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
 
 
-@patch("matchbox.server.api.routers.sources.backend")
-def test_add_source(mock_backend: Mock, test_client: TestClient):
+def test_add_source(test_client: TestClient):
     """Test the source addition endpoint."""
+    mock_backend = Mock()
     mock_backend.index = Mock(return_value=None)
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
     source_testkit = source_factory()
 
@@ -100,72 +117,69 @@ async def test_complete_source_upload_process(s3: S3Client, test_client: TestCli
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
     mock_backend.index = Mock(return_value=None)
 
-    with (
-        patch("matchbox.server.api.routers.sources.backend", mock_backend),
-        patch("matchbox.server.api.main.backend", mock_backend),
-    ):
-        # Create test bucket
-        s3.create_bucket(
-            Bucket="test-bucket",
-            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-        )
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
 
-        # Create test data
-        source_testkit = source_factory()
+    # Create test bucket
+    s3.create_bucket(
+        Bucket="test-bucket",
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+    )
 
-        # Step 1: Add source
-        response = test_client.post("/sources", json=source_testkit.source.model_dump())
-        assert response.status_code == 202
-        upload_id = response.json()["id"]
-        assert response.json()["status"] == "awaiting_upload"
+    # Create test data
+    source_testkit = source_factory()
 
-        # Step 2: Upload file with real background tasks
-        response = test_client.post(
-            f"/upload/{upload_id}",
-            files={
-                "file": (
-                    "hashes.parquet",
-                    table_to_buffer(source_testkit.data_hashes),
-                    "application/octet-stream",
-                ),
-            },
-        )
-        assert response.status_code == 202
-        assert response.json()["status"] == "queued"
+    # Step 1: Add source
+    response = test_client.post("/sources", json=source_testkit.source.model_dump())
+    assert response.status_code == 202
+    upload_id = response.json()["id"]
+    assert response.json()["status"] == "awaiting_upload"
 
-        # Step 3: Poll status until complete or timeout
-        max_attempts = 10
-        current_attempt = 0
-        while current_attempt < max_attempts:
-            response = test_client.get(f"/upload/{upload_id}/status")
-            assert response.status_code == 200
+    # Step 2: Upload file with real background tasks
+    response = test_client.post(
+        f"/upload/{upload_id}",
+        files={
+            "file": (
+                "hashes.parquet",
+                table_to_buffer(source_testkit.data_hashes),
+                "application/octet-stream",
+            ),
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
 
-            status = response.json()["status"]
-            if status == "complete":
-                break
-            elif status == "failed":
-                pytest.fail(f"Upload failed: {response.json().get('details')}")
-            elif status in ["processing", "queued"]:
-                await asyncio.sleep(0.1)  # Small delay between polls
-            else:
-                pytest.fail(f"Unexpected status: {status}")
-
-            current_attempt += 1
-
-        assert current_attempt < max_attempts, (
-            "Timed out waiting for processing to complete"
-        )
-        assert status == "complete"
+    # Step 3: Poll status until complete or timeout
+    max_attempts = 10
+    current_attempt = 0
+    while current_attempt < max_attempts:
+        response = test_client.get(f"/upload/{upload_id}/status")
         assert response.status_code == 200
 
-        # Verify backend.index was called with correct arguments
-        mock_backend.index.assert_called_once()
-        call_args = mock_backend.index.call_args
-        assert call_args[1]["source"] == source_testkit.source  # Check source matches
-        assert call_args[1]["data_hashes"].equals(
-            source_testkit.data_hashes
-        )  # Check data
+        status = response.json()["status"]
+        if status == "complete":
+            break
+        elif status == "failed":
+            pytest.fail(f"Upload failed: {response.json().get('details')}")
+        elif status in ["processing", "queued"]:
+            await asyncio.sleep(0.1)  # Small delay between polls
+        else:
+            pytest.fail(f"Unexpected status: {status}")
 
-        # Verify file is deleted from S3 after processing
-        with pytest.raises(ClientError):
-            s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")
+        current_attempt += 1
+
+    assert current_attempt < max_attempts, (
+        "Timed out waiting for processing to complete"
+    )
+    assert status == "complete"
+    assert response.status_code == 200
+
+    # Verify backend.index was called with correct arguments
+    mock_backend.index.assert_called_once()
+    call_args = mock_backend.index.call_args
+    assert call_args[1]["source"] == source_testkit.source  # Check source matches
+    assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
+
+    # Verify file is deleted from S3 after processing
+    with pytest.raises(ClientError):
+        s3.head_object(Bucket="test-bucket", Key=f"{upload_id}.parquet")

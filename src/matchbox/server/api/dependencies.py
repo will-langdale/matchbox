@@ -3,9 +3,10 @@
 import logging
 import sys
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Annotated, AsyncGenerator, Generator
 
 from fastapi import (
+    Depends,
     FastAPI,
     HTTPException,
     Security,
@@ -30,22 +31,43 @@ class ParquetResponse(Response):
     media_type = "application/octet-stream"
 
 
-settings: MatchboxServerSettings | None = None
-backend: MatchboxDBAdapter | None = None
-metadata_store = MetadataStore(expiry_minutes=30)
-api_key_header = APIKeyHeader(name="X-API-Key")
+SETTINGS: MatchboxServerSettings | None = None
+BACKEND: MatchboxDBAdapter | None = None
+METADATA_STORE = MetadataStore(expiry_minutes=30)
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
+
+
+def backend() -> Generator[MatchboxDBAdapter, None, None]:
+    """Get the backend instance."""
+    if BACKEND is None:
+        raise ValueError("Backend not initialized.")
+    yield BACKEND
+
+
+def settings() -> Generator[MatchboxServerSettings, None, None]:
+    """Get the settings instance."""
+    if SETTINGS is None:
+        raise ValueError("Settings not initialized.")
+    yield SETTINGS
+
+
+def metadata_store() -> Generator[MetadataStore, None, None]:
+    """Get the metadata store instance."""
+    if METADATA_STORE is None:
+        raise ValueError("Metadata store not initialized.")
+    yield METADATA_STORE
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Context manager for the FastAPI lifespan events."""
     # Set up the backend
-    global settings
-    global backend
+    global SETTINGS
+    global BACKEND
 
     SettingsClass = get_backend_settings(MatchboxServerSettings().backend_type)
-    settings = SettingsClass()
-    backend = settings_to_backend(settings)
+    SETTINGS = SettingsClass()
+    BACKEND = settings_to_backend(SETTINGS)
 
     # Define common formatter
     formatter = ASIMFormatter()
@@ -63,11 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     for logger_name in loggers_to_configure:
         # Configure handler
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(backend.settings.log_level)
+        handler.setLevel(BACKEND.settings.log_level)
         handler.setFormatter(formatter)
 
         logger = logging.getLogger(logger_name)
-        logger.setLevel(backend.settings.log_level)
+        logger.setLevel(BACKEND.settings.log_level)
         # Remove any existing handlers to avoid duplicates
         if logger.handlers:
             logger.handlers.clear()
@@ -79,11 +101,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    del settings
-    del backend
+    del SETTINGS
+    del BACKEND
 
 
-def validate_api_key(api_key: str = Security(api_key_header)) -> None:
+BackendDependency = Annotated[MatchboxDBAdapter, Depends(backend)]
+SettingsDependency = Annotated[MatchboxServerSettings, Depends(settings)]
+MetadataStoreDependency = Annotated[MetadataStore, Depends(metadata_store)]
+
+
+def validate_api_key(
+    settings: SettingsDependency, api_key: str = Security(API_KEY_HEADER)
+) -> None:
     """Validate client API Key against settings."""
     if not settings.api_key:
         raise HTTPException(

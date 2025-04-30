@@ -26,9 +26,9 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.server.api.dependencies import (
+    BackendDependency,
+    MetadataStoreDependency,
     ParquetResponse,
-    backend,
-    metadata_store,
     validate_api_key,
 )
 
@@ -46,7 +46,9 @@ router = APIRouter(prefix="/models", tags=["models"])
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(validate_api_key)],
 )
-async def insert_model(model: ModelMetadata) -> ModelOperationStatus:
+async def insert_model(
+    backend: BackendDependency, model: ModelMetadata
+) -> ModelOperationStatus:
     """Insert a model into the backend."""
     try:
         backend.insert_model(model)
@@ -71,7 +73,7 @@ async def insert_model(model: ModelMetadata) -> ModelOperationStatus:
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-async def get_model(name: str) -> ModelMetadata:
+async def get_model(backend: BackendDependency, name: str) -> ModelMetadata:
     """Get a model from the backend."""
     try:
         return backend.get_model(model=name)
@@ -90,7 +92,9 @@ async def get_model(name: str) -> ModelMetadata:
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(validate_api_key)],
 )
-async def set_results(name: str) -> UploadStatus:
+async def set_results(
+    backend: BackendDependency, metadata_store: MetadataStoreDependency, name: str
+) -> UploadStatus:
     """Create an upload task for model results."""
     try:
         metadata = backend.get_model(model=name)
@@ -110,7 +114,7 @@ async def set_results(name: str) -> UploadStatus:
     "/{name}/results",
     responses={404: {"model": NotFoundError}},
 )
-async def get_results(name: str) -> ParquetResponse:
+async def get_results(backend: BackendDependency, name: str) -> ParquetResponse:
     """Download results for a model as a parquet file."""
     try:
         res = backend.get_model_results(model=name)
@@ -138,6 +142,7 @@ async def get_results(name: str) -> ParquetResponse:
     dependencies=[Depends(validate_api_key)],
 )
 async def set_truth(
+    backend: BackendDependency,
     name: str,
     truth: Annotated[int, Body(ge=0, le=100)],
 ) -> ModelOperationStatus:
@@ -172,7 +177,7 @@ async def set_truth(
     "/{name}/truth",
     responses={404: {"model": NotFoundError}},
 )
-async def get_truth(name: str) -> float:
+async def get_truth(backend: BackendDependency, name: str) -> float:
     """Get truth data for a model."""
     try:
         return backend.get_model_truth(model=name)
@@ -189,7 +194,7 @@ async def get_truth(name: str) -> float:
     "/{name}/ancestors",
     responses={404: {"model": NotFoundError}},
 )
-async def get_ancestors(name: str) -> list[ModelAncestor]:
+async def get_ancestors(backend: BackendDependency, name: str) -> list[ModelAncestor]:
     """Get the ancestors for a model."""
     try:
         return backend.get_model_ancestors(model=name)
@@ -214,6 +219,7 @@ async def get_ancestors(name: str) -> list[ModelAncestor]:
     dependencies=[Depends(validate_api_key)],
 )
 async def set_ancestors_cache(
+    backend: BackendDependency,
     name: str,
     ancestors: list[ModelAncestor],
 ):
@@ -248,7 +254,9 @@ async def set_ancestors_cache(
     "/{name}/ancestors_cache",
     responses={404: {"model": NotFoundError}},
 )
-async def get_ancestors_cache(name: str) -> list[ModelAncestor]:
+async def get_ancestors_cache(
+    backend: BackendDependency, name: str
+) -> list[ModelAncestor]:
     """Get the cached ancestors for a model."""
     try:
         return backend.get_model_ancestors_cache(model=name)
@@ -273,6 +281,7 @@ async def get_ancestors_cache(name: str) -> list[ModelAncestor]:
     dependencies=[Depends(validate_api_key)],
 )
 async def delete_model(
+    backend: BackendDependency,
     name: str,
     certain: Annotated[
         bool, Query(description="Confirm deletion of the model")

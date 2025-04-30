@@ -36,10 +36,10 @@ from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import process_upload
 from matchbox.server.api.dependencies import (
+    BackendDependency,
+    MetadataStoreDependency,
     ParquetResponse,
-    backend,
     lifespan,
-    metadata_store,
     validate_api_key,
 )
 from matchbox.server.api.routers import models, sources
@@ -78,6 +78,8 @@ async def healthcheck() -> OKMessage:
 )
 async def upload_file(
     background_tasks: BackgroundTasks,
+    backend: BackendDependency,
+    metadata_store: MetadataStoreDependency,
     upload_id: str,
     file: UploadFile,
 ) -> UploadStatus:
@@ -166,6 +168,7 @@ async def upload_file(
     status_code=status.HTTP_200_OK,
 )
 async def get_upload_status(
+    metadata_store: MetadataStoreDependency,
     upload_id: str,
 ) -> UploadStatus:
     """Get the status of an upload process.
@@ -201,6 +204,7 @@ async def get_upload_status(
     responses={404: {"model": NotFoundError}},
 )
 def query(
+    backend: BackendDependency,
     full_name: str,
     warehouse_hash_b64: str,
     resolution_name: str | None = None,
@@ -242,6 +246,7 @@ def query(
     responses={404: {"model": NotFoundError}},
 )
 def match(
+    backend: BackendDependency,
     target_full_names: Annotated[list[str], Query()],
     target_warehouse_hashes_b64: Annotated[list[str], Query()],
     source_full_name: str,
@@ -288,13 +293,14 @@ def match(
 
 
 @app.get("/report/resolutions")
-async def get_resolutions() -> ResolutionGraph:
+async def get_resolutions(backend: BackendDependency) -> ResolutionGraph:
     """Get the resolution graph."""
     return backend.get_resolution_graph()
 
 
 @app.get("/database/count")
 async def count_backend_items(
+    backend: BackendDependency,
     entity: BackendCountableType | None = None,
 ) -> CountResult:
     """Count the number of various entities in the backend."""
@@ -315,6 +321,7 @@ async def count_backend_items(
     dependencies=[Depends(validate_api_key)],
 )
 async def clear_database(
+    backend: BackendDependency,
     certain: Annotated[
         bool,
         Query(

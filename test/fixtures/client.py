@@ -8,6 +8,7 @@ from pydantic import SecretStr
 
 from matchbox.client._settings import settings as client_settings
 from matchbox.server import app
+from matchbox.server.api.dependencies import backend, settings
 
 
 @pytest.fixture(scope="function")
@@ -36,8 +37,13 @@ def test_client() -> Generator[TestClient, None, None]:
     """Return a configured TestClient with patched backend and settings."""
     with (
         patch("matchbox.server.api.dependencies.settings") as mock_settings,
-        patch("matchbox.server.api.dependencies.backend") as _,
+        patch("matchbox.server.api.dependencies.backend") as mock_backend,
     ):
         mock_settings.api_key = SecretStr("test-api-key")
-        client = TestClient(app, headers={"X-API-Key": "test-api-key"})
-        yield client
+
+        app.dependency_overrides[backend] = lambda: mock_backend
+        app.dependency_overrides[settings] = lambda: mock_settings
+
+        yield TestClient(app, headers={"X-API-Key": "test-api-key"})
+
+        app.dependency_overrides.clear()

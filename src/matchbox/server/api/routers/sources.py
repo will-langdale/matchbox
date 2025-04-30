@@ -18,8 +18,8 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.sources import Source, SourceAddress
 from matchbox.server.api.dependencies import (
-    backend,
-    metadata_store,
+    BackendDependency,
+    MetadataStoreDependency,
     validate_api_key,
 )
 
@@ -31,7 +31,9 @@ router = APIRouter(prefix="/sources", tags=["sources"])
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(validate_api_key)],
 )
-async def add_source(source: Source) -> UploadStatus:
+async def add_source(
+    metadata_store: MetadataStoreDependency, source: Source
+) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
     upload_id = metadata_store.cache_source(metadata=source)
     return metadata_store.get(cache_id=upload_id).status
@@ -42,6 +44,7 @@ async def add_source(source: Source) -> UploadStatus:
     responses={404: {"model": NotFoundError}},
 )
 async def get_source(
+    backend: BackendDependency,
     warehouse_hash_b64: str,
     full_name: str,
 ) -> Source:
@@ -63,6 +66,7 @@ async def get_source(
     responses={404: {"model": NotFoundError}},
 )
 async def get_resolution_sources(
+    backend: BackendDependency,
     resolution_name: str,
 ) -> list[Source]:
     """Get all sources in scope for a resolution."""
