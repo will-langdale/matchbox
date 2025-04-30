@@ -2,16 +2,246 @@ import copy
 from typing import Any, Callable
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pytest
 from pandas.testing import assert_frame_equal
-from sqlalchemy import Engine, Table, create_engine
+from pydantic import AnyUrl
+from sqlalchemy import (
+    Engine,
+    Table,
+    create_engine,
+)
+from sqlalchemy.exc import OperationalError
 
 from matchbox.client.helpers.selector import Match
 from matchbox.common.db import fullname_to_prefix
 from matchbox.common.exceptions import MatchboxSourceColumnError
 from matchbox.common.factories.sources import source_factory, source_from_tuple
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import (
+    Location,
+    RelationalDBLocation,
+    Source,
+    SourceAddress,
+    SourceColumn,
+)
+
+
+def test_relational_db_location_instantiation():
+    """Test that RelationalDBLocation can be instantiated with valid parameters."""
+    location = RelationalDBLocation(uri="sqlite:///test.db")
+    assert location.type == "dbms"
+    assert str(location.uri) == "sqlite:///test.db"
+    assert location.credentials is None
+
+
+@pytest.mark.parametrize(
+    ["uri_str", "should_pass"],
+    [
+        pytest.param("sqlite:///test.db", True, id="valid-sqlite"),
+        pytest.param("postgresql://localhost:5432/testdb", True, id="valid-postgres"),
+        pytest.param(
+            "postgresql://user:pass@localhost:5432/testdb",
+            False,
+            id="invalid-credentials-in-uri",
+        ),
+        pytest.param("sqlite:///test.db?mode=ro", False, id="invalid-query-params"),
+        pytest.param("sqlite:///test.db#fragment", False, id="invalid-fragment"),
+    ],
+)
+def test_relational_db_location_uri_validation(uri_str: str, should_pass: bool):
+    """Test URI validation in RelationalDBLocation."""
+    if should_pass:
+        location = RelationalDBLocation(uri=uri_str)
+        assert str(location.uri) == uri_str
+    else:
+        with pytest.raises(ValueError):
+            RelationalDBLocation(uri=AnyUrl(uri_str))
+
+
+@pytest.mark.parametrize(
+    ["location_uri", "engine_uri", "should_match"],
+    [
+        pytest.param(
+            "sqlite:///test.db", "sqlite:///test.db", True, id="matching-sqlite"
+        ),
+        pytest.param(
+            "sqlite:///test.db", "sqlite:///other.db", False, id="different-path"
+        ),
+        pytest.param(
+            "postgresql://localhost:5432/testdb",
+            "postgresql://otherhost:5432/testdb",
+            False,
+            id="different-host",
+        ),
+    ],
+)
+def test_validate_engine(location_uri: str, engine_uri: str, should_match: bool):
+    """Test engine validation against location URI."""
+    location = RelationalDBLocation(uri=location_uri)
+    engine = create_engine(engine_uri)
+
+    if should_match:
+        # Should not raise an exception
+        location._validate_engine(engine)
+    else:
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="does not match"):
+            location._validate_engine(engine)
+
+
+def test_credentials_connect(sqlite_warehouse: Engine):
+    """Test adding credentials and conncting to a RelationalDBLocation."""
+    # Create a RelationalDBLocation with the SQLite engine
+    location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
+
+    # Add credentials
+    location.add_credentials(sqlite_warehouse)
+
+    # Check that the credential was set
+    assert location.credentials == sqlite_warehouse
+    assert location.connect() is True
+
+    # Create a location with an invalid engine
+    location2 = RelationalDBLocation(uri=AnyUrl("postgresql://host:1234/db2"))
+    location2.credentials = create_engine("postgresql://host:1234/db2")
+
+    # Should fail to connect
+    assert location2.connect() is False
+
+
+@pytest.mark.parametrize(
+    ["sql", "is_valid"],
+    [
+        pytest.param("SELECT * FROM test_table", True, id="valid-select"),
+        pytest.param(
+            "SELECT id, name FROM test_table WHERE id > 1", True, id="valid-where"
+        ),
+        pytest.param("SLECT * FROM test_table", False, id="invalid-syntax"),
+        pytest.param("", False, id="empty-string"),
+    ],
+)
+def test_validate_extract_transform(sql: str, is_valid: bool):
+    """Test SQL validation in validate_extract_transform."""
+    location = RelationalDBLocation(uri="postgresql://host:1234/db2")
+
+    assert location.validate_extract_transform(sql) is is_valid
+
+
+def test_execute(sqlite_warehouse: Engine):
+    """Test executing a query and returning results using a real SQLite database."""
+    source_testkit = source_factory(engine=sqlite_warehouse)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    sql = f"SELECT * FROM {source_testkit.source.address.full_name}"
+    batch_size = 2
+
+    # Execute the query
+    results = list(location.execute(sql, batch_size))
+
+    # Check that we got expected results
+    assert len(results) > 0
+
+    # Combine all batches to check total row count
+    combined_df = pl.concat(results)
+    assert len(combined_df) == 10
+
+
+def test_from_engine(sqlite_warehouse: Engine):
+    """Test creating a RelationalDBLocation from an engine."""
+    # Create a location from the engine
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    # Check that it was created correctly
+    assert location.credentials == sqlite_warehouse
+    assert location.type == "dbms"
+
+    # Verify it works by connecting
+    assert location.connect() is True
+
+
+def test_location_factory():
+    """Test we can construct appropriate Location classes from raw data."""
+    location = Location.create(
+        {
+            "type": "dbms",
+            "uri": "postgresql://host:1234/db2",
+        }
+    )
+    assert isinstance(location, RelationalDBLocation)
+
+
+def test_location_empty_credentials_error():
+    """Test that operations requiring credentials fail when credentials are not set."""
+    location = RelationalDBLocation(uri="postgresql://host:1234/db2")
+
+    # Attempting to connect without credentials should raise an error
+    with pytest.raises(AttributeError):
+        location.connect()
+
+    # Invalid location type
+    with pytest.raises(ValueError, match="Unknown location type"):
+        Location.create({"type": "unknown", "uri": "http://example.com"})
+
+    # Missing required fields
+    with pytest.raises(ValueError):
+        Location.create({"type": "dbms"})
+
+
+def test_data_retrieval_and_transformation(sqlite_warehouse: Engine):
+    """Test a more complete workflow with data retrieval and transformation."""
+    source_testkit = source_factory(engine=sqlite_warehouse)
+    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    # Execute a query with transformation
+    sql = f"""
+    SELECT 
+        company_name as name,
+        UPPER(company_name) as company_name,
+        crn as crn
+    FROM {source_testkit.source.address.full_name};
+    """
+
+    results = list(location.execute(sql, batch_size=1))
+    assert len(results) == 10  # 10 batches of 1 row
+
+    df = pl.concat(results)
+
+    # Verify the result structure
+    assert set(df.columns) == {"name", "company_name", "crn"}
+
+    # Verify the calculated columns
+    sample_str: str = df.select("company_name").row(0)[0]
+    assert sample_str == sample_str.upper()
+
+
+def test_handling_of_invalid_query(sqlite_warehouse: Engine):
+    """Test that invalid queries are handled correctly when executing."""
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    # Invalid SQL query
+    sql = "SELECT * FROM nonexistent_table"
+
+    # Should raise an exception when executed
+    with pytest.raises(OperationalError):
+        list(location.execute(sql, batch_size=10))
+
+
+def test_location_serialisation():
+    """Test serialisation and deserialization of Location objects."""
+    original = RelationalDBLocation(uri="postgresql://host:1234/db2")
+
+    # Convert to dict and back - credentials should be excluded
+    location_dict = original.model_dump()
+    assert "credentials" not in location_dict
+
+    # Deserialize back to a Location
+    reconstructed = RelationalDBLocation.model_validate(location_dict)
+    assert reconstructed.uri == original.uri
+    assert reconstructed.type == original.type
+    assert reconstructed.credentials is None
 
 
 def test_source_address_compose():

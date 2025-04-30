@@ -1,21 +1,36 @@
 """Classes and functions for working with data sources in Matchbox."""
 
 import json
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import wraps
-from typing import Any, Callable, Iterator, ParamSpec, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    ParamSpec,
+    TypeVar,
+    Union,
+)
 
 import polars as pl
+import sqlglot
 from pandas import DataFrame as PandasDataframe
 from polars import DataFrame as PolarsDataFrame
+from pyarrow import RecordBatch as ArrowRecordBatch
 from pyarrow import Table as ArrowTable
 from pydantic import (
+    AnyUrl,
     BaseModel,
     ConfigDict,
     Field,
     PlainSerializer,
     PlainValidator,
     WithJsonSchema,
+    field_validator,
     model_validator,
 )
 from sqlalchemy import (
@@ -28,7 +43,12 @@ from sqlalchemy import (
     cast,
     select,
 )
-from typing_extensions import Annotated
+
+if TYPE_CHECKING:
+    from adbc_driver_postgresql.dbapi import Connection as ADBCConnection
+else:
+    ADBCConnection = Any
+
 
 from matchbox.common.db import fullname_to_prefix, get_schema_table_names, sql_to_df
 from matchbox.common.exceptions import (
@@ -46,6 +66,169 @@ from matchbox.common.hash import (
 T = TypeVar("T")
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+LocationType = Union["RelationalDBLocation"]
+"""Union type alias for Location class. Currently only supports RelationalDBLocation."""
+
+
+def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator that checks if credentials are set before executing a method.
+
+    A helper method for Location subclasses.
+
+    Raises:
+        AttributeError: If the credentials are not set.
+    """
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs) -> T:
+        if self.credentials is None:
+            raise AttributeError(
+                f"Credentials are required for {method.__name__}. "
+                "Use add_credentials() method to set credentials for "
+                f"this {self.type} location."
+            )
+        return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+class Location(ABC, BaseModel):
+    """A location for a data source."""
+
+    type: LocationType
+    uri: AnyUrl
+    credentials: Any | None = Field(exclude=True, default=None)
+
+    @abstractmethod
+    def add_credentials(self, credentials: Any) -> None:
+        """Adds credentials to the location."""
+        ...
+
+    @abstractmethod
+    def connect(self) -> bool:
+        """Establish connection to the data source.
+
+        Raises:
+            AttributeError: If the credentials are not set.
+        """
+        ...
+
+    @abstractmethod
+    def validate_extract_transform(self, extract_transform: str) -> bool:
+        """Validate SQL ET logic against this location's dialect."""
+        ...
+
+    @abstractmethod
+    def execute(
+        self, extract_transform: str, batch_size: int
+    ) -> Iterator[ArrowRecordBatch]:
+        """Execute ET logic against this location and return Arrow RecordBatches.
+
+        Raises:
+            AttributeError: If the credentials are not set.
+        """
+        ...
+
+    @classmethod
+    def create(cls, data: dict) -> "Location":
+        """Factory method to create the appropriate Location subclass."""
+        location_type = data.get("type")
+
+        if location_type == "dbms":
+            return RelationalDBLocation.model_validate(data)
+
+        raise ValueError(f"Unknown location type: {location_type}")
+
+
+class RelationalDBLocation(Location):
+    """A location for a relational database."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: Literal["dbms"] = "dbms"
+    credentials: Engine | None = Field(
+        exclude=True,
+        default=None,
+        description=(
+            "The credentials for a relational database are a SQLAlchemy "
+            "Engine or ADBC Connection."
+        ),
+    )
+
+    @field_validator("uri", mode="after")
+    @classmethod
+    def validate_uri(cls, value: AnyUrl) -> AnyUrl:
+        """Ensure no credentials, query params, or fragments are in the URI."""
+        if value.username or value.password:
+            raise ValueError("Credentials should not be in the URI.")
+        if value.query or value.fragment:
+            raise ValueError("Query params and fragments should not be in the URI.")
+        return value
+
+    def _validate_engine(self, credentials: Engine) -> None:
+        """Validate an engine matches the URI.
+
+        Raises:
+            ValueError: If the Engine and URI do not match.
+        """
+        uri = AnyUrl(str(credentials.url))
+
+        if any(
+            [
+                uri.scheme != self.uri.scheme,
+                uri.host != self.uri.host,
+                uri.port != self.uri.port,
+                uri.path != self.uri.path,
+            ]
+        ):
+            raise ValueError(
+                "The Engine location URI does not match the location model URI. "
+            )
+
+    def add_credentials(self, credentials: Engine) -> None:  # noqa: D102
+        self._validate_engine(credentials)
+        self.credentials = credentials
+
+    @requires_credentials
+    def connect(self) -> bool:  # noqa: D102
+        try:
+            _ = sql_to_df(stmt="select 1", connection=self.credentials)
+            return True
+        except Exception as _:
+            return False
+
+    def validate_extract_transform(self, extract_transform: str) -> bool:  # noqa: D102
+        try:
+            sqlglot.parse_one(extract_transform)
+            return True
+        except sqlglot.errors.ParseError as _:
+            return False
+
+    @requires_credentials
+    def execute(  # noqa: D102
+        self, extract_transform: str, batch_size: int
+    ) -> Iterator[PolarsDataFrame]:
+        yield from sql_to_df(
+            stmt=extract_transform,
+            connection=self.credentials,
+            batch_size=batch_size,
+            return_batches=True,
+            return_type="polars",
+        )
+
+    @classmethod
+    def from_engine(cls, engine: Engine) -> "RelationalDBLocation":
+        """Create a RelationalDBLocation from a SQLAlchemy Engine."""
+        cleaned_url = engine.url.set(
+            username=None,
+            password=None,
+            query={},
+        )
+        location = cls(uri=str(cleaned_url))
+        location.add_credentials(engine)
+        return location
 
 
 class SourceColumn(BaseModel):

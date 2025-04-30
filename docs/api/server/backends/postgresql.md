@@ -81,4 +81,4 @@ erDiagram
         separate_signature: true
         show_submodules: true
         extra:
-            show_root_docstring: true        
+            show_root_docstring: true
