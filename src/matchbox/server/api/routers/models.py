@@ -36,7 +36,7 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 
 @router.post(
-    "/",
+    "",
     responses={
         500: {
             "model": ModelOperationStatus,

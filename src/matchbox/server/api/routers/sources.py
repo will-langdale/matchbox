@@ -27,7 +27,7 @@ router = APIRouter(prefix="/sources", tags=["sources"])
 
 
 @router.post(
-    "/",
+    "",
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(validate_api_key)],
 )
@@ -62,7 +62,7 @@ async def get_source(
 
 
 @router.get(
-    "/",
+    "",
     responses={404: {"model": NotFoundError}},
 )
 async def get_resolution_sources(

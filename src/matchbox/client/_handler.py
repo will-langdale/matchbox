@@ -210,7 +210,7 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     # Upload metadata
     logger.debug("Uploading metadata", prefix=log_prefix)
 
-    metadata_res = CLIENT.post("/sources/", json=source.model_dump())
+    metadata_res = CLIENT.post("/sources", json=source.model_dump())
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -253,7 +253,7 @@ def get_resolution_sources(resolution_name: str) -> list[Source]:
     log_prefix = f"Resolution {resolution_name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get("/sources/", params={"resolution_name": resolution_name})
+    res = CLIENT.get("/sources", params={"resolution_name": resolution_name})
 
     return [Source.model_validate(s) for s in res.json()]
 
@@ -275,7 +275,7 @@ def insert_model(model: ModelMetadata) -> ModelOperationStatus:
     log_prefix = f"Model {model.name}"
     logger.debug("Inserting metadata", prefix=log_prefix)
 
-    res = CLIENT.post("/models/", json=model.model_dump())
+    res = CLIENT.post("/models", json=model.model_dump())
     return ModelOperationStatus.model_validate(res.json())
 
 
