@@ -12,6 +12,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -317,8 +318,11 @@ def query(
             id_query = id_query.limit(limit)
 
         with MBDB.get_adbc_connection() as conn:
+            stmt = compile_sql(id_query)
+            logger.debug(f"Query SQL: \n {stmt}")
+
             mb_ids = sql_to_df(
-                stmt=compile_sql(id_query),
+                stmt=stmt,
                 connection=conn,
                 return_type="arrow",
             )
@@ -561,6 +565,8 @@ def match(
             session=session,
             threshold=threshold,
         )
+
+        logger.debug(f"Match SQL: \n {compile_sql(match_stmt)}")
 
         matches = session.execute(match_stmt).all()
 
