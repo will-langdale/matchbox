@@ -174,6 +174,9 @@ class RelationalDBLocation(Location):
             raise ValueError("Credentials should not be in the URI.")
         if value.query or value.fragment:
             raise ValueError("Query params and fragments should not be in the URI.")
+        if value.scheme:
+            if "+" in value.scheme:
+                raise ValueError("Driver should not be in the URI.")
         return value
 
     def _validate_engine(self, credentials: Engine) -> None:
@@ -183,17 +186,22 @@ class RelationalDBLocation(Location):
             ValueError: If the Engine and URI do not match.
         """
         uri = AnyUrl(str(credentials.url))
+        scheme_without_driver = uri.scheme.split("+")[0]
 
         if any(
             [
-                uri.scheme != self.uri.scheme,
+                scheme_without_driver != self.uri.scheme,
                 uri.host != self.uri.host,
                 uri.port != self.uri.port,
                 uri.path != self.uri.path,
             ]
         ):
             raise ValueError(
-                "The Engine location URI does not match the location model URI. "
+                "The Engine location URI does not match the location model URI. \n"
+                f"Scheme: {scheme_without_driver}, {self.uri.scheme} \n"
+                f"Host: {uri.host}, {self.uri.host} \n"
+                f"Port: {uri.port}, {self.uri.port} \n"
+                f"Path: {uri.path}, {self.uri.path} \n"
             )
 
     def add_credentials(self, credentials: Engine) -> None:  # noqa: D102
