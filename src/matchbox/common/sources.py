@@ -139,13 +139,13 @@ class Location(ABC, BaseModel):
 
         Examples:
             ```python
-            loc = Location.create({"type": "dbms", "uri": "postgresql://..."})
+            loc = Location.create({"type": "rdbms", "uri": "postgresql://..."})
             isisntance(loc, RelationalDBLocation)  # True
             ```
         """
         location_type = data.get("type")
 
-        if location_type == "dbms":
+        if location_type == "rdbms":
             return RelationalDBLocation.model_validate(data)
 
         raise ValueError(f"Unknown location type: {location_type}")
@@ -156,7 +156,7 @@ class RelationalDBLocation(Location):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    type: Literal["dbms"] = "dbms"
+    type: Literal["rdbms"] = "rdbms"
     uri: AnyUrl
     credentials: Engine | None = Field(
         exclude=True,

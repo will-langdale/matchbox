@@ -35,7 +35,7 @@ def test_location_factory():
     """Test we can construct appropriate Location classes from raw data."""
     location = Location.create(
         {
-            "type": "dbms",
+            "type": "rdbms",
             "uri": "postgresql://host:1234/db2",
         }
     )
@@ -56,7 +56,7 @@ def test_location_empty_credentials_error():
 
     # Missing required fields
     with pytest.raises(ValueError):
-        Location.create({"type": "dbms"})
+        Location.create({"type": "rdbms"})
 
 
 def test_location_serialisation():
@@ -77,7 +77,7 @@ def test_location_serialisation():
 def test_relational_db_location_instantiation():
     """Test that RelationalDBLocation can be instantiated with valid parameters."""
     location = RelationalDBLocation(uri="sqlite:///test.db")
-    assert location.type == "dbms"
+    assert location.type == "rdbms"
     assert str(location.uri) == "sqlite:///test.db"
     assert location.credentials is None
 
@@ -273,7 +273,7 @@ def test_relational_db_from_engine(sqlite_warehouse: Engine):
 
     # Check that it was created correctly
     assert location.credentials == sqlite_warehouse
-    assert location.type == "dbms"
+    assert location.type == "rdbms"
 
     # Verify it works by connecting
     assert location.connect() is True
