@@ -51,6 +51,21 @@ class MatchboxSourceEngineError(Exception):
     """Engine must be available in Source."""
 
 
+class MatchboxSourceExtractTransformError(Exception):
+    """Invalid ETL logic detected."""
+
+    def __init__(
+        self,
+        logic: str | None = None,
+    ):
+        """Initialise the exception."""
+        message = "Invalid ETL logic detected."
+        if logic is not None:
+            message += f"\{logic}"
+
+        super().__init__(message)
+
+
 class MatchboxSourceTableError(Exception):
     """Tables not found in your source data warehouse."""
 
