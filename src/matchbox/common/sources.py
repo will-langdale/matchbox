@@ -16,7 +16,6 @@ from typing import (
 )
 
 import polars as pl
-import sqlglot
 from pandas import DataFrame as PandasDataframe
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import RecordBatch as ArrowRecordBatch
@@ -42,8 +41,14 @@ from sqlalchemy import (
     cast,
     select,
 )
+from sqlalchemy.exc import OperationalError
 
-from matchbox.common.db import fullname_to_prefix, get_schema_table_names, sql_to_df
+from matchbox.common.db import (
+    fullname_to_prefix,
+    get_schema_table_names,
+    sql_to_df,
+    validate_sql_for_data_extraction,
+)
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
@@ -101,7 +106,7 @@ class Location(ABC, BaseModel):
 
     @abstractmethod
     def connect(self) -> bool:
-        """Establish connection to the data source.
+        """Establish connection to the data location.
 
         Raises:
             AttributeError: If the credentials are not set.
@@ -110,7 +115,11 @@ class Location(ABC, BaseModel):
 
     @abstractmethod
     def validate_extract_transform(self, extract_transform: str) -> bool:
-        """Validate SQL ET logic against this location's dialect."""
+        """Validate SQL ET logic against this location's query language.
+
+        Raises:
+            MatchboxSourceExtractTransformError: If the ET logic is invalid.
+        """
         ...
 
     @abstractmethod
@@ -125,8 +134,15 @@ class Location(ABC, BaseModel):
         ...
 
     @classmethod
-    def create(cls, data: dict) -> "Location":
-        """Factory method to create the appropriate Location subclass."""
+    def create(cls, data: dict[str, Any]) -> "Location":
+        """Factory method to create the appropriate Location subclass.
+
+        Examples:
+            ```python
+            loc = Location.create({"type": "dbms", "uri": "postgresql://..."})
+            isisntance(loc, RelationalDBLocation)  # True
+            ```
+        """
         location_type = data.get("type")
 
         if location_type == "dbms":
@@ -141,6 +157,7 @@ class RelationalDBLocation(Location):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: Literal["dbms"] = "dbms"
+    uri: AnyUrl
     credentials: Engine | None = Field(
         exclude=True,
         default=None,
@@ -188,15 +205,11 @@ class RelationalDBLocation(Location):
         try:
             _ = sql_to_df(stmt="select 1", connection=self.credentials)
             return True
-        except Exception as _:
+        except OperationalError:
             return False
 
     def validate_extract_transform(self, extract_transform: str) -> bool:  # noqa: D102
-        try:
-            sqlglot.parse_one(extract_transform)
-            return True
-        except sqlglot.errors.ParseError as _:
-            return False
+        return validate_sql_for_data_extraction(extract_transform)
 
     @requires_credentials
     def execute(  # noqa: D102

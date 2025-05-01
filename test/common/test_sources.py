@@ -13,10 +13,14 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.exc import OperationalError
+from sqlglot.errors import ParseError
 
 from matchbox.client.helpers.selector import Match
 from matchbox.common.db import fullname_to_prefix
-from matchbox.common.exceptions import MatchboxSourceColumnError
+from matchbox.common.exceptions import (
+    MatchboxSourceColumnError,
+    MatchboxSourceExtractTransformError,
+)
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.sources import (
     Location,
@@ -91,7 +95,7 @@ def test_validate_engine(location_uri: str, engine_uri: str, should_match: bool)
 
 
 def test_credentials_connect(sqlite_warehouse: Engine):
-    """Test adding credentials and conncting to a RelationalDBLocation."""
+    """Test adding credentials and connecting to a RelationalDBLocation."""
     # Create a RelationalDBLocation with the SQLite engine
     location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
 
@@ -119,13 +123,42 @@ def test_credentials_connect(sqlite_warehouse: Engine):
         ),
         pytest.param("SLECT * FROM test_table", False, id="invalid-syntax"),
         pytest.param("", False, id="empty-string"),
+        pytest.param("ALTER TABLE test_table", False, id="alter-sql"),
+        pytest.param(
+            "INSERT INTO users (name, age) VALUES ('John', '25')",
+            False,
+            id="insert-sql",
+        ),
+        pytest.param("DROP TABLE test_table", False, id="drop-sql"),
+        pytest.param("SELECT * FROM users /* with a comment */", True, id="comment"),
+        pytest.param(
+            "WITH user_cte AS (SELECT * FROM users) SELECT * FROM user_cte",
+            True,
+            id="valid-with",
+        ),
+        pytest.param(
+            (
+                "WITH user_cte AS (SELECT * FROM users) "
+                "INSERT INTO temp_users SELECT * FROM user_cte"
+            ),
+            False,
+            id="invalid-with",
+        ),
+        pytest.param(
+            "SELECT * FROM users; DROP TABLE users;", False, id="multiple-statements"
+        ),
+        pytest.param("SELECT * INTO new_table FROM users", False, id="select-into"),
     ],
 )
-def test_validate_extract_transform(sql: str, is_valid: bool):
+def test_validate_sql_extract_transform(sql: str, is_valid: bool):
     """Test SQL validation in validate_extract_transform."""
     location = RelationalDBLocation(uri="postgresql://host:1234/db2")
 
-    assert location.validate_extract_transform(sql) is is_valid
+    if is_valid:
+        assert location.validate_extract_transform(sql)
+    else:
+        with pytest.raises((MatchboxSourceExtractTransformError, ParseError)):
+            location.validate_extract_transform(sql)
 
 
 def test_execute(sqlite_warehouse: Engine):

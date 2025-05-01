@@ -3,10 +3,13 @@
 from typing import TYPE_CHECKING, Any, Iterator, Literal, TypeVar, get_args, overload
 
 import polars as pl
+import sqlglot
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from sqlalchemy.engine import Engine
+
+from matchbox.common.exceptions import MatchboxSourceExtractTransformError
 
 if TYPE_CHECKING:
     from adbc_driver_postgresql.dbapi import Connection as ADBCConnection
@@ -145,3 +148,67 @@ def fullname_to_prefix(fullname: str) -> str:
     if db_schema:
         return f"{db_schema}_{db_table}_"
     return f"{db_table}_"
+
+
+def validate_sql_for_data_extraction(sql: str) -> bool:
+    """Validates that the SQL statement only contains a single data-extracting command.
+
+    Args:
+        sql: The SQL statement to validate
+
+    Returns:
+        bool: True if the SQL statement is valid
+
+    Raises:
+        ParseError: If the SQL statement cannot be parsed
+        MatchboxSourceExtractTransformError: If validation requirements are not met
+    """
+    if not sql.strip():
+        raise MatchboxSourceExtractTransformError(
+            "SQL statement is empty or only contains whitespace."
+        )
+
+    expressions = sqlglot.parse(sql)
+
+    if len(expressions) > 1:
+        raise MatchboxSourceExtractTransformError(
+            "SQL statement contains multiple commands."
+        )
+
+    if not expressions:
+        raise MatchboxSourceExtractTransformError(
+            "SQL statement does not contain any valid expressions."
+        )
+
+    expr = expressions[0]
+
+    if not isinstance(expr, (sqlglot.expressions.Select, sqlglot.expressions.With)):
+        raise MatchboxSourceExtractTransformError(
+            "SQL statement must start with a SELECT or WITH command."
+        )
+
+    forbidden_classes = (
+        sqlglot.expressions.Insert,
+        sqlglot.expressions.Update,
+        sqlglot.expressions.Delete,
+        sqlglot.expressions.Create,
+        sqlglot.expressions.Drop,
+        sqlglot.expressions.Alter,
+        sqlglot.expressions.Grant,
+        sqlglot.expressions.TruncateTable,
+    )
+
+    nodes = list(expr.find_all(forbidden_classes))
+    if nodes:
+        raise MatchboxSourceExtractTransformError(
+            f"SQL statement contains forbidden command: {nodes}"
+        )
+
+    select_nodes = expr.find_all(sqlglot.expressions.Select)
+    for select in select_nodes:
+        if select.args.get("into"):
+            raise MatchboxSourceExtractTransformError(
+                "SQL statement contains a SELECT INTO command, which modifies data."
+            )
+
+    return True
