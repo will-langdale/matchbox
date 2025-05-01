@@ -182,33 +182,20 @@ def validate_sql_for_data_extraction(sql: str) -> bool:
 
     expr = expressions[0]
 
-    if not isinstance(expr, (sqlglot.expressions.Select, sqlglot.expressions.With)):
+    if not isinstance(expr, sqlglot.expressions.Select):
         raise MatchboxSourceExtractTransformError(
             "SQL statement must start with a SELECT or WITH command."
         )
 
-    forbidden_classes = (
-        sqlglot.expressions.Insert,
-        sqlglot.expressions.Update,
-        sqlglot.expressions.Delete,
-        sqlglot.expressions.Create,
-        sqlglot.expressions.Drop,
-        sqlglot.expressions.Alter,
-        sqlglot.expressions.Grant,
-        sqlglot.expressions.TruncateTable,
+    forbidden = (
+        sqlglot.expressions.DDL,
+        sqlglot.expressions.DML,
+        sqlglot.expressions.Into,
     )
 
-    nodes = list(expr.find_all(forbidden_classes))
-    if nodes:
+    if len(list(expr.find_all(forbidden))) > 0:
         raise MatchboxSourceExtractTransformError(
-            f"SQL statement contains forbidden command: {nodes}"
+            "SQL statement must not contain DDL or DML commands."
         )
-
-    select_nodes = expr.find_all(sqlglot.expressions.Select)
-    for select in select_nodes:
-        if select.args.get("into"):
-            raise MatchboxSourceExtractTransformError(
-                "SQL statement contains a SELECT INTO command, which modifies data."
-            )
 
     return True

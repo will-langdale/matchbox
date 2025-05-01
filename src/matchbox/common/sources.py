@@ -174,9 +174,8 @@ class RelationalDBLocation(Location):
             raise ValueError("Credentials should not be in the URI.")
         if value.query or value.fragment:
             raise ValueError("Query params and fragments should not be in the URI.")
-        if value.scheme:
-            if "+" in value.scheme:
-                raise ValueError("Driver should not be in the URI.")
+        if "+" in value.scheme:
+            raise ValueError("Driver should not be in the URI.")
         return value
 
     def _validate_engine(self, credentials: Engine) -> None:
@@ -217,6 +216,10 @@ class RelationalDBLocation(Location):
             return False
 
     def validate_extract_transform(self, extract_transform: str) -> bool:  # noqa: D102
+        # We are NOT attempting a full sanitisation of the SQL statement
+        # Validation is done purely to stop accidental mistakes, not malicious actors
+        # Users should only run indexing using Sources they trust and have read,
+        # using least privilege credentials
         return validate_sql_for_data_extraction(extract_transform)
 
     @requires_credentials

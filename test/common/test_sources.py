@@ -221,6 +221,19 @@ def test_relational_db_add_credentials(sqlite_warehouse: Engine):
             "SELECT * FROM users; DROP TABLE users;", False, id="multiple-statements"
         ),
         pytest.param("SELECT * INTO new_table FROM users", False, id="select-into"),
+        pytest.param(
+            """
+            WITH updated_rows AS (
+                UPDATE employees
+                SET salary = salary * 1.1
+                WHERE department = 'Sales'
+                RETURNING *
+            )
+            SELECT * FROM updated_rows;
+            """,
+            False,
+            id="non-query-cte",
+        ),
     ],
 )
 def test_relational_db_extract_transform(sql: str, is_valid: bool):
