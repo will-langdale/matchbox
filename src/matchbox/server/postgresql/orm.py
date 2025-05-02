@@ -15,7 +15,7 @@ from sqlalchemy import (
     select,
     update,
 )
-from sqlalchemy.dialects.postgresql import BYTEA, TEXT
+from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -194,10 +194,15 @@ class PKSpace(MBDB.MatchboxBase):
                 next_id_col = "next_cluster_source_pk_id"
 
         with MBDB.get_session() as session:
-            if not session.query(cls).first():
-                initial_ids = cls(next_cluster_id=1, next_cluster_source_pk_id=1)
-                session.add(initial_ids)
-                session.flush()
+            # Create tracking row atomically if it doesn't exist
+            init_statement = (
+                insert(cls)
+                .values(id=1, next_cluster_id=1, next_cluster_source_pk_id=1)
+                .on_conflict_do_nothing()
+            )
+
+            session.execute(init_statement)
+            session.flush()
 
             result = session.execute(
                 update(cls)
