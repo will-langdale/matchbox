@@ -31,14 +31,9 @@ from matchbox.common.graph import (
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
-    Clusters,
-    ClusterSourcePK,
-    Contains,
-    Probabilities,
+    TABLE_MAP,
     ResolutionFrom,
     Resolutions,
-    SourceColumns,
-    Sources,
 )
 
 # Retrieval
@@ -100,21 +95,10 @@ def dump(engine: Engine) -> MatchboxSnapshot:
         A MatchboxSnapshot object of type "postgres" with the database's
             current state.
     """
-    tables = {
-        "resolutions": Resolutions,
-        "resolution_from": ResolutionFrom,
-        "sources": Sources,
-        "source_columns": SourceColumns,
-        "clusters": Clusters,
-        "cluster_source_pks": ClusterSourcePK,
-        "contains": Contains,
-        "probabilities": Probabilities,
-    }
-
     data = {}
 
     with Session(engine) as session:
-        for table_name, model in tables.items():
+        for table_name, model in TABLE_MAP.items():
             # Query all records from this table
             records = session.execute(select(model)).scalars().all()
 
@@ -152,35 +136,13 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
     Raises:
         ValueError: If the snapshot is missing data
     """
-    table_map = {
-        "resolutions": Resolutions,
-        "resolution_from": ResolutionFrom,
-        "sources": Sources,
-        "source_columns": SourceColumns,
-        "clusters": Clusters,
-        "cluster_source_pks": ClusterSourcePK,
-        "contains": Contains,
-        "probabilities": Probabilities,
-    }
-
-    table_order = [
-        "resolutions",
-        "resolution_from",
-        "sources",
-        "source_columns",
-        "clusters",
-        "cluster_source_pks",
-        "contains",
-        "probabilities",
-    ]
-
     with Session(engine) as session:
         # Process tables in order
-        for table_name in table_order:
+        for table_name in TABLE_MAP.keys():
             if table_name not in snapshot.data:
                 raise ValueError(f"Invalid: Table {table_name} not found in snapshot.")
 
-            model = table_map[table_name]
+            model = TABLE_MAP[table_name]
             records = snapshot.data[table_name]
 
             if not records:

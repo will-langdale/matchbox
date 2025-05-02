@@ -428,3 +428,17 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
         CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
         Index("ix_probabilities_resolution", "resolution"),
     )
+
+
+# Defines order in which tables must be created
+TABLE_MAP = {
+    "resolutions": Resolutions,
+    "resolution_from": ResolutionFrom,
+    "sources": Sources,
+    "source_columns": SourceColumns,
+    "clusters": Clusters,
+    "cluster_source_pks": ClusterSourcePK,
+    "contains": Contains,
+    "probabilities": Probabilities,
+    "pk_space": PKSpace,
+}
