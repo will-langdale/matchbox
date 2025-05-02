@@ -22,6 +22,7 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourcePK,
     Contains,
+    PKSpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
@@ -45,7 +46,7 @@ class HashIDMap:
         lookup (optional): A lookup table to use for existing hashes
     """
 
-    def __init__(self, start: int, lookup: pa.Table = None):
+    def __init__(self, start: int | None = None, lookup: pa.Table | None = None):
         """Initialise the HashIDMap object."""
         self.next_int = start
         if not lookup:
@@ -77,8 +78,11 @@ class HashIDMap:
 
         return pc.take(self.lookup["hash"], indices)
 
-    def get_ids(self, hashes: pa.BinaryArray) -> pa.UInt64Array:
+    def generate_ids(self, hashes: pa.BinaryArray) -> pa.UInt64Array:
         """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
+        if self.next_int is None:
+            raise RuntimeError("`next_int` was unset for HasIDMap")
+
         indices = pc.index_in(hashes, self.lookup["hash"])
         new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
 
@@ -128,7 +132,6 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         else:
             # Create new resolution
             resolution = Resolutions(
-                resolution_id=Resolutions.next_id(),
                 name=source.resolution_name,
                 resolution_hash=resolution_hash,
                 type=ResolutionNodeType.DATASET.value,
@@ -174,8 +177,6 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
 
         # Store source_id and max primary keys for later use
         source_id = source_obj.source_id
-        next_cluster_id = Clusters.next_id()
-        next_pk_id = ClusterSourcePK.next_id()
 
     # Don't insert new hashes, but new PKs need existing hash IDs
     with MBDB.get_adbc_connection() as conn:
@@ -200,7 +201,12 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
             )
         )
 
-    # Create new cluster records with sequential IDs
+    if new_hashes.shape[0]:
+        # Create new cluster records with sequential IDs
+        next_cluster_id = PKSpace.reserve_block("clusters", len(new_hashes))
+    else:
+        # The value of next_cluster_id is irrelevant as cluster_records will be empty
+        next_cluster_id = 0
     cluster_records = (
         new_hashes.with_row_index("cluster_id")
         .with_columns(
@@ -219,17 +225,19 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
     # Add cluster_id values to data hashes
     hashes_with_ids = data_hashes.join(lookup, left_on="hash", right_on="cluster_hash")
 
-    # Explode source_pk and add required columns
-    source_pk_records = (
-        hashes_with_ids.select(["cluster_id", "source_pk"])
-        .explode("source_pk")
-        .with_row_index("pk_id")
-        .with_columns(
-            [
-                (pl.col("pk_id") + next_pk_id).alias("pk_id"),
-                pl.lit(source_id, dtype=pl.Int64).alias("source_id"),
-            ]
-        )
+    # Explode source_pk
+    source_pk_records = hashes_with_ids.select(["cluster_id", "source_pk"]).explode(
+        "source_pk"
+    )
+
+    next_pk_id = PKSpace.reserve_block("cluster_source_pks", len(source_pk_records))
+
+    # Add required columns
+    source_pk_records = source_pk_records.with_row_index("pk_id").with_columns(
+        [
+            (pl.col("pk_id") + next_pk_id).alias("pk_id"),
+            pl.lit(source_id, dtype=pl.Int64).alias("source_id"),
+        ]
     )
 
     # Insert new clusters and all source primary keys
@@ -317,31 +325,38 @@ def insert_model(
             Resolutions.resolution_hash == resolution_hash
         )
         exists_obj = session.scalar(exists_stmt)
-        exists = exists_obj is not None
-        resolution_id = (
-            Resolutions.next_id() if not exists else exists_obj.resolution_id
-        )
 
-        # Upsert new resolution
-        stmt = (
-            insert(Resolutions)
-            .values(
-                resolution_id=resolution_id,
+        if exists_obj is not None:
+            # Upsert new resolution
+            stmt = (
+                insert(Resolutions)
+                .values(
+                    resolution_id=exists_obj.resolution_id,
+                    resolution_hash=resolution_hash,
+                    type=ResolutionNodeType.MODEL.value,
+                    name=model,
+                    description=description,
+                    truth=100,
+                )
+                .on_conflict_do_update(
+                    index_elements=["resolution_hash"],
+                    set_={"name": model, "description": description},
+                )
+            )
+            session.execute(stmt)
+
+            status = "Updated existing"
+            resolution_id = exists_obj.resolution_id
+        else:
+            new_res = Resolutions(
                 resolution_hash=resolution_hash,
                 type=ResolutionNodeType.MODEL.value,
                 name=model,
                 description=description,
                 truth=100,
             )
-            .on_conflict_do_update(
-                index_elements=["resolution_hash"],
-                set_={"name": model, "description": description},
-            )
-        )
-
-        session.execute(stmt)
-
-        if not exists:
+            session.add(new_res)
+            session.flush()
 
             def _create_closure_entries(parent_resolution: Resolutions) -> None:
                 """Create closure entries for the new model.
@@ -352,7 +367,7 @@ def insert_model(
                 session.add(
                     ResolutionFrom(
                         parent=parent_resolution.resolution_id,
-                        child=resolution_id,
+                        child=new_res.resolution_id,
                         level=1,
                         truth_cache=parent_resolution.truth,
                     )
@@ -368,7 +383,7 @@ def insert_model(
                     session.add(
                         ResolutionFrom(
                             parent=entry.parent,
-                            child=resolution_id,
+                            child=new_res.resolution_id,
                             level=entry.level + 1,
                             truth_cache=entry.truth_cache,
                         )
@@ -379,10 +394,11 @@ def insert_model(
 
             if right != left:
                 _create_closure_entries(parent_resolution=right)
+            status = "Inserted new"
+            resolution_id = new_res.resolution_id
 
         session.commit()
 
-    status = "Inserted new" if not exists else "Updated existing"
     logger.info(f"{status} model with ID {resolution_id}", prefix=log_prefix)
     logger.info("Done!", prefix=log_prefix)
 
@@ -400,6 +416,30 @@ def _results_to_insert_tables(
             * A Probabilities update Arrow table
     """
     log_prefix = f"Model {resolution.name}"
+
+    if probabilities.shape[0] == 0:
+        clusters = pa.table(
+            {"cluster_id": [], "cluster_hash": []},
+            schema=pa.schema(
+                [("cluster_id", pa.uint64()), ("cluster_hash", pa.large_binary())]
+            ),
+        )
+        contains = pa.table(
+            {"parent": [], "child": []},
+            schema=pa.schema([("parent", pa.uint64()), ("child", pa.uint64())]),
+        )
+        probabilities = pa.table(
+            {"resolution": [], "cluster": [], "probability": []},
+            schema=pa.schema(
+                [
+                    ("resolution", pa.uint64()),
+                    ("cluster", pa.uint64()),
+                    ("probability", pa.uint8()),
+                ]
+            ),
+        )
+        return clusters, contains, probabilities
+
     logger.info("Wrangling data to insert tables", prefix=log_prefix)
 
     # Create ID-Hash lookup for existing probabilities
@@ -415,7 +455,7 @@ def _results_to_insert_tables(
         )
     lookup = lookup.cast(pa.schema([("hash", pa.large_binary()), ("id", pa.uint64())]))
 
-    hm = HashIDMap(start=Clusters.next_id(), lookup=lookup)
+    hm = HashIDMap(lookup=lookup)
 
     # Join hashes, probabilities and components
     logger.debug("Attaching components to hashes", prefix=log_prefix)
@@ -439,6 +479,21 @@ def _results_to_insert_tables(
         dtype=pa.large_binary,
     )
 
+    # Determine number of new IDs to generate
+    referenced_hashes = pc.unique(
+        pa.concat_arrays(
+            [hierarchy["parent"].combine_chunks(), hierarchy["parent"].combine_chunks()]
+        )
+    )
+    indices_old_hashes = pc.index_in(referenced_hashes, lookup["hash"])
+    num_new_hashes = pc.sum(pc.is_null(indices_old_hashes)).as_py()
+
+    if num_new_hashes:
+        hm.next_int = PKSpace.reserve_block(table="clusters", block_size=num_new_hashes)
+    else:
+        # No new hashes means no new cluster IDs, so next_int won't matter
+        hm.next_int = 0
+
     # Create Probabilities Arrow table to insert, containing all generated probabilities
     logger.debug("Filtering to target table shapes", prefix=log_prefix)
 
@@ -448,7 +503,7 @@ def _results_to_insert_tables(
                 [resolution.resolution_id] * hierarchy.shape[0],
                 type=pa.uint64(),
             ),
-            "cluster": hm.get_ids(hierarchy["parent"]),
+            "cluster": hm.generate_ids(hierarchy["parent"]),
             "probability": hierarchy["probability"],
         }
     )
@@ -475,8 +530,8 @@ def _results_to_insert_tables(
 
     contains = pa.table(
         {
-            "parent": hm.get_ids(hierarchy_new["parent"]),
-            "child": hm.get_ids(hierarchy_new["child"]),
+            "parent": hm.generate_ids(hierarchy_new["parent"]),
+            "child": hm.generate_ids(hierarchy_new["child"]),
         }
     )
 
