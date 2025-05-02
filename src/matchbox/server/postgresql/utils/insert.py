@@ -230,7 +230,11 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         "source_pk"
     )
 
-    next_pk_id = PKSpace.reserve_block("cluster_source_pks", len(source_pk_records))
+    if len(source_pk_records) > 0:
+        next_pk_id = PKSpace.reserve_block("cluster_source_pks", len(source_pk_records))
+    else:
+        # The next_pk_id is irrelevant if we don't write any PK records
+        next_pk_id = 0
 
     # Add required columns
     source_pk_records = source_pk_records.with_row_index("pk_id").with_columns(
