@@ -173,6 +173,7 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
             for pk in table.primary_key:
                 session.execute(
                     text(f"""
+                    lock table {table.schema}.{table.name} in exclusive mode;
                     select
                         setval(pg_get_serial_sequence(
                             '{table.schema}.{table.name}',
