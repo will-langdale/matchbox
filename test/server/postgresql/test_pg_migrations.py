@@ -80,13 +80,13 @@ def test_migrations_stairway_with_data(
             logger.debug(f"Testing migration {i + 1}/{len(revisions)}: {revision_id}")
 
             try:
-                # Downgrade to the previous revision
+                # Test downgrade
                 downgrade(alembic_config, down_revision)
 
-                # Upgrade back to this revision
+                # Test upgrade back to this revision
                 upgrade(alembic_config, revision_id)
 
-                # Re-apply it to ensure it works in both directions
+                # Downgrade again to test next step
                 downgrade(alembic_config, down_revision)
 
                 logger.debug(f"✓ Migration {revision_id} passed")
@@ -96,5 +96,5 @@ def test_migrations_stairway_with_data(
                     f"{str(e)}"
                 )
 
-        # Upgrade to table creation migration so scenario can tidy up without erroring
-        upgrade(alembic_config, revisions[-2].revision)
+        # Upgrade to latest migration so scenario can tidy up without erroring
+        upgrade(alembic_config, "head")
