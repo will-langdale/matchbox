@@ -43,12 +43,15 @@ class MatchboxUnhandledServerResponse(Exception):
 # -- Source exceptions --
 
 
-class MatchboxSourceColumnError(Exception):
-    """Specified columns diverge with the warehouse."""
+class MatchboxSourceFieldError(Exception):
+    """Specified fields diverge with the location."""
 
 
-class MatchboxSourceEngineError(Exception):
-    """Engine must be available in Source."""
+class MatchboxSourceCredentialsError(Exception):
+    """Location credentials must be set.
+
+    Use Location.add_credentials() to set appropriate credentials for the location type.
+    """
 
 
 class MatchboxSourceExtractTransformError(Exception):

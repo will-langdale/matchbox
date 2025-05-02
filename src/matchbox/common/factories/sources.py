@@ -1,5 +1,6 @@
 """Factories for generating sources and linked source testkits for testing."""
 
+import textwrap
 import warnings
 from functools import cache, wraps
 from itertools import product
@@ -14,19 +15,20 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.db import get_schema_table_names
+from matchbox.common.dtos import DataTypes
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
     FeatureConfig,
     SourceEntity,
     SuffixRule,
+    convert_data_type,
     diff_results,
     generate_entities,
-    infer_sql_type_from_type,
     probabilities_to_results_entities,
 )
 from matchbox.common.hash import hash_values
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import RelationalDBLocation, Source, SourceField
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -103,8 +105,8 @@ class SourceTestkit(BaseModel):
         """Create a mock Source object with this testkit's configuration."""
         mock_source = create_autospec(self.source)
 
-        mock_source.set_engine.return_value = mock_source
-        mock_source.default_columns.return_value = mock_source
+        mock_source.set_credentials.return_value = mock_source
+        mock_source.from_location.return_value = mock_source
         mock_source.hash_data.return_value = self.data_hashes
 
         mock_source.model_dump.side_effect = self.source.model_dump
@@ -129,11 +131,11 @@ class SourceTestkit(BaseModel):
 
         As the Source won't have an engine set by default, can be supplied.
         """
-        schema, table = get_schema_table_names(self.source.address.full_name)
+        schema, table = get_schema_table_names(self.source.resolution_name)
         self.data.to_pandas().drop("id", axis=1).to_sql(
             name=table,
             schema=schema,
-            con=engine or self.source.engine,
+            con=engine or self.source.location.credentials,
             index=False,
             if_exists="replace",
         )
@@ -457,13 +459,25 @@ def source_factory(
         for row_id, pks in row_pks.items()
     ]
 
-    source = Source(
-        address=SourceAddress.compose(full_name=full_name, engine=engine),
-        db_pk="pk",
-        columns=(
-            SourceColumn(name=feature.name, type=feature.sql_type)
+    fields: tuple[SourceField, ...] = tuple(
+        [SourceField(name="pk", type=DataTypes.STRING, identifier=True)]
+        + [
+            SourceField(name=feature.name, type=feature.datatype)
             for feature in features
-        ),
+        ]
+    )
+    select_string = ", \n".join(f'"{field.name}"' for field in fields)
+
+    source = Source(
+        location=RelationalDBLocation(uri=str(engine.url)),
+        resolution_name=full_name,
+        extract_transform=textwrap.dedent(f"""
+            select
+                {select_string}
+            from 
+                {full_name};
+        """),
+        fields=fields,
     )
 
     return SourceTestkit(
@@ -510,13 +524,25 @@ def source_from_tuple(
         for pk, entity_id in zip(data_pks, entity_ids, strict=True)
     ]
 
-    source = Source(
-        address=SourceAddress.compose(full_name=full_name, engine=engine),
-        db_pk="pk",
-        columns=(
-            SourceColumn(name=k, type=infer_sql_type_from_type(type(v)))
+    fields: tuple[SourceField, ...] = tuple(
+        [SourceField(name="pk", type=DataTypes.STRING, identifier=True)]
+        + [
+            SourceField(name=k, type=convert_data_type(type(v)))
             for k, v in data_tuple[0].items()
-        ),
+        ]
+    )
+    select_string = ", \n".join(f'"{field.name}"' for field in fields)
+
+    source = Source(
+        location=RelationalDBLocation(uri=str(engine.url)),
+        resolution_name=full_name,
+        extract_transform=textwrap.dedent(f"""
+            select
+                {select_string}
+            from 
+                {full_name};
+        """),
+        fields=fields,
     )
 
     hashes = [hash_values(*row) for row in data_tuple]
@@ -711,15 +737,22 @@ def linked_sources_factory(
         ]
 
         # Create source
+        fields: tuple[SourceField, ...] = tuple(
+            [SourceField(name="pk", type=DataTypes.STRING, identifier=True)]
+            + [SourceField(name=f.name, type=f.datatype) for f in config.features]
+        )
+        select_string = ", \n".join(f'"{field.name}"' for field in fields)
+
         source = Source(
-            address=SourceAddress.compose(
-                full_name=config.full_name, engine=config.engine
-            ),
-            db_pk="pk",
-            columns=(
-                SourceColumn(name=feature.name, type=feature.sql_type)
-                for feature in config.features
-            ),
+            location=RelationalDBLocation(uri=str(config.engine.url)),
+            resolution_name=config.full_name,
+            extract_transform=textwrap.dedent(f"""
+                select
+                    {select_string}
+                from 
+                    {config.full_name};
+            """),
+            fields=fields,
         )
 
         # Add source to linked.sources

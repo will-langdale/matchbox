@@ -5,6 +5,7 @@ from faker import Faker
 from sqlalchemy import create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.dtos import DataTypes
 from matchbox.common.factories.entities import (
     FeatureConfig,
     ReplaceRule,
@@ -16,7 +17,7 @@ from matchbox.common.factories.sources import (
     source_factory,
     source_from_tuple,
 )
-from matchbox.common.sources import SourceAddress
+from matchbox.common.sources import RelationalDBLocation
 
 
 def test_source_factory_default():
@@ -143,17 +144,20 @@ def test_source_testkit_to_mock():
     mock_source = source_testkit.mock
 
     # Test that method calls are tracked
-    mock_source.set_engine("test_engine")
-    mock_source.default_columns()
+    mock_source.set_credentials(credentials="test_engine")
+    mock_source.from_location(location="test_location", extract_transform="test_et")
     mock_source.hash_data()
 
-    mock_source.set_engine.assert_called_once_with("test_engine")
-    mock_source.default_columns.assert_called_once()
+    mock_source.set_credentials.assert_called_once_with("test_engine")
+    mock_source.from_location.assert_called_once_with("test_location", "test_et")
     mock_source.hash_data.assert_called_once()
 
     # Test method return values
-    assert mock_source.set_engine("test_engine") == mock_source
-    assert mock_source.default_columns() == mock_source
+    assert mock_source.set_credentials(credentials="test_engine") == mock_source
+    assert (
+        mock_source.from_location(location="test_location", extract_transform="test_et")
+        == mock_source
+    )
     assert mock_source.hash_data() == source_testkit.data_hashes
 
     # Test model dump methods
@@ -189,32 +193,31 @@ def test_source_factory_mock_properties():
     full_name = "companies"
     engine = create_engine("sqlite:///:memory:")
 
-    source_testkit = source_factory(
+    source = source_factory(
         features=features, full_name=full_name, engine=engine
     ).source
 
-    # Check source address properties
-    assert source_testkit.address.full_name == full_name
-
     # Warehouse hash should be consistent for same engine config
-    expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
-    assert source_testkit.address.warehouse_hash == expected_address.warehouse_hash
+    expected_location = RelationalDBLocation.from_engine(engine)
+    assert source.location == expected_location
 
-    # Check column configuration
-    assert len(source_testkit.columns) == len(features)
-    for feature, column in zip(features, source_testkit.columns, strict=False):
-        assert column.name == feature.name
-        assert column.type == feature.sql_type
+    # Check indexed fields configuration
+    assert len(source.indexed) == len(features)
+    for feature, field in zip(features, source.indexed, strict=True):
+        assert field.name == feature.name
+        assert field.type == feature.datatype
 
     # Check default resolution name and default pk
-    assert source_testkit.resolution_name == str(expected_address)
-    assert source_testkit.db_pk == "pk"
+    assert source.resolution_name == full_name
+    assert source.identifier.name == "pk"
 
     # Verify source properties are preserved through model_dump
-    dump = source_testkit.model_dump()
-    assert dump["address"]["full_name"] == full_name
-    assert dump["columns"] == tuple(
-        {"name": f.name, "type": f.sql_type} for f in features
+    dump = source.model_dump()
+    assert dump["resolution_name"] == full_name
+    assert str(dump["location"]["uri"]) == str(engine.url)
+    assert dump["fields"] == tuple(
+        [{"name": "pk", "type": DataTypes.STRING, "identifier": True}]
+        + [{"name": f.name, "type": f.datatype, "identifier": False} for f in features]
     )
 
 
@@ -236,7 +239,7 @@ def test_entity_variations_tracking():
     ]
 
     source = source_factory(features=features, n_true_entities=2, seed=42)
-    source_name = source.source.address.full_name
+    source_name = source.source.resolution_name
 
     # Process each ClusterEntity group
     for cluster_entity in source.entities:
@@ -283,7 +286,7 @@ def test_base_and_variation_entities():
     ]
 
     source = source_factory(features=features, n_true_entities=1, seed=42)
-    source_name = source.source.address.full_name
+    source_name = source.source.resolution_name
 
     # Should have two ClusterEntity objects - one for base, one for variation
     assert len(source.entities) == 2
@@ -403,7 +406,7 @@ def test_source_from_tuple():
     assert testkit.data.shape[0] == 2
     assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2
-    assert set(col.name for col in testkit.source.columns) == {"a", "b"}
+    assert set(field.name for field in testkit.source.indexed) == {"a", "b"}
 
 
 @pytest.mark.parametrize(

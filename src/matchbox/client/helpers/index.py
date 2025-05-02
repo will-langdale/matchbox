@@ -3,21 +3,19 @@
 from sqlalchemy import Engine
 
 from matchbox.client import _handler
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import Source, SourceAddress, SourceField
 
 
 def _process_columns(
     columns: list[str] | list[dict[str, dict[str, str]]] | None,
-) -> tuple[SourceColumn]:
+) -> tuple[SourceField]:
     if columns is None:
         return []
 
     if isinstance(columns[0], str):
-        return (SourceColumn(name=column) for column in columns)
+        return (SourceField(name=column) for column in columns)
 
-    return (
-        SourceColumn(name=column["name"], type=column["type"]) for column in columns
-    )
+    return (SourceField(name=column["name"], type=column["type"]) for column in columns)
 
 
 def index(

@@ -18,8 +18,7 @@ from sqlalchemy.orm import relationship
 
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.sources import Source as CommonSource
-from matchbox.common.sources import SourceAddress
-from matchbox.common.sources import SourceColumn as CommonSourceCoulmn
+from matchbox.common.sources import SourceAddress, SourceField
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -304,7 +303,7 @@ class Sources(CountMixin, MBDB.MatchboxBase):
             ),
             db_pk=self.db_pk,
             columns=[
-                CommonSourceCoulmn(
+                SourceField(
                     name=column.column_name,
                     type=column.column_type,
                 )

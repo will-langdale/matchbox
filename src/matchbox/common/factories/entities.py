@@ -4,20 +4,20 @@ These underpin the entity resolution process, which is the core of the
 source and model testkit factory system.
 """
 
-import datetime
 from abc import ABC, abstractmethod
 from collections import Counter
-from decimal import Decimal
 from functools import cache
 from random import getrandbits
 from typing import TYPE_CHECKING, Any, Type
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 from faker import Faker
 from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from matchbox.common.dtos import DataTypes
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
@@ -89,54 +89,34 @@ class ReplaceRule(VariationRule):
         return "replace"
 
 
-def infer_sql_type_from_type(type_: Type) -> str:
-    """Infer an appropriate SQL type from a single type."""
-    type_map = {
-        str: "TEXT",
-        int: "BIGINT",
-        float: "FLOAT",
-        bool: "BOOLEAN",
-        datetime.datetime: "TIMESTAMP",
-        datetime.date: "DATE",
-        datetime.time: "TIME",
-        Decimal: "DECIMAL(10,2)",
-    }
-
-    return type_map.get(type_, "TEXT")
-
-
-def infer_sql_type(base: str, parameters: tuple | None) -> str:
-    """Infer an appropriate SQL type from a Faker configuration.
+def infer_data_type(base: str, parameters: tuple | None) -> str:
+    """Infer an appropriate Matchbox type from a Faker configuration.
 
     Args:
         base: Faker generator type
         parameters: Parameters for the generator
 
     Returns:
-        A SQL type string
+        A Matchbox DataType
     """
     generator = Faker()
     value_generator = getattr(generator, base)
     parameters = {} if not parameters else dict(parameters)
     examples = [value_generator(**dict(parameters)) for _ in range(5)]
+    series = pl.Series(examples)
+    return DataTypes.from_dtype(series.dtype)
 
-    # Get the types of all non-None examples
-    types_found = {type(x) for x in examples}
 
-    # If multiple types, use the most general one
-    if len(types_found) > 1:
-        # Check for numeric types
-        if all(issubclass(t, (int, float, Decimal)) for t in types_found):
-            if any(issubclass(t, float) or issubclass(t, Decimal) for t in types_found):
-                return "FLOAT"
-            return "BIGINT"
-        # Default to TEXT for mixed types
-        return "TEXT"
+def convert_data_type(py_type: Type) -> DataTypes:
+    """Convert a Python type to a Matchbox type.
 
-    # Single type case
-    python_type = next(iter(types_found))
+    Args:
+        py_type: Python type
 
-    return infer_sql_type_from_type(python_type)
+    Returns:
+        A Matchbox DataType
+    """
+    return DataTypes.from_dtype(pl.DataType.from_python(py_type))
 
 
 class FeatureConfig(BaseModel):
@@ -164,8 +144,8 @@ class FeatureConfig(BaseModel):
         default=False, description="Whether the base case is dropped."
     )
     variations: tuple[VariationRule, ...] = Field(default_factory=tuple)
-    sql_type: str = Field(
-        default_factory=lambda data: infer_sql_type(
+    datatype: DataTypes = Field(
+        default_factory=lambda data: infer_data_type(
             data["base_generator"], data["parameters"]
         )
     )

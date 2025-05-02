@@ -208,7 +208,7 @@ def test_testkit_dag_model_chain(
             )
         else:  # Linked sources case
             assert linked_key in sources_dict, f"{model_name} should use linked sources"
-            actual_sources = {s.split("@")[0] for s in sources_dict[linked_key]}
+            actual_sources = set(sources_dict[linked_key])
             assert actual_sources == set(expected_sources), (
                 f"{model_name} expected sources {expected_sources}, "
                 f"got {actual_sources}"
