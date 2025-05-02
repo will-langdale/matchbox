@@ -11,7 +11,7 @@ import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Column, Engine, Table, inspect, select
+from sqlalchemy import Column, Engine, Table, inspect, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -138,7 +138,7 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
     """
     with Session(engine) as session:
         # Process tables in order
-        for table_name in TABLE_MAP.keys():
+        for table_name, model in TABLE_MAP.items():
             if table_name not in snapshot.data:
                 raise ValueError(f"Invalid: Table {table_name} not found in snapshot.")
 
@@ -167,6 +167,21 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
                 batch = processed_records[i : i + batch_size]
                 session.bulk_insert_mappings(model, batch)
                 session.flush()
+
+            # Re-sync PK sequences
+            table: Table = model.__table__
+            for pk in table.primary_key:
+                session.execute(
+                    text(f"""
+                    select
+                        setval(pg_get_serial_sequence(
+                            '{table.schema}.{table.name}',
+                            '{pk.name}'
+                        ),
+                        coalesce(max({pk.name}),0) + 1, false)
+                    from {table.schema}.{table.name};
+                    """)
+                )
 
         session.commit()
 
