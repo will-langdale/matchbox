@@ -13,7 +13,9 @@ from matchbox.server.postgresql.utils.insert import HashIDMap
 
 
 @pytest.mark.docker
-def test_reserve_id_block(matchbox_postgres: MatchboxPostgres):
+def test_reserve_id_block(
+    matchbox_postgres: MatchboxPostgres,  # Reset DB
+):
     """Test that we can atomically reserve ID blocks."""
     first_cluster_id = PKSpace.reserve_block("clusters", 42)
     second_cluster_id = PKSpace.reserve_block("clusters", 42)
@@ -27,6 +29,25 @@ def test_reserve_id_block(matchbox_postgres: MatchboxPostgres):
 
     with pytest.raises(ValueError):
         PKSpace.reserve_block("clusters", 0)
+
+
+def get_next_id(_):
+    return PKSpace.reserve_block("clusters", 100)
+
+
+@pytest.mark.docker
+def test_reserve_id_block_parallel(
+    matchbox_postgres: MatchboxPostgres,  # Reset DB
+):
+    from multiprocessing import Pool
+
+    for _ in range(100):
+        process_count = 4
+
+        with Pool(processes=process_count) as pool:
+            next_ids = pool.map(func=get_next_id, iterable=range(process_count))
+
+        assert len(set(next_ids)) == process_count
 
 
 def test_hash_id_map():
