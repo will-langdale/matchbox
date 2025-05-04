@@ -3,7 +3,7 @@
 from typing import TypeVar
 
 import pyarrow as pa
-from sqlalchemy import BIGINT, Engine, and_, cast, func, literal, null, select, union
+from sqlalchemy import BIGINT, and_, cast, func, literal, null, select, union
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
@@ -142,7 +142,6 @@ def _build_valid_contains(valid_clusters_cte: CTE, name: str) -> CTE:
 def _resolve_cluster_hierarchy(
     dataset_source: Sources,
     truth_resolution: Resolutions,
-    engine: Engine,
     threshold: int | None = None,
 ) -> Select:
     """Resolves the final cluster assignments for all records in a dataset.
@@ -150,14 +149,13 @@ def _resolve_cluster_hierarchy(
     Args:
         dataset_source: Source object of the dataset to query
         truth_resolution: Resolution object representing the point of truth
-        engine: Engine for database connection
         threshold: Optional threshold value
 
     Returns:
         SQLAlchemy Select statement that will resolve to (hash, id) pairs, where
         hash is the ultimate parent cluster hash and id is the original record ID
     """
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         dataset_resolution = session.get(Resolutions, dataset_source.resolution_id)
         if dataset_resolution is None:
             raise MatchboxSourceNotFoundError()
@@ -291,8 +289,7 @@ def query(
         A table containing the requested data from each table, unioned together,
         with the hash key of each row in Matchbox
     """
-    engine = MBDB.get_engine()
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         dataset_source = _get_dataset_source(source_address, session)
         dataset_resolution = session.get(Resolutions, dataset_source.resolution_id)
 
@@ -311,7 +308,6 @@ def query(
             dataset_source=dataset_source,
             truth_resolution=truth_resolution,
             threshold=threshold,
-            engine=engine,
         )
 
         if limit:
@@ -536,7 +532,6 @@ def _build_match_query(
 
 
 def match(
-    engine: Engine,
     source_pk: str,
     source: SourceAddress,
     targets: list[SourceAddress],
@@ -554,7 +549,7 @@ def match(
         * Retrieves all other IDs in the cluster in the target dataset
     * Returns the results as Match objects, one per target
     """
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         # Get all matches for source_pk in all possible targets
         dataset_source = _get_dataset_source(source, session)
 

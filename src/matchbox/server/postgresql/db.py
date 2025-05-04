@@ -18,7 +18,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from matchbox.common.logging import logger
@@ -139,7 +139,7 @@ class MatchboxDatabase:
             self._connect()
         return self._engine
 
-    def get_session(self):
+    def get_session(self) -> Session:
         """Get a new session."""
         if not self._SessionLocal:
             self._connect()
