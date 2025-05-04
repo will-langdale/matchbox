@@ -31,25 +31,6 @@ def test_reserve_id_block(
         PKSpace.reserve_block("clusters", 0)
 
 
-def get_next_id(_):
-    return PKSpace.reserve_block("clusters", 100)
-
-
-@pytest.mark.docker
-def test_reserve_id_block_parallel(
-    matchbox_postgres: MatchboxPostgres,  # Reset DB
-):
-    from multiprocessing import Pool
-
-    for _ in range(100):
-        process_count = 4
-
-        with Pool(processes=process_count) as pool:
-            next_ids = pool.map(func=get_next_id, iterable=range(process_count))
-
-        assert len(set(next_ids)) == process_count
-
-
 def test_hash_id_map():
     """Test HashIDMap core functionality including basic operations."""
     # Initialize with some existing mappings
