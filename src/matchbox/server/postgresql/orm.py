@@ -66,8 +66,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     content_hash = Column(BYTEA, nullable=True)
     type = Column(TEXT, nullable=False)
     name = Column(TEXT, nullable=False)
-    description = Column(TEXT)
-    truth = Column(SMALLINT)
+    description = Column(TEXT, nullable=True)
+    truth = Column(SMALLINT, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
@@ -176,8 +176,8 @@ class PKSpace(MBDB.MatchboxBase):
     __tablename__ = "pk_space"
 
     id = Column(BIGINT, primary_key=True)
-    next_cluster_id = Column(BIGINT)
-    next_cluster_source_pk_id = Column(BIGINT)
+    next_cluster_id = Column(BIGINT, nullable=False)
+    next_cluster_source_pk_id = Column(BIGINT, nullable=False)
 
     @classmethod
     def reserve_block(
@@ -274,7 +274,9 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     # Columns
     source_id = Column(BIGINT, Identity(start=1), primary_key=True)
     resolution_id = Column(
-        BIGINT, ForeignKey("resolutions.resolution_id", ondelete="CASCADE")
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        nullable=False,
     )
     resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
