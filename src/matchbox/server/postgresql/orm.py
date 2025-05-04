@@ -180,6 +180,19 @@ class PKSpace(MBDB.MatchboxBase):
     next_cluster_source_pk_id = Column(BIGINT, nullable=False)
 
     @classmethod
+    def initialise(cls) -> None:
+        """Create PKSpace tracking row if not exists."""
+        with MBDB.get_session() as session:
+            init_statement = (
+                insert(cls)
+                .values(id=1, next_cluster_id=1, next_cluster_source_pk_id=1)
+                .on_conflict_do_nothing()
+            )
+
+            session.execute(init_statement)
+            session.commit()
+
+    @classmethod
     def reserve_block(
         cls, table: Literal["clusters", "cluster_source_pks"], block_size: int
     ) -> int:
@@ -194,23 +207,18 @@ class PKSpace(MBDB.MatchboxBase):
                 next_id_col = "next_cluster_source_pk_id"
 
         with MBDB.get_session() as session:
-            # Create tracking row atomically if it doesn't exist
-            init_statement = (
-                insert(cls)
-                .values(id=1, next_cluster_id=1, next_cluster_source_pk_id=1)
-                .on_conflict_do_nothing()
-            )
+            try:
+                next_id = session.execute(
+                    update(cls)
+                    .values(**{next_id_col: getattr(cls, next_id_col) + block_size})
+                    .returning(getattr(cls, next_id_col) - block_size)
+                ).scalar_one()
+                session.commit()
+            except:
+                session.rollback()
+                raise
 
-            session.execute(init_statement)
-            session.flush()
-
-            result = session.execute(
-                update(cls)
-                .values(**{next_id_col: getattr(cls, next_id_col) + block_size})
-                .returning(getattr(cls, next_id_col) - block_size)
-            ).scalar_one()
-            session.commit()
-            return result
+            return next_id
 
 
 class SourceColumns(CountMixin, MBDB.MatchboxBase):

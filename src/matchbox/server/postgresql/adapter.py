@@ -25,6 +25,7 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourcePK,
     Contains,
+    PKSpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
@@ -140,6 +141,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         MBDB.settings = settings
         MBDB.run_migrations()
         MBDB.verify_schema()
+
+        PKSpace.initialise()
 
         self.datasets = Sources
         self.models = FilteredResolutions(datasets=False, humans=False, models=True)
@@ -330,6 +333,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def drop(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.drop_database()
+            PKSpace.initialise()
         else:
             raise MatchboxDeletionNotConfirmed(
                 "This operation will drop the entire database and recreate it."
@@ -340,6 +344,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def clear(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.clear_database()
+            PKSpace.initialise()
         else:
             raise MatchboxDeletionNotConfirmed(
                 "This operation will drop all rows in the database but not the "
@@ -347,14 +352,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 "If you're sure you want to continue, rerun with certain=True"
             )
 
-    def restore(self, snapshot: MatchboxSnapshot, clear: bool = False) -> None:  # noqa: D102
+    def restore(self, snapshot: MatchboxSnapshot) -> None:  # noqa: D102
         if snapshot.backend_type != MatchboxBackends.POSTGRES:
             raise TypeError(
                 f"Cannot restore {snapshot.backend_type} snapshot to PostgreSQL backend"
             )
 
-        if clear:
-            MBDB.clear_database()
+        MBDB.clear_database()
 
         restore(
             snapshot=snapshot,

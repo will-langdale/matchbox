@@ -811,18 +811,6 @@ class TestMatchboxBackend:
             # Dump the database
             snapshot = self.backend.dump()
 
-            # Clear the database
-            self.backend.clear(certain=True)
-
-            # Verify database is empty
-            assert self.backend.datasets.count() == 0
-            assert self.backend.models.count() == 0
-            assert self.backend.data.count() == 0
-            assert self.backend.clusters.count() == 0
-            assert self.backend.merges.count() == 0
-            assert self.backend.creates.count() == 0
-            assert self.backend.proposes.count() == 0
-
             # Restore from snapshot
             self.backend.restore(snapshot)
 
@@ -845,8 +833,8 @@ class TestMatchboxBackend:
             # The same IDs should be present after restoration
             assert set(sample_ids_before) == set(sample_ids_after)
 
-            # Test the clear parameter of restore
-            self.backend.restore(snapshot, clear=True)
+            # Test that restoring also clears the database
+            self.backend.restore(snapshot)
 
             # Verify counts still match
             assert self.backend.datasets.count() == pre_dump_datasets_count
