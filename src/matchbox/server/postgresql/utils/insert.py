@@ -3,10 +3,9 @@
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import Engine, delete, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
@@ -114,8 +113,8 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
     log_prefix = f"Index {source.address.pretty}"
     resolution_hash = hash_data(str(source.address))
     content_hash = hash_arrow_table(data_hashes)
-    engine = MBDB.get_engine()
-    with Session(engine) as session:
+
+    with MBDB.get_session() as session:
         logger.info("Begin", prefix=log_prefix)
 
         # Check if resolution already exists
@@ -137,6 +136,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
                 type=ResolutionNodeType.DATASET.value,
             )
             session.add(resolution)
+            session.flush()
 
         # Store resolution ID for later use
         resolution_id: int = resolution.resolution_id
@@ -246,41 +246,37 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
 
     # Insert new clusters and all source primary keys
     try:
-        with engine.connect() as conn:
-            # Bulk insert into Clusters table (only new clusters)
-            if not cluster_records.is_empty():
-                large_ingest(
-                    data=cluster_records.to_arrow(),
-                    table_class=Clusters,
-                    max_chunksize=batch_size,
-                )
-                logger.info(
-                    f"Added {len(cluster_records):,} objects to Clusters table",
-                    prefix=log_prefix,
-                )
+        # Bulk insert into Clusters table (only new clusters)
+        if not cluster_records.is_empty():
+            large_ingest(
+                data=cluster_records.to_arrow(),
+                table_class=Clusters,
+                max_chunksize=batch_size,
+            )
+            logger.info(
+                f"Added {len(cluster_records):,} objects to Clusters table",
+                prefix=log_prefix,
+            )
 
-            # Bulk insert into ClusterSourcePK table (all links)
-            if not source_pk_records.is_empty():
-                large_ingest(
-                    data=source_pk_records.to_arrow(),
-                    table_class=ClusterSourcePK,
-                    max_chunksize=batch_size,
-                )
-                logger.info(
-                    f"Added {len(source_pk_records):,} primary keys to "
-                    "ClusterSourcePK table",
-                    prefix=log_prefix,
-                )
-
-            # Commit both inserts in a single transaction
-            conn.commit()
+        # Bulk insert into ClusterSourcePK table (all links)
+        if not source_pk_records.is_empty():
+            large_ingest(
+                data=source_pk_records.to_arrow(),
+                table_class=ClusterSourcePK,
+                max_chunksize=batch_size,
+            )
+            logger.info(
+                f"Added {len(source_pk_records):,} primary keys to "
+                "ClusterSourcePK table",
+                prefix=log_prefix,
+            )
     except IntegrityError as e:
         # Log the error and rollback
         logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
         conn.rollback()
 
     # Insert successful, safe to update the resolution's content hash
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         if not source_pk_records.is_empty():
             stmt = (
                 update(Resolutions)
@@ -300,7 +296,6 @@ def insert_model(
     left: Resolutions,
     right: Resolutions,
     description: str,
-    engine: Engine,
 ) -> None:
     """Writes a model to Matchbox with a default truth value of 100.
 
@@ -309,7 +304,6 @@ def insert_model(
         left: Left parent of the model
         right: Right parent of the model. Same as left in a dedupe job
         description: Model description
-        engine: SQLAlchemy engine instance
 
     Raises:
         MatchboxResolutionNotFoundError: If the specified parent models don't exist.
@@ -317,7 +311,7 @@ def insert_model(
     """
     log_prefix = f"Model {model}"
     logger.info("Registering", prefix=log_prefix)
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         resolution_hash = hash_values(
             left.resolution_hash,
             right.resolution_hash,
@@ -335,12 +329,10 @@ def insert_model(
             stmt = (
                 insert(Resolutions)
                 .values(
-                    resolution_id=exists_obj.resolution_id,
                     resolution_hash=resolution_hash,
                     type=ResolutionNodeType.MODEL.value,
                     name=model,
                     description=description,
-                    truth=100,
                 )
                 .on_conflict_do_update(
                     index_elements=["resolution_hash"],
@@ -408,7 +400,7 @@ def insert_model(
 
 
 def _results_to_insert_tables(
-    resolution: Resolutions, probabilities: pa.Table, engine: Engine
+    resolution: Resolutions, probabilities: pa.Table
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
     """Takes probabilities and returns three Arrow tables that can be inserted exactly.
 
@@ -546,7 +538,6 @@ def _results_to_insert_tables(
 
 def insert_results(
     resolution: Resolutions,
-    engine: Engine,
     results: pa.Table,
     batch_size: int,
 ) -> None:
@@ -562,7 +553,6 @@ def insert_results(
 
     Args:
         resolution: Resolution of type model to associate results with
-        engine: SQLAlchemy engine instance
         results: A PyArrow results table with left_id, right_id, probability
         batch_size: Number of records to insert in each batch
 
@@ -581,10 +571,10 @@ def insert_results(
         return
 
     clusters, contains, probabilities = _results_to_insert_tables(
-        resolution=resolution, probabilities=results, engine=engine
+        resolution=resolution, probabilities=results
     )
 
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         try:
             # Clear existing probabilities for this resolution
             stmt = delete(Probabilities).where(
@@ -647,7 +637,7 @@ def insert_results(
         raise
 
     # Insert successful, safe to update the resolution's content hash
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         stmt = (
             update(Resolutions)
             .where(Resolutions.resolution_id == resolution.resolution_id)

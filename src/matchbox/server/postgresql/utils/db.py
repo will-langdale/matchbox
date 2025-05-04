@@ -11,11 +11,11 @@ import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Column, Engine, Table, inspect, select, text
+from sqlalchemy import Column, Table, inspect, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeMeta, Session
+from sqlalchemy.orm import DeclarativeMeta
 from sqlalchemy.sql import Select
 
 from matchbox.common.exceptions import (
@@ -39,17 +39,16 @@ from matchbox.server.postgresql.orm import (
 # Retrieval
 
 
-def resolve_model_name(model: str, engine: Engine) -> Resolutions:
+def resolve_model_name(model: str) -> Resolutions:
     """Resolves a model name to a Resolution object.
 
     Args:
         model: The name of the model to resolve.
-        engine: The database engine.
 
     Raises:
         MatchboxResolutionNotFoundError: If the model doesn't exist.
     """
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         if (
             resolution := session.query(Resolutions)
             .filter_by(name=model, type="model")
@@ -61,10 +60,10 @@ def resolve_model_name(model: str, engine: Engine) -> Resolutions:
         )
 
 
-def get_resolution_graph(engine: Engine) -> ResolutionGraph:
+def get_resolution_graph() -> ResolutionGraph:
     """Retrieves the resolution graph."""
     G = ResolutionGraph(nodes=set(), edges=set())
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         for resolution in session.query(Resolutions).all():
             G.nodes.add(
                 ResolutionNode(
@@ -85,11 +84,8 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
 # Data management
 
 
-def dump(engine: Engine) -> MatchboxSnapshot:
+def dump() -> MatchboxSnapshot:
     """Dumps the entire database to a snapshot.
-
-    Args:
-        engine: The database engine.
 
     Returns:
         A MatchboxSnapshot object of type "postgres" with the database's
@@ -97,7 +93,7 @@ def dump(engine: Engine) -> MatchboxSnapshot:
     """
     data = {}
 
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         for table_name, model in TABLE_MAP.items():
             # Query all records from this table
             records = session.execute(select(model)).scalars().all()
@@ -124,11 +120,10 @@ def dump(engine: Engine) -> MatchboxSnapshot:
     return MatchboxSnapshot(backend_type=MatchboxBackends.POSTGRES, data=data)
 
 
-def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None:
+def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
     """Restores the database from a snapshot.
 
     Args:
-        engine: The database engine.
         snapshot: A MatchboxSnapshot object of type "postgres" with the
             database's state
         batch_size: The number of records to insert in each batch
@@ -136,7 +131,7 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
     Raises:
         ValueError: If the snapshot is missing data
     """
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         # Process tables in order
         for table_name, model in TABLE_MAP.items():
             if table_name not in snapshot.data:

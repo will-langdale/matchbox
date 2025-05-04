@@ -177,7 +177,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
-            engine=MBDB.get_engine(),
             source_pk=source_pk,
             source=source,
             targets=targets,
@@ -323,10 +322,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
         }
 
     def get_resolution_graph(self) -> ResolutionGraph:  # noqa: D102
-        return get_resolution_graph(engine=MBDB.get_engine())
+        return get_resolution_graph()
 
     def dump(self) -> MatchboxSnapshot:  # noqa: D102
-        return dump(engine=MBDB.get_engine())
+        return dump()
 
     def drop(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
@@ -358,7 +357,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
             MBDB.clear_database()
 
         restore(
-            engine=MBDB.get_engine(),
             snapshot=snapshot,
             batch_size=self.settings.batch_size,
         )
@@ -398,39 +396,37 @@ class MatchboxPostgres(MatchboxDBAdapter):
             left=left_resolution,
             right=right_resolution,
             description=model.description,
-            engine=MBDB.get_engine(),
         )
 
     def get_model(self, model: str) -> ModelMetadata:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
-        return get_model_metadata(engine=MBDB.get_engine(), resolution=resolution)
+        resolution = resolve_model_name(model=model)
+        return get_model_metadata(resolution=resolution)
 
     def set_model_results(self, model: str, results: Table) -> None:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         insert_results(
             results=results,
             resolution=resolution,
-            engine=MBDB.get_engine(),
             batch_size=self.settings.batch_size,
         )
 
     def get_model_results(self, model: str) -> Table:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         return get_model_results(resolution=resolution)
 
     def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         with MBDB.get_session() as session:
             session.add(resolution)
             resolution.truth = truth
             session.commit()
 
     def get_model_truth(self, model: str) -> int:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         return resolution.truth
 
     def get_model_ancestors(self, model: str) -> list[ModelAncestor]:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         return [
             ModelAncestor(name=resolution.name, truth=resolution.truth)
             for resolution in resolution.ancestors
@@ -441,7 +437,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         model: str,
         ancestors_cache: list[ModelAncestor],
     ) -> None:
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         with MBDB.get_session() as session:
             session.add(resolution)
             ancestor_names = [ancestor.name for ancestor in ancestors_cache]
@@ -466,7 +462,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             session.commit()
 
     def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         with MBDB.get_session() as session:
             session.add(resolution)
             query = (
@@ -482,7 +478,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             ]
 
     def delete_model(self, model: str, certain: bool = False) -> None:  # noqa: D102
-        resolution = resolve_model_name(model=model, engine=MBDB.get_engine())
+        resolution = resolve_model_name(model=model)
         with MBDB.get_session() as session:
             session.add(resolution)
             if certain:
