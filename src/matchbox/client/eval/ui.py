@@ -1,5 +1,7 @@
 """Interface for submitting evaluation data."""
 
+from itertools import combinations
+
 import polars as pl
 import streamlit as st
 
@@ -17,6 +19,9 @@ orig_columns = list(set(original_df.columns) - {"id"})
 if "step" not in st.session_state:
     st.session_state.step = "eval"
     st.session_state.df = original_df.with_columns(select=False)
+    st.session_state.all_pairs = set(
+        combinations(original_df.select("id").to_series(), 2)
+    )
 
 if st.session_state.step == "eval":
     edited_df = st.data_editor(
@@ -25,24 +30,28 @@ if st.session_state.step == "eval":
         column_order=("select", *orig_columns),
     )
 
+    def submit_group(ids):
+        """Send to server judgement corresponding to group of IDs."""
+        print(f"Sent judgement to server: {ids}, context: {st.session_state.all_pairs}")
+
     def splinter():
-        """Endorse subset of cluster."""
+        """Callback for splinter button."""
         st.session_state.df = edited_df.filter(~pl.col("select"))
         selected_ids = (
             edited_df.filter(pl.col("select")).select("id").to_series().to_list()
         )
-        print(f"Sent judgement to server: {selected_ids}")
+        submit_group(selected_ids)
         if st.session_state.df.shape[0] == 1:
             looks_good()
 
     def looks_good():
-        """Confirm cluster as is."""
+        """Callback for confirmation button."""
         st.session_state.step = "done"
         all_ids = st.session_state.df.select("id").to_series().to_list()
-        print(f"Sent judgement to server: {all_ids}")
+        submit_group(all_ids)
 
     if (edited_df.select("select").to_series().any()) and (
-        not st.session_state.df.select("select").to_series().all()
+        not edited_df.select("select").to_series().all()
     ):
         st.button("Splinter", icon="✂️", on_click=splinter)
     else:
