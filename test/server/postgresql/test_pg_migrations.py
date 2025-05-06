@@ -62,7 +62,6 @@ def test_migrations_stairway_with_data(
 
     Will start at head, then downgrade to base, step by step.
     """
-    # Set up revisions in reverse order
     with setup_scenario(matchbox_postgres, "link", warehouse=sqlite_warehouse):
         alembic_config: Config = (
             matchbox_postgres.settings.postgres.get_alembic_config()
@@ -72,6 +71,7 @@ def test_migrations_stairway_with_data(
 
         logger.debug(f"Total revisions to test: {len(revisions)}")
 
+        # Set up revisions in reverse order
         for i, revision in enumerate(revisions):
             revision_id = revision.revision
             down_revision = revision.down_revision or "base"
@@ -95,5 +95,5 @@ def test_migrations_stairway_with_data(
                     f"{str(e)}"
                 )
 
-    # Upgrade to latest migration so scenario can tidy up without erroring
-    upgrade(alembic_config, "head")
+        # Upgrade to latest migration so scenario can tidy up without erroring
+        upgrade(alembic_config, "head")
