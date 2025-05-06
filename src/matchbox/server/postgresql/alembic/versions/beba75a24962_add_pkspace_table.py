@@ -23,9 +23,20 @@ def upgrade() -> None:
     op.create_table(
         "pk_space",
         sa.Column("id", sa.BIGINT(), nullable=False),
-        sa.Column("next_cluster_id", sa.BIGINT(), nullable=True),
-        sa.Column("next_cluster_source_pk_id", sa.BIGINT(), nullable=True),
+        sa.Column("next_cluster_id", sa.BIGINT(), nullable=False),
+        sa.Column("next_cluster_source_pk_id", sa.BIGINT(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        schema="mb",
+    )
+
+    op.alter_column(
+        "resolutions", "truth", existing_type=sa.SMALLINT(), nullable=False, schema="mb"
+    )
+    op.alter_column(
+        "sources",
+        "resolution_id",
+        existing_type=sa.BIGINT(),
+        nullable=False,
         schema="mb",
     )
 
@@ -33,3 +44,13 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_table("pk_space", schema="mb")
+    op.alter_column(
+        "sources",
+        "resolution_id",
+        existing_type=sa.BIGINT(),
+        nullable=True,
+        schema="mb",
+    )
+    op.alter_column(
+        "resolutions", "truth", existing_type=sa.SMALLINT(), nullable=True, schema="mb"
+    )
