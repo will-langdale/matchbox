@@ -4,9 +4,12 @@ import pytest
 from alembic.command import downgrade, upgrade
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy import Engine
 
 from matchbox.common.logging import logger
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
+
+from ...fixtures.db import setup_scenario
 
 
 @pytest.mark.docker
@@ -50,7 +53,9 @@ def test_migrations_stairway(matchbox_postgres_settings: MatchboxPostgresSetting
 
 
 @pytest.mark.docker
-def test_migrations_stairway_with_data(matchbox_postgres: MatchboxPostgres):
+def test_migrations_stairway_with_data(
+    matchbox_postgres: MatchboxPostgres, sqlite_warehouse: Engine
+):
     """Tests that all migrations can be applied and rolled back with data.
 
     This shows that the migrations are not only schema changes but also data changes.
@@ -58,33 +63,37 @@ def test_migrations_stairway_with_data(matchbox_postgres: MatchboxPostgres):
     Will start at head, then downgrade to base, step by step.
     """
     # Set up revisions in reverse order
-    alembic_config: Config = matchbox_postgres.settings.postgres.get_alembic_config()
-    revisions_dir = ScriptDirectory.from_config(alembic_config)
-    revisions = list(revisions_dir.walk_revisions("base", "heads"))
+    with setup_scenario(matchbox_postgres, "link", warehouse=sqlite_warehouse):
+        alembic_config: Config = (
+            matchbox_postgres.settings.postgres.get_alembic_config()
+        )
+        revisions_dir = ScriptDirectory.from_config(alembic_config)
+        revisions = list(revisions_dir.walk_revisions("base", "heads"))
 
-    logger.debug(f"Total revisions to test: {len(revisions)}")
+        logger.debug(f"Total revisions to test: {len(revisions)}")
 
-    for i, revision in enumerate(revisions):
-        revision_id = revision.revision
-        down_revision = revision.down_revision or "base"
+        for i, revision in enumerate(revisions):
+            revision_id = revision.revision
+            down_revision = revision.down_revision or "base"
 
-        logger.debug(f"Testing migration {i + 1}/{len(revisions)}: {revision_id}")
+            logger.debug(f"Testing migration {i + 1}/{len(revisions)}: {revision_id}")
 
-        try:
-            # Test downgrade
-            downgrade(alembic_config, down_revision)
+            try:
+                # Test downgrade
+                downgrade(alembic_config, down_revision)
 
-            # Test upgrade back to this revision
-            upgrade(alembic_config, revision_id)
+                # Test upgrade back to this revision
+                upgrade(alembic_config, revision_id)
 
-            # Downgrade again to test next step
-            downgrade(alembic_config, down_revision)
+                # Downgrade again to test next step
+                downgrade(alembic_config, down_revision)
 
-            logger.debug(f"✓ Migration {revision_id} passed")
-        except Exception as e:
-            pytest.fail(
-                f"Migration {i + 1}/{len(revisions)} '{revision_id}' failed: {str(e)}"
-            )
+                logger.debug(f"✓ Migration {revision_id} passed")
+            except Exception as e:
+                pytest.fail(
+                    f"Migration {i + 1}/{len(revisions)} '{revision_id}' failed: "
+                    f"{str(e)}"
+                )
 
     # Upgrade to latest migration so scenario can tidy up without erroring
     upgrade(alembic_config, "head")
