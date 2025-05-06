@@ -11,7 +11,7 @@ import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Column, Table, inspect, select, text
+from sqlalchemy import Column, Table, func, inspect, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -166,18 +166,20 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
             # Re-sync PK sequences
             table: Table = model.__table__
             for pk in table.primary_key:
-                session.execute(
-                    text(f"""
-                    lock table {table.schema}.{table.name} in exclusive mode;
-                    select
-                        setval(pg_get_serial_sequence(
-                            '{table.schema}.{table.name}',
-                            '{pk.name}'
-                        ),
-                        coalesce(max({pk.name}),0) + 1, false)
-                    from {table.schema}.{table.name};
-                    """)
+                lock_stmt = text(
+                    f"lock table {table.schema}.{table.name} in exclusive mode;"
                 )
+                sync_statement = select(
+                    func.setval(
+                        func.pg_get_serial_sequence(
+                            text(f"'{table.schema}.{table.name}'"), text(f"'{pk.name}'")
+                        ),
+                        func.coalesce(func.max(text(pk.name)), 0),
+                    )
+                ).select_from(text(f"{table.schema}.{table.name}"))
+
+                session.execute(lock_stmt)
+                session.execute(sync_statement)
 
         session.commit()
 

@@ -230,7 +230,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         "source_pk"
     )
 
-    if len(source_pk_records) > 0:
+    if source_pk_records.shape[0] > 0:
         next_pk_id = PKSpace.reserve_block("cluster_source_pks", len(source_pk_records))
     else:
         # The next_pk_id is irrelevant if we don't write any PK records
