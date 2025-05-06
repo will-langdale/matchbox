@@ -30,9 +30,6 @@ def upgrade() -> None:
     )
 
     op.alter_column(
-        "resolutions", "truth", existing_type=sa.SMALLINT(), nullable=False, schema="mb"
-    )
-    op.alter_column(
         "sources",
         "resolution_id",
         existing_type=sa.BIGINT(),
@@ -50,7 +47,4 @@ def downgrade() -> None:
         existing_type=sa.BIGINT(),
         nullable=True,
         schema="mb",
-    )
-    op.alter_column(
-        "resolutions", "truth", existing_type=sa.SMALLINT(), nullable=True, schema="mb"
     )

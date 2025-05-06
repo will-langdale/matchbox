@@ -67,7 +67,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     type = Column(TEXT, nullable=False)
     name = Column(TEXT, nullable=False)
     description = Column(TEXT, nullable=True)
-    truth = Column(SMALLINT, nullable=False)
+    truth = Column(SMALLINT, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
