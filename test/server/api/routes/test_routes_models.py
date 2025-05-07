@@ -9,9 +9,10 @@ from fastapi.testclient import TestClient
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
+    CRUDOperation,
     ModelAncestor,
-    ModelOperationType,
     NotFoundError,
+    ResolutionOperationStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -38,12 +39,16 @@ def test_insert_model(test_client: TestClient):
     response = test_client.post("/models", json=testkit.model.metadata.model_dump())
 
     assert response.status_code == 201
-    assert response.json() == {
-        "success": True,
-        "model_name": "test_model",
-        "operation": ModelOperationType.INSERT.value,
-        "details": None,
-    }
+    assert (
+        response.json()
+        == ResolutionOperationStatus(
+            success=True,
+            resolution_name="test_model",
+            operation=CRUDOperation.CREATE,
+            details=None,
+        ).model_dump()
+    )
+
     mock_backend.insert_model.assert_called_once_with(testkit.model.metadata)
 
 
@@ -173,7 +178,7 @@ async def test_complete_model_upload_process(
     response = test_client.post("/models", json=testkit.model.metadata.model_dump())
     assert response.status_code == 201
     assert response.json()["success"] is True
-    assert response.json()["model_name"] == testkit.model.metadata.name
+    assert response.json()["resolution_name"] == testkit.model.metadata.name
 
     # Step 2: Initialize results upload
     response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
@@ -416,7 +421,7 @@ def test_set_ancestors_cache(test_client: TestClient):
 
     assert response.status_code == 200
     assert response.json()["success"] is True
-    assert response.json()["operation"] == ModelOperationType.UPDATE_ANCESTOR_CACHE
+    assert response.json()["operation"] == CRUDOperation.UPDATE
     mock_backend.set_model_ancestors_cache.assert_called_once_with(
         model=testkit.model.metadata.name, ancestors_cache=ancestors_data
     )
@@ -481,27 +486,30 @@ def test_model_patch_endpoints_404(
     assert error.entity == BackendRetrievableType.RESOLUTION
 
 
-def test_delete_model(test_client: TestClient):
-    """Test deletion of a model."""
+def test_delete_resolution(test_client: TestClient):
+    """Test deletion of a resolution."""
     testkit = model_factory()
     response = test_client.delete(
-        f"/models/{testkit.model.metadata.name}",
+        f"/resolutions/{testkit.model.metadata.name}",
         params={"certain": True},
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "success": True,
-        "model_name": testkit.model.metadata.name,
-        "operation": ModelOperationType.DELETE,
-        "details": None,
-    }
+    assert (
+        response.json()
+        == ResolutionOperationStatus(
+            success=True,
+            resolution_name=testkit.model.metadata.name,
+            operation=CRUDOperation.DELETE,
+            details=None,
+        ).model_dump()
+    )
 
 
-def test_delete_model_needs_confirmation(test_client: TestClient):
+def test_delete_resolution_needs_confirmation(test_client: TestClient):
     """Test deletion of a model that requires confirmation."""
     mock_backend = Mock()
-    mock_backend.delete_model = Mock(
+    mock_backend.delete_resolution = Mock(
         side_effect=MatchboxDeletionNotConfirmed(children=["dedupe1", "dedupe2"])
     )
 
@@ -521,18 +529,18 @@ def test_delete_model_needs_confirmation(test_client: TestClient):
     "certain",
     [True, False],
 )
-def test_delete_model_404(certain: bool, test_client: TestClient) -> None:
-    """Test 404 response when trying to delete a non-existent model."""
+def test_delete_resolution_404(certain: bool, test_client: TestClient) -> None:
+    """Test 404 response when trying to delete a non-existent resolution."""
     # Setup backend mock
     mock_backend = Mock()
-    mock_backend.delete_model.side_effect = MatchboxResolutionNotFoundError()
+    mock_backend.delete_resolution.side_effect = MatchboxResolutionNotFoundError()
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
     # Make request
     response = test_client.delete(
-        "/models/nonexistent-model", params={"certain": certain}
+        "/resolutions/nonexistent-model", params={"certain": certain}
     )
 
     # Verify response
