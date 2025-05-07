@@ -172,7 +172,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_model(model="nonexistent")
 
-    def test_delete_model(self):
+    def test_delete_resolution(self):
         """
         Tests the deletion of:
 
@@ -202,7 +202,7 @@ class TestMatchboxBackend:
             assert actual_merges_pre_delete > 0
 
             # Perform deletion
-            self.backend.delete_model(deduper_to_delete, certain=True)
+            self.backend.delete_resolution(deduper_to_delete, certain=True)
 
             models_post_delete = self.backend.models.count()
             cluster_count_post_delete = self.backend.clusters.count()

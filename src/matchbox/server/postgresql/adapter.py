@@ -476,8 +476,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 for name, truth in session.execute(query).all()
             ]
 
-    def delete_model(self, model: str, certain: bool = False) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def delete_resolution(self, resolution: str, certain: bool = False) -> None:  # noqa: D102
+        resolution = Resolutions.from_name(resolution_name=resolution, res_type="model")
         with MBDB.get_session() as session:
             session.add(resolution)
             if certain:
