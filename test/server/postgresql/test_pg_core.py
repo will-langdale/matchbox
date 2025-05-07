@@ -127,7 +127,7 @@ def test_large_ingest_simple(
 
 @pytest.mark.docker
 def test_large_ingest_upsert_custom_update(
-    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+    matchbox_postgres_dropped: MatchboxPostgres,  # will drop dummy table
 ):
     """Test large ingest with upsertion and custom columns to update."""
     engine = MBDB.get_engine()
@@ -217,7 +217,7 @@ def test_large_ingest_upsert_custom_update(
 
 @pytest.mark.docker
 def test_large_ingest_upsert_custom_key(
-    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+    matchbox_postgres_dropped: MatchboxPostgres,  # will drop dummy table
 ):
     """Test large ingest with upsertion on custom keys."""
     engine = MBDB.get_engine()
