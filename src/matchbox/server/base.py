@@ -389,11 +389,6 @@ class MatchboxDBAdapter(ABC):
         """
         ...
 
-    @abstractmethod
-    def verify(self) -> None:
-        """Checks the database schema against expected and logs outcome."""
-        ...
-
     # Model management
 
     @abstractmethod
