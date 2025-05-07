@@ -517,7 +517,7 @@ def test_delete_resolution_needs_confirmation(test_client: TestClient):
     app.dependency_overrides[backend] = lambda: mock_backend
 
     testkit = model_factory()
-    response = test_client.delete(f"/models/{testkit.model.metadata.name}")
+    response = test_client.delete(f"/resolutions/{testkit.model.metadata.name}")
 
     assert response.status_code == 409
     assert response.json()["success"] is False
