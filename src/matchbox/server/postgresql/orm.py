@@ -1,5 +1,7 @@
 """ORM classes for the Matchbox PostgreSQL database."""
 
+from typing import Literal
+
 from sqlalchemy import (
     BIGINT,
     INTEGER,
@@ -10,10 +12,10 @@ from sqlalchemy import (
     Identity,
     Index,
     UniqueConstraint,
-    func,
     select,
+    update,
 )
-from sqlalchemy.dialects.postgresql import BYTEA, TEXT
+from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -59,13 +61,13 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "resolutions"
 
     # Columns
-    resolution_id = Column(BIGINT, primary_key=True)
+    resolution_id = Column(BIGINT, primary_key=True, autoincrement=True)
     resolution_hash = Column(BYTEA, nullable=False)
     content_hash = Column(BYTEA, nullable=True)
     type = Column(TEXT, nullable=False)
     name = Column(TEXT, nullable=False)
-    description = Column(TEXT)
-    truth = Column(SMALLINT)
+    description = Column(TEXT, nullable=True)
+    truth = Column(SMALLINT, nullable=True)
 
     # Relationships
     source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
@@ -167,14 +169,56 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
             return lineage
 
+
+class PKSpace(MBDB.MatchboxBase):
+    """Table used to reserve ranges of primary keys."""
+
+    __tablename__ = "pk_space"
+
+    id = Column(BIGINT, primary_key=True)
+    next_cluster_id = Column(BIGINT, nullable=False)
+    next_cluster_source_pk_id = Column(BIGINT, nullable=False)
+
     @classmethod
-    def next_id(cls) -> int:
-        """Returns the next available resolution_id."""
+    def initialise(cls) -> None:
+        """Create PKSpace tracking row if not exists."""
         with MBDB.get_session() as session:
-            result = session.execute(
-                select(func.coalesce(func.max(cls.resolution_id), 0))
-            ).scalar()
-            return result + 1
+            init_statement = (
+                insert(cls)
+                .values(id=1, next_cluster_id=1, next_cluster_source_pk_id=1)
+                .on_conflict_do_nothing()
+            )
+
+            session.execute(init_statement)
+            session.commit()
+
+    @classmethod
+    def reserve_block(
+        cls, table: Literal["clusters", "cluster_source_pks"], block_size: int
+    ) -> int:
+        """Atomically get next available ID for table, and increment it."""
+        if block_size < 1:
+            raise ValueError("Block size must be at least 1.")
+
+        match table:
+            case "clusters":
+                next_id_col = "next_cluster_id"
+            case "cluster_source_pks":
+                next_id_col = "next_cluster_source_pk_id"
+
+        with MBDB.get_session() as session:
+            try:
+                next_id = session.execute(
+                    update(cls)
+                    .values(**{next_id_col: getattr(cls, next_id_col) + block_size})
+                    .returning(getattr(cls, next_id_col) - block_size)
+                ).scalar_one()
+                session.commit()
+            except:
+                session.rollback()
+                raise
+
+            return next_id
 
 
 class SourceColumns(CountMixin, MBDB.MatchboxBase):
@@ -229,15 +273,6 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
         UniqueConstraint("pk_id", "source_id", name="unique_pk_source"),
     )
 
-    @classmethod
-    def next_id(cls) -> int:
-        """Returns the next available cluster_id."""
-        with MBDB.get_session() as session:
-            result = session.execute(
-                select(func.coalesce(func.max(cls.pk_id), 0))
-            ).scalar()
-            return result + 1
-
 
 class Sources(CountMixin, MBDB.MatchboxBase):
     """Table of sources of data for Matchbox."""
@@ -247,7 +282,9 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     # Columns
     source_id = Column(BIGINT, Identity(start=1), primary_key=True)
     resolution_id = Column(
-        BIGINT, ForeignKey("resolutions.resolution_id", ondelete="CASCADE")
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        nullable=False,
     )
     resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
@@ -374,15 +411,6 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
     # Constraints and indices
     __table_args__ = (UniqueConstraint("cluster_hash", name="clusters_hash_key"),)
-
-    @classmethod
-    def next_id(cls) -> int:
-        """Returns the next available cluster_id."""
-        with MBDB.get_session() as session:
-            result = session.execute(
-                select(func.coalesce(func.max(cls.cluster_id), 0))
-            ).scalar()
-            return result + 1
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):

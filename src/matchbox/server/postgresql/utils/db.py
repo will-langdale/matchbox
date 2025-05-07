@@ -11,11 +11,11 @@ import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Column, Engine, Table, inspect, select
+from sqlalchemy import Column, Table, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeMeta, Session
+from sqlalchemy.orm import DeclarativeMeta
 from sqlalchemy.sql import Select
 
 from matchbox.common.exceptions import (
@@ -31,30 +31,23 @@ from matchbox.common.graph import (
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
-    Clusters,
-    ClusterSourcePK,
-    Contains,
-    Probabilities,
     ResolutionFrom,
     Resolutions,
-    SourceColumns,
-    Sources,
 )
 
 # Retrieval
 
 
-def resolve_model_name(model: str, engine: Engine) -> Resolutions:
+def resolve_model_name(model: str) -> Resolutions:
     """Resolves a model name to a Resolution object.
 
     Args:
         model: The name of the model to resolve.
-        engine: The database engine.
 
     Raises:
         MatchboxResolutionNotFoundError: If the model doesn't exist.
     """
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         if (
             resolution := session.query(Resolutions)
             .filter_by(name=model, type="model")
@@ -66,10 +59,10 @@ def resolve_model_name(model: str, engine: Engine) -> Resolutions:
         )
 
 
-def get_resolution_graph(engine: Engine) -> ResolutionGraph:
+def get_resolution_graph() -> ResolutionGraph:
     """Retrieves the resolution graph."""
     G = ResolutionGraph(nodes=set(), edges=set())
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         for resolution in session.query(Resolutions).all():
             G.nodes.add(
                 ResolutionNode(
@@ -90,61 +83,40 @@ def get_resolution_graph(engine: Engine) -> ResolutionGraph:
 # Data management
 
 
-def dump(engine: Engine) -> MatchboxSnapshot:
+def dump() -> MatchboxSnapshot:
     """Dumps the entire database to a snapshot.
-
-    Args:
-        engine: The database engine.
 
     Returns:
         A MatchboxSnapshot object of type "postgres" with the database's
             current state.
     """
-    tables = {
-        "resolutions": Resolutions,
-        "resolution_from": ResolutionFrom,
-        "sources": Sources,
-        "source_columns": SourceColumns,
-        "clusters": Clusters,
-        "cluster_source_pks": ClusterSourcePK,
-        "contains": Contains,
-        "probabilities": Probabilities,
-    }
-
     data = {}
 
-    with Session(engine) as session:
-        for table_name, model in tables.items():
+    with MBDB.get_session() as session:
+        for table in MBDB.sorted_tables:
             # Query all records from this table
-            records = session.execute(select(model)).scalars().all()
+            records = session.execute(select(table)).mappings().all()
 
             # Convert each record to a dictionary
             table_data = []
             for record in records:
-                record_dict = {}
-                for column in inspect(model).columns:
-                    value = getattr(record, column.name)
-
+                record_dict = dict(record)
+                for k, v in record_dict.items():
                     # Store bytes as nested dictionary with encoding format
-                    if isinstance(value, bytes):
-                        record_dict[column.name] = {
-                            "base64": base64.b64encode(value).decode("ascii")
-                        }
-                    else:
-                        record_dict[column.name] = value
+                    if isinstance(v, bytes):
+                        record_dict[k] = {"base64": base64.b64encode(v).decode("ascii")}
 
                 table_data.append(record_dict)
 
-            data[table_name] = table_data
+            data[table.name] = table_data
 
     return MatchboxSnapshot(backend_type=MatchboxBackends.POSTGRES, data=data)
 
 
-def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None:
+def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
     """Restores the database from a snapshot.
 
     Args:
-        engine: The database engine.
         snapshot: A MatchboxSnapshot object of type "postgres" with the
             database's state
         batch_size: The number of records to insert in each batch
@@ -152,36 +124,13 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
     Raises:
         ValueError: If the snapshot is missing data
     """
-    table_map = {
-        "resolutions": Resolutions,
-        "resolution_from": ResolutionFrom,
-        "sources": Sources,
-        "source_columns": SourceColumns,
-        "clusters": Clusters,
-        "cluster_source_pks": ClusterSourcePK,
-        "contains": Contains,
-        "probabilities": Probabilities,
-    }
-
-    table_order = [
-        "resolutions",
-        "resolution_from",
-        "sources",
-        "source_columns",
-        "clusters",
-        "cluster_source_pks",
-        "contains",
-        "probabilities",
-    ]
-
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         # Process tables in order
-        for table_name in table_order:
-            if table_name not in snapshot.data:
-                raise ValueError(f"Invalid: Table {table_name} not found in snapshot.")
+        for table in MBDB.sorted_tables:
+            if table.name not in snapshot.data:
+                raise ValueError(f"Invalid: Table {table.name} not found in snapshot.")
 
-            model = table_map[table_name]
-            records = snapshot.data[table_name]
+            records = snapshot.data[table.name]
 
             if not records:
                 continue
@@ -203,8 +152,25 @@ def restore(engine: Engine, snapshot: MatchboxSnapshot, batch_size: int) -> None
             # Insert
             for i in range(0, len(processed_records), batch_size):
                 batch = processed_records[i : i + batch_size]
-                session.bulk_insert_mappings(model, batch)
+                session.execute(insert(table), batch)
                 session.flush()
+
+            # Re-sync PK sequences
+            for pk in table.primary_key:
+                lock_stmt = text(
+                    f"lock table {table.schema}.{table.name} in exclusive mode;"
+                )
+                sync_statement = select(
+                    func.setval(
+                        func.pg_get_serial_sequence(
+                            text(f"'{table.schema}.{table.name}'"), text(f"'{pk.name}'")
+                        ),
+                        func.coalesce(func.max(text(pk.name)), 0),
+                    )
+                ).select_from(text(f"{table.schema}.{table.name}"))
+
+                session.execute(lock_stmt)
+                session.execute(sync_statement)
 
         session.commit()
 

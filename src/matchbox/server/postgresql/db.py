@@ -14,11 +14,12 @@ from sqlalchemy import (
     URL,
     Engine,
     MetaData,
+    Table,
     create_engine,
     inspect,
     text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from matchbox.common.logging import logger
@@ -139,7 +140,7 @@ class MatchboxDatabase:
             self._connect()
         return self._engine
 
-    def get_session(self):
+    def get_session(self) -> Session:
         """Get a new session."""
         if not self._SessionLocal:
             self._connect()
@@ -238,6 +239,11 @@ class MatchboxDatabase:
                 logger.warning(f"Schema mismatch detected. \nDiff: {diff}")
             else:
                 logger.info("Schema matches expected.")
+
+    @property
+    def sorted_tables(self) -> list[Table]:
+        """Return a list of SQLAlchemy tables in order of creation."""
+        return self.MatchboxBase.metadata.sorted_tables
 
 
 # Global database instance -- everything should use this

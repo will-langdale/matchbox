@@ -391,7 +391,7 @@ def setup_scenario(
         dag = dag.model_copy(deep=True)
 
         # Restore backend and write sources to warehouse
-        backend.restore(clear=True, snapshot=snapshot)
+        backend.restore(snapshot=snapshot)
         _testkitdag_to_warehouse(warehouse, dag)
     else:
         # Create new TestkitDAG with proper backend integration
