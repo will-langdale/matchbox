@@ -1,8 +1,10 @@
 import functools
+from typing import Literal
 
 import pytest
 from faker import Faker
-from sqlalchemy import create_engine
+from polars import DataFrame as PolarsDataFrame
+from sqlalchemy.engine import Engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.dtos import DataTypes
@@ -12,12 +14,13 @@ from matchbox.common.factories.entities import (
     SourceEntity,
     SuffixRule,
 )
+from matchbox.common.factories.locations import location_factory
 from matchbox.common.factories.sources import (
     generate_rows,
     source_factory,
     source_from_tuple,
 )
-from matchbox.common.sources import RelationalDBLocation
+from matchbox.common.sources import RelationalDBLocation, SourceField
 
 
 def test_source_factory_default():
@@ -137,7 +140,7 @@ def test_source_testkit_to_mock():
     ]
 
     source_testkit = source_factory(
-        features=features, full_name="test.source", n_true_entities=2, seed=42
+        features=features, resolution_name="test.source", n_true_entities=2, seed=42
     )
 
     # Create the mock
@@ -190,34 +193,36 @@ def test_source_factory_mock_properties():
         ),
     ]
 
-    full_name = "companies"
-    engine = create_engine("sqlite:///:memory:")
+    resolution_name = "companies"
+    location_config = location_factory(location_type="rdbms")
 
     source = source_factory(
-        features=features, full_name=full_name, engine=engine
+        features=features,
+        resolution_name=resolution_name,
+        location_config=location_config,
     ).source
 
-    # Warehouse hash should be consistent for same engine config
-    expected_location = RelationalDBLocation.from_engine(engine)
+    # Location should be consistent
+    expected_location = RelationalDBLocation(uri=location_config.uri)
     assert source.location == expected_location
 
     # Check indexed fields configuration
-    assert len(source.indexed) == len(features)
-    for feature, field in zip(features, source.indexed, strict=True):
+    assert len(source.fields) == len(features)
+    for feature, field in zip(features, source.fields, strict=True):
         assert field.name == feature.name
         assert field.type == feature.datatype
 
     # Check default resolution name and default pk
-    assert source.resolution_name == full_name
+    assert source.resolution_name == resolution_name
     assert source.identifier.name == "pk"
 
     # Verify source properties are preserved through model_dump
     dump = source.model_dump()
-    assert dump["resolution_name"] == full_name
-    assert str(dump["location"]["uri"]) == str(engine.url)
+    assert dump["resolution_name"] == resolution_name
+    assert str(dump["location"]["uri"]) == str(location_config.uri)
+    assert dump["identifier"] == {"name": "pk", "type": DataTypes.STRING}
     assert dump["fields"] == tuple(
-        [{"name": "pk", "type": DataTypes.STRING, "identifier": True}]
-        + [{"name": f.name, "type": f.datatype, "identifier": False} for f in features]
+        {"name": f.name, "type": f.datatype} for f in features
     )
 
 
@@ -394,7 +399,7 @@ def test_source_from_tuple():
     # Create a source from a tuple of values
     data_tuple = ({"a": 1, "b": "val"}, {"a": 2, "b": "val"})
     testkit = source_from_tuple(
-        data_tuple=data_tuple, data_pks=["0", "1"], full_name="foo"
+        data_tuple=data_tuple, data_pks=["0", "1"], resolution_name="foo"
     )
 
     # Verify the generated testkit has the expected properties
@@ -406,7 +411,7 @@ def test_source_from_tuple():
     assert testkit.data.shape[0] == 2
     assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2
-    assert set(field.name for field in testkit.source.indexed) == {"a", "b"}
+    assert set(field.name for field in testkit.source.fields) == {"a", "b"}
 
 
 @pytest.mark.parametrize(
@@ -635,3 +640,84 @@ def test_generate_rows(
     if len(unique_values) > 1:
         unique_hashes = set(values_to_hash.values())
         assert len(unique_hashes) == len(unique_values)
+
+
+@pytest.mark.parametrize(
+    ("table_strategy", "table_mapping"),
+    [
+        pytest.param("single", None, id="single_table_strategy"),
+        pytest.param("spread", None, id="spread_table_strategy"),
+        pytest.param(
+            "single",
+            {
+                "table1": (
+                    SourceField(
+                        name="jobcode",
+                        type=DataTypes.STRING,
+                    ),
+                    SourceField(
+                        name="name",
+                        type=DataTypes.STRING,
+                    ),
+                ),
+                "table2": (
+                    SourceField(
+                        name="age",
+                        type=DataTypes.INT64,
+                    ),
+                ),
+            },
+            id="custom_table_mapping",
+        ),
+    ],
+)
+def test_source_write_to_rdbms_location(
+    sqlite_warehouse: Engine,
+    table_strategy: Literal["single", "spread"],
+    table_mapping: dict[str, list[FeatureConfig]] | None,
+) -> None:
+    """Test writing to locations with different RDBMS table strategies."""
+    # Define feature configs with faker generators
+    feature_configs = (
+        FeatureConfig(
+            name="jobcode",
+            base_generator="bothify",
+            parameters=(("text", "??-###"),),
+        ),
+        FeatureConfig(
+            name="name",
+            base_generator="company",
+        ),
+        FeatureConfig(
+            name="age",
+            base_generator="random_int",
+            parameters=(("min", 18), ("max", 100)),
+        ),
+    )
+
+    location = location_factory(
+        location_type="rdbms",
+        location_options={
+            "table_strategy": table_strategy,
+            "table_mapping": table_mapping,
+        },
+        uri=str(sqlite_warehouse.url),
+    )
+
+    source_testkit = source_factory(
+        features=feature_configs,
+        resolution_name="test_source",
+        location_config=location,
+        n_true_entities=2,
+        seed=42,
+    )
+
+    source_testkit.write_to_location(credentials=sqlite_warehouse)
+    source_testkit.set_credentials(credentials=sqlite_warehouse)
+
+    queried: PolarsDataFrame = source_testkit.source.query(return_type="polars")
+    original: PolarsDataFrame = PolarsDataFrame(
+        source_testkit.data.drop_columns(["pk", "id"])
+    )
+
+    assert original.equals(queried)

@@ -14,7 +14,6 @@ import rustworkx as rx
 from faker import Faker
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import create_engine
 
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
@@ -30,6 +29,7 @@ from matchbox.common.factories.entities import (
     probabilities_to_results_entities,
     query_to_cluster_entities,
 )
+from matchbox.common.factories.locations import location_factory
 from matchbox.common.factories.sources import (
     SourceConfig,
     SourceTestkit,
@@ -724,7 +724,7 @@ def model_factory(
             right_resolution = right_query = right_entities = None
     else:
         # Create default sources
-        engine = create_engine("sqlite:///:memory:")
+        location_config = location_factory()
         resolved_model_type = ModelType(model_type.lower() if model_type else "deduper")
 
         # Define common features
@@ -747,8 +747,8 @@ def model_factory(
         # Configure left source
         left_resolution = generator.unique.word()
         left_config = SourceConfig(
-            full_name="crn",
-            engine=engine,
+            resolution_name="crn",
+            location_config=location_config,
             features=(
                 features["company_name"].add_variations(
                     SuffixRule(suffix=" Limited"),
@@ -767,7 +767,8 @@ def model_factory(
             right_resolution = generator.unique.word()
             source_configs.append(
                 SourceConfig(
-                    full_name="cdms",
+                    resolution_name="cdms",
+                    location_config=location_config,
                     features=(features["crn"], features["cdms"]),
                     repetition=1,
                 )

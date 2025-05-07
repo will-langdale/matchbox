@@ -11,6 +11,7 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.exc import OperationalError
+from sqlglot import parse_one
 from sqlglot.errors import ParseError
 
 from matchbox.client.helpers.selector import Match
@@ -19,6 +20,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceCredentialsError,
     MatchboxSourceExtractTransformError,
 )
+from matchbox.common.factories.locations import location_factory
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import (
@@ -250,15 +252,20 @@ def test_relational_db_extract_transform(sql: str, is_valid: bool):
 
 def test_relational_db_execute(sqlite_warehouse: Engine):
     """Test executing a query and returning results using a real SQLite database."""
-    source_testkit = source_factory(engine=sqlite_warehouse)
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
-    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
+    )
+    source_testkit = source_factory(location_config=location_config, n_true_entities=10)
+    source_testkit.write_to_location(credentials=sqlite_warehouse)
+    source_testkit.set_credentials(credentials=sqlite_warehouse)
 
-    sql = f"SELECT * FROM {source_testkit.source.resolution_name}"
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
     batch_size = 2
 
     # Execute the query
-    results = list(location.execute(sql, batch_size))
+    results = list(
+        location.execute(source_testkit.source.extract_transform, batch_size)
+    )
 
     # Check that we got expected results
     assert len(results) > 0
@@ -295,8 +302,13 @@ def test_relational_db_from_engine(sqlite_warehouse: Engine):
 
 def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
     """Test a more complete workflow with data retrieval and transformation."""
-    source_testkit = source_factory(engine=sqlite_warehouse)
-    source_testkit.to_warehouse(engine=sqlite_warehouse)
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
+    )
+    source_testkit = source_factory(location_config=location_config, n_true_entities=10)
+    source_testkit.write_to_location(credentials=sqlite_warehouse)
+    source_testkit.set_credentials(credentials=sqlite_warehouse)
+
     location = RelationalDBLocation.from_engine(sqlite_warehouse)
 
     # Execute a query with transformation
@@ -305,7 +317,9 @@ def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
         company_name as name,
         UPPER(company_name) as company_name,
         crn as crn
-    FROM {source_testkit.source.resolution_name};
+    FROM (
+        {parse_one(source_testkit.source.extract_transform).sql()}
+    );
     """
 
     results = list(location.execute(sql, batch_size=1))
@@ -331,7 +345,7 @@ def test_source_init():
 
     # Create basic fields
     fields = (
-        SourceField(name="id", type=DataTypes.STRING, identifier=True),
+        SourceField(name="id", type=DataTypes.STRING),
         SourceField(name="name", type=DataTypes.STRING),
         SourceField(name="age", type=DataTypes.INT64),
     )
@@ -374,8 +388,8 @@ def test_source_field_validation():
 
     # Test with multiple identifiers
     invalid_fields_multiple_ids = (
-        SourceField(name="id", type=DataTypes.STRING, identifier=True),
-        SourceField(name="uuid", type=DataTypes.STRING, identifier=True),
+        SourceField(name="id", type=DataTypes.STRING),
+        SourceField(name="uuid", type=DataTypes.STRING),
         SourceField(name="name", type=DataTypes.STRING),
     )
 
@@ -389,7 +403,7 @@ def test_source_field_validation():
 
     # Test with non-string identifier
     invalid_fields_non_string_id = (
-        SourceField(name="id", type=DataTypes.INT64, identifier=True),
+        SourceField(name="id", type=DataTypes.INT64),
         SourceField(name="name", type=DataTypes.STRING),
     )
 
@@ -443,7 +457,7 @@ def test_source_set_credentials():
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
         fields=(
-            SourceField(name="id", type=DataTypes.STRING, identifier=True),
+            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
         ),
     )
@@ -498,7 +512,7 @@ def test_source_query(return_batches, batch_size, return_type, mocker):
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
         fields=(
-            SourceField(name="id", type=DataTypes.STRING, identifier=True),
+            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
         ),
     )
@@ -555,7 +569,7 @@ def test_source_query_with_qualification(mocker):
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
         fields=(
-            SourceField(name="id", type=DataTypes.STRING, identifier=True),
+            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
         ),
     )
@@ -593,7 +607,7 @@ def test_source_query_requires_credentials():
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
         fields=(
-            SourceField(name="id", type=DataTypes.STRING, identifier=True),
+            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
         ),
     )
@@ -615,7 +629,7 @@ def test_source_hash_data(mocker):
         resolution_name="test_source",
         extract_transform="SELECT id, name, age FROM users",
         fields=(
-            SourceField(name="id", type=DataTypes.STRING, identifier=True),
+            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
             SourceField(name="age", type=DataTypes.INTEGER),
         ),
@@ -659,7 +673,7 @@ def test_source_hash_data_with_null_pk(mocker):
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
         fields=(
-            SourceField(name="id", type=DataTypes.STRING, identifier=True),
+            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
         ),
     )
@@ -681,12 +695,12 @@ def test_source_equality_and_hash():
     location2 = RelationalDBLocation(uri="sqlite:///test.db")
 
     fields1 = (
-        SourceField(name="id", type=DataTypes.STRING, identifier=True),
+        SourceField(name="id", type=DataTypes.STRING),
         SourceField(name="name", type=DataTypes.STRING),
     )
 
     fields2 = (
-        SourceField(name="id", type=DataTypes.STRING, identifier=True),
+        SourceField(name="id", type=DataTypes.STRING),
         SourceField(name="name", type=DataTypes.STRING),
     )
 

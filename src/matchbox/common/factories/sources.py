@@ -1,6 +1,5 @@
 """Factories for generating sources and linked source testkits for testing."""
 
-import textwrap
 import warnings
 from functools import cache, wraps
 from itertools import product
@@ -11,10 +10,8 @@ import pandas as pd
 import pyarrow as pa
 from faker import Faker
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
-from matchbox.common.db import get_schema_table_names
 from matchbox.common.dtos import DataTypes
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -27,8 +24,18 @@ from matchbox.common.factories.entities import (
     generate_entities,
     probabilities_to_results_entities,
 )
+from matchbox.common.factories.locations import (
+    LocationConfig,
+    RelationalDBConfig,
+    RelationalDBConfigOptions,
+)
 from matchbox.common.hash import hash_values
-from matchbox.common.sources import RelationalDBLocation, Source, SourceField
+from matchbox.common.sources import (
+    LocationType,
+    RelationalDBLocation,  # noqa: F401
+    Source,
+    SourceField,
+)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -70,8 +77,14 @@ class SourceConfig(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     features: tuple[FeatureConfig, ...] = Field(default_factory=tuple)
-    full_name: str
-    engine: Engine = Field(default=create_engine("sqlite:///:memory:"))
+    resolution_name: str
+    location_config: LocationConfig | None = Field(
+        default=RelationalDBConfig(),
+        description=(
+            "Location configuration for the source. If not provided, "
+            "a default in-memory SQLite database will be used."
+        ),
+    )
     n_true_entities: int | None = Field(default=None)
     repetition: int = Field(default=0)
 
@@ -93,6 +106,12 @@ class SourceTestkit(BaseModel):
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
+    )
+    location_writer: Callable[[pa.Table, LocationType], None] = Field(
+        description=(
+            "A function that takes the data and location and writes the data to "
+            "the location."
+        )
     )
 
     @property
@@ -126,19 +145,16 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["pk"]], names=["id", "source_pk"]
         )
 
-    def to_warehouse(self, engine: Engine | None) -> None:
-        """Write the data to the Source's engine.
+    def set_credentials(self, credentials: Any) -> None:
+        """Set the credentials for the Source."""
+        self.source.set_credentials(credentials)
 
-        As the Source won't have an engine set by default, can be supplied.
+    def write_to_location(self, credentials: Any) -> None:
+        """Write the data to the Source's location.
+
+        Credentials aren't set in testkits, so they must be provided here.
         """
-        schema, table = get_schema_table_names(self.source.resolution_name)
-        self.data.to_pandas().drop("id", axis=1).to_sql(
-            name=table,
-            schema=schema,
-            con=engine or self.source.location.credentials,
-            index=False,
-            if_exists="replace",
-        )
+        self.location_writer(self.data, self.source.location, credentials)
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -397,13 +413,26 @@ def generate_source(
 @cache
 def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
-    full_name: str | None = None,
-    engine: Engine | None = None,
+    resolution_name: str | None = None,
+    location_config: LocationConfig | None = None,
     n_true_entities: int = 10,
     repetition: int = 0,
     seed: int = 42,
 ) -> SourceTestkit:
-    """Generate a complete source testkit from configured features."""
+    """Generate a complete source testkit from configured features.
+
+    Args:
+        features: Optional list of feature configurations. If not provided,
+            defaults to a set of common features.
+        resolution_name: Optional resolution_name for the source. If not provided,
+            a unique name will be generated.
+        location_config: Optional location configuration. If not provided,
+            defaults to an in-memory SQLite database.
+        n_true_entities: Number of true entities to generate.
+        repetition: Number of times to repeat the data.
+        seed: Random seed for reproducibility.
+
+    """
     generator = Faker()
     generator.seed_instance(seed)
 
@@ -420,11 +449,17 @@ def source_factory(
             ),
         )
 
-    if full_name is None:
-        full_name = generator.unique.word()
+    if resolution_name is None:
+        resolution_name = generator.unique.word()
 
-    if engine is None:
-        engine = create_engine("sqlite:///:memory:")
+    if location_config is None:
+        location_config = RelationalDBConfig(
+            location_options=RelationalDBConfigOptions(
+                table_strategy="single",
+                table_mapping=None,
+            ),
+            uri="sqlite:///:memory:",
+        )
 
     # Generate base entities
     base_entities = generate_entities(
@@ -447,36 +482,38 @@ def source_factory(
     for entity in base_entities:
         pks = entity_pks.get(entity.id, [])
         if pks:
-            entity.add_source_reference(full_name, pks)
+            entity.add_source_reference(resolution_name, pks)
             source_entities.append(entity)
 
     # Create ClusterEntity objects from row_pks
     results_entities = [
         ClusterEntity(
             id=row_id,
-            source_pks=EntityReference({full_name: frozenset(pks)}),
+            source_pks=EntityReference({resolution_name: frozenset(pks)}),
         )
         for row_id, pks in row_pks.items()
     ]
 
-    fields: tuple[SourceField, ...] = tuple(
-        [SourceField(name="pk", type=DataTypes.STRING, identifier=True)]
-        + [
-            SourceField(name=feature.name, type=feature.datatype)
-            for feature in features
-        ]
+    # Create identifier and fields
+    identifier: SourceField = SourceField(
+        name="pk",
+        type=DataTypes.STRING,
     )
-    select_string = ", \n".join(f'"{field.name}"' for field in fields)
+    fields: tuple[SourceField, ...] = tuple(
+        SourceField(name=feature.name, type=feature.datatype) for feature in features
+    )
+
+    # Create the extract/transform string and location writer
+    extract_transform, location_writer = location_config.to_et_and_location_writer(
+        fields=fields,
+        generator=generator,
+    )
 
     source = Source(
-        location=RelationalDBLocation(uri=str(engine.url)),
-        resolution_name=full_name,
-        extract_transform=textwrap.dedent(f"""
-            select
-                {select_string}
-            from 
-                {full_name};
-        """),
+        location=location_config.to_location(),
+        resolution_name=resolution_name,
+        extract_transform=extract_transform,
+        identifier=identifier,
         fields=fields,
     )
 
@@ -486,32 +523,49 @@ def source_factory(
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
+        location_writer=location_writer,
     )
 
 
 def source_from_tuple(
     data_tuple: tuple[dict[str, Any], ...],
     data_pks: tuple[Any],
-    full_name: str | None = None,
-    engine: Engine | None = None,
+    resolution_name: str | None = None,
+    location_config: LocationConfig | None = None,
     seed: int = 42,
 ) -> SourceTestkit:
-    """Generate a complete source testkit from dummy data."""
+    """Generate a complete source testkit from dummy data.
+
+    Args:
+        data_tuple: Tuple of dictionaries representing the data rows.
+        data_pks: Tuple of primary keys for the data rows.
+        resolution_name: Optional resolution name for the source. If not provided,
+            a unique name will be generated.
+        location_config: Optional location configuration. If not provided,
+            defaults to an in-memory SQLite database.
+        seed: Random seed for reproducibility.
+    """
     generator = Faker()
     generator.seed_instance(seed)
 
-    if full_name is None:
-        full_name = generator.unique.word()
+    if resolution_name is None:
+        resolution_name = generator.unique.word()
 
-    if engine is None:
-        engine = create_engine("sqlite:///:memory:")
+    if location_config is None:
+        location_config = RelationalDBConfig(
+            location_options=RelationalDBConfigOptions(
+                table_strategy="single",
+                table_mapping=None,
+            ),
+            uri="sqlite:///:memory:",
+        )
 
     base_entities = tuple(SourceEntity(base_values=row) for row in data_tuple)
 
     # Create source entities with references
     source_entities: list[SourceEntity] = []
     for entity, pk in zip(base_entities, data_pks, strict=True):
-        entity.add_source_reference(full_name, [pk])
+        entity.add_source_reference(resolution_name, [pk])
         source_entities.append(entity)
     entity_ids = {entity.id for entity in source_entities}
 
@@ -519,29 +573,32 @@ def source_from_tuple(
     results_entities = [
         ClusterEntity(
             id=entity_id,
-            source_pks=EntityReference({full_name: frozenset([pk])}),
+            source_pks=EntityReference({resolution_name: frozenset([pk])}),
         )
         for pk, entity_id in zip(data_pks, entity_ids, strict=True)
     ]
 
-    fields: tuple[SourceField, ...] = tuple(
-        [SourceField(name="pk", type=DataTypes.STRING, identifier=True)]
-        + [
-            SourceField(name=k, type=convert_data_type(type(v)))
-            for k, v in data_tuple[0].items()
-        ]
+    # Create identifier and fields
+    identifier: SourceField = SourceField(
+        name="pk",
+        type=DataTypes.STRING,
     )
-    select_string = ", \n".join(f'"{field.name}"' for field in fields)
+    fields: tuple[SourceField, ...] = tuple(
+        SourceField(name=k, type=convert_data_type(type(v)))
+        for k, v in data_tuple[0].items()
+    )
+
+    # Create the extract/transform string and location writer
+    extract_transform, location_writer = location_config.to_et_and_location_writer(
+        fields=fields,
+        generator=generator,
+    )
 
     source = Source(
-        location=RelationalDBLocation(uri=str(engine.url)),
-        resolution_name=full_name,
-        extract_transform=textwrap.dedent(f"""
-            select
-                {select_string}
-            from 
-                {full_name};
-        """),
+        location=location_config.to_location(),
+        resolution_name=resolution_name,
+        extract_transform=extract_transform,
+        identifier=identifier,
         fields=fields,
     )
 
@@ -566,6 +623,7 @@ def source_from_tuple(
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
+        location_writer=location_writer,
     )
 
 
@@ -573,7 +631,7 @@ def source_from_tuple(
 def linked_sources_factory(
     source_configs: tuple[SourceConfig, ...] | None = None,
     n_true_entities: int | None = None,
-    engine: Engine | None = None,
+    location_config: LocationConfig | None = None,
     seed: int = 42,
 ) -> LinkedSourcesTestkit:
     """Generate a set of linked sources with tracked entities.
@@ -583,14 +641,17 @@ def linked_sources_factory(
         n_true_entities: Optional number of true entities to generate. If provided,
             overrides any n_true_entities in source configs. If not provided, each
             SourceConfig must specify its own n_true_entities.
-        engine: Optional SQLAlchemy engine to use for all sources. If provided,
-            overrides any engine in source configs.
+        location_config: Optional location to use for all sources. If provided,
+            overrides any location in source configs.
         seed: Random seed for reproducibility
     """
     generator = Faker()
     generator.seed_instance(seed)
 
-    default_engine = create_engine("sqlite:///:memory:")
+    default_location = RelationalDBConfig(
+        location_options={"table_strategy": "single"},
+        uri="sqlite:///:memory:",
+    )
 
     if source_configs is None:
         # Use factory parameter or default for default configs
@@ -624,8 +685,8 @@ def linked_sources_factory(
 
         source_configs = (
             SourceConfig(
-                full_name="crn",
-                engine=engine or default_engine,
+                resolution_name="crn",
+                location_config=location_config or default_location,
                 features=(
                     features["company_name"].add_variations(
                         SuffixRule(suffix=" Limited"),
@@ -639,8 +700,8 @@ def linked_sources_factory(
                 repetition=0,
             ),
             SourceConfig(
-                full_name="duns",
-                engine=engine or default_engine,
+                resolution_name="duns",
+                location_config=location_config or default_location,
                 features=(
                     features["company_name"],
                     features["duns"],
@@ -649,8 +710,8 @@ def linked_sources_factory(
                 repetition=0,
             ),
             SourceConfig(
-                full_name="cdms",
-                engine=engine or default_engine,
+                resolution_name="cdms",
+                location_config=location_config or default_location,
                 features=(
                     features["crn"],
                     features["cdms"],
@@ -673,8 +734,8 @@ def linked_sources_factory(
             # Override all configs with factory parameter
             source_configs = tuple(
                 SourceConfig(
-                    full_name=config.full_name,
-                    engine=engine or config.engine,
+                    resolution_name=config.resolution_name,
+                    location_config=location_config or default_location,
                     features=config.features,
                     repetition=config.repetition,
                     n_true_entities=n_true_entities,
@@ -684,7 +745,7 @@ def linked_sources_factory(
         else:
             # No factory parameter - check all configs have n_true_entities set
             missing_counts = [
-                config.full_name
+                config.resolution_name
                 for config in source_configs
                 if config.n_true_entities is None
             ]
@@ -731,42 +792,50 @@ def linked_sources_factory(
         results_entities = [
             ClusterEntity(
                 id=row_id,
-                source_pks=EntityReference({config.full_name: frozenset(pks)}),
+                source_pks=EntityReference({config.resolution_name: frozenset(pks)}),
             )
             for row_id, pks in row_pks.items()
         ]
 
-        # Create source
-        fields: tuple[SourceField, ...] = tuple(
-            [SourceField(name="pk", type=DataTypes.STRING, identifier=True)]
-            + [SourceField(name=f.name, type=f.datatype) for f in config.features]
+        # Create identifier and fields
+        identifier: SourceField = SourceField(
+            name="pk",
+            type=DataTypes.STRING,
         )
-        select_string = ", \n".join(f'"{field.name}"' for field in fields)
+        fields: tuple[SourceField, ...] = tuple(
+            SourceField(name=f.name, type=f.datatype) for f in config.features
+        )
 
+        # Create the extract/transform string and location writer
+        extract_transform, location_writer = (
+            config.location_config.to_et_and_location_writer(
+                fields=fields,
+                generator=generator,
+            )
+        )
+
+        # Create source
         source = Source(
-            location=RelationalDBLocation(uri=str(config.engine.url)),
-            resolution_name=config.full_name,
-            extract_transform=textwrap.dedent(f"""
-                select
-                    {select_string}
-                from 
-                    {config.full_name};
-            """),
+            location=config.location_config.to_location(),
+            resolution_name=config.resolution_name,
+            extract_transform=extract_transform,
+            identifier=identifier,
             fields=fields,
         )
 
         # Add source to linked.sources
-        linked.sources[config.full_name] = SourceTestkit(
+        linked.sources[config.resolution_name] = SourceTestkit(
             source=source,
             features=tuple(config.features),
             data=data,
             data_hashes=data_hashes,
             entities=tuple(sorted(results_entities)),
+            location_writer=location_writer,
         )
 
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
             entity = true_entity_lookup[entity_id]
-            entity.add_source_reference(config.full_name, pks)
+            entity.add_source_reference(config.resolution_name, pks)
 
     return linked

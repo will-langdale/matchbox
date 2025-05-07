@@ -77,7 +77,7 @@ def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
     """
 
     @wraps(method)
-    def wrapper(self, *args, **kwargs) -> T:
+    def wrapper(self: "Location", *args, **kwargs) -> T:
         if self.credentials is None:
             raise MatchboxSourceCredentialsError
         return method(self, *args, **kwargs)
@@ -267,7 +267,7 @@ class RelationalDBLocation(Location):
         return_batches: bool = True,
         return_type: ReturnTypeStr = "polars",
     ) -> Iterator[QueryReturnType] | QueryReturnType:
-        yield from sql_to_df(
+        return sql_to_df(
             stmt=extract_transform,
             connection=self.credentials,
             rename=rename,
@@ -294,26 +294,6 @@ class SourceField(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    identifier: bool = Field(
-        default=False,
-        description=textwrap.dedent("""
-            Whether this field is the source's identifier for unique entities, 
-            such as a primary key in a relational database.
-
-            Idenfiers must ALWAYS be a string.
-
-            For example, if the source describes companies, it may have used
-            a Companies House number as its identifier.
-            
-            This identifier is ALWAYS correct. It should be something generated and 
-            owned by the source being indexed.
-            
-            For example, a Salesforce ID is an identifier within Salesforce.
-            
-            A Salesforce ID entered by hand in another dataset shouldn't be used 
-            as an identifier.
-        """),
-    )
     name: str = Field(
         description=(
             "The name of the column in the source dataset after the "
@@ -323,13 +303,6 @@ class SourceField(BaseModel):
     type: DataTypes = Field(
         description="The cached column type. Used to ensure a stable hash.",
     )
-
-    @model_validator(mode="after")
-    def validate_string_identifier(self) -> Self:
-        """Ensure that the identifier is a string."""
-        if self.identifier and self.type != DataTypes.STRING:
-            raise ValueError("Identifier must be a string.")
-        return self
 
 
 def b64_bytes_validator(val: bytes | str) -> bytes:
@@ -423,6 +396,25 @@ class Source(BaseModel):
         )
     )
     # Fields can to be set at creation, or initialised with `.default_columns()`
+    identifier: SourceField = Field(
+        description=textwrap.dedent("""
+            The identifier field. This is the source's identifier for unique
+            entities, such as a primary key in a relational database.
+
+            Idenfiers must ALWAYS be a string.
+
+            For example, if the source describes companies, it may have used
+            a Companies House number as its identifier.
+            
+            This identifier is ALWAYS correct. It should be something generated and 
+            owned by the source being indexed.
+            
+            For example, your organisation's CRM ID is an identifier within the CRM.
+            
+            A CRM ID entered by hand in another dataset shouldn't be used 
+            as an identifier.
+        """),
+    )
     fields: tuple[SourceField, ...] = Field(
         default=None,
         description=textwrap.dedent(
@@ -442,49 +434,51 @@ class Source(BaseModel):
 
     def _detect_fields(
         self, location: Location, extract_transform: str, identifier: str | None = None
-    ) -> tuple[SourceField, ...]:
-        """A helper method to detect the fields from the extract/transform logic."""
+    ) -> tuple[SourceField, tuple[SourceField, ...]]:
+        """A helper method to detect the fields from the extract/transform logic.
+
+        Return a tuple of the identifier, and the fields to index, as SourceFields.
+        """
         id = identifier or "id"
         df: pl.DataFrame = next(
             location.execute(extract_transform=extract_transform, batch_size=100)
         )
+
+        identifier: SourceField
         fields: list[SourceField] = []
+
         for col in df.iter_columns():
-            pk: bool = False
             if col.name == id:
-                pk = True
-            fields.append(
-                SourceField(
-                    name=col,
-                    type=DataTypes.STRING if pk else DataTypes.from_dtype(col.dtype),
-                    identifier=pk,
+                identifier = SourceField(
+                    name=col.name,
+                    type=DataTypes.STRING,
                 )
+            else:
+                fields.append(
+                    SourceField(
+                        name=col,
+                        type=DataTypes.from_dtype(col.dtype),
+                    )
+                )
+
+        if not identifier:
+            raise ValueError(
+                "No identifier found in the extract/transform logic. "
+                "Please set the identifier manually."
             )
-        return tuple(fields)
 
-    @field_validator("fields", mode="after")
-    @classmethod
-    def validate_fields(
-        cls, fields: tuple[SourceField, ...]
-    ) -> tuple[SourceField, ...]:
-        """Ensure that all fields are valid."""
-        pk: bool = False
-        count: int = 0
-        for field in fields:
-            if field.identifier:
-                pk = True
-                count += 1
+        return identifier, tuple(fields)
 
-        if not pk:
-            return ValueError("At least one field must be marked as an identifier.")
+    @model_validator(mode="after")
+    def validate_identifier(self) -> Self:
+        """Ensure that the identifier is a string."""
+        if self.identifier in self.fields:
+            raise ValueError("Identifier must not be in the fields. ")
 
-        if count > 1:
-            return ValueError("Only one field can be marked as an identifier.")
+        if self.identifier.type != DataTypes.STRING:
+            raise ValueError("Identifier must be a string. ")
 
-        if count == 0:
-            raise ValueError("At least one field must be marked as an identifier.")
-
-        return fields
+        return self
 
     @model_validator(mode="after")
     def validate_location_et_fields(self) -> "Source":
@@ -493,7 +487,7 @@ class Source(BaseModel):
             # We can't validate
             return self
 
-        fields = self._detect_fields(
+        identifier, fields = self._detect_fields(
             location=self.location,
             extract_transform=self.extract_transform,
             identifier=self.identifier.name,
@@ -507,23 +501,15 @@ class Source(BaseModel):
                 f"Fields from logic: {fields} \n"
             )
 
-    @property
-    def identifier(self) -> SourceField:
-        """The identifier field."""
-        for field in self.fields:
-            if field.identifier:
-                return field
+        if self.identifier != identifier:
+            raise ValueError(
+                "The identifier does not match the extract/transform logic. "
+                "Please check the identifier and logic. \n"
+                f"Declared identifier: {self.identifier} \n"
+                f"Identifier from logic: {identifier} \n"
+            )
 
-    @property
-    def indexed(self) -> list[SourceField]:
-        """The fields to index."""
-        return [field for field in self.fields if not field.identifier]
-
-    @property
-    def column_qualifier(self) -> str:
-        """A representation of the source's name appropriate for a column prefix."""
-        et_hash = HASH_FUNC(self.extract_transform.encode("utf-8")).hexdigest()[:6]
-        return f"{self.resolution_name}_{et_hash}"
+        return self
 
     @classmethod
     def from_location(cls, location: Location, extract_transform: str) -> "Source":
@@ -543,33 +529,28 @@ class Source(BaseModel):
             A Source object with the location set.
         """
         et_hash = HASH_FUNC(extract_transform.encode("utf-8")).hexdigest()[:6]
+        identifier, fields = cls._detect_fields(
+            cls,
+            location=location,
+            extract_transform=extract_transform,
+            identifier="id",
+        )
         return cls(
             resolution_name=location.uri.host + "_" + et_hash,
             location=location,
             extract_transform=extract_transform,
-            fields=cls._detect_fields(
-                cls,
-                location=location,
-                extract_transform=extract_transform,
-                identifier="id",
-            ),
+            identifier=identifier,
+            fields=fields,
         )
 
-    def set_credentials(self, credentials: Any) -> "Source":
+    def set_credentials(self, credentials: Any) -> None:
         """Set the credentials for the location.
 
         Args:
             credentials: The credentials to set.
-
-        Returns:
-            An updated Source object.
         """
-        source = self.model_copy(
-            update={"location": self.location.add_credentials(credentials)}
-        )
-        return source
+        self.location.add_credentials(credentials)
 
-    @requires_credentials
     def query(
         self,
         qualify_names: bool = False,
@@ -608,7 +589,6 @@ class Source(BaseModel):
             return_type=return_type,
         )
 
-    @requires_credentials
     def hash_data(self, batch_size: int | None = None) -> ArrowTable:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.
 
@@ -620,9 +600,7 @@ class Source(BaseModel):
             A PyArrow Table containing source primary keys and their hashes.
         """
         idenfier: str = self.identifier.name
-        fields_to_index: list[str] = [
-            field.name for field in self.fields if not field.identifier
-        ]
+        fields_to_index: list[str] = [field.name for field in self.fields]
 
         def _process_batch(batch: PolarsDataFrame) -> PolarsDataFrame:
             """Process a single batch of data using Polars.

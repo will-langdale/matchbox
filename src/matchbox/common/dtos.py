@@ -280,6 +280,7 @@ class DataTypes(Enum):
     def to_dtype(self):
         """Convert enum value to actual polars dtype."""
         # Map from enum values to actual polars datatypes
+        # We do this because polars datatypes are not directly serialisable in Pydantic
         dtype_map = {
             self.BOOLEAN: pl.Boolean,
             self.INT8: pl.Int8,

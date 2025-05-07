@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import create_engine
 
+from matchbox.common.factories.locations import RelationalDBConfig
 from matchbox.common.factories.sources import (
     FeatureConfig,
     SourceConfig,
@@ -35,7 +36,11 @@ def test_linked_sources_factory_default():
 
 def test_linked_sources_custom_config():
     """Test linked_sources_factory with custom source configurations."""
-    engine = create_engine("sqlite:///:memory:")
+    location_config = RelationalDBConfig(
+        location_options={"table_strategy": "single"},
+        uri="sqlite:///:memory:",
+        credentials=None,
+    )
 
     features = {
         "name": FeatureConfig(
@@ -51,14 +56,14 @@ def test_linked_sources_custom_config():
 
     configs = (
         SourceConfig(
-            full_name="source_a",
-            engine=engine,
+            resolution_name="source_a",
+            location_config=location_config,
             features=(features["name"], features["user_id"]),
             n_true_entities=5,
             repetition=1,
         ),
         SourceConfig(
-            full_name="source_b",
+            resolution_name="source_b",
             features=(features["name"],),
             n_true_entities=3,
             repetition=2,
@@ -166,7 +171,7 @@ def test_source_entity_equality():
 def test_seed_reproducibility():
     """Test that linked sources generation is reproducible with same seed."""
     config = SourceConfig(
-        full_name="test_source",
+        resolution_name="test_source",
         features=(
             FeatureConfig(
                 name="name",
@@ -199,7 +204,7 @@ def test_seed_reproducibility():
 def test_empty_source_handling():
     """Test handling of sources with zero entities."""
     config = SourceConfig(
-        full_name="empty_source",
+        resolution_name="empty_source",
         features=(FeatureConfig(name="name", base_generator="name"),),
         n_true_entities=0,
     )
@@ -215,7 +220,7 @@ def test_empty_source_handling():
 def test_large_entity_count():
     """Test handling of sources with large number of entities."""
     config = SourceConfig(
-        full_name="large_source",
+        resolution_name="large_source",
         features=(FeatureConfig(name="user_id", base_generator="uuid4"),),
         n_true_entities=10_000,
     )
@@ -237,10 +242,10 @@ def test_feature_inheritance():
 
     configs = (
         SourceConfig(
-            full_name="source_a", features=(features["name"], features["email"])
+            resolution_name="source_a", features=(features["name"], features["email"])
         ),
         SourceConfig(
-            full_name="source_b", features=(features["name"], features["phone"])
+            resolution_name="source_b", features=(features["name"], features["phone"])
         ),
     )
 
@@ -263,7 +268,7 @@ def test_feature_inheritance():
 def test_unique_feature_values():
     """Test that unique features generate distinct values across entities."""
     config = SourceConfig(
-        full_name="test_source",
+        resolution_name="test_source",
         features=(
             FeatureConfig(name="unique_id", base_generator="uuid4", unique=True),
             FeatureConfig(name="is_true", base_generator="boolean", unique=False),
@@ -325,12 +330,12 @@ def test_linked_sources_entity_hierarchy():
 
     configs = (
         SourceConfig(
-            full_name="source_a",
+            resolution_name="source_a",
             features=(features["name"], features["user_id"]),
             n_true_entities=5,
         ),
         SourceConfig(
-            full_name="source_b",
+            resolution_name="source_b",
             features=(features["name"],),
             n_true_entities=3,
         ),
@@ -369,13 +374,13 @@ def test_linked_sources_entity_count_behavior():
     # Test error when n_true_entities missing from configs
     configs_missing_counts = (
         SourceConfig(
-            full_name="source_a",
+            resolution_name="source_a",
             engine=engine,
             features=(base_feature,),
             n_true_entities=5,
         ),
         SourceConfig(
-            full_name="source_b",
+            resolution_name="source_b",
             features=(base_feature,),  # Deliberately missing n_true_entities
         ),
     )
@@ -388,13 +393,13 @@ def test_linked_sources_entity_count_behavior():
     # Test respecting different entity counts per source
     configs_different_counts = (
         SourceConfig(
-            full_name="source_a",
+            resolution_name="source_a",
             engine=engine,
             features=(base_feature,),
             n_true_entities=5,
         ),
         SourceConfig(
-            full_name="source_b",
+            resolution_name="source_b",
             features=(base_feature,),
             n_true_entities=10,
         ),
