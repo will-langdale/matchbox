@@ -11,7 +11,7 @@ import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Column, Table, func, inspect, select, text
+from sqlalchemy import Column, Table, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -31,7 +31,6 @@ from matchbox.common.graph import (
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
-    TABLE_MAP,
     ResolutionFrom,
     Resolutions,
 )
@@ -94,28 +93,22 @@ def dump() -> MatchboxSnapshot:
     data = {}
 
     with MBDB.get_session() as session:
-        for table_name, model in TABLE_MAP.items():
+        for table in MBDB.sorted_tables:
             # Query all records from this table
-            records = session.execute(select(model)).scalars().all()
+            records = session.execute(select(table)).mappings().all()
 
             # Convert each record to a dictionary
             table_data = []
             for record in records:
-                record_dict = {}
-                for column in inspect(model).columns:
-                    value = getattr(record, column.name)
-
+                record_dict = dict(record)
+                for k, v in record_dict.items():
                     # Store bytes as nested dictionary with encoding format
-                    if isinstance(value, bytes):
-                        record_dict[column.name] = {
-                            "base64": base64.b64encode(value).decode("ascii")
-                        }
-                    else:
-                        record_dict[column.name] = value
+                    if isinstance(v, bytes):
+                        record_dict[k] = {"base64": base64.b64encode(v).decode("ascii")}
 
                 table_data.append(record_dict)
 
-            data[table_name] = table_data
+            data[table.name] = table_data
 
     return MatchboxSnapshot(backend_type=MatchboxBackends.POSTGRES, data=data)
 
@@ -133,12 +126,11 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
     """
     with MBDB.get_session() as session:
         # Process tables in order
-        for table_name, model in TABLE_MAP.items():
-            if table_name not in snapshot.data:
-                raise ValueError(f"Invalid: Table {table_name} not found in snapshot.")
+        for table in MBDB.sorted_tables:
+            if table.name not in snapshot.data:
+                raise ValueError(f"Invalid: Table {table.name} not found in snapshot.")
 
-            model = TABLE_MAP[table_name]
-            records = snapshot.data[table_name]
+            records = snapshot.data[table.name]
 
             if not records:
                 continue
@@ -160,11 +152,10 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
             # Insert
             for i in range(0, len(processed_records), batch_size):
                 batch = processed_records[i : i + batch_size]
-                session.bulk_insert_mappings(model, batch)
+                session.execute(insert(table), batch)
                 session.flush()
 
             # Re-sync PK sequences
-            table: Table = model.__table__
             for pk in table.primary_key:
                 lock_stmt = text(
                     f"lock table {table.schema}.{table.name} in exclusive mode;"

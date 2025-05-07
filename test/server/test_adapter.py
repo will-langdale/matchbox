@@ -798,7 +798,7 @@ class TestMatchboxBackend:
 
             # Verify we have data
             pre_dump_counts = get_counts()
-            assert min(pre_dump_counts) > 0
+            assert all(count > 0 for count in pre_dump_counts)
 
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
@@ -812,7 +812,7 @@ class TestMatchboxBackend:
 
         with self.scenario(self.backend, "bare"):
             # Verify counts match pre-dump state
-            assert max([f() for f in count_funcs]) == 0
+            assert all(c == 0 for c in get_counts())
 
             # Restore from snapshot
             self.backend.restore(snapshot)
