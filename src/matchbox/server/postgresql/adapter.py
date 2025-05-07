@@ -34,7 +34,6 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.db import (
     dump,
     get_resolution_graph,
-    resolve_model_name,
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
@@ -399,11 +398,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
         )
 
     def get_model(self, model: str) -> ModelMetadata:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         return get_model_metadata(resolution=resolution)
 
     def set_model_results(self, model: str, results: Table) -> None:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         insert_results(
             results=results,
             resolution=resolution,
@@ -411,22 +410,22 @@ class MatchboxPostgres(MatchboxDBAdapter):
         )
 
     def get_model_results(self, model: str) -> Table:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         return get_model_results(resolution=resolution)
 
     def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
             session.add(resolution)
             resolution.truth = truth
             session.commit()
 
     def get_model_truth(self, model: str) -> int:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         return resolution.truth
 
     def get_model_ancestors(self, model: str) -> list[ModelAncestor]:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         return [
             ModelAncestor(name=resolution.name, truth=resolution.truth)
             for resolution in resolution.ancestors
@@ -437,7 +436,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         model: str,
         ancestors_cache: list[ModelAncestor],
     ) -> None:
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
             session.add(resolution)
             ancestor_names = [ancestor.name for ancestor in ancestors_cache]
@@ -462,7 +461,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             session.commit()
 
     def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
             session.add(resolution)
             query = (
@@ -478,7 +477,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             ]
 
     def delete_model(self, model: str, certain: bool = False) -> None:  # noqa: D102
-        resolution = resolve_model_name(model=model)
+        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
             session.add(resolution)
             if certain:

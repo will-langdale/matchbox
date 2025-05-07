@@ -20,7 +20,6 @@ from sqlalchemy.sql import Select
 
 from matchbox.common.exceptions import (
     MatchboxDatabaseWriteError,
-    MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import (
     ResolutionEdge,
@@ -36,27 +35,6 @@ from matchbox.server.postgresql.orm import (
 )
 
 # Retrieval
-
-
-def resolve_model_name(model: str) -> Resolutions:
-    """Resolves a model name to a Resolution object.
-
-    Args:
-        model: The name of the model to resolve.
-
-    Raises:
-        MatchboxResolutionNotFoundError: If the model doesn't exist.
-    """
-    with MBDB.get_session() as session:
-        if (
-            resolution := session.query(Resolutions)
-            .filter_by(name=model, type="model")
-            .first()
-        ):
-            return resolution
-        raise MatchboxResolutionNotFoundError(
-            message=f"Resolution {model} not found or not of type 'model'."
-        )
 
 
 def get_resolution_graph() -> ResolutionGraph:

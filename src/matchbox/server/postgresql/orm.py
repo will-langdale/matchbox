@@ -18,6 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import relationship
 
+from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
+)
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.sources import Source as CommonSource
 from matchbox.common.sources import SourceAddress
@@ -168,6 +171,34 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             lineage[self.resolution_id] = self.truth
 
             return lineage
+
+    @classmethod
+    def from_name(
+        cls,
+        resolution_name: str,
+        res_type: Literal["model", "dataset", "human"] | None = None,
+    ) -> "Resolutions":
+        """Resolves a model name to a Resolution object.
+
+        Args:
+            resolution_name: The name of the model to resolve.
+            res_type: A resolution type to use as filter.
+
+        Raises:
+            MatchboxResolutionNotFoundError: If the model doesn't exist.
+        """
+        with MBDB.get_session() as session:
+            query = select(cls).where(cls.name == resolution_name)
+            if res_type:
+                query = query.where(cls.type == res_type)
+
+            if resolution := session.execute(query).scalar():
+                return resolution
+
+            res_type = res_type or "any"
+            raise MatchboxResolutionNotFoundError(
+                message=f"No resolution {resolution_name} of {res_type}."
+            )
 
 
 class PKSpace(MBDB.MatchboxBase):
