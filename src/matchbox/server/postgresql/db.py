@@ -14,6 +14,7 @@ from sqlalchemy import (
     URL,
     Engine,
     MetaData,
+    Table,
     create_engine,
     inspect,
     text,
@@ -238,6 +239,11 @@ class MatchboxDatabase:
                 logger.warning(f"Schema mismatch detected. \nDiff: {diff}")
             else:
                 logger.info("Schema matches expected.")
+
+    @property
+    def sorted_tables(self) -> list[Table]:
+        """Return a list of SQLAlchemy tables in order of creation."""
+        return self.MatchboxBase.metadata.sorted_tables
 
 
 # Global database instance -- everything should use this
