@@ -114,6 +114,7 @@ class TestRelationalDBConfig:
         )
 
         sql, writer = config.to_et_and_location_writer(
+            identifier=SourceField(name="pk", type=DataTypes.STRING),
             fields=field_configs,
             generator=faker,
         )
@@ -173,6 +174,7 @@ class TestRelationalDBConfig:
         # This should raise a ValueError due to incomplete mapping
         with pytest.raises(ValueError):
             config.to_et_and_location_writer(
+                identifier=SourceField(name="pk", type=DataTypes.STRING),
                 fields=field_configs,
                 generator=faker,
             )
@@ -264,6 +266,7 @@ class TestRelationalDBConfig:
         )
 
         _, writer = config.to_et_and_location_writer(
+            identifier=SourceField(name="pk", type=DataTypes.STRING),
             fields=field_configs,
             generator=faker,
         )

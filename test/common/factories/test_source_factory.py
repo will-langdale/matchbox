@@ -712,12 +712,9 @@ def test_source_write_to_rdbms_location(
         seed=42,
     )
 
-    source_testkit.write_to_location(credentials=sqlite_warehouse)
-    source_testkit.set_credentials(credentials=sqlite_warehouse)
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
     queried: PolarsDataFrame = source_testkit.source.query(return_type="polars")
-    original: PolarsDataFrame = PolarsDataFrame(
-        source_testkit.data.drop_columns(["pk", "id"])
-    )
+    original: PolarsDataFrame = PolarsDataFrame(source_testkit.data.drop("id"))
 
     assert original.equals(queried)

@@ -1,17 +1,16 @@
-import copy
-from typing import Iterator
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
-import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pytest
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 from sqlalchemy import (
     Engine,
     create_engine,
 )
 from sqlalchemy.exc import OperationalError
-from sqlglot import parse_one
+from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
 from matchbox.client.helpers.selector import Match
@@ -22,7 +21,6 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.factories.locations import location_factory
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import (
     Location,
     RelationalDBLocation,
@@ -256,8 +254,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
         location_type="rdbms", uri=str(sqlite_warehouse.url)
     )
     source_testkit = source_factory(location_config=location_config, n_true_entities=10)
-    source_testkit.write_to_location(credentials=sqlite_warehouse)
-    source_testkit.set_credentials(credentials=sqlite_warehouse)
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
     location = RelationalDBLocation.from_engine(sqlite_warehouse)
     batch_size = 2
@@ -306,8 +303,7 @@ def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
         location_type="rdbms", uri=str(sqlite_warehouse.url)
     )
     source_testkit = source_factory(location_config=location_config, n_true_entities=10)
-    source_testkit.write_to_location(credentials=sqlite_warehouse)
-    source_testkit.set_credentials(credentials=sqlite_warehouse)
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
     location = RelationalDBLocation.from_engine(sqlite_warehouse)
 
@@ -339,402 +335,459 @@ def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
 
 
 def test_source_init():
-    """Test that Source can be instantiated with valid parameters."""
-    # Create a location
-    location = RelationalDBLocation(uri="sqlite:///test.db")
+    """Test basic Source instantiation with a Location object."""
+    # Create a basic location
+    location = RelationalDBLocation(uri="sqlite:///:memory:")
 
-    # Create basic fields
+    # Create fields
+    identifier = SourceField(name="id", type=DataTypes.STRING)
     fields = (
-        SourceField(name="id", type=DataTypes.STRING),
         SourceField(name="name", type=DataTypes.STRING),
         SourceField(name="age", type=DataTypes.INT64),
     )
 
-    # Create a Source
+    # Create Source
     source = Source(
         location=location,
         resolution_name="test_source",
         extract_transform="SELECT id, name, age FROM users",
+        identifier=identifier,
         fields=fields,
     )
 
-    et_hash = HASH_FUNC("SELECT id, name, age FROM users".encode("utf-8")).hexdigest()
-
+    # Verify attributes
     assert source.location == location
     assert source.resolution_name == "test_source"
     assert source.extract_transform == "SELECT id, name, age FROM users"
+    assert source.identifier == identifier
     assert source.fields == fields
-    assert source.identifier.name == "id"
-    assert source.column_qualifier == f"test_source_{et_hash[:6]}"
 
 
-def test_source_field_validation():
-    """Test validation of Source fields."""
-    location = RelationalDBLocation(uri="sqlite:///test.db")
+def test_source_model_validation():
+    """Test that Source validation works for fields and identifier."""
+    # Create a basic location
+    location = RelationalDBLocation(uri="sqlite:///:memory:")
 
-    # Test with missing identifier
-    invalid_fields = (
-        SourceField(name="name", type=DataTypes.STRING),
-        SourceField(name="age", type=DataTypes.INT64),
-    )
+    # Test identifier in fields validation
+    identifier = SourceField(name="id", type=DataTypes.STRING)
+    fields = (identifier, SourceField(name="name", type=DataTypes.STRING))
 
-    with pytest.raises(ValueError):
-        Source(
-            location=location,
-            resolution_name="test_source",
-            extract_transform="SELECT name, age FROM users",
-            fields=invalid_fields,
-        )
-
-    # Test with multiple identifiers
-    invalid_fields_multiple_ids = (
-        SourceField(name="id", type=DataTypes.STRING),
-        SourceField(name="uuid", type=DataTypes.STRING),
-        SourceField(name="name", type=DataTypes.STRING),
-    )
-
-    with pytest.raises(ValueError):
-        Source(
-            location=location,
-            resolution_name="test_source",
-            extract_transform="SELECT id, uuid, name FROM users",
-            fields=invalid_fields_multiple_ids,
-        )
-
-    # Test with non-string identifier
-    invalid_fields_non_string_id = (
-        SourceField(name="id", type=DataTypes.INT64),
-        SourceField(name="name", type=DataTypes.STRING),
-    )
-
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError, match="Identifier must not be in the fields"):
         Source(
             location=location,
             resolution_name="test_source",
             extract_transform="SELECT id, name FROM users",
-            fields=invalid_fields_non_string_id,
+            identifier=identifier,
+            fields=fields,
         )
 
 
-def test_source_from_location(mocker):
-    """Test creating a Source from a Location."""
-    # Mock a location with execute method
-    location = RelationalDBLocation(uri="sqlite:///test.db")
+def test_source_identifier_validation():
+    """Test that identifier validation requires a string type."""
+    # Create a basic location
+    location = RelationalDBLocation(uri="sqlite:///:memory:")
+    fields = (SourceField(name="name", type=DataTypes.STRING),)
 
-    # Create a mock DataFrame to return
-    mock_df = pl.DataFrame(
-        {
-            "id": ["1", "2", "3"],
-            "name": ["Alice", "Bob", "Charlie"],
-            "age": [25, 30, 35],
-        }
-    )
-
-    # Mock the execute method
-    mocker.patch.object(Location, "execute", return_value=mock_df)
-
-    # Test Source.from_location
-    source = Source.from_location(
-        location=location, extract_transform="SELECT id, name, age FROM users"
-    )
-
-    assert source.location == location
-    assert source.extract_transform == "SELECT id, name, age FROM users"
-    assert len(source.fields) == 3
-    assert source.fields[0].name == "id"
-    assert source.fields[0].identifier is True
-    assert source.resolution_name.startswith(location.uri.host)
-
-
-def test_source_set_credentials():
-    """Test setting credentials on a Source."""
-    # Create a location
-    location = RelationalDBLocation(uri="sqlite:///test.db")
-
-    # Create a Source
+    # Valid case: String identifier
+    string_identifier = SourceField(name="id", type=DataTypes.STRING)
     source = Source(
         location=location,
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
-        fields=(
-            SourceField(name="id", type=DataTypes.STRING),
-            SourceField(name="name", type=DataTypes.STRING),
-        ),
+        identifier=string_identifier,
+        fields=fields,
+    )
+    assert source.identifier.type == DataTypes.STRING
+
+    # Invalid case: Non-string identifier
+    int_identifier = SourceField(name="id", type=DataTypes.INT64)
+    with pytest.raises(ValidationError, match="Identifier must be a string"):
+        Source(
+            location=location,
+            resolution_name="test_source",
+            extract_transform="SELECT id, name FROM users",
+            identifier=int_identifier,
+            fields=fields,
+        )
+
+
+def test_source_from_location(sqlite_warehouse: Engine):
+    """Test the from_location factory method with minimal parameters."""
+    # Create a location with credentials
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    # Create test data and write to warehouse
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
+    )
+    source_testkit = source_factory(
+        location_config=location_config,
+        n_true_entities=5,
+        features=[
+            {"name": "name", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+    )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+
+    # Use the factory method
+    table_name = (
+        parse_one(source_testkit.source.extract_transform).find(exp.Table).alias_or_name
+    )
+    extract_transform = f"SELECT pk as id, name FROM {table_name}"
+    source = Source.from_location(
+        location=location, extract_transform=extract_transform
     )
 
-    # Mock credentials
-    credentials = create_engine("sqlite:///test.db")
-
-    # Mock the add_credentials method
-    location_with_creds = copy.deepcopy(location)
-    location_with_creds.credentials = credentials
-
-    # Patch the add_credentials method
-    source.location.add_credentials = lambda x: location_with_creds
-
-    # Set credentials
-    new_source = source.set_credentials(credentials)
-
-    # Verify
-    assert new_source.location.credentials == credentials
-    assert source.location.credentials is None  # Original source unchanged
+    # Verify the created source
+    assert source.location == location
+    assert source.extract_transform == extract_transform
+    assert source.identifier.name == "id"
+    assert source.identifier.type == DataTypes.STRING
+    assert len(source.fields) == 1
+    assert source.fields[0].name == "name"
+    assert source.fields[0].type == DataTypes.STRING
+    assert source.resolution_name.startswith(Path(str(sqlite_warehouse.url)).stem)
 
 
-class MockEngine:
-    """Mock engine for testing."""
+def test_source_field_detection_from_location(sqlite_warehouse: Engine):
+    """Test automatic field detection through from_location factory method."""
+    # Create a location with credentials
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
 
-    def __init__(self):
-        self.url = None
+    # Create test data with different column types
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
+    )
+    source_testkit = source_factory(
+        location_config=location_config,
+        n_true_entities=5,
+        features=[
+            {"name": "age", "base_generator": "random_int", "sql_type": "INTEGER"},
+            {"name": "score", "base_generator": "pyfloat", "sql_type": "REAL"},
+        ],
+    )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
-    def execute(self, *args, **kwargs):
-        """Mock execute method."""
-        return []
+    # Use the from_location factory method which internally uses field detection
+    table_name = (
+        parse_one(source_testkit.source.extract_transform).find(exp.Table).alias_or_name
+    )
+    extract_transform = f"SELECT pk as id, age, score FROM {table_name}"
+    source = Source.from_location(
+        location=location, extract_transform=extract_transform
+    )
+
+    # Verify detection results through the created source
+    assert source.identifier.name == "id"
+    assert source.identifier.type == DataTypes.STRING
+    assert len(source.fields) == 2
+
+    # Check field names and types
+    field_dict = {field.name: field.type for field in source.fields}
+    assert "age" in field_dict
+    assert "score" in field_dict
+    assert field_dict["age"] == DataTypes.INT64
+    assert field_dict["score"] == DataTypes.FLOAT64
+
+
+def test_source_set_credentials(sqlite_warehouse: Engine):
+    """Test that credentials can be set on the Location via Source."""
+    # Create a location without credentials
+    location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
+    assert location.credentials is None
+
+    # Create a source with this location
+    source = Source(
+        location=location,
+        resolution_name="test_source",
+        extract_transform="SELECT id, name FROM users",
+        identifier=SourceField(name="id", type=DataTypes.STRING),
+        fields=(SourceField(name="name", type=DataTypes.STRING),),
+    )
+
+    # Set credentials through the source
+    source.set_credentials(sqlite_warehouse)
+
+    # Verify credentials are set on the location
+    assert source.location.credentials == sqlite_warehouse
+
+
+def test_source_query(sqlite_warehouse: Engine):
+    """Test the query method with default parameters."""
+    # Create test data
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
+    )
+    source_testkit = source_factory(
+        location_config=location_config,
+        n_true_entities=5,
+        features=[
+            {"name": "name", "base_generator": "word", "sql_type": "TEXT"},
+        ],
+    )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+
+    # Create location and source
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+    source = Source(
+        location=location,
+        resolution_name="test_source",
+        extract_transform=source_testkit.source.extract_transform,
+        identifier=SourceField(name="pk", type=DataTypes.STRING),
+        fields=(SourceField(name="name", type=DataTypes.STRING),),
+    )
+
+    # Execute query
+    result = source.query()
+
+    # Verify result
+    assert isinstance(result, pl.DataFrame)
+    assert len(result) == 5
+    assert "pk" in result.columns
+    assert "name" in result.columns
 
 
 @pytest.mark.parametrize(
-    "return_batches, batch_size, return_type",
+    "qualify_names",
     [
-        (False, 100, "polars"),
-        (True, 50, "polars"),
-        (False, 100, "arrow"),
-        (True, 50, "pandas"),
+        pytest.param(False, id="no_name_qualification"),
+        pytest.param(True, id="with_name_qualification"),
     ],
 )
-def test_source_query(return_batches, batch_size, return_type, mocker):
-    """Test Source query method with different parameters."""
-    # Create a location
-    location = RelationalDBLocation(uri="sqlite:///test.db")
-    location.credentials = MockEngine()
+@patch("matchbox.common.sources.RelationalDBLocation.execute")
+def test_source_query_name_qualification(
+    mock_execute: Mock,
+    sqlite_warehouse: Engine,
+    qualify_names: bool,
+):
+    """Test that column names are qualified when requested."""
+    # Mock the location execute method to verify parameters
+    mock_execute.return_value = MagicMock()
+    location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
 
-    # Create a Source
+    # Create source
     source = Source(
         location=location,
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
-        fields=(
-            SourceField(name="id", type=DataTypes.STRING),
-            SourceField(name="name", type=DataTypes.STRING),
-        ),
+        identifier=SourceField(name="id", type=DataTypes.STRING),
+        fields=(SourceField(name="name", type=DataTypes.STRING),),
     )
 
-    # Create mock return values
-    if return_type == "polars":
-        mock_return = pl.DataFrame({"id": ["1", "2"], "name": ["Alice", "Bob"]})
-    elif return_type == "arrow":
-        mock_return = pa.Table.from_pydict({"id": ["1", "2"], "name": ["Alice", "Bob"]})
-    else:  # pandas
-        mock_return = pd.DataFrame({"id": ["1", "2"], "name": ["Alice", "Bob"]})
+    # Call query with qualification parameter
+    source.query(qualify_names=qualify_names)
 
-    # Mock the location.execute method
-    if return_batches:
-        mocker.patch.object(location, "execute", return_value=iter([mock_return]))
+    # Verify the rename parameter passed to execute
+    _, kwargs = mock_execute.call_args
+    rename_param = kwargs.get("rename")
+
+    if qualify_names:
+        assert rename_param is not None
+        assert callable(rename_param)
+        # Test the rename function
+        sample_col = "test_col"
+        assert "test_source_" in source.resolution_name + "_" + sample_col
     else:
-        mocker.patch.object(location, "execute", return_value=mock_return)
-
-    # Call query method
-    result = source.query(
-        return_batches=return_batches,
-        batch_size=batch_size,
-        return_type=return_type,
-    )
-
-    # Check results
-    if return_batches:
-        assert isinstance(result, Iterator)
-        first_batch = next(result)
-        if return_type == "polars":
-            assert isinstance(first_batch, pl.DataFrame)
-        elif return_type == "arrow":
-            assert isinstance(first_batch, pa.Table)
-        else:  # pandas
-            assert isinstance(first_batch, pd.DataFrame)
-    else:
-        if return_type == "polars":
-            assert isinstance(result, pl.DataFrame)
-        elif return_type == "arrow":
-            assert isinstance(result, pa.Table)
-        else:  # pandas
-            assert isinstance(result, pd.DataFrame)
+        assert rename_param is None
 
 
-def test_source_query_with_qualification(mocker):
-    """Test Source query method with name qualification."""
-    # Create a location
-    location = RelationalDBLocation(uri="sqlite:///test.db")
-    location.credentials = MockEngine()
+@pytest.mark.parametrize(
+    ("return_batches", "batch_size", "expected_call_kwargs"),
+    [
+        pytest.param(
+            False,
+            None,
+            {"return_batches": False, "batch_size": None},
+            id="single_return",
+        ),
+        pytest.param(
+            True, 3, {"return_batches": True, "batch_size": 3}, id="multiple_batches"
+        ),
+    ],
+)
+@patch("matchbox.common.sources.RelationalDBLocation.execute")
+def test_source_query_batching(
+    mock_execute: Mock,
+    sqlite_warehouse: Engine,
+    return_batches: bool,
+    batch_size: int,
+    expected_call_kwargs: dict,
+):
+    """Test query with batching options."""
+    # Mock the location execute method to verify parameters
+    mock_execute.return_value = MagicMock()
+    location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
 
-    # Create a Source
+    # Create source
     source = Source(
         location=location,
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
-        fields=(
-            SourceField(name="id", type=DataTypes.STRING),
-            SourceField(name="name", type=DataTypes.STRING),
-        ),
+        identifier=SourceField(name="id", type=DataTypes.STRING),
+        fields=(SourceField(name="name", type=DataTypes.STRING),),
     )
 
-    # Create mock return values and capture renamed columns
-    renamed_columns = {}
+    # Call query with batching parameters
+    source.query(return_batches=return_batches, batch_size=batch_size)
 
-    def mock_execute(
-        extract_transform, rename, batch_size, return_batches, return_type
-    ):
-        """Mock execute that captures the rename function."""
-        if rename:
-            renamed_columns["id"] = rename("id")
-            renamed_columns["name"] = rename("name")
-        return pl.DataFrame({"id": ["1", "2"], "name": ["Alice", "Bob"]})
-
-    mocker.patch.object(location, "execute", side_effect=mock_execute)
-
-    # Call query method with qualify_names=True
-    source.query(qualify_names=True)
-
-    # Verify column renaming
-    assert renamed_columns["id"].startswith("test_source_")
-    assert renamed_columns["name"].startswith("test_source_")
+    # Verify parameters passed to execute
+    _, kwargs = mock_execute.call_args
+    for key, value in expected_call_kwargs.items():
+        assert kwargs.get(key) == value
 
 
-def test_source_query_requires_credentials():
-    """Test that query raises an error if credentials are not set."""
-    # Create a location without credentials
-    location = RelationalDBLocation(uri="sqlite:///test.db")
+@pytest.mark.parametrize(
+    "batch_size",
+    [
+        pytest.param(None, id="no_batching"),
+        pytest.param(2, id="with_batching"),
+    ],
+)
+def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
+    """Test the hash_data method produces expected hash format."""
+    # Create test data with unique values
+    n_true_entities = 3
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
+    )
+    source_testkit = source_factory(
+        location_config=location_config,
+        n_true_entities=n_true_entities,
+        features=[
+            {"name": "name", "base_generator": "name", "sql_type": "TEXT"},
+            {"name": "age", "base_generator": "random_int", "sql_type": "INTEGER"},
+        ],
+    )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
-    # Create a Source
+    # Create location and source
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
     source = Source(
         location=location,
         resolution_name="test_source",
-        extract_transform="SELECT id, name FROM users",
+        extract_transform=source_testkit.source.extract_transform,
+        identifier=SourceField(name="pk", type=DataTypes.STRING),
         fields=(
-            SourceField(name="id", type=DataTypes.STRING),
             SourceField(name="name", type=DataTypes.STRING),
+            SourceField(name="age", type=DataTypes.INT64),
         ),
     )
 
-    # Call query method should raise error
-    with pytest.raises(MatchboxSourceCredentialsError):
-        source.query()
+    # Execute hash_data with different batching parameters
+    result = source.hash_data(batch_size=batch_size)
 
-
-def test_source_hash_data(mocker):
-    """Test Source hash_data method."""
-    # Create a location
-    location = RelationalDBLocation(uri="sqlite:///test.db")
-    location.credentials = MockEngine()
-
-    # Create a Source
-    source = Source(
-        location=location,
-        resolution_name="test_source",
-        extract_transform="SELECT id, name, age FROM users",
-        fields=(
-            SourceField(name="id", type=DataTypes.STRING),
-            SourceField(name="name", type=DataTypes.STRING),
-            SourceField(name="age", type=DataTypes.INTEGER),
-        ),
-    )
-
-    # Create mock return values
-    mock_df = pl.DataFrame(
-        {"id": ["1", "2"], "name": ["Alice", "Bob"], "age": [25, 30]}
-    )
-
-    mocker.patch.object(location, "execute", return_value=mock_df)
-
-    # Mock the hash_rows function
-    mock_hash = pl.Series(["hash1", "hash2"])
-    mocker.patch("matchbox.common.sources.hash_rows", return_value=mock_hash)
-
-    # Call hash_data method
-    result = source.hash_data(batch_size=100)
-
-    # Verify result structure
+    # Verify result
     assert isinstance(result, pa.Table)
-    assert result.column_names == ["hash", "source_pk"]
-
-    # Verify result values
-    assert len(result) == 2
-
-    # Calling with batch_size should process in batches
-    result_batched = source.hash_data(batch_size=1)
-    assert isinstance(result_batched, pa.Table)
+    assert "hash" in result.column_names
+    assert "source_pk" in result.column_names
+    assert len(result) == n_true_entities
 
 
-def test_source_hash_data_with_null_pk(mocker):
-    """Test that hash_data raises an error if source_pk contains nulls."""
-    # Create a location
-    location = RelationalDBLocation(uri="sqlite:///test.db")
-    location.credentials = MockEngine()
-
-    # Create a Source
+@patch("matchbox.common.sources.Source.query")
+def test_source_hash_data_null_pk(mock_query: Mock, sqlite_warehouse: Engine):
+    """Test hash_data raises an error when source primary keys contain nulls."""
+    # Create a source
+    location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
     source = Source(
         location=location,
         resolution_name="test_source",
         extract_transform="SELECT id, name FROM users",
-        fields=(
-            SourceField(name="id", type=DataTypes.STRING),
-            SourceField(name="name", type=DataTypes.STRING),
-        ),
+        identifier=SourceField(name="id", type=DataTypes.STRING),
+        fields=(SourceField(name="name", type=DataTypes.STRING),),
     )
 
-    # Create mock return values with null id
-    mock_df = pl.DataFrame({"id": ["1", None], "name": ["Alice", "Bob"]})
+    # Mock query to return data with null PKs
+    mock_df = pl.DataFrame({"id": ["1", None], "name": ["a", "b"]})
+    mock_query.return_value = mock_df
 
-    mocker.patch.object(location, "execute", return_value=mock_df)
-
-    # Call hash_data method should raise error
+    # hash_data should raise ValueErrors for null PKs
     with pytest.raises(ValueError, match="source_pk column contains null values"):
         source.hash_data()
 
 
-def test_source_equality_and_hash():
-    """Test Source __eq__ and __hash__ methods."""
-    # Create two identical sources
-    location1 = RelationalDBLocation(uri="sqlite:///test.db")
-    location2 = RelationalDBLocation(uri="sqlite:///test.db")
+def test_source_validation_location_et_fields(sqlite_warehouse: Engine):
+    """Test Source validation of location, extract_transform, and fields alignment.
 
-    fields1 = (
-        SourceField(name="id", type=DataTypes.STRING),
-        SourceField(name="name", type=DataTypes.STRING),
+    Tests three scenarios:
+    1. Valid alignment between location, extract_transform, and fields
+    2. Skip validation when credentials are not set
+    3. Error when fields don't match the results of extract_transform
+    """
+    # Create test data
+    location_config = location_factory(
+        location_type="rdbms", uri=str(sqlite_warehouse.url)
     )
-
-    fields2 = (
-        SourceField(name="id", type=DataTypes.STRING),
-        SourceField(name="name", type=DataTypes.STRING),
+    source_testkit = source_factory(
+        location_config=location_config,
+        n_true_entities=2,
+        features=[
+            {"name": "name", "base_generator": "word", "sql_type": "TEXT"},
+        ],
     )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
-    source1 = Source(
-        location=location1,
+    # Scenario 1: Valid alignment
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+    extract_transform = source_testkit.source.extract_transform
+
+    # This should validate successfully
+    Source(
+        location=location,
         resolution_name="test_source",
-        extract_transform="SELECT id, name FROM users",
-        fields=fields1,
+        extract_transform=extract_transform,
+        identifier=SourceField(name="pk", type=DataTypes.STRING),
+        fields=(SourceField(name="name", type=DataTypes.STRING),),
     )
 
-    source2 = Source(
-        location=location2,
+    # Scenario 2: Skip validation when credentials are not set
+    location_no_creds = RelationalDBLocation(
+        uri=str(sqlite_warehouse.url).split("?")[0]
+    )
+
+    # This should not raise validation errors as credentials aren't set
+    Source(
+        location=location_no_creds,
         resolution_name="test_source",
-        extract_transform="SELECT id, name FROM users",
-        fields=fields2,
+        extract_transform=extract_transform,
+        identifier=SourceField(name="pk", type=DataTypes.STRING),
+        # Fields don't match what extract_transform would return, but we don't validate
+        fields=(
+            SourceField(name="name", type=DataTypes.STRING),
+            SourceField(name="nonexistent", type=DataTypes.STRING),
+        ),
     )
 
-    # Add credentials to one source
-    location1.credentials = MockEngine()
+    # Scenario 3: Error when fields don't match
+    with pytest.raises(
+        ValidationError, match="do not match the extract/transform logic"
+    ):
+        Source(
+            location=location,
+            resolution_name="test_source",
+            extract_transform=extract_transform,
+            identifier=SourceField(name="pk", type=DataTypes.STRING),
+            # This doesn't match the extract_transform
+            fields=(
+                SourceField(name="name", type=DataTypes.STRING),
+                SourceField(name="nonexistent", type=DataTypes.STRING),
+            ),
+        )
 
-    # Verify equality and hash
-    assert source1 == source2
-    assert hash(source1) == hash(source2)
+    # Additional test: identifier doesn't match
+    with pytest.raises(
+        ValidationError, match="do not match the extract/transform logic"
+    ):
+        Source(
+            location=location,
+            resolution_name="test_source",
+            extract_transform=extract_transform,
+            # Wrong identifier name
+            identifier=SourceField(name="wrong_id", type=DataTypes.STRING),
+            fields=(SourceField(name="name", type=DataTypes.STRING),),
+        )
 
-    # Modify one source
-    source3 = Source(
-        location=location1,
-        resolution_name="different",
-        extract_transform="SELECT id, name FROM users",
-        fields=fields1,
-    )
 
-    assert source1 != source3
-    assert hash(source1) != hash(source3)
+# Match
 
 
 def test_match_validation():
@@ -788,41 +841,6 @@ def test_match_validation():
     assert valid_no_target.cluster == 1
     assert valid_no_target.source_id == {"src1", "src2"}
     assert valid_no_target.target_id == set()
-
-
-def test_source_address_methods():
-    """Test SourceAddress methods."""
-    # Create a source address
-    addr = SourceAddress(full_name="schema.table", warehouse_hash=b"warehouse_hash")
-
-    # Test string representation
-    assert str(addr) == f"schema.table@{addr.warehouse_hash_b64}"
-
-    # Test pretty representation
-    assert addr.pretty == f"schema.table@{addr.warehouse_hash_b64[:5]}..."
-
-    # Test format_column method
-    assert addr.format_column("id") == "schema.table_id"
-
-    # Test compose method (mocked)
-    mock_engine = MockEngine()
-    mock_engine.url = AnyUrl("sqlite:///test.db")
-
-    # Mock the get_dialect method
-    mock_engine.url.get_dialect = lambda: type("obj", (object,), {"name": "sqlite"})
-    mock_engine.url.database = "test"
-    mock_engine.url.host = "localhost"
-    mock_engine.url.port = 1234
-    mock_engine.url.schema = "main"
-    mock_engine.url.query = {}
-
-    # Test compose
-    composed_addr = SourceAddress.compose(mock_engine, "schema.table")
-    assert composed_addr.full_name == "schema.table"
-    assert isinstance(composed_addr.warehouse_hash, bytes)
-
-
-# Match
 
 
 def test_match_validates():

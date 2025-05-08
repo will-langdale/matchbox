@@ -5,6 +5,7 @@ import textwrap
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import wraps
+from pathlib import Path
 from typing import (
     Annotated,
     Any,
@@ -456,7 +457,7 @@ class Source(BaseModel):
             else:
                 fields.append(
                     SourceField(
-                        name=col,
+                        name=col.name,
                         type=DataTypes.from_dtype(col.dtype),
                     )
                 )
@@ -493,18 +494,12 @@ class Source(BaseModel):
             identifier=self.identifier.name,
         )
 
-        if self.fields != fields:
+        if (set(self.fields) != set(fields)) or (self.identifier != identifier):
             raise ValueError(
-                "The fields do not match the extract/transform logic. "
-                "Please check the fields and logic. \n"
+                "The fields or identifier do not match the extract/transform logic. "
+                "Please check the fields, identifier and logic. \n"
                 f"Declared fields: {self.fields} \n"
                 f"Fields from logic: {fields} \n"
-            )
-
-        if self.identifier != identifier:
-            raise ValueError(
-                "The identifier does not match the extract/transform logic. "
-                "Please check the identifier and logic. \n"
                 f"Declared identifier: {self.identifier} \n"
                 f"Identifier from logic: {identifier} \n"
             )
@@ -535,8 +530,16 @@ class Source(BaseModel):
             extract_transform=extract_transform,
             identifier="id",
         )
+        default_name: str | None = (
+            location.uri.host or Path(location.uri.path).stem or None
+        )
+        if default_name is None:
+            raise ValueError(
+                "Could not detect a default name for the source. "
+                "Please create the source manually."
+            )
         return cls(
-            resolution_name=location.uri.host + "_" + et_hash,
+            resolution_name=default_name + "_" + et_hash,
             location=location,
             extract_transform=extract_transform,
             identifier=identifier,
@@ -591,6 +594,10 @@ class Source(BaseModel):
 
     def hash_data(self, batch_size: int | None = None) -> ArrowTable:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.
+
+        Hashes the fields defined in the source based on the extract/transform logic.
+
+        Does not hash the identifier field.
 
         Args:
             batch_size: If set, process data in batches internally. Indicates the

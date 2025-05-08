@@ -149,12 +149,21 @@ class SourceTestkit(BaseModel):
         """Set the credentials for the Source."""
         self.source.set_credentials(credentials)
 
-    def write_to_location(self, credentials: Any) -> None:
+    def write_to_location(
+        self, credentials: Any, set_credentials: bool = False
+    ) -> None:
         """Write the data to the Source's location.
 
         Credentials aren't set in testkits, so they must be provided here.
+
+        Args:
+            credentials: Credentials to use for the location.
+            set_credentials: Whether to set the credentials on the Source.
+                Offered here for convenience as it's often the next step.
         """
         self.location_writer(self.data, self.source.location, credentials)
+        if set_credentials:
+            self.set_credentials(credentials)
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -505,6 +514,7 @@ def source_factory(
 
     # Create the extract/transform string and location writer
     extract_transform, location_writer = location_config.to_et_and_location_writer(
+        identifier=identifier,
         fields=fields,
         generator=generator,
     )
@@ -590,6 +600,7 @@ def source_from_tuple(
 
     # Create the extract/transform string and location writer
     extract_transform, location_writer = location_config.to_et_and_location_writer(
+        identifier=identifier,
         fields=fields,
         generator=generator,
     )
@@ -809,6 +820,7 @@ def linked_sources_factory(
         # Create the extract/transform string and location writer
         extract_transform, location_writer = (
             config.location_config.to_et_and_location_writer(
+                identifier=identifier,
                 fields=fields,
                 generator=generator,
             )

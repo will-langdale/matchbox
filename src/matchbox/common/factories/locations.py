@@ -103,11 +103,18 @@ class RelationalDBConfig(LocationConfig):
 
     def to_et_and_location_writer(  # noqa: D102
         self,
+        identifier: SourceField,
         fields: list[SourceField],
         generator: Faker,
     ) -> tuple[str, Callable[[pa.Table, RelationalDBLocation, Engine], None]]:
         _to_location: Callable[[pa.Table, RelationalDBLocation, Engine], None]
         sql: str
+
+        # Validate that identifier name is "pk" for now
+        if identifier.name != "pk":
+            raise ValueError(
+                f"Identifier name must be 'pk' for now, but got '{identifier.name}'"
+            )
 
         def _make_select_clause(field_names: list[str], table_map: dict[str, str]):
             """Create SELECT clause with proper table prefixes."""
@@ -130,7 +137,7 @@ class RelationalDBConfig(LocationConfig):
 
             if not field_names:
                 # Spread strategy 6NF central table
-                df[["pk"]].to_sql(
+                df[[identifier.name]].to_sql(
                     name=table_name,
                     con=credentials,
                     index=False,
@@ -138,7 +145,7 @@ class RelationalDBConfig(LocationConfig):
                 )
             else:
                 # Write pk plus specified fields
-                columns = ["pk"] + field_names
+                columns = [identifier.name] + field_names
                 df[columns].to_sql(
                     name=table_name,
                     con=credentials,
@@ -209,6 +216,9 @@ class RelationalDBConfig(LocationConfig):
         tables: list[str] = list(tables_to_fields.keys())
         main_table: str = tables[0]
 
+        # Add identifier to the field_to_table mapping, using the main table
+        field_to_table[identifier.name] = main_table
+
         # Define the location writer function
         def _to_location(
             data: pa.Table, location: RelationalDBLocation, credentials: Engine
@@ -220,14 +230,15 @@ class RelationalDBConfig(LocationConfig):
                 _write_table(df, table, table_fields, location, credentials)
 
         # Build SQL query with joins
-        field_names = [field.name for field in fields]
-        select_string = _make_select_clause(field_names, field_to_table)
+        # Include identifier in the field names for SELECT clause
+        all_field_names = [identifier.name] + [field.name for field in fields]
+        select_string = _make_select_clause(all_field_names, field_to_table)
 
         # Build JOIN clauses for all tables except the main one
         join_clauses = [
             textwrap.dedent(f"""
-                LEFT JOIN "{table}"
-                    ON "{main_table}"."pk" = "{table}"."pk"
+                LEFT JOIN "{table}" ON
+                    "{main_table}"."{identifier.name}" = "{table}"."{identifier.name}"
             """)
             for table in tables[1:]
         ]
