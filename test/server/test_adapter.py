@@ -192,14 +192,12 @@ class TestMatchboxBackend:
             cluster_count_pre_delete = self.backend.clusters.count()
             cluster_assoc_count_pre_delete = self.backend.creates.count()
             proposed_merge_probs_pre_delete = self.backend.proposes.count()
-            actual_merges_pre_delete = self.backend.merges.count()
 
             assert sources_pre_delete == total_sources
             assert models_pre_delete == total_models
             assert cluster_count_pre_delete > 0
             assert cluster_assoc_count_pre_delete > 0
             assert proposed_merge_probs_pre_delete > 0
-            assert actual_merges_pre_delete > 0
 
             # Perform deletion
             self.backend.delete_resolution(resolution_to_delete, certain=True)
@@ -207,20 +205,17 @@ class TestMatchboxBackend:
             source_configs_post_delete = self.backend.datasets.count()
             sources_post_delete = self.backend.source_resolutions.count()
             models_post_delete = self.backend.models.count()
-            # cluster_count_post_delete = self.backend.clusters.count()
+            cluster_count_post_delete = self.backend.clusters.count()
             cluster_assoc_count_post_delete = self.backend.creates.count()
             proposed_merge_probs_post_delete = self.backend.proposes.count()
-            # actual_merges_post_delete = self.backend.merges.count()
 
             # 1 source, 1 index, 1 deduper, 3 linkers are gone
             assert source_configs_post_delete == source_configs_pre_delete - 1
             assert sources_post_delete == sources_pre_delete - 1
             assert models_post_delete == models_pre_delete - 4
 
-            # TODO: what is going on here??
-            # Cluster, dedupe and link count unaffected
-            # assert cluster_count_post_delete == cluster_count_pre_delete
-            # assert actual_merges_post_delete == actual_merges_pre_delete
+            # We've lost some composite clusters
+            assert cluster_count_post_delete < cluster_count_pre_delete
 
             # Count of propose and create edges has dropped
             assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
