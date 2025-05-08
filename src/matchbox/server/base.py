@@ -467,11 +467,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def delete_model(self, model: str, certain: bool) -> None:
-        """Delete a model from the database.
+    def delete_resolution(self, resolution: str, certain: bool) -> None:
+        """Delete a resolution from the database.
 
         Args:
-            model: The name of the model to delete.
+            resolution: The name of the resolution to delete.
             certain: Whether to delete the model without confirmation.
         """
         ...

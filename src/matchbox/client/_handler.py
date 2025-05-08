@@ -15,8 +15,8 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     ModelAncestor,
     ModelMetadata,
-    ModelOperationStatus,
     NotFoundError,
+    ResolutionOperationStatus,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -83,7 +83,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
             raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     if res.status_code == 409:
-        error = ModelOperationStatus.model_validate(res.json())
+        error = ResolutionOperationStatus.model_validate(res.json())
         raise MatchboxDeletionNotConfirmed(message=error.details)
 
     if res.status_code == 422:
@@ -270,13 +270,13 @@ def get_resolution_graph() -> ResolutionGraph:
 # Model management
 
 
-def insert_model(model: ModelMetadata) -> ModelOperationStatus:
+def insert_model(model: ModelMetadata) -> ResolutionOperationStatus:
     """Insert a model in Matchbox."""
     log_prefix = f"Model {model.name}"
     logger.debug("Inserting metadata", prefix=log_prefix)
 
     res = CLIENT.post("/models", json=model.model_dump())
-    return ModelOperationStatus.model_validate(res.json())
+    return ResolutionOperationStatus.model_validate(res.json())
 
 
 def get_model(name: str) -> ModelMetadata:
@@ -336,13 +336,13 @@ def get_model_results(name: str) -> Table:
     return read_table(buffer)
 
 
-def set_model_truth(name: str, truth: int) -> ModelOperationStatus:
+def set_model_truth(name: str, truth: int) -> ResolutionOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Setting truth value", prefix=log_prefix)
 
     res = CLIENT.patch(f"/models/{name}/truth", json=truth)
-    return ModelOperationStatus.model_validate(res.json())
+    return ResolutionOperationStatus.model_validate(res.json())
 
 
 def get_model_truth(name: str) -> int:
@@ -365,7 +365,7 @@ def get_model_ancestors(name: str) -> list[ModelAncestor]:
 
 def set_model_ancestors_cache(
     name: str, ancestors: list[ModelAncestor]
-) -> ModelOperationStatus:
+) -> ResolutionOperationStatus:
     """Set the ancestors cache for a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Setting ancestors cached truth values", prefix=log_prefix)
@@ -374,7 +374,7 @@ def set_model_ancestors_cache(
         f"/models/{name}/ancestors_cache",
         json=[a.model_dump() for a in ancestors],
     )
-    return ModelOperationStatus.model_validate(res.json())
+    return ResolutionOperationStatus.model_validate(res.json())
 
 
 def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
@@ -386,10 +386,10 @@ def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
-def delete_model(name: str, certain: bool = False) -> ModelOperationStatus:
-    """Delete a model in Matchbox."""
+def delete_resolution(name: str, certain: bool = False) -> ResolutionOperationStatus:
+    """Delete a resolution in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Deleting", prefix=log_prefix)
 
-    res = CLIENT.delete(f"/models/{name}", params={"certain": certain})
-    return ModelOperationStatus.model_validate(res.json())
+    res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
+    return ResolutionOperationStatus.model_validate(res.json())
