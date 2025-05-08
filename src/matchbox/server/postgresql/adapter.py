@@ -140,7 +140,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self.settings = settings
         MBDB.settings = settings
         MBDB.run_migrations()
-        MBDB.verify_schema()
 
         PKSpace.initialise()
 
@@ -364,9 +363,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
             snapshot=snapshot,
             batch_size=self.settings.batch_size,
         )
-
-    def verify(self) -> None:  # noqa: D102
-        MBDB.verify_schema()
 
     # Model management
 
