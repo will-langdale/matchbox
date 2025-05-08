@@ -209,7 +209,7 @@ class TestMatchboxBackend:
             cluster_assoc_count_post_delete = self.backend.creates.count()
             proposed_merge_probs_post_delete = self.backend.proposes.count()
 
-            # 1 source, 1 index, 1 deduper, 3 linkers are gone
+            # 1 source, 1 index, (1 deduper + 3 linkers) = 4 models are gone
             assert source_configs_post_delete == source_configs_pre_delete - 1
             assert sources_post_delete == sources_pre_delete - 1
             assert models_post_delete == models_pre_delete - 4
