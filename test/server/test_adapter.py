@@ -783,23 +783,22 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "link") as dag:
             crn_testkit = dag.sources.get("crn")
 
-            # Verify we have data
-            pre_dump_datasets_count = self.backend.datasets.count()
-            pre_dump_models_count = self.backend.models.count()
-            pre_dump_data_count = self.backend.data.count()
-            pre_dump_clusters_count = self.backend.clusters.count()
-            pre_dump_merges_count = self.backend.merges.count()
-            pre_dump_creates_count = self.backend.creates.count()
-            pre_dump_proposes_count = self.backend.proposes.count()
+            count_funcs = [
+                self.backend.datasets.count,
+                self.backend.models.count,
+                self.backend.data.count,
+                self.backend.clusters.count,
+                self.backend.merges.count,
+                self.backend.creates.count,
+                self.backend.proposes.count,
+            ]
 
-            # All these should be greater than zero after setup
-            assert pre_dump_datasets_count > 0
-            assert pre_dump_models_count > 0
-            assert pre_dump_data_count > 0
-            assert pre_dump_clusters_count > 0
-            assert pre_dump_merges_count > 0
-            assert pre_dump_creates_count > 0
-            assert pre_dump_proposes_count > 0
+            def get_counts():
+                return [f() for f in count_funcs]
+
+            # Verify we have data
+            pre_dump_counts = get_counts()
+            assert all(count > 0 for count in pre_dump_counts)
 
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
@@ -811,29 +810,15 @@ class TestMatchboxBackend:
             # Dump the database
             snapshot = self.backend.dump()
 
-            # Clear the database
-            self.backend.clear(certain=True)
-
-            # Verify database is empty
-            assert self.backend.datasets.count() == 0
-            assert self.backend.models.count() == 0
-            assert self.backend.data.count() == 0
-            assert self.backend.clusters.count() == 0
-            assert self.backend.merges.count() == 0
-            assert self.backend.creates.count() == 0
-            assert self.backend.proposes.count() == 0
+        with self.scenario(self.backend, "bare"):
+            # Verify counts match pre-dump state
+            assert all(c == 0 for c in get_counts())
 
             # Restore from snapshot
             self.backend.restore(snapshot)
 
             # Verify counts match pre-dump state
-            assert self.backend.datasets.count() == pre_dump_datasets_count
-            assert self.backend.models.count() == pre_dump_models_count
-            assert self.backend.data.count() == pre_dump_data_count
-            assert self.backend.clusters.count() == pre_dump_clusters_count
-            assert self.backend.merges.count() == pre_dump_merges_count
-            assert self.backend.creates.count() == pre_dump_creates_count
-            assert self.backend.proposes.count() == pre_dump_proposes_count
+            assert get_counts() == pre_dump_counts
 
             # Verify specific data was restored correctly
             df_crn_after = self.backend.query(
@@ -845,10 +830,8 @@ class TestMatchboxBackend:
             # The same IDs should be present after restoration
             assert set(sample_ids_before) == set(sample_ids_after)
 
-            # Test the clear parameter of restore
-            self.backend.restore(snapshot, clear=True)
+            # Test that restoring also clears the database
+            self.backend.restore(snapshot)
 
             # Verify counts still match
-            assert self.backend.datasets.count() == pre_dump_datasets_count
-            assert self.backend.models.count() == pre_dump_models_count
-            assert self.backend.data.count() == pre_dump_data_count
+            assert get_counts() == pre_dump_counts

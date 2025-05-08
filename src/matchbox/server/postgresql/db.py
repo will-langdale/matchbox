@@ -6,19 +6,18 @@ from typing import Any, Generator
 
 from adbc_driver_postgresql import dbapi as adbc_dbapi
 from alembic import command
-from alembic.autogenerate import compare_metadata
 from alembic.config import Config
-from alembic.migration import MigrationContext
 from pydantic import BaseModel, Field
 from sqlalchemy import (
     URL,
     Engine,
     MetaData,
+    Table,
     create_engine,
     inspect,
     text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from matchbox.common.logging import logger
@@ -139,7 +138,7 @@ class MatchboxDatabase:
             self._connect()
         return self._engine
 
-    def get_session(self):
+    def get_session(self) -> Session:
         """Get a new session."""
         if not self._SessionLocal:
             self._connect()
@@ -205,39 +204,10 @@ class MatchboxDatabase:
             alembic_version = None
         return alembic_version
 
-    def verify_schema(self):
-        """Verify the database schema live is in sync with the ORM.
-
-        If any differences are detected, log this as an error.
-
-        NOTE: this was originally implemented prior to alembic. In principle alembic
-        is best placed to manage any such diff, and this remains for now only as an
-        informative aid and could be removed.
-        """
-        engine = self.get_engine()
-
-        # Compare schema with ORM
-        def _include_name(name: str, type_: str, _: dict[str, str]) -> bool:
-            if type_ == "schema":
-                return name == self.settings.postgres.db_schema
-            else:
-                return True
-
-        with engine.connect() as conn:
-            opts = {
-                "compare_type": True,
-                "compare_server_default": True,
-                "include_schemas": True,
-                "include_names": _include_name,
-            }
-            context = MigrationContext.configure(conn, opts=opts)
-
-            diff = compare_metadata(context, self.MatchboxBase.metadata)
-
-            if diff:
-                logger.warning(f"Schema mismatch detected. \nDiff: {diff}")
-            else:
-                logger.info("Schema matches expected.")
+    @property
+    def sorted_tables(self) -> list[Table]:
+        """Return a list of SQLAlchemy tables in order of creation."""
+        return self.MatchboxBase.metadata.sorted_tables
 
 
 # Global database instance -- everything should use this

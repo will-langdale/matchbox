@@ -7,8 +7,28 @@ from matchbox.common.exceptions import MatchboxDatabaseWriteError
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
+from matchbox.server.postgresql.orm import PKSpace
 from matchbox.server.postgresql.utils.db import large_ingest
 from matchbox.server.postgresql.utils.insert import HashIDMap
+
+
+@pytest.mark.docker
+def test_reserve_id_block(
+    matchbox_postgres: MatchboxPostgres,  # Reset DB
+):
+    """Test that we can atomically reserve ID blocks."""
+    first_cluster_id = PKSpace.reserve_block("clusters", 42)
+    second_cluster_id = PKSpace.reserve_block("clusters", 42)
+
+    assert first_cluster_id == second_cluster_id - 42
+
+    first_source_pk_id = PKSpace.reserve_block("cluster_source_pks", 42)
+    second_source_pk_id = PKSpace.reserve_block("cluster_source_pks", 42)
+
+    assert first_source_pk_id == second_source_pk_id - 42
+
+    with pytest.raises(ValueError):
+        PKSpace.reserve_block("clusters", 0)
 
 
 def test_hash_id_map():
@@ -30,7 +50,7 @@ def test_hash_id_map():
 
     # Test getting mix of existing and new hashes
     input_hashes = pa.array([b"hash1", b"new_hash", b"hash2"], type=pa.large_binary())
-    returned_ids = hash_map.get_ids(input_hashes)
+    returned_ids = hash_map.generate_ids(input_hashes)
 
     # Verify results
     id_list = returned_ids.to_pylist()
@@ -107,7 +127,7 @@ def test_large_ingest_simple(
 
 @pytest.mark.docker
 def test_large_ingest_upsert_custom_update(
-    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+    matchbox_postgres_dropped: MatchboxPostgres,  # will drop dummy table
 ):
     """Test large ingest with upsertion and custom columns to update."""
     engine = MBDB.get_engine()
@@ -197,7 +217,7 @@ def test_large_ingest_upsert_custom_update(
 
 @pytest.mark.docker
 def test_large_ingest_upsert_custom_key(
-    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+    matchbox_postgres_dropped: MatchboxPostgres,  # will drop dummy table
 ):
     """Test large ingest with upsertion on custom keys."""
     engine = MBDB.get_engine()

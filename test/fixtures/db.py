@@ -391,7 +391,7 @@ def setup_scenario(
         dag = dag.model_copy(deep=True)
 
         # Restore backend and write sources to warehouse
-        backend.restore(clear=True, snapshot=snapshot)
+        backend.restore(snapshot=snapshot)
         _testkitdag_to_warehouse(warehouse, dag)
     else:
         # Create new TestkitDAG with proper backend integration
@@ -496,11 +496,28 @@ def matchbox_postgres_settings(
 def matchbox_postgres(
     matchbox_postgres_settings: MatchboxPostgresSettings,
 ) -> Generator[MatchboxPostgres, None, None]:
-    """The Matchbox PostgreSQL database."""
+    """The Matchbox PostgreSQL database, cleared."""
 
     adapter = MatchboxPostgres(settings=matchbox_postgres_settings)
 
-    # Clean up the Matchbox database before each test, just in case
+    # Clean up the Matchbox database before each test
+    adapter.clear(certain=True)
+
+    yield adapter
+
+    # Clean up the Matchbox database after each test
+    adapter.clear(certain=True)
+
+
+@pytest.fixture(scope="function")
+def matchbox_postgres_dropped(
+    matchbox_postgres_settings: MatchboxPostgresSettings,
+) -> Generator[MatchboxPostgres, None, None]:
+    """The Matchbox PostgreSQL database, dropped and recreated."""
+
+    adapter = MatchboxPostgres(settings=matchbox_postgres_settings)
+
+    # Clean up the Matchbox database before each test
     adapter.drop(certain=True)
 
     yield adapter

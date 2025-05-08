@@ -3,8 +3,7 @@
 from typing import NamedTuple
 
 from pyarrow import Table
-from sqlalchemy import Engine, and_, case, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, case, func, select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelMetadata, ModelType
@@ -28,9 +27,7 @@ class SourceInfo(NamedTuple):
     right_ancestors: set[int] | None
 
 
-def _get_model_parents(
-    engine: Engine, resolution_id: int
-) -> tuple[bytes, bytes | None]:
+def _get_model_parents(resolution_id: int) -> tuple[bytes, bytes | None]:
     """Get the model's immediate parent models."""
     parent_query = (
         select(Resolutions.resolution_id, Resolutions.type)
@@ -39,8 +36,8 @@ def _get_model_parents(
         .where(ResolutionFrom.level == 1)
     )
 
-    with engine.connect() as conn:
-        parents = conn.execute(parent_query).fetchall()
+    with MBDB.get_session() as session:
+        parents = session.execute(parent_query).fetchall()
 
     if len(parents) == 1:
         return parents[0][0], None
@@ -59,11 +56,11 @@ def _get_model_parents(
         raise ValueError(f"Model has unexpected number of parents: {len(parents)}")
 
 
-def _get_source_info(engine: Engine, resolution_id: int) -> SourceInfo:
+def _get_source_info(resolution_id: int) -> SourceInfo:
     """Get source resolutions and their ancestry information."""
-    left_id, right_id = _get_model_parents(engine=engine, resolution_id=resolution_id)
+    left_id, right_id = _get_model_parents(resolution_id=resolution_id)
 
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         left = session.get(Resolutions, left_id)
         right = session.get(Resolutions, right_id) if right_id else None
 
@@ -81,16 +78,14 @@ def _get_source_info(engine: Engine, resolution_id: int) -> SourceInfo:
     )
 
 
-def get_model_metadata(engine: Engine, resolution: Resolutions) -> ModelMetadata:
+def get_model_metadata(resolution: Resolutions) -> ModelMetadata:
     """Get metadata for a model resolution."""
     if resolution.type != ResolutionNodeType.MODEL:
         raise ValueError("Expected resolution of type model")
 
-    source_info: SourceInfo = _get_source_info(
-        engine=engine, resolution_id=resolution.resolution_id
-    )
+    source_info: SourceInfo = _get_source_info(resolution_id=resolution.resolution_id)
 
-    with Session(engine) as session:
+    with MBDB.get_session() as session:
         left = session.get(Resolutions, source_info.left)
         right = (
             session.get(Resolutions, source_info.right) if source_info.right else None
@@ -119,13 +114,10 @@ def get_model_results(resolution: Resolutions) -> Table:
     Returns:
         Table containing the original pairwise probabilities
     """
-    engine = MBDB.get_engine()
     if resolution.type != ResolutionNodeType.MODEL:
         raise ValueError("Expected resolution of type model")
 
-    source_info: SourceInfo = _get_source_info(
-        engine=engine, resolution_id=resolution.resolution_id
-    )
+    source_info: SourceInfo = _get_source_info(resolution_id=resolution.resolution_id)
 
     # First get all clusters this resolution assigned probabilities to
     resolution_clusters = (

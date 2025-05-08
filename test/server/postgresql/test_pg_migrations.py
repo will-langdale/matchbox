@@ -54,8 +54,7 @@ def test_migrations_stairway(matchbox_postgres_settings: MatchboxPostgresSetting
 
 @pytest.mark.docker
 def test_migrations_stairway_with_data(
-    matchbox_postgres: MatchboxPostgres,
-    sqlite_warehouse: Engine,
+    matchbox_postgres: MatchboxPostgres, sqlite_warehouse: Engine
 ):
     """Tests that all migrations can be applied and rolled back with data.
 
@@ -64,7 +63,6 @@ def test_migrations_stairway_with_data(
     Will start at head, then downgrade to base, step by step.
     """
     with setup_scenario(matchbox_postgres, "link", warehouse=sqlite_warehouse):
-        # Set up revisions in reverse order
         alembic_config: Config = (
             matchbox_postgres.settings.postgres.get_alembic_config()
         )
@@ -73,6 +71,7 @@ def test_migrations_stairway_with_data(
 
         logger.debug(f"Total revisions to test: {len(revisions)}")
 
+        # Set up revisions in reverse order
         for i, revision in enumerate(revisions):
             revision_id = revision.revision
             down_revision = revision.down_revision or "base"
@@ -80,13 +79,13 @@ def test_migrations_stairway_with_data(
             logger.debug(f"Testing migration {i + 1}/{len(revisions)}: {revision_id}")
 
             try:
-                # Downgrade to the previous revision
+                # Test downgrade
                 downgrade(alembic_config, down_revision)
 
-                # Upgrade back to this revision
+                # Test upgrade back to this revision
                 upgrade(alembic_config, revision_id)
 
-                # Re-apply it to ensure it works in both directions
+                # Downgrade again to test next step
                 downgrade(alembic_config, down_revision)
 
                 logger.debug(f"✓ Migration {revision_id} passed")
@@ -96,5 +95,5 @@ def test_migrations_stairway_with_data(
                     f"{str(e)}"
                 )
 
-        # Upgrade to table creation migration so scenario can tidy up without erroring
-        upgrade(alembic_config, revisions[-2].revision)
+        # Upgrade to latest migration so scenario can tidy up without erroring
+        upgrade(alembic_config, "head")

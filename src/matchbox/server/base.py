@@ -377,22 +377,16 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def restore(self, snapshot: MatchboxSnapshot, clear: bool) -> None:
+    def restore(self, snapshot: MatchboxSnapshot) -> None:
         """Restores the database from a snapshot.
 
         Args:
             snapshot: A MatchboxSnapshot object of type "postgres" with the
                 database's state
-            clear: Whether to clear the database before restoration
 
         Raises:
             TypeError: If the snapshot is not compatible with PostgreSQL
         """
-        ...
-
-    @abstractmethod
-    def verify(self) -> None:
-        """Checks the database schema against expected and logs outcome."""
         ...
 
     # Model management
