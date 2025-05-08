@@ -75,10 +75,10 @@ class FilteredClusters(BaseModel):
                         ClusterSourcePK.cluster_id == Clusters.cluster_id,
                     )
                 else:
-                    query = query.outerjoin(
-                        ClusterSourcePK,
-                        ClusterSourcePK.cluster_id == Clusters.cluster_id,
-                    ).filter(ClusterSourcePK.cluster_id.is_(None))
+                    query = query.join(
+                        Probabilities,
+                        Probabilities.cluster == Clusters.cluster_id,
+                    )
 
             return query.scalar()
 
@@ -414,9 +414,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
         return get_model_results(resolution=resolution)
 
     def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
-            session.add(resolution)
+            resolution = Resolutions.from_name(
+                resolution_name=model, res_type="model", session=session
+            )
             resolution.truth = truth
             session.commit()
 
@@ -438,7 +439,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
     ) -> None:
         resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
-            session.add(resolution)
             ancestor_names = [ancestor.name for ancestor in ancestors_cache]
             name_to_id = dict(
                 session.query(Resolutions.name, Resolutions.resolution_id)
@@ -463,7 +463,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]:  # noqa: D102
         resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         with MBDB.get_session() as session:
-            session.add(resolution)
             query = (
                 select(Resolutions.name, ResolutionFrom.truth_cache)
                 .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
@@ -479,7 +478,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def delete_resolution(self, resolution: str, certain: bool = False) -> None:  # noqa: D102
         resolution = Resolutions.from_name(resolution_name=resolution)
         with MBDB.get_session() as session:
-            session.add(resolution)
             if certain:
                 delete_stmt = delete(Resolutions).where(
                     Resolutions.resolution_id.in_(
