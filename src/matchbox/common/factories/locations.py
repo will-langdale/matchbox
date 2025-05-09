@@ -53,7 +53,7 @@ class LocationConfig(ABC, BaseModel):
         Returns:
             - The extract transform string to retrieve the data from the location
             - A function that takes SourceTestkit.data and
-                SourceTestkit.source.location and writes the data to the location.
+                SourceTestkit.config.location and writes the data to the location.
                 The function should take the following arguments:
 
                     - data: The data to write to the location.
@@ -270,7 +270,7 @@ def location_factory(
         location_type: Option type of location to create. Currently only "rdbms" is
             supported.
         location_options: Optional options for the location type. If not provided,
-            defaults to an in-memory SQLite database in a single table.
+            defaults to a single table strategy for a relational database.
         uri: Optional URI for the source. If not provided, defaults to an in-memory
             SQLite database.
 

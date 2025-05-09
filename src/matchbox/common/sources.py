@@ -44,7 +44,7 @@ from matchbox.common.db import (
     sql_to_df,
     validate_sql_for_data_extraction,
 )
-from matchbox.common.dtos import DataTypes
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.exceptions import (
     MatchboxSourceCredentialsError,
 )
@@ -109,7 +109,7 @@ class Location(ABC, BaseModel):
         if memo is None:
             memo = {}
 
-        obj_copy = Source(
+        obj_copy = SourceConfig(
             type=deepcopy(self.type, memo),
             uri=deepcopy(self.uri, memo),
         )
@@ -177,7 +177,7 @@ class Location(ABC, BaseModel):
         Examples:
             ```python
             loc = Location.create({"type": "rdbms", "uri": "postgresql://..."})
-            isisntance(loc, RelationalDBLocation)  # True
+            isinstance(loc, RelationalDBLocation)  # True
             ```
         """
         location_type = data.get("type")
@@ -255,7 +255,7 @@ class RelationalDBLocation(Location):
     def validate_extract_transform(self, extract_transform: str) -> bool:  # noqa: D102
         # We are NOT attempting a full sanitisation of the SQL statement
         # Validation is done purely to stop accidental mistakes, not malicious actors
-        # Users should only run indexing using Sources they trust and have read,
+        # Users should only run indexing using SourceConfigs they trust and have read,
         # using least privilege credentials
         return validate_sql_for_data_extraction(extract_transform)
 
@@ -377,8 +377,13 @@ class SourceAddress(BaseModel):
         return fullname_to_prefix(self.full_name) + column
 
 
-class Source(BaseModel):
-    """A dataset that can, or has been indexed on the backend."""
+class SourceConfig(BaseModel):
+    """Configuration of a source that can, or has been, indexed in the backend.
+
+    SourceConfigs are used to configure source resolutions. They are foundational
+    processes on top of which linking and deduplication models can build new
+    resolutions.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -387,8 +392,11 @@ class Source(BaseModel):
             "The location of the source. Used to run the extract/tansform logic."
         )
     )
-    resolution_name: str = Field(
-        description="A unique, human-readable name of the source."
+    name: SourceResolutionName = Field(
+        description=(
+            "A unique, human-readable name of the source resolution this "
+            "object configures."
+        )
     )
     extract_transform: str = Field(
         description=(
@@ -482,7 +490,7 @@ class Source(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_location_et_fields(self) -> "Source":
+    def validate_location_et_fields(self) -> "SourceConfig":
         """Ensure that the location, extract_transform, and fields are aligned."""
         if self.location.credentials is None:
             # We can't validate
@@ -507,10 +515,12 @@ class Source(BaseModel):
         return self
 
     @classmethod
-    def from_location(cls, location: Location, extract_transform: str) -> "Source":
-        """Create a Source from a Location.
+    def from_location(
+        cls, location: Location, extract_transform: str
+    ) -> "SourceConfig":
+        """Create a SourceConfig from a Location.
 
-        A convenience method to create a Source from minimal options.
+        A convenience method to create a SourceConfig from minimal options.
 
         * Assumes a column aliasesed as "id" is the identifier
         * Autodetects datatypes from a small sample
@@ -521,7 +531,7 @@ class Source(BaseModel):
             extract_transform: The logic to extract and transform data from the source.
 
         Returns:
-            A Source object with the location set.
+            A SourceConfig object with the location set.
         """
         et_hash = HASH_FUNC(extract_transform.encode("utf-8")).hexdigest()[:6]
         identifier, fields = cls._detect_fields(
@@ -539,7 +549,7 @@ class Source(BaseModel):
                 "Please create the source manually."
             )
         return cls(
-            resolution_name=default_name + "_" + et_hash,
+            name=default_name + "_" + et_hash,
             location=location,
             extract_transform=extract_transform,
             identifier=identifier,
@@ -582,7 +592,7 @@ class Source(BaseModel):
         if qualify_names:
 
             def _rename(c: str) -> str:
-                self.resolution_name + "_" + c
+                self.name + "_" + c
 
         return self.location.execute(
             extract_transform=self.extract_transform,
@@ -616,15 +626,15 @@ class Source(BaseModel):
                 batch: Polars DataFrame containing the data
 
             Returns:
-                Polars DataFrame with hash and source_pk columns
+                Polars DataFrame with hash and source_identifier columns
 
             Raises:
-                ValueError: If any source_pk values are null
+                ValueError: If any source_identifier values are null
             """
-            batch: pl.DataFrame = batch.rename({idenfier: "source_pk"})
+            batch: pl.DataFrame = batch.rename({idenfier: "source_identifier"})
 
-            if batch["source_pk"].is_null().any():
-                raise ValueError("source_pk column contains null values")
+            if batch["source_identifier"].is_null().any():
+                raise ValueError("source_identifier column contains null values")
 
             row_hashes: pl.Series = hash_rows(
                 df=batch,
@@ -633,7 +643,7 @@ class Source(BaseModel):
             )
 
             result = batch.with_columns(row_hashes.alias("hash")).select(
-                ["hash", "source_pk"]
+                ["hash", "source_identifier"]
             )
 
             return result
@@ -655,22 +665,22 @@ class Source(BaseModel):
             # Non-batched processing
             processed_df = _process_batch(self.query())
 
-        return processed_df.group_by("hash").agg(pl.col("source_pk")).to_arrow()
+        return processed_df.group_by("hash").agg(pl.col("source_identifier")).to_arrow()
 
 
 class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
 
     cluster: int | None
-    source: SourceAddress
-    source_id: set[str] = Field(default_factory=set)
-    target: SourceAddress
-    target_id: set[str] = Field(default_factory=set)
+    source: SourceResolutionName
+    source_identifier: set[str] = Field(default_factory=set)
+    target: SourceResolutionName
+    target_identifier: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
     def found_or_none(self) -> "Match":
         """Ensure that a match has sources and a cluster if target was found."""
-        if self.target_id and not (self.source_id and self.cluster):
+        if self.target_identifier and not (self.source_identifier and self.cluster):
             raise ValueError(
                 "A match must have sources and a cluster if target was found."
             )

@@ -58,12 +58,12 @@ def test_source_factory_repetition():
 
     # For each hash group, verify it contains the correct number of rows
     for _, group in hashes_df.groupby("hash"):
-        # Each hash should have repetition + 1 (base) number of PKs
-        source_pks = group["source_pk"].explode()
-        assert len(source_pks) == repetition + 1
+        # Each hash should have repetition + 1 (base) number of identifiers
+        source_identifiers = group["source_identifier"].explode()
+        assert len(source_identifiers) == repetition + 1
 
-        # Get the actual rows for these PKs
-        rows = data_df[data_df["pk"].isin(source_pks)]
+        # Get the actual rows for these identifiers
+        rows = data_df[data_df["identifier"].isin(source_identifiers)]
 
         # Should have repetition + 1 (base) number of rows
         assert len(rows) == repetition + 1
@@ -105,18 +105,18 @@ def test_source_factory_data_hashes_integrity():
 
     # For each hash group, verify that the corresponding rows are identical
     for _, group in hashes_df.groupby("hash"):
-        pks = group["source_pk"].explode()
-        rows = data_df[data_df["pk"].isin(pks)]
+        identifiers = group["source_identifier"].explode()
+        rows = data_df[data_df["identifier"].isin(identifiers)]
 
         # All rows in the same hash group should have identical feature values
         for feature in features:
             assert len(rows[feature.name].unique()) == 1
 
     # Due to repetition=1, each unique row should appear
-    # in exactly one hash group with two PKs
+    # in exactly one hash group with two identifiers
     # Repetition + 1 because we include the base value
     assert all(
-        len(group["source_pk"].explode()) == repetition + 1
+        len(group["source_identifier"].explode()) == repetition + 1
         for _, group in hashes_df.groupby("hash")
     )
 
@@ -140,7 +140,7 @@ def test_source_testkit_to_mock():
     ]
 
     source_testkit = source_factory(
-        features=features, resolution_name="test.source", n_true_entities=2, seed=42
+        features=features, name="test.config", n_true_entities=2, seed=42
     )
 
     # Create the mock
@@ -164,11 +164,11 @@ def test_source_testkit_to_mock():
     assert mock_source.hash_data() == source_testkit.data_hashes
 
     # Test model dump methods
-    original_dump = source_testkit.source.model_dump()
+    original_dump = source_testkit.config.model_dump()
     mock_dump = mock_source.model_dump()
     assert mock_dump == original_dump
 
-    original_json = source_testkit.source.model_dump_json()
+    original_json = source_testkit.config.model_dump_json()
     mock_json = mock_source.model_dump_json()
     assert mock_json == original_json
 
@@ -178,7 +178,7 @@ def test_source_testkit_to_mock():
 
 
 def test_source_factory_mock_properties():
-    """Test that source properties set in source_factory match generated Source."""
+    """Test that properties set in source_factory match generated SourceConfig."""
     # Create source with specific features and name
     features = [
         FeatureConfig(
@@ -193,14 +193,14 @@ def test_source_factory_mock_properties():
         ),
     ]
 
-    resolution_name = "companies"
+    name = "companies"
     location_config = location_factory(location_type="rdbms")
 
     source = source_factory(
         features=features,
-        resolution_name=resolution_name,
+        name=name,
         location_config=location_config,
-    ).source
+    ).config
 
     # Location should be consistent
     expected_location = RelationalDBLocation(uri=location_config.uri)
@@ -212,15 +212,15 @@ def test_source_factory_mock_properties():
         assert field.name == feature.name
         assert field.type == feature.datatype
 
-    # Check default resolution name and default pk
-    assert source.resolution_name == resolution_name
-    assert source.identifier.name == "pk"
+    # Check default resolution name and default identifier
+    assert source.name == name
+    assert source.identifier.name == "identifier"
 
     # Verify source properties are preserved through model_dump
     dump = source.model_dump()
-    assert dump["resolution_name"] == resolution_name
+    assert dump["name"] == name
     assert str(dump["location"]["uri"]) == str(location_config.uri)
-    assert dump["identifier"] == {"name": "pk", "type": DataTypes.STRING}
+    assert dump["identifier"] == {"name": "identifier", "type": DataTypes.STRING}
     assert dump["fields"] == tuple(
         {"name": f.name, "type": f.datatype} for f in features
     )
@@ -244,7 +244,7 @@ def test_entity_variations_tracking():
     ]
 
     source = source_factory(features=features, n_true_entities=2, seed=42)
-    source_name = source.source.resolution_name
+    source_name = source.config.name
 
     # Process each ClusterEntity group
     for cluster_entity in source.entities:
@@ -264,12 +264,12 @@ def test_entity_variations_tracking():
         # Verify the data values match expectations
         data_df = source.data.to_pandas()
 
-        # Get PKs for this cluster entity
-        result_pks = cluster_entity.get_source_pks(source_name)
-        assert result_pks is not None
+        # Get identifiers for this cluster entity
+        result_identifiers = cluster_entity.get_source_identifiers(source_name)
+        assert result_identifiers is not None
 
         # All rows for a given cluster entity should share the same company value
-        result_rows = data_df[data_df["pk"].isin(result_pks)]
+        result_rows = data_df[data_df["identifier"].isin(result_identifiers)]
         assert len(result_rows["company"].unique()) == 1
 
         company_values = result_rows["company"]
@@ -291,7 +291,7 @@ def test_base_and_variation_entities():
     ]
 
     source = source_factory(features=features, n_true_entities=1, seed=42)
-    source_name = source.source.resolution_name
+    source_name = source.config.name
 
     # Should have two ClusterEntity objects - one for base, one for variation
     assert len(source.entities) == 2
@@ -315,8 +315,8 @@ def test_base_and_variation_entities():
     variation_entity = None
 
     for entity in source.entities:
-        entity_pks = entity.get_source_pks(source_name)
-        rows = data_df[data_df["pk"].isin(entity_pks)]
+        entity_identifiers = entity.get_source_identifiers(source_name)
+        rows = data_df[data_df["identifier"].isin(entity_identifiers)]
         values = rows["company"]
         assert len(values.unique()) == 1
         value = values.iloc[0]
@@ -345,19 +345,22 @@ def test_base_and_variation_entities():
         [base_value, variation_value]
     )
 
-    # Verify that adding the entities produces the same result as having all PKs
+    # Verify that adding the entities produces the same result as having all identifiers
     assert (
-        combined.source_pks[source_name]
-        == base_entity.source_pks[source_name]
-        | variation_entity.source_pks[source_name]
+        combined.source_identifiers[source_name]
+        == base_entity.source_identifiers[source_name]
+        | variation_entity.source_identifiers[source_name]
     )
 
-    # The diff between entities should match their respective PKs
+    # The diff between entities should match their respective identifiers
     base_diff = base_entity - variation_entity
-    assert base_diff.get(source_name) == base_entity.source_pks[source_name]
+    assert base_diff.get(source_name) == base_entity.source_identifiers[source_name]
 
     variation_diff = variation_entity - base_entity
-    assert variation_diff.get(source_name) == variation_entity.source_pks[source_name]
+    assert (
+        variation_diff.get(source_name)
+        == variation_entity.source_identifiers[source_name]
+    )
 
 
 def test_source_factory_id_generation():
@@ -382,7 +385,7 @@ def test_source_factory_id_generation():
     # Convert to pandas for easier analysis
     data_df = source.data.to_pandas()
 
-    # Each unique row combination (excluding pk) should get a different ID
+    # Each unique row combination (excluding identifier) should get a different ID
     for _, group in data_df.groupby("company_name"):
         # All rows with same features should have same ID
         assert len(group["id"].unique()) == 1
@@ -399,19 +402,19 @@ def test_source_from_tuple():
     # Create a source from a tuple of values
     data_tuple = ({"a": 1, "b": "val"}, {"a": 2, "b": "val"})
     testkit = source_from_tuple(
-        data_tuple=data_tuple, data_pks=["0", "1"], resolution_name="foo"
+        data_tuple=data_tuple, data_identifiers=["0", "1"], name="foo"
     )
 
     # Verify the generated testkit has the expected properties
     assert len(testkit.entities) == 2
-    assert set(testkit.entities[0].source_pks["foo"]) | set(
-        testkit.entities[1].source_pks["foo"]
+    assert set(testkit.entities[0].source_identifiers["foo"]) | set(
+        testkit.entities[1].source_identifiers["foo"]
     ) == {"0", "1"}
 
     assert testkit.data.shape[0] == 2
-    assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
+    assert set(testkit.data.column_names) == {"id", "identifier", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2
-    assert set(field.name for field in testkit.source.fields) == {"a", "b"}
+    assert set(field.name for field in testkit.config.fields) == {"a", "b"}
 
 
 @pytest.mark.parametrize(
@@ -523,23 +526,23 @@ def test_generate_rows(
 ):
     """Test generate_rows correctly tracks entities and row identities."""
     generator = Faker(seed=42)
-    raw_data, entity_pks, id_pks, id_hashes = generate_rows(
+    raw_data, entity_identifiers, id_identifiers, id_hashes = generate_rows(
         generator, selected_entities, features
     )
 
     # Check arrays have consistent lengths
-    n_rows = len(raw_data["pk"])
+    n_rows = len(raw_data["identifier"])
     assert len(raw_data["id"]) == n_rows
     assert all(len(values) == n_rows for values in raw_data.values())
 
     # Check entity tracking - each entity appears exactly once
-    assert len(selected_entities) == len(entity_pks)
+    assert len(selected_entities) == len(entity_identifiers)
 
     # Check row identity tracking - each unique value combo gets one ID
     unique_values = {
         tuple(raw_data[f.name][i] for f in features) for i in range(n_rows)
     }
-    assert len(unique_values) == len(id_pks)
+    assert len(unique_values) == len(id_identifiers)
 
     # When we have duplicate values, verify correct ID sharing
     value_counts = {}
@@ -548,28 +551,38 @@ def test_generate_rows(
         row_id = raw_data["id"][i]
         value_counts[values] = value_counts.get(values, 0) + 1
 
-    # Each ID's PKs set should match the number of times those values appear
+    # Each ID's identifiers set should match the number of times those values appear
     for i in range(n_rows):
         values = tuple(raw_data[f.name][i] for f in features)
         row_id = raw_data["id"][i]
-        assert len(id_pks[row_id]) == value_counts[values]
+        assert len(id_identifiers[row_id]) == value_counts[values]
 
-    # Verify all PKs are accounted for
-    all_pks = set(raw_data["pk"])
-    assert all(pk in all_pks for pks in entity_pks.values() for pk in pks)
-    assert all(pk in all_pks for pks in id_pks.values() for pk in pks)
+    # Verify all identifiers are accounted for
+    all_identifiers = set(raw_data["identifier"])
+    assert all(
+        identifier in all_identifiers
+        for identifiers in entity_identifiers.values()
+        for identifier in identifiers
+    )
+    assert all(
+        identifier in all_identifiers
+        for identifiers in id_identifiers.values()
+        for identifier in identifiers
+    )
 
     # For empty entities case, verify empty results
     if not selected_entities:
-        assert not raw_data["pk"]
-        assert not entity_pks
-        assert not id_pks
+        assert not raw_data["identifier"]
+        assert not entity_identifiers
+        assert not id_identifiers
         assert not id_hashes
 
     # Verify core variation behavior
     for entity in selected_entities:
         entity_rows = {
-            i for i, pk in enumerate(raw_data["pk"]) if pk in entity_pks[entity.id]
+            i
+            for i, identifier in enumerate(raw_data["identifier"])
+            if identifier in entity_identifiers[entity.id]
         }
 
         for feature in features:
@@ -615,12 +628,12 @@ def test_generate_rows(
 
         # Multiply all counts together to get total combinations
         expected_rows = functools.reduce(lambda x, y: x * y, variation_counts, 1)
-        assert len(entity_pks[entity.id]) == expected_rows
+        assert len(entity_identifiers[entity.id]) == expected_rows
 
     # Verify hashing functionality
     # Each unique row should have a unique hash
-    assert len(id_hashes) == len(id_pks)
-    assert set(id_hashes.keys()) == set(id_pks.keys())
+    assert len(id_hashes) == len(id_identifiers)
+    assert set(id_hashes.keys()) == set(id_identifiers.keys())
 
     # Create a map from values to hash
     values_to_hash = {}
@@ -706,7 +719,7 @@ def test_source_write_to_rdbms_location(
 
     source_testkit = source_factory(
         features=feature_configs,
-        resolution_name="test_source",
+        name="test_source",
         location_config=location,
         n_true_entities=2,
         seed=42,
@@ -714,7 +727,7 @@ def test_source_write_to_rdbms_location(
 
     source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
-    queried: PolarsDataFrame = source_testkit.source.query(return_type="polars")
+    queried: PolarsDataFrame = source_testkit.config.query(return_type="polars")
     original: PolarsDataFrame = PolarsDataFrame(source_testkit.data.drop("id"))
 
     assert original.equals(queried)

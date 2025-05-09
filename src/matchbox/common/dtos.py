@@ -2,12 +2,21 @@
 
 from enum import Enum, StrEnum
 from importlib.metadata import version
-from typing import Literal
+from typing import Literal, TypeAlias
 
 import polars as pl
 from pydantic import BaseModel, Field
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+
+SourceResolutionName: TypeAlias = str
+"""Type alias for source resolution names."""
+
+ModelResolutionName: TypeAlias = str
+"""Type alias for model resolution names."""
+
+ResolutionName = SourceResolutionName | ModelResolutionName
+"""Type alias for resolution names."""
 
 
 class OKMessage(BaseModel):
@@ -77,7 +86,7 @@ class ModelOperationType(StrEnum):
 class ModelMetadata(BaseModel):
     """Metadata for a model."""
 
-    name: str
+    name: ModelResolutionName
     description: str
     type: ModelType
     left_resolution: str
@@ -87,7 +96,7 @@ class ModelMetadata(BaseModel):
 class ModelAncestor(BaseModel):
     """A model's ancestor and its truth value."""
 
-    name: str = Field(..., description="Name of the ancestor model")
+    name: ModelResolutionName = Field(..., description="Name of the ancestor model")
     truth: int | None = Field(
         default=None, description="Truth threshold value", ge=0, le=100, strict=True
     )
@@ -97,7 +106,7 @@ class ModelOperationStatus(BaseModel):
     """Status response for any model operation."""
 
     success: bool
-    model_name: str
+    name: ModelResolutionName
     operation: ModelOperationType
     details: str | None = None
 
@@ -112,7 +121,7 @@ class ModelOperationStatus(BaseModel):
                             "summary": "Delete operation requires confirmation. ",
                             "value": cls(
                                 success=False,
-                                model_name="example_model",
+                                name="example_model",
                                 operation=ModelOperationType.DELETE,
                                 details=(
                                     "This operation will delete the resolutions "
@@ -145,7 +154,7 @@ class ModelOperationStatus(BaseModel):
                             ),
                             "value": cls(
                                 success=False,
-                                model_name="example_model",
+                                name="example_model",
                                 operation=ModelOperationType.UPDATE_TRUTH,
                             ).model_dump(),
                         },
@@ -162,7 +171,7 @@ class CountResult(BaseModel):
 
 
 class UploadStatus(BaseModel):
-    """Response model for any file upload processes, like Source or Model results."""
+    """Response model for any file upload processes."""
 
     id: str | None = None
     status: Literal[

@@ -35,7 +35,7 @@ def test_insert_model(matchbox_api: MockRouter):
             201,
             json=ModelOperationStatus(
                 success=True,
-                model_name=testkit.model.metadata.name,
+                name=testkit.model.metadata.name,
                 operation=ModelOperationType.INSERT,
             ).model_dump(),
         )
@@ -62,7 +62,7 @@ def test_insert_model_error(matchbox_api: MockRouter):
             500,
             json=ModelOperationStatus(
                 success=False,
-                model_name=testkit.model.metadata.name,
+                name=testkit.model.metadata.name,
                 operation=ModelOperationType.INSERT,
                 details="Internal server error",
             ).model_dump(),
@@ -241,7 +241,7 @@ def test_truth_setter(matchbox_api: MockRouter):
             200,
             json=ModelOperationStatus(
                 success=True,
-                model_name=testkit.model.metadata.name,
+                name=testkit.model.metadata.name,
                 operation=ModelOperationType.UPDATE_TRUTH,
             ).model_dump(),
         )
@@ -307,7 +307,7 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
             200,
             json=ModelOperationStatus(
                 success=True,
-                model_name=testkit.model.metadata.name,
+                name=testkit.model.metadata.name,
                 operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
             ).model_dump(),
         )
@@ -348,7 +348,7 @@ def test_delete_model(matchbox_api: MockRouter):
             200,
             json=ModelOperationStatus(
                 success=True,
-                model_name=testkit.model.metadata.name,
+                name=testkit.model.metadata.name,
                 operation=ModelOperationType.DELETE,
             ).model_dump(),
         )
@@ -375,7 +375,7 @@ def test_delete_model_needs_confirmation(matchbox_api: MockRouter):
             409,
             json=ModelOperationStatus(
                 success=False,
-                model_name=testkit.model.metadata.name,
+                name=testkit.model.metadata.name,
                 operation=ModelOperationType.DELETE,
                 details=error_details,
             ).model_dump(),

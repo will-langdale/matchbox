@@ -30,7 +30,7 @@ def make_cluster_entity(id: int, *args) -> ClusterEntity:
     if len(args) % 2 != 0:
         raise ValueError("Arguments must be pairs of dataset name and PKs list")
 
-    source_pks = {}
+    source_identifiers = {}
     for i in range(0, len(args), 2):
         dataset = args[i]
         pks = args[i + 1]
@@ -38,9 +38,9 @@ def make_cluster_entity(id: int, *args) -> ClusterEntity:
             raise TypeError(f"Dataset name must be a string, got {type(dataset)}")
         if not isinstance(pks, list):
             raise TypeError(f"PKs must be a list, got {type(pks)}")
-        source_pks[dataset] = frozenset(pks)
+        source_identifiers[dataset] = frozenset(pks)
 
-    return ClusterEntity(id=id, source_pks=EntityReference(source_pks))
+    return ClusterEntity(id=id, source_identifiers=EntityReference(source_identifiers))
 
 
 def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
@@ -91,19 +91,23 @@ def test_entity_reference_subset():
 def test_cluster_entity_creation():
     """Test basic ClusterEntity functionality."""
     ref = EntityReference({"dataset1": frozenset({"1", "2"})})
-    entity = ClusterEntity(source_pks=ref)
+    entity = ClusterEntity(source_identifiers=ref)
 
-    assert entity.source_pks == ref
+    assert entity.source_identifiers == ref
     assert isinstance(entity.id, int)
 
 
 def test_cluster_entity_addition():
     """Test combining ClusterEntity objects."""
-    entity1 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"1"})}))
-    entity2 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"2"})}))
+    entity1 = ClusterEntity(
+        source_identifiers=EntityReference({"dataset1": frozenset({"1"})})
+    )
+    entity2 = ClusterEntity(
+        source_identifiers=EntityReference({"dataset1": frozenset({"2"})})
+    )
 
     combined = entity1 + entity2
-    assert combined.source_pks["dataset1"] == frozenset({"1", "2"})
+    assert combined.source_identifiers["dataset1"] == frozenset({"1", "2"})
 
 
 def test_source_entity_creation():
@@ -111,10 +115,10 @@ def test_source_entity_creation():
     base_values = {"name": "John", "age": 30}
     ref = EntityReference({"dataset1": frozenset({"1", "2"})})
 
-    entity = SourceEntity(base_values=base_values, source_pks=ref)
+    entity = SourceEntity(base_values=base_values, source_identifiers=ref)
 
     assert entity.base_values == base_values
-    assert entity.source_pks == ref
+    assert entity.source_identifiers == ref
     assert isinstance(entity.id, int)
 
 
@@ -395,7 +399,7 @@ def test_source_to_results_conversion():
     # Create source entity present in multiple datasets
     source = SourceEntity(
         base_values={"name": "Test"},
-        source_pks=EntityReference(
+        source_identifiers=EntityReference(
             {"dataset1": frozenset({"1", "2"}), "dataset2": frozenset({"A", "B"})}
         ),
     )

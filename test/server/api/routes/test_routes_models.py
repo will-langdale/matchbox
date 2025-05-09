@@ -40,7 +40,7 @@ def test_insert_model(test_client: TestClient):
     assert response.status_code == 201
     assert response.json() == {
         "success": True,
-        "model_name": "test_model",
+        "name": "test_model",
         "operation": ModelOperationType.INSERT.value,
         "details": None,
     }
@@ -173,7 +173,7 @@ async def test_complete_model_upload_process(
     response = test_client.post("/models", json=testkit.model.metadata.model_dump())
     assert response.status_code == 201
     assert response.json()["success"] is True
-    assert response.json()["model_name"] == testkit.model.metadata.name
+    assert response.json()["name"] == testkit.model.metadata.name
 
     # Step 2: Initialize results upload
     response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
@@ -492,7 +492,7 @@ def test_delete_model(test_client: TestClient):
     assert response.status_code == 200
     assert response.json() == {
         "success": True,
-        "model_name": testkit.model.metadata.name,
+        "name": testkit.model.metadata.name,
         "operation": ModelOperationType.DELETE,
         "details": None,
     }

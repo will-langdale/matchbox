@@ -12,7 +12,7 @@ from faker import Faker
 from pydantic import BaseModel, ConfigDict, Field
 
 from matchbox.common.arrow import SCHEMA_INDEX
-from matchbox.common.dtos import DataTypes
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -33,7 +33,7 @@ from matchbox.common.hash import hash_values
 from matchbox.common.sources import (
     LocationType,
     RelationalDBLocation,  # noqa: F401
-    Source,
+    SourceConfig,
     SourceField,
 )
 
@@ -71,13 +71,13 @@ def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class SourceConfig(BaseModel):
+class SourceTestkitConfig(BaseModel):
     """Configuration for generating a source."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+    name: SourceResolutionName
     features: tuple[FeatureConfig, ...] = Field(default_factory=tuple)
-    resolution_name: str
     location_config: LocationConfig | None = Field(
         default=RelationalDBConfig(),
         description=(
@@ -90,11 +90,11 @@ class SourceConfig(BaseModel):
 
 
 class SourceTestkit(BaseModel):
-    """A testkit of data and metadata for a Source."""
+    """A testkit of data and metadata for a SourceConfig."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: Source = Field(description="The real generated Source object.")
+    config: SourceConfig = Field(description="The real generated SourceConfig object.")
     features: tuple[FeatureConfig, ...] | None = Field(
         description=(
             "The features used to generate the data. "
@@ -116,22 +116,22 @@ class SourceTestkit(BaseModel):
 
     @property
     def name(self) -> str:
-        """Return the resolution name of the Source."""
-        return self.source.resolution_name
+        """Return the resolution name of the SourceConfig."""
+        return self.config.name
 
     @property
     def mock(self) -> Mock:
-        """Create a mock Source object with this testkit's configuration."""
-        mock_source = create_autospec(self.source)
+        """Create a mock SourceConfig object with this testkit's configuration."""
+        mock_source_config = create_autospec(self.config)
 
-        mock_source.set_credentials.return_value = mock_source
-        mock_source.from_location.return_value = mock_source
-        mock_source.hash_data.return_value = self.data_hashes
+        mock_source_config.set_credentials.return_value = mock_source_config
+        mock_source_config.from_location.return_value = mock_source_config
+        mock_source_config.hash_data.return_value = self.data_hashes
 
-        mock_source.model_dump.side_effect = self.source.model_dump
-        mock_source.model_dump_json.side_effect = self.source.model_dump_json
+        mock_source_config.model_dump.side_effect = self.config.model_dump
+        mock_source_config.model_dump_json.side_effect = self.config.model_dump_json
 
-        return mock_source
+        return mock_source_config
 
     @property
     def query(self) -> pa.Table:
@@ -142,32 +142,33 @@ class SourceTestkit(BaseModel):
     def query_backend(self) -> pa.Table:
         """Return a PyArrow table in the same format as the SCHEMA_MB_IDS DTO."""
         return pa.Table.from_arrays(
-            [self.data["id"], self.data["pk"]], names=["id", "source_pk"]
+            [self.data["id"], self.data["identifier"]],
+            names=["id", "source_identifier"],
         )
 
     def set_credentials(self, credentials: Any) -> None:
-        """Set the credentials for the Source."""
-        self.source.set_credentials(credentials)
+        """Set the credentials for the SourceConfig."""
+        self.config.set_credentials(credentials)
 
     def write_to_location(
         self, credentials: Any, set_credentials: bool = False
     ) -> None:
-        """Write the data to the Source's location.
+        """Write the data to the SourceConfig's location.
 
         Credentials aren't set in testkits, so they must be provided here.
 
         Args:
             credentials: Credentials to use for the location.
-            set_credentials: Whether to set the credentials on the Source.
+            set_credentials: Whether to set the credentials on the SourceConfig.
                 Offered here for convenience as it's often the next step.
         """
-        self.location_writer(self.data, self.source.location, credentials)
+        self.location_writer(self.data, self.config.location, credentials)
         if set_credentials:
             self.set_credentials(credentials)
 
 
 class LinkedSourcesTestkit(BaseModel):
-    """Container for multiple related Source testkits with entity tracking."""
+    """Container for multiple related SourceConfig testkits with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -186,7 +187,7 @@ class LinkedSourcesTestkit(BaseModel):
             entity: SourceEntity, criteria: dict[str, int], compare: Callable
         ) -> bool:
             return all(
-                compare(len(entity.get_source_pks(src)), count)
+                compare(len(entity.get_source_identifiers(src)), count)
                 for src, count in criteria.items()
             )
 
@@ -263,32 +264,33 @@ def generate_rows(
     Returns a tuple of:
 
     * raw_data: Dictionary of column arrays for DataFrame creation
-    * entity_pks: Maps SourceEntity.id to the set of PKs where that entity appears
-    * id_pks: Maps each ID to the set of PKs where that row appears
+    * entity_identifiers: Maps SourceEntity.id to the set of identifiers where that
+        entity appears
+    * id_identifiers: Maps each ID to the set of identifiers where that row appears
     * id_hashes: Maps each ID to its hash value
 
     For example, if this is the raw data:
 
-    | id | pk | company_name |
-    |----|----|--------------|
-    | 1  | 1  | alpha co     |
-    | 2  | 2  | alpha ltd    |
-    | 1  | 3  | alpha co     |
-    | 2  | 4  | alpha ltd    |
-    | 3  | 5  | beta co      |
-    | 4  | 6  | beta ltd     |
-    | 3  | 7  | beta co      |
-    | 4  | 8  | beta ltd     |
+    | id | identifier | company_name |
+    |----|------------|--------------|
+    | 1  | 1          | alpha co     |
+    | 2  | 2          | alpha ltd    |
+    | 1  | 3          | alpha co     |
+    | 2  | 4          | alpha ltd    |
+    | 3  | 5          | beta co      |
+    | 4  | 6          | beta ltd     |
+    | 3  | 7          | beta co      |
+    | 4  | 8          | beta ltd     |
 
 
-    Entity PKs would be this, because there are two true SourceEntities:
+    Entity identifiers would be this, because there are two true SourceEntities:
 
     {
         1: [1, 2, 3, 4],
         2: [5, 6, 7, 8],
     }
 
-    And ID PKs would be this, because there are four unique rows:
+    And ID identifiers would be this, because there are four unique rows:
 
     {
         1: [1, 3],
@@ -297,32 +299,32 @@ def generate_rows(
         4: [6, 8],
     }
     """
-    raw_data = {"pk": [], "id": []}
+    raw_data = {"identifier": [], "id": []}
     for feature in features:
         raw_data[feature.name] = []
 
     # Track entity locations and row identities
-    entity_pks = {entity.id: [] for entity in selected_entities}
-    id_pks = {}
+    entity_identifiers = {entity.id: [] for entity in selected_entities}
+    id_identifiers = {}
     id_hashes = {}
     value_to_id = {}
 
     def add_row(entity_id: int, values: tuple) -> None:
-        """Add a row of data, handling IDs and PKs."""
-        pk = str(generator.uuid4())
-        entity_pks[entity_id].append(pk)
+        """Add a row of data, handling IDs and identifiers."""
+        identifier = str(generator.uuid4())
+        entity_identifiers[entity_id].append(identifier)
         row_hash = hash_values(*(str(v) for v in values))
 
         if values not in value_to_id:
             mb_id = generator.random_number(digits=16)
             value_to_id[values] = mb_id
-            id_pks[mb_id] = []
+            id_identifiers[mb_id] = []
             id_hashes[mb_id] = row_hash
 
         row_id = value_to_id[values]
-        id_pks[row_id].append(pk)
+        id_identifiers[row_id].append(identifier)
 
-        raw_data["pk"].append(pk)
+        raw_data["identifier"].append(identifier)
         raw_data["id"].append(row_id)
         for feature, value in zip(features, values, strict=True):
             raw_data[feature.name].append(value)
@@ -346,7 +348,7 @@ def generate_rows(
         for values in product(*possible_values):
             add_row(entity.id, values)
 
-    return raw_data, entity_pks, id_pks, id_hashes
+    return raw_data, entity_identifiers, id_identifiers, id_hashes
 
 
 @cache
@@ -362,8 +364,8 @@ def generate_source(
     Returns:
         - data: PyArrow table with generated data
         - data_hashes: PyArrow table with hash groups
-        - entity_pks: SourceEntity ID -> list of PKs mapping
-        - row_pks: Results row ID -> list of PKs mapping for identical rows
+        - entity_identifiers: SourceEntity ID -> list of PKs mapping
+        - row_identifiers: Results row ID -> list of PKs mapping for identical rows
     """
     # Select or generate entities
     if seed_entities is None:
@@ -376,7 +378,7 @@ def generate_source(
         )
 
     # Generate initial data
-    raw_data, entity_pks, row_pks, id_hashes = generate_rows(
+    raw_data, entity_identifiers, row_identifiers, id_hashes = generate_rows(
         generator, selected_entities, features
     )
 
@@ -385,19 +387,25 @@ def generate_source(
 
     # Handle repetition
     df = pd.concat([df] * (repetition + 1), ignore_index=True)
-    entity_pks = {eid: pks * (repetition + 1) for eid, pks in entity_pks.items()}
-    row_pks = {rid: pks * (repetition + 1) for rid, pks in row_pks.items()}
+    entity_identifiers = {
+        eid: identifiers * (repetition + 1)
+        for eid, identifiers in entity_identifiers.items()
+    }
+    row_identifiers = {
+        rid: identifiers * (repetition + 1)
+        for rid, identifiers in row_identifiers.items()
+    }
 
     # Create hash groups
-    source_pks = []
+    source_identifiers = []
     hashes = []
-    for row_id, group_pks in row_pks.items():
-        source_pks.append(list(group_pks))
+    for row_id, group_identifiers in row_identifiers.items():
+        source_identifiers.append(list(group_identifiers))
         hashes.append(id_hashes[row_id])
 
     data_hashes = pa.Table.from_pydict(
         {
-            "source_pk": source_pks,
+            "source_identifier": source_identifiers,
             "hash": hashes,
         },
         schema=SCHEMA_INDEX,
@@ -405,16 +413,16 @@ def generate_source(
 
     # Update variation counts
     for entity in selected_entities:
-        if entity.id in entity_pks:
+        if entity.id in entity_identifiers:
             # Count unique row IDs this entity appears in
-            entity_rows = df[df["pk"].isin(entity_pks[entity.id])]
+            entity_rows = df[df["identifier"].isin(entity_identifiers[entity.id])]
             entity.total_unique_variations = len(set(entity_rows["id"]))
 
     return (
         pa.Table.from_pandas(df, preserve_index=False),
         data_hashes,
-        entity_pks,
-        row_pks,
+        entity_identifiers,
+        row_identifiers,
     )
 
 
@@ -422,7 +430,7 @@ def generate_source(
 @cache
 def source_factory(
     features: list[FeatureConfig] | list[dict] | None = None,
-    resolution_name: str | None = None,
+    name: SourceResolutionName | None = None,
     location_config: LocationConfig | None = None,
     n_true_entities: int = 10,
     repetition: int = 0,
@@ -433,7 +441,7 @@ def source_factory(
     Args:
         features: Optional list of feature configurations. If not provided,
             defaults to a set of common features.
-        resolution_name: Optional resolution_name for the source. If not provided,
+        name: Optional resolution name for the source. If not provided,
             a unique name will be generated.
         location_config: Optional location configuration. If not provided,
             defaults to an in-memory SQLite database.
@@ -458,8 +466,8 @@ def source_factory(
             ),
         )
 
-    if resolution_name is None:
-        resolution_name = generator.unique.word()
+    if name is None:
+        name = generator.unique.word()
 
     if location_config is None:
         location_config = RelationalDBConfig(
@@ -478,7 +486,7 @@ def source_factory(
     )
 
     # Generate data using the base entities
-    data, data_hashes, entity_pks, row_pks = generate_source(
+    data, data_hashes, entity_identifiers, row_identifiers = generate_source(
         generator=generator,
         n_true_entities=n_true_entities,
         features=features,
@@ -489,23 +497,23 @@ def source_factory(
     # Create source entities with references
     source_entities = []
     for entity in base_entities:
-        pks = entity_pks.get(entity.id, [])
-        if pks:
-            entity.add_source_reference(resolution_name, pks)
+        identifiers = entity_identifiers.get(entity.id, [])
+        if identifiers:
+            entity.add_source_reference(name, identifiers)
             source_entities.append(entity)
 
-    # Create ClusterEntity objects from row_pks
+    # Create ClusterEntity objects from row_identifiers
     results_entities = [
         ClusterEntity(
             id=row_id,
-            source_pks=EntityReference({resolution_name: frozenset(pks)}),
+            source_identifiers=EntityReference({name: frozenset(identifiers)}),
         )
-        for row_id, pks in row_pks.items()
+        for row_id, identifiers in row_identifiers.items()
     ]
 
     # Create identifier and fields
     identifier: SourceField = SourceField(
-        name="pk",
+        name="identifier",
         type=DataTypes.STRING,
     )
     fields: tuple[SourceField, ...] = tuple(
@@ -519,16 +527,16 @@ def source_factory(
         generator=generator,
     )
 
-    source = Source(
+    source = SourceConfig(
         location=location_config.to_location(),
-        resolution_name=resolution_name,
+        name=name,
         extract_transform=extract_transform,
         identifier=identifier,
         fields=fields,
     )
 
     return SourceTestkit(
-        source=source,
+        config=source,
         features=features,
         data=data,
         data_hashes=data_hashes,
@@ -539,8 +547,8 @@ def source_factory(
 
 def source_from_tuple(
     data_tuple: tuple[dict[str, Any], ...],
-    data_pks: tuple[Any],
-    resolution_name: str | None = None,
+    data_identifiers: tuple[Any],
+    name: SourceResolutionName | None = None,
     location_config: LocationConfig | None = None,
     seed: int = 42,
 ) -> SourceTestkit:
@@ -548,8 +556,8 @@ def source_from_tuple(
 
     Args:
         data_tuple: Tuple of dictionaries representing the data rows.
-        data_pks: Tuple of primary keys for the data rows.
-        resolution_name: Optional resolution name for the source. If not provided,
+        data_identifiers: Tuple of primary keys for the data rows.
+        name: Optional resolution name for the source. If not provided,
             a unique name will be generated.
         location_config: Optional location configuration. If not provided,
             defaults to an in-memory SQLite database.
@@ -558,8 +566,8 @@ def source_from_tuple(
     generator = Faker()
     generator.seed_instance(seed)
 
-    if resolution_name is None:
-        resolution_name = generator.unique.word()
+    if name is None:
+        name = generator.unique.word()
 
     if location_config is None:
         location_config = RelationalDBConfig(
@@ -574,23 +582,23 @@ def source_from_tuple(
 
     # Create source entities with references
     source_entities: list[SourceEntity] = []
-    for entity, pk in zip(base_entities, data_pks, strict=True):
-        entity.add_source_reference(resolution_name, [pk])
+    for entity, identifier in zip(base_entities, data_identifiers, strict=True):
+        entity.add_source_reference(name, [identifier])
         source_entities.append(entity)
     entity_ids = {entity.id for entity in source_entities}
 
-    # Create ClusterEntity objects from row_pks
+    # Create ClusterEntity objects from row_identifiers
     results_entities = [
         ClusterEntity(
             id=entity_id,
-            source_pks=EntityReference({resolution_name: frozenset([pk])}),
+            source_identifiers=EntityReference({name: frozenset([identifier])}),
         )
-        for pk, entity_id in zip(data_pks, entity_ids, strict=True)
+        for identifier, entity_id in zip(data_identifiers, entity_ids, strict=True)
     ]
 
     # Create identifier and fields
     identifier: SourceField = SourceField(
-        name="pk",
+        name="identifier",
         type=DataTypes.STRING,
     )
     fields: tuple[SourceField, ...] = tuple(
@@ -605,9 +613,9 @@ def source_from_tuple(
         generator=generator,
     )
 
-    source = Source(
+    source_config = SourceConfig(
         location=location_config.to_location(),
-        resolution_name=resolution_name,
+        name=name,
         extract_transform=extract_transform,
         identifier=identifier,
         fields=fields,
@@ -618,19 +626,21 @@ def source_from_tuple(
     data_hashes = pa.Table.from_pydict(
         {
             # Assumes that string conversion will be the same as the SQL warehouse's
-            "source_pk": [str(dpk) for dpk in data_pks],
+            "source_identifier": [str(dpk) for dpk in data_identifiers],
             "hash": hashes,
         },
         schema=SCHEMA_INDEX,
     )
 
     raw_data = pa.Table.from_pylist(list(data_tuple))
-    raw_pks = pa.array(data_pks)
+    raw_identifiers = pa.array(data_identifiers)
 
-    data = raw_data.append_column("id", [entity_ids]).append_column("pk", raw_pks)
+    data = raw_data.append_column("id", [entity_ids]).append_column(
+        "identifier", raw_identifiers
+    )
 
     return SourceTestkit(
-        source=source,
+        config=source_config,
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
@@ -640,7 +650,7 @@ def source_from_tuple(
 
 @cache
 def linked_sources_factory(
-    source_configs: tuple[SourceConfig, ...] | None = None,
+    source_testkit_configs: tuple[SourceTestkitConfig, ...] | None = None,
     n_true_entities: int | None = None,
     location_config: LocationConfig | None = None,
     seed: int = 42,
@@ -648,10 +658,10 @@ def linked_sources_factory(
     """Generate a set of linked sources with tracked entities.
 
     Args:
-        source_configs: Optional tuple of source configurations
+        source_testkit_configs: Optional tuple of source configurations
         n_true_entities: Optional number of true entities to generate. If provided,
             overrides any n_true_entities in source configs. If not provided, each
-            SourceConfig must specify its own n_true_entities.
+            SourceTestkitConfig must specify its own n_true_entities.
         location_config: Optional location to use for all sources. If provided,
             overrides any location in source configs.
         seed: Random seed for reproducibility
@@ -664,7 +674,7 @@ def linked_sources_factory(
         uri="sqlite:///:memory:",
     )
 
-    if source_configs is None:
+    if source_testkit_configs is None:
         # Use factory parameter or default for default configs
         n_true_entities = n_true_entities if n_true_entities is not None else 10
 
@@ -694,9 +704,9 @@ def linked_sources_factory(
             ),
         }
 
-        source_configs = (
-            SourceConfig(
-                resolution_name="crn",
+        source_testkit_configs = (
+            SourceTestkitConfig(
+                name="crn",
                 location_config=location_config or default_location,
                 features=(
                     features["company_name"].add_variations(
@@ -710,8 +720,8 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities,
                 repetition=0,
             ),
-            SourceConfig(
-                resolution_name="duns",
+            SourceTestkitConfig(
+                name="duns",
                 location_config=location_config or default_location,
                 features=(
                     features["company_name"],
@@ -720,8 +730,8 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities // 2,
                 repetition=0,
             ),
-            SourceConfig(
-                resolution_name="cdms",
+            SourceTestkitConfig(
+                name="cdms",
                 location_config=location_config or default_location,
                 features=(
                     features["crn"],
@@ -734,7 +744,9 @@ def linked_sources_factory(
     else:
         if n_true_entities is not None:
             # Factory parameter provided - warn if configs have values set
-            config_entities = [config.n_true_entities for config in source_configs]
+            config_entities = [
+                config.n_true_entities for config in source_testkit_configs
+            ]
             if any(n is not None for n in config_entities):
                 warnings.warn(
                     "Both source configs and linked_sources_factory specify "
@@ -743,21 +755,21 @@ def linked_sources_factory(
                     stacklevel=2,
                 )
             # Override all configs with factory parameter
-            source_configs = tuple(
-                SourceConfig(
-                    resolution_name=config.resolution_name,
+            source_testkit_configs = tuple(
+                SourceTestkitConfig(
+                    name=config.name,
                     location_config=location_config or default_location,
                     features=config.features,
                     repetition=config.repetition,
                     n_true_entities=n_true_entities,
                 )
-                for config in source_configs
+                for config in source_testkit_configs
             )
         else:
             # No factory parameter - check all configs have n_true_entities set
             missing_counts = [
-                config.resolution_name
-                for config in source_configs
+                config.name
+                for config in source_testkit_configs
                 if config.n_true_entities is None
             ]
             if missing_counts:
@@ -769,12 +781,12 @@ def linked_sources_factory(
 
     # Collect all unique features
     all_features = set()
-    for config in source_configs:
+    for config in source_testkit_configs:
         all_features.update(config.features)
     all_features = tuple(sorted(all_features, key=lambda f: f.name))
 
     # Find maximum number of entities needed across all sources
-    max_entities = max(config.n_true_entities for config in source_configs)
+    max_entities = max(config.n_true_entities for config in source_testkit_configs)
 
     # Generate all possible entities
     all_entities = generate_entities(
@@ -789,9 +801,9 @@ def linked_sources_factory(
     )
 
     # Generate sources
-    for config in source_configs:
+    for config in source_testkit_configs:
         # Generate source data using seed entities
-        data, data_hashes, entity_pks, row_pks = generate_source(
+        data, data_hashes, entity_identifiers, row_identifiers = generate_source(
             generator=generator,
             features=tuple(config.features),
             n_true_entities=config.n_true_entities,
@@ -799,18 +811,20 @@ def linked_sources_factory(
             seed_entities=all_entities,
         )
 
-        # Create ClusterEntity objects from row_pks
+        # Create ClusterEntity objects from row_identifiers
         results_entities = [
             ClusterEntity(
                 id=row_id,
-                source_pks=EntityReference({config.resolution_name: frozenset(pks)}),
+                source_identifiers=EntityReference(
+                    {config.name: frozenset(identifiers)}
+                ),
             )
-            for row_id, pks in row_pks.items()
+            for row_id, identifiers in row_identifiers.items()
         ]
 
         # Create identifier and fields
         identifier: SourceField = SourceField(
-            name="pk",
+            name="identifier",
             type=DataTypes.STRING,
         )
         fields: tuple[SourceField, ...] = tuple(
@@ -827,17 +841,17 @@ def linked_sources_factory(
         )
 
         # Create source
-        source = Source(
+        source_config = SourceConfig(
             location=config.location_config.to_location(),
-            resolution_name=config.resolution_name,
+            name=config.name,
             extract_transform=extract_transform,
             identifier=identifier,
             fields=fields,
         )
 
         # Add source to linked.sources
-        linked.sources[config.resolution_name] = SourceTestkit(
-            source=source,
+        linked.sources[config.name] = SourceTestkit(
+            config=source_config,
             features=tuple(config.features),
             data=data,
             data_hashes=data_hashes,
@@ -846,8 +860,8 @@ def linked_sources_factory(
         )
 
         # Update entities with source references
-        for entity_id, pks in entity_pks.items():
+        for entity_id, identifiers in entity_identifiers.items():
             entity = true_entity_lookup[entity_id]
-            entity.add_source_reference(config.resolution_name, pks)
+            entity.add_source_reference(config.name, identifiers)
 
     return linked

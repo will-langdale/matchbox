@@ -18,6 +18,7 @@ from matchbox.common.dtos import (
     ModelMetadata,
     ModelOperationStatus,
     ModelOperationType,
+    ModelResolutionName,
     NotFoundError,
     UploadStatus,
 )
@@ -54,7 +55,7 @@ async def insert_model(
         backend.insert_model(model)
         return ModelOperationStatus(
             success=True,
-            model_name=model.name,
+            name=model.name,
             operation=ModelOperationType.INSERT,
         )
     except Exception as e:
@@ -62,7 +63,7 @@ async def insert_model(
             status_code=500,
             detail=ModelOperationStatus(
                 success=False,
-                model_name=model.name,
+                name=model.name,
                 operation=ModelOperationType.INSERT,
                 details=str(e),
             ).model_dump(),
@@ -73,10 +74,12 @@ async def insert_model(
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-async def get_model(backend: BackendDependency, name: str) -> ModelMetadata:
+async def get_model(
+    backend: BackendDependency, name: ModelResolutionName
+) -> ModelMetadata:
     """Get a model from the backend."""
     try:
-        return backend.get_model(model=name)
+        return backend.get_model(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -93,11 +96,13 @@ async def get_model(backend: BackendDependency, name: str) -> ModelMetadata:
     dependencies=[Depends(validate_api_key)],
 )
 async def set_results(
-    backend: BackendDependency, metadata_store: MetadataStoreDependency, name: str
+    backend: BackendDependency,
+    metadata_store: MetadataStoreDependency,
+    name: ModelResolutionName,
 ) -> UploadStatus:
     """Create an upload task for model results."""
     try:
-        metadata = backend.get_model(model=name)
+        metadata = backend.get_model(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -114,10 +119,12 @@ async def set_results(
     "/{name}/results",
     responses={404: {"model": NotFoundError}},
 )
-async def get_results(backend: BackendDependency, name: str) -> ParquetResponse:
+async def get_results(
+    backend: BackendDependency, name: ModelResolutionName
+) -> ParquetResponse:
     """Download results for a model as a parquet file."""
     try:
-        res = backend.get_model_results(model=name)
+        res = backend.get_model_results(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -143,15 +150,15 @@ async def get_results(backend: BackendDependency, name: str) -> ParquetResponse:
 )
 async def set_truth(
     backend: BackendDependency,
-    name: str,
+    name: ModelResolutionName,
     truth: Annotated[int, Body(ge=0, le=100)],
 ) -> ModelOperationStatus:
     """Set truth data for a model."""
     try:
-        backend.set_model_truth(model=name, truth=truth)
+        backend.set_model_truth(name=name, truth=truth)
         return ModelOperationStatus(
             success=True,
-            model_name=name,
+            name=name,
             operation=ModelOperationType.UPDATE_TRUTH,
         )
     except MatchboxResolutionNotFoundError as e:
@@ -166,7 +173,7 @@ async def set_truth(
             status_code=500,
             detail=ModelOperationStatus(
                 success=False,
-                model_name=name,
+                name=name,
                 operation=ModelOperationType.UPDATE_TRUTH,
                 details=str(e),
             ).model_dump(),
@@ -177,10 +184,10 @@ async def set_truth(
     "/{name}/truth",
     responses={404: {"model": NotFoundError}},
 )
-async def get_truth(backend: BackendDependency, name: str) -> float:
+async def get_truth(backend: BackendDependency, name: ModelResolutionName) -> float:
     """Get truth data for a model."""
     try:
-        return backend.get_model_truth(model=name)
+        return backend.get_model_truth(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -194,10 +201,12 @@ async def get_truth(backend: BackendDependency, name: str) -> float:
     "/{name}/ancestors",
     responses={404: {"model": NotFoundError}},
 )
-async def get_ancestors(backend: BackendDependency, name: str) -> list[ModelAncestor]:
+async def get_ancestors(
+    backend: BackendDependency, name: ModelResolutionName
+) -> list[ModelAncestor]:
     """Get the ancestors for a model."""
     try:
-        return backend.get_model_ancestors(model=name)
+        return backend.get_model_ancestors(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -220,15 +229,15 @@ async def get_ancestors(backend: BackendDependency, name: str) -> list[ModelAnce
 )
 async def set_ancestors_cache(
     backend: BackendDependency,
-    name: str,
+    name: ModelResolutionName,
     ancestors: list[ModelAncestor],
 ):
     """Update the cached ancestors for a model."""
     try:
-        backend.set_model_ancestors_cache(model=name, ancestors_cache=ancestors)
+        backend.set_model_ancestors_cache(name=name, ancestors_cache=ancestors)
         return ModelOperationStatus(
             success=True,
-            model_name=name,
+            name=name,
             operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
         )
     except MatchboxResolutionNotFoundError as e:
@@ -243,7 +252,7 @@ async def set_ancestors_cache(
             status_code=500,
             detail=ModelOperationStatus(
                 success=False,
-                model_name=name,
+                name=name,
                 operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
                 details=str(e),
             ).model_dump(),
@@ -255,11 +264,11 @@ async def set_ancestors_cache(
     responses={404: {"model": NotFoundError}},
 )
 async def get_ancestors_cache(
-    backend: BackendDependency, name: str
+    backend: BackendDependency, name: ModelResolutionName
 ) -> list[ModelAncestor]:
     """Get the cached ancestors for a model."""
     try:
-        return backend.get_model_ancestors_cache(model=name)
+        return backend.get_model_ancestors_cache(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -282,17 +291,17 @@ async def get_ancestors_cache(
 )
 async def delete_model(
     backend: BackendDependency,
-    name: str,
+    name: ModelResolutionName,
     certain: Annotated[
         bool, Query(description="Confirm deletion of the model")
     ] = False,
 ) -> ModelOperationStatus:
     """Delete a model from the backend."""
     try:
-        backend.delete_model(model=name, certain=certain)
+        backend.delete_model(name=name, certain=certain)
         return ModelOperationStatus(
             success=True,
-            model_name=name,
+            name=name,
             operation=ModelOperationType.DELETE,
         )
     except MatchboxResolutionNotFoundError as e:
@@ -307,7 +316,7 @@ async def delete_model(
             status_code=409,
             detail=ModelOperationStatus(
                 success=False,
-                model_name=name,
+                name=name,
                 operation=ModelOperationType.DELETE,
                 details=str(e),
             ).model_dump(),
