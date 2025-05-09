@@ -96,7 +96,7 @@ class Model:
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
-        result = _handler.delete_model(name=self.metadata.name, certain=certain)
+        result = _handler.delete_resolution(name=self.metadata.name, certain=certain)
         return result.success
 
     def run(self) -> Results:

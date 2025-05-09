@@ -74,12 +74,11 @@ class ModelType(StrEnum):
     DEDUPER = "deduper"
 
 
-class ModelOperationType(StrEnum):
-    """Enumeration of supported model operations."""
+class CRUDOperation(StrEnum):
+    """Enumeration of CRUD operations."""
 
-    INSERT = "insert"
-    UPDATE_TRUTH = "update_truth"
-    UPDATE_ANCESTOR_CACHE = "update_ancestor_cache"
+    CREATE = "create"
+    UPDATE = "update"
     DELETE = "delete"
 
 
@@ -102,12 +101,12 @@ class ModelAncestor(BaseModel):
     )
 
 
-class ModelOperationStatus(BaseModel):
-    """Status response for any model operation."""
+class ResolutionOperationStatus(BaseModel):
+    """Status response for any resolution operation."""
 
     success: bool
     name: ModelResolutionName
-    operation: ModelOperationType
+    operation: CRUDOperation
     details: str | None = None
 
     @classmethod
@@ -122,7 +121,7 @@ class ModelOperationStatus(BaseModel):
                             "value": cls(
                                 success=False,
                                 name="example_model",
-                                operation=ModelOperationType.DELETE,
+                                operation=CRUDOperation.DELETE,
                                 details=(
                                     "This operation will delete the resolutions "
                                     "deduper_1, deduper_2, linker_1, "
@@ -155,7 +154,7 @@ class ModelOperationStatus(BaseModel):
                             "value": cls(
                                 success=False,
                                 name="example_model",
-                                operation=ModelOperationType.UPDATE_TRUTH,
+                                operation=CRUDOperation.UPDATE,
                             ).model_dump(),
                         },
                     },

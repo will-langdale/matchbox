@@ -7,23 +7,21 @@ from fastapi import (
     Body,
     Depends,
     HTTPException,
-    Query,
     status,
 )
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
+    CRUDOperation,
     ModelAncestor,
     ModelMetadata,
-    ModelOperationStatus,
-    ModelOperationType,
     ModelResolutionName,
     NotFoundError,
+    ResolutionOperationStatus,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
-    MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
 )
 from matchbox.server.api.dependencies import (
@@ -40,8 +38,8 @@ router = APIRouter(prefix="/models", tags=["models"])
     "",
     responses={
         500: {
-            "model": ModelOperationStatus,
-            **ModelOperationStatus.status_500_examples(),
+            "model": ResolutionOperationStatus,
+            **ResolutionOperationStatus.status_500_examples(),
         },
     },
     status_code=status.HTTP_201_CREATED,
@@ -49,22 +47,22 @@ router = APIRouter(prefix="/models", tags=["models"])
 )
 async def insert_model(
     backend: BackendDependency, model: ModelMetadata
-) -> ModelOperationStatus:
+) -> ResolutionOperationStatus:
     """Insert a model into the backend."""
     try:
         backend.insert_model(model)
-        return ModelOperationStatus(
+        return ResolutionOperationStatus(
             success=True,
             name=model.name,
-            operation=ModelOperationType.INSERT,
+            operation=CRUDOperation.CREATE,
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=ModelOperationStatus(
+            detail=ResolutionOperationStatus(
                 success=False,
                 name=model.name,
-                operation=ModelOperationType.INSERT,
+                operation=CRUDOperation.CREATE,
                 details=str(e),
             ).model_dump(),
         ) from e
@@ -142,8 +140,8 @@ async def get_results(
     responses={
         404: {"model": NotFoundError},
         500: {
-            "model": ModelOperationStatus,
-            **ModelOperationStatus.status_500_examples(),
+            "model": ResolutionOperationStatus,
+            **ResolutionOperationStatus.status_500_examples(),
         },
     },
     dependencies=[Depends(validate_api_key)],
@@ -152,14 +150,14 @@ async def set_truth(
     backend: BackendDependency,
     name: ModelResolutionName,
     truth: Annotated[int, Body(ge=0, le=100)],
-) -> ModelOperationStatus:
+) -> ResolutionOperationStatus:
     """Set truth data for a model."""
     try:
         backend.set_model_truth(name=name, truth=truth)
-        return ModelOperationStatus(
+        return ResolutionOperationStatus(
             success=True,
             name=name,
-            operation=ModelOperationType.UPDATE_TRUTH,
+            operation=CRUDOperation.UPDATE,
         )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
@@ -171,10 +169,10 @@ async def set_truth(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=ModelOperationStatus(
+            detail=ResolutionOperationStatus(
                 success=False,
                 name=name,
-                operation=ModelOperationType.UPDATE_TRUTH,
+                operation=CRUDOperation.UPDATE,
                 details=str(e),
             ).model_dump(),
         ) from e
@@ -221,8 +219,8 @@ async def get_ancestors(
     responses={
         404: {"model": NotFoundError},
         500: {
-            "model": ModelOperationStatus,
-            **ModelOperationStatus.status_500_examples(),
+            "model": ResolutionOperationStatus,
+            **ResolutionOperationStatus.status_500_examples(),
         },
     },
     dependencies=[Depends(validate_api_key)],
@@ -235,10 +233,10 @@ async def set_ancestors_cache(
     """Update the cached ancestors for a model."""
     try:
         backend.set_model_ancestors_cache(name=name, ancestors_cache=ancestors)
-        return ModelOperationStatus(
+        return ResolutionOperationStatus(
             success=True,
             name=name,
-            operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+            operation=CRUDOperation.UPDATE,
         )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
@@ -250,10 +248,10 @@ async def set_ancestors_cache(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=ModelOperationStatus(
+            detail=ResolutionOperationStatus(
                 success=False,
                 name=name,
-                operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+                operation=CRUDOperation.UPDATE,
                 details=str(e),
             ).model_dump(),
         ) from e
@@ -274,50 +272,5 @@ async def get_ancestors_cache(
             status_code=404,
             detail=NotFoundError(
                 details=str(e), entity=BackendRetrievableType.RESOLUTION
-            ).model_dump(),
-        ) from e
-
-
-@router.delete(
-    "/{name}",
-    responses={
-        404: {"model": NotFoundError},
-        409: {
-            "model": ModelOperationStatus,
-            **ModelOperationStatus.status_409_examples(),
-        },
-    },
-    dependencies=[Depends(validate_api_key)],
-)
-async def delete_model(
-    backend: BackendDependency,
-    name: ModelResolutionName,
-    certain: Annotated[
-        bool, Query(description="Confirm deletion of the model")
-    ] = False,
-) -> ModelOperationStatus:
-    """Delete a model from the backend."""
-    try:
-        backend.delete_model(name=name, certain=certain)
-        return ModelOperationStatus(
-            success=True,
-            name=name,
-            operation=ModelOperationType.DELETE,
-        )
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
-            ).model_dump(),
-        ) from e
-    except MatchboxDeletionNotConfirmed as e:
-        raise HTTPException(
-            status_code=409,
-            detail=ModelOperationStatus(
-                success=False,
-                name=name,
-                operation=ModelOperationType.DELETE,
-                details=str(e),
             ).model_dump(),
         ) from e

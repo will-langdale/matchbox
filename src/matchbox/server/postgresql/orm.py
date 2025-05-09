@@ -18,6 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import Session, relationship
 
+from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
+)
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.sources import Location, SourceField
 from matchbox.common.sources import SourceConfig as CommonSource
@@ -75,7 +78,6 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     probabilities = relationship(
         "Probabilities",
         back_populates="proposed_by",
-        cascade="all, delete-orphan",
         passive_deletes=True,
     )
     children = relationship(
@@ -169,6 +171,41 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             lineage[self.resolution_id] = self.truth
 
             return lineage
+
+    @classmethod
+    def from_name(
+        cls,
+        resolution_name: str,
+        res_type: Literal["model", "dataset", "human"] | None = None,
+        session: Session | None = None,
+    ) -> "Resolutions":
+        """Resolves a model name to a Resolution object.
+
+        Args:
+            resolution_name: The name of the model to resolve.
+            res_type: A resolution type to use as filter.
+            session: A session to get the resolution for updates.
+
+        Raises:
+            MatchboxResolutionNotFoundError: If the model doesn't exist.
+        """
+        query = select(cls).where(cls.name == resolution_name)
+        if res_type:
+            query = query.where(cls.type == res_type)
+
+        if session:
+            resolution = session.execute(query).scalar()
+        else:
+            with MBDB.get_session() as session:
+                resolution = session.execute(query).scalar()
+
+        if resolution:
+            return resolution
+
+        res_type = res_type or "any"
+        raise MatchboxResolutionNotFoundError(
+            message=f"No resolution {resolution_name} of {res_type}."
+        )
 
 
 class PKSpace(MBDB.MatchboxBase):
@@ -307,7 +344,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         "SourceFields",
         primaryjoin="SourceConfigs.source_id == SourceFields.source_id",
         back_populates="source",
-        cascade="all, delete-orphan",
         passive_deletes=True,
     )
     indexed_fields = relationship(
@@ -321,7 +357,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     cluster_source_ids = relationship(
         "ClusterSourceIdentifiers",
         back_populates="source",
-        cascade="all, delete-orphan",
         passive_deletes=True,
     )
     clusters = relationship(
@@ -447,13 +482,11 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     source_identifiers = relationship(
         "ClusterSourceIdentifiers",
         back_populates="cluster",
-        cascade="all, delete-orphan",
         passive_deletes=True,
     )
     probabilities = relationship(
         "Probabilities",
         back_populates="proposes",
-        cascade="all, delete-orphan",
         passive_deletes=True,
     )
     children = relationship(

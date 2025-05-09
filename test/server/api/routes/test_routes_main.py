@@ -502,59 +502,28 @@ def test_clear_backend_errors(test_client: TestClient):
 
 
 def test_api_key_authorisation(test_client: TestClient):
+    routes = [
+        (test_client.post, "/upload/upload_id"),
+        (test_client.post, "/sources"),
+        (test_client.post, "/models"),
+        (test_client.patch, "/models/name/truth"),
+        (test_client.delete, "/resolutions/name"),
+        (test_client.delete, "/database"),
+    ]
+
     # Incorrect API Key Value
     test_client.headers["X-API-Key"] = "incorrect-api-key"
-
-    response = test_client.post("/upload/upload_id")
-    assert response.status_code == 401
-    assert response.content == b'"API Key invalid."'
-
-    response = test_client.post("/sources")
-    assert response.status_code == 401
-    assert response.content == b'"API Key invalid."'
-
-    response = test_client.post("/models")
-    assert response.status_code == 401
-    assert response.content == b'"API Key invalid."'
-
-    response = response = test_client.patch("/models/name/truth")
-    assert response.status_code == 401
-    assert response.content == b'"API Key invalid."'
-
-    response = test_client.delete("/models/name")
-    assert response.status_code == 401
-    assert response.content == b'"API Key invalid."'
-
-    response = test_client.delete("/database")
-    assert response.status_code == 401
-    assert response.content == b'"API Key invalid."'
+    for method, url in routes:
+        response = method(url)
+        assert response.status_code == 401
+        assert response.content == b'"API Key invalid."'
 
     # Missing API Key Value
     test_client.headers.pop("X-API-Key")
-
-    response = test_client.post("/upload/upload_id")
-    assert response.status_code == 403
-    assert response.content == b'"Not authenticated"'
-
-    response = test_client.post("/sources")
-    assert response.status_code == 403
-    assert response.content == b'"Not authenticated"'
-
-    response = test_client.post("/models")
-    assert response.status_code == 403
-    assert response.content == b'"Not authenticated"'
-
-    response = response = test_client.patch("/models/name/truth")
-    assert response.status_code == 403
-    assert response.content == b'"Not authenticated"'
-
-    response = test_client.delete("/models/name")
-    assert response.status_code == 403
-    assert response.content == b'"Not authenticated"'
-
-    response = test_client.delete("/database")
-    assert response.status_code == 403
-    assert response.content == b'"Not authenticated"'
+    for method, url in routes:
+        response = method(url)
+        assert response.status_code == 403
+        assert response.content == b'"Not authenticated"'
 
 
 def test_get_resolution_graph(

@@ -9,10 +9,10 @@ from matchbox.common.arrow import SCHEMA_RESULTS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
     BackendUploadType,
+    CRUDOperation,
     ModelAncestor,
-    ModelOperationStatus,
-    ModelOperationType,
     NotFoundError,
+    ResolutionOperationStatus,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -33,10 +33,10 @@ def test_insert_model(matchbox_api: MockRouter):
     route = matchbox_api.post("/models").mock(
         return_value=Response(
             201,
-            json=ModelOperationStatus(
+            json=ResolutionOperationStatus(
                 success=True,
                 name=testkit.model.metadata.name,
-                operation=ModelOperationType.INSERT,
+                operation=CRUDOperation.CREATE,
             ).model_dump(),
         )
     )
@@ -60,10 +60,10 @@ def test_insert_model_error(matchbox_api: MockRouter):
     route = matchbox_api.post("/models").mock(
         return_value=Response(
             500,
-            json=ModelOperationStatus(
+            json=ResolutionOperationStatus(
                 success=False,
                 name=testkit.model.metadata.name,
-                operation=ModelOperationType.INSERT,
+                operation=CRUDOperation.CREATE,
                 details="Internal server error",
             ).model_dump(),
         )
@@ -239,10 +239,10 @@ def test_truth_setter(matchbox_api: MockRouter):
     route = matchbox_api.patch(f"/models/{testkit.model.metadata.name}/truth").mock(
         return_value=Response(
             200,
-            json=ModelOperationStatus(
+            json=ResolutionOperationStatus(
                 success=True,
                 name=testkit.model.metadata.name,
-                operation=ModelOperationType.UPDATE_TRUTH,
+                operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )
     )
@@ -305,10 +305,10 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
     ).mock(
         return_value=Response(
             200,
-            json=ModelOperationStatus(
+            json=ResolutionOperationStatus(
                 success=True,
                 name=testkit.model.metadata.name,
-                operation=ModelOperationType.UPDATE_ANCESTOR_CACHE,
+                operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )
     )
@@ -335,21 +335,21 @@ def test_ancestors_cache_set_error(matchbox_api: MockRouter):
         testkit.model.ancestors_cache = {"model1": 1.1}
 
 
-def test_delete_model(matchbox_api: MockRouter):
-    """Test successfully deleting a model."""
+def test_delete_resolution(matchbox_api: MockRouter):
+    """Test successfully deleting a resolution."""
     # Create test model using factory
     testkit = model_factory()
 
     # Mock the DELETE endpoint with success response
     route = matchbox_api.delete(
-        f"/models/{testkit.model.metadata.name}", params={"certain": True}
+        f"/resolutions/{testkit.model.metadata.name}", params={"certain": True}
     ).mock(
         return_value=Response(
             200,
-            json=ModelOperationStatus(
+            json=ResolutionOperationStatus(
                 success=True,
                 name=testkit.model.metadata.name,
-                operation=ModelOperationType.DELETE,
+                operation=CRUDOperation.DELETE,
             ).model_dump(),
         )
     )
@@ -363,20 +363,20 @@ def test_delete_model(matchbox_api: MockRouter):
     assert route.calls.last.request.url.params["certain"] == "true"
 
 
-def test_delete_model_needs_confirmation(matchbox_api: MockRouter):
-    """Test attempting to delete a model without confirmation returns 409."""
+def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter):
+    """Test attempting to delete a resolution without confirmation returns 409."""
     # Create test model using factory
     testkit = model_factory()
 
     # Mock the DELETE endpoint with 409 confirmation required response
     error_details = "Cannot delete model with dependent models: dedupe1, dedupe2"
-    route = matchbox_api.delete(f"/models/{testkit.model.metadata.name}").mock(
+    route = matchbox_api.delete(f"/resolutions/{testkit.model.metadata.name}").mock(
         return_value=Response(
             409,
-            json=ModelOperationStatus(
+            json=ResolutionOperationStatus(
                 success=False,
                 name=testkit.model.metadata.name,
-                operation=ModelOperationType.DELETE,
+                operation=CRUDOperation.DELETE,
                 details=error_details,
             ).model_dump(),
         )
