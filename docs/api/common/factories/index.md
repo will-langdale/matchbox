@@ -152,7 +152,7 @@ Configure the true state of your data with `linked_sources_factory()`. Its defau
 * CDMS (CRN ID, DUNS ID) contains all entities repeated twice
 * DUNS (company name, DUNS ID) contains half the entities
 
-`linked_sources_factory()` can be configured using tuples of [`SourceTestkitConfig`][matchbox.common.factories.sources.SourceTestkitConfig] objects. Using these you can create complex sets of interweaving sources for methodologies to be tested against.
+`linked_sources_factory()` can be configured using tuples of [`SourceTestkitParameters`][matchbox.common.factories.sources.SourceTestkitParameters] objects. Using these you can create complex sets of interweaving sources for methodologies to be tested against.
 
 The `model_factory()` is designed so you can chain together known processes in any order, before using your real methodology. [`LinkedSourcesTestkit.diff_results()`][matchbox.common.factories.sources.LinkedSourcesTestkit.diff_results] will make any probabilistic output comparable with the true source entities, and give a detailed diff to help you debug.
 

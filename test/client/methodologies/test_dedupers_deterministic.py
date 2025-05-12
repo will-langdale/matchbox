@@ -11,7 +11,7 @@ from matchbox.client.results import Results
 from matchbox.common.factories.entities import FeatureConfig
 from matchbox.common.factories.sources import (
     SourceTestkit,
-    SourceTestkitConfig,
+    SourceTestkitParameters,
     linked_sources_factory,
 )
 from matchbox.common.sources import SourceConfig
@@ -69,14 +69,14 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         ),
     )
 
-    source_tkit_config = SourceTestkitConfig(
+    source_parameters = SourceTestkitParameters(
         full_name="source_exact",
         features=features,
         n_true_entities=10,
         repetition=0,  # Each entity appears once
     )
 
-    linked = linked_sources_factory(source_tkit_configs=(source_tkit_config,), seed=42)
+    linked = linked_sources_factory(source_parameters=(source_parameters,), seed=42)
     source = linked.sources["source_exact"]
 
     # Configure and run the deduper
@@ -119,14 +119,14 @@ def test_exact_duplicate_deduplication(
         ),
     )
 
-    source_tkit_config = SourceTestkitConfig(
+    source_parameters = SourceTestkitParameters(
         full_name="source_exact",
         features=features,
         n_true_entities=10,
         repetition=2,  # Each entity appears 3 times (base + 2 repetitions)
     )
 
-    linked = linked_sources_factory(source_tkit_configs=(source_tkit_config,), seed=42)
+    linked = linked_sources_factory(source_parameters=(source_parameters,), seed=42)
     source = linked.sources["source_exact"]
 
     # Configure and run the deduper

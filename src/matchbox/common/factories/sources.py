@@ -62,7 +62,7 @@ def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class SourceTestkitConfig(BaseModel):
+class SourceTestkitParameters(BaseModel):
     """Configuration for generating a source."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -549,7 +549,7 @@ def source_from_tuple(
 
 @cache
 def linked_sources_factory(
-    source_tkit_configs: tuple[SourceTestkitConfig, ...] | None = None,
+    source_parameters: tuple[SourceTestkitParameters, ...] | None = None,
     n_true_entities: int | None = None,
     engine: Engine | None = None,
     seed: int = 42,
@@ -557,10 +557,10 @@ def linked_sources_factory(
     """Generate a set of linked sources with tracked entities.
 
     Args:
-        source_tkit_configs: Optional tuple of source configurations
+        source_parameters: Optional tuple of source testkit parameters
         n_true_entities: Optional number of true entities to generate. If provided,
             overrides any n_true_entities in source configs. If not provided, each
-            SourceTestkitConfig must specify its own n_true_entities.
+            SourceTestkitParameters must specify its own n_true_entities.
         engine: Optional SQLAlchemy engine to use for all sources. If provided,
             overrides any engine in source configs.
         seed: Random seed for reproducibility
@@ -570,7 +570,7 @@ def linked_sources_factory(
 
     default_engine = create_engine("sqlite:///:memory:")
 
-    if source_tkit_configs is None:
+    if source_parameters is None:
         # Use factory parameter or default for default configs
         n_true_entities = n_true_entities if n_true_entities is not None else 10
 
@@ -600,8 +600,8 @@ def linked_sources_factory(
             ),
         }
 
-        source_tkit_configs = (
-            SourceTestkitConfig(
+        source_parameters = (
+            SourceTestkitParameters(
                 full_name="crn",
                 engine=engine or default_engine,
                 features=(
@@ -616,7 +616,7 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities,
                 repetition=0,
             ),
-            SourceTestkitConfig(
+            SourceTestkitParameters(
                 full_name="duns",
                 engine=engine or default_engine,
                 features=(
@@ -626,7 +626,7 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities // 2,
                 repetition=0,
             ),
-            SourceTestkitConfig(
+            SourceTestkitParameters(
                 full_name="cdms",
                 engine=engine or default_engine,
                 features=(
@@ -641,7 +641,7 @@ def linked_sources_factory(
         if n_true_entities is not None:
             # Factory parameter provided - warn if configs have values set
             config_entities = [
-                tkit_config.n_true_entities for tkit_config in source_tkit_configs
+                parameters.n_true_entities for parameters in source_parameters
             ]
             if any(n is not None for n in config_entities):
                 warnings.warn(
@@ -651,22 +651,22 @@ def linked_sources_factory(
                     stacklevel=2,
                 )
             # Override all configs with factory parameter
-            source_tkit_configs = tuple(
-                SourceTestkitConfig(
-                    full_name=tkit_config.full_name,
-                    engine=engine or tkit_config.engine,
-                    features=tkit_config.features,
-                    repetition=tkit_config.repetition,
+            source_parameters = tuple(
+                SourceTestkitParameters(
+                    full_name=parameters.full_name,
+                    engine=engine or parameters.engine,
+                    features=parameters.features,
+                    repetition=parameters.repetition,
                     n_true_entities=n_true_entities,
                 )
-                for tkit_config in source_tkit_configs
+                for parameters in source_parameters
             )
         else:
             # No factory parameter - check all configs have n_true_entities set
             missing_counts = [
-                tkit_config.full_name
-                for tkit_config in source_tkit_configs
-                if tkit_config.n_true_entities is None
+                parameters.full_name
+                for parameters in source_parameters
+                if parameters.n_true_entities is None
             ]
             if missing_counts:
                 raise ValueError(
@@ -677,14 +677,12 @@ def linked_sources_factory(
 
     # Collect all unique features
     all_features = set()
-    for tkit_config in source_tkit_configs:
-        all_features.update(tkit_config.features)
+    for parameters in source_parameters:
+        all_features.update(parameters.features)
     all_features = tuple(sorted(all_features, key=lambda f: f.name))
 
     # Find maximum number of entities needed across all sources
-    max_entities = max(
-        tkit_config.n_true_entities for tkit_config in source_tkit_configs
-    )
+    max_entities = max(parameters.n_true_entities for parameters in source_parameters)
 
     # Generate all possible entities
     all_entities = generate_entities(
@@ -699,13 +697,13 @@ def linked_sources_factory(
     )
 
     # Generate sources
-    for tkit_config in source_tkit_configs:
+    for parameters in source_parameters:
         # Generate source data using seed entities
         data, data_hashes, entity_pks, row_pks = generate_source(
             generator=generator,
-            features=tuple(tkit_config.features),
-            n_true_entities=tkit_config.n_true_entities,
-            repetition=tkit_config.repetition,
+            features=tuple(parameters.features),
+            n_true_entities=parameters.n_true_entities,
+            repetition=parameters.repetition,
             seed_entities=all_entities,
         )
 
@@ -713,7 +711,7 @@ def linked_sources_factory(
         results_entities = [
             ClusterEntity(
                 id=row_id,
-                source_pks=EntityReference({tkit_config.full_name: frozenset(pks)}),
+                source_pks=EntityReference({parameters.full_name: frozenset(pks)}),
             )
             for row_id, pks in row_pks.items()
         ]
@@ -721,19 +719,19 @@ def linked_sources_factory(
         # Create source
         source_config = SourceConfig(
             address=SourceAddress.compose(
-                full_name=tkit_config.full_name, engine=tkit_config.engine
+                full_name=parameters.full_name, engine=parameters.engine
             ),
             db_pk="pk",
             columns=(
                 SourceColumn(name=feature.name, type=feature.sql_type)
-                for feature in tkit_config.features
+                for feature in parameters.features
             ),
         )
 
         # Add source to linked.sources
-        linked.sources[tkit_config.full_name] = SourceTestkit(
+        linked.sources[parameters.full_name] = SourceTestkit(
             source_config=source_config,
-            features=tuple(tkit_config.features),
+            features=tuple(parameters.features),
             data=data,
             data_hashes=data_hashes,
             entities=tuple(sorted(results_entities)),
@@ -742,6 +740,6 @@ def linked_sources_factory(
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
             entity = true_entity_lookup[entity_id]
-            entity.add_source_reference(tkit_config.full_name, pks)
+            entity.add_source_reference(parameters.full_name, pks)
 
     return linked

@@ -20,7 +20,7 @@ from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
 from matchbox.common.factories.sources import (
-    SourceTestkitConfig,
+    SourceTestkitParameters,
     linked_sources_factory,
 )
 from matchbox.server.base import (
@@ -310,7 +310,7 @@ def create_convergent_scenario(
         name="company_name", base_generator="company"
     ).add_variations(SuffixRule(suffix=" UK"))
 
-    foo_a_tkit_source = SourceTestkitConfig(
+    foo_a_tkit_source = SourceTestkitParameters(
         full_name="foo_a",
         engine=warehouse_engine,
         features=(company_name_feature,),
@@ -320,7 +320,7 @@ def create_convergent_scenario(
     )
 
     linked = linked_sources_factory(
-        source_tkit_configs=(
+        source_parameters=(
             foo_a_tkit_source,
             foo_a_tkit_source.model_copy(update={"full_name": "foo_b"}),
         )
