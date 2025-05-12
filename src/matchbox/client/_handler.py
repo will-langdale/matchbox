@@ -195,22 +195,22 @@ def match(
 # Data management
 
 
-def index(source: SourceConfig, batch_size: int | None = None) -> UploadStatus:
+def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadStatus:
     """Index a SourceConfig in Matchbox."""
-    log_prefix = f"Index {source.address.pretty}"
+    log_prefix = f"Index {source_config.address.pretty}"
     log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
     logger.debug(f"Started {log_batch}", prefix=log_prefix)
 
     logger.debug("Retrieving and hashing", prefix=log_prefix)
 
-    data_hashes = source.hash_data(batch_size=batch_size)
+    data_hashes = source_config.hash_data(batch_size=batch_size)
 
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
     logger.debug("Uploading metadata", prefix=log_prefix)
 
-    metadata_res = CLIENT.post("/sources", json=source.model_dump())
+    metadata_res = CLIENT.post("/sources", json=source_config.model_dump())
 
     upload = UploadStatus.model_validate(metadata_res.json())
 

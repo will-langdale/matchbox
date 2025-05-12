@@ -97,7 +97,7 @@ def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     i_foo = IndexStep(source_config=foo, batch_size=batch_size)
     i_foo.run()
 
-    handler_index_mock.assert_called_once_with(source=foo, batch_size=batch_size)
+    handler_index_mock.assert_called_once_with(source_config=foo, batch_size=batch_size)
 
     # Test without batch size
     handler_index_mock.reset_mock()
@@ -105,7 +105,7 @@ def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     i_foo_no_batch = IndexStep(source_config=foo, batch_size=None)
     i_foo_no_batch.run()
 
-    handler_index_mock.assert_called_once_with(source=foo, batch_size=None)
+    handler_index_mock.assert_called_once_with(source_config=foo, batch_size=None)
 
 
 @pytest.mark.parametrize(
@@ -399,7 +399,7 @@ def test_dag_runs(
 
     # Verify sources and batch sizes passed to handler.index
     calls = {
-        call.kwargs["source"]: call.kwargs["batch_size"]
+        call.kwargs["source_config"]: call.kwargs["batch_size"]
         for call in handler_index.call_args_list
     }
 
@@ -409,9 +409,9 @@ def test_dag_runs(
 
     # Verify the right sources were sent to index
     assert {
-        handler_index.call_args_list[0].kwargs["source"],
-        handler_index.call_args_list[1].kwargs["source"],
-        handler_index.call_args_list[2].kwargs["source"],
+        handler_index.call_args_list[0].kwargs["source_config"],
+        handler_index.call_args_list[1].kwargs["source_config"],
+        handler_index.call_args_list[2].kwargs["source_config"],
     } == {foo, bar, baz}
 
     assert dedupe_run.call_count == 1
