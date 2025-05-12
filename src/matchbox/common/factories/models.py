@@ -21,7 +21,13 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import Model
 from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS
-from matchbox.common.dtos import ModelMetadata, ModelType
+from matchbox.common.dtos import (
+    ModelMetadata,
+    ModelResolutionName,
+    ModelType,
+    ResolutionName,
+    SourceResolutionName,
+)
 from matchbox.common.factories.entities import (
     ClusterEntity,
     FeatureConfig,
@@ -643,7 +649,7 @@ class ModelTestkit(BaseModel):
 
 
 def model_factory(
-    name: str | None = None,
+    name: ModelResolutionName | None = None,
     description: str | None = None,
     left_testkit: SourceTestkit | ModelTestkit | None = None,
     right_testkit: SourceTestkit | ModelTestkit | None = None,
@@ -844,15 +850,15 @@ def model_factory(
 
 
 def query_to_model_factory(
-    left_resolution: str,
+    left_resolution: ResolutionName,
     left_query: pa.Table,
-    left_source_pks: dict[str, str],
+    left_source_pks: dict[SourceResolutionName, str],
     true_entities: tuple[SourceEntity, ...],
-    name: str | None = None,
+    name: ModelResolutionName | None = None,
     description: str | None = None,
-    right_resolution: str | None = None,
+    right_resolution: ResolutionName | None = None,
     right_query: pa.Table | None = None,
-    right_source_pks: dict[str, str] | None = None,
+    right_source_pks: dict[SourceResolutionName, str] | None = None,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> ModelTestkit:

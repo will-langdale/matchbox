@@ -18,6 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import Session, relationship
 
+from matchbox.common.dtos import ResolutionName
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
@@ -65,11 +66,10 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     resolution_id = Column(BIGINT, primary_key=True, autoincrement=True)
-    resolution_hash = Column(BYTEA, nullable=False)
-    content_hash = Column(BYTEA, nullable=True)
-    type = Column(TEXT, nullable=False)
     name = Column(TEXT, nullable=False)
     description = Column(TEXT, nullable=True)
+    type = Column(TEXT, nullable=False)
+    hash = Column(BYTEA, nullable=True)
     truth = Column(SMALLINT, nullable=True)
 
     # Relationships
@@ -95,7 +95,6 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             "type IN ('model', 'dataset', 'human')",
             name="resolution_type_constraints",
         ),
-        UniqueConstraint("resolution_hash", name="resolutions_hash_key"),
         UniqueConstraint("name", name="resolutions_name_key"),
     )
 
@@ -176,21 +175,21 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def from_name(
         cls,
-        resolution_name: str,
+        name: ResolutionName,
         res_type: Literal["model", "dataset", "human"] | None = None,
         session: Session | None = None,
     ) -> "Resolutions":
         """Resolves a model name to a Resolution object.
 
         Args:
-            resolution_name: The name of the model to resolve.
+            name: The name of the model to resolve.
             res_type: A resolution type to use as filter.
             session: A session to get the resolution for updates.
 
         Raises:
             MatchboxResolutionNotFoundError: If the model doesn't exist.
         """
-        query = select(cls).where(cls.name == resolution_name)
+        query = select(cls).where(cls.name == name)
         if res_type:
             query = query.where(cls.type == res_type)
 
@@ -205,7 +204,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         res_type = res_type or "any"
         raise MatchboxResolutionNotFoundError(
-            message=f"No resolution {resolution_name} of {res_type}."
+            message=f"No resolution {name} of {res_type}."
         )
 
 
@@ -329,7 +328,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         nullable=False,
     )
-    resolution_name = Column(TEXT, nullable=False)
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
     db_pk = Column(TEXT, nullable=False)
@@ -378,7 +376,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             )
 
         return CommonSourceConfig(
-            resolution_name=self.resolution_name,
+            name=self.source_resolution.name,
             address=SourceAddress(
                 full_name=self.full_name, warehouse_hash=self.warehouse_hash
             ),

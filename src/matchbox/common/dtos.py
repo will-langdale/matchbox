@@ -2,11 +2,20 @@
 
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
+
+SourceResolutionName: TypeAlias = str
+"""Type alias for source resolution names."""
+
+ModelResolutionName: TypeAlias = str
+"""Type alias for model resolution names."""
+
+ResolutionName = SourceResolutionName | ModelResolutionName
+"""Type alias for resolution names."""
 
 
 class OKMessage(BaseModel):
@@ -75,17 +84,17 @@ class CRUDOperation(StrEnum):
 class ModelMetadata(BaseModel):
     """Metadata for a model."""
 
-    name: str
+    name: ModelResolutionName
     description: str
     type: ModelType
-    left_resolution: str
-    right_resolution: str | None = None  # Only used for linker models
+    left_resolution: ResolutionName
+    right_resolution: ResolutionName | None = None  # Only used for linker models
 
 
 class ModelAncestor(BaseModel):
     """A model's ancestor and its truth value."""
 
-    name: str = Field(..., description="Name of the ancestor model")
+    name: ModelResolutionName = Field(..., description="Name of the ancestor model")
     truth: int | None = Field(
         default=None, description="Truth threshold value", ge=0, le=100, strict=True
     )
@@ -95,7 +104,7 @@ class ResolutionOperationStatus(BaseModel):
     """Status response for any resolution operation."""
 
     success: bool
-    resolution_name: str
+    name: ModelResolutionName
     operation: CRUDOperation
     details: str | None = None
 
@@ -110,7 +119,7 @@ class ResolutionOperationStatus(BaseModel):
                             "summary": "Delete operation requires confirmation. ",
                             "value": cls(
                                 success=False,
-                                resolution_name="example_model",
+                                name="example_model",
                                 operation=CRUDOperation.DELETE,
                                 details=(
                                     "This operation will delete the resolutions "
@@ -143,7 +152,7 @@ class ResolutionOperationStatus(BaseModel):
                             ),
                             "value": cls(
                                 success=False,
-                                resolution_name="example_model",
+                                name="example_model",
                                 operation=CRUDOperation.UPDATE,
                             ).model_dump(),
                         },

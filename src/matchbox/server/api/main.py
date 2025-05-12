@@ -23,6 +23,7 @@ from matchbox.common.dtos import (
     CountResult,
     NotFoundError,
     OKMessage,
+    ResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -208,7 +209,7 @@ def query(
     backend: BackendDependency,
     full_name: str,
     warehouse_hash_b64: str,
-    resolution_name: str | None = None,
+    resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
@@ -219,7 +220,7 @@ def query(
     try:
         res = backend.query(
             source=source_address,
-            resolution_name=resolution_name,
+            resolution=resolution,
             threshold=threshold,
             limit=limit,
         )
@@ -253,7 +254,7 @@ def match(
     source_full_name: str,
     source_warehouse_hash_b64: str,
     source_pk: str,
-    resolution_name: str,
+    resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
     """Match a source primary key against a list of target addresses."""
@@ -269,7 +270,7 @@ def match(
             source_pk=source_pk,
             source=source,
             targets=targets,
-            resolution_name=resolution_name,
+            resolution=resolution,
             threshold=threshold,
         )
     except MatchboxResolutionNotFoundError as e:

@@ -185,7 +185,7 @@ def process_upload(
         if upload.upload_type == BackendUploadType.INDEX:
             backend.index(source_config=upload.metadata, data_hashes=data)
         elif upload.upload_type == BackendUploadType.RESULTS:
-            backend.set_model_results(model=upload.metadata.name, results=data)
+            backend.set_model_results(name=upload.metadata.name, results=data)
         else:
             raise ValueError(f"Unknown upload type: {upload.upload_type}")
 

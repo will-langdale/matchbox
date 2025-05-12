@@ -8,6 +8,7 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     CRUDOperation,
     NotFoundError,
+    ResolutionName,
     ResolutionOperationStatus,
 )
 from matchbox.common.exceptions import (
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/resolutions", tags=["resolutions"])
 )
 async def delete_resolution(
     backend: BackendDependency,
-    name: str,
+    name: ResolutionName,
     certain: Annotated[
         bool, Query(description="Confirm deletion of the model")
     ] = False,
@@ -45,7 +46,7 @@ async def delete_resolution(
         backend.delete_resolution(resolution=name, certain=certain)
         return ResolutionOperationStatus(
             success=True,
-            resolution_name=name,
+            name=name,
             operation=CRUDOperation.DELETE,
         )
     except MatchboxResolutionNotFoundError as e:
@@ -60,7 +61,7 @@ async def delete_resolution(
             status_code=409,
             detail=ResolutionOperationStatus(
                 success=False,
-                resolution_name=name,
+                name=name,
                 operation=CRUDOperation.DELETE,
                 details=str(e),
             ).model_dump(),

@@ -4,12 +4,13 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import delete, select, update
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
+from matchbox.common.dtos import ModelResolutionName
+from matchbox.common.exceptions import MatchboxResolutionAlreadyExists
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import hash_arrow_table, hash_data, hash_values
+from matchbox.common.hash import hash_arrow_table, hash_values
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
 from matchbox.common.transform import (
@@ -113,7 +114,6 @@ def insert_dataset(
 ) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
     log_prefix = f"Index {source_config.address.pretty}"
-    resolution_hash = hash_data(str(source_config.address))
     content_hash = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:
@@ -121,22 +121,20 @@ def insert_dataset(
 
         # Check if resolution already exists
         existing_resolution = (
-            session.query(Resolutions)
-            .filter_by(name=source_config.resolution_name)
-            .first()
+            session.query(Resolutions).filter_by(name=source_config.name).first()
         )
 
         if existing_resolution:
             resolution = existing_resolution
             # Check if the content hash is the same
-            if resolution.content_hash == content_hash:
+            if resolution.hash == content_hash:
                 logger.info("Dataset matches index. Finished", prefix=log_prefix)
                 return
         else:
             # Create new resolution
             resolution = Resolutions(
-                name=source_config.resolution_name,
-                resolution_hash=resolution_hash,
+                name=source_config.name,
+                hash=content_hash,
                 type=ResolutionNodeType.DATASET.value,
             )
             session.add(resolution)
@@ -160,7 +158,6 @@ def insert_dataset(
         # Create new source with relationship to resolution
         source_obj = SourceConfigs(
             resolution_id=resolution.resolution_id,
-            resolution_name=source_config.resolution_name,
             full_name=source_config.address.full_name,
             warehouse_hash=source_config.address.warehouse_hash,
             db_pk=source_config.db_pk,
@@ -287,7 +284,7 @@ def insert_dataset(
             stmt = (
                 update(Resolutions)
                 .where(Resolutions.resolution_id == resolution_id)
-                .values(content_hash=content_hash)
+                .values(hash=content_hash)
             )
             session.execute(stmt)
 
@@ -298,7 +295,7 @@ def insert_dataset(
 
 
 def insert_model(
-    model: str,
+    name: ModelResolutionName,
     left: Resolutions,
     right: Resolutions,
     description: str,
@@ -306,54 +303,35 @@ def insert_model(
     """Writes a model to Matchbox with a default truth value of 100.
 
     Args:
-        model: Name of the new model
+        name: Name of the new model
         left: Left parent of the model
         right: Right parent of the model. Same as left in a dedupe job
         description: Model description
 
     Raises:
         MatchboxResolutionNotFoundError: If the specified parent models don't exist.
-        MatchboxResolutionNotFoundError: If the specified model doesn't exist.
+        MatchboxResolutionAlreadyExists: If the specified model already exists.
     """
-    log_prefix = f"Model {model}"
+    log_prefix = f"Model {name}"
     logger.info("Registering", prefix=log_prefix)
     with MBDB.get_session() as session:
-        resolution_hash = hash_values(
-            left.resolution_hash,
-            right.resolution_hash,
-            bytes(model, encoding="utf-8"),
+        model_name_hash = hash_values(
+            bytes(left.name, encoding="utf-8"),
+            bytes(right.name, encoding="utf-8"),
+            bytes(name, encoding="utf-8"),
         )
 
         # Check if resolution exists
-        exists_stmt = select(Resolutions).where(
-            Resolutions.resolution_hash == resolution_hash
-        )
+        exists_stmt = select(Resolutions).where(Resolutions.name == name)
         exists_obj = session.scalar(exists_stmt)
 
         if exists_obj is not None:
-            # Upsert new resolution
-            stmt = (
-                insert(Resolutions)
-                .values(
-                    resolution_hash=resolution_hash,
-                    type=ResolutionNodeType.MODEL.value,
-                    name=model,
-                    description=description,
-                )
-                .on_conflict_do_update(
-                    index_elements=["resolution_hash"],
-                    set_={"name": model, "description": description},
-                )
-            )
-            session.execute(stmt)
-
-            status = "Updated existing"
-            resolution_id = exists_obj.resolution_id
+            raise MatchboxResolutionAlreadyExists
         else:
             new_res = Resolutions(
-                resolution_hash=resolution_hash,
+                hash=model_name_hash,
                 type=ResolutionNodeType.MODEL.value,
-                name=model,
+                name=name,
                 description=description,
                 truth=100,
             )
@@ -572,7 +550,7 @@ def insert_results(
 
     # Check if the content hash is the same
     content_hash = hash_arrow_table(results)
-    if resolution.content_hash == content_hash:
+    if resolution.hash == content_hash:
         logger.info("Results already uploaded. Finished", prefix=log_prefix)
         return
 
@@ -647,7 +625,7 @@ def insert_results(
         stmt = (
             update(Resolutions)
             .where(Resolutions.resolution_id == resolution.resolution_id)
-            .values(content_hash=content_hash)
+            .values(hash=content_hash)
         )
         session.execute(stmt)
         session.commit()

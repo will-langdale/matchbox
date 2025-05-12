@@ -14,6 +14,7 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.db import get_schema_table_names
+from matchbox.common.dtos import SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -98,7 +99,7 @@ class SourceTestkit(BaseModel):
     @property
     def name(self) -> str:
         """Return the resolution name of the SourceConfig."""
-        return self.source_config.resolution_name
+        return self.source_config.name
 
     @property
     def mock(self) -> Mock:
@@ -183,7 +184,7 @@ class LinkedSourcesTestkit(BaseModel):
 
         return result
 
-    def true_entity_subset(self, *sources: str) -> list[ClusterEntity]:
+    def true_entity_subset(self, *sources: SourceResolutionName) -> list[ClusterEntity]:
         """Return a subset of true entities that appear in the given sources."""
         cluster_entities = [
             entity.to_cluster_entity(*sources) for entity in self.true_entities

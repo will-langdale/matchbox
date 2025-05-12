@@ -16,7 +16,7 @@ Given a primary key and a source dataset, retrieves all primary keys that share 
         select("datahub_companies", engine=engine),
         source=select("companies_house", engine=engine),
         source_pk="8534735",
-        resolution_name="last_linker",
+        resolution="last_linker",
     )
     ```
 

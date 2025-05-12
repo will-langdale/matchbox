@@ -6,7 +6,13 @@ from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
 
-from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
+from matchbox.common.dtos import (
+    ModelAncestor,
+    ModelMetadata,
+    ModelResolutionName,
+    ModelType,
+    ResolutionName,
+)
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
@@ -158,13 +164,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def query(  # noqa: D102
         self,
         source: SourceAddress,
-        resolution_name: str | None = None,
+        resolution: ResolutionName | None = None,
         threshold: int | None = None,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
             source=source,
-            resolution_name=resolution_name,
+            resolution=resolution,
             threshold=threshold,
             limit=limit,
         )
@@ -174,14 +180,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
         source_pk: str,
         source: SourceAddress,
         targets: list[SourceAddress],
-        resolution_name: str,
+        resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
             source_pk=source_pk,
             source=source,
             targets=targets,
-            resolution_name=resolution_name,
+            resolution=resolution,
             threshold=threshold,
         )
 
@@ -213,17 +219,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_resolution_source_configs(  # noqa: D102
         self,
-        resolution_name: str,
+        name: ModelResolutionName,
     ) -> list[SourceConfig]:
         with MBDB.get_session() as session:
             # Find resolution by name
             resolution: Resolutions | None = (
-                session.query(Resolutions)
-                .filter(Resolutions.name == resolution_name)
-                .first()
+                session.query(Resolutions).filter(Resolutions.name == name).first()
             )
             if not resolution:
-                raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
+                raise MatchboxResolutionNotFoundError(name=name)
             # Find all resolutions in scope (selected + ancestors)
             relevant_resolutions = (
                 session.query(Resolutions)
@@ -367,68 +371,68 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Model management
 
-    def insert_model(self, model: ModelMetadata) -> None:  # noqa: D102
+    def insert_model(self, model_metadata: ModelMetadata) -> None:  # noqa: D102
         with MBDB.get_session() as session:
             left_resolution = (
                 session.query(Resolutions)
-                .filter(Resolutions.name == model.left_resolution)
+                .filter(Resolutions.name == model_metadata.left_resolution)
                 .first()
             )
             if not left_resolution:
                 raise MatchboxResolutionNotFoundError(
-                    resolution_name=model.left_resolution
+                    name=model_metadata.left_resolution
                 )
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
-            if model.type == ModelType.LINKER:
+            if model_metadata.type == ModelType.LINKER:
                 right_resolution = (
                     session.query(Resolutions)
-                    .filter(Resolutions.name == model.right_resolution)
+                    .filter(Resolutions.name == model_metadata.right_resolution)
                     .first()
                 )
                 if not right_resolution:
                     raise MatchboxResolutionNotFoundError(
-                        resolution_name=model.right_resolution
+                        name=model_metadata.right_resolution
                     )
 
         insert_model(
-            model=model.name,
+            name=model_metadata.name,
             left=left_resolution,
             right=right_resolution,
-            description=model.description,
+            description=model_metadata.description,
         )
 
-    def get_model(self, model: str) -> ModelMetadata:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def get_model(self, name: ModelResolutionName) -> ModelMetadata:  # noqa: D102
+        resolution = Resolutions.from_name(name=name, res_type="model")
         return get_model_metadata(resolution=resolution)
 
-    def set_model_results(self, model: str, results: Table) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def set_model_results(self, name: ModelResolutionName, results: Table) -> None:  # noqa: D102
+        resolution = Resolutions.from_name(name=name, res_type="model")
         insert_results(
             results=results,
             resolution=resolution,
             batch_size=self.settings.batch_size,
         )
 
-    def get_model_results(self, model: str) -> Table:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def get_model_results(self, name: ModelResolutionName) -> Table:  # noqa: D102
+        resolution = Resolutions.from_name(name=name, res_type="model")
         return get_model_results(resolution=resolution)
 
-    def set_model_truth(self, model: str, truth: int) -> None:  # noqa: D102
+    def set_model_truth(self, name: ModelResolutionName, truth: int) -> None:  # noqa: D102
         with MBDB.get_session() as session:
             resolution = Resolutions.from_name(
-                resolution_name=model, res_type="model", session=session
+                name=name, res_type="model", session=session
             )
             resolution.truth = truth
             session.commit()
 
-    def get_model_truth(self, model: str) -> int:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def get_model_truth(self, name: ModelResolutionName) -> int:  # noqa: D102
+        resolution = Resolutions.from_name(name=name, res_type="model")
         return resolution.truth
 
-    def get_model_ancestors(self, model: str) -> list[ModelAncestor]:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def get_model_ancestors(self, name: ModelResolutionName) -> list[ModelAncestor]:  # noqa: D102
+        resolution = Resolutions.from_name(name=name, res_type="model")
         return [
             ModelAncestor(name=resolution.name, truth=resolution.truth)
             for resolution in resolution.ancestors
@@ -436,10 +440,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def set_model_ancestors_cache(  # noqa: D102
         self,
-        model: str,
+        name: ModelResolutionName,
         ancestors_cache: list[ModelAncestor],
     ) -> None:
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+        resolution = Resolutions.from_name(name=name, res_type="model")
         with MBDB.get_session() as session:
             ancestor_names = [ancestor.name for ancestor in ancestors_cache]
             name_to_id = dict(
@@ -462,8 +466,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
             session.commit()
 
-    def get_model_ancestors_cache(self, model: str) -> list[ModelAncestor]:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=model, res_type="model")
+    def get_model_ancestors_cache(  # noqa: D102
+        self, name: ModelResolutionName
+    ) -> list[ModelAncestor]:
+        resolution = Resolutions.from_name(name=name, res_type="model")
         with MBDB.get_session() as session:
             query = (
                 select(Resolutions.name, ResolutionFrom.truth_cache)
@@ -477,8 +483,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 for name, truth in session.execute(query).all()
             ]
 
-    def delete_resolution(self, resolution: str, certain: bool = False) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(resolution_name=resolution)
+    def delete_resolution(self, name: ResolutionName, certain: bool = False) -> None:  # noqa: D102
+        resolution = Resolutions.from_name(name=name)
         with MBDB.get_session() as session:
             if certain:
                 delete_stmt = delete(Resolutions).where(

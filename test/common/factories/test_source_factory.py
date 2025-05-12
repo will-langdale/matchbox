@@ -207,7 +207,7 @@ def test_source_factory_mock_properties():
         assert column.type == feature.sql_type
 
     # Check default resolution name and default pk
-    assert source_testkit.resolution_name == str(expected_address)
+    assert source_testkit.name == str(expected_address)
     assert source_testkit.db_pk == "pk"
 
     # Verify source properties are preserved through model_dump

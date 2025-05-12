@@ -14,6 +14,9 @@ from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
+from matchbox.common.dtos import (
+    ResolutionName,
+)
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
 
@@ -21,7 +24,7 @@ from matchbox.common.sources import SourceConfig
 class Step(BaseModel, ABC):
     """Abstract base class defining what a step needs to support."""
 
-    name: str
+    name: ResolutionName
     sources: set[str] = Field(default_factory=set)
     last_run: datetime.datetime | None = Field(default=None)
 
@@ -135,7 +138,7 @@ class ModelStep(Step):
             selectors,
             return_type="pandas",
             threshold=step_input.threshold,
-            resolution_name=step_input.name,
+            name=step_input.name,
             only_indexed=True,
             batch_size=step_input.batch_size,
             return_batches=False,
@@ -158,7 +161,7 @@ class DedupeStep(ModelStep):
         left_clean = process(left_raw, self.left.cleaners)
 
         deduper = make_model(
-            model_name=self.name,
+            name=self.name,
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
@@ -191,7 +194,7 @@ class LinkStep(ModelStep):
         right_clean = process(right_raw, self.right.cleaners)
 
         linker = make_model(
-            model_name=self.name,
+            name=self.name,
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
@@ -211,11 +214,11 @@ class DAG:
 
     def __init__(self):
         """Initialise DAG object."""
-        self.nodes: dict[str, Step] = {}
-        self.graph: dict[str, list[str]] = {}
-        self.sequence: list[str] = []
+        self.nodes: dict[ResolutionName, Step] = {}
+        self.graph: dict[ResolutionName, list[ResolutionName]] = {}
+        self.sequence: list[ResolutionName] = []
 
-    def _validate_node(self, name: str) -> None:
+    def _validate_node(self, name: ResolutionName) -> None:
         """Validate that a node name is unique in the DAG."""
         if name in self.nodes:
             raise ValueError(f"Name '{name}' is already taken in the DAG")
@@ -298,8 +301,8 @@ class DAG:
     def draw(
         self,
         start_time: datetime.datetime | None = None,
-        doing: str | None = None,
-        skipped: list[str] | None = None,
+        doing: ResolutionName | None = None,
+        skipped: list[ResolutionName] | None = None,
     ) -> str:
         """Create a string representation of the DAG as a tree structure.
 
@@ -322,14 +325,14 @@ class DAG:
         _, root_name = self._build_inverse_graph()
         skipped = skipped or []
 
-        def _get_node_status(node_name: str) -> str:
+        def _get_node_status(name: ResolutionName) -> str:
             """Determine the status indicator for a node."""
-            if node_name in skipped:
+            if name in skipped:
                 return "⏭️"
-            elif doing and node_name == doing:
+            elif doing and name == doing:
                 return "🔄"
             elif (
-                (node := self.nodes.get(node_name))
+                (node := self.nodes.get(name))
                 and node.last_run
                 and node.last_run > start_time
             ):
@@ -346,7 +349,7 @@ class DAG:
 
         visited = set([root_name])
 
-        def format_children(node: str, prefix=""):
+        def format_children(node: ResolutionName, prefix=""):
             """Recursively format the children of a node."""
             children = []
             # Get all outgoing edges from this node
@@ -377,7 +380,9 @@ class DAG:
 
         return "\n".join(result)
 
-    def run(self, start: str | None = None, finish: str | None = None):
+    def run(
+        self, start: ResolutionName | None = None, finish: ResolutionName | None = None
+    ):
         """Run entire DAG.
 
         Args:

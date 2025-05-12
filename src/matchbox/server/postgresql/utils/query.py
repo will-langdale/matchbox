@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import sql_to_df
+from matchbox.common.dtos import (
+    ResolutionName,
+)
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
@@ -267,7 +270,7 @@ def _resolve_cluster_hierarchy(
 
 def query(
     source: SourceAddress,
-    resolution_name: str | None = None,
+    resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int = None,
 ) -> pa.Table:
@@ -294,14 +297,14 @@ def query(
         dataset_source = _get_dataset_source(source, session)
         dataset_resolution = session.get(Resolutions, dataset_source.resolution_id)
 
-        if resolution_name:
+        if resolution:
             truth_resolution = (
                 session.query(Resolutions)
-                .filter(Resolutions.name == resolution_name)
+                .filter(Resolutions.name == resolution)
                 .first()
             )
             if truth_resolution is None:
-                raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
+                raise MatchboxResolutionNotFoundError(name=resolution)
         else:
             truth_resolution = dataset_resolution
 
@@ -483,17 +486,17 @@ def _build_hierarchy_down(
 def _build_match_query(
     source_pk: str,
     dataset_source: SourceConfigs,
-    resolution_name: str,
+    resolution: ResolutionName,
     session: Session,
     threshold: int | None = None,
 ) -> Select:
     """Builds the SQL query that powers the match function."""
     # Get truth resolution
     truth_resolution = (
-        session.query(Resolutions).filter(Resolutions.name == resolution_name).first()
+        session.query(Resolutions).filter(Resolutions.name == resolution).first()
     )
     if truth_resolution is None:
-        raise MatchboxResolutionNotFoundError(resolution_name=resolution_name)
+        raise MatchboxResolutionNotFoundError(name=resolution)
 
     # Get resolution lineage and resolve thresholds
     lineage_truths = truth_resolution.get_lineage()
@@ -538,7 +541,7 @@ def match(
     source_pk: str,
     source: SourceAddress,
     targets: list[SourceAddress],
-    resolution_name: str,
+    resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches an ID in a source dataset and returns the keys in the targets.
@@ -559,7 +562,7 @@ def match(
         match_stmt = _build_match_query(
             source_pk=source_pk,
             dataset_source=dataset_source,
-            resolution_name=resolution_name,
+            resolution=resolution,
             session=session,
             threshold=threshold,
         )

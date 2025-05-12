@@ -8,6 +8,7 @@ from sqlalchemy import Engine
 from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
+    MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
@@ -60,7 +61,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name="naive_test.crn",
+                resolution="naive_test.crn",
             )
 
             ids = df_crn["id"].to_pylist()
@@ -77,7 +78,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name="naive_test.crn",
+                resolution="naive_test.crn",
             )
 
             ids = df_crn["id"].to_pylist()
@@ -97,7 +98,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name="naive_test.crn",
+                resolution="naive_test.crn",
             )
 
             ids = df_crn["id"].to_pylist()
@@ -133,25 +134,21 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "link") as dag:
             crn, duns = dag.sources["crn"], dag.sources["duns"]
             dedupe_sources = self.backend.get_resolution_source_configs(
-                resolution_name="naive_test.crn"
+                name="naive_test.crn"
             )
             link_sources = self.backend.get_resolution_source_configs(
-                resolution_name="deterministic_naive_test.crn_naive_test.duns"
+                name="deterministic_naive_test.crn_naive_test.duns"
             )
 
-            assert {s.resolution_name for s in dedupe_sources} == {
-                crn.source_config.resolution_name
-            }
+            assert {s.name for s in dedupe_sources} == {crn.source_config.name}
 
-            assert {s.resolution_name for s in link_sources} == {
-                crn.source_config.resolution_name,
-                duns.source_config.resolution_name,
+            assert {s.name for s in link_sources} == {
+                crn.source_config.name,
+                duns.source_config.name,
             }
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution_source_configs(
-                    resolution_name="nonexistent"
-                )
+                self.backend.get_resolution_source_configs(name="nonexistent")
 
     def test_get_resolution_graph(self):
         """Test getting the resolution graph."""
@@ -170,11 +167,11 @@ class TestMatchboxBackend:
     def test_get_model(self):
         """Test getting a model from the database."""
         with self.scenario(self.backend, "dedupe"):
-            model = self.backend.get_model(model="naive_test.crn")
+            model = self.backend.get_model(name="naive_test.crn")
             assert isinstance(model, ModelMetadata)
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_model(model="nonexistent")
+                self.backend.get_model(name="nonexistent")
 
     def test_delete_resolution(self):
         """
@@ -186,7 +183,7 @@ class TestMatchboxBackend:
         * All probabilities for all descendants
         """
         with self.scenario(self.backend, "link") as dag:
-            resolution_to_delete = dag.sources["crn"].source_config.resolution_name
+            resolution_to_delete = dag.sources["crn"].source_config.name
             total_sources = len(dag.sources)
             total_models = len(dag.models)
 
@@ -235,19 +232,19 @@ class TestMatchboxBackend:
             models_count = self.backend.models.count()
 
             self.backend.insert_model(
-                model=ModelMetadata(
+                model_metadata=ModelMetadata(
                     name="dedupe_1",
                     description="Test deduper 1",
                     type=ModelType.DEDUPER,
-                    left_resolution=crn_testkit.source_config.resolution_name,
+                    left_resolution=crn_testkit.source_config.name,
                 )
             )
             self.backend.insert_model(
-                model=ModelMetadata(
+                model_metadata=ModelMetadata(
                     name="dedupe_2",
                     description="Test deduper 2",
                     type=ModelType.DEDUPER,
-                    left_resolution=duns_testkit.source_config.resolution_name,
+                    left_resolution=duns_testkit.source_config.name,
                 )
             )
 
@@ -255,7 +252,7 @@ class TestMatchboxBackend:
 
             # Test linker insertion
             self.backend.insert_model(
-                model=ModelMetadata(
+                model_metadata=ModelMetadata(
                     name="link_1",
                     description="Test linker 1",
                     type=ModelType.LINKER,
@@ -266,16 +263,17 @@ class TestMatchboxBackend:
 
             assert self.backend.models.count() == models_count + 3
 
-            # Test model upsert
-            self.backend.insert_model(
-                model=ModelMetadata(
-                    name="link_1",
-                    description="Test upsert",
-                    type=ModelType.LINKER,
-                    left_resolution="dedupe_1",
-                    right_resolution="dedupe_2",
+            # Test can't insert duplicate
+            with pytest.raises(MatchboxResolutionAlreadyExists):
+                self.backend.insert_model(
+                    model_metadata=ModelMetadata(
+                        name="link_1",
+                        description="Test upsert",
+                        type=ModelType.LINKER,
+                        left_resolution="dedupe_1",
+                        right_resolution="dedupe_2",
+                    )
                 )
-            )
 
             assert self.backend.models.count() == models_count + 3
 
@@ -283,7 +281,7 @@ class TestMatchboxBackend:
         """Test that a model's results data can be set and retrieved."""
         with self.scenario(self.backend, "dedupe"):
             # Retrieve
-            pre_results = self.backend.get_model_results(model="naive_test.crn")
+            pre_results = self.backend.get_model_results(name="naive_test.crn")
 
             assert isinstance(pre_results, pa.Table)
             assert len(pre_results) > 0
@@ -311,10 +309,10 @@ class TestMatchboxBackend:
                 ["left_id", "right_id", "probability"]
             )
 
-            self.backend.set_model_results(model="naive_test.crn", results=results)
+            self.backend.set_model_results(name="naive_test.crn", results=results)
 
             # Retrieve again
-            post_results = self.backend.get_model_results(model="naive_test.crn")
+            post_results = self.backend.get_model_results(name="naive_test.crn")
 
             # Check difference
             assert len(pre_results) != len(post_results)
@@ -323,22 +321,22 @@ class TestMatchboxBackend:
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag:
             for model_testkit in dag.models.values():
-                self.backend.insert_model(model=model_testkit.model.metadata)
+                self.backend.insert_model(model_metadata=model_testkit.model.metadata)
                 self.backend.set_model_results(
-                    model=model_testkit.name, results=model_testkit.probabilities
+                    name=model_testkit.name, results=model_testkit.probabilities
                 )
 
     def test_model_truth(self):
         """Test that a model's truth can be set and retrieved."""
         with self.scenario(self.backend, "dedupe"):
             # Retrieve
-            pre_truth = self.backend.get_model_truth(model="naive_test.crn")
+            pre_truth = self.backend.get_model_truth(name="naive_test.crn")
 
             # Set
-            self.backend.set_model_truth(model="naive_test.crn", truth=75)
+            self.backend.set_model_truth(name="naive_test.crn", truth=75)
 
             # Retrieve again
-            post_truth = self.backend.get_model_truth(model="naive_test.crn")
+            post_truth = self.backend.get_model_truth(name="naive_test.crn")
 
             # Check difference
             assert pre_truth != post_truth
@@ -347,7 +345,7 @@ class TestMatchboxBackend:
         """Test that a model's ancestors can be retrieved."""
         with self.scenario(self.backend, "link"):
             linker_name = "deterministic_naive_test.crn_naive_test.duns"
-            linker_ancestors = self.backend.get_model_ancestors(model=linker_name)
+            linker_ancestors = self.backend.get_model_ancestors(name=linker_name)
 
             assert [
                 isinstance(ancestor, ModelAncestor) for ancestor in linker_ancestors
@@ -368,7 +366,7 @@ class TestMatchboxBackend:
 
             # Retrieve
             pre_ancestors_cache = self.backend.get_model_ancestors_cache(
-                model=linker_name
+                name=linker_name
             )
 
             # Set
@@ -377,12 +375,12 @@ class TestMatchboxBackend:
                 for ancestor in pre_ancestors_cache
             ]
             self.backend.set_model_ancestors_cache(
-                model=linker_name, ancestors_cache=updated_ancestors_cache
+                name=linker_name, ancestors_cache=updated_ancestors_cache
             )
 
             # Retrieve again
             post_ancestors_cache = self.backend.get_model_ancestors_cache(
-                model=linker_name
+                name=linker_name
             )
 
             # Check difference
@@ -503,7 +501,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name="naive_test.crn",
+                resolution="naive_test.crn",
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -527,7 +525,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -536,7 +534,7 @@ class TestMatchboxBackend:
 
             df_duns = self.backend.query(
                 source=duns_testkit.source_config.address,
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert isinstance(df_duns, pa.Table)
@@ -564,7 +562,7 @@ class TestMatchboxBackend:
 
             df_crn = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert isinstance(df_crn, pa.Table)
@@ -573,7 +571,7 @@ class TestMatchboxBackend:
 
             df_cdms = self.backend.query(
                 source=cdms_testkit.source_config.address,
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert isinstance(df_cdms, pa.Table)
@@ -587,12 +585,12 @@ class TestMatchboxBackend:
             # Test query with threshold
             df_crn_threshold = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name=linker_name,
+                resolution=linker_name,
                 threshold=100,
             )
             df_cdms_threshold = self.backend.query(
                 source=cdms_testkit.source_config.address,
-                resolution_name=linker_name,
+                resolution=linker_name,
                 threshold=100,
             )
             threshold_ids = pa.concat_arrays(
@@ -629,7 +627,7 @@ class TestMatchboxBackend:
                 source_pk=next(iter(source_entity.source_pks["duns"])),
                 source=duns_testkit.source_config.address,
                 targets=[crn_testkit.source_config.address],
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert len(res) == 1
@@ -661,7 +659,7 @@ class TestMatchboxBackend:
                 source_pk=next(iter(source_entity.source_pks["crn"])),
                 source=crn_testkit.source_config.address,
                 targets=[duns_testkit.source_config.address],
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert len(res) == 1
@@ -693,7 +691,7 @@ class TestMatchboxBackend:
                 source_pk=next(iter(source_entity.source_pks["crn"])),
                 source=crn_testkit.source_config.address,
                 targets=[duns_testkit.source_config.address],
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert len(res) == 1
@@ -718,7 +716,7 @@ class TestMatchboxBackend:
                 source_pk=non_existent_pk,
                 source=crn_testkit.source_config.address,
                 targets=[duns_testkit.source_config.address],
-                resolution_name=linker_name,
+                resolution=linker_name,
             )
 
             assert len(res) == 1
@@ -750,7 +748,7 @@ class TestMatchboxBackend:
                 source_pk=next(iter(source_entity.source_pks["crn"])),
                 source=crn_testkit.source_config.address,
                 targets=[cdms_testkit.source_config.address],
-                resolution_name=linker_name,
+                resolution=linker_name,
                 threshold=100,
             )
 
@@ -809,7 +807,7 @@ class TestMatchboxBackend:
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name="naive_test.crn",
+                resolution="naive_test.crn",
             )
             sample_ids_before = df_crn_before["id"].to_pylist()[:5]  # Take first 5 IDs
 
@@ -829,7 +827,7 @@ class TestMatchboxBackend:
             # Verify specific data was restored correctly
             df_crn_after = self.backend.query(
                 source=crn_testkit.source_config.address,
-                resolution_name="naive_test.crn",
+                resolution="naive_test.crn",
             )
             sample_ids_after = df_crn_after["id"].to_pylist()[:5]  # Take first 5 IDs
 

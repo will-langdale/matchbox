@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from matchbox.common.dtos import ResolutionName
+
 # -- Configuration exceptions
 
 
@@ -101,15 +103,15 @@ class MatchboxServerFileError(Exception):
 class MatchboxResolutionNotFoundError(Exception):
     """Resolution not found."""
 
-    def __init__(self, message: str | None = None, resolution_name: str | None = None):
+    def __init__(self, message: str | None = None, name: ResolutionName | None = None):
         """Initialise the exception."""
         if message is None:
             message = "Resolution not found."
-            if resolution_name is not None:
-                message = f"Resolution {resolution_name} not found."
+            if name is not None:
+                message = f"Resolution {name} not found."
 
         super().__init__(message)
-        self.resolution_name = resolution_name
+        self.name = name
 
 
 class MatchboxSourceNotFoundError(Exception):
@@ -173,7 +175,9 @@ class MatchboxConnectionError(Exception):
 class MatchboxDeletionNotConfirmed(Exception):
     """Deletion must be confirmed: if certain, rerun with certain=True."""
 
-    def __init__(self, message: str | None = None, children: list[str] | None = None):
+    def __init__(
+        self, message: str | None = None, children: list[ResolutionName] | None = None
+    ):
         """Initialise the exception."""
         if message is None:
             message = "Deletion must be confirmed: if certain, rerun with certain=True."
@@ -189,6 +193,10 @@ class MatchboxDeletionNotConfirmed(Exception):
             )
 
         super().__init__(message)
+
+
+class MatchboxResolutionAlreadyExists(Exception):
+    """Resolution already exists."""
 
 
 # -- Adapter DB exceptions --

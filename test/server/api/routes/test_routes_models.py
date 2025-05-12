@@ -43,7 +43,7 @@ def test_insert_model(test_client: TestClient):
         response.json()
         == ResolutionOperationStatus(
             success=True,
-            resolution_name="test_model",
+            name="test_model",
             operation=CRUDOperation.CREATE,
             details=None,
         ).model_dump()
@@ -178,7 +178,7 @@ async def test_complete_model_upload_process(
     response = test_client.post("/models", json=testkit.model.metadata.model_dump())
     assert response.status_code == 201
     assert response.json()["success"] is True
-    assert response.json()["resolution_name"] == testkit.model.metadata.name
+    assert response.json()["name"] == testkit.model.metadata.name
 
     # Step 2: Initialize results upload
     response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
@@ -231,7 +231,7 @@ async def test_complete_model_upload_process(
     mock_backend.set_model_results.assert_called_once()
     call_args = mock_backend.set_model_results.call_args
     assert (
-        call_args[1]["model"] == testkit.model.metadata.name
+        call_args[1]["name"] == testkit.model.metadata.name
     )  # Check model name matches
     assert call_args[1]["results"].equals(
         testkit.probabilities
@@ -327,7 +327,7 @@ def test_set_truth(test_client: TestClient):
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        model=testkit.model.metadata.name, truth=95
+        name=testkit.model.metadata.name, truth=95
     )
 
 
@@ -423,7 +423,7 @@ def test_set_ancestors_cache(test_client: TestClient):
     assert response.json()["success"] is True
     assert response.json()["operation"] == CRUDOperation.UPDATE
     mock_backend.set_model_ancestors_cache.assert_called_once_with(
-        model=testkit.model.metadata.name, ancestors_cache=ancestors_data
+        name=testkit.model.metadata.name, ancestors_cache=ancestors_data
     )
 
 
@@ -499,7 +499,7 @@ def test_delete_resolution(test_client: TestClient):
         response.json()
         == ResolutionOperationStatus(
             success=True,
-            resolution_name=testkit.model.metadata.name,
+            name=testkit.model.metadata.name,
             operation=CRUDOperation.DELETE,
             details=None,
         ).model_dump()

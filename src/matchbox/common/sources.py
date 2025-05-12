@@ -49,6 +49,7 @@ from matchbox.common.db import (
     sql_to_df,
     validate_sql_for_data_extraction,
 )
+from matchbox.common.dtos import SourceResolutionName
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
@@ -348,7 +349,9 @@ class SourceConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     address: SourceAddress
-    resolution_name: str = Field(default_factory=lambda data: str(data["address"]))
+    name: SourceResolutionName = Field(
+        default_factory=lambda data: str(data["address"])
+    )
     db_pk: str
     # Columns need to be set at creation, or initialised with `.default_columns()`
     columns: tuple[SourceColumn, ...] | None = None
@@ -362,16 +365,16 @@ class SourceConfig(BaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Custom equality which ignores engine."""
-        return (self.address, self.resolution_name, self.db_pk, self.columns) == (
+        return (self.address, self.name, self.db_pk, self.columns) == (
             other.address,
-            other.resolution_name,
+            other.name,
             other.db_pk,
             other.columns,
         )
 
     def __hash__(self) -> int:
         """Custom hash which ignores engine."""
-        return hash((self.address, self.resolution_name, self.db_pk, self.columns))
+        return hash((self.address, self.name, self.db_pk, self.columns))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the SourceConfig object."""
@@ -380,7 +383,7 @@ class SourceConfig(BaseModel):
 
         obj_copy = SourceConfig(
             address=deepcopy(self.address, memo),
-            resolution_name=deepcopy(self.resolution_name, memo),
+            name=deepcopy(self.name, memo),
             db_pk=deepcopy(self.db_pk, memo),
             columns=deepcopy(self.columns, memo),
         )
@@ -428,7 +431,7 @@ class SourceConfig(BaseModel):
 
         new_source = SourceConfig(
             address=self.address,
-            resolution_name=self.resolution_name,
+            name=self.name,
             db_pk=self.db_pk,
             columns=columns_attribute,
         )

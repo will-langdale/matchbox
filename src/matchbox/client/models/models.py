@@ -8,7 +8,13 @@ from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
+from matchbox.common.dtos import (
+    ModelAncestor,
+    ModelMetadata,
+    ModelResolutionName,
+    ModelType,
+    ResolutionName,
+)
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 
 P = ParamSpec("P")
@@ -33,7 +39,7 @@ class Model:
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        _handler.insert_model(model=self.metadata)
+        _handler.insert_model(model_metadata=self.metadata)
 
     @property
     def results(self) -> Results:
@@ -116,19 +122,19 @@ class Model:
 
 
 def make_model(
-    model_name: str,
+    name: ModelResolutionName,
     description: str,
     model_class: type[Linker] | type[Deduper],
     model_settings: dict[str, Any],
     left_data: DataFrame,
-    left_resolution: str,
+    left_resolution: ResolutionName,
     right_data: DataFrame | None = None,
-    right_resolution: str | None = None,
+    right_resolution: ResolutionName | None = None,
 ) -> Model:
     """Create a unified model instance for either linking or deduping operations.
 
     Args:
-        model_name: Your unique identifier for the model
+        name: Your unique identifier for the model
         description: Description of the model run
         model_class: Either Linker or Deduper class
         model_settings: Configuration settings for the model
@@ -157,7 +163,7 @@ def make_model(
         model_instance.prepare(data=left_data)
 
     metadata = ModelMetadata(
-        name=model_name,
+        name=name,
         description=description,
         type=model_type.value,
         left_resolution=left_resolution,
