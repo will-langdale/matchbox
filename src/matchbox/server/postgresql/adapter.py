@@ -14,7 +14,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -29,7 +29,7 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     ResolutionFrom,
     Resolutions,
-    Sources,
+    SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import (
     dump,
@@ -142,7 +142,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         PKSpace.initialise()
 
-        self.datasets = Sources
+        self.datasets = SourceConfigs
         self.models = FilteredResolutions(datasets=False, humans=False, models=True)
         self.source_resolutions = FilteredResolutions(
             datasets=True, humans=False, models=False
@@ -187,19 +187,19 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Data management
 
-    def index(self, source: Source, data_hashes: Table) -> None:  # noqa: D102
+    def index(self, source: SourceConfig, data_hashes: Table) -> None:  # noqa: D102
         insert_dataset(
             source=source, data_hashes=data_hashes, batch_size=self.settings.batch_size
         )
 
-    def get_source(self, address: SourceAddress) -> Source:  # noqa: D102
+    def get_source(self, address: SourceAddress) -> SourceConfig:  # noqa: D102
         with MBDB.get_session() as session:
-            source: Sources = (
-                session.query(Sources)
+            source: SourceConfigs = (
+                session.query(SourceConfigs)
                 .where(
                     and_(
-                        Sources.full_name == address.full_name,
-                        Sources.warehouse_hash == address.warehouse_hash,
+                        SourceConfigs.full_name == address.full_name,
+                        SourceConfigs.warehouse_hash == address.warehouse_hash,
                     )
                 )
                 .first()
@@ -212,7 +212,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def get_resolution_sources(  # noqa: D102
         self,
         resolution_name: str,
-    ) -> list[Source]:
+    ) -> list[SourceConfig]:
         with MBDB.get_session() as session:
             # Find resolution by name
             resolution: Resolutions | None = (
@@ -237,11 +237,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
             # Find all sources matching a resolution in scope
-            res_sources: list[Sources] = (
-                session.query(Sources)
+            res_sources: list[SourceConfigs] = (
+                session.query(SourceConfigs)
                 .join(
                     relevant_resolutions,
-                    Sources.resolution_id == relevant_resolutions.c.resolution_id,
+                    SourceConfigs.resolution_id == relevant_resolutions.c.resolution_id,
                 )
                 .all()
             )

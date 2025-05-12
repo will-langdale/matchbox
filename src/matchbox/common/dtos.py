@@ -160,7 +160,7 @@ class CountResult(BaseModel):
 
 
 class UploadStatus(BaseModel):
-    """Response model for any file upload processes, like Source or Model results."""
+    """Response model for any file upload processes."""
 
     id: str | None = None
     status: Literal[

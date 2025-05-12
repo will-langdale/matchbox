@@ -23,8 +23,8 @@ from matchbox.client.models.linkers.weighteddeterministic import (
 from matchbox.client.results import Results
 from matchbox.common.factories.entities import FeatureConfig
 from matchbox.common.factories.sources import (
-    SourceConfig,
     SourceTestkit,
+    SourceTestkitConfig,
     linked_sources_factory,
     source_factory,
 )
@@ -217,12 +217,12 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
     )
 
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_left",
             features=features,
             n_true_entities=10,
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
@@ -280,13 +280,13 @@ def test_exact_match_with_duplicates_linking(
     )
 
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_left",
             features=features,
             n_true_entities=10,
             repetition=1,  # Each entity appears twice
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
@@ -345,12 +345,12 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
 
     # Configure sources - full set on left, half on right
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_left",
             features=features,
             n_true_entities=10,  # Full set
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_right",
             features=features,
             n_true_entities=5,  # Half the entities
@@ -402,7 +402,7 @@ def test_no_matching_entities_linking(
     )
 
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_left",
             features=features,
             n_true_entities=10,

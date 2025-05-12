@@ -19,7 +19,10 @@ from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
-from matchbox.common.factories.sources import SourceConfig, linked_sources_factory
+from matchbox.common.factories.sources import (
+    SourceTestkitConfig,
+    linked_sources_factory,
+)
 from matchbox.server.base import (
     MatchboxDatastoreSettings,
     MatchboxDBAdapter,
@@ -295,7 +298,7 @@ def create_convergent_scenario(
 ) -> TestkitDAG:
     """Create a convergent TestkitDAG scenario.
 
-    This is where two Sources index almost identically. TestkitDAG contains two
+    This is where two SourceConfigs index almost identically. TestkitDAG contains two
     indexed sources with repetition, and two naive dedupe models that haven't yet
     had their results inserted.
     """
@@ -306,7 +309,7 @@ def create_convergent_scenario(
         name="company_name", base_generator="company"
     ).add_variations(SuffixRule(suffix=" UK"))
 
-    foo_a_source = SourceConfig(
+    foo_a_source = SourceTestkitConfig(
         full_name="foo_a",
         engine=warehouse_engine,
         features=(company_name_feature,),

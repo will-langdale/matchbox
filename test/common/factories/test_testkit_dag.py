@@ -4,7 +4,7 @@ from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig
 from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import (
-    SourceConfig,
+    SourceTestkitConfig,
     linked_sources_factory,
     source_factory,
 )
@@ -226,12 +226,12 @@ def test_testkit_dag_multiple_linked_sources():
 
     # Create two linked source testkits
     configs1 = (
-        SourceConfig(full_name="foo1", features=tuple(features[:1])),
-        SourceConfig(full_name="foo2", features=tuple(features[:1])),
+        SourceTestkitConfig(full_name="foo1", features=tuple(features[:1])),
+        SourceTestkitConfig(full_name="foo2", features=tuple(features[:1])),
     )
     configs2 = (
-        SourceConfig(full_name="bar1", features=tuple(features[1:])),
-        SourceConfig(full_name="bar2", features=tuple(features[1:])),
+        SourceTestkitConfig(full_name="bar1", features=tuple(features[1:])),
+        SourceTestkitConfig(full_name="bar2", features=tuple(features[1:])),
     )
 
     linked1 = linked_sources_factory(source_configs=configs1, n_true_entities=10)

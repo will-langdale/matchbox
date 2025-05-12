@@ -11,7 +11,7 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.common.hash import hash_arrow_table, hash_data, hash_values
 from matchbox.common.logging import logger
-from matchbox.common.sources import Source
+from matchbox.common.sources import SourceConfig
 from matchbox.common.transform import (
     attach_components_to_probabilities,
     to_hierarchical_clusters,
@@ -26,7 +26,7 @@ from matchbox.server.postgresql.orm import (
     ResolutionFrom,
     Resolutions,
     SourceColumns,
-    Sources,
+    SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import compile_sql, large_ingest
 
@@ -108,7 +108,9 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> None:
+def insert_dataset(
+    source: SourceConfig, data_hashes: pa.Table, batch_size: int
+) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
     log_prefix = f"Index {source.address.pretty}"
     resolution_hash = hash_data(str(source.address))
@@ -143,7 +145,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
 
         # Check if source already exists
         existing_source = (
-            session.query(Sources)
+            session.query(SourceConfigs)
             .filter_by(resolution_id=resolution.resolution_id)
             .first()
         )
@@ -154,7 +156,7 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
             session.flush()
 
         # Create new source with relationship to resolution
-        source_obj = Sources(
+        source_obj = SourceConfigs(
             resolution_id=resolution.resolution_id,
             resolution_name=source.resolution_name,
             full_name=source.address.full_name,
@@ -173,7 +175,9 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         session.add(source_obj)
         session.commit()
 
-        logger.info("Added to Resolutions, Sources, SourceColumns", prefix=log_prefix)
+        logger.info(
+            "Added to Resolutions, SourceConfigs, SourceColumns", prefix=log_prefix
+        )
 
         # Store source_id and max primary keys for later use
         source_id = source_obj.source_id

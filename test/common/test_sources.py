@@ -25,9 +25,9 @@ from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.sources import (
     Location,
     RelationalDBLocation,
-    Source,
     SourceAddress,
     SourceColumn,
+    SourceConfig,
 )
 
 
@@ -395,12 +395,12 @@ def test_source_address_format_columns():
 
 
 def test_source_set_engine(sqlite_warehouse: Engine):
-    """Engine can be set on Source."""
+    """Engine can be set on SourceConfig."""
     source_testkit = source_factory(engine=sqlite_warehouse)
 
     # We can set engine with correct column specification
     source = source_testkit.source.set_engine(sqlite_warehouse)
-    assert isinstance(source, Source)
+    assert isinstance(source, SourceConfig)
 
     # Error is raised with wrong engine
     with pytest.raises(ValueError, match="engine does not match"):
@@ -409,7 +409,7 @@ def test_source_set_engine(sqlite_warehouse: Engine):
 
 
 def test_source_check_columns(sqlite_warehouse: Engine):
-    """Source columns are checked against the warehouse."""
+    """SourceConfig columns are checked against the warehouse."""
     source_testkit = source_factory(
         features=[{"name": "b", "base_generator": "random_int", "sql_type": "BIGINT"}],
         engine=sqlite_warehouse,
@@ -418,7 +418,7 @@ def test_source_check_columns(sqlite_warehouse: Engine):
 
     # We can set engine with correct column specification
     source = source_testkit.source.set_engine(sqlite_warehouse)
-    assert isinstance(source, Source)
+    assert isinstance(source, SourceConfig)
 
     # Error is raised with custom columns
     with pytest.raises(MatchboxSourceColumnError, match="Columns {'c'} not in"):
@@ -449,7 +449,7 @@ def test_source_check_columns(sqlite_warehouse: Engine):
 
 
 def test_source_hash_equality(sqlite_warehouse: Engine):
-    """__eq__ and __hash__ behave as expected for a Source."""
+    """__eq__ and __hash__ behave as expected for a SourceConfig."""
     # This won't set the engine just yet
     source_testkit = source_factory(engine=sqlite_warehouse)
     source = source_testkit.source
@@ -464,7 +464,7 @@ def test_source_hash_equality(sqlite_warehouse: Engine):
 
 
 def test_source_default_columns(sqlite_warehouse: Engine):
-    """Default columns from the warehouse can be assigned to a Source."""
+    """Default columns from the warehouse can be assigned to a SourceConfig."""
     source_testkit = source_factory(
         features=[
             {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
@@ -490,7 +490,7 @@ def test_source_default_columns(sqlite_warehouse: Engine):
 
 
 def test_source_to_table(sqlite_warehouse: Engine):
-    """Convert Source to SQLAlchemy Table."""
+    """Convert SourceConfig to SQLAlchemy Table."""
     source_testkit = source_factory(engine=sqlite_warehouse)
     source_testkit.to_warehouse(engine=sqlite_warehouse)
 
@@ -524,7 +524,7 @@ def test_source_conversion_methods(
     converter: Callable[[Any], Any],
     to_pandas_fn: Callable[[Any], Any],
 ):
-    """Check equivalence of Source to Arrow, Pandas or Polars, with options."""
+    """Check equivalence of SourceConfig to Arrow, Pandas or Polars, with options."""
     source_testkit = source_factory(
         features=[
             {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
@@ -569,7 +569,7 @@ def test_source_conversion_methods(
 
 
 def test_source_hash_data(sqlite_warehouse: Engine):
-    """A Source can output hashed versions of its rows."""
+    """A SourceConfig can output hashed versions of its rows."""
     original = source_factory(
         full_name="original",
         features=[
@@ -631,7 +631,7 @@ def test_source_hash_data(sqlite_warehouse: Engine):
 
 
 def test_source_hash_nulls(sqlite_warehouse: Engine):
-    """A Source can output hashed versions of rows with nulls."""
+    """A SourceConfig can output hashed versions of rows with nulls."""
     testkit = source_from_tuple(
         data_tuple=({"a": 1.0}, {"a": None}),
         data_pks=["a", "b"],
@@ -670,7 +670,7 @@ def test_source_hash_nulls(sqlite_warehouse: Engine):
     ],
 )
 def test_source_data_batching(method_name, return_type, sqlite_warehouse: Engine):
-    """Test Source data retrieval methods with batching parameters."""
+    """Test SourceConfig data retrieval methods with batching parameters."""
     # Create a source with multiple rows of data
     source_testkit = source_factory(
         features=[

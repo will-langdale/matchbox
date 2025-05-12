@@ -171,7 +171,7 @@ def test_source_testkit_to_mock():
 
 
 def test_source_factory_mock_properties():
-    """Test that source properties set in source_factory match generated Source."""
+    """Test that source properties set in source_factory match generated config."""
     # Create source with specific features and name
     features = [
         FeatureConfig(

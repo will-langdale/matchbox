@@ -34,7 +34,7 @@ from matchbox.common.factories.sources import (
     source_from_tuple,
 )
 from matchbox.common.graph import DEFAULT_RESOLUTION
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceAddress, SourceConfig
 
 
 def test_cleaners():
@@ -448,7 +448,7 @@ def test_query_404_source_query(matchbox_api: MockRouter, sqlite_warehouse: Engi
         return_value=Response(
             404,
             json=NotFoundError(
-                details="Source 42 not found",
+                details="SourceConfig 42 not found",
                 entity=BackendRetrievableType.SOURCE,
             ).model_dump(),
         )
@@ -470,7 +470,8 @@ def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine
         return_value=Response(
             404,
             json=NotFoundError(
-                details="Source 42 not found", entity=BackendRetrievableType.SOURCE
+                details="SourceConfig 42 not found",
+                entity=BackendRetrievableType.SOURCE,
             ).model_dump(),
         )
     )
@@ -548,12 +549,12 @@ def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     assert {"foo_a", "foo_b", "id"} == set(results.column_names)
 
 
-@patch("matchbox.client.helpers.index.Source")
+@patch("matchbox.client.helpers.index.SourceConfig")
 def test_index_success(
     MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Test successful indexing flow through the API."""
-    # Mock Source
+    # Mock SourceConfig
     source = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
@@ -591,7 +592,7 @@ def test_index_success(
     )
 
     # Verify the API calls
-    source_call = Source.model_validate_json(
+    source_call = SourceConfig.model_validate_json(
         source_route.calls.last.request.content.decode("utf-8")
     )
     assert source_call == source.source
@@ -600,7 +601,7 @@ def test_index_success(
     assert b"PAR1" in upload_route.calls.last.request.content
 
 
-@patch("matchbox.client.helpers.index.Source")
+@patch("matchbox.client.helpers.index.SourceConfig")
 @pytest.mark.parametrize(
     "columns",
     [
@@ -664,7 +665,7 @@ def test_index_with_columns(
 
     # Verify API calls and source creation
     assert source_route.called
-    source_call = Source.model_validate_json(
+    source_call = SourceConfig.model_validate_json(
         source_route.calls.last.request.content.decode("utf-8")
     )
     assert source_call == source.source
@@ -678,12 +679,12 @@ def test_index_with_columns(
         mock_source_instance.default_columns.assert_called_once()
 
 
-@patch("matchbox.client.helpers.index.Source")
+@patch("matchbox.client.helpers.index.SourceConfig")
 def test_index_upload_failure(
     MockSource: Mock, matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Test handling of upload failures."""
-    # Mock Source
+    # Mock SourceConfig
     source = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
@@ -725,7 +726,7 @@ def test_index_upload_failure(
         )
 
     # Verify API calls
-    source_call = Source.model_validate_json(
+    source_call = SourceConfig.model_validate_json(
         source_route.calls.last.request.content.decode("utf-8")
     )
     assert source_call == source.source
@@ -768,7 +769,9 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
     )
 
     # Spy on the hash_data method to verify batch_size
-    with patch.object(Source, "hash_data", wraps=source.hash_data) as spy_hash_data:
+    with patch.object(
+        SourceConfig, "hash_data", wraps=source.hash_data
+    ) as spy_hash_data:
         # Call index with batch_size
         index(
             full_name=source.address.full_name,
@@ -879,7 +882,7 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         return_value=Response(
             404,
             json=NotFoundError(
-                details="Source 42 not found",
+                details="SourceConfig 42 not found",
                 entity=BackendRetrievableType.SOURCE,
             ).model_dump(),
         )

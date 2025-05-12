@@ -218,7 +218,7 @@ class RelationalDBLocation(Location):
     def validate_extract_transform(self, extract_transform: str) -> bool:  # noqa: D102
         # We are NOT attempting a full sanitisation of the SQL statement
         # Validation is done purely to stop accidental mistakes, not malicious actors
-        # Users should only run indexing using Sources they trust and have read,
+        # Users should only run indexing using SourceConfigs they trust and have read,
         # using least privilege credentials
         return validate_sql_for_data_extraction(extract_transform)
 
@@ -333,7 +333,7 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator to check that engine is set."""
 
     @wraps(func)
-    def wrapper(self: "Source", *args: P.args, **kwargs: P.kwargs) -> R:
+    def wrapper(self: "SourceConfig", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.engine:
             raise MatchboxSourceEngineError
 
@@ -342,7 +342,7 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class Source(BaseModel):
+class SourceConfig(BaseModel):
     """A dataset that can, or has been indexed on the backend."""
 
     model_config = ConfigDict(frozen=True)
@@ -374,11 +374,11 @@ class Source(BaseModel):
         return hash((self.address, self.resolution_name, self.db_pk, self.columns))
 
     def __deepcopy__(self, memo=None):
-        """Create a deep copy of the Source object."""
+        """Create a deep copy of the SourceConfig object."""
         if memo is None:
             memo = {}
 
-        obj_copy = Source(
+        obj_copy = SourceConfig(
             address=deepcopy(self.address, memo),
             resolution_name=deepcopy(self.resolution_name, memo),
             db_pk=deepcopy(self.db_pk, memo),
@@ -414,7 +414,7 @@ class Source(BaseModel):
         }
 
     @needs_engine
-    def default_columns(self) -> "Source":
+    def default_columns(self) -> "SourceConfig":
         """Returns a new source with default columns.
 
         Default columns are all from the source warehouse other than `self.db_pk`.
@@ -426,7 +426,7 @@ class Source(BaseModel):
             for col_name, col_type in remote_columns.items()
         )
 
-        new_source = Source(
+        new_source = SourceConfig(
             address=self.address,
             resolution_name=self.resolution_name,
             db_pk=self.db_pk,
@@ -469,7 +469,7 @@ class Source(BaseModel):
                 )
         else:
             if not self.columns:
-                raise ValueError("No columns passed, and none set on the Source.")
+                raise ValueError("No columns passed, and none set on the SourceConfig.")
 
             for col in self.columns:
                 if col.name not in remote_columns:

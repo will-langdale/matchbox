@@ -17,7 +17,7 @@ from matchbox.common.factories.entities import query_to_cluster_entities
 from matchbox.common.factories.sources import (
     FeatureConfig,
     LinkedSourcesTestkit,
-    SourceConfig,
+    SourceTestkitConfig,
     SuffixRule,
     linked_sources_factory,
 )
@@ -71,7 +71,7 @@ class TestE2EAnalyticalUser:
 
         # Create source configurations that match our test fixtures
         source_configs = (
-            SourceConfig(
+            SourceTestkitConfig(
                 full_name="e2e.crn",
                 engine=postgres_warehouse,
                 features=(
@@ -86,7 +86,7 @@ class TestE2EAnalyticalUser:
                 n_true_entities=n_true_entities,
                 repetition=0,  # No duplicates within the variations
             ),
-            SourceConfig(
+            SourceTestkitConfig(
                 full_name="e2e.duns",
                 engine=postgres_warehouse,
                 features=(
@@ -96,7 +96,7 @@ class TestE2EAnalyticalUser:
                 n_true_entities=n_true_entities // 2,  # Half the companies
                 repetition=0,
             ),
-            SourceConfig(
+            SourceTestkitConfig(
                 full_name="e2e.cdms",
                 engine=postgres_warehouse,
                 features=(
