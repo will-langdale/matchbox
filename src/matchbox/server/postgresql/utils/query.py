@@ -107,7 +107,8 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
             resolution_valid = (
                 select(ClusterSourcePK.cluster_id.label("cluster"))
                 .join(
-                    SourceConfigs, SourceConfigs.source_id == ClusterSourcePK.source_id
+                    SourceConfigs,
+                    SourceConfigs.source_config_id == ClusterSourcePK.source_config_id,
                 )
                 .where(SourceConfigs.resolution_id == resolution_id)
                 .distinct()
@@ -189,7 +190,7 @@ def _resolve_cluster_hierarchy(
             .where(
                 and_(
                     Clusters.cluster_id.in_(select(valid_clusters.c.cluster)),
-                    ClusterSourcePK.source_id == dataset_source.source_id,
+                    ClusterSourcePK.source_config_id == dataset_source.source_config_id,
                 )
             )
             .cte("mapping_base")
@@ -331,7 +332,7 @@ def _build_unnested_clusters() -> CTE:
     return (
         select(
             Clusters.cluster_id,
-            ClusterSourcePK.source_id.label("dataset"),
+            ClusterSourcePK.source_config_id.label("dataset"),
             ClusterSourcePK.source_pk,
         )
         .select_from(Clusters)
@@ -512,7 +513,9 @@ def _build_match_query(
 
     # Build the query components
     unnested = _build_unnested_clusters()
-    source_cluster = _find_source_cluster(unnested, dataset_source.source_id, source_pk)
+    source_cluster = _find_source_cluster(
+        unnested, dataset_source.source_config_id, source_pk
+    )
     hierarchy_up = _build_hierarchy_up(source_cluster, contains_table)
     highest = _find_highest_parent(hierarchy_up)
     hierarchy_down = _build_hierarchy_down(highest, unnested, contains_table)
@@ -581,9 +584,13 @@ def match(
             match_obj = Match(
                 cluster=cluster,
                 source=source,
-                source_id=matches_by_source_id.get(dataset_source.source_id, set()),
+                source_id=matches_by_source_id.get(
+                    dataset_source.source_config_id, set()
+                ),
                 target=target_address,
-                target_id=matches_by_source_id.get(target_source.source_id, set()),
+                target_id=matches_by_source_id.get(
+                    target_source.source_config_id, set()
+                ),
             )
             result.append(match_obj)
 

@@ -181,8 +181,8 @@ def insert_dataset(
             "Added to Resolutions, SourceConfigs, SourceColumns", prefix=log_prefix
         )
 
-        # Store source_id and max primary keys for later use
-        source_id = source_obj.source_id
+        # Store source_config_id and max primary keys for later use
+        source_config_id = source_obj.source_config_id
 
     # Don't insert new hashes, but new PKs need existing hash IDs
     with MBDB.get_adbc_connection() as conn:
@@ -246,7 +246,7 @@ def insert_dataset(
     source_pk_records = source_pk_records.with_row_index("pk_id").with_columns(
         [
             (pl.col("pk_id") + next_pk_id).alias("pk_id"),
-            pl.lit(source_id, dtype=pl.Int64).alias("source_id"),
+            pl.lit(source_config_id, dtype=pl.Int64).alias("source_config_id"),
         ]
     )
 

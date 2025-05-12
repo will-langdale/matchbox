@@ -267,9 +267,9 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     column_id = Column(BIGINT, primary_key=True)
-    source_id = Column(
+    source_config_id = Column(
         BIGINT,
-        ForeignKey("source_configs.source_id", ondelete="CASCADE"),
+        ForeignKey("source_configs.source_config_id", ondelete="CASCADE"),
         nullable=False,
     )
     column_index = Column(INTEGER, nullable=False)
@@ -281,8 +281,10 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
 
     # Constraints and indices
     __table_args__ = (
-        UniqueConstraint("source_id", "column_index", name="unique_column_index"),
-        Index("ix_source_columns_source_id", "source_id"),
+        UniqueConstraint(
+            "source_config_id", "column_index", name="unique_column_index"
+        ),
+        Index("ix_source_columns_source_id", "source_config_id"),
     )
 
 
@@ -296,9 +298,9 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
     cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
-    source_id = Column(
+    source_config_id = Column(
         BIGINT,
-        ForeignKey("source_configs.source_id", ondelete="CASCADE"),
+        ForeignKey("source_configs.source_config_id", ondelete="CASCADE"),
         nullable=False,
     )
     source_pk = Column(TEXT, nullable=False)
@@ -311,7 +313,7 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
     __table_args__ = (
         Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
         Index("ix_cluster_source_pks_source_pk", "source_pk"),
-        UniqueConstraint("pk_id", "source_id", name="unique_pk_source"),
+        UniqueConstraint("pk_id", "source_config_id", name="unique_pk_source"),
     )
 
 
@@ -321,7 +323,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "source_configs"
 
     # Columns
-    source_id = Column(BIGINT, Identity(start=1), primary_key=True)
+    source_config_id = Column(BIGINT, Identity(start=1), primary_key=True)
     resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
@@ -347,7 +349,9 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     clusters = relationship(
         "Clusters",
         secondary=ClusterSourcePK.__table__,
-        primaryjoin="SourceConfigs.source_id == ClusterSourcePK.source_id",
+        primaryjoin=(
+            "SourceConfigs.source_config_id == ClusterSourcePK.source_config_id"
+        ),
         secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
         viewonly=True,
     )
@@ -368,7 +372,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         with MBDB.get_session() as session:
             columns: list[SourceColumns] = (
                 session.query(SourceColumns)
-                .filter(SourceColumns.source_id == self.source_id)
+                .filter(SourceColumns.source_config_id == self.source_config_id)
                 .order_by(SourceColumns.column_index)
                 .all()
             )
@@ -442,7 +446,9 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         "SourceConfigs",
         secondary=ClusterSourcePK.__table__,
         primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
-        secondaryjoin="ClusterSourcePK.source_id == SourceConfigs.source_id",
+        secondaryjoin=(
+            "ClusterSourcePK.source_config_id == SourceConfigs.source_config_id"
+        ),
         viewonly=True,
     )
 
