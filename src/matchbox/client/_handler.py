@@ -240,7 +240,7 @@ def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadS
     return status
 
 
-def get_source(address: SourceAddress) -> SourceConfig:
+def get_source_config(address: SourceAddress) -> SourceConfig:
     log_prefix = f"SourceConfig {address.pretty}"
     logger.debug("Retrieving", prefix=log_prefix)
 
@@ -249,7 +249,7 @@ def get_source(address: SourceAddress) -> SourceConfig:
     return SourceConfig.model_validate(res.json())
 
 
-def get_resolution_sources(resolution_name: str) -> list[SourceConfig]:
+def get_resolution_source_configs(resolution_name: str) -> list[SourceConfig]:
     log_prefix = f"Resolution {resolution_name}"
     logger.debug("Retrieving", prefix=log_prefix)
 

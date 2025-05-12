@@ -18,7 +18,7 @@ def primary_keys_map(
 ) -> ArrowTable:
     """Return matchbox IDs to source IDs mapping, optionally filtering by an engine."""
     # Get all sources in scope of the resolution
-    sources = _handler.get_resolution_sources(resolution_name=resolution_name)
+    sources = _handler.get_resolution_source_configs(resolution_name=resolution_name)
 
     if engine:
         # Filter only sources compatible with engine
