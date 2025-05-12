@@ -22,9 +22,9 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.sources import Source as CommonSource
 from matchbox.common.sources import SourceAddress
-from matchbox.common.sources import SourceColumn as CommonSourceCoulmn
+from matchbox.common.sources import SourceColumn as CommonSourceColumn
+from matchbox.common.sources import SourceConfig as CommonSourceConfig
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -73,7 +73,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     truth = Column(SMALLINT, nullable=True)
 
     # Relationships
-    source = relationship("Sources", back_populates="dataset_resolution", uselist=False)
+    source_config = relationship(
+        "SourceConfigs", back_populates="source_resolution", uselist=False
+    )
     probabilities = relationship(
         "Probabilities",
         back_populates="proposed_by",
@@ -259,15 +261,15 @@ class PKSpace(MBDB.MatchboxBase):
 
 
 class SourceColumns(CountMixin, MBDB.MatchboxBase):
-    """Table for storing column details for Sources."""
+    """Table for storing column details for SourceConfigs."""
 
     __tablename__ = "source_columns"
 
     # Columns
     column_id = Column(BIGINT, primary_key=True)
-    source_id = Column(
+    source_config_id = Column(
         BIGINT,
-        ForeignKey("sources.source_id", ondelete="CASCADE"),
+        ForeignKey("source_configs.source_config_id", ondelete="CASCADE"),
         nullable=False,
     )
     column_index = Column(INTEGER, nullable=False)
@@ -275,12 +277,14 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
     column_type = Column(TEXT, nullable=False)
 
     # Relationships
-    source = relationship("Sources", back_populates="columns")
+    source_config = relationship("SourceConfigs", back_populates="columns")
 
     # Constraints and indices
     __table_args__ = (
-        UniqueConstraint("source_id", "column_index", name="unique_column_index"),
-        Index("ix_source_columns_source_id", "source_id"),
+        UniqueConstraint(
+            "source_config_id", "column_index", name="unique_column_index"
+        ),
+        Index("ix_source_columns_source_config_id", "source_config_id"),
     )
 
 
@@ -294,30 +298,32 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
     cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
-    source_id = Column(
-        BIGINT, ForeignKey("sources.source_id", ondelete="CASCADE"), nullable=False
+    source_config_id = Column(
+        BIGINT,
+        ForeignKey("source_configs.source_config_id", ondelete="CASCADE"),
+        nullable=False,
     )
     source_pk = Column(TEXT, nullable=False)
 
     # Relationships
     cluster = relationship("Clusters", back_populates="source_pks")
-    source = relationship("Sources", back_populates="cluster_source_pks")
+    source_config = relationship("SourceConfigs", back_populates="cluster_source_pks")
 
     # Constraints and indices
     __table_args__ = (
         Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
         Index("ix_cluster_source_pks_source_pk", "source_pk"),
-        UniqueConstraint("pk_id", "source_id", name="unique_pk_source"),
+        UniqueConstraint("pk_id", "source_config_id", name="unique_pk_source"),
     )
 
 
-class Sources(CountMixin, MBDB.MatchboxBase):
-    """Table of sources of data for Matchbox."""
+class SourceConfigs(CountMixin, MBDB.MatchboxBase):
+    """Table of source_configs of data for Matchbox."""
 
-    __tablename__ = "sources"
+    __tablename__ = "source_configs"
 
     # Columns
-    source_id = Column(BIGINT, Identity(start=1), primary_key=True)
+    source_config_id = Column(BIGINT, Identity(start=1), primary_key=True)
     resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
@@ -329,21 +335,23 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     db_pk = Column(TEXT, nullable=False)
 
     # Relationships
-    dataset_resolution = relationship("Resolutions", back_populates="source")
+    source_resolution = relationship("Resolutions", back_populates="source_config")
     columns = relationship(
         "SourceColumns",
-        back_populates="source",
+        back_populates="source_config",
         passive_deletes=True,
     )
     cluster_source_pks = relationship(
         "ClusterSourcePK",
-        back_populates="source",
+        back_populates="source_config",
         passive_deletes=True,
     )
     clusters = relationship(
         "Clusters",
         secondary=ClusterSourcePK.__table__,
-        primaryjoin="Sources.source_id == ClusterSourcePK.source_id",
+        primaryjoin=(
+            "SourceConfigs.source_config_id == ClusterSourcePK.source_config_id"
+        ),
         secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
         viewonly=True,
     )
@@ -354,29 +362,29 @@ class Sources(CountMixin, MBDB.MatchboxBase):
     )
 
     @classmethod
-    def list_all(cls) -> list["Sources"]:
-        """Returns all sources in the database."""
+    def list_all(cls) -> list["SourceConfigs"]:
+        """Returns all source_configs in the database."""
         with MBDB.get_session() as session:
             return session.query(cls).all()
 
-    def to_common_source(self) -> list[CommonSource]:
-        """Convert ORM source to a matchbox.common Source object."""
+    def to_dto(self) -> list[CommonSourceConfig]:
+        """Convert ORM source to a matchbox.common SourceConfig object."""
         with MBDB.get_session() as session:
             columns: list[SourceColumns] = (
                 session.query(SourceColumns)
-                .filter(SourceColumns.source_id == self.source_id)
+                .filter(SourceColumns.source_config_id == self.source_config_id)
                 .order_by(SourceColumns.column_index)
                 .all()
             )
 
-        return CommonSource(
+        return CommonSourceConfig(
             resolution_name=self.resolution_name,
             address=SourceAddress(
                 full_name=self.full_name, warehouse_hash=self.warehouse_hash
             ),
             db_pk=self.db_pk,
             columns=[
-                CommonSourceCoulmn(
+                CommonSourceColumn(
                     name=column.column_name,
                     type=column.column_type,
                 )
@@ -433,12 +441,14 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Clusters.cluster_id == Contains.child",
         backref="parents",
     )
-    # Add relationship to Sources through ClusterSourcePK
-    sources = relationship(
-        "Sources",
+    # Add relationship to SourceConfigs through ClusterSourcePK
+    source_configs = relationship(
+        "SourceConfigs",
         secondary=ClusterSourcePK.__table__,
         primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
-        secondaryjoin="ClusterSourcePK.source_id == Sources.source_id",
+        secondaryjoin=(
+            "ClusterSourcePK.source_config_id == SourceConfigs.source_config_id"
+        ),
         viewonly=True,
     )
 

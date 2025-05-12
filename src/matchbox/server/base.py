@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from matchbox.common.dtos import ModelAncestor, ModelMetadata
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.logging import LogLevelType
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -222,7 +222,7 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        source_address: SourceAddress,
+        source: SourceAddress,
         resolution_name: str | None = None,
         threshold: int | None = None,
         limit: int = None,
@@ -230,7 +230,7 @@ class MatchboxDBAdapter(ABC):
         """Queries the database from an optional point of truth.
 
         Args:
-            source_address: the `SourceAddress` object identifying the source to query
+            source: the `SourceAddress` object identifying the source to query
             resolution_name (optional): the resolution to use for filtering results
                 If not specified, will use the dataset resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
@@ -271,39 +271,39 @@ class MatchboxDBAdapter(ABC):
     # Data management
 
     @abstractmethod
-    def index(self, source: Source, data_hashes: Table) -> None:
-        """Indexes to Matchbox a source dataset in your warehouse.
+    def index(self, source_config: SourceConfig, data_hashes: Table) -> None:
+        """Indexes a source in your warehouse to Matchbox.
 
         Args:
-            source: The source dataset to index.
+            source_config: The source configuration to index.
             data_hashes: The Arrow table with the hash of each data row
         """
         ...
 
     @abstractmethod
-    def get_source(self, address: SourceAddress) -> Source:
-        """Get a source from its address.
+    def get_source_config(self, address: SourceAddress) -> SourceConfig:
+        """Get a source configuration from its address.
 
         Args:
             address: The name address for the source
 
         Returns:
-            A Source object
+            A SourceConfig object
         """
         ...
 
     @abstractmethod
-    def get_resolution_sources(
+    def get_resolution_source_configs(
         self,
         resolution_name: str,
-    ) -> list[Source]:
-        """Get a list of sources queriable from a resolution.
+    ) -> list[SourceConfig]:
+        """Get a list of source configurations queriable from a resolution.
 
         Args:
             resolution_name: Name of the resolution to query.
 
         Returns:
-            List of relevant Source objects.
+            List of relevant SourceConfig objects.
         """
         ...
 

@@ -5,10 +5,10 @@ from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceAddress, SourceConfig
 
 
-def _combined_colname(source: Source, col_name: str):
+def _combined_colname(source: SourceConfig, col_name: str):
     return source.address.full_name.replace(".", "_") + "_" + col_name
 
 
@@ -18,7 +18,7 @@ def primary_keys_map(
 ) -> ArrowTable:
     """Return matchbox IDs to source IDs mapping, optionally filtering by an engine."""
     # Get all sources in scope of the resolution
-    sources = _handler.get_resolution_sources(resolution_name=resolution_name)
+    sources = _handler.get_resolution_source_configs(resolution_name=resolution_name)
 
     if engine:
         # Filter only sources compatible with engine
@@ -40,7 +40,7 @@ def primary_keys_map(
         # Get Matchbox IDs from backend
         source_mb_ids.append(
             _handler.query(
-                source_address=s.address,
+                source=s.address,
                 resolution_name=resolution_name,
             )
         )

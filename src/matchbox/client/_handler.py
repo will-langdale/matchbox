@@ -31,7 +31,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 
 URLEncodeHandledType = str | int | float | bytes
 
@@ -117,21 +117,21 @@ CLIENT = create_client(settings=settings)
 
 
 def query(
-    source_address: SourceAddress,
+    source: SourceAddress,
     resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
-    log_prefix = f"Query {source_address.pretty}"
+    log_prefix = f"Query {source.pretty}"
     logger.debug(f"Using {resolution_name}", prefix=log_prefix)
 
     res = CLIENT.get(
         "/query",
         params=url_params(
             {
-                "full_name": source_address.full_name,
+                "full_name": source.full_name,
                 # Converted to b64 by `url_params()`
-                "warehouse_hash_b64": source_address.warehouse_hash,
+                "warehouse_hash_b64": source.warehouse_hash,
                 "resolution_name": resolution_name,
                 "threshold": threshold,
                 "limit": limit,
@@ -195,22 +195,22 @@ def match(
 # Data management
 
 
-def index(source: Source, batch_size: int | None = None) -> UploadStatus:
-    """Index a Source in Matchbox."""
-    log_prefix = f"Index {source.address.pretty}"
+def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadStatus:
+    """Index from a SourceConfig in Matchbox."""
+    log_prefix = f"Index {source_config.address.pretty}"
     log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
     logger.debug(f"Started {log_batch}", prefix=log_prefix)
 
     logger.debug("Retrieving and hashing", prefix=log_prefix)
 
-    data_hashes = source.hash_data(batch_size=batch_size)
+    data_hashes = source_config.hash_data(batch_size=batch_size)
 
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
     logger.debug("Uploading metadata", prefix=log_prefix)
 
-    metadata_res = CLIENT.post("/sources", json=source.model_dump())
+    metadata_res = CLIENT.post("/sources", json=source_config.model_dump())
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -240,22 +240,22 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     return status
 
 
-def get_source(address: SourceAddress) -> Source:
-    log_prefix = f"Source {address.pretty}"
+def get_source_config(address: SourceAddress) -> SourceConfig:
+    log_prefix = f"SourceConfig {address.pretty}"
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
 
-    return Source.model_validate(res.json())
+    return SourceConfig.model_validate(res.json())
 
 
-def get_resolution_sources(resolution_name: str) -> list[Source]:
+def get_resolution_source_configs(resolution_name: str) -> list[SourceConfig]:
     log_prefix = f"Resolution {resolution_name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get("/sources", params={"resolution_name": resolution_name})
 
-    return [Source.model_validate(s) for s in res.json()]
+    return [SourceConfig.model_validate(s) for s in res.json()]
 
 
 def get_resolution_graph() -> ResolutionGraph:

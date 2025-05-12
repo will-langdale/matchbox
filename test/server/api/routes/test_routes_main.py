@@ -69,7 +69,7 @@ def test_upload(
     # Mock the metadata store
     mock_metadata_store = Mock()
     store = MetadataStore()
-    update_id = store.cache_source(source_testkit.source)
+    update_id = store.cache_source(source_testkit.source_config)
     mock_metadata_store.get.side_effect = store.get
     mock_metadata_store.update_status.side_effect = store.update_status
 
@@ -119,7 +119,7 @@ def test_upload_wrong_schema(
     # Setup store
     mock_metadata_store = Mock()
     store = MetadataStore()
-    update_id = store.cache_source(source_testkit.source)
+    update_id = store.cache_source(source_testkit.source_config)
     mock_metadata_store.get.side_effect = store.get
     mock_metadata_store.update_status.side_effect = store.update_status
 
@@ -155,7 +155,7 @@ def test_upload_status_check(test_client: TestClient):
     mock_metadata_store = Mock()
     store = MetadataStore()
     source_testkit = source_factory()
-    update_id = store.cache_source(source_testkit.source)
+    update_id = store.cache_source(source_testkit.source_config)
     store.update_status(update_id, "processing")
 
     mock_metadata_store.get.side_effect = store.get
@@ -179,7 +179,7 @@ def test_upload_already_processing(test_client: TestClient):
     mock_metadata_store = Mock()
     store = MetadataStore()
     source_testkit = source_factory()
-    update_id = store.cache_source(source_testkit.source)
+    update_id = store.cache_source(source_testkit.source_config)
     store.update_status(update_id, "processing")
 
     mock_metadata_store.get.side_effect = store.get
@@ -204,7 +204,7 @@ def test_upload_already_queued(test_client: TestClient):
     mock_metadata_store = Mock()
     store = MetadataStore()
     source_testkit = source_factory()
-    update_id = store.cache_source(source_testkit.source)
+    update_id = store.cache_source(source_testkit.source_config)
     store.update_status(update_id, "queued")
 
     mock_metadata_store.get.side_effect = store.get
@@ -261,7 +261,7 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
 
     # Setup metadata store with test data
     store = MetadataStore()
-    upload_id = store.cache_source(source_testkit.source)
+    upload_id = store.cache_source(source_testkit.source_config)
     store.update_status(upload_id, "awaiting_upload")
 
     # Run the process, expecting it to fail

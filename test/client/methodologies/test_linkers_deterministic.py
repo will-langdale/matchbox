@@ -23,8 +23,8 @@ from matchbox.client.models.linkers.weighteddeterministic import (
 from matchbox.client.results import Results
 from matchbox.common.factories.entities import FeatureConfig
 from matchbox.common.factories.sources import (
-    SourceConfig,
     SourceTestkit,
+    SourceTestkitParameters,
     linked_sources_factory,
     source_factory,
 )
@@ -48,10 +48,12 @@ def configure_deterministic_linker(
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     # Build comparison string
@@ -87,10 +89,12 @@ def configure_weighted_deterministic_linker(
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     # Build weighted comparisons with equal weights
@@ -128,10 +132,12 @@ def configure_splink_linker(
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     deterministic_matching_rules: list[str] = []
@@ -217,19 +223,19 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
     )
 
     configs = (
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,
         ),
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -280,13 +286,13 @@ def test_exact_match_with_duplicates_linking(
     )
 
     configs = (
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,
             repetition=1,  # Each entity appears twice
         ),
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
@@ -294,7 +300,7 @@ def test_exact_match_with_duplicates_linking(
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -345,12 +351,12 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
 
     # Configure sources - full set on left, half on right
     configs = (
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,  # Full set
         ),
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_right",
             features=features,
             n_true_entities=5,  # Half the entities
@@ -358,7 +364,7 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
     )
 
     # Create the linked sources
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -402,14 +408,14 @@ def test_no_matching_entities_linking(
     )
 
     configs = (
-        SourceConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=314)
+    linked = linked_sources_factory(source_parameters=configs, seed=314)
     left_source = linked.sources["source_left"]
     right_source = source_factory(
         full_name="source_right", features=features, n_true_entities=10, seed=159

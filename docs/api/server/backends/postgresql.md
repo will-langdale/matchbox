@@ -9,8 +9,9 @@ There are two graph-like trees in place here.
 
 ```mermaid
 erDiagram
-    Sources {
-        bigint resolution_id PK,FK
+    SourceConfigs {
+        bigint source_config_id PK
+        bigint resolution_id FK
         string resolution_name
         string full_name
         bytes warehouse_hash
@@ -18,7 +19,7 @@ erDiagram
     }
     SourceColumns {
         bigint column_id PK
-        bigint source_id FK
+        bigint source_config_id FK
         int column_index
         string column_name
         string column_type
@@ -30,7 +31,7 @@ erDiagram
     ClusterSourcePK {
         bigint pk_id PK
         bigint cluster_id FK
-        bigint source_id FK
+        bigint source_config_id FK
         string source_pk
     }
     Contains {
@@ -45,6 +46,7 @@ erDiagram
     Resolutions {
         bigint resolution_id PK
         bytes resolution_hash
+        bytes content_hash
         string type
         string name
         string description
@@ -57,9 +59,9 @@ erDiagram
         smallint truth_cache
     }
 
-    Sources |o--|| Resolutions : ""
-    Sources ||--o{ SourceColumns : ""
-    Sources ||--o{ ClusterSourcePK : ""
+    SourceConfigs |o--|| Resolutions : ""
+    SourceConfigs ||--o{ SourceColumns : ""
+    SourceConfigs ||--o{ ClusterSourcePK : ""
     Clusters ||--o{ ClusterSourcePK : ""
     Clusters ||--o{ Probabilities : ""
     Clusters ||--o{ Contains : "parent"

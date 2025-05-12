@@ -136,42 +136,42 @@ def test_source_testkit_to_mock():
     ]
 
     source_testkit = source_factory(
-        features=features, full_name="test.source", n_true_entities=2, seed=42
+        features=features, full_name="test.source_config", n_true_entities=2, seed=42
     )
 
     # Create the mock
-    mock_source = source_testkit.mock
+    mock_source_config = source_testkit.mock
 
     # Test that method calls are tracked
-    mock_source.set_engine("test_engine")
-    mock_source.default_columns()
-    mock_source.hash_data()
+    mock_source_config.set_engine("test_engine")
+    mock_source_config.default_columns()
+    mock_source_config.hash_data()
 
-    mock_source.set_engine.assert_called_once_with("test_engine")
-    mock_source.default_columns.assert_called_once()
-    mock_source.hash_data.assert_called_once()
+    mock_source_config.set_engine.assert_called_once_with("test_engine")
+    mock_source_config.default_columns.assert_called_once()
+    mock_source_config.hash_data.assert_called_once()
 
     # Test method return values
-    assert mock_source.set_engine("test_engine") == mock_source
-    assert mock_source.default_columns() == mock_source
-    assert mock_source.hash_data() == source_testkit.data_hashes
+    assert mock_source_config.set_engine("test_engine") == mock_source_config
+    assert mock_source_config.default_columns() == mock_source_config
+    assert mock_source_config.hash_data() == source_testkit.data_hashes
 
     # Test model dump methods
-    original_dump = source_testkit.source.model_dump()
-    mock_dump = mock_source.model_dump()
+    original_dump = source_testkit.source_config.model_dump()
+    mock_dump = mock_source_config.model_dump()
     assert mock_dump == original_dump
 
-    original_json = source_testkit.source.model_dump_json()
-    mock_json = mock_source.model_dump_json()
+    original_json = source_testkit.source_config.model_dump_json()
+    mock_json = mock_source_config.model_dump_json()
     assert mock_json == original_json
 
     # Verify side effect functions were set correctly
-    mock_source.model_dump.assert_called_once()
-    mock_source.model_dump_json.assert_called_once()
+    mock_source_config.model_dump.assert_called_once()
+    mock_source_config.model_dump_json.assert_called_once()
 
 
 def test_source_factory_mock_properties():
-    """Test that source properties set in source_factory match generated Source."""
+    """Test that source properties set in source_factory match generated config."""
     # Create source with specific features and name
     features = [
         FeatureConfig(
@@ -191,7 +191,7 @@ def test_source_factory_mock_properties():
 
     source_testkit = source_factory(
         features=features, full_name=full_name, engine=engine
-    ).source
+    ).source_config
 
     # Check source address properties
     assert source_testkit.address.full_name == full_name
@@ -236,7 +236,7 @@ def test_entity_variations_tracking():
     ]
 
     source = source_factory(features=features, n_true_entities=2, seed=42)
-    source_name = source.source.address.full_name
+    source_name = source.source_config.address.full_name
 
     # Process each ClusterEntity group
     for cluster_entity in source.entities:
@@ -283,7 +283,7 @@ def test_base_and_variation_entities():
     ]
 
     source = source_factory(features=features, n_true_entities=1, seed=42)
-    source_name = source.source.address.full_name
+    source_name = source.source_config.address.full_name
 
     # Should have two ClusterEntity objects - one for base, one for variation
     assert len(source.entities) == 2
@@ -403,7 +403,7 @@ def test_source_from_tuple():
     assert testkit.data.shape[0] == 2
     assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2
-    assert set(col.name for col in testkit.source.columns) == {"a", "b"}
+    assert set(col.name for col in testkit.source_config.columns) == {"a", "b"}
 
 
 @pytest.mark.parametrize(

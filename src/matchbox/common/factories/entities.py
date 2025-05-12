@@ -308,7 +308,7 @@ class SourcePKMixin:
             source = sources.get(dataset_name)
 
             if source is None:
-                raise ValueError(f"Source not found: {dataset_name}")
+                raise ValueError(f"SourceConfig not found: {dataset_name}")
 
             # Get rows for this entity in this source
             df = source.data.to_pandas()

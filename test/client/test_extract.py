@@ -51,8 +51,8 @@ def test_primary_keys_map(
         return_value=Response(
             200,
             json=[
-                foo.source.model_dump(),
-                bar.source.model_dump(),
+                foo.source_config.model_dump(),
+                bar.source_config.model_dump(),
             ],
         )
     )
