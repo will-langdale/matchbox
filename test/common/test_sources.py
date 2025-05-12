@@ -253,7 +253,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     source_testkit.to_warehouse(engine=sqlite_warehouse)
     location = RelationalDBLocation.from_engine(sqlite_warehouse)
 
-    sql = f"SELECT * FROM {source_testkit.source.address.full_name}"
+    sql = f"SELECT * FROM {source_testkit.source_config.address.full_name}"
     batch_size = 2
 
     # Execute the query
@@ -304,7 +304,7 @@ def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
         company_name as name,
         UPPER(company_name) as company_name,
         crn as crn
-    FROM {source_testkit.source.address.full_name};
+    FROM {source_testkit.source_config.address.full_name};
     """
 
     results = list(location.execute(sql, batch_size=1))
@@ -399,7 +399,7 @@ def test_source_set_engine(sqlite_warehouse: Engine):
     source_testkit = source_factory(engine=sqlite_warehouse)
 
     # We can set engine with correct column specification
-    source = source_testkit.source.set_engine(sqlite_warehouse)
+    source = source_testkit.source_config.set_engine(sqlite_warehouse)
     assert isinstance(source, SourceConfig)
 
     # Error is raised with wrong engine
@@ -417,7 +417,7 @@ def test_source_check_columns(sqlite_warehouse: Engine):
     source_testkit.to_warehouse(engine=sqlite_warehouse)
 
     # We can set engine with correct column specification
-    source = source_testkit.source.set_engine(sqlite_warehouse)
+    source = source_testkit.source_config.set_engine(sqlite_warehouse)
     assert isinstance(source, SourceConfig)
 
     # Error is raised with custom columns
@@ -425,23 +425,23 @@ def test_source_check_columns(sqlite_warehouse: Engine):
         source.check_columns(columns=["c"])
 
     # Error is raised with missing primary key
-    new_source = source_testkit.source.model_copy(update={"db_pk": "typo"}).set_engine(
-        sqlite_warehouse
-    )
+    new_source = source_testkit.source_config.model_copy(
+        update={"db_pk": "typo"}
+    ).set_engine(sqlite_warehouse)
     with pytest.raises(
         MatchboxSourceColumnError, match="Primary key typo not available"
     ):
         new_source.check_columns()
 
     # Error is raised with missing column
-    new_source = source_testkit.source.model_copy(
+    new_source = source_testkit.source_config.model_copy(
         update={"columns": (SourceColumn(name="c", type="TEXT"),)}
     ).set_engine(sqlite_warehouse)
     with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
         new_source.check_columns()
 
     # Error is raised with wrong type
-    new_source = source_testkit.source.model_copy(
+    new_source = source_testkit.source_config.model_copy(
         update={"columns": (SourceColumn(name="b", type="TEXT"),)}
     ).set_engine(sqlite_warehouse)
     with pytest.raises(MatchboxSourceColumnError, match="Type BIGINT != TEXT for b"):
@@ -452,7 +452,7 @@ def test_source_hash_equality(sqlite_warehouse: Engine):
     """__eq__ and __hash__ behave as expected for a SourceConfig."""
     # This won't set the engine just yet
     source_testkit = source_factory(engine=sqlite_warehouse)
-    source = source_testkit.source
+    source = source_testkit.source_config
     source_eq = source.model_copy(deep=True)
 
     source_testkit.to_warehouse(engine=sqlite_warehouse)
@@ -480,12 +480,12 @@ def test_source_default_columns(sqlite_warehouse: Engine):
         SourceColumn(name="b", type="TEXT"),
     )
 
-    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_columns()
 
     assert source.columns == expected_columns
     # We create a new source, but attributes and engine match
-    assert source is not source_testkit.source
-    assert source == source_testkit.source
+    assert source is not source_testkit.source_config
+    assert source == source_testkit.source_config
     assert source.engine == sqlite_warehouse
 
 
@@ -494,7 +494,7 @@ def test_source_to_table(sqlite_warehouse: Engine):
     source_testkit = source_factory(engine=sqlite_warehouse)
     source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    source = source_testkit.source.set_engine(sqlite_warehouse)
+    source = source_testkit.source_config.set_engine(sqlite_warehouse)
 
     assert isinstance(source.to_table(), Table)
 
@@ -534,8 +534,8 @@ def test_source_conversion_methods(
         n_true_entities=2,
     )
     source_testkit.to_warehouse(engine=sqlite_warehouse)
-    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
-    prefix = fullname_to_prefix(source_testkit.source.address.full_name)
+    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_columns()
+    prefix = fullname_to_prefix(source_testkit.source_config.address.full_name)
     expected_df_prefixed = (
         source_testkit.data.to_pandas().drop(columns=["id"]).add_prefix(prefix)
     )
@@ -582,25 +582,28 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     )
 
     reordered = copy.deepcopy(original)
-    reordered.source = original.source.model_copy(
+    reordered.source_config = original.source_config.model_copy(
         update={
-            "address": original.source.address.model_copy(
+            "address": original.source_config.address.model_copy(
                 update={"full_name": "reordered"}
             ),
-            "columns": (original.source.columns[1], original.source.columns[0]),
+            "columns": (
+                original.source_config.columns[1],
+                original.source_config.columns[0],
+            ),
         }
     )
 
     renamed = copy.deepcopy(original)
     renamed.data = renamed.data.rename_columns({"a": "x"})
-    renamed.source = original.source.model_copy(
+    renamed.source_config = original.source_config.model_copy(
         update={
-            "address": original.source.address.model_copy(
+            "address": original.source_config.address.model_copy(
                 update={"full_name": "renamed"}
             ),
             "columns": (
-                original.source.columns[0].model_copy(update={"name": "x"}),
-                original.source.columns[1],
+                original.source_config.columns[0].model_copy(update={"name": "x"}),
+                original.source_config.columns[1],
             ),
         }
     )
@@ -609,9 +612,9 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     reordered.to_warehouse(engine=sqlite_warehouse)
     renamed.to_warehouse(engine=sqlite_warehouse)
 
-    original_source = original.source.set_engine(sqlite_warehouse)
-    reordered_source = reordered.source.set_engine(sqlite_warehouse)
-    renamed_source = renamed.source.set_engine(sqlite_warehouse)
+    original_source = original.source_config.set_engine(sqlite_warehouse)
+    reordered_source = reordered.source_config.set_engine(sqlite_warehouse)
+    renamed_source = renamed.source_config.set_engine(sqlite_warehouse)
 
     original_hash = original_source.hash_data(batch_size=3).to_pandas()
     reordered_hash = reordered_source.hash_data().to_pandas()
@@ -638,7 +641,7 @@ def test_source_hash_nulls(sqlite_warehouse: Engine):
         full_name="null_test",
         engine=sqlite_warehouse,
     )
-    source = testkit.source.set_engine(sqlite_warehouse)
+    source = testkit.source_config.set_engine(sqlite_warehouse)
     testkit.to_warehouse(engine=sqlite_warehouse)
 
     # Test hashing with nulls
@@ -657,7 +660,9 @@ def test_source_hash_nulls(sqlite_warehouse: Engine):
 
     # Null PKs should error
     with pytest.raises(ValueError):
-        source_with_null_pks = null_pk_testkit.source.set_engine(sqlite_warehouse)
+        source_with_null_pks = null_pk_testkit.source_config.set_engine(
+            sqlite_warehouse
+        )
         null_pk_testkit.to_warehouse(engine=sqlite_warehouse)
         source_with_null_pks.hash_data()
 
@@ -681,7 +686,7 @@ def test_source_data_batching(method_name, return_type, sqlite_warehouse: Engine
         n_true_entities=9,
     )
     source_testkit.to_warehouse(engine=sqlite_warehouse)
-    source = source_testkit.source.set_engine(sqlite_warehouse).default_columns()
+    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_columns()
 
     # Call the method with batching
     method = getattr(source, method_name)
@@ -699,7 +704,7 @@ def test_match_validates():
     """Match objects are validated when they're instantiated."""
     Match(
         cluster=1,
-        source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+        source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
         source_id={"a"},
         target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
         target_id={"b"},
@@ -709,7 +714,7 @@ def test_match_validates():
     with pytest.raises(ValueError):
         Match(
             cluster=1,
-            source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+            source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
             target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
             target_id={"b"},
         )
@@ -717,7 +722,7 @@ def test_match_validates():
     # Missing cluster with target_id
     with pytest.raises(ValueError):
         Match(
-            source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+            source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
             source_id={"a"},
             target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
             target_id={"b"},
@@ -727,6 +732,6 @@ def test_match_validates():
     with pytest.raises(ValueError):
         Match(
             cluster=1,
-            source=SourceAddress(full_name="test.source", warehouse_hash=b"bar"),
+            source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
             target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
         )

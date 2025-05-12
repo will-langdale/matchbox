@@ -44,10 +44,12 @@ def configure_weighted_probabilistic(
     """
 
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     # Generate geometric series of weights
@@ -93,10 +95,12 @@ def configure_splink_probabilistic(
 
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     # Create comparison functions based on field type
@@ -110,7 +114,8 @@ def configure_splink_probabilistic(
 
         field = l_field  # Use common field name after checking they match
         field_type = next(
-            (c.type for c in left_testkit.source.columns if c.name == field), "TEXT"
+            (c.type for c in left_testkit.source_config.columns if c.name == field),
+            "TEXT",
         )
 
         # Create deterministic matching rule for each field
@@ -214,7 +219,7 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 

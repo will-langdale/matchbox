@@ -48,10 +48,12 @@ def configure_deterministic_linker(
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     # Build comparison string
@@ -87,10 +89,12 @@ def configure_weighted_deterministic_linker(
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     # Build weighted comparisons with equal weights
@@ -128,10 +132,12 @@ def configure_splink_linker(
     """
     # Extract column names excluding pk and id
     left_fields = [
-        c.name for c in left_testkit.source.columns if c.name not in ("pk", "id")
+        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
     ]
     right_fields = [
-        c.name for c in right_testkit.source.columns if c.name not in ("pk", "id")
+        c.name
+        for c in right_testkit.source_config.columns
+        if c.name not in ("pk", "id")
     ]
 
     deterministic_matching_rules: list[str] = []
@@ -229,7 +235,7 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -294,7 +300,7 @@ def test_exact_match_with_duplicates_linking(
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -358,7 +364,7 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
     )
 
     # Create the linked sources
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -409,7 +415,7 @@ def test_no_matching_entities_linking(
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=314)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=314)
     left_source = linked.sources["source_left"]
     right_source = source_factory(
         full_name="source_right", features=features, n_true_entities=10, seed=159

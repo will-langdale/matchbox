@@ -13,10 +13,10 @@ from matchbox.common.factories.sources import source_factory
 
 def test_step_input_validation(sqlite_warehouse: Engine):
     """Cannot select sources not available to a step."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
 
-    i_foo = IndexStep(source=foo)
+    i_foo = IndexStep(source_config=foo)
 
     d_foo_right = DedupeStep(
         name="d_foo",
@@ -37,13 +37,13 @@ def test_step_input_validation(sqlite_warehouse: Engine):
 
 
 def test_model_step_validation(sqlite_warehouse: Engine):
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
-    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source_config
 
-    i_foo = IndexStep(source=foo)
-    i_bar = IndexStep(source=bar)
-    i_baz = IndexStep(source=baz)
+    i_foo = IndexStep(source_config=foo)
+    i_bar = IndexStep(source_config=bar)
+    i_baz = IndexStep(source_config=baz)
 
     d_foo = DedupeStep(
         name="d_foo",
@@ -87,14 +87,14 @@ def test_model_step_validation(sqlite_warehouse: Engine):
 @patch("matchbox.client.dags._handler.index")
 def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     """Tests that an index step correctly calls the index handler."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source.set_engine(
-        sqlite_warehouse
-    )
+    foo = source_factory(
+        full_name="foo", engine=sqlite_warehouse
+    ).source_config.set_engine(sqlite_warehouse)
 
     # Test with batch size
     batch_size = 100
 
-    i_foo = IndexStep(source=foo, batch_size=batch_size)
+    i_foo = IndexStep(source_config=foo, batch_size=batch_size)
     i_foo.run()
 
     handler_index_mock.assert_called_once_with(source=foo, batch_size=batch_size)
@@ -102,7 +102,7 @@ def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     # Test without batch size
     handler_index_mock.reset_mock()
 
-    i_foo_no_batch = IndexStep(source=foo, batch_size=None)
+    i_foo_no_batch = IndexStep(source_config=foo, batch_size=None)
     i_foo_no_batch.run()
 
     handler_index_mock.assert_called_once_with(source=foo, batch_size=None)
@@ -137,9 +137,9 @@ def test_dedupe_step_run(
         # Set up and run deduper
         foo = source_factory(
             full_name="foo", engine=sqlite_warehouse
-        ).source.set_engine(sqlite_warehouse)
+        ).source_config.set_engine(sqlite_warehouse)
 
-        i_foo = IndexStep(source=foo)
+        i_foo = IndexStep(source_config=foo)
 
         d_foo = DedupeStep(
             name="d_foo",
@@ -217,13 +217,13 @@ def test_link_step_run(
         # Set up and run deduper
         foo = source_factory(
             full_name="foo", engine=sqlite_warehouse
-        ).source.set_engine(sqlite_warehouse)
+        ).source_config.set_engine(sqlite_warehouse)
         bar = source_factory(
             full_name="bar", engine=sqlite_warehouse
-        ).source.set_engine(sqlite_warehouse)
+        ).source_config.set_engine(sqlite_warehouse)
 
-        i_foo = IndexStep(source=foo)
-        i_bar = IndexStep(source=bar)
+        i_foo = IndexStep(source_config=foo)
+        i_bar = IndexStep(source_config=bar)
 
         foo_bar = LinkStep(
             name="foo_bar",
@@ -306,12 +306,12 @@ def test_dag_runs(
     dag = DAG()
 
     # Set up constituents
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
-    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source_config
 
     # Structure: SourceConfigs can be added directly, with and without IndexStep
-    i_foo = IndexStep(source=foo, batch_size=100)
+    i_foo = IndexStep(source_config=foo, batch_size=100)
     dag.add_steps(i_foo)
 
     i_bar, i_baz = dag.add_sources(bar, baz, batch_size=200)
@@ -459,9 +459,9 @@ def test_dag_runs(
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
     """Steps cannot be added before their dependencies."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
 
-    i_foo = IndexStep(source=foo)
+    i_foo = IndexStep(source_config=foo)
 
     d_foo = DedupeStep(
         name="d_foo",
@@ -479,11 +479,11 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
     """Names across sources and steps must be unique."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
 
-    i_foo = IndexStep(source=foo)
-    i_bar = IndexStep(source=bar)
+    i_foo = IndexStep(source_config=foo)
+    i_bar = IndexStep(source_config=bar)
 
     d_foo = DedupeStep(
         name="d_foo",
@@ -517,8 +517,8 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
 
 def test_dag_disconnected(sqlite_warehouse: Engine):
     """Nodes cannot be disconnected."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
 
     dag = DAG()
     _ = dag.add_sources(foo, bar)
@@ -532,9 +532,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
     # Set up a simple DAG
     dag = DAG()
 
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
-    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
+    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
+    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source_config
 
     i_foo, i_bar, i_baz = dag.add_sources(foo, bar, baz)
 
