@@ -157,13 +157,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(  # noqa: D102
         self,
-        source_address: SourceAddress,
+        source: SourceAddress,
         resolution_name: str | None = None,
         threshold: int | None = None,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
-            source_address=source_address,
+            source=source,
             resolution_name=resolution_name,
             threshold=threshold,
             limit=limit,

@@ -40,7 +40,7 @@ def primary_keys_map(
         # Get Matchbox IDs from backend
         source_mb_ids.append(
             _handler.query(
-                source_address=s.address,
+                source=s.address,
                 resolution_name=resolution_name,
             )
         )

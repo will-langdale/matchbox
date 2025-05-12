@@ -117,21 +117,21 @@ CLIENT = create_client(settings=settings)
 
 
 def query(
-    source_address: SourceAddress,
+    source: SourceAddress,
     resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
-    log_prefix = f"Query {source_address.pretty}"
+    log_prefix = f"Query {source.pretty}"
     logger.debug(f"Using {resolution_name}", prefix=log_prefix)
 
     res = CLIENT.get(
         "/query",
         params=url_params(
             {
-                "full_name": source_address.full_name,
+                "full_name": source.full_name,
                 # Converted to b64 by `url_params()`
-                "warehouse_hash_b64": source_address.warehouse_hash,
+                "warehouse_hash_b64": source.warehouse_hash,
                 "resolution_name": resolution_name,
                 "threshold": threshold,
                 "limit": limit,
