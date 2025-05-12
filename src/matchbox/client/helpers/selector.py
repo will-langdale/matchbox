@@ -173,7 +173,7 @@ def _process_selectors(
     for selector in selectors:
         mb_ids = pl.from_arrow(
             _handler.query(
-                source_address=selector.address,
+                source=selector.address,
                 resolution_name=resolution_name,
                 threshold=threshold,
             )

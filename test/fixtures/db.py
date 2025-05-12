@@ -147,9 +147,7 @@ def create_dedupe_scenario(
 
         # Query the raw data
         source_query = backend.query(
-            source_address=linked.sources[
-                source.address.full_name
-            ].source_config.address,
+            source=linked.sources[source.address.full_name].source_config.address,
         )
 
         # Build model testkit using query data
@@ -194,17 +192,17 @@ def create_link_scenario(
 
     # Query data for each resolution
     crn_query = backend.query(
-        source_address=linked.sources["crn"].source_config.address,
+        source=linked.sources["crn"].source_config.address,
         resolution_name=crn_model.name,
     )
 
     duns_query = backend.query(
-        source_address=linked.sources["duns"].source_config.address,
+        source=linked.sources["duns"].source_config.address,
         resolution_name=duns_model.name,
     )
 
     cdms_query = backend.query(
-        source_address=linked.sources["cdms"].source_config.address,
+        source=linked.sources["cdms"].source_config.address,
         resolution_name=cdms_model.name,
     )
 
@@ -252,11 +250,11 @@ def create_link_scenario(
     # Create final join
     # Query the previous link's results
     crn_cdms_query_crn_only = backend.query(
-        source_address=linked.sources["crn"].source_config.address,
+        source=linked.sources["crn"].source_config.address,
         resolution_name=crn_cdms_name,
     ).rename_columns(["id", "source_pk_crn"])
     crn_cdms_query_cdms_only = backend.query(
-        source_address=linked.sources["cdms"].source_config.address,
+        source=linked.sources["cdms"].source_config.address,
         resolution_name=crn_cdms_name,
     ).rename_columns(["id", "source_pk_cdms"])
     crn_cdms_query = pa.concat_tables(
@@ -265,7 +263,7 @@ def create_link_scenario(
     ).combine_chunks()
 
     duns_query_linked = backend.query(
-        source_address=linked.sources["duns"].source_config.address,
+        source=linked.sources["duns"].source_config.address,
         resolution_name=crn_duns_name,
     )
 
@@ -347,9 +345,7 @@ def create_convergent_scenario(
 
         # Query the raw data
         source_query = backend.query(
-            source_address=linked.sources[
-                source.address.full_name
-            ].source_config.address,
+            source=linked.sources[source.address.full_name].source_config.address,
         )
 
         # Build model testkit using query data

@@ -222,7 +222,7 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        source_address: SourceAddress,
+        source: SourceAddress,
         resolution_name: str | None = None,
         threshold: int | None = None,
         limit: int = None,
@@ -230,7 +230,7 @@ class MatchboxDBAdapter(ABC):
         """Queries the database from an optional point of truth.
 
         Args:
-            source_address: the `SourceAddress` object identifying the source to query
+            source: the `SourceAddress` object identifying the source to query
             resolution_name (optional): the resolution to use for filtering results
                 If not specified, will use the dataset resolution for the queried source
             threshold (optional): the threshold to use for creating clusters

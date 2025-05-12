@@ -28,21 +28,19 @@ from matchbox.server.postgresql.utils.db import compile_sql
 T = TypeVar("T")
 
 
-def _get_dataset_source(
-    source_name_address: SourceAddress, session: Session
-) -> SourceConfigs:
+def _get_dataset_source(source: SourceAddress, session: Session) -> SourceConfigs:
     """Converts the named address of source to a SourceConfigs ORM object."""
     source = (
         session.query(SourceConfigs)
         .filter(
-            SourceConfigs.full_name == source_name_address.full_name,
-            SourceConfigs.warehouse_hash == source_name_address.warehouse_hash,
+            SourceConfigs.full_name == source.full_name,
+            SourceConfigs.warehouse_hash == source.warehouse_hash,
         )
         .first()
     )
     if source is None:
         raise MatchboxSourceNotFoundError(
-            address=str(source_name_address),
+            address=str(source),
         )
 
     return source
@@ -267,7 +265,7 @@ def _resolve_cluster_hierarchy(
 
 
 def query(
-    source_address: SourceAddress,
+    source: SourceAddress,
     resolution_name: str | None = None,
     threshold: int | None = None,
     limit: int = None,
@@ -292,7 +290,7 @@ def query(
         with the hash key of each row in Matchbox
     """
     with MBDB.get_session() as session:
-        dataset_source = _get_dataset_source(source_address, session)
+        dataset_source = _get_dataset_source(source, session)
         dataset_resolution = session.get(Resolutions, dataset_source.resolution_id)
 
         if resolution_name:

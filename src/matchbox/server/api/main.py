@@ -218,7 +218,7 @@ def query(
     )
     try:
         res = backend.query(
-            source_address=source_address,
+            source=source_address,
             resolution_name=resolution_name,
             threshold=threshold,
             limit=limit,

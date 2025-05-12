@@ -59,7 +59,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -76,7 +76,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -96,7 +96,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -484,16 +484,14 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn_sample = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 limit=10,
             )
 
             assert isinstance(df_crn_sample, pa.Table)
             assert df_crn_sample.num_rows == 10
 
-            df_crn_full = self.backend.query(
-                source_address=crn_testkit.source_config.address
-            )
+            df_crn_full = self.backend.query(source=crn_testkit.source_config.address)
 
             assert df_crn_full.num_rows == crn_testkit.query.num_rows
             assert set(df_crn_full.column_names) == {"id", "source_pk"}
@@ -504,7 +502,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
 
@@ -528,7 +526,7 @@ class TestMatchboxBackend:
             duns_testkit = dag.sources.get("duns")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -537,7 +535,7 @@ class TestMatchboxBackend:
             assert set(df_crn.column_names) == {"id", "source_pk"}
 
             df_duns = self.backend.query(
-                source_address=duns_testkit.source_config.address,
+                source=duns_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -565,7 +563,7 @@ class TestMatchboxBackend:
             cdms_testkit = dag.sources.get("cdms")
 
             df_crn = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -574,7 +572,7 @@ class TestMatchboxBackend:
             assert set(df_crn.column_names) == {"id", "source_pk"}
 
             df_cdms = self.backend.query(
-                source_address=cdms_testkit.source_config.address,
+                source=cdms_testkit.source_config.address,
                 resolution_name=linker_name,
             )
 
@@ -588,12 +586,12 @@ class TestMatchboxBackend:
 
             # Test query with threshold
             df_crn_threshold = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name=linker_name,
                 threshold=100,
             )
             df_cdms_threshold = self.backend.query(
-                source_address=cdms_testkit.source_config.address,
+                source=cdms_testkit.source_config.address,
                 resolution_name=linker_name,
                 threshold=100,
             )
@@ -810,7 +808,7 @@ class TestMatchboxBackend:
 
             # Get some specific IDs to verify they're restored properly
             df_crn_before = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
             sample_ids_before = df_crn_before["id"].to_pylist()[:5]  # Take first 5 IDs
@@ -830,7 +828,7 @@ class TestMatchboxBackend:
 
             # Verify specific data was restored correctly
             df_crn_after = self.backend.query(
-                source_address=crn_testkit.source_config.address,
+                source=crn_testkit.source_config.address,
                 resolution_name="naive_test.crn",
             )
             sample_ids_after = df_crn_after["id"].to_pylist()[:5]  # Take first 5 IDs
