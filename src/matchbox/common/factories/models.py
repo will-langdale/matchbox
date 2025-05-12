@@ -746,7 +746,7 @@ def model_factory(
 
         # Configure left source
         left_resolution = generator.unique.word()
-        left_config = SourceTestkitConfig(
+        left_tkit_config = SourceTestkitConfig(
             full_name="crn",
             engine=engine,
             features=(
@@ -762,10 +762,10 @@ def model_factory(
         )
 
         # Configure sources based on model type
-        source_configs = [left_config]
+        source_tkit_configs = [left_tkit_config]
         if resolved_model_type == ModelType.LINKER:
             right_resolution = generator.unique.word()
-            source_configs.append(
+            source_tkit_configs.append(
                 SourceTestkitConfig(
                     full_name="cdms",
                     features=(features["crn"], features["cdms"]),
@@ -777,7 +777,7 @@ def model_factory(
 
         # Generate linked sources
         linked = linked_sources_factory(
-            source_configs=tuple(source_configs),
+            source_tkit_configs=tuple(source_tkit_configs),
             n_true_entities=n_true_entities,
             seed=seed,
         )

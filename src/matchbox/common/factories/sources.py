@@ -79,7 +79,9 @@ class SourceTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: SourceConfig = Field(description="The real generated SourceConfig object.")
+    source_config: SourceConfig = Field(
+        description="The real generated SourceConfig object."
+    )
     features: tuple[FeatureConfig, ...] | None = Field(
         description=(
             "The features used to generate the data. "
@@ -96,21 +98,23 @@ class SourceTestkit(BaseModel):
     @property
     def name(self) -> str:
         """Return the resolution name of the SourceConfig."""
-        return self.source.resolution_name
+        return self.source_config.resolution_name
 
     @property
     def mock(self) -> Mock:
         """Create a mock SourceConfig object with this testkit's configuration."""
-        mock_source = create_autospec(self.source)
+        mock_source_config = create_autospec(self.source_config)
 
-        mock_source.set_engine.return_value = mock_source
-        mock_source.default_columns.return_value = mock_source
-        mock_source.hash_data.return_value = self.data_hashes
+        mock_source_config.set_engine.return_value = mock_source_config
+        mock_source_config.default_columns.return_value = mock_source_config
+        mock_source_config.hash_data.return_value = self.data_hashes
 
-        mock_source.model_dump.side_effect = self.source.model_dump
-        mock_source.model_dump_json.side_effect = self.source.model_dump_json
+        mock_source_config.model_dump.side_effect = self.source_config.model_dump
+        mock_source_config.model_dump_json.side_effect = (
+            self.source_config.model_dump_json
+        )
 
-        return mock_source
+        return mock_source_config
 
     @property
     def query(self) -> pa.Table:
@@ -129,11 +133,11 @@ class SourceTestkit(BaseModel):
 
         As the SourceConfig won't have an engine set by default, can be supplied.
         """
-        schema, table = get_schema_table_names(self.source.address.full_name)
+        schema, table = get_schema_table_names(self.source_config.address.full_name)
         self.data.to_pandas().drop("id", axis=1).to_sql(
             name=table,
             schema=schema,
-            con=engine or self.source.engine,
+            con=engine or self.source_config.engine,
             index=False,
             if_exists="replace",
         )
@@ -457,7 +461,7 @@ def source_factory(
         for row_id, pks in row_pks.items()
     ]
 
-    source = SourceConfig(
+    source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
         columns=(
@@ -467,7 +471,7 @@ def source_factory(
     )
 
     return SourceTestkit(
-        source=source,
+        source_config=source_config,
         features=features,
         data=data,
         data_hashes=data_hashes,
@@ -510,7 +514,7 @@ def source_from_tuple(
         for pk, entity_id in zip(data_pks, entity_ids, strict=True)
     ]
 
-    source = SourceConfig(
+    source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
         columns=(
@@ -536,7 +540,7 @@ def source_from_tuple(
     data = raw_data.append_column("id", [entity_ids]).append_column("pk", raw_pks)
 
     return SourceTestkit(
-        source=source,
+        source_config=source_config,
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
@@ -545,7 +549,7 @@ def source_from_tuple(
 
 @cache
 def linked_sources_factory(
-    source_configs: tuple[SourceTestkitConfig, ...] | None = None,
+    source_tkit_configs: tuple[SourceTestkitConfig, ...] | None = None,
     n_true_entities: int | None = None,
     engine: Engine | None = None,
     seed: int = 42,
@@ -553,7 +557,7 @@ def linked_sources_factory(
     """Generate a set of linked sources with tracked entities.
 
     Args:
-        source_configs: Optional tuple of source configurations
+        source_tkit_configs: Optional tuple of source configurations
         n_true_entities: Optional number of true entities to generate. If provided,
             overrides any n_true_entities in source configs. If not provided, each
             SourceTestkitConfig must specify its own n_true_entities.
@@ -566,7 +570,7 @@ def linked_sources_factory(
 
     default_engine = create_engine("sqlite:///:memory:")
 
-    if source_configs is None:
+    if source_tkit_configs is None:
         # Use factory parameter or default for default configs
         n_true_entities = n_true_entities if n_true_entities is not None else 10
 
@@ -596,7 +600,7 @@ def linked_sources_factory(
             ),
         }
 
-        source_configs = (
+        source_tkit_configs = (
             SourceTestkitConfig(
                 full_name="crn",
                 engine=engine or default_engine,
@@ -636,31 +640,33 @@ def linked_sources_factory(
     else:
         if n_true_entities is not None:
             # Factory parameter provided - warn if configs have values set
-            config_entities = [config.n_true_entities for config in source_configs]
+            config_entities = [
+                tkit_config.n_true_entities for tkit_config in source_tkit_configs
+            ]
             if any(n is not None for n in config_entities):
                 warnings.warn(
-                    "Both source configs and linked_sources_factory specify "
+                    "Both source testkit configs and linked_sources_factory specify "
                     "n_true_entities. The factory parameter will be used.",
                     UserWarning,
                     stacklevel=2,
                 )
             # Override all configs with factory parameter
-            source_configs = tuple(
+            source_tkit_configs = tuple(
                 SourceTestkitConfig(
-                    full_name=config.full_name,
-                    engine=engine or config.engine,
-                    features=config.features,
-                    repetition=config.repetition,
+                    full_name=tkit_config.full_name,
+                    engine=engine or tkit_config.engine,
+                    features=tkit_config.features,
+                    repetition=tkit_config.repetition,
                     n_true_entities=n_true_entities,
                 )
-                for config in source_configs
+                for tkit_config in source_tkit_configs
             )
         else:
             # No factory parameter - check all configs have n_true_entities set
             missing_counts = [
-                config.full_name
-                for config in source_configs
-                if config.n_true_entities is None
+                tkit_config.full_name
+                for tkit_config in source_tkit_configs
+                if tkit_config.n_true_entities is None
             ]
             if missing_counts:
                 raise ValueError(
@@ -671,12 +677,14 @@ def linked_sources_factory(
 
     # Collect all unique features
     all_features = set()
-    for config in source_configs:
-        all_features.update(config.features)
+    for tkit_config in source_tkit_configs:
+        all_features.update(tkit_config.features)
     all_features = tuple(sorted(all_features, key=lambda f: f.name))
 
     # Find maximum number of entities needed across all sources
-    max_entities = max(config.n_true_entities for config in source_configs)
+    max_entities = max(
+        tkit_config.n_true_entities for tkit_config in source_tkit_configs
+    )
 
     # Generate all possible entities
     all_entities = generate_entities(
@@ -691,13 +699,13 @@ def linked_sources_factory(
     )
 
     # Generate sources
-    for config in source_configs:
+    for tkit_config in source_tkit_configs:
         # Generate source data using seed entities
         data, data_hashes, entity_pks, row_pks = generate_source(
             generator=generator,
-            features=tuple(config.features),
-            n_true_entities=config.n_true_entities,
-            repetition=config.repetition,
+            features=tuple(tkit_config.features),
+            n_true_entities=tkit_config.n_true_entities,
+            repetition=tkit_config.repetition,
             seed_entities=all_entities,
         )
 
@@ -705,27 +713,27 @@ def linked_sources_factory(
         results_entities = [
             ClusterEntity(
                 id=row_id,
-                source_pks=EntityReference({config.full_name: frozenset(pks)}),
+                source_pks=EntityReference({tkit_config.full_name: frozenset(pks)}),
             )
             for row_id, pks in row_pks.items()
         ]
 
         # Create source
-        source = SourceConfig(
+        source_config = SourceConfig(
             address=SourceAddress.compose(
-                full_name=config.full_name, engine=config.engine
+                full_name=tkit_config.full_name, engine=tkit_config.engine
             ),
             db_pk="pk",
             columns=(
                 SourceColumn(name=feature.name, type=feature.sql_type)
-                for feature in config.features
+                for feature in tkit_config.features
             ),
         )
 
         # Add source to linked.sources
-        linked.sources[config.full_name] = SourceTestkit(
-            source=source,
-            features=tuple(config.features),
+        linked.sources[tkit_config.full_name] = SourceTestkit(
+            source_config=source_config,
+            features=tuple(tkit_config.features),
             data=data,
             data_hashes=data_hashes,
             entities=tuple(sorted(results_entities)),
@@ -734,6 +742,6 @@ def linked_sources_factory(
         # Update entities with source references
         for entity_id, pks in entity_pks.items():
             entity = true_entity_lookup[entity_id]
-            entity.add_source_reference(config.full_name, pks)
+            entity.add_source_reference(tkit_config.full_name, pks)
 
     return linked

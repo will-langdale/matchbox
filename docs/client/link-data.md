@@ -136,8 +136,8 @@ Only data indexed in Matchbox can we used to match.
     batch_size = 250_000
     
     # Create index steps
-    i_companies = IndexStep(source=companies_house, batch_size=batch_size)
-    i_exporters = IndexStep(source=exporters, batch_size=batch_size)
+    i_companies = IndexStep(source_config=companies_house, batch_size=batch_size)
+    i_exporters = IndexStep(source_config=exporters, batch_size=batch_size)
     ```
 
 Each [`IndexStep`][matchbox.client.dags.IndexStep] requires:

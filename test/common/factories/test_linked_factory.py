@@ -65,7 +65,7 @@ def test_linked_sources_custom_config():
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
 
     # Verify sources were created correctly
     assert set(linked.sources.keys()) == {"source_a", "source_b"}
@@ -165,7 +165,7 @@ def test_source_entity_equality():
 
 def test_seed_reproducibility():
     """Test that linked sources generation is reproducible with same seed."""
-    config = SourceTestkitConfig(
+    source_tkit_config = SourceTestkitConfig(
         full_name="test_source",
         features=(
             FeatureConfig(
@@ -178,11 +178,11 @@ def test_seed_reproducibility():
     )
 
     # Generate two instances with same seed
-    linked1 = linked_sources_factory(source_configs=(config,), seed=42)
-    linked2 = linked_sources_factory(source_configs=(config,), seed=42)
+    linked1 = linked_sources_factory(source_tkit_configs=(source_tkit_config,), seed=42)
+    linked2 = linked_sources_factory(source_tkit_configs=(source_tkit_config,), seed=42)
 
     # Generate one with different seed
-    linked3 = linked_sources_factory(source_configs=(config,), seed=43)
+    linked3 = linked_sources_factory(source_tkit_configs=(source_tkit_config,), seed=43)
 
     # Same seed should produce identical results
     assert linked1.sources["test_source"].data.equals(
@@ -198,13 +198,13 @@ def test_seed_reproducibility():
 
 def test_empty_source_handling():
     """Test handling of sources with zero entities."""
-    config = SourceTestkitConfig(
+    source_tkit_config = SourceTestkitConfig(
         full_name="empty_source",
         features=(FeatureConfig(name="name", base_generator="name"),),
         n_true_entities=0,
     )
 
-    linked = linked_sources_factory(source_configs=(config,))
+    linked = linked_sources_factory(source_tkit_configs=(source_tkit_config,))
 
     # Should create source but with empty data
     assert "empty_source" in linked.sources
@@ -214,13 +214,13 @@ def test_empty_source_handling():
 
 def test_large_entity_count():
     """Test handling of sources with large number of entities."""
-    config = SourceTestkitConfig(
+    source_tkit_config = SourceTestkitConfig(
         full_name="large_source",
         features=(FeatureConfig(name="user_id", base_generator="uuid4"),),
         n_true_entities=10_000,
     )
 
-    linked = linked_sources_factory(source_configs=(config,))
+    linked = linked_sources_factory(source_tkit_configs=(source_tkit_config,))
 
     # Should handle large entity counts
     assert len(linked.true_entities) == 10_000
@@ -244,7 +244,7 @@ def test_feature_inheritance():
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, n_true_entities=10)
+    linked = linked_sources_factory(source_tkit_configs=configs, n_true_entities=10)
 
     # Check that entities have all relevant features
     for entity in linked.true_entities:
@@ -262,7 +262,7 @@ def test_feature_inheritance():
 
 def test_unique_feature_values():
     """Test that unique features generate distinct values across entities."""
-    config = SourceTestkitConfig(
+    source_tkit_config = SourceTestkitConfig(
         full_name="test_source",
         features=(
             FeatureConfig(name="unique_id", base_generator="uuid4", unique=True),
@@ -271,7 +271,7 @@ def test_unique_feature_values():
         n_true_entities=100,
     )
 
-    linked = linked_sources_factory(source_configs=(config,))
+    linked = linked_sources_factory(source_tkit_configs=(source_tkit_config,))
 
     # Get all base values
     unique_ids = set()
@@ -336,7 +336,7 @@ def test_linked_sources_entity_hierarchy():
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs, seed=42)
+    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
 
     # For each source, verify its entities are subsets of true_entities
     for source_name, source in linked.sources.items():
@@ -383,7 +383,7 @@ def test_linked_sources_entity_count_behavior():
     with pytest.raises(
         ValueError, match="n_true_entities not set for sources: source_b"
     ):
-        linked_sources_factory(source_configs=configs_missing_counts)
+        linked_sources_factory(source_tkit_configs=configs_missing_counts)
 
     # Test respecting different entity counts per source
     configs_different_counts = (
@@ -400,7 +400,7 @@ def test_linked_sources_entity_count_behavior():
         ),
     )
 
-    linked = linked_sources_factory(source_configs=configs_different_counts)
+    linked = linked_sources_factory(source_tkit_configs=configs_different_counts)
 
     # Should generate enough entities for max requested (10)
     assert len(linked.true_entities) == 10
@@ -414,7 +414,7 @@ def test_linked_sources_entity_count_behavior():
     # Test factory parameter override
     with pytest.warns(UserWarning, match="factory parameter will be used"):
         linked_override = linked_sources_factory(
-            source_configs=configs_different_counts, n_true_entities=15
+            source_tkit_configs=configs_different_counts, n_true_entities=15
         )
 
     # Both sources should now have 15 entities

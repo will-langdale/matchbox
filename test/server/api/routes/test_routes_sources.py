@@ -56,7 +56,7 @@ def test_get_source_404(test_client: TestClient):
 
 
 def test_get_resolution_sources(test_client: TestClient):
-    source = source_factory().source
+    source = source_factory().source_config
 
     mock_backend = Mock()
     mock_backend.get_resolution_sources = Mock(return_value=[source])
@@ -97,7 +97,7 @@ def test_add_source(test_client: TestClient):
     # Make request
     response = test_client.post(
         "/sources",
-        json=source_testkit.source.model_dump(),
+        json=source_testkit.source_config.model_dump(),
     )
 
     # Validate response
@@ -130,7 +130,9 @@ async def test_complete_source_upload_process(s3: S3Client, test_client: TestCli
     source_testkit = source_factory()
 
     # Step 1: Add source
-    response = test_client.post("/sources", json=source_testkit.source.model_dump())
+    response = test_client.post(
+        "/sources", json=source_testkit.source_config.model_dump()
+    )
     assert response.status_code == 202
     upload_id = response.json()["id"]
     assert response.json()["status"] == "awaiting_upload"
@@ -177,7 +179,9 @@ async def test_complete_source_upload_process(s3: S3Client, test_client: TestCli
     # Verify backend.index was called with correct arguments
     mock_backend.index.assert_called_once()
     call_args = mock_backend.index.call_args
-    assert call_args[1]["source"] == source_testkit.source  # Check source matches
+    assert (
+        call_args[1]["source"] == source_testkit.source_config
+    )  # Check source matches
     assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
 
     # Verify file is deleted from S3 after processing

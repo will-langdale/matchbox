@@ -51,7 +51,7 @@ source_testkit = source_factory()
 
 # Setup store
 store = MetadataStore()
-update_id = store.cache_source(source_testkit.source)
+update_id = store.cache_source(source_testkit.source_config)
 ```
 
 Or you're testing the client handler and want to mock the API.
@@ -99,7 +99,7 @@ Adding a `SourceConfig`.
 ```python
 source_testkit = source_factory()
 backend.index(
-    source=source_testkit.source
+    source=source_testkit.source_config
     data_hashes=source_testkit.data_hashes
 )
 ```
@@ -128,7 +128,7 @@ linked_testkit = linked_sources_factory()
 
 for source_testkit in linked_testkit.sources.values():
     backend.index(
-        source=source_testkit.source
+        source=source_testkit.source_config
         data_hashes=source_testkit.data_hashes
     )
 

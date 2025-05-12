@@ -234,8 +234,8 @@ def test_testkit_dag_multiple_linked_sources():
         SourceTestkitConfig(full_name="bar2", features=tuple(features[1:])),
     )
 
-    linked1 = linked_sources_factory(source_configs=configs1, n_true_entities=10)
-    linked2 = linked_sources_factory(source_configs=configs2, n_true_entities=10)
+    linked1 = linked_sources_factory(source_tkit_configs=configs1, n_true_entities=10)
+    linked2 = linked_sources_factory(source_tkit_configs=configs2, n_true_entities=10)
 
     # Expected linked keys
     linked1_key = "linked_foo1_foo2"
