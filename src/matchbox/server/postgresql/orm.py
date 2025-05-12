@@ -284,7 +284,7 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
         UniqueConstraint(
             "source_config_id", "column_index", name="unique_column_index"
         ),
-        Index("ix_source_columns_source_id", "source_config_id"),
+        Index("ix_source_columns_source_config_id", "source_config_id"),
     )
 
 

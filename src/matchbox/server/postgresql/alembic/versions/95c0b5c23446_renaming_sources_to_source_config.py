@@ -55,7 +55,7 @@ def upgrade() -> None:
         "ix_source_columns_source_id", table_name="source_columns", schema="mb"
     )
     op.create_index(
-        "ix_source_columns_source_id",
+        "ix_source_columns_source_config_id",
         "source_columns",
         ["source_config_id"],
         unique=False,
@@ -130,7 +130,7 @@ def downgrade() -> None:
         "unique_pk_source", "cluster_source_pks", schema="mb", type_="unique"
     )
     op.drop_index(
-        "ix_source_columns_source_id", table_name="source_columns", schema="mb"
+        "ix_source_columns_source_config_id", table_name="source_columns", schema="mb"
     )
 
     # Rename source_config_id column back to source_id in all tables
