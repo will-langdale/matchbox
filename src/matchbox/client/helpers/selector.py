@@ -118,7 +118,7 @@ def _source_query(
     only_indexed: bool = False,
 ) -> tuple[SourceConfig, Iterator[PolarsDataFrame]]:
     """From a Selector, query a source and join to matchbox IDs."""
-    source = _handler.get_source(selector.address).set_engine(selector.engine)
+    source = _handler.get_source_config(selector.address).set_engine(selector.engine)
 
     indexed_columns = set()
     if source.columns:

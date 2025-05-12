@@ -272,7 +272,7 @@ class MatchboxDBAdapter(ABC):
 
     @abstractmethod
     def index(self, source_config: SourceConfig, data_hashes: Table) -> None:
-        """Indexes to Matchbox a source dataset in your warehouse.
+        """Indexes a source in your warehouse to Matchbox.
 
         Args:
             source_config: The source configuration to index.
@@ -281,8 +281,8 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_source(self, address: SourceAddress) -> SourceConfig:
-        """Get a source from its address.
+    def get_source_config(self, address: SourceAddress) -> SourceConfig:
+        """Get a source configuration from its address.
 
         Args:
             address: The name address for the source
@@ -293,11 +293,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_resolution_sources(
+    def get_resolution_source_configs(
         self,
         resolution_name: str,
     ) -> list[SourceConfig]:
-        """Get a list of sources queriable from a resolution.
+        """Get a list of source configurations queriable from a resolution.
 
         Args:
             resolution_name: Name of the resolution to query.

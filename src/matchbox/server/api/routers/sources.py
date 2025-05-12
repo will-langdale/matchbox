@@ -43,7 +43,7 @@ async def add_source(
     "/{warehouse_hash_b64}/{full_name}",
     responses={404: {"model": NotFoundError}},
 )
-async def get_source(
+async def get_source_config(
     backend: BackendDependency,
     warehouse_hash_b64: str,
     full_name: str,
@@ -51,7 +51,7 @@ async def get_source(
     """Get a source from the backend."""
     address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
     try:
-        return backend.get_source(address)
+        return backend.get_source_config(address)
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -65,13 +65,13 @@ async def get_source(
     "",
     responses={404: {"model": NotFoundError}},
 )
-async def get_resolution_sources(
+async def get_resolution_source_configs(
     backend: BackendDependency,
     resolution_name: str,
 ) -> list[SourceConfig]:
     """Get all sources in scope for a resolution."""
     try:
-        return backend.get_resolution_sources(resolution_name=resolution_name)
+        return backend.get_resolution_source_configs(resolution_name=resolution_name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,

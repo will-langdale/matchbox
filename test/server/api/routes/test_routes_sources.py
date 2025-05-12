@@ -31,7 +31,7 @@ def test_get_source(test_client: TestClient):
     address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
     source = SourceConfig(address=address, db_pk="pk")
     mock_backend = Mock()
-    mock_backend.get_source = Mock(return_value=source)
+    mock_backend.get_source_config = Mock(return_value=source)
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -45,7 +45,7 @@ def test_get_source(test_client: TestClient):
 
 def test_get_source_404(test_client: TestClient):
     mock_backend = Mock()
-    mock_backend.get_source = Mock(side_effect=MatchboxSourceNotFoundError)
+    mock_backend.get_source_config = Mock(side_effect=MatchboxSourceNotFoundError)
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -59,7 +59,7 @@ def test_get_resolution_sources(test_client: TestClient):
     source = source_factory().source_config
 
     mock_backend = Mock()
-    mock_backend.get_resolution_sources = Mock(return_value=[source])
+    mock_backend.get_resolution_source_configs = Mock(return_value=[source])
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -72,7 +72,7 @@ def test_get_resolution_sources(test_client: TestClient):
 
 def test_get_resolution_sources_404(test_client: TestClient):
     mock_backend = Mock()
-    mock_backend.get_resolution_sources = Mock(
+    mock_backend.get_resolution_source_configs = Mock(
         side_effect=MatchboxResolutionNotFoundError
     )
 

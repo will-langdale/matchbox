@@ -194,7 +194,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
-    def get_source(self, address: SourceAddress) -> SourceConfig:  # noqa: D102
+    def get_source_config(self, address: SourceAddress) -> SourceConfig:  # noqa: D102
         with MBDB.get_session() as session:
             source: SourceConfigs = (
                 session.query(SourceConfigs)
@@ -211,7 +211,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             else:
                 raise MatchboxSourceNotFoundError(address=str(address))
 
-    def get_resolution_sources(  # noqa: D102
+    def get_resolution_source_configs(  # noqa: D102
         self,
         resolution_name: str,
     ) -> list[SourceConfig]:

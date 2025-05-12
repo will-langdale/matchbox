@@ -115,12 +115,14 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "index") as dag:
             crn_testkit = dag.sources.get("crn")
 
-            crn_retrieved = self.backend.get_source(crn_testkit.source_config.address)
+            crn_retrieved = self.backend.get_source_config(
+                crn_testkit.source_config.address
+            )
             # Equality between the two is False because one lacks the Engine
             assert crn_testkit.source_config.model_dump() == crn_retrieved.model_dump()
 
             with pytest.raises(MatchboxSourceNotFoundError):
-                self.backend.get_source(
+                self.backend.get_source_config(
                     SourceAddress(
                         full_name="foo", warehouse_hash=bytes("bar".encode("ascii"))
                     )
@@ -130,10 +132,10 @@ class TestMatchboxBackend:
         """Test retrieving sources available to a resolution."""
         with self.scenario(self.backend, "link") as dag:
             crn, duns = dag.sources["crn"], dag.sources["duns"]
-            dedupe_sources = self.backend.get_resolution_sources(
+            dedupe_sources = self.backend.get_resolution_source_configs(
                 resolution_name="naive_test.crn"
             )
-            link_sources = self.backend.get_resolution_sources(
+            link_sources = self.backend.get_resolution_source_configs(
                 resolution_name="deterministic_naive_test.crn_naive_test.duns"
             )
 
@@ -147,7 +149,9 @@ class TestMatchboxBackend:
             }
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution_sources(resolution_name="nonexistent")
+                self.backend.get_resolution_source_configs(
+                    resolution_name="nonexistent"
+                )
 
     def test_get_resolution_graph(self):
         """Test getting the resolution graph."""
@@ -405,7 +409,9 @@ class TestMatchboxBackend:
 
             self.backend.index(crn_testkit.source_config, crn_testkit.data_hashes)
 
-            crn_retrieved = self.backend.get_source(crn_testkit.source_config.address)
+            crn_retrieved = self.backend.get_source_config(
+                crn_testkit.source_config.address
+            )
 
             # Equality between the two is False because one lacks the Engine
             assert crn_testkit.source_config.model_dump() == crn_retrieved.model_dump()
