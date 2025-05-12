@@ -20,8 +20,8 @@ from matchbox.common.factories.entities import (
     SuffixRule,
 )
 from matchbox.common.factories.sources import (
-    SourceConfig,
     SourceTestkit,
+    SourceTestkitConfig,
     linked_sources_factory,
 )
 
@@ -206,8 +206,12 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
     )
 
     configs = (
-        SourceConfig(full_name="source_left", features=features, n_true_entities=10),
-        SourceConfig(full_name="source_right", features=features, n_true_entities=10),
+        SourceTestkitConfig(
+            full_name="source_left", features=features, n_true_entities=10
+        ),
+        SourceTestkitConfig(
+            full_name="source_right", features=features, n_true_entities=10
+        ),
     )
 
     linked = linked_sources_factory(source_configs=configs, seed=42)

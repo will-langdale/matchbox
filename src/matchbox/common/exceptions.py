@@ -40,7 +40,7 @@ class MatchboxUnhandledServerResponse(Exception):
         super().__init__(message)
 
 
-# -- Source exceptions --
+# -- SourceConfig exceptions --
 
 
 class MatchboxSourceColumnError(Exception):
@@ -48,7 +48,7 @@ class MatchboxSourceColumnError(Exception):
 
 
 class MatchboxSourceEngineError(Exception):
-    """Engine must be available in Source."""
+    """Engine must be available in SourceConfig."""
 
 
 class MatchboxSourceExtractTransformError(Exception):
@@ -113,7 +113,7 @@ class MatchboxResolutionNotFoundError(Exception):
 
 
 class MatchboxSourceNotFoundError(Exception):
-    """Source not found on the server."""
+    """SourceConfig not found on the server."""
 
     def __init__(
         self,
@@ -122,9 +122,9 @@ class MatchboxSourceNotFoundError(Exception):
     ):
         """Initialise the exception."""
         if message is None:
-            message = "Source not found on matchbox."
+            message = "SourceConfig not found on matchbox."
             if address:
-                message = f"Source ({address}) not found."
+                message = f"SourceConfig ({address}) not found."
 
         super().__init__(message)
         self.address = address

@@ -5,10 +5,10 @@ from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceAddress, SourceConfig
 
 
-def _combined_colname(source: Source, col_name: str):
+def _combined_colname(source: SourceConfig, col_name: str):
     return source.address.full_name.replace(".", "_") + "_" + col_name
 
 

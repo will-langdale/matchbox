@@ -31,8 +31,8 @@ from matchbox.common.factories.entities import (
     query_to_cluster_entities,
 )
 from matchbox.common.factories.sources import (
-    SourceConfig,
     SourceTestkit,
+    SourceTestkitConfig,
     linked_sources_factory,
 )
 from matchbox.common.transform import DisjointSet, graph_results
@@ -707,7 +707,7 @@ def model_factory(
     n_true_entities = n_true_entities or 10
     dummy_true_entities = None
 
-    # ==== Source configuration ====
+    # ==== SourceConfig configuration ====
     if left_testkit is not None:
         # Using provided sources
         left_resolution = left_testkit.name
@@ -746,7 +746,7 @@ def model_factory(
 
         # Configure left source
         left_resolution = generator.unique.word()
-        left_config = SourceConfig(
+        left_config = SourceTestkitConfig(
             full_name="crn",
             engine=engine,
             features=(
@@ -766,7 +766,7 @@ def model_factory(
         if resolved_model_type == ModelType.LINKER:
             right_resolution = generator.unique.word()
             source_configs.append(
-                SourceConfig(
+                SourceTestkitConfig(
                     full_name="cdms",
                     features=(features["crn"], features["cdms"]),
                     repetition=1,

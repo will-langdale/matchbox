@@ -10,13 +10,13 @@ from matchbox.client.models.dedupers.naive import NaiveDeduper, NaiveSettings
 from matchbox.client.results import Results
 from matchbox.common.factories.entities import FeatureConfig
 from matchbox.common.factories.sources import (
-    SourceConfig,
     SourceTestkit,
+    SourceTestkitConfig,
     linked_sources_factory,
 )
-from matchbox.common.sources import Source
+from matchbox.common.sources import SourceConfig
 
-DeduperConfigurator = Callable[[Source], dict[str, Any]]
+DeduperConfigurator = Callable[[SourceConfig], dict[str, Any]]
 
 # Methodology configuration adapters
 
@@ -67,7 +67,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         ),
     )
 
-    source_config = SourceConfig(
+    source_config = SourceTestkitConfig(
         full_name="source_exact",
         features=features,
         n_true_entities=10,
@@ -117,7 +117,7 @@ def test_exact_duplicate_deduplication(
         ),
     )
 
-    source_config = SourceConfig(
+    source_config = SourceTestkitConfig(
         full_name="source_exact",
         features=features,
         n_true_entities=10,

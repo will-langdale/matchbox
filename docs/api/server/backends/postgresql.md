@@ -9,7 +9,7 @@ There are two graph-like trees in place here.
 
 ```mermaid
 erDiagram
-    Sources {
+    SourceConfigs {
         bigint resolution_id PK,FK
         string resolution_name
         string full_name
@@ -57,9 +57,9 @@ erDiagram
         smallint truth_cache
     }
 
-    Sources |o--|| Resolutions : ""
-    Sources ||--o{ SourceColumns : ""
-    Sources ||--o{ ClusterSourcePK : ""
+    SourceConfigs |o--|| Resolutions : ""
+    SourceConfigs ||--o{ SourceColumns : ""
+    SourceConfigs ||--o{ ClusterSourcePK : ""
     Clusters ||--o{ ClusterSourcePK : ""
     Clusters ||--o{ Probabilities : ""
     Clusters ||--o{ Contains : "parent"

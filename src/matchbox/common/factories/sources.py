@@ -26,7 +26,7 @@ from matchbox.common.factories.entities import (
     probabilities_to_results_entities,
 )
 from matchbox.common.hash import hash_values
-from matchbox.common.sources import Source, SourceAddress, SourceColumn
+from matchbox.common.sources import SourceAddress, SourceColumn, SourceConfig
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -62,7 +62,7 @@ def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-class SourceConfig(BaseModel):
+class SourceTestkitConfig(BaseModel):
     """Configuration for generating a source."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -75,11 +75,11 @@ class SourceConfig(BaseModel):
 
 
 class SourceTestkit(BaseModel):
-    """A testkit of data and metadata for a Source."""
+    """A testkit of data and metadata for a SourceConfig."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: Source = Field(description="The real generated Source object.")
+    source: SourceConfig = Field(description="The real generated SourceConfig object.")
     features: tuple[FeatureConfig, ...] | None = Field(
         description=(
             "The features used to generate the data. "
@@ -95,12 +95,12 @@ class SourceTestkit(BaseModel):
 
     @property
     def name(self) -> str:
-        """Return the resolution name of the Source."""
+        """Return the resolution name of the SourceConfig."""
         return self.source.resolution_name
 
     @property
     def mock(self) -> Mock:
-        """Create a mock Source object with this testkit's configuration."""
+        """Create a mock SourceConfig object with this testkit's configuration."""
         mock_source = create_autospec(self.source)
 
         mock_source.set_engine.return_value = mock_source
@@ -125,9 +125,9 @@ class SourceTestkit(BaseModel):
         )
 
     def to_warehouse(self, engine: Engine | None) -> None:
-        """Write the data to the Source's engine.
+        """Write the data to the SourceConfig's engine.
 
-        As the Source won't have an engine set by default, can be supplied.
+        As the SourceConfig won't have an engine set by default, can be supplied.
         """
         schema, table = get_schema_table_names(self.source.address.full_name)
         self.data.to_pandas().drop("id", axis=1).to_sql(
@@ -140,7 +140,7 @@ class SourceTestkit(BaseModel):
 
 
 class LinkedSourcesTestkit(BaseModel):
-    """Container for multiple related Source testkits with entity tracking."""
+    """Container for multiple related SourceConfig testkits with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -457,7 +457,7 @@ def source_factory(
         for row_id, pks in row_pks.items()
     ]
 
-    source = Source(
+    source = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
         columns=(
@@ -510,7 +510,7 @@ def source_from_tuple(
         for pk, entity_id in zip(data_pks, entity_ids, strict=True)
     ]
 
-    source = Source(
+    source = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         db_pk="pk",
         columns=(
@@ -545,7 +545,7 @@ def source_from_tuple(
 
 @cache
 def linked_sources_factory(
-    source_configs: tuple[SourceConfig, ...] | None = None,
+    source_configs: tuple[SourceTestkitConfig, ...] | None = None,
     n_true_entities: int | None = None,
     engine: Engine | None = None,
     seed: int = 42,
@@ -556,7 +556,7 @@ def linked_sources_factory(
         source_configs: Optional tuple of source configurations
         n_true_entities: Optional number of true entities to generate. If provided,
             overrides any n_true_entities in source configs. If not provided, each
-            SourceConfig must specify its own n_true_entities.
+            SourceTestkitConfig must specify its own n_true_entities.
         engine: Optional SQLAlchemy engine to use for all sources. If provided,
             overrides any engine in source configs.
         seed: Random seed for reproducibility
@@ -597,7 +597,7 @@ def linked_sources_factory(
         }
 
         source_configs = (
-            SourceConfig(
+            SourceTestkitConfig(
                 full_name="crn",
                 engine=engine or default_engine,
                 features=(
@@ -612,7 +612,7 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities,
                 repetition=0,
             ),
-            SourceConfig(
+            SourceTestkitConfig(
                 full_name="duns",
                 engine=engine or default_engine,
                 features=(
@@ -622,7 +622,7 @@ def linked_sources_factory(
                 n_true_entities=n_true_entities // 2,
                 repetition=0,
             ),
-            SourceConfig(
+            SourceTestkitConfig(
                 full_name="cdms",
                 engine=engine or default_engine,
                 features=(
@@ -646,7 +646,7 @@ def linked_sources_factory(
                 )
             # Override all configs with factory parameter
             source_configs = tuple(
-                SourceConfig(
+                SourceTestkitConfig(
                     full_name=config.full_name,
                     engine=engine or config.engine,
                     features=config.features,
@@ -711,7 +711,7 @@ def linked_sources_factory(
         ]
 
         # Create source
-        source = Source(
+        source = SourceConfig(
             address=SourceAddress.compose(
                 full_name=config.full_name, engine=config.engine
             ),

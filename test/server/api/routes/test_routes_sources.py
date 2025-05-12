@@ -17,7 +17,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceAddress, SourceConfig
 from matchbox.server.api.dependencies import backend
 from matchbox.server.api.main import app
 
@@ -29,7 +29,7 @@ else:
 
 def test_get_source(test_client: TestClient):
     address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
-    source = Source(address=address, db_pk="pk")
+    source = SourceConfig(address=address, db_pk="pk")
     mock_backend = Mock()
     mock_backend.get_source = Mock(return_value=source)
 
@@ -40,7 +40,7 @@ def test_get_source(test_client: TestClient):
         f"/sources/{address.warehouse_hash_b64}/{address.full_name}"
     )
     assert response.status_code == 200
-    assert Source.model_validate(response.json())
+    assert SourceConfig.model_validate(response.json())
 
 
 def test_get_source_404(test_client: TestClient):
@@ -67,7 +67,7 @@ def test_get_resolution_sources(test_client: TestClient):
     response = test_client.get("/sources", params={"resolution_name": "foo"})
     assert response.status_code == 200
     for s in response.json():
-        assert Source.model_validate(s)
+        assert SourceConfig.model_validate(s)
 
 
 def test_get_resolution_sources_404(test_client: TestClient):

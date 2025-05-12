@@ -13,7 +13,7 @@ from matchbox.client._settings import settings
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 
 
 class Selector(BaseModel):
@@ -116,7 +116,7 @@ def _source_query(
     return_batches: bool = False,
     batch_size: int | None = None,
     only_indexed: bool = False,
-) -> tuple[Source, Iterator[PolarsDataFrame]]:
+) -> tuple[SourceConfig, Iterator[PolarsDataFrame]]:
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source(selector.address).set_engine(selector.engine)
 

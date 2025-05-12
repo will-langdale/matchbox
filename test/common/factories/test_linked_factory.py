@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 
 from matchbox.common.factories.sources import (
     FeatureConfig,
-    SourceConfig,
+    SourceTestkitConfig,
     SuffixRule,
     linked_sources_factory,
 )
@@ -50,14 +50,14 @@ def test_linked_sources_custom_config():
     }
 
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_a",
             engine=engine,
             features=(features["name"], features["user_id"]),
             n_true_entities=5,
             repetition=1,
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_b",
             features=(features["name"],),
             n_true_entities=3,
@@ -165,7 +165,7 @@ def test_source_entity_equality():
 
 def test_seed_reproducibility():
     """Test that linked sources generation is reproducible with same seed."""
-    config = SourceConfig(
+    config = SourceTestkitConfig(
         full_name="test_source",
         features=(
             FeatureConfig(
@@ -198,7 +198,7 @@ def test_seed_reproducibility():
 
 def test_empty_source_handling():
     """Test handling of sources with zero entities."""
-    config = SourceConfig(
+    config = SourceTestkitConfig(
         full_name="empty_source",
         features=(FeatureConfig(name="name", base_generator="name"),),
         n_true_entities=0,
@@ -214,7 +214,7 @@ def test_empty_source_handling():
 
 def test_large_entity_count():
     """Test handling of sources with large number of entities."""
-    config = SourceConfig(
+    config = SourceTestkitConfig(
         full_name="large_source",
         features=(FeatureConfig(name="user_id", base_generator="uuid4"),),
         n_true_entities=10_000,
@@ -236,10 +236,10 @@ def test_feature_inheritance():
     }
 
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_a", features=(features["name"], features["email"])
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_b", features=(features["name"], features["phone"])
         ),
     )
@@ -262,7 +262,7 @@ def test_feature_inheritance():
 
 def test_unique_feature_values():
     """Test that unique features generate distinct values across entities."""
-    config = SourceConfig(
+    config = SourceTestkitConfig(
         full_name="test_source",
         features=(
             FeatureConfig(name="unique_id", base_generator="uuid4", unique=True),
@@ -324,12 +324,12 @@ def test_linked_sources_entity_hierarchy():
     }
 
     configs = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_a",
             features=(features["name"], features["user_id"]),
             n_true_entities=5,
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_b",
             features=(features["name"],),
             n_true_entities=3,
@@ -368,13 +368,13 @@ def test_linked_sources_entity_count_behavior():
 
     # Test error when n_true_entities missing from configs
     configs_missing_counts = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_a",
             engine=engine,
             features=(base_feature,),
             n_true_entities=5,
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_b",
             features=(base_feature,),  # Deliberately missing n_true_entities
         ),
@@ -387,13 +387,13 @@ def test_linked_sources_entity_count_behavior():
 
     # Test respecting different entity counts per source
     configs_different_counts = (
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_a",
             engine=engine,
             features=(base_feature,),
             n_true_entities=5,
         ),
-        SourceConfig(
+        SourceTestkitConfig(
             full_name="source_b",
             features=(base_feature,),
             n_true_entities=10,
@@ -408,8 +408,8 @@ def test_linked_sources_entity_count_behavior():
     # Each source should have its specified number of entities
     source_a_entities = [e for e in linked.true_entities if "source_a" in e.source_pks]
     source_b_entities = [e for e in linked.true_entities if "source_b" in e.source_pks]
-    assert len(source_a_entities) == 5, "Source A should have 5 entities"
-    assert len(source_b_entities) == 10, "Source B should have 10 entities"
+    assert len(source_a_entities) == 5, "SourceConfig A should have 5 entities"
+    assert len(source_b_entities) == 10, "SourceConfig B should have 10 entities"
 
     # Test factory parameter override
     with pytest.warns(UserWarning, match="factory parameter will be used"):
@@ -424,5 +424,9 @@ def test_linked_sources_entity_count_behavior():
     override_source_b = [
         e for e in linked_override.true_entities if "source_b" in e.source_pks
     ]
-    assert len(override_source_a) == 15, "Source A should be overridden to 15 entities"
-    assert len(override_source_b) == 15, "Source B should be overridden to 15 entities"
+    assert len(override_source_a) == 15, (
+        "SourceConfig A should be overridden to 15 entities"
+    )
+    assert len(override_source_b) == 15, (
+        "SourceConfig B should be overridden to 15 entities"
+    )

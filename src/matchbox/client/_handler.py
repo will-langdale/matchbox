@@ -31,7 +31,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, Source, SourceAddress
+from matchbox.common.sources import Match, SourceAddress, SourceConfig
 
 URLEncodeHandledType = str | int | float | bytes
 
@@ -195,8 +195,8 @@ def match(
 # Data management
 
 
-def index(source: Source, batch_size: int | None = None) -> UploadStatus:
-    """Index a Source in Matchbox."""
+def index(source: SourceConfig, batch_size: int | None = None) -> UploadStatus:
+    """Index a SourceConfig in Matchbox."""
     log_prefix = f"Index {source.address.pretty}"
     log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
     logger.debug(f"Started {log_batch}", prefix=log_prefix)
@@ -240,22 +240,22 @@ def index(source: Source, batch_size: int | None = None) -> UploadStatus:
     return status
 
 
-def get_source(address: SourceAddress) -> Source:
-    log_prefix = f"Source {address.pretty}"
+def get_source(address: SourceAddress) -> SourceConfig:
+    log_prefix = f"SourceConfig {address.pretty}"
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
 
-    return Source.model_validate(res.json())
+    return SourceConfig.model_validate(res.json())
 
 
-def get_resolution_sources(resolution_name: str) -> list[Source]:
+def get_resolution_sources(resolution_name: str) -> list[SourceConfig]:
     log_prefix = f"Resolution {resolution_name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get("/sources", params={"resolution_name": resolution_name})
 
-    return [Source.model_validate(s) for s in res.json()]
+    return [SourceConfig.model_validate(s) for s in res.json()]
 
 
 def get_resolution_graph() -> ResolutionGraph:

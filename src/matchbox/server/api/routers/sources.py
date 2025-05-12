@@ -1,4 +1,4 @@
-"""Source API routes for the Matchbox server."""
+"""SourceConfig API routes for the Matchbox server."""
 
 from fastapi import (
     APIRouter,
@@ -16,7 +16,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceAddress, SourceConfig
 from matchbox.server.api.dependencies import (
     BackendDependency,
     MetadataStoreDependency,
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/sources", tags=["sources"])
     dependencies=[Depends(validate_api_key)],
 )
 async def add_source(
-    metadata_store: MetadataStoreDependency, source: Source
+    metadata_store: MetadataStoreDependency, source: SourceConfig
 ) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
     upload_id = metadata_store.cache_source(metadata=source)
@@ -47,7 +47,7 @@ async def get_source(
     backend: BackendDependency,
     warehouse_hash_b64: str,
     full_name: str,
-) -> Source:
+) -> SourceConfig:
     """Get a source from the backend."""
     address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
     try:
@@ -68,7 +68,7 @@ async def get_source(
 async def get_resolution_sources(
     backend: BackendDependency,
     resolution_name: str,
-) -> list[Source]:
+) -> list[SourceConfig]:
     """Get all sources in scope for a resolution."""
     try:
         return backend.get_resolution_sources(resolution_name=resolution_name)

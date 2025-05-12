@@ -21,7 +21,7 @@ from matchbox.server.postgresql.orm import (
     Contains,
     Probabilities,
     Resolutions,
-    Sources,
+    SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import compile_sql
 
@@ -30,13 +30,13 @@ T = TypeVar("T")
 
 def _get_dataset_source(
     source_name_address: SourceAddress, session: Session
-) -> Sources:
-    """Converts the named address of source to a Sources ORM object."""
+) -> SourceConfigs:
+    """Converts the named address of source to a SourceConfigs ORM object."""
     source = (
-        session.query(Sources)
+        session.query(SourceConfigs)
         .filter(
-            Sources.full_name == source_name_address.full_name,
-            Sources.warehouse_hash == source_name_address.warehouse_hash,
+            SourceConfigs.full_name == source_name_address.full_name,
+            SourceConfigs.warehouse_hash == source_name_address.warehouse_hash,
         )
         .first()
     )
@@ -108,8 +108,10 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
             # This is a dataset - get all its clusters through ClusterSourcePK
             resolution_valid = (
                 select(ClusterSourcePK.cluster_id.label("cluster"))
-                .join(Sources, Sources.source_id == ClusterSourcePK.source_id)
-                .where(Sources.resolution_id == resolution_id)
+                .join(
+                    SourceConfigs, SourceConfigs.source_id == ClusterSourcePK.source_id
+                )
+                .where(SourceConfigs.resolution_id == resolution_id)
                 .distinct()
             )
         else:
@@ -140,14 +142,14 @@ def _build_valid_contains(valid_clusters_cte: CTE, name: str) -> CTE:
 
 
 def _resolve_cluster_hierarchy(
-    dataset_source: Sources,
+    dataset_source: SourceConfigs,
     truth_resolution: Resolutions,
     threshold: int | None = None,
 ) -> Select:
     """Resolves the final cluster assignments for all records in a dataset.
 
     Args:
-        dataset_source: Source object of the dataset to query
+        dataset_source: SourceConfig object of the dataset to query
         truth_resolution: Resolution object representing the point of truth
         threshold: Optional threshold value
 
@@ -270,7 +272,7 @@ def query(
     threshold: int | None = None,
     limit: int = None,
 ) -> pa.Table:
-    """Queries Matchbox and the Source warehouse to retrieve linked data.
+    """Queries Matchbox and the SourceConfig warehouse to retrieve linked data.
 
     Takes the dictionaries of tables and fields outputted by selectors and
     queries database for them. If a "point of truth" resolution is supplied, will
@@ -281,7 +283,7 @@ def query(
     * Iterates through each selector, and
         * Retrieves its data in Matchbox according to the optional point of truth,
         including its hash and cluster hash
-        * Retrieves its raw data from its Source's warehouse
+        * Retrieves its raw data from its SourceConfig's warehouse
         * Joins the two together
     * Unions the results, one row per item of data in the warehouses
 
@@ -481,7 +483,7 @@ def _build_hierarchy_down(
 
 def _build_match_query(
     source_pk: str,
-    dataset_source: Sources,
+    dataset_source: SourceConfigs,
     resolution_name: str,
     session: Session,
     threshold: int | None = None,

@@ -23,7 +23,7 @@ from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
 from matchbox.client.helpers.cleaner import cleaner, cleaners
 from matchbox.client.models.dedupers.naive import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.common.sources import Source, SourceAddress
+from matchbox.common.sources import SourceConfig, SourceAddress
 
 # Configure logging
 logging.basicConfig(
@@ -51,10 +51,10 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
 
 === "Example"
     ```python
-    from matchbox.common.sources import Source, SourceAddress
+    from matchbox.common.sources import SourceConfig, SourceAddress
     
     # Companies House data
-    companies_house = Source(
+    companies_house = SourceConfig(
         address=SourceAddress.compose(full_name="companieshouse.companies", engine=engine),
         columns=[
             {"name": "company_name", "type": "VARCHAR"},
@@ -65,7 +65,7 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
     ).set_engine(engine)
     
     # Exporters data
-    exporters = Source(
+    exporters = SourceConfig(
         address=SourceAddress.compose(full_name="hmrc.trade__exporters", engine=engine),
         columns=[
             {"name": "company_name", "type": "VARCHAR(500)"},
@@ -75,7 +75,7 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
     ).set_engine(engine)
     ```
 
-Each [`Source`][matchbox.common.sources.Source] object requires:
+Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
 
 - An `address` created with [`SourceAddress.compose()`][matchbox.common.sources.SourceAddress], comprised of
     - The schema-qualified `full_name` of the dataset

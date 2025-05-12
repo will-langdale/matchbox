@@ -27,7 +27,7 @@ def test_step_input_validation(sqlite_warehouse: Engine):
         truth=1,
     )
 
-    # CASE 1: Reading from Source
+    # CASE 1: Reading from SourceConfig
     with pytest.raises(ValueError, match="only select"):
         StepInput(prev_node=i_foo, select={bar: []})
 
@@ -310,7 +310,7 @@ def test_dag_runs(
     bar = source_factory(full_name="bar", engine=sqlite_warehouse).source
     baz = source_factory(full_name="baz", engine=sqlite_warehouse).source
 
-    # Structure: Sources can be added directly, with and without IndexStep
+    # Structure: SourceConfigs can be added directly, with and without IndexStep
     i_foo = IndexStep(source=foo, batch_size=100)
     dag.add_steps(i_foo)
 
