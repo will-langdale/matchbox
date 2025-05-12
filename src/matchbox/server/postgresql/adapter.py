@@ -187,9 +187,11 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Data management
 
-    def index(self, source: SourceConfig, data_hashes: Table) -> None:  # noqa: D102
+    def index(self, source_config: SourceConfig, data_hashes: Table) -> None:  # noqa: D102
         insert_dataset(
-            source=source, data_hashes=data_hashes, batch_size=self.settings.batch_size
+            source_config=source_config,
+            data_hashes=data_hashes,
+            batch_size=self.settings.batch_size,
         )
 
     def get_source(self, address: SourceAddress) -> SourceConfig:  # noqa: D102

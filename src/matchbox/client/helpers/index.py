@@ -66,21 +66,21 @@ def index(
 
     address = SourceAddress.compose(engine=engine, full_name=full_name)
     if resolution_name:
-        source = SourceConfig(
+        source_config = SourceConfig(
             address=address,
             resolution_name=resolution_name,
             columns=columns,
             db_pk=db_pk,
         )
     else:
-        source = SourceConfig(
+        source_config = SourceConfig(
             address=address,
             columns=columns,
             db_pk=db_pk,
         )
 
-    source.set_engine(engine)
+    source_config.set_engine(engine)
     if not columns:
-        source = source.default_columns()
+        source_config = source_config.default_columns()
 
-    _handler.index(source=source, batch_size=batch_size)
+    _handler.index(source_config=source_config, batch_size=batch_size)

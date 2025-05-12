@@ -180,7 +180,7 @@ async def test_complete_source_upload_process(s3: S3Client, test_client: TestCli
     mock_backend.index.assert_called_once()
     call_args = mock_backend.index.call_args
     assert (
-        call_args[1]["source"] == source_testkit.source_config
+        call_args[1]["source_config"] == source_testkit.source_config
     )  # Check source matches
     assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
 

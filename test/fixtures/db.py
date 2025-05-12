@@ -118,7 +118,8 @@ def create_index_scenario(
     # Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
-            source=source_testkit.source_config, data_hashes=source_testkit.data_hashes
+            source_config=source_testkit.source_config,
+            data_hashes=source_testkit.data_hashes,
         )
 
     return dag
@@ -335,7 +336,8 @@ def create_convergent_scenario(
     # Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
-            source=source_testkit.source_config, data_hashes=source_testkit.data_hashes
+            source_config=source_testkit.source_config,
+            data_hashes=source_testkit.data_hashes,
         )
 
     # Create and add deduplication models

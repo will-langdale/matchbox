@@ -109,11 +109,11 @@ class HashIDMap:
 
 
 def insert_dataset(
-    source: SourceConfig, data_hashes: pa.Table, batch_size: int
+    source_config: SourceConfig, data_hashes: pa.Table, batch_size: int
 ) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
-    log_prefix = f"Index {source.address.pretty}"
-    resolution_hash = hash_data(str(source.address))
+    log_prefix = f"Index {source_config.address.pretty}"
+    resolution_hash = hash_data(str(source_config.address))
     content_hash = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:
@@ -121,7 +121,9 @@ def insert_dataset(
 
         # Check if resolution already exists
         existing_resolution = (
-            session.query(Resolutions).filter_by(name=source.resolution_name).first()
+            session.query(Resolutions)
+            .filter_by(name=source_config.resolution_name)
+            .first()
         )
 
         if existing_resolution:
@@ -133,7 +135,7 @@ def insert_dataset(
         else:
             # Create new resolution
             resolution = Resolutions(
-                name=source.resolution_name,
+                name=source_config.resolution_name,
                 resolution_hash=resolution_hash,
                 type=ResolutionNodeType.DATASET.value,
             )
@@ -158,17 +160,17 @@ def insert_dataset(
         # Create new source with relationship to resolution
         source_obj = SourceConfigs(
             resolution_id=resolution.resolution_id,
-            resolution_name=source.resolution_name,
-            full_name=source.address.full_name,
-            warehouse_hash=source.address.warehouse_hash,
-            db_pk=source.db_pk,
+            resolution_name=source_config.resolution_name,
+            full_name=source_config.address.full_name,
+            warehouse_hash=source_config.address.warehouse_hash,
+            db_pk=source_config.db_pk,
             columns=[
                 SourceColumns(
                     column_index=idx,
                     column_name=column.name,
                     column_type=column.type,
                 )
-                for idx, column in enumerate(source.columns)
+                for idx, column in enumerate(source_config.columns)
             ],
         )
 

@@ -271,11 +271,11 @@ class MatchboxDBAdapter(ABC):
     # Data management
 
     @abstractmethod
-    def index(self, source: SourceConfig, data_hashes: Table) -> None:
+    def index(self, source_config: SourceConfig, data_hashes: Table) -> None:
         """Indexes to Matchbox a source dataset in your warehouse.
 
         Args:
-            source: The source dataset to index.
+            source_config: The source configuration to index.
             data_hashes: The Arrow table with the hash of each data row
         """
         ...

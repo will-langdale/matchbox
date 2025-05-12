@@ -99,7 +99,7 @@ class IndexStep(Step):
 
     def run(self) -> None:
         """Run indexing step."""
-        _handler.index(source=self.source_config, batch_size=self.batch_size)
+        _handler.index(source_config=self.source_config, batch_size=self.batch_size)
 
 
 class ModelStep(Step):
