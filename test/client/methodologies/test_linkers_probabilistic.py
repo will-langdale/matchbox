@@ -21,7 +21,7 @@ from matchbox.common.factories.entities import (
 )
 from matchbox.common.factories.sources import (
     SourceTestkit,
-    SourceTestkitConfig,
+    SourceTestkitParameters,
     linked_sources_factory,
 )
 
@@ -211,15 +211,15 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
     )
 
     configs = (
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_left", features=features, n_true_entities=10
         ),
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_right", features=features, n_true_entities=10
         ),
     )
 
-    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 

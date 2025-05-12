@@ -207,7 +207,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .first()
             )
             if source:
-                return source.to_common_source_config()
+                return source.to_dto()
             else:
                 raise MatchboxSourceNotFoundError(address=str(address))
 
@@ -248,7 +248,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 .all()
             )
 
-            return [s.to_common_source_config() for s in res_sources]
+            return [s.to_dto() for s in res_sources]
 
     def validate_ids(self, ids: list[int]) -> None:  # noqa: D102
         with MBDB.get_session() as session:

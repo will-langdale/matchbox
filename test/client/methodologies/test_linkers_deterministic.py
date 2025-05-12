@@ -24,7 +24,7 @@ from matchbox.client.results import Results
 from matchbox.common.factories.entities import FeatureConfig
 from matchbox.common.factories.sources import (
     SourceTestkit,
-    SourceTestkitConfig,
+    SourceTestkitParameters,
     linked_sources_factory,
     source_factory,
 )
@@ -223,19 +223,19 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
     )
 
     configs = (
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,
         ),
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
         ),
     )
 
-    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -286,13 +286,13 @@ def test_exact_match_with_duplicates_linking(
     )
 
     configs = (
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,
             repetition=1,  # Each entity appears twice
         ),
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_right",
             features=features,
             n_true_entities=10,  # Same number of entities
@@ -300,7 +300,7 @@ def test_exact_match_with_duplicates_linking(
         ),
     )
 
-    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -351,12 +351,12 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
 
     # Configure sources - full set on left, half on right
     configs = (
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,  # Full set
         ),
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_right",
             features=features,
             n_true_entities=5,  # Half the entities
@@ -364,7 +364,7 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
     )
 
     # Create the linked sources
-    linked = linked_sources_factory(source_tkit_configs=configs, seed=42)
+    linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
@@ -408,14 +408,14 @@ def test_no_matching_entities_linking(
     )
 
     configs = (
-        SourceTestkitConfig(
+        SourceTestkitParameters(
             full_name="source_left",
             features=features,
             n_true_entities=10,
         ),
     )
 
-    linked = linked_sources_factory(source_tkit_configs=configs, seed=314)
+    linked = linked_sources_factory(source_parameters=configs, seed=314)
     left_source = linked.sources["source_left"]
     right_source = source_factory(
         full_name="source_right", features=features, n_true_entities=10, seed=159

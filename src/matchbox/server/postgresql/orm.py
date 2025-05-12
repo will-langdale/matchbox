@@ -367,7 +367,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         with MBDB.get_session() as session:
             return session.query(cls).all()
 
-    def to_common_source_config(self) -> list[CommonSourceConfig]:
+    def to_dto(self) -> list[CommonSourceConfig]:
         """Convert ORM source to a matchbox.common SourceConfig object."""
         with MBDB.get_session() as session:
             columns: list[SourceColumns] = (
