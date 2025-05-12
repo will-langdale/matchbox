@@ -1,7 +1,9 @@
 """PostgreSQL adapter for Matchbox server."""
 
+import tempfile
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
+import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
@@ -163,6 +165,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
+            backend=self,
             source_address=source_address,
             resolution_name=resolution_name,
             threshold=threshold,
@@ -189,7 +192,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def index(self, source: Source, data_hashes: Table) -> None:  # noqa: D102
         insert_dataset(
-            source=source, data_hashes=data_hashes, batch_size=self.settings.batch_size
+            backend=self,
+            source=source,
+            data_hashes=data_hashes,
+            batch_size=self.settings.batch_size,
         )
 
     def get_source(self, address: SourceAddress) -> Source:  # noqa: D102
@@ -404,6 +410,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def set_model_results(self, model: str, results: Table) -> None:  # noqa: D102
         resolution = Resolutions.from_name(resolution_name=model, res_type="model")
         insert_results(
+            backend=self,
             results=results,
             resolution=resolution,
             batch_size=self.settings.batch_size,
@@ -492,3 +499,34 @@ class MatchboxPostgres(MatchboxDBAdapter):
             else:
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(childen=children)
+
+    def s3_dump(self, resolution_id: int, clusters: pl.DataFrame, keys: pl.DataFrame):
+        """S3 dump."""
+        s3 = self.settings.datastore.get_client()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            clusters.write_parquet(f"{tmp_dir}/clusters.parquet")
+            keys.write_parquet(f"{tmp_dir}/keys.parquet")
+
+            clusters_path = f"{resolution_id}/clusters.parquet"
+            keys_path = f"{resolution_id}/keys.parquet"
+
+            s3.upload_file(f"{tmp_dir}/clusters.parquet", "resolutions", clusters_path)
+            s3.upload_file(f"{tmp_dir}/keys.parquet", "resolutions", keys_path)
+
+    def s3_load(self, resolution_id: int) -> tuple[pl.DataFrame, pl.DataFrame]:
+        """S3 load."""
+        s3 = self.settings.datastore.get_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            clusters_path = f"{tmp_dir}/clusters.parquet"
+            keys_path = f"{tmp_dir}/keys.parquet"
+
+            s3.download_file(
+                "resolutions", f"{resolution_id}/clusters.parquet", clusters_path
+            )
+            s3.download_file("resolutions", f"{resolution_id}/keys.parquet", keys_path)
+
+            df_clusters = pl.read_parquet(clusters_path)
+            df_keys = pl.read_parquet(keys_path)
+
+            return df_clusters, df_keys

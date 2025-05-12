@@ -3,9 +3,8 @@
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.graph import ResolutionNodeType
@@ -19,16 +18,13 @@ from matchbox.common.transform import (
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
-    ClusterSourcePK,
-    Contains,
     PKSpace,
-    Probabilities,
     ResolutionFrom,
     Resolutions,
     SourceColumns,
     Sources,
 )
-from matchbox.server.postgresql.utils.db import compile_sql, large_ingest
+from matchbox.server.postgresql.utils.db import compile_sql
 
 
 class HashIDMap:
@@ -108,7 +104,9 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> None:
+def insert_dataset(
+    backend, source: Source, data_hashes: pa.Table, batch_size: int
+) -> None:
     """Indexes a dataset from your data warehouse within Matchbox."""
     log_prefix = f"Index {source.address.pretty}"
     resolution_hash = hash_data(str(source.address))
@@ -178,115 +176,29 @@ def insert_dataset(source: Source, data_hashes: pa.Table, batch_size: int) -> No
         # Store source_id and max primary keys for later use
         source_id = source_obj.source_id
 
-    # Don't insert new hashes, but new PKs need existing hash IDs
-    with MBDB.get_adbc_connection() as conn:
-        existing_hash_lookup: pl.DataFrame = sql_to_df(
-            stmt=compile_sql(select(Clusters.cluster_id, Clusters.cluster_hash)),
-            connection=conn,
-            return_type="polars",
-        )
-
-    data_hashes: pl.DataFrame = pl.from_arrow(data_hashes)
-    if existing_hash_lookup.is_empty():
-        new_hashes = data_hashes.select("hash").unique()
-    else:
-        new_hashes = (
-            data_hashes.select("hash")
-            .unique()
-            .join(
-                other=existing_hash_lookup,
-                left_on="hash",
-                right_on="cluster_hash",
-                how="anti",
-            )
-        )
-
-    if new_hashes.shape[0]:
-        # Create new cluster records with sequential IDs
-        next_cluster_id = PKSpace.reserve_block("clusters", len(new_hashes))
-    else:
-        # The value of next_cluster_id is irrelevant as cluster_records will be empty
-        next_cluster_id = 0
-    cluster_records = (
-        new_hashes.with_row_index("cluster_id")
-        .with_columns(
-            [
-                (pl.col("cluster_id") + next_cluster_id)
-                .cast(pl.Int64)
-                .alias("cluster_id")
-            ]
-        )
-        .rename({"hash": "cluster_hash"})
+    keys = (
+        pl.from_arrow(data_hashes)
+        .explode("source_pk")
+        .with_columns(source_id=source_id)
     )
-
-    # Create a combined lookup with both existing and new mappings
-    lookup = pl.concat([existing_hash_lookup, cluster_records], how="vertical")
-
-    # Add cluster_id values to data hashes
-    hashes_with_ids = data_hashes.join(lookup, left_on="hash", right_on="cluster_hash")
-
-    # Explode source_pk
-    source_pk_records = hashes_with_ids.select(["cluster_id", "source_pk"]).explode(
-        "source_pk"
-    )
-
-    if source_pk_records.shape[0] > 0:
-        next_pk_id = PKSpace.reserve_block("cluster_source_pks", len(source_pk_records))
-    else:
-        # The next_pk_id is irrelevant if we don't write any PK records
-        next_pk_id = 0
-
-    # Add required columns
-    source_pk_records = source_pk_records.with_row_index("pk_id").with_columns(
+    clusters = pl.from_arrow(data_hashes.select(["hash"])).with_columns(
         [
-            (pl.col("pk_id") + next_pk_id).alias("pk_id"),
-            pl.lit(source_id, dtype=pl.Int64).alias("source_id"),
+            pl.col("hash").map_elements(lambda x: [x]).alias("leaves"),
+            pl.lit(100).alias("probability"),
         ]
     )
 
-    # Insert new clusters and all source primary keys
-    try:
-        # Bulk insert into Clusters table (only new clusters)
-        if not cluster_records.is_empty():
-            large_ingest(
-                data=cluster_records.to_arrow(),
-                table_class=Clusters,
-                max_chunksize=batch_size,
-            )
-            logger.info(
-                f"Added {len(cluster_records):,} objects to Clusters table",
-                prefix=log_prefix,
-            )
-
-        # Bulk insert into ClusterSourcePK table (all links)
-        if not source_pk_records.is_empty():
-            large_ingest(
-                data=source_pk_records.to_arrow(),
-                table_class=ClusterSourcePK,
-                max_chunksize=batch_size,
-            )
-            logger.info(
-                f"Added {len(source_pk_records):,} primary keys to "
-                "ClusterSourcePK table",
-                prefix=log_prefix,
-            )
-    except IntegrityError as e:
-        # Log the error and rollback
-        logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
-        conn.rollback()
+    backend.s3_dump(resolution_id, clusters, keys)
 
     # Insert successful, safe to update the resolution's content hash
+    content_hash = hash_arrow_table(data_hashes)
     with MBDB.get_session() as session:
-        if not source_pk_records.is_empty():
-            stmt = (
-                update(Resolutions)
-                .where(Resolutions.resolution_id == resolution_id)
-                .values(content_hash=content_hash)
-            )
-            session.execute(stmt)
-
-    if cluster_records.is_empty() and source_pk_records.is_empty():
-        logger.info("No new records to add", prefix=log_prefix)
+        stmt = (
+            update(Resolutions)
+            .where(Resolutions.resolution_id == resolution_id)
+            .values(content_hash=content_hash)
+        )
+        session.execute(stmt)
 
     logger.info("Finished", prefix=log_prefix)
 
@@ -537,6 +449,7 @@ def _results_to_insert_tables(
 
 
 def insert_results(
+    backend,
     resolution: Resolutions,
     results: pa.Table,
     batch_size: int,
@@ -552,6 +465,7 @@ def insert_results(
     This allows easy querying of clusters at any threshold.
 
     Args:
+        backend: backend
         resolution: Resolution of type model to associate results with
         results: A PyArrow results table with left_id, right_id, probability
         batch_size: Number of records to insert in each batch
@@ -570,71 +484,26 @@ def insert_results(
         logger.info("Results already uploaded. Finished", prefix=log_prefix)
         return
 
-    clusters, contains, probabilities = _results_to_insert_tables(
-        resolution=resolution, probabilities=results
-    )
+    from matchbox.common.transform import DisjointSet
 
-    with MBDB.get_session() as session:
-        try:
-            # Clear existing probabilities for this resolution
-            stmt = delete(Probabilities).where(
-                Probabilities.resolution == resolution.resolution_id
+    results: pl.DataFrame = pl.from_arrow(results)
+    thresholds = results["probability"].unique().sort(order="descending").to_pylist()
+    djs = DisjointSet[int]()
+    clusters = []
+    for thresh in thresholds:
+        rel_rows = results.filter(results.probability == thresh)
+        for row in rel_rows.to_dict():
+            djs.union(row["left_id"], row["right_id"])
+
+        components = djs.get_components()
+        for c in components():
+            clusters.append(
+                {"probability": thresh, "cluster_hash": hash_values(c), "leaves": c}
             )
-            session.execute(stmt)
 
-            session.commit()
-            logger.info("Removed old probabilities", prefix=log_prefix)
+    clusters, keys = ..., ...
 
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(
-                f"Failed to clear old probabilities or update content hash: {str(e)}",
-                prefix=log_prefix,
-            )
-            raise
-
-    try:
-        logger.info(
-            f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
-        )
-
-        large_ingest(
-            data=clusters,
-            table_class=Clusters,
-            max_chunksize=batch_size,
-        )
-
-        logger.info(
-            f"Successfully inserted {clusters.shape[0]:,} objects into Clusters table",
-            prefix=log_prefix,
-        )
-
-        large_ingest(
-            data=contains,
-            table_class=Contains,
-            max_chunksize=batch_size,
-        )
-
-        logger.info(
-            f"Successfully inserted {contains.shape[0]:,} objects into Contains table",
-            prefix=log_prefix,
-        )
-
-        large_ingest(
-            data=probabilities,
-            table_class=Probabilities,
-            max_chunksize=batch_size,
-        )
-
-        logger.info(
-            f"Successfully inserted "
-            f"{probabilities.shape[0]:,} objects into Probabilities table",
-            prefix=log_prefix,
-        )
-
-    except SQLAlchemyError as e:
-        logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
-        raise
+    backend.s3_dump(resolution.resolution_id, clusters, keys)
 
     # Insert successful, safe to update the resolution's content hash
     with MBDB.get_session() as session:

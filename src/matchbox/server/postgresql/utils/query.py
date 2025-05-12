@@ -265,6 +265,7 @@ def _resolve_cluster_hierarchy(
 
 
 def query(
+    backend,
     source_address: SourceAddress,
     resolution_name: str | None = None,
     threshold: int | None = None,

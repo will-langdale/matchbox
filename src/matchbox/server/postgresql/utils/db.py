@@ -27,7 +27,10 @@ from matchbox.common.graph import (
     ResolutionNode,
     ResolutionNodeType,
 )
-from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
+from matchbox.server.base import (
+    MatchboxBackends,
+    MatchboxSnapshot,
+)
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     ResolutionFrom,
