@@ -17,7 +17,7 @@ def primary_keys_map(
     engine: Engine | None = None,
     full_names: list[str] | None = None,
 ) -> ArrowTable:
-    """Return matchbox IDs to source IDs mapping, optionally filtering by an engine."""
+    """Return matchbox IDs to source IDs mapping, optionally filtering."""
     # Get all sources in scope of the resolution
     sources = _handler.get_resolution_source_configs(resolution_name=resolution_name)
 
