@@ -21,6 +21,7 @@ from matchbox.common.dtos import (
     ResolutionOperationStatus,
     UploadStatus,
 )
+from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
     MatchboxDeletionNotConfirmed,
@@ -397,3 +398,14 @@ def delete_resolution(
 
     res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
     return ResolutionOperationStatus.model_validate(res.json())
+
+
+# Evaluation
+
+
+def send_eval(user_id: int, judgement: Judgement):
+    print(f"Posting {judgement} for {user_id}")
+    # CLIENT.post(
+    #     f"/eval/{judgement.user_id}",
+    #     json=judgement.model_dump(),
+    # )

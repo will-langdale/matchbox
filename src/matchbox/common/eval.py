@@ -4,8 +4,15 @@ from itertools import combinations
 from typing import TypeAlias
 
 import polars as pl
+from pydantic import BaseModel
 
 Pairs: TypeAlias = set[tuple[int, int]]
+
+
+class Judgement(BaseModel):
+    """Representation of how to split a set of entities into clusters."""
+
+    clusters: list[list[int]]
 
 
 def contains_to_pairs(contains: pl.DataFrame) -> Pairs:
