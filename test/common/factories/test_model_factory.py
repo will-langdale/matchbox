@@ -13,7 +13,7 @@ from matchbox.common.factories.sources import linked_sources_factory, source_fac
 
 
 def test_model_factory_entity_preservation():
-    """Test that model_factory preserves source_pks with incomplete probabilities."""
+    """Test that model_factory preserves keys with incomplete probabilities."""
     linked = linked_sources_factory()
     all_true_sources = list(linked.true_entities)
 
@@ -33,7 +33,7 @@ def test_model_factory_entity_preservation():
         true_entities=all_true_sources[1:],  # Different source entities
     )
 
-    # Even with no probabilities possible, should describe same pks
+    # Even with no probabilities possible, should describe same keys
     assert sum(second_model.entities) == sum(first_model.entities)
 
 
@@ -492,13 +492,13 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     assert all(p >= expected_checks["prob_min"] for p in probs)
     assert all(p <= expected_checks["prob_max"] for p in probs)
 
-    # Verify source PKs are preserved
-    input_pks = sum(
+    # Verify source keys are preserved
+    input_keys = sum(
         set(left_testkit.entities)
         | set(right_testkit.entities if right_testkit else {})
     )
-    assert input_pks == sum(model.entities), (
-        "Model entities should preserve all source PKs"
+    assert input_keys == sum(model.entities), (
+        "Model entities should preserve all source keys"
     )
 
 
@@ -543,16 +543,16 @@ def test_query_to_model_factory_validation():
     left_testkit = linked.sources["crn"]
     true_entities = tuple(linked.true_entities)
 
-    # Extract query and source_pks for our function
+    # Extract query and keys for our function
     left_query = left_testkit.query
-    left_source_pks = {"crn": "pk"}
+    left_keys = {"crn": "key"}
 
     # Test invalid probability range
     with pytest.raises(ValueError, match="Probabilities must be increasing values"):
         query_to_model_factory(
             left_resolution="crn",
             left_query=left_query,
-            left_source_pks=left_source_pks,
+            left_keys=left_keys,
             true_entities=true_entities,
             prob_range=(0.9, 0.8),
         )
@@ -562,7 +562,7 @@ def test_query_to_model_factory_validation():
         query_to_model_factory(
             left_resolution="crn",
             left_query=left_query,
-            left_source_pks=left_source_pks,
+            left_keys=left_keys,
             true_entities=true_entities,
             right_resolution="right",
         )
@@ -610,28 +610,28 @@ def test_query_to_model_factory_creation(
     # Get left source
     left_testkit = linked.sources["crn"]
     left_query = left_testkit.query
-    left_source_pks = {"crn": "pk"}
+    left_keys = {"crn": "key"}
 
     # Setup right query if needed
     right_query = None
-    right_source_pks = None
+    right_keys = None
     right_resolution = None
 
     if test_config["right_args"]:
         right_testkit = linked.sources["cdms"]
         right_query = right_testkit.query
-        right_source_pks = {"cdms": "pk"}
+        right_keys = {"cdms": "key"}
         right_resolution = "cdms"
 
     # Create the model using our function
     model = query_to_model_factory(
         left_resolution="crn",
         left_query=left_query,
-        left_source_pks=left_source_pks,
+        left_keys=left_keys,
         true_entities=true_entities,
         right_resolution=right_resolution,
         right_query=right_query,
-        right_source_pks=right_source_pks,
+        right_keys=right_keys,
         prob_range=test_config["prob_range"],
         seed=42,
     )
@@ -667,13 +667,13 @@ def test_query_to_model_factory_seed_behavior(
     # Get source
     left_testkit = linked.sources["crn"]
     left_query = left_testkit.query
-    left_source_pks = {"crn": "pk"}
+    left_keys = {"crn": "key"}
 
     # Create two models with different seeds
     model1 = query_to_model_factory(
         left_resolution="crn",
         left_query=left_query,
-        left_source_pks=left_source_pks,
+        left_keys=left_keys,
         true_entities=true_entities,
         seed=seed1,
     )
@@ -681,7 +681,7 @@ def test_query_to_model_factory_seed_behavior(
     model2 = query_to_model_factory(
         left_resolution="crn",
         left_query=left_query,
-        left_source_pks=left_source_pks,
+        left_keys=left_keys,
         true_entities=true_entities,
         seed=seed2,
     )
@@ -720,18 +720,18 @@ def test_query_to_model_factory_compare_with_model_factory():
     # Extract queries for our new function
     left_query = linked.sources["crn"].query
     right_query = linked.sources["cdms"].query
-    left_source_pks = {"crn": "pk"}
-    right_source_pks = {"cdms": "pk"}
+    left_keys = {"crn": "key"}
+    right_keys = {"cdms": "key"}
 
     # Create model using query_to_model_factory
     query_model = query_to_model_factory(
         left_resolution="crn",
         left_query=left_query,
-        left_source_pks=left_source_pks,
+        left_keys=left_keys,
         true_entities=true_entities,
         right_resolution="cdms",
         right_query=right_query,
-        right_source_pks=right_source_pks,
+        right_keys=right_keys,
         seed=42,
     )
 

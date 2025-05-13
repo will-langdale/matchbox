@@ -185,8 +185,8 @@ class FeatureConfig(BaseModel):
     @field_validator("name", mode="after")
     def protected_names(cls, value: str) -> str:
         """Ensure name is not a reserved keyword."""
-        if value in {"id", "pk"}:
-            raise ValueError("Feature name cannot be 'id' or 'pk'.")
+        if value in {"id", "key"}:
+            raise ValueError("Feature name cannot be 'id' or 'key'.")
         return value
 
 
@@ -203,7 +203,7 @@ class EntityReference(frozendict):
         super().__init__({} if mapping is None else mapping)
 
     def __add__(self, other: "EntityReference") -> "EntityReference":
-        """Merge two EntityReferences by unioning PKs for each source."""
+        """Merge two EntityReferences by unioning keys for each source."""
         if not isinstance(other, EntityReference):
             return NotImplemented
 
@@ -268,24 +268,24 @@ class EntityIDMixin:
         return NotImplemented
 
 
-class SourcePKMixin:
-    """Mixin providing common source primary key functionality for entity classes.
+class SourceKeyMixin:
+    """Mixin providing common source key functionality for entity classes.
 
-    Implements methods for accessing and retrieving source primary keys.
+    Implements methods for accessing and retrieving source keys.
     """
 
-    source_pks: EntityReference
+    keys: EntityReference
 
-    def get_source_pks(self, name: SourceResolutionName) -> set[str]:
-        """Get PKs for a specific source.
+    def get_keys(self, name: SourceResolutionName) -> set[str]:
+        """Get keys for a specific source.
 
         Args:
             name: Name of the source
 
         Returns:
-            Set of primary keys, empty if source not found
+            Set of keys, empty if source not found
         """
-        return set(self.source_pks.get(name, frozenset()))
+        return set(self.keys.get(name, frozenset()))
 
     def get_values(
         self, sources: dict[SourceResolutionName, "SourceTestkit"]
@@ -306,8 +306,8 @@ class SourcePKMixin:
         """
         values: dict[str, dict[str, list[str]]] = {}
 
-        # For each source we have PKs for
-        for source_name, pks in self.source_pks.items():
+        # For each source we have keys for
+        for source_name, keys in self.keys.items():
             source = sources.get(source_name)
 
             if source is None:
@@ -315,7 +315,7 @@ class SourcePKMixin:
 
             # Get rows for this entity in this source
             df = source.data.to_pandas()
-            entity_rows = df[df["pk"].isin(pks)]
+            entity_rows = df[df["key"].isin(keys)]
 
             # Get unique values for each feature in this source
             values[source_name] = {
@@ -326,21 +326,21 @@ class SourcePKMixin:
         return values
 
 
-class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
+class ClusterEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
     """Represents a merged entity mid-pipeline."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     id: int = Field(default_factory=lambda: getrandbits(63))  # 64 gives OverflowError
-    source_pks: EntityReference
+    keys: EntityReference
 
     def __add__(self, other: "ClusterEntity") -> "ClusterEntity":
-        """Combine two ClusterEntity objects by combining the source_pks."""
+        """Combine two ClusterEntity objects by combining the keys."""
         if other is None:
             return self
         if not isinstance(other, ClusterEntity):
             return NotImplemented
-        return ClusterEntity(source_pks=self.source_pks + other.source_pks)
+        return ClusterEntity(keys=self.keys + other.keys)
 
     def __radd__(self, other: Any) -> "ClusterEntity":
         """Handle sum() by treating 0 as an empty ClusterEntity."""
@@ -349,7 +349,7 @@ class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         return NotImplemented
 
     def __sub__(self, other: "ClusterEntity") -> dict[str, frozenset[str]]:
-        """Return PKs in self that aren't in other, by source.
+        """Return keys in self that aren't in other, by source.
 
         Used to diff two ClusterEntity objects.
         """
@@ -357,9 +357,9 @@ class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
             return NotImplemented
 
         diff = {}
-        for name, our_pks in self.source_pks.items():
-            their_pks = other.source_pks.get(name, frozenset())
-            if remaining := our_pks - their_pks:
+        for name, our_keys in self.keys.items():
+            their_keys = other.keys.get(name, frozenset())
+            if remaining := our_keys - their_keys:
                 diff[name] = remaining
 
         return diff
@@ -371,50 +371,50 @@ class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         return other - self
 
     def __eq__(self, other: Any) -> bool:
-        """Compare based on source_pks."""
+        """Compare based on keys."""
         if not isinstance(other, ClusterEntity):
             return NotImplemented
-        return self.source_pks == other.source_pks
+        return self.keys == other.keys
 
     def __contains__(self, other: "ClusterEntity") -> bool:
-        """Check if this entity contains all PKs from other entity."""
-        return other.source_pks <= self.source_pks
+        """Check if this entity contains all keys from other entity."""
+        return other.keys <= self.keys
 
     def __hash__(self) -> int:
         """Hash based on EntityReference which is itself hashable."""
-        return hash(self.source_pks)
+        return hash(self.keys)
 
     def is_subset_of_source_entity(self, source_entity: "SourceEntity") -> bool:
         """Check if this ClusterEntity's references are a subset of a SourceEntity's."""
-        return self.source_pks <= source_entity.source_pks
+        return self.keys <= source_entity.keys
 
     def similarity_ratio(self, other: "ClusterEntity") -> float:
-        """Return ratio of shared PKs to total PKs across all sources."""
-        total_pks = 0
-        shared_pks = 0
+        """Return ratio of shared keys to total keys across all sources."""
+        total_keys = 0
+        shared_keys = 0
 
         # Get all source names
-        all_sources = set(self.source_pks.keys()) | set(other.source_pks.keys())
+        all_sources = set(self.keys.keys()) | set(other.keys.keys())
 
         for name in all_sources:
-            our_pks = self.source_pks.get(name, frozenset())
-            their_pks = other.source_pks.get(name, frozenset())
+            our_keys = self.keys.get(name, frozenset())
+            their_keys = other.keys.get(name, frozenset())
 
-            total_pks += len(our_pks | their_pks)
-            shared_pks += len(our_pks & their_pks)
+            total_keys += len(our_keys | their_keys)
+            shared_keys += len(our_keys & their_keys)
 
-        return shared_pks / total_pks if total_pks > 0 else 0.0
+        return shared_keys / total_keys if total_keys > 0 else 0.0
 
 
-class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
+class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
     """Represents a single entity across all sources."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: int = Field(default_factory=lambda: getrandbits(63))  # 64 gives OverflowError
     base_values: dict[str, Any] = Field(description="Feature name -> base value")
-    source_pks: EntityReference = Field(
-        description="Source to PKs mapping",
+    keys: EntityReference = Field(
+        description="Source to keys mapping",
         default=EntityReference(mapping=frozenset()),
     )
     total_unique_variations: int = Field(default=0)
@@ -431,16 +431,16 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         """Hash based on sorted base values."""
         return hash(tuple(sorted(self.base_values.items())))
 
-    def add_source_reference(self, name: SourceResolutionName, pks: list[str]) -> None:
+    def add_source_reference(self, name: SourceResolutionName, keys: list[str]) -> None:
         """Add or update a source reference.
 
         Args:
             name: Source name
-            pks: List of primary keys for this source
+            keys: List of primary keys for this source
         """
-        mapping = dict(self.source_pks)
-        mapping[name] = frozenset(pks)
-        self.source_pks = EntityReference(mapping)
+        mapping = dict(self.keys)
+        mapping[name] = frozenset(keys)
+        self.keys = EntityReference(mapping)
 
     def to_cluster_entity(self, *names: SourceResolutionName) -> ClusterEntity | None:
         """Convert this SourceEntity to a ClusterEntity with the specified sources.
@@ -466,23 +466,23 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
             *names: Names of sources to include in the ClusterEntity
 
         Returns:
-            ClusterEntity containing only the specified sources' PKs, or None
+            ClusterEntity containing only the specified sources' keys, or None
             if none of the specified sources are present in this entity.
         """
         filtered = {
-            name: self.source_pks.get(name)
+            name: self.keys.get(name)
             for name in names
-            if self.source_pks.get(name) is not None
+            if self.keys.get(name) is not None
         }
 
         if len(filtered) == 0:
             return None
 
-        return ClusterEntity(source_pks=EntityReference(filtered))
+        return ClusterEntity(keys=EntityReference(filtered))
 
 
 def query_to_cluster_entities(
-    query: pa.Table | pd.DataFrame, source_pks: dict[SourceResolutionName, str]
+    query: pa.Table | pd.DataFrame, keys: dict[SourceResolutionName, str]
 ) -> set[ClusterEntity]:
     """Convert a query result to a set of ClusterEntities.
 
@@ -491,7 +491,7 @@ def query_to_cluster_entities(
 
     Args:
         query: A PyArrow table or DataFrame representing a query result
-        source_pks: Mapping of source resolution names to primary key column names
+        keys: Mapping of source resolution names to key column names
 
     Returns:
         A set of ClusterEntity objects
@@ -499,7 +499,7 @@ def query_to_cluster_entities(
     if isinstance(query, pa.Table):
         query = query.to_pandas()
 
-    must_have_columns = set(["id"] + list(source_pks.values()))
+    must_have_columns = set(["id"] + list(keys.values()))
     if not must_have_columns.issubset(query.columns):
         raise ValueError(
             f"Columms {must_have_columns.difference(query.columns)} must be included "
@@ -508,14 +508,14 @@ def query_to_cluster_entities(
 
     def _create_cluster_entity(group: pd.DataFrame) -> ClusterEntity:
         entity_refs = {
-            source: frozenset(group[pk_column].dropna().values)
-            for source, pk_column in source_pks.items()
-            if not group[pk_column].dropna().empty
+            source: frozenset(group[key_column].dropna().values)
+            for source, key_column in keys.items()
+            if not group[key_column].dropna().empty
         }
 
         return ClusterEntity(
             id=group.name,
-            source_pks=EntityReference(entity_refs),
+            keys=EntityReference(entity_refs),
         )
 
     result = query.groupby("id").apply(_create_cluster_entity, include_groups=False)
@@ -538,9 +538,7 @@ def generate_entities(
             parameters = {} if not feature.parameters else dict(feature.parameters)
             base_values[feature.name] = value_generator(**parameters)
 
-        entities.append(
-            SourceEntity(base_values=base_values, source_pks=EntityReference())
-        )
+        entities.append(SourceEntity(base_values=base_values, keys=EntityReference()))
     return tuple(entities)
 
 
@@ -606,7 +604,7 @@ def diff_results(
             - 'subset': Are a subset of an expected entity
             - 'superset': Are a superset of an expected entity
             - 'wrong': Don't match any expected entity
-            - 'invalid': Contain source_pks not present in any expected entity
+            - 'invalid': Contain keys not present in any expected entity
     """
     expected_set, actual_set = set(expected), set(actual)
     if expected_set == actual_set:

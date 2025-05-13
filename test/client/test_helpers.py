@@ -142,7 +142,7 @@ def test_query_no_resolution_ok_various_params(
     # Dummy data and source
     testkit = source_from_tuple(
         data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
-        data_pks=["0", "1"],
+        data_keys=["0", "1"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
@@ -161,8 +161,8 @@ def test_query_no_resolution_ok_various_params(
             content=table_to_buffer(
                 pa.Table.from_pylist(
                     [
-                        {"source_pk": "0", "id": 1},
-                        {"source_pk": "1", "id": 2},
+                        {"key": "0", "id": 1},
+                        {"key": "1", "id": 2},
                     ],
                     schema=SCHEMA_MB_IDS,
                 )
@@ -199,7 +199,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     # Dummy data and source
     testkit1 = source_from_tuple(
         data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
-        data_pks=["0", "1"],
+        data_keys=["0", "1"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
@@ -209,7 +209,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
 
     testkit2 = source_from_tuple(
         data_tuple=({"c": "val"}, {"c": "val"}),
-        data_pks=["2", "3"],
+        data_keys=["2", "3"],
         full_name="foo2",
         engine=sqlite_warehouse,
     )
@@ -233,8 +233,8 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
                 content=table_to_buffer(
                     pa.Table.from_pylist(
                         [
-                            {"source_pk": "0", "id": 1},
-                            {"source_pk": "1", "id": 2},
+                            {"key": "0", "id": 1},
+                            {"key": "1", "id": 2},
                         ],
                         schema=SCHEMA_MB_IDS,
                     )
@@ -245,8 +245,8 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
                 content=table_to_buffer(
                     pa.Table.from_pylist(
                         [
-                            {"source_pk": "2", "id": 1},
-                            {"source_pk": "3", "id": 2},
+                            {"key": "2", "id": 1},
+                            {"key": "3", "id": 2},
                         ],
                         schema=SCHEMA_MB_IDS,
                     )
@@ -263,7 +263,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     assert len(results) == 4
     assert {
         # All columns automatically selected for `foo`
-        "foo_pk",
+        "foo_key",
         "foo_a",
         "foo_b",
         # Only one column selected for `foo2`
@@ -298,7 +298,7 @@ def test_query_combine_type(
     # Dummy data and source
     testkit1 = source_from_tuple(
         data_tuple=({"col": 20}, {"col": 40}, {"col": 60}),
-        data_pks=["0", "1", "2"],
+        data_keys=["0", "1", "2"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
@@ -308,7 +308,7 @@ def test_query_combine_type(
 
     testkit2 = source_from_tuple(
         data_tuple=({"col": "val1"}, {"col": "val2"}, {"col": "val3"}),
-        data_pks=["3", "4", "5"],
+        data_keys=["3", "4", "5"],
         full_name="bar",
         engine=sqlite_warehouse,
     )
@@ -332,9 +332,9 @@ def test_query_combine_type(
                 content=table_to_buffer(
                     pa.Table.from_pylist(
                         [
-                            {"source_pk": "0", "id": 1},
-                            {"source_pk": "1", "id": 1},
-                            {"source_pk": "2", "id": 2},
+                            {"key": "0", "id": 1},
+                            {"key": "1", "id": 1},
+                            {"key": "2", "id": 2},
                         ],
                         schema=SCHEMA_MB_IDS,
                     )
@@ -346,9 +346,9 @@ def test_query_combine_type(
                     pa.Table.from_pylist(
                         [
                             # Creating a duplicate value for the same Matchbox ID
-                            {"source_pk": "3", "id": 2},
-                            {"source_pk": "3", "id": 2},
-                            {"source_pk": "4", "id": 3},
+                            {"key": "3", "id": 2},
+                            {"key": "3", "id": 2},
+                            {"key": "4", "id": 3},
                         ],
                         schema=SCHEMA_MB_IDS,
                     )
@@ -374,9 +374,9 @@ def test_query_combine_type(
 
     assert len(results) == expected_len
     assert {
-        "foo_pk",
+        "foo_key",
         "foo_col",
-        "bar_pk",
+        "bar_key",
         "bar_col",
         "id",
     } == set(results.columns)
@@ -387,7 +387,7 @@ def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engi
     # Dummy data and source
     testkit = source_from_tuple(
         data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
-        data_pks=["0", "1"],
+        data_keys=["0", "1"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
@@ -408,7 +408,7 @@ def test_query_unindexed_fields(matchbox_api: MockRouter, sqlite_warehouse: Engi
             200,
             content=table_to_buffer(
                 pa.Table.from_pylist(
-                    [{"source_pk": "0", "id": 1}],
+                    [{"keys": "0", "id": 1}],
                     schema=SCHEMA_MB_IDS,
                 )
             ).read(),
@@ -480,9 +480,7 @@ def test_query_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine
         return_value=Response(
             200,
             content=table_to_buffer(
-                pa.Table.from_pylist(
-                    [{"source_pk": "0", "id": 1}], schema=SCHEMA_MB_IDS
-                )
+                pa.Table.from_pylist([{"keys": "0", "id": 1}], schema=SCHEMA_MB_IDS)
             ).read(),
         )
     )
@@ -498,7 +496,7 @@ def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Dummy data and source
     source_testkit = source_from_tuple(
         data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
-        data_pks=["0", "1"],
+        data_keys=["0", "1"],
         full_name="foo",
         engine=sqlite_warehouse,
     )
@@ -516,8 +514,8 @@ def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             content=table_to_buffer(
                 pa.Table.from_pylist(
                     [
-                        {"source_pk": "0", "id": 1},
-                        {"source_pk": "1", "id": 2},
+                        {"key": "0", "id": 1},
+                        {"key": "1", "id": 2},
                     ],
                     schema=SCHEMA_MB_IDS,
                 )
@@ -587,7 +585,7 @@ def test_index_success(
     # Call the index function
     index(
         full_name=source.source_config.address.full_name,
-        db_pk=source.source_config.db_pk,
+        key=source.source_config.key,
         engine=sqlite_warehouse,
     )
 
@@ -658,7 +656,7 @@ def test_index_with_columns(
     # Call index with column definition
     index(
         full_name=source.source_config.address.full_name,
-        db_pk=source.source_config.db_pk,
+        key=source.source_config.key,
         engine=sqlite_warehouse,
         columns=columns,
     )
@@ -721,7 +719,7 @@ def test_index_upload_failure(
     with pytest.raises(MatchboxServerFileError):
         index(
             full_name=source.source_config.address.full_name,
-            db_pk=source.source_config.db_pk,
+            key=source.source_config.key,
             engine=sqlite_warehouse,
         )
 
@@ -740,7 +738,7 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
     # Dummy data and source
     source_testkit = source_from_tuple(
         data_tuple=({"company_name": "Company A"}, {"company_name": "Company B"}),
-        data_pks=["1", "2"],
+        data_keys=["1", "2"],
         full_name="test_companies",
         engine=sqlite_warehouse,
     )
@@ -775,7 +773,7 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
         # Call index with batch_size
         index(
             full_name=source.address.full_name,
-            db_pk=source.db_pk,
+            key=source.key,
             engine=sqlite_warehouse,
             batch_size=1,
         )
@@ -824,7 +822,7 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         target1,
         target2,
         source=source,
-        source_pk="pk1",
+        key="key1",
         resolution="foo",
     )
 
@@ -843,7 +841,7 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             ("target_warehouse_hashes_b64", expected_hash_b64),
             ("source_full_name", "test.source_config"),
             ("source_warehouse_hash_b64", expected_hash_b64),
-            ("source_pk", "pk1"),
+            ("key", "key1"),
             ("resolution", "foo"),
         ]
     )
@@ -870,7 +868,7 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         match(
             target,
             source=source,
-            source_pk="pk1",
+            key="key1",
             resolution="foo",
         )
 
@@ -896,6 +894,6 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         match(
             target,
             source=source,
-            source_pk="pk1",
+            key="key1",
             resolution="foo",
         )

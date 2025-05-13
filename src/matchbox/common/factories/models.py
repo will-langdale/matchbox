@@ -852,13 +852,13 @@ def model_factory(
 def query_to_model_factory(
     left_resolution: ResolutionName,
     left_query: pa.Table,
-    left_source_pks: dict[SourceResolutionName, str],
+    left_keys: dict[SourceResolutionName, str],
     true_entities: tuple[SourceEntity, ...],
     name: ModelResolutionName | None = None,
     description: str | None = None,
     right_resolution: ResolutionName | None = None,
     right_query: pa.Table | None = None,
-    right_source_pks: dict[SourceResolutionName, str] | None = None,
+    right_keys: dict[SourceResolutionName, str] | None = None,
     prob_range: tuple[float, float] = (0.8, 1.0),
     seed: int = 42,
 ) -> ModelTestkit:
@@ -867,16 +867,16 @@ def query_to_model_factory(
     Args:
         left_resolution: Name of the resolution used for the left query
         left_query: PyArrow table with left query data
-        left_source_pks: Dictionary mapping source resolution names to primary key
-            column names in left query
+        left_keys: Dictionary mapping source resolution names to key column names
+            in left query
         true_entities: Ground truth SourceEntity objects to use for generating
             probabilities
         name: Name of the model
         description: Description of the model
         right_resolution: Name of the resolution used for the right query
         right_query: PyArrow table with right query data, if creating a linker
-        right_source_pks: Dictionary mapping source resolution names to primary key
-            column names in right query
+        right_keys: Dictionary mapping source resolution names to key column names
+            in right query
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility
 
@@ -888,13 +888,13 @@ def query_to_model_factory(
         raise ValueError("Probabilities must be increasing values between 0 and 1")
 
     # Check if right-side arguments are consistently provided
-    right_args = [right_resolution, right_query, right_source_pks]
+    right_args = [right_resolution, right_query, right_keys]
     if any(arg is not None for arg in right_args) and not all(
         arg is not None for arg in right_args
     ):
         raise ValueError(
             "When providing right-side arguments, all of right_resolution, "
-            "right_query, and right_source_pks must be provided"
+            "right_query, and right_keys must be provided"
         )
 
     # Create a Faker instance with the seed
@@ -905,10 +905,10 @@ def query_to_model_factory(
     model_type = ModelType.LINKER if right_query is not None else ModelType.DEDUPER
 
     # Create left and right ClusterEntity sets
-    left_clusters = query_to_cluster_entities(left_query, left_source_pks)
+    left_clusters = query_to_cluster_entities(left_query, left_keys)
 
-    if right_query is not None and right_source_pks is not None:
-        right_clusters = query_to_cluster_entities(right_query, right_source_pks)
+    if right_query is not None and right_keys is not None:
+        right_clusters = query_to_cluster_entities(right_query, right_keys)
     else:
         right_clusters = None
 

@@ -357,7 +357,7 @@ class SourceConfig(BaseModel):
     name: SourceResolutionName = Field(
         default_factory=lambda data: str(data["address"])
     )
-    db_pk: str
+    key: str
     # Columns need to be set at creation, or initialised with `.default_columns()`
     columns: tuple[SourceColumn, ...] | None = None
 
@@ -370,16 +370,16 @@ class SourceConfig(BaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Custom equality which ignores engine."""
-        return (self.address, self.name, self.db_pk, self.columns) == (
+        return (self.address, self.name, self.key, self.columns) == (
             other.address,
             other.name,
-            other.db_pk,
+            other.key,
             other.columns,
         )
 
     def __hash__(self) -> int:
         """Custom hash which ignores engine."""
-        return hash((self.address, self.name, self.db_pk, self.columns))
+        return hash((self.address, self.name, self.key, self.columns))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the SourceConfig object."""
@@ -389,7 +389,7 @@ class SourceConfig(BaseModel):
         obj_copy = SourceConfig(
             address=deepcopy(self.address, memo),
             name=deepcopy(self.name, memo),
-            db_pk=deepcopy(self.db_pk, memo),
+            key=deepcopy(self.key, memo),
             columns=deepcopy(self.columns, memo),
         )
 
@@ -412,23 +412,23 @@ class SourceConfig(BaseModel):
         return self
 
     @needs_engine
-    def get_remote_columns(self, exclude_pk=False) -> dict[str, str]:
+    def get_remote_columns(self, exclude_key=False) -> dict[str, str]:
         """Returns a dictionary of column names and SQLAlchemy types."""
         table = self.to_table()
         return {
             col.name: col.type
             for col in table.columns
-            if (col.name != self.db_pk) or (not exclude_pk)
+            if (col.name != self.key) or (not exclude_key)
         }
 
     @needs_engine
     def default_columns(self) -> "SourceConfig":
         """Returns a new source with default columns.
 
-        Default columns are all from the source warehouse other than `self.db_pk`.
+        Default columns are all from the source warehouse other than `self.key`.
         All other attributes are copied, and its engine (if present) is set.
         """
-        remote_columns = self.get_remote_columns(exclude_pk=True)
+        remote_columns = self.get_remote_columns(exclude_key=True)
         columns_attribute = (
             SourceColumn(name=col_name, type=str(col_type))
             for col_name, col_type in remote_columns.items()
@@ -437,7 +437,7 @@ class SourceConfig(BaseModel):
         new_source = SourceConfig(
             address=self.address,
             name=self.name,
-            db_pk=self.db_pk,
+            key=self.key,
             columns=columns_attribute,
         )
 
@@ -463,9 +463,9 @@ class SourceConfig(BaseModel):
         """
         remote_columns = self.get_remote_columns()
 
-        if self.db_pk not in remote_columns:
+        if self.key not in remote_columns:
             raise MatchboxSourceColumnError(
-                f"Primary key {self.db_pk} not available in {self.address}"
+                f"Key {self.key} not available in {self.address}"
             )
 
         if columns:
@@ -493,7 +493,7 @@ class SourceConfig(BaseModel):
     def _select(
         self,
         fields: list[str] | None = None,
-        pks: list[T] | None = None,
+        keys: list[T] | None = None,
         limit: int | None = None,
     ) -> str:
         """Returns a SQL query to retrieve data from the source."""
@@ -504,13 +504,13 @@ class SourceConfig(BaseModel):
         if not fields:
             fields = [col.name for col in self.columns]
 
-        if self.db_pk not in fields:
-            fields.append(self.db_pk)
+        if self.key not in fields:
+            fields.append(self.key)
 
         def _get_column(col_name: str) -> ColumnElement:
-            """Helper to get a column with proper casting and labeling for PKs."""
+            """Helper to get a column with proper casting and labeling for keys."""
             col = table.columns[col_name]
-            if col_name == self.db_pk:
+            if col_name == self.key:
                 return cast(col, String).label(self.address.format_column(col_name))
             return col
 
@@ -522,10 +522,10 @@ class SourceConfig(BaseModel):
 
         stmt = select(*select_cols)
 
-        if pks:
-            string_pks = [str(pk) for pk in pks]
-            pk_col = table.columns[self.db_pk]
-            stmt = stmt.where(cast(pk_col, String).in_(string_pks))
+        if keys:
+            string_keys = [str(key) for key in keys]
+            key_col = table.columns[self.key]
+            stmt = stmt.where(cast(key_col, String).in_(string_keys))
 
         if limit:
             stmt = stmt.limit(limit)
@@ -540,7 +540,7 @@ class SourceConfig(BaseModel):
     def to_arrow(
         self,
         fields: list[str] | None = None,
-        pks: list[T] | None = None,
+        keys: list[T] | None = None,
         limit: int | None = None,
         *,
         return_batches: bool = False,
@@ -552,7 +552,7 @@ class SourceConfig(BaseModel):
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
-            pks: List of primary keys to filter by. If None, retrieves all rows.
+            keys: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
             return_batches:
                 * If True, return an iterator that yields each batch separately
@@ -568,7 +568,7 @@ class SourceConfig(BaseModel):
                 * If return_batches is False: a PyArrow Table
                 * If return_batches is True: an iterator of PyArrow Tables
         """
-        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        stmt = self._select(fields=fields, keys=keys, limit=limit)
         return sql_to_df(
             stmt,
             self._engine,
@@ -583,7 +583,7 @@ class SourceConfig(BaseModel):
     def to_polars(
         self,
         fields: list[str] | None = None,
-        pks: list[T] | None = None,
+        keys: list[T] | None = None,
         limit: int | None = None,
         *,
         return_batches: bool = False,
@@ -595,7 +595,7 @@ class SourceConfig(BaseModel):
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
-            pks: List of primary keys to filter by. If None, retrieves all rows.
+            keys: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
             return_batches:
                 * If True, return an iterator that yields each batch separately
@@ -611,7 +611,7 @@ class SourceConfig(BaseModel):
                 * If return_batches is False: a Polars DataFrame
                 * If return_batches is True: an iterator of Polars DataFrames
         """
-        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        stmt = self._select(fields=fields, keys=keys, limit=limit)
         return sql_to_df(
             stmt,
             self._engine,
@@ -626,7 +626,7 @@ class SourceConfig(BaseModel):
     def to_pandas(
         self,
         fields: list[str] | None = None,
-        pks: list[T] | None = None,
+        keys: list[T] | None = None,
         limit: int | None = None,
         *,
         return_batches: bool = False,
@@ -638,7 +638,7 @@ class SourceConfig(BaseModel):
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
-            pks: List of primary keys to filter by. If None, retrieves all rows.
+            keys: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
             return_batches:
                 * If True, return an iterator that yields each batch separately
@@ -654,7 +654,7 @@ class SourceConfig(BaseModel):
                 * If return_batches is False: a Pandas DataFrame
                 * If return_batches is True: an iterator of Pandas DataFrames
         """
-        stmt = self._select(fields=fields, pks=pks, limit=limit)
+        stmt = self._select(fields=fields, keys=keys, limit=limit)
         return sql_to_df(
             stmt,
             self._engine,
@@ -693,7 +693,7 @@ class SourceConfig(BaseModel):
 
         slct_stmt = select(
             *[source_table.c[col] for col in cols_to_index],
-            source_table.c[self.db_pk].cast(String).label("source_pk"),
+            source_table.c[self.key].cast(String).label("keys"),
         )
 
         def _process_batch(
@@ -707,13 +707,13 @@ class SourceConfig(BaseModel):
                 cols_to_index: Columns to include in the hash
 
             Returns:
-                Polars DataFrame with hash and source_pk columns
+                Polars DataFrame with hash and key columns
 
             Raises:
-                ValueError: If any source_pk values are null
+                ValueError: If any key values are null
             """
-            if batch["source_pk"].is_null().any():
-                raise ValueError("source_pk column contains null values")
+            if batch["keys"].is_null().any():
+                raise ValueError("key column contains null values")
 
             row_hashes = hash_rows(
                 df=batch,
@@ -722,7 +722,7 @@ class SourceConfig(BaseModel):
             )
 
             result = batch.with_columns(row_hashes.alias("hash")).select(
-                ["hash", "source_pk"]
+                ["hash", "keys"]
             )
 
             return result
@@ -758,7 +758,7 @@ class SourceConfig(BaseModel):
 
             processed_df = _process_batch(raw_result, cols_to_index)
 
-        return processed_df.group_by("hash").agg(pl.col("source_pk")).to_arrow()
+        return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
 
 
 class Match(BaseModel):

@@ -126,7 +126,7 @@ class SourceTestkit(BaseModel):
     def query_backend(self) -> pa.Table:
         """Return a PyArrow table in the same format as the SCHEMA_MB_IDS DTO."""
         return pa.Table.from_arrays(
-            [self.data["id"], self.data["pk"]], names=["id", "source_pk"]
+            [self.data["id"], self.data["key"]], names=["id", "key"]
         )
 
     def to_warehouse(self, engine: Engine | None) -> None:
@@ -164,7 +164,7 @@ class LinkedSourcesTestkit(BaseModel):
             entity: SourceEntity, criteria: dict[str, int], compare: Callable
         ) -> bool:
             return all(
-                compare(len(entity.get_source_pks(src)), count)
+                compare(len(entity.get_keys(src)), count)
                 for src, count in criteria.items()
             )
 
@@ -236,18 +236,20 @@ def generate_rows(
 ) -> tuple[
     dict[str, list], dict[int, list[str]], dict[int, list[str]], dict[int, bytes]
 ]:
-    """Generate raw data rows. Adds an ID shared by unique rows, and a PK for every row.
+    """Generate raw data rows.
+
+    Adds an ID shared by unique rows, and a key for every row.
 
     Returns a tuple of:
 
     * raw_data: Dictionary of column arrays for DataFrame creation
-    * entity_pks: Maps SourceEntity.id to the set of PKs where that entity appears
-    * id_pks: Maps each ID to the set of PKs where that row appears
+    * entity_keys: Maps SourceEntity.id to the set of keys where that entity appears
+    * id_keys: Maps each ID to the set of keys where that row appears
     * id_hashes: Maps each ID to its hash value
 
     For example, if this is the raw data:
 
-    | id | pk | company_name |
+    | id | key | company_name |
     |----|----|--------------|
     | 1  | 1  | alpha co     |
     | 2  | 2  | alpha ltd    |
@@ -259,14 +261,14 @@ def generate_rows(
     | 4  | 8  | beta ltd     |
 
 
-    Entity PKs would be this, because there are two true SourceEntities:
+    Entity keys would be this, because there are two true SourceEntities:
 
     {
         1: [1, 2, 3, 4],
         2: [5, 6, 7, 8],
     }
 
-    And ID PKs would be this, because there are four unique rows:
+    And ID keys would be this, because there are four unique rows:
 
     {
         1: [1, 3],
@@ -275,32 +277,32 @@ def generate_rows(
         4: [6, 8],
     }
     """
-    raw_data = {"pk": [], "id": []}
+    raw_data = {"key": [], "id": []}
     for feature in features:
         raw_data[feature.name] = []
 
     # Track entity locations and row identities
-    entity_pks = {entity.id: [] for entity in selected_entities}
-    id_pks = {}
+    entity_keys = {entity.id: [] for entity in selected_entities}
+    id_keys = {}
     id_hashes = {}
     value_to_id = {}
 
     def add_row(entity_id: int, values: tuple) -> None:
-        """Add a row of data, handling IDs and PKs."""
-        pk = str(generator.uuid4())
-        entity_pks[entity_id].append(pk)
+        """Add a row of data, handling IDs and keys."""
+        key = str(generator.uuid4())
+        entity_keys[entity_id].append(key)
         row_hash = hash_values(*(str(v) for v in values))
 
         if values not in value_to_id:
             mb_id = generator.random_number(digits=16)
             value_to_id[values] = mb_id
-            id_pks[mb_id] = []
+            id_keys[mb_id] = []
             id_hashes[mb_id] = row_hash
 
         row_id = value_to_id[values]
-        id_pks[row_id].append(pk)
+        id_keys[row_id].append(key)
 
-        raw_data["pk"].append(pk)
+        raw_data["key"].append(key)
         raw_data["id"].append(row_id)
         for feature, value in zip(features, values, strict=True):
             raw_data[feature.name].append(value)
@@ -324,7 +326,7 @@ def generate_rows(
         for values in product(*possible_values):
             add_row(entity.id, values)
 
-    return raw_data, entity_pks, id_pks, id_hashes
+    return raw_data, entity_keys, id_keys, id_hashes
 
 
 @cache
@@ -340,8 +342,8 @@ def generate_source(
     Returns:
         - data: PyArrow table with generated data
         - data_hashes: PyArrow table with hash groups
-        - entity_pks: SourceEntity ID -> list of PKs mapping
-        - row_pks: Results row ID -> list of PKs mapping for identical rows
+        - entity_keys: SourceEntity ID -> list of keys mapping
+        - row_keys: Results row ID -> list of keys mapping for identical rows
     """
     # Select or generate entities
     if seed_entities is None:
@@ -354,7 +356,7 @@ def generate_source(
         )
 
     # Generate initial data
-    raw_data, entity_pks, row_pks, id_hashes = generate_rows(
+    raw_data, entity_keys, row_keys, id_hashes = generate_rows(
         generator, selected_entities, features
     )
 
@@ -363,19 +365,19 @@ def generate_source(
 
     # Handle repetition
     df = pd.concat([df] * (repetition + 1), ignore_index=True)
-    entity_pks = {eid: pks * (repetition + 1) for eid, pks in entity_pks.items()}
-    row_pks = {rid: pks * (repetition + 1) for rid, pks in row_pks.items()}
+    entity_keys = {eid: keys * (repetition + 1) for eid, keys in entity_keys.items()}
+    row_keys = {rid: keys * (repetition + 1) for rid, keys in row_keys.items()}
 
     # Create hash groups
-    source_pks = []
+    keys = []
     hashes = []
-    for row_id, group_pks in row_pks.items():
-        source_pks.append(list(group_pks))
+    for row_id, group_keys in row_keys.items():
+        keys.append(list(group_keys))
         hashes.append(id_hashes[row_id])
 
     data_hashes = pa.Table.from_pydict(
         {
-            "source_pk": source_pks,
+            "keys": keys,
             "hash": hashes,
         },
         schema=SCHEMA_INDEX,
@@ -383,16 +385,16 @@ def generate_source(
 
     # Update variation counts
     for entity in selected_entities:
-        if entity.id in entity_pks:
+        if entity.id in entity_keys:
             # Count unique row IDs this entity appears in
-            entity_rows = df[df["pk"].isin(entity_pks[entity.id])]
+            entity_rows = df[df["key"].isin(entity_keys[entity.id])]
             entity.total_unique_variations = len(set(entity_rows["id"]))
 
     return (
         pa.Table.from_pandas(df, preserve_index=False),
         data_hashes,
-        entity_pks,
-        row_pks,
+        entity_keys,
+        row_keys,
     )
 
 
@@ -437,7 +439,7 @@ def source_factory(
     )
 
     # Generate data using the base entities
-    data, data_hashes, entity_pks, row_pks = generate_source(
+    data, data_hashes, entity_keys, row_keys = generate_source(
         generator=generator,
         n_true_entities=n_true_entities,
         features=features,
@@ -448,23 +450,23 @@ def source_factory(
     # Create source entities with references
     source_entities = []
     for entity in base_entities:
-        pks = entity_pks.get(entity.id, [])
-        if pks:
-            entity.add_source_reference(full_name, pks)
+        keys = entity_keys.get(entity.id, [])
+        if keys:
+            entity.add_source_reference(full_name, keys)
             source_entities.append(entity)
 
-    # Create ClusterEntity objects from row_pks
+    # Create ClusterEntity objects from row_keys
     results_entities = [
         ClusterEntity(
             id=row_id,
-            source_pks=EntityReference({full_name: frozenset(pks)}),
+            keys=EntityReference({full_name: frozenset(keys)}),
         )
-        for row_id, pks in row_pks.items()
+        for row_id, keys in row_keys.items()
     ]
 
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
-        db_pk="pk",
+        key="key",
         columns=(
             SourceColumn(name=feature.name, type=feature.sql_type)
             for feature in features
@@ -482,7 +484,7 @@ def source_factory(
 
 def source_from_tuple(
     data_tuple: tuple[dict[str, Any], ...],
-    data_pks: tuple[Any],
+    data_keys: tuple[Any],
     full_name: str | None = None,
     engine: Engine | None = None,
     seed: int = 42,
@@ -501,23 +503,23 @@ def source_from_tuple(
 
     # Create source entities with references
     source_entities: list[SourceEntity] = []
-    for entity, pk in zip(base_entities, data_pks, strict=True):
-        entity.add_source_reference(full_name, [pk])
+    for entity, key in zip(base_entities, data_keys, strict=True):
+        entity.add_source_reference(full_name, [key])
         source_entities.append(entity)
     entity_ids = {entity.id for entity in source_entities}
 
-    # Create ClusterEntity objects from row_pks
+    # Create ClusterEntity objects from row_keys
     results_entities = [
         ClusterEntity(
             id=entity_id,
-            source_pks=EntityReference({full_name: frozenset([pk])}),
+            keys=EntityReference({full_name: frozenset([key])}),
         )
-        for pk, entity_id in zip(data_pks, entity_ids, strict=True)
+        for key, entity_id in zip(data_keys, entity_ids, strict=True)
     ]
 
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
-        db_pk="pk",
+        key="key",
         columns=(
             SourceColumn(name=k, type=infer_sql_type_from_type(type(v)))
             for k, v in data_tuple[0].items()
@@ -529,16 +531,16 @@ def source_from_tuple(
     data_hashes = pa.Table.from_pydict(
         {
             # Assumes that string conversion will be the same as the SQL warehouse's
-            "source_pk": [str(dpk) for dpk in data_pks],
+            "keys": [str(dkey) for dkey in data_keys],
             "hash": hashes,
         },
         schema=SCHEMA_INDEX,
     )
 
     raw_data = pa.Table.from_pylist(list(data_tuple))
-    raw_pks = pa.array(data_pks)
+    raw_keys = pa.array(data_keys)
 
-    data = raw_data.append_column("id", [entity_ids]).append_column("pk", raw_pks)
+    data = raw_data.append_column("id", [entity_ids]).append_column("key", raw_keys)
 
     return SourceTestkit(
         source_config=source_config,
@@ -700,7 +702,7 @@ def linked_sources_factory(
     # Generate sources
     for parameters in source_parameters:
         # Generate source data using seed entities
-        data, data_hashes, entity_pks, row_pks = generate_source(
+        data, data_hashes, entity_keys, row_keys = generate_source(
             generator=generator,
             features=tuple(parameters.features),
             n_true_entities=parameters.n_true_entities,
@@ -708,13 +710,13 @@ def linked_sources_factory(
             seed_entities=all_entities,
         )
 
-        # Create ClusterEntity objects from row_pks
+        # Create ClusterEntity objects from row_keys
         results_entities = [
             ClusterEntity(
                 id=row_id,
-                source_pks=EntityReference({parameters.full_name: frozenset(pks)}),
+                keys=EntityReference({parameters.full_name: frozenset(keys)}),
             )
-            for row_id, pks in row_pks.items()
+            for row_id, keys in row_keys.items()
         ]
 
         # Create source
@@ -722,7 +724,7 @@ def linked_sources_factory(
             address=SourceAddress.compose(
                 full_name=parameters.full_name, engine=parameters.engine
             ),
-            db_pk="pk",
+            key="key",
             columns=(
                 SourceColumn(name=feature.name, type=feature.sql_type)
                 for feature in parameters.features
@@ -739,8 +741,8 @@ def linked_sources_factory(
         )
 
         # Update entities with source references
-        for entity_id, pks in entity_pks.items():
+        for entity_id, keys in entity_keys.items():
             entity = true_entity_lookup[entity_id]
-            entity.add_source_reference(parameters.full_name, pks)
+            entity.add_source_reference(parameters.full_name, keys)
 
     return linked

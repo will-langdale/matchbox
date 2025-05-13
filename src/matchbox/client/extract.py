@@ -13,12 +13,12 @@ def _combined_colname(source: SourceConfig, col_name: str):
     return source.address.full_name.replace(".", "_") + "_" + col_name
 
 
-def primary_keys_map(
+def key_map(
     resolution: ModelResolutionName,
     engine: Engine | None = None,
     full_names: list[str] | None = None,
 ) -> ArrowTable:
-    """Return matchbox IDs to source IDs mapping, optionally filtering."""
+    """Return matchbox IDs to source key mapping, optionally filtering."""
     # Get all sources in scope of the resolution
     sources = _handler.get_resolution_source_configs(name=resolution)
 
@@ -39,7 +39,7 @@ def primary_keys_map(
         raise MatchboxSourceNotFoundError("No compatible source was found")
 
     source_mb_ids: list[ArrowTable] = []
-    db_pks: dict[str, str] = {}
+    keys: dict[str, str] = {}
 
     for s in sources:
         # Get Matchbox IDs from backend
@@ -50,16 +50,12 @@ def primary_keys_map(
             )
         )
 
-        db_pks[s.address.full_name] = s.db_pk
+        keys[s.address.full_name] = s.key
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]
     mapping = mapping.rename_columns(
-        {
-            "source_pk": _combined_colname(
-                sources[0], db_pks[sources[0].address.full_name]
-            )
-        }
+        {"key": _combined_colname(sources[0], keys[sources[0].address.full_name])}
     )
     if len(sources) > 1:
         for s, mb_ids in zip(sources[1:], source_mb_ids[1:], strict=True):
@@ -67,7 +63,7 @@ def primary_keys_map(
                 right_table=mb_ids, keys="id", join_type="full outer"
             )
             mapping = mapping.rename_columns(
-                {"source_pk": _combined_colname(s, db_pks[s.address.full_name])}
+                {"key": _combined_colname(s, keys[s.address.full_name])}
             )
 
     return mapping

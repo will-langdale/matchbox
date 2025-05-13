@@ -2,7 +2,7 @@
 
 ## Match
 
-Given a primary key and a source, retrieves all primary keys that share its cluster in both the source and target. Useful for making ad-hoc queries about specific items of data.
+Given a key and a source, retrieves all keys that share its cluster in both the source and target. Useful for making ad-hoc queries about specific items of data.
 
 === "Example"
     ```python
@@ -15,7 +15,7 @@ Given a primary key and a source, retrieves all primary keys that share its clus
     mb.match(
         select("datahub_companies", engine=engine),
         source=select("companies_house", engine=engine),
-        source_pk="8534735",
+        key="8534735",
         resolution="last_linker",
     )
     ```

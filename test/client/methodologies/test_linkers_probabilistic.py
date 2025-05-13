@@ -44,12 +44,14 @@ def configure_weighted_probabilistic(
     """
 
     left_fields = [
-        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
+        c.name
+        for c in left_testkit.source_config.columns
+        if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
         for c in right_testkit.source_config.columns
-        if c.name not in ("pk", "id")
+        if c.name not in ("key", "id")
     ]
 
     # Generate geometric series of weights
@@ -93,14 +95,16 @@ def configure_splink_probabilistic(
         A dictionary with validated settings for SplinkLinker
     """
 
-    # Extract column names excluding pk and id
+    # Extract column names excluding key and id
     left_fields = [
-        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
+        c.name
+        for c in left_testkit.source_config.columns
+        if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
         for c in right_testkit.source_config.columns
-        if c.name not in ("pk", "id")
+        if c.name not in ("key", "id")
     ]
 
     # Create comparison functions based on field type
@@ -229,9 +233,9 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         description="Testing probability generation",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_data=left_source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_data=right_source.query.to_pandas().drop("key", axis=1),
         right_resolution="source_right",
     )
 

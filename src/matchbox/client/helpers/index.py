@@ -23,7 +23,7 @@ def _process_columns(
 
 def index(
     full_name: str,
-    db_pk: str,
+    key: str,
     engine: Engine,
     name: SourceResolutionName | None = None,
     columns: list[str] | list[dict[str, dict[str, str]]] | None = None,
@@ -33,7 +33,7 @@ def index(
 
     Args:
         full_name: the full name of the source
-        db_pk: the primary key of the source
+        key: the unique identifier of the entity the source config describes
         engine: the engine to connect to a data warehouse
         name: a custom resolution name
             If missing, will use the default name for a `SourceConfig`
@@ -71,13 +71,13 @@ def index(
             address=address,
             name=name,
             columns=columns,
-            db_pk=db_pk,
+            key=key,
         )
     else:
         source_config = SourceConfig(
             address=address,
             columns=columns,
-            db_pk=db_pk,
+            key=key,
         )
 
     source_config.set_engine(engine)

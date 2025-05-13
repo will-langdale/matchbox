@@ -29,9 +29,9 @@ from matchbox.server.postgresql.db import (
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
-    ClusterSourcePK,
+    ClusterSourceKey,
     Contains,
-    PKSpace,
+    KeySpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
@@ -77,8 +77,8 @@ class FilteredClusters(BaseModel):
             if self.has_source is not None:
                 if self.has_source:
                     query = query.join(
-                        ClusterSourcePK,
-                        ClusterSourcePK.cluster_id == Clusters.cluster_id,
+                        ClusterSourceKey,
+                        ClusterSourceKey.cluster_id == Clusters.cluster_id,
                     )
                 else:
                     query = query.join(
@@ -146,7 +146,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         MBDB.settings = settings
         MBDB.run_migrations()
 
-        PKSpace.initialise()
+        KeySpace.initialise()
 
         self.sources = SourceConfigs
         self.models = FilteredResolutions(sources=False, humans=False, models=True)
@@ -177,14 +177,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def match(  # noqa: D102
         self,
-        source_pk: str,
+        key: str,
         source: SourceAddress,
         targets: list[SourceAddress],
         resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
-            source_pk=source_pk,
+            key=key,
             source=source,
             targets=targets,
             resolution=resolution,
@@ -337,7 +337,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def drop(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.drop_database()
-            PKSpace.initialise()
+            KeySpace.initialise()
         else:
             raise MatchboxDeletionNotConfirmed(
                 "This operation will drop the entire database and recreate it."
@@ -348,7 +348,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def clear(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.clear_database()
-            PKSpace.initialise()
+            KeySpace.initialise()
         else:
             raise MatchboxDeletionNotConfirmed(
                 "This operation will drop all rows in the database but not the "

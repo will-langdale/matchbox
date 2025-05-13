@@ -5,6 +5,7 @@ import pyarrow.compute as pc
 import pytest
 from sqlalchemy import Engine
 
+from matchbox.common.arrow import SCHEMA_MB_IDS
 from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
@@ -492,7 +493,7 @@ class TestMatchboxBackend:
             df_crn_full = self.backend.query(source=crn_testkit.source_config.address)
 
             assert df_crn_full.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn_full.column_names) == {"id", "source_pk"}
+            assert set(df_crn_full.column_names) == set(SCHEMA_MB_IDS.names)
 
     def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""
@@ -506,7 +507,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn.column_names) == {"id", "source_pk"}
+            assert set(df_crn.column_names) == set(SCHEMA_MB_IDS.names)
 
             sources_dict = dag.get_sources_for_model("naive_test.crn")
             assert len(sources_dict) == 1
@@ -530,7 +531,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn.column_names) == {"id", "source_pk"}
+            assert set(df_crn.column_names) == set(SCHEMA_MB_IDS.names)
 
             df_duns = self.backend.query(
                 source=duns_testkit.source_config.address,
@@ -539,7 +540,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_duns, pa.Table)
             assert df_duns.num_rows == duns_testkit.query.num_rows
-            assert set(df_duns.column_names) == {"id", "source_pk"}
+            assert set(df_duns.column_names) == set(SCHEMA_MB_IDS.names)
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -567,7 +568,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn.column_names) == {"id", "source_pk"}
+            assert set(df_crn.column_names) == set(SCHEMA_MB_IDS.names)
 
             df_cdms = self.backend.query(
                 source=cdms_testkit.source_config.address,
@@ -576,7 +577,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_cdms, pa.Table)
             assert df_cdms.num_rows == cdms_testkit.query.num_rows
-            assert set(df_cdms.column_names) == {"id", "source_pk"}
+            assert set(df_cdms.column_names) == set(SCHEMA_MB_IDS.names)
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -624,7 +625,7 @@ class TestMatchboxBackend:
             )[0]
 
             res = self.backend.match(
-                source_pk=next(iter(source_entity.source_pks["duns"])),
+                key=next(iter(source_entity.keys["duns"])),
                 source=duns_testkit.source_config.address,
                 targets=[crn_testkit.source_config.address],
                 resolution=linker_name,
@@ -635,8 +636,8 @@ class TestMatchboxBackend:
             assert res[0].source == duns_testkit.source_config.address
             assert res[0].target == crn_testkit.source_config.address
             assert res[0].cluster is not None
-            assert res[0].source_id == source_entity.source_pks["duns"]
-            assert res[0].target_id == source_entity.source_pks["crn"]
+            assert res[0].source_id == source_entity.keys["duns"]
+            assert res[0].target_id == source_entity.keys["crn"]
 
     def test_match_many_to_one(self):
         """Test that matching data works when the source has more possible IDs."""
@@ -656,7 +657,7 @@ class TestMatchboxBackend:
             )[0]
 
             res = self.backend.match(
-                source_pk=next(iter(source_entity.source_pks["crn"])),
+                key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.source_config.address,
                 targets=[duns_testkit.source_config.address],
                 resolution=linker_name,
@@ -667,8 +668,8 @@ class TestMatchboxBackend:
             assert res[0].source == crn_testkit.source_config.address
             assert res[0].target == duns_testkit.source_config.address
             assert res[0].cluster is not None
-            assert res[0].source_id == source_entity.source_pks["crn"]
-            assert res[0].target_id == source_entity.source_pks["duns"]
+            assert res[0].source_id == source_entity.keys["crn"]
+            assert res[0].target_id == source_entity.keys["duns"]
 
     def test_match_one_to_none(self):
         """Test that matching data works when the target has no IDs."""
@@ -688,7 +689,7 @@ class TestMatchboxBackend:
             )[0]
 
             res = self.backend.match(
-                source_pk=next(iter(source_entity.source_pks["crn"])),
+                key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.source_config.address,
                 targets=[duns_testkit.source_config.address],
                 resolution=linker_name,
@@ -699,8 +700,8 @@ class TestMatchboxBackend:
             assert res[0].source == crn_testkit.source_config.address
             assert res[0].target == duns_testkit.source_config.address
             assert res[0].cluster is not None
-            assert res[0].source_id == source_entity.source_pks["crn"]
-            assert res[0].target_id == source_entity.source_pks.get("duns", set())
+            assert res[0].source_id == source_entity.keys["crn"]
+            assert res[0].target_id == source_entity.keys.get("duns", set())
 
     def test_match_none_to_none(self):
         """Test that matching data works when the supplied key doesn't exist."""
@@ -709,11 +710,11 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
             duns_testkit = dag.sources.get("duns")
 
-            # Use a non-existent source primary key
-            non_existent_pk = "foo"
+            # Use a non-existent source key
+            non_existent_key = "foo"
 
             res = self.backend.match(
-                source_pk=non_existent_pk,
+                key=non_existent_key,
                 source=crn_testkit.source_config.address,
                 targets=[duns_testkit.source_config.address],
                 resolution=linker_name,
@@ -745,7 +746,7 @@ class TestMatchboxBackend:
             )[0]
 
             res = self.backend.match(
-                source_pk=next(iter(source_entity.source_pks["crn"])),
+                key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.source_config.address,
                 targets=[cdms_testkit.source_config.address],
                 resolution=linker_name,
@@ -756,10 +757,10 @@ class TestMatchboxBackend:
             assert isinstance(res[0], Match)
             assert res[0].source == crn_testkit.source_config.address
             assert res[0].target == cdms_testkit.source_config.address
-            assert res[0].source_id == source_entity.source_pks["crn"]
+            assert res[0].source_id == source_entity.keys["crn"]
             # Match does not return true target ids when threshold
             # exceeds match probability
-            assert len(res[0].target_id) < len(source_entity.source_pks["cdms"])
+            assert len(res[0].target_id) < len(source_entity.keys["cdms"])
 
     def test_clear(self):
         """Test deleting all rows in the database."""
