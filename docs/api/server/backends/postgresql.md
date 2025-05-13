@@ -45,8 +45,6 @@ erDiagram
     }
     Resolutions {
         bigint resolution_id PK
-        bytes resolution_hash
-        string type
         string name
         string description
         string type
