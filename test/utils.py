@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Dict
 
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.types import TypeEngine
 
 
 def dataset_parquet_to_local_warehouse(
-    parquetpath: Path, schema: str, table: str, dtype: Dict[str, type]
+    parquetpath: Path, schema: str, table: str, dtype: dict[str, TypeEngine]
 ) -> None:
     """Load dataset parquet file to local warehouse instance.
 
