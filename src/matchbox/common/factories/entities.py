@@ -203,7 +203,7 @@ class EntityReference(frozendict):
         super().__init__({} if mapping is None else mapping)
 
     def __add__(self, other: "EntityReference") -> "EntityReference":
-        """Merge two EntityReferences by unioning PKs for each dataset."""
+        """Merge two EntityReferences by unioning PKs for each source."""
         if not isinstance(other, EntityReference):
             return NotImplemented
 
@@ -283,7 +283,7 @@ class SourcePKMixin:
             name: Name of the source
 
         Returns:
-            Set of primary keys, empty if dataset not found
+            Set of primary keys, empty if source not found
         """
         return set(self.source_pks.get(name, frozenset()))
 
@@ -306,19 +306,19 @@ class SourcePKMixin:
         """
         values: dict[str, dict[str, list[str]]] = {}
 
-        # For each dataset we have PKs for
-        for dataset_name, pks in self.source_pks.items():
-            source = sources.get(dataset_name)
+        # For each source we have PKs for
+        for source_name, pks in self.source_pks.items():
+            source = sources.get(source_name)
 
             if source is None:
-                raise ValueError(f"SourceConfig not found: {dataset_name}")
+                raise ValueError(f"SourceConfig not found: {source_name}")
 
             # Get rows for this entity in this source
             df = source.data.to_pandas()
             entity_rows = df[df["pk"].isin(pks)]
 
             # Get unique values for each feature in this source
-            values[dataset_name] = {
+            values[source_name] = {
                 feature.name: sorted(entity_rows[feature.name].unique())
                 for feature in source.features
             }
@@ -349,7 +349,7 @@ class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         return NotImplemented
 
     def __sub__(self, other: "ClusterEntity") -> dict[str, frozenset[str]]:
-        """Return PKs in self that aren't in other, by dataset.
+        """Return PKs in self that aren't in other, by source.
 
         Used to diff two ClusterEntity objects.
         """
@@ -389,14 +389,14 @@ class ClusterEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         return self.source_pks <= source_entity.source_pks
 
     def similarity_ratio(self, other: "ClusterEntity") -> float:
-        """Return ratio of shared PKs to total PKs across all datasets."""
+        """Return ratio of shared PKs to total PKs across all sources."""
         total_pks = 0
         shared_pks = 0
 
-        # Get all dataset names
-        all_datasets = set(self.source_pks.keys()) | set(other.source_pks.keys())
+        # Get all source names
+        all_sources = set(self.source_pks.keys()) | set(other.source_pks.keys())
 
-        for name in all_datasets:
+        for name in all_sources:
             our_pks = self.source_pks.get(name, frozenset())
             their_pks = other.source_pks.get(name, frozenset())
 
@@ -414,7 +414,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
     id: int = Field(default_factory=lambda: getrandbits(63))  # 64 gives OverflowError
     base_values: dict[str, Any] = Field(description="Feature name -> base value")
     source_pks: EntityReference = Field(
-        description="Dataset to PKs mapping",
+        description="Source to PKs mapping",
         default=EntityReference(mapping=frozenset()),
     )
     total_unique_variations: int = Field(default=0)
@@ -435,15 +435,15 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         """Add or update a source reference.
 
         Args:
-            name: Dataset name
-            pks: List of primary keys for this dataset
+            name: Source name
+            pks: List of primary keys for this source
         """
         mapping = dict(self.source_pks)
         mapping[name] = frozenset(pks)
         self.source_pks = EntityReference(mapping)
 
     def to_cluster_entity(self, *names: SourceResolutionName) -> ClusterEntity | None:
-        """Convert this SourceEntity to a ClusterEntity with the specified datasets.
+        """Convert this SourceEntity to a ClusterEntity with the specified sources.
 
         This method makes diffing really easy. Testing whether ClusterEntity objects
         are subsets of SourceEntity objects is a weaker, logically more fragile test
@@ -453,7 +453,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         ```python
         actual: set[ClusterEntity] = ...
         expected: set[ClusterEntity] = {
-            s.to_cluster_entity("dataset1", "dataset2")
+            s.to_cluster_entity("source1", "source2")
             for s in source_entities
         }
 
@@ -463,11 +463,11 @@ class SourceEntity(BaseModel, EntityIDMixin, SourcePKMixin):
         ```
 
         Args:
-            *names: Names of datasets to include in the ClusterEntity
+            *names: Names of sources to include in the ClusterEntity
 
         Returns:
-            ClusterEntity containing only the specified datasets' PKs, or None
-            if none of the specified datasets are present in this entity.
+            ClusterEntity containing only the specified sources' PKs, or None
+            if none of the specified sources are present in this entity.
         """
         filtered = {
             name: self.source_pks.get(name)

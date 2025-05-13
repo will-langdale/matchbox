@@ -43,9 +43,9 @@ from matchbox.server.postgresql.utils.db import (
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
-    insert_dataset,
     insert_model,
     insert_results,
+    insert_source,
 )
 from matchbox.server.postgresql.utils.query import match, query
 from matchbox.server.postgresql.utils.results import (
@@ -65,7 +65,7 @@ else:
 class FilteredClusters(BaseModel):
     """Wrapper class for filtered cluster queries."""
 
-    has_dataset: bool | None = None
+    has_source: bool | None = None
 
     def count(self) -> int:
         """Counts the number of clusters in the database."""
@@ -74,8 +74,8 @@ class FilteredClusters(BaseModel):
                 func.count(func.distinct(Clusters.cluster_id))
             ).select_from(Clusters)
 
-            if self.has_dataset is not None:
-                if self.has_dataset:
+            if self.has_source is not None:
+                if self.has_source:
                     query = query.join(
                         ClusterSourcePK,
                         ClusterSourcePK.cluster_id == Clusters.cluster_id,
@@ -114,7 +114,7 @@ class FilteredProbabilities(BaseModel):
 class FilteredResolutions(BaseModel):
     """Wrapper class for filtered resolution queries."""
 
-    datasets: bool = False
+    sources: bool = False
     humans: bool = False
     models: bool = False
 
@@ -124,8 +124,8 @@ class FilteredResolutions(BaseModel):
             query = session.query(func.count()).select_from(Resolutions)
 
             filter_list = []
-            if self.datasets:
-                filter_list.append(Resolutions.type == ResolutionNodeType.DATASET)
+            if self.sources:
+                filter_list.append(Resolutions.type == ResolutionNodeType.SOURCE)
             if self.humans:
                 filter_list.append(Resolutions.type == ResolutionNodeType.HUMAN)
             if self.models:
@@ -148,13 +148,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         PKSpace.initialise()
 
-        self.datasets = SourceConfigs
-        self.models = FilteredResolutions(datasets=False, humans=False, models=True)
+        self.sources = SourceConfigs
+        self.models = FilteredResolutions(sources=False, humans=False, models=True)
         self.source_resolutions = FilteredResolutions(
-            datasets=True, humans=False, models=False
+            sources=True, humans=False, models=False
         )
-        self.data = FilteredClusters(has_dataset=True)
-        self.clusters = FilteredClusters(has_dataset=False)
+        self.data = FilteredClusters(has_source=True)
+        self.clusters = FilteredClusters(has_source=False)
         self.merges = Contains
         self.creates = FilteredProbabilities(over_truth=True)
         self.proposes = FilteredProbabilities()
@@ -194,7 +194,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Data management
 
     def index(self, source_config: SourceConfig, data_hashes: Table) -> None:  # noqa: D102
-        insert_dataset(
+        insert_source(
             source_config=source_config,
             data_hashes=data_hashes,
             batch_size=self.settings.batch_size,

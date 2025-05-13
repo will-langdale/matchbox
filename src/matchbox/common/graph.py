@@ -13,7 +13,7 @@ DEFAULT_RESOLUTION: ResolutionName = "__DEFAULT__"
 class ResolutionNodeType(StrEnum):
     """Types of nodes in a resolution."""
 
-    DATASET = "dataset"
+    SOURCE = "source"
     MODEL = "model"
     HUMAN = "human"
 

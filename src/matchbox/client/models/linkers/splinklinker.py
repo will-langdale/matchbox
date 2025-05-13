@@ -195,7 +195,7 @@ class SplinkLinker(Linker):
             right.dtypes
         ):
             raise ValueError(
-                "SplinkLinker requires input datasets to be conformant, meaning they "
+                "SplinkLinker requires input data to be conformant, meaning they "
                 "share the same column names and data formats."
             )
 

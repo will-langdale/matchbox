@@ -28,7 +28,7 @@ class OKMessage(BaseModel):
 class BackendCountableType(StrEnum):
     """Enumeration of supported backend countable types."""
 
-    DATASETS = "datasets"
+    SOURCES = "sources"
     MODELS = "models"
     DATA = "data"
     CLUSTERS = "clusters"

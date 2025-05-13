@@ -57,7 +57,7 @@ class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
 
 
 class Resolutions(CountMixin, MBDB.MatchboxBase):
-    """Table of resolution points: models, datasets and humans.
+    """Table of resolution points: models, sources and humans.
 
     Resolutions produce probabilities or own data in the clusters table.
     """
@@ -92,7 +92,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            "type IN ('model', 'dataset', 'human')",
+            "type IN ('model', 'source', 'human')",
             name="resolution_type_constraints",
         ),
         UniqueConstraint("name", name="resolutions_name_key"),
@@ -140,17 +140,17 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
             return lineage
 
-    def get_lineage_to_dataset(
-        self, dataset: "Resolutions"
+    def get_lineage_to_source(
+        self, source: "Resolutions"
     ) -> tuple[bytes, dict[int, float]]:
-        """Returns the resolution lineage and cached truth values to a dataset."""
-        if dataset.type != ResolutionNodeType.DATASET.value:
+        """Returns the resolution lineage and cached truth values to a source."""
+        if source.type != ResolutionNodeType.SOURCE.value:
             raise ValueError(
-                f"Target resolution must be of type 'dataset', got {dataset.type}"
+                f"Target resolution must be of type 'source', got {source.type}"
             )
 
-        if self.resolution_id == dataset.resolution_id:
-            return {dataset.resolution_id: None}
+        if self.resolution_id == source.resolution_id:
+            return {source.resolution_id: None}
 
         with MBDB.get_session() as session:
             path_query = (
@@ -162,9 +162,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
             results = session.execute(path_query).all()
 
-            if not any(parent == dataset.resolution_id for parent, _ in results):
+            if not any(parent == source.resolution_id for parent, _ in results):
                 raise ValueError(
-                    f"No path between resolution {self.name}, dataset {dataset.name}"
+                    f"No path between resolution {self.name}, source {source.name}"
                 )
 
             lineage = {parent: truth for parent, truth in results}
@@ -176,7 +176,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     def from_name(
         cls,
         name: ResolutionName,
-        res_type: Literal["model", "dataset", "human"] | None = None,
+        res_type: Literal["model", "source", "human"] | None = None,
         session: Session | None = None,
     ) -> "Resolutions":
         """Resolves a model resolution name to a Resolution object.

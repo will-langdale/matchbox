@@ -2,13 +2,13 @@
 
 * Use your team's best matching methods when retrieving entities, always
 * Measurably improve methodologies when they don't work for you
-* When you link new datasets, allow others to use your work easily and securely
+* When you link new data, allow others to use your work easily and securely
 
 [:octicons-download-16: Install client](./client/install.md){ .md-button }
 
 ## For data architects and engineers
 
-* Reconcile entities across disparate datasets
+* Reconcile entities across disparate data
 * Rationalise about the quality of different entity matching pipelines and serve up the best
 * Run matching pipelines without recomputing them every time
 * Lay the foundation for the nouns of a semantic layer

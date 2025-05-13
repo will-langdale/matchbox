@@ -45,8 +45,8 @@ class TestMatchboxBackend:
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""
         with self.scenario(self.backend, "index"):
-            assert isinstance(self.backend.datasets.list_all(), list)
-            assert isinstance(self.backend.datasets.count(), int)
+            assert isinstance(self.backend.sources.list_all(), list)
+            assert isinstance(self.backend.sources.count(), int)
             assert isinstance(self.backend.models.count(), int)
             assert isinstance(self.backend.data.count(), int)
             assert isinstance(self.backend.clusters.count(), int)
@@ -159,7 +159,7 @@ class TestMatchboxBackend:
 
         with self.scenario(self.backend, "link"):
             graph = self.backend.get_resolution_graph()
-            # Nodes: 3 datasets, 3 dedupers, and 3 linkers
+            # Nodes: 3 sources, 3 dedupers, and 3 linkers
             # Edges: 1 per deduper, 2 per linker
             assert len(graph.nodes) == 9
             assert len(graph.edges) == 9
@@ -187,7 +187,7 @@ class TestMatchboxBackend:
             total_sources = len(dag.sources)
             total_models = len(dag.models)
 
-            source_configs_pre_delete = self.backend.datasets.count()
+            source_configs_pre_delete = self.backend.sources.count()
             sources_pre_delete = self.backend.source_resolutions.count()
             models_pre_delete = self.backend.models.count()
             cluster_count_pre_delete = self.backend.clusters.count()
@@ -203,7 +203,7 @@ class TestMatchboxBackend:
             # Perform deletion
             self.backend.delete_resolution(resolution_to_delete, certain=True)
 
-            source_configs_post_delete = self.backend.datasets.count()
+            source_configs_post_delete = self.backend.sources.count()
             sources_post_delete = self.backend.source_resolutions.count()
             models_post_delete = self.backend.models.count()
             cluster_count_post_delete = self.backend.clusters.count()
@@ -764,7 +764,7 @@ class TestMatchboxBackend:
     def test_clear(self):
         """Test deleting all rows in the database."""
         with self.scenario(self.backend, "dedupe"):
-            assert self.backend.datasets.count() > 0
+            assert self.backend.sources.count() > 0
             assert self.backend.data.count() > 0
             assert self.backend.models.count() > 0
             assert self.backend.clusters.count() > 0
@@ -774,7 +774,7 @@ class TestMatchboxBackend:
 
             self.backend.clear(certain=True)
 
-            assert self.backend.datasets.count() == 0
+            assert self.backend.sources.count() == 0
             assert self.backend.data.count() == 0
             assert self.backend.models.count() == 0
             assert self.backend.clusters.count() == 0
@@ -788,7 +788,7 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             count_funcs = [
-                self.backend.datasets.count,
+                self.backend.sources.count,
                 self.backend.models.count,
                 self.backend.data.count,
                 self.backend.clusters.count,

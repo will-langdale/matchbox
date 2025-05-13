@@ -1,4 +1,4 @@
-"""Functions to compare fields in different datasets."""
+"""Functions to compare fields in different sources."""
 
 import sqlglot.expressions as exp
 from sqlglot import parse_one

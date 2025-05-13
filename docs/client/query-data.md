@@ -2,7 +2,7 @@
 
 ## Match
 
-Given a primary key and a source dataset, retrieves all primary keys that share its cluster in both the source and target datasets. Useful for making ad-hoc queries about specific items of data.
+Given a primary key and a source, retrieves all primary keys that share its cluster in both the source and target. Useful for making ad-hoc queries about specific items of data.
 
 === "Example"
     ```python

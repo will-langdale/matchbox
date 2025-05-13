@@ -108,9 +108,7 @@ class Model:
         """Execute the model pipeline and return results."""
         if self.model_config.type == ModelType.LINKER:
             if self.right_data is None:
-                raise MatchboxResolutionNotFoundError(
-                    "Right dataset required for linking"
-                )
+                raise MatchboxResolutionNotFoundError("Right data required for linking")
 
             results = self.model_instance.link(
                 left=self.left_data, right=self.right_data
@@ -142,10 +140,10 @@ def make_model(
         description: Description of the model run
         model_class: Either Linker or Deduper class
         model_settings: Configuration settings for the model
-        left_data: Primary dataset
-        left_resolution: Resolution name for primary model or dataset
-        right_data: Secondary dataset (linking only)
-        right_resolution: Resolution name for secondary model or dataset (linking only)
+        left_data: Primary data
+        left_resolution: Resolution name for primary model or source
+        right_data: Secondary data (linking only)
+        right_resolution: Resolution name for secondary model or source (linking only)
 
     Returns:
         Model: Configured model instance ready for execution

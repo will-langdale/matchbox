@@ -109,10 +109,10 @@ class HashIDMap:
         return pc.take(self.lookup["id"], indices)
 
 
-def insert_dataset(
+def insert_source(
     source_config: SourceConfig, data_hashes: pa.Table, batch_size: int
 ) -> None:
-    """Indexes a dataset from your data warehouse within Matchbox."""
+    """Indexes a source within Matchbox."""
     log_prefix = f"Index {source_config.address.pretty}"
     content_hash = hash_arrow_table(data_hashes)
 
@@ -128,14 +128,14 @@ def insert_dataset(
             resolution = existing_resolution
             # Check if the content hash is the same
             if resolution.hash == content_hash:
-                logger.info("Dataset matches index. Finished", prefix=log_prefix)
+                logger.info("Source data matches index. Finished", prefix=log_prefix)
                 return
         else:
             # Create new resolution
             resolution = Resolutions(
                 name=source_config.name,
                 hash=content_hash,
-                type=ResolutionNodeType.DATASET.value,
+                type=ResolutionNodeType.SOURCE.value,
             )
             session.add(resolution)
             session.flush()

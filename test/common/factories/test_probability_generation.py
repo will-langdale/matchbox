@@ -380,22 +380,22 @@ def test_generate_dummy_probabilities_errors(parameters: dict[str, Any]):
         pytest.param(
             frozenset(
                 [
-                    make_cluster_entity(1, "dataset1", ["1"]),
-                    make_cluster_entity(2, "dataset2", ["A"]),
-                    make_cluster_entity(3, "dataset3", ["X"]),
+                    make_cluster_entity(1, "source1", ["1"]),
+                    make_cluster_entity(2, "source2", ["A"]),
+                    make_cluster_entity(3, "source3", ["X"]),
                 ]
             ),
             None,
             frozenset(
                 [
-                    make_source_entity("dataset1", ["1"], "entity"),
-                    make_source_entity("dataset2", ["A"], "entity"),
-                    make_source_entity("dataset3", ["X"], "entity"),
+                    make_source_entity("source1", ["1"], "entity"),
+                    make_source_entity("source2", ["A"], "entity"),
+                    make_source_entity("source3", ["X"], "entity"),
                 ]
             ),
             (0.8, 1.0),
             {"edge_count": 0, "prob_range": (80, 100)},
-            id="multi_dataset_entity",
+            id="multi_source_entity",
         ),
     ],
 )
@@ -501,18 +501,18 @@ def test_seed_determinism(
 def test_disjoint_set_recovery():
     """Test that DisjointSet can recover the entity structure from probabilities."""
     # Create source entities
-    source1 = make_source_entity("dataset1", ["1", "2", "3"], "entity1")
-    source2 = make_source_entity("dataset1", ["4", "5", "6"], "entity2")
+    source1 = make_source_entity("source1", ["1", "2", "3"], "entity1")
+    source2 = make_source_entity("source1", ["4", "5", "6"], "entity2")
 
     # Create split cluster entities
     clusters = frozenset(
         [
-            make_cluster_entity(1, "dataset1", ["1"]),
-            make_cluster_entity(2, "dataset1", ["2"]),
-            make_cluster_entity(3, "dataset1", ["3"]),
-            make_cluster_entity(4, "dataset1", ["4"]),
-            make_cluster_entity(5, "dataset1", ["5"]),
-            make_cluster_entity(6, "dataset1", ["6"]),
+            make_cluster_entity(1, "source1", ["1"]),
+            make_cluster_entity(2, "source1", ["2"]),
+            make_cluster_entity(3, "source1", ["3"]),
+            make_cluster_entity(4, "source1", ["4"]),
+            make_cluster_entity(5, "source1", ["5"]),
+            make_cluster_entity(6, "source1", ["6"]),
         ]
     )
 
@@ -569,15 +569,15 @@ def test_invalid_probability_ranges(prob_range: tuple[float, float]):
 
 
 def test_complex_entity_recovery():
-    """Test recovery of complex, multi-dataset entity structures."""
-    # Create a source entity spanning multiple datasets
+    """Test recovery of complex, multi-source entity structures."""
+    # Create a source entity spanning multiple sources
     source = SourceEntity(
         base_values={"name": "Complex Entity"},
         source_pks=EntityReference(
             {
-                "dataset1": frozenset(["1", "2"]),
-                "dataset2": frozenset(["A", "B"]),
-                "dataset3": frozenset(["X"]),
+                "source1": frozenset(["1", "2"]),
+                "source2": frozenset(["A", "B"]),
+                "source3": frozenset(["X"]),
             }
         ),
     )
@@ -585,11 +585,11 @@ def test_complex_entity_recovery():
     # Create fragmented ClusterEntity objects
     clusters = frozenset(
         [
-            ClusterEntity(source_pks=EntityReference({"dataset1": frozenset(["1"])})),
-            ClusterEntity(source_pks=EntityReference({"dataset1": frozenset(["2"])})),
-            ClusterEntity(source_pks=EntityReference({"dataset2": frozenset(["A"])})),
-            ClusterEntity(source_pks=EntityReference({"dataset2": frozenset(["B"])})),
-            ClusterEntity(source_pks=EntityReference({"dataset3": frozenset(["X"])})),
+            ClusterEntity(source_pks=EntityReference({"source1": frozenset(["1"])})),
+            ClusterEntity(source_pks=EntityReference({"source1": frozenset(["2"])})),
+            ClusterEntity(source_pks=EntityReference({"source2": frozenset(["A"])})),
+            ClusterEntity(source_pks=EntityReference({"source2": frozenset(["B"])})),
+            ClusterEntity(source_pks=EntityReference({"source3": frozenset(["X"])})),
         ]
     )
 

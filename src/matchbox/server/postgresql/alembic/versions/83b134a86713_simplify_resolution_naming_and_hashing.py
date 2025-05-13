@@ -57,6 +57,28 @@ def calculate_resolution_hashes(
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # Drop the old check constraint
+    op.drop_constraint(
+        "resolution_type_constraints", "resolutions", schema="mb", type_="check"
+    )
+
+    # Update any 'dataset' types to 'source' types
+    op.execute(
+        """
+        UPDATE mb.resolutions 
+        SET type = 'source'
+        WHERE type = 'dataset'
+        """
+    )
+
+    # Create the new check constraint with updated type values
+    op.create_check_constraint(
+        "resolution_type_constraints",
+        "resolutions",
+        "type IN ('model', 'source', 'human')",
+        schema="mb",
+    )
+
     # Add the new hash column
     op.add_column(
         "resolutions", sa.Column("hash", postgresql.BYTEA(), nullable=True), schema="mb"
@@ -68,7 +90,7 @@ def upgrade() -> None:
         UPDATE mb.resolutions 
         SET hash = CASE 
             WHEN type = 'model' THEN resolution_hash
-            WHEN type = 'dataset' THEN content_hash
+            WHEN type = 'source' THEN content_hash
             ELSE NULL
         END
         """
@@ -156,12 +178,12 @@ def downgrade() -> None:
             {"hash": calculated_hash, "id": resolution_id},
         )
 
-    # Set content_hash from hash for datasets only
+    # Set content_hash from hash for sources only
     op.execute(
         """
         UPDATE mb.resolutions 
         SET content_hash = CASE 
-            WHEN type = 'dataset' THEN hash
+            WHEN type = 'source' THEN hash
             ELSE NULL
         END
         """
@@ -177,3 +199,25 @@ def downgrade() -> None:
 
     # Drop the new hash column
     op.drop_column("resolutions", "hash", schema="mb")
+
+    # Drop the new check constraint
+    op.drop_constraint(
+        "resolution_type_constraints", "resolutions", schema="mb", type_="check"
+    )
+
+    # Update any 'source' types back to 'dataset' types
+    op.execute(
+        """
+        UPDATE mb.resolutions 
+        SET type = 'dataset'
+        WHERE type = 'source'
+        """
+    )
+
+    # Recreate the old check constraint with original type values
+    op.create_check_constraint(
+        "resolution_type_constraints",
+        "resolutions",
+        "type IN ('model', 'dataset', 'human')",
+        schema="mb",
+    )

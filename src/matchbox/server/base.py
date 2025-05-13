@@ -213,7 +213,7 @@ class MatchboxDBAdapter(ABC):
 
     settings: "MatchboxServerSettings"
 
-    datasets: ListableAndCountable
+    sources: ListableAndCountable
     models: Countable
     data: Countable
     clusters: Countable
@@ -237,7 +237,7 @@ class MatchboxDBAdapter(ABC):
         Args:
             source: the `SourceAddress` object identifying the source to query
             resolution (optional): the resolution to use for filtering results
-                If not specified, will use the dataset resolution for the queried source
+                If not specified, will use the source resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the models' default threshold
                 If an integer, uses that threshold for the specified model, and the
@@ -258,12 +258,12 @@ class MatchboxDBAdapter(ABC):
         resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
-        """Matches an ID in a source dataset and returns the keys in the targets.
+        """Matches an ID in a source source and returns the keys in the targets.
 
         Args:
             source_pk: The primary key to match from the source.
-            source: The address of the source dataset.
-            targets: The addresses of the target datasets.
+            source: The address of the source source.
+            targets: The addresses of the target sources.
             resolution: The name of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold

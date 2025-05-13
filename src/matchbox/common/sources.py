@@ -249,7 +249,7 @@ class RelationalDBLocation(Location):
 
 
 class SourceColumn(BaseModel):
-    """A column in a dataset that can be indexed in the Matchbox database."""
+    """A column in a source that can be indexed in the Matchbox database."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -344,7 +344,12 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
 
 
 class SourceConfig(BaseModel):
-    """A dataset that can, or has been indexed on the backend."""
+    """Data that can, or has been indexed on the backend.
+
+    The configuration produces a source that maps to a "noun" of the business,
+    such as a "customer" or "product". It contains fields that are attributes of
+    the noun, and the unique key that identifies it in the source system.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -360,7 +365,7 @@ class SourceConfig(BaseModel):
 
     @property
     def engine(self) -> Engine | None:
-        """The SQLAlchemy Engine used to connect to the dataset."""
+        """The SQLAlchemy Engine used to connect to the data."""
         return self._engine
 
     def __eq__(self, other: Any) -> bool:
@@ -443,7 +448,7 @@ class SourceConfig(BaseModel):
 
     @needs_engine
     def to_table(self) -> Table:
-        """Returns the dataset as a SQLAlchemy Table object."""
+        """Returns the source as a SQLAlchemy Table object."""
         db_schema, db_table = get_schema_table_names(self.address.full_name)
         metadata = MetaData(schema=db_schema)
         table = Table(db_table, metadata, autoload_with=self.engine)
@@ -491,7 +496,7 @@ class SourceConfig(BaseModel):
         pks: list[T] | None = None,
         limit: int | None = None,
     ) -> str:
-        """Returns a SQL query to retrieve data from the dataset."""
+        """Returns a SQL query to retrieve data from the source."""
         table = self.to_table()
 
         # Ensure all set columns are available and the expected type
@@ -543,7 +548,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> ArrowTable | Iterator[ArrowTable]:
-        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+        """Returns the source as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
@@ -586,7 +591,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> PolarsDataFrame | Iterator[PolarsDataFrame]:
-        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+        """Returns the source as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
@@ -629,7 +634,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> PandasDataframe | Iterator[PandasDataframe]:
-        """Returns the dataset as a pandas DataFrame or an iterator of DataFrames.
+        """Returns the source as a pandas DataFrame or an iterator of DataFrames.
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
@@ -668,7 +673,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> ArrowTable:
-        """Retrieve and hash a dataset from its warehouse, ready to be inserted.
+        """Retrieve and hash the source from its warehouse, ready to be inserted.
 
         Args:
             batch_size: If set, process data in batches internally. Indicates the

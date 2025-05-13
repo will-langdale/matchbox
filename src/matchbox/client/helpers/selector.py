@@ -248,7 +248,7 @@ def query(
             warehouse, which helps reduce memory usage and load on the database.
             Default is None.
         return_batches (optional): If True, returns an iterator of batches instead of a
-            single combined result, which is useful for processing large datasets with
+            single combined result, which is useful for processing large data with
             limited memory. Default is False.
         only_indexed (optional): If True, it will raise an exception when attempting to
             query un-indexed columns, which should never be done if querying for

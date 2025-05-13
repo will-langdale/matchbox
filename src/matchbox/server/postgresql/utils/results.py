@@ -45,10 +45,10 @@ def _get_model_parents(resolution_id: int) -> tuple[bytes, bytes | None]:
         p1, p2 = parents
         p1_id, p1_type = p1
         p2_id, p2_type = p2
-        # Put dataset first if it exists
-        if p1_type == ResolutionNodeType.DATASET:
+        # Put source first if it exists
+        if p1_type == ResolutionNodeType.SOURCE:
             return p1_id, p2_id
-        elif p2_type == ResolutionNodeType.DATASET:
+        elif p2_type == ResolutionNodeType.SOURCE:
             return p2_id, p1_id
         # Both models, maintain original order
         return p1_id, p2_id

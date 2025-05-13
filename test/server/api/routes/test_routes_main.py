@@ -460,7 +460,7 @@ def test_count_all_backend_items(test_client: TestClient):
     """Test the unparameterised entity counting endpoint."""
     mock_backend = Mock()
     entity_counts = {
-        "datasets": 1,
+        "sources": 1,
         "models": 2,
         "data": 3,
         "clusters": 4,
