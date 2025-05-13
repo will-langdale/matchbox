@@ -162,7 +162,7 @@ def test_dedupe_step_run(
             [Selector(engine=sqlite_warehouse, address=foo.address, fields=[])],
             return_type="pandas",
             threshold=d_foo.left.threshold,
-            resolution_name=d_foo.left.name,
+            name=d_foo.left.name,
             only_indexed=True,
             batch_size=100 if batched else None,
             return_batches=False,
@@ -174,7 +174,7 @@ def test_dedupe_step_run(
 
         # Model is created and run
         make_model_mock.assert_called_once_with(
-            model_name=d_foo.name,
+            name=d_foo.name,
             description=d_foo.description,
             model_class=d_foo.model_class,
             model_settings=d_foo.settings,
@@ -253,7 +253,7 @@ def test_link_step_run(
             [Selector(engine=sqlite_warehouse, address=foo.address, fields=[])],
             return_type="pandas",
             threshold=foo_bar.left.threshold,
-            resolution_name=foo_bar.left.name,
+            name=foo_bar.left.name,
             only_indexed=True,
             batch_size=100 if batched else None,
             return_batches=False,
@@ -262,7 +262,7 @@ def test_link_step_run(
             [Selector(engine=sqlite_warehouse, address=bar.address, fields=[])],
             return_type="pandas",
             threshold=foo_bar.right.threshold,
-            resolution_name=foo_bar.right.name,
+            name=foo_bar.right.name,
             only_indexed=True,
             batch_size=100 if batched else None,
             return_batches=False,
@@ -279,7 +279,7 @@ def test_link_step_run(
 
         # Model is created and run
         make_model_mock.assert_called_once_with(
-            model_name=foo_bar.name,
+            name=foo_bar.name,
             description=foo_bar.description,
             model_class=foo_bar.model_class,
             model_settings=foo_bar.settings,

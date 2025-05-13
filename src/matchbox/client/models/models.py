@@ -8,7 +8,13 @@ from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
+from matchbox.common.dtos import (
+    ModelAncestor,
+    ModelConfig,
+    ModelResolutionName,
+    ModelType,
+    ResolutionName,
+)
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 
 P = ParamSpec("P")
@@ -20,46 +26,46 @@ class Model:
 
     def __init__(
         self,
-        metadata: ModelMetadata,
+        metadata: ModelConfig,
         model_instance: Linker | Deduper,
         left_data: DataFrame,
         right_data: DataFrame | None = None,
     ):
         """Create a new model instance."""
-        self.metadata = metadata
+        self.model_config = metadata
         self.model_instance = model_instance
         self.left_data = left_data
         self.right_data = right_data
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        _handler.insert_model(model=self.metadata)
+        _handler.insert_model(model_config=self.model_config)
 
     @property
     def results(self) -> Results:
         """Retrieve results associated with the model from the database."""
-        results = _handler.get_model_results(name=self.metadata.name)
-        return Results(probabilities=results, metadata=self.metadata)
+        results = _handler.get_model_results(name=self.model_config.name)
+        return Results(probabilities=results, metadata=self.model_config)
 
     @results.setter
     def results(self, results: Results) -> None:
         """Write results associated with the model to the database."""
         if results.probabilities.shape[0] > 0:
             _handler.add_model_results(
-                name=self.metadata.name, results=results.probabilities
+                name=self.model_config.name, results=results.probabilities
             )
 
     @property
     def truth(self) -> float:
         """Retrieve the truth threshold for the model."""
-        truth = _handler.get_model_truth(name=self.metadata.name)
+        truth = _handler.get_model_truth(name=self.model_config.name)
         return _truth_int_to_float(truth)
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
         _handler.set_model_truth(
-            name=self.metadata.name, truth=_truth_float_to_int(truth)
+            name=self.model_config.name, truth=_truth_float_to_int(truth)
         )
 
     @property
@@ -67,7 +73,7 @@ class Model:
         """Retrieve the ancestors of the model."""
         return {
             ancestor.name: _truth_int_to_float(ancestor.truth)
-            for ancestor in _handler.get_model_ancestors(name=self.metadata.name)
+            for ancestor in _handler.get_model_ancestors(name=self.model_config.name)
         }
 
     @property
@@ -75,14 +81,16 @@ class Model:
         """Retrieve the ancestors cache of the model."""
         return {
             ancestor.name: _truth_int_to_float(ancestor.truth)
-            for ancestor in _handler.get_model_ancestors_cache(name=self.metadata.name)
+            for ancestor in _handler.get_model_ancestors_cache(
+                name=self.model_config.name
+            )
         }
 
     @ancestors_cache.setter
     def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None:
         """Set the ancestors cache of the model."""
         _handler.set_model_ancestors_cache(
-            name=self.metadata.name,
+            name=self.model_config.name,
             ancestors=[
                 ModelAncestor(name=k, truth=_truth_float_to_int(v))
                 for k, v in ancestors_cache.items()
@@ -91,16 +99,16 @@ class Model:
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
-        result = _handler.delete_resolution(name=self.metadata.name, certain=certain)
+        result = _handler.delete_resolution(
+            name=self.model_config.name, certain=certain
+        )
         return result.success
 
     def run(self) -> Results:
         """Execute the model pipeline and return results."""
-        if self.metadata.type == ModelType.LINKER:
+        if self.model_config.type == ModelType.LINKER:
             if self.right_data is None:
-                raise MatchboxResolutionNotFoundError(
-                    "Right dataset required for linking"
-                )
+                raise MatchboxResolutionNotFoundError("Right data required for linking")
 
             results = self.model_instance.link(
                 left=self.left_data, right=self.right_data
@@ -111,31 +119,31 @@ class Model:
         return Results(
             probabilities=results,
             model=self,
-            metadata=self.metadata,
+            metadata=self.model_config,
         )
 
 
 def make_model(
-    model_name: str,
+    name: ModelResolutionName,
     description: str,
     model_class: type[Linker] | type[Deduper],
     model_settings: dict[str, Any],
     left_data: DataFrame,
-    left_resolution: str,
+    left_resolution: ResolutionName,
     right_data: DataFrame | None = None,
-    right_resolution: str | None = None,
+    right_resolution: ResolutionName | None = None,
 ) -> Model:
     """Create a unified model instance for either linking or deduping operations.
 
     Args:
-        model_name: Your unique identifier for the model
+        name: Your unique identifier for the model
         description: Description of the model run
         model_class: Either Linker or Deduper class
         model_settings: Configuration settings for the model
-        left_data: Primary dataset
-        left_resolution: Resolution name for primary model or dataset
-        right_data: Secondary dataset (linking only)
-        right_resolution: Resolution name for secondary model or dataset (linking only)
+        left_data: Primary data
+        left_resolution: Resolution name for primary model or source
+        right_data: Secondary data (linking only)
+        right_resolution: Resolution name for secondary model or source (linking only)
 
     Returns:
         Model: Configured model instance ready for execution
@@ -156,8 +164,8 @@ def make_model(
     else:
         model_instance.prepare(data=left_data)
 
-    metadata = ModelMetadata(
-        name=model_name,
+    metadata = ModelConfig(
+        name=name,
         description=description,
         type=model_type.value,
         left_resolution=left_resolution,

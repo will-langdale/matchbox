@@ -49,6 +49,7 @@ from matchbox.common.db import (
     sql_to_df,
     validate_sql_for_data_extraction,
 )
+from matchbox.common.dtos import SourceResolutionName
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
     MatchboxSourceEngineError,
@@ -248,7 +249,7 @@ class RelationalDBLocation(Location):
 
 
 class SourceColumn(BaseModel):
-    """A column in a dataset that can be indexed in the Matchbox database."""
+    """A column in a source that can be indexed in the Matchbox database."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -301,7 +302,7 @@ class SourceAddress(BaseModel):
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
-        """Generate a SourceAddress from a SQLAlchemy Engine and full source name."""
+        """Generate a SourceAddress from a SQLAlchemy Engine and schema.table name."""
         url = engine.url
         components = {
             "dialect": url.get_dialect().name,
@@ -343,12 +344,19 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
 
 
 class SourceConfig(BaseModel):
-    """A dataset that can, or has been indexed on the backend."""
+    """Data that can, or has been indexed on the backend.
+
+    The configuration produces a source that maps to a "noun" of the business,
+    such as a "customer" or "product". It contains fields that are attributes of
+    the noun, and the unique key that identifies it in the source system.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     address: SourceAddress
-    resolution_name: str = Field(default_factory=lambda data: str(data["address"]))
+    name: SourceResolutionName = Field(
+        default_factory=lambda data: str(data["address"])
+    )
     db_pk: str
     # Columns need to be set at creation, or initialised with `.default_columns()`
     columns: tuple[SourceColumn, ...] | None = None
@@ -357,21 +365,21 @@ class SourceConfig(BaseModel):
 
     @property
     def engine(self) -> Engine | None:
-        """The SQLAlchemy Engine used to connect to the dataset."""
+        """The SQLAlchemy Engine used to connect to the data."""
         return self._engine
 
     def __eq__(self, other: Any) -> bool:
         """Custom equality which ignores engine."""
-        return (self.address, self.resolution_name, self.db_pk, self.columns) == (
+        return (self.address, self.name, self.db_pk, self.columns) == (
             other.address,
-            other.resolution_name,
+            other.name,
             other.db_pk,
             other.columns,
         )
 
     def __hash__(self) -> int:
         """Custom hash which ignores engine."""
-        return hash((self.address, self.resolution_name, self.db_pk, self.columns))
+        return hash((self.address, self.name, self.db_pk, self.columns))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the SourceConfig object."""
@@ -380,7 +388,7 @@ class SourceConfig(BaseModel):
 
         obj_copy = SourceConfig(
             address=deepcopy(self.address, memo),
-            resolution_name=deepcopy(self.resolution_name, memo),
+            name=deepcopy(self.name, memo),
             db_pk=deepcopy(self.db_pk, memo),
             columns=deepcopy(self.columns, memo),
         )
@@ -428,7 +436,7 @@ class SourceConfig(BaseModel):
 
         new_source = SourceConfig(
             address=self.address,
-            resolution_name=self.resolution_name,
+            name=self.name,
             db_pk=self.db_pk,
             columns=columns_attribute,
         )
@@ -440,7 +448,7 @@ class SourceConfig(BaseModel):
 
     @needs_engine
     def to_table(self) -> Table:
-        """Returns the dataset as a SQLAlchemy Table object."""
+        """Returns the source as a SQLAlchemy Table object."""
         db_schema, db_table = get_schema_table_names(self.address.full_name)
         metadata = MetaData(schema=db_schema)
         table = Table(db_table, metadata, autoload_with=self.engine)
@@ -488,7 +496,7 @@ class SourceConfig(BaseModel):
         pks: list[T] | None = None,
         limit: int | None = None,
     ) -> str:
-        """Returns a SQL query to retrieve data from the dataset."""
+        """Returns a SQL query to retrieve data from the source."""
         table = self.to_table()
 
         # Ensure all set columns are available and the expected type
@@ -540,7 +548,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> ArrowTable | Iterator[ArrowTable]:
-        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+        """Returns the source as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
@@ -583,7 +591,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> PolarsDataFrame | Iterator[PolarsDataFrame]:
-        """Returns the dataset as a PyArrow Table or an iterator of PyArrow Tables.
+        """Returns the source as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
@@ -626,7 +634,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> PandasDataframe | Iterator[PandasDataframe]:
-        """Returns the dataset as a pandas DataFrame or an iterator of DataFrames.
+        """Returns the source as a pandas DataFrame or an iterator of DataFrames.
 
         Args:
             fields: List of column names to retrieve. If None, retrieves all columns.
@@ -665,7 +673,7 @@ class SourceConfig(BaseModel):
         schema_overrides: dict[str, Any] | None = None,
         execute_options: dict[str, Any] | None = None,
     ) -> ArrowTable:
-        """Retrieve and hash a dataset from its warehouse, ready to be inserted.
+        """Retrieve and hash the source from its warehouse, ready to be inserted.
 
         Args:
             batch_size: If set, process data in batches internally. Indicates the

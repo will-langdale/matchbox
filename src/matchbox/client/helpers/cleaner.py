@@ -6,7 +6,7 @@ from pandas import DataFrame
 
 
 def cleaner(function: Callable, arguments: dict) -> dict[str, dict[str, Any]]:
-    """Define a function to clean a dataset.
+    """Define a function to clean data.
 
     Args:
         function: the callable implementing the cleaning behaviour
@@ -55,7 +55,7 @@ def process(data: DataFrame, pipeline: dict[str, dict[str, Any]]) -> DataFrame:
         pipeline: Output of the `cleaners()` function
 
     Returns:
-        The processed dataset
+        The processed data
     """
     curr = data
     for func in pipeline.keys():

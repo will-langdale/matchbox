@@ -5,13 +5,15 @@ from enum import StrEnum
 import rustworkx as rx
 from pydantic import BaseModel, ConfigDict
 
-DEFAULT_RESOLUTION = "__DEFAULT__"
+from matchbox.common.dtos import ResolutionName
+
+DEFAULT_RESOLUTION: ResolutionName = "__DEFAULT__"
 
 
 class ResolutionNodeType(StrEnum):
     """Types of nodes in a resolution."""
 
-    DATASET = "dataset"
+    SOURCE = "source"
     MODEL = "model"
     HUMAN = "human"
 
@@ -22,7 +24,7 @@ class ResolutionNode(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: int
-    name: str
+    name: ResolutionName
     type: ResolutionNodeType
 
 

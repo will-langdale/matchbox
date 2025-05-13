@@ -10,6 +10,7 @@ from fastapi import (
 from matchbox.common.dtos import (
     BackendRetrievableType,
     NotFoundError,
+    ResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -67,11 +68,11 @@ async def get_source_config(
 )
 async def get_resolution_source_configs(
     backend: BackendDependency,
-    resolution_name: str,
+    name: ResolutionName,
 ) -> list[SourceConfig]:
     """Get all sources in scope for a resolution."""
     try:
-        return backend.get_resolution_source_configs(resolution_name=resolution_name)
+        return backend.get_resolution_source_configs(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,

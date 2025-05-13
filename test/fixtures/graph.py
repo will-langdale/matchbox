@@ -15,8 +15,8 @@ from matchbox.common.graph import (
 def resolution_graph() -> ResolutionGraph:
     res_graph = ResolutionGraph(
         nodes={
-            ResolutionNode(id=1, name="1", type=ResType.DATASET),
-            ResolutionNode(id=2, name="2", type=ResType.DATASET),
+            ResolutionNode(id=1, name="1", type=ResType.SOURCE),
+            ResolutionNode(id=2, name="2", type=ResType.SOURCE),
             ResolutionNode(id=3, name="3", type=ResType.MODEL),
             ResolutionNode(id=4, name="4", type=ResType.MODEL),
             ResolutionNode(id=5, name="5", type=ResType.MODEL),
@@ -35,8 +35,8 @@ def resolution_graph() -> ResolutionGraph:
 @pytest.fixture
 def pydigraph() -> PyDiGraph:
     G = PyDiGraph()
-    n1 = G.add_node({"id": 1, "name": "1", "type": str(ResType.DATASET)})
-    n2 = G.add_node({"id": 2, "name": "2", "type": str(ResType.DATASET)})
+    n1 = G.add_node({"id": 1, "name": "1", "type": str(ResType.SOURCE)})
+    n2 = G.add_node({"id": 2, "name": "2", "type": str(ResType.SOURCE)})
     n3 = G.add_node({"id": 3, "name": "3", "type": str(ResType.MODEL)})
     n4 = G.add_node({"id": 4, "name": "4", "type": str(ResType.MODEL)})
     n5 = G.add_node({"id": 5, "name": "5", "type": str(ResType.MODEL)})

@@ -8,7 +8,7 @@ def cms_original_clean_company_name_general(column):
 
     The _general_name_simplification version from app/algorithm/sql_statements.py#L24.
 
-    Use with any dataset except Companies House.
+    Use with any data except Companies House.
     """
     regex_1 = (
         r"^the\s|\s?:\s?|\[|\]|\(|\)|''|\*.*\*|&|,|;|\"|ltd\.?$|"

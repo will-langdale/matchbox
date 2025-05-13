@@ -4,6 +4,7 @@ from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine
 
 from matchbox.client import _handler
+from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
 from matchbox.common.sources import SourceAddress, SourceConfig
 
@@ -13,13 +14,13 @@ def _combined_colname(source: SourceConfig, col_name: str):
 
 
 def primary_keys_map(
-    resolution_name: str,
+    resolution: ModelResolutionName,
     engine: Engine | None = None,
     full_names: list[str] | None = None,
 ) -> ArrowTable:
     """Return matchbox IDs to source IDs mapping, optionally filtering."""
     # Get all sources in scope of the resolution
-    sources = _handler.get_resolution_source_configs(resolution_name=resolution_name)
+    sources = _handler.get_resolution_source_configs(name=resolution)
 
     if engine:
         # Filter only sources compatible with engine
@@ -45,7 +46,7 @@ def primary_keys_map(
         source_mb_ids.append(
             _handler.query(
                 source=s.address,
-                resolution_name=resolution_name,
+                resolution=resolution,
             )
         )
 
