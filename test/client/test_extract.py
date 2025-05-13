@@ -94,7 +94,7 @@ def test_primary_keys_map(
         primary_keys_map(resolution="companies", engine=create_engine("postgresql://"))
 
     with pytest.raises(MatchboxSourceNotFoundError):
-        primary_keys_map(resolution_name="companies", full_names=["nonexistent"])
+        primary_keys_map(resolution="companies", full_names=["nonexistent"])
 
     # Case 1: apply engine filter, and retrieve single table
     foo_mapping = primary_keys_map(resolution="companies", engine=sqlite_warehouse)
