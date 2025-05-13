@@ -229,7 +229,7 @@ class TestE2EAnalyticalUser:
             # Create and run a deduper model
             deduper_name = f"deduper_{source_name}"
             deduper = make_model(
-                model_name=deduper_name,
+                name=deduper_name,
                 description=f"Deduplication of {source_name}",
                 model_class=NaiveDeduper,
                 model_settings={
@@ -237,7 +237,7 @@ class TestE2EAnalyticalUser:
                     "unique_fields": feature_names,
                 },
                 left_data=cleaned,
-                left_resolution=source_testkit.source_config.resolution_name,
+                left_resolution=source_testkit.source_config.name,
             )
 
             # Run the deduper and store results
@@ -300,9 +300,7 @@ class TestE2EAnalyticalUser:
                     },
                     engine=self.warehouse_engine,
                 ),
-                resolution_name=deduper_names[
-                    left_testkit.source_config.address.full_name
-                ],
+                resolution=deduper_names[left_testkit.source_config.address.full_name],
                 return_type="pandas",
             )
             left_clusters = query_to_cluster_entities(
@@ -323,9 +321,7 @@ class TestE2EAnalyticalUser:
                     },
                     engine=self.warehouse_engine,
                 ),
-                resolution_name=deduper_names[
-                    right_testkit.source_config.address.full_name
-                ],
+                resolution=deduper_names[right_testkit.source_config.address.full_name],
                 return_type="pandas",
             )
             right_clusters = query_to_cluster_entities(
@@ -351,7 +347,7 @@ class TestE2EAnalyticalUser:
                 f"_{right_testkit.source_config.address.full_name}"
             )
             linker = make_model(
-                model_name=linker_name,
+                name=linker_name,
                 description=f"Linking {left_testkit.name} and {right_testkit.name}",
                 model_class=DeterministicLinker,
                 model_settings={
@@ -425,7 +421,7 @@ class TestE2EAnalyticalUser:
         left_raw_df = query(
             select({crn_source: ["pk", "crn"]}, engine=self.warehouse_engine),
             select({duns_source: ["pk"]}, engine=self.warehouse_engine),
-            resolution_name=linker_names[first_pair],
+            resolution=linker_names[first_pair],
             return_type="pandas",
         )
         left_clusters = query_to_cluster_entities(
@@ -436,7 +432,7 @@ class TestE2EAnalyticalUser:
 
         right_raw_df = query(
             select({cdms_source: ["pk", "crn"]}, engine=self.warehouse_engine),
-            resolution_name=deduper_names[cdms_source],
+            resolution=deduper_names[cdms_source],
             return_type="pandas",
         )
         right_clusters = query_to_cluster_entities(
@@ -451,7 +447,7 @@ class TestE2EAnalyticalUser:
         # Create and run final linker with the common "crn" field
         final_linker_name = "__DEFAULT__"
         final_linker = make_model(
-            model_name=final_linker_name,
+            name=final_linker_name,
             description="Final linking of all sources",
             model_class=DeterministicLinker,
             model_settings={
@@ -504,7 +500,7 @@ class TestE2EAnalyticalUser:
                 },
                 engine=self.warehouse_engine,
             ),
-            resolution_name=final_linker_name,
+            resolution=final_linker_name,
             return_type="pandas",
         )
 

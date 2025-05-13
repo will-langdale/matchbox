@@ -14,8 +14,10 @@ from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
     ModelAncestor,
-    ModelMetadata,
+    ModelConfig,
+    ModelResolutionName,
     NotFoundError,
+    ResolutionName,
     ResolutionOperationStatus,
     UploadStatus,
 )
@@ -118,12 +120,12 @@ CLIENT = create_client(settings=settings)
 
 def query(
     source: SourceAddress,
-    resolution_name: str | None = None,
+    resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
     log_prefix = f"Query {source.pretty}"
-    logger.debug(f"Using {resolution_name}", prefix=log_prefix)
+    logger.debug(f"Using {resolution}", prefix=log_prefix)
 
     res = CLIENT.get(
         "/query",
@@ -132,7 +134,7 @@ def query(
                 "full_name": source.full_name,
                 # Converted to b64 by `url_params()`
                 "warehouse_hash_b64": source.warehouse_hash,
-                "resolution_name": resolution_name,
+                "resolution": resolution,
                 "threshold": threshold,
                 "limit": limit,
             }
@@ -158,7 +160,7 @@ def match(
     targets: list[SourceAddress],
     source: SourceAddress,
     source_pk: str,
-    resolution_name: str,
+    resolution: ResolutionName,
     threshold: int | None = None,
 ) -> Match:
     target_full_names = [t.full_name for t in targets]
@@ -166,7 +168,7 @@ def match(
 
     log_prefix = f"Query {source.pretty}"
     logger.debug(
-        f"{source_pk} to {', '.join(str(t) for t in targets)} using {resolution_name}",
+        f"{source_pk} to {', '.join(str(t) for t in targets)} using {resolution}",
         prefix=log_prefix,
     )
 
@@ -181,7 +183,7 @@ def match(
                 # Converted to b64 by `url_params()`
                 "source_warehouse_hash_b64": source.warehouse_hash,
                 "source_pk": source_pk,
-                "resolution_name": resolution_name,
+                "resolution": resolution,
                 "threshold": threshold,
             }
         ),
@@ -249,11 +251,11 @@ def get_source_config(address: SourceAddress) -> SourceConfig:
     return SourceConfig.model_validate(res.json())
 
 
-def get_resolution_source_configs(resolution_name: str) -> list[SourceConfig]:
-    log_prefix = f"Resolution {resolution_name}"
+def get_resolution_source_configs(name: ModelResolutionName) -> list[SourceConfig]:
+    log_prefix = f"Resolution {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get("/sources", params={"resolution_name": resolution_name})
+    res = CLIENT.get("/sources", params={"name": name})
 
     return [SourceConfig.model_validate(s) for s in res.json()]
 
@@ -270,25 +272,25 @@ def get_resolution_graph() -> ResolutionGraph:
 # Model management
 
 
-def insert_model(model: ModelMetadata) -> ResolutionOperationStatus:
+def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
     """Insert a model in Matchbox."""
-    log_prefix = f"Model {model.name}"
+    log_prefix = f"Model {model_config.name}"
     logger.debug("Inserting metadata", prefix=log_prefix)
 
-    res = CLIENT.post("/models", json=model.model_dump())
+    res = CLIENT.post("/models", json=model_config.model_dump())
     return ResolutionOperationStatus.model_validate(res.json())
 
 
-def get_model(name: str) -> ModelMetadata:
+def get_model(name: ModelResolutionName) -> ModelConfig:
     """Get model metadata from Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(f"/models/{name}")
-    return ModelMetadata.model_validate(res.json())
+    return ModelConfig.model_validate(res.json())
 
 
-def add_model_results(name: str, results: Table) -> UploadStatus:
+def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus:
     """Upload model results in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Uploading results", prefix=log_prefix)
@@ -326,7 +328,7 @@ def add_model_results(name: str, results: Table) -> UploadStatus:
     return status
 
 
-def get_model_results(name: str) -> Table:
+def get_model_results(name: ModelResolutionName) -> Table:
     """Get model results from Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving results", prefix=log_prefix)
@@ -336,7 +338,7 @@ def get_model_results(name: str) -> Table:
     return read_table(buffer)
 
 
-def set_model_truth(name: str, truth: int) -> ResolutionOperationStatus:
+def set_model_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Setting truth value", prefix=log_prefix)
@@ -345,7 +347,7 @@ def set_model_truth(name: str, truth: int) -> ResolutionOperationStatus:
     return ResolutionOperationStatus.model_validate(res.json())
 
 
-def get_model_truth(name: str) -> int:
+def get_model_truth(name: ModelResolutionName) -> int:
     """Get the truth threshold for a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving truth value", prefix=log_prefix)
@@ -354,7 +356,7 @@ def get_model_truth(name: str) -> int:
     return res.json()
 
 
-def get_model_ancestors(name: str) -> list[ModelAncestor]:
+def get_model_ancestors(name: ModelResolutionName) -> list[ModelAncestor]:
     """Get the ancestors of a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving ancestors", prefix=log_prefix)
@@ -364,7 +366,7 @@ def get_model_ancestors(name: str) -> list[ModelAncestor]:
 
 
 def set_model_ancestors_cache(
-    name: str, ancestors: list[ModelAncestor]
+    name: ModelResolutionName, ancestors: list[ModelAncestor]
 ) -> ResolutionOperationStatus:
     """Set the ancestors cache for a model in Matchbox."""
     log_prefix = f"Model {name}"
@@ -377,7 +379,7 @@ def set_model_ancestors_cache(
     return ResolutionOperationStatus.model_validate(res.json())
 
 
-def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
+def get_model_ancestors_cache(name: ModelResolutionName) -> list[ModelAncestor]:
     """Get the ancestors cache for a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Getting ancestors cached truth values", prefix=log_prefix)
@@ -386,7 +388,9 @@ def get_model_ancestors_cache(name: str) -> list[ModelAncestor]:
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
-def delete_resolution(name: str, certain: bool = False) -> ResolutionOperationStatus:
+def delete_resolution(
+    name: ModelResolutionName, certain: bool = False
+) -> ResolutionOperationStatus:
     """Delete a resolution in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Deleting", prefix=log_prefix)

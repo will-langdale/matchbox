@@ -9,8 +9,8 @@ This guide walks through creating complete matching pipelines using the Matchbox
 A DAG (Directed Acyclic Graph) represents a sequence of operations where each step depends on the outputs of previous steps, without any circular dependencies. In Matchbox, a DAG consists of:
 
 1. [`IndexStep`s][matchbox.client.dags.IndexStep]: Loading and indexing data from sources
-2. [`DedupeStep`s][matchbox.client.dags.DedupeStep]: Removing duplicates within a dataset
-3. [`LinkStep`s][matchbox.client.dags.LinkStep]: Connecting records between different datasets
+2. [`DedupeStep`s][matchbox.client.dags.DedupeStep]: Removing duplicates within a source
+3. [`LinkStep`s][matchbox.client.dags.LinkStep]: Connecting records between different sources
 
 ## Setting up your environment
 
@@ -45,7 +45,7 @@ engine = get_database_engine()
 
 ## 1. Defining data sources
 
-The first step in creating a matching pipeline is to define your data sources. Each source represents a dataset that will be used in the matching process.
+The first step in creating a matching pipeline is to define your data sources. Each source represents data that will be used in the matching process.
 
 The `columns` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
 
@@ -143,11 +143,11 @@ Only data indexed in Matchbox can we used to match.
 Each [`IndexStep`][matchbox.client.dags.IndexStep] requires:
 
 - A `source` object
-- An optional `batch_size` for processing large datasets in chunks
+- An optional `batch_size` for processing large data in chunks
 
 ## 4. Creating dedupe steps
 
-Dedupe steps identify and resolve duplicates within a single dataset.
+Dedupe steps identify and resolve duplicates within a single source.
 
 === "Example"
     ```python
@@ -190,7 +190,7 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 
 ## 5. Creating link steps
 
-Link steps connect records between different datasets.
+Link steps connect records between different sources.
 
 === "Example"
     ```python
@@ -480,7 +480,7 @@ Data cleaning is 90% of any record matching problem.
 ### 2. Pipeline design
 
 - Break complex matching tasks into smaller steps
-- Use appropriate batch sizes for large datasets
+- Use appropriate batch sizes for large sources
 - Create clear, descriptive names for your steps
 
 ### 3. Execution

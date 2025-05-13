@@ -154,7 +154,7 @@ def test_testkit_dag_model_chain(
     # Build model chain
     for config in chain_config:
         # Extract config values
-        model_name = config["name"]
+        name = config["name"]
         source_names = config["sources"]
         prev_models = config["previous_models"]
         is_standalone = config.get("standalone", False)
@@ -189,29 +189,28 @@ def test_testkit_dag_model_chain(
 
         # Create and add model
         model = model_factory(
-            name=model_name,
+            name=name,
             left_testkit=left_testkit,
             right_testkit=right_testkit,
             true_entities=all_true_sources,
         )
         dag.add_model(model)
-        models[model_name] = model
+        models[name] = model
 
     # Test: Verify sources for each model
-    for model_name, expected_sources in expected_sources_by_model.items():
-        sources_dict = dag.get_sources_for_model(model_name)
+    for name, expected_sources in expected_sources_by_model.items():
+        sources_dict = dag.get_sources_for_model(name)
 
         if not expected_sources:  # Standalone case
-            assert None in sources_dict, f"{model_name} should have standalone sources"
+            assert None in sources_dict, f"{name} should have standalone sources"
             assert linked_key not in sources_dict, (
-                f"{model_name} should not use linked sources"
+                f"{name} should not use linked sources"
             )
         else:  # Linked sources case
-            assert linked_key in sources_dict, f"{model_name} should use linked sources"
+            assert linked_key in sources_dict, f"{name} should use linked sources"
             actual_sources = {s.split("@")[0] for s in sources_dict[linked_key]}
             assert actual_sources == set(expected_sources), (
-                f"{model_name} expected sources {expected_sources}, "
-                f"got {actual_sources}"
+                f"{name} expected sources {expected_sources}, got {actual_sources}"
             )
 
 

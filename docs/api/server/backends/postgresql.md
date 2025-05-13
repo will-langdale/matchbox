@@ -12,7 +12,7 @@ erDiagram
     SourceConfigs {
         bigint source_config_id PK
         bigint resolution_id FK
-        string resolution_name
+        string name
         string full_name
         bytes warehouse_hash
         string db_pk
@@ -46,10 +46,11 @@ erDiagram
     Resolutions {
         bigint resolution_id PK
         bytes resolution_hash
-        bytes content_hash
         string type
         string name
         string description
+        string type
+        bytes hash
         smallint truth
     }
     ResolutionFrom {

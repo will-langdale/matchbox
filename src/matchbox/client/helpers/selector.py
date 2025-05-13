@@ -11,6 +11,7 @@ from sqlalchemy import Engine, create_engine
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
+from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceAddress, SourceConfig
@@ -27,13 +28,14 @@ class Selector(BaseModel):
 
 
 def select(
-    *selection: str | dict[str, str],
+    *selection: SourceResolutionName | dict[SourceResolutionName, str],
     engine: Engine | None = None,
 ) -> list[Selector]:
     """From one engine, builds and verifies a list of selectors.
 
     Args:
-        selection: Full source names and optionally a subset of columns to select
+        selection: Full source resolution names and optionally a subset of columns
+            to select
         engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.
@@ -146,7 +148,7 @@ def _source_query(
 
 def _process_selectors(
     selectors: list[Selector],
-    resolution_name: str | None,
+    resolution: ResolutionName | None,
     threshold: int | None,
     batch_size: int | None,
     only_indexed: bool,
@@ -174,7 +176,7 @@ def _process_selectors(
         mb_ids = pl.from_arrow(
             _handler.query(
                 source=selector.address,
-                resolution_name=resolution_name,
+                resolution=resolution,
                 threshold=threshold,
             )
         )
@@ -208,7 +210,7 @@ def _process_selectors(
 
 def query(
     *selectors: list[Selector],
-    resolution_name: str | None = None,
+    resolution: ResolutionName | None = None,
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_type: ReturnTypeStr = "pandas",
     threshold: int | None = None,
@@ -221,7 +223,7 @@ def query(
     Args:
         selectors: Each selector is the output of `select()`.
             This allows querying sources coming from different engines
-        resolution_name (optional): The name of the resolution point to query
+        resolution (optional): The name of the resolution point to query
             If not set:
 
             * If querying a single source, it will use the source resolution
@@ -246,7 +248,7 @@ def query(
             warehouse, which helps reduce memory usage and load on the database.
             Default is None.
         return_batches (optional): If True, returns an iterator of batches instead of a
-            single combined result, which is useful for processing large datasets with
+            single combined result, which is useful for processing large data with
             limited memory. Default is False.
         only_indexed (optional): If True, it will raise an exception when attempting to
             query un-indexed columns, which should never be done if querying for
@@ -269,7 +271,7 @@ def query(
         query(
             select("companies_house", engine=engine1),
             select("datahub_companies", engine=engine2),
-            resolution_name="last_linker",
+            name="last_linker",
         )
         ```
 
@@ -298,12 +300,12 @@ def query(
 
     selectors: list[Selector] = list(itertools.chain(*selectors))
 
-    if not resolution_name and len(selectors) > 1:
-        resolution_name = DEFAULT_RESOLUTION
+    if not resolution and len(selectors) > 1:
+        resolution = DEFAULT_RESOLUTION
 
     res = _process_selectors(
         selectors=selectors,
-        resolution_name=resolution_name,
+        resolution=resolution,
         threshold=threshold,
         batch_size=batch_size,
         only_indexed=only_indexed,
@@ -362,7 +364,7 @@ def match(
     *targets: list[Selector],
     source: list[Selector],
     source_pk: str,
-    resolution_name: str = DEFAULT_RESOLUTION,
+    resolution: ResolutionName = DEFAULT_RESOLUTION,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches IDs against the selected backend.
@@ -372,7 +374,7 @@ def match(
             This allows matching against sources coming from different engines
         source: The output of using `select()` on a single source.
         source_pk: The primary key value to match from the source.
-        resolution_name (optional): The resolution name to use for filtering results.
+        resolution (optional): The resolution name to use for filtering results.
             If not set, it will look for a default resolution.
         threshold (optional): The threshold to use for creating clusters.
             If None, uses the resolutions' default threshold
@@ -385,7 +387,7 @@ def match(
             select("datahub_companies", engine=engine),
             source=select("companies_house", engine=engine),
             source_pk="8534735",
-            resolution_name="last_linker",
+            resolution="last_linker",
         )
         ```
     """
@@ -400,6 +402,6 @@ def match(
         targets=targets,
         source=source,
         source_pk=source_pk,
-        resolution_name=resolution_name,
+        resolution=resolution,
         threshold=threshold,
     )

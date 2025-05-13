@@ -13,16 +13,16 @@ def draw_resolution_graph() -> Figure:
     G: rx.PyDiGraph = get_resolution_graph().to_rx()
 
     node_indices = G.node_indices()
-    datasets = {
+    sources = {
         G[node_indices[i]]["id"]: i
         for i in node_indices
-        if G[node_indices[i]]["type"] == ResolutionNodeType.DATASET.value
+        if G[node_indices[i]]["type"] == ResolutionNodeType.SOURCE.value
     }
 
     colours = []
     for i in node_indices:
         node_type = G[node_indices[i]]["type"]
-        if node_type == ResolutionNodeType.DATASET.value:
+        if node_type == ResolutionNodeType.SOURCE.value:
             colours.append((0, 0, 1, 0.2))
         elif node_type == ResolutionNodeType.MODEL.value:
             colours.append((1, 0, 0, 0.2))
@@ -31,8 +31,8 @@ def draw_resolution_graph() -> Figure:
         G,
         pos=rx.spring_layout(
             G,
-            pos={v: [0, i / 2] for v, i in enumerate(datasets.values())},
-            fixed=set(datasets.values()),
+            pos={v: [0, i / 2] for v, i in enumerate(sources.values())},
+            fixed=set(sources.values()),
         ),
         node_color=colours,
         with_labels=True,

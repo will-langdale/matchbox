@@ -4,6 +4,7 @@ import pyarrow as pa
 import pytest
 from faker import Faker
 
+from matchbox.common.dtos import SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -16,47 +17,49 @@ from matchbox.common.factories.entities import (
 
 
 def make_cluster_entity(id: int, *args) -> ClusterEntity:
-    """Helper to create a ClusterEntity with specified datasets and PKs.
+    """Helper to create a ClusterEntity with specified sources and PKs.
 
     Args:
         id: Entity ID
-        *args: Variable arguments in pairs of (dataset_name, pks_list)
+        *args: Variable arguments in pairs of (source_name, pks_list)
             e.g., "d1", ["1", "2"], "d2", ["3", "4"]
 
     Returns:
-        ClusterEntity with the specified datasets and primary keys
+        ClusterEntity with the specified sources and primary keys
     """
     if len(args) % 2 != 0:
-        raise ValueError("Arguments must be pairs of dataset name and PKs list")
+        raise ValueError("Arguments must be pairs of source name and PKs list")
 
     source_pks = {}
     for i in range(0, len(args), 2):
-        dataset = args[i]
+        source = args[i]
         pks = args[i + 1]
-        if not isinstance(dataset, str):
-            raise TypeError(f"Dataset name must be a string, got {type(dataset)}")
+        if not isinstance(source, str):
+            raise TypeError(f"source name must be a string, got {type(source)}")
         if not isinstance(pks, list):
             raise TypeError(f"PKs must be a list, got {type(pks)}")
-        source_pks[dataset] = frozenset(pks)
+        source_pks[source] = frozenset(pks)
 
     return ClusterEntity(id=id, source_pks=EntityReference(source_pks))
 
 
-def make_source_entity(dataset: str, pks: list[str], base_val: str) -> SourceEntity:
-    """Helper to create a SourceEntity with specified dataset and PKs."""
+def make_source_entity(
+    source: SourceResolutionName, pks: list[str], base_val: str
+) -> SourceEntity:
+    """Helper to create a SourceEntity with specified source resolution name and PKs."""
     entity = SourceEntity(base_values={"name": base_val})
-    entity.add_source_reference(dataset, pks)
+    entity.add_source_reference(source, pks)
     return entity
 
 
 @pytest.mark.parametrize(
     ("name", "pks"),
     (
-        ("dataset1", frozenset({"1", "2", "3"})),
-        ("dataset2", frozenset({"A", "B"})),
+        ("source1", frozenset({"1", "2", "3"})),
+        ("source2", frozenset({"A", "B"})),
     ),
 )
-def test_entity_reference_creation(name: str, pks: frozenset[str]):
+def test_entity_reference_creation(name: SourceResolutionName, pks: frozenset[str]):
     """Test basic EntityReference creation and access."""
     ref = EntityReference({name: pks})
     assert ref[name] == pks
@@ -67,20 +70,20 @@ def test_entity_reference_creation(name: str, pks: frozenset[str]):
 
 def test_entity_reference_addition():
     """Test combining EntityReferences."""
-    ref1 = EntityReference({"dataset1": frozenset({"1", "2"})})
+    ref1 = EntityReference({"source1": frozenset({"1", "2"})})
     ref2 = EntityReference(
-        {"dataset1": frozenset({"2", "3"}), "dataset2": frozenset({"A"})}
+        {"source1": frozenset({"2", "3"}), "source2": frozenset({"A"})}
     )
     combined = ref1 + ref2
-    assert combined["dataset1"] == frozenset({"1", "2", "3"})
-    assert combined["dataset2"] == frozenset({"A"})
+    assert combined["source1"] == frozenset({"1", "2", "3"})
+    assert combined["source2"] == frozenset({"A"})
 
 
 def test_entity_reference_subset():
     """Test subset relationships between EntityReferences."""
-    subset = EntityReference({"dataset1": frozenset({"1", "2"})})
+    subset = EntityReference({"source1": frozenset({"1", "2"})})
     superset = EntityReference(
-        {"dataset1": frozenset({"1", "2", "3"}), "dataset2": frozenset({"A"})}
+        {"source1": frozenset({"1", "2", "3"}), "source2": frozenset({"A"})}
     )
 
     assert subset <= superset
@@ -89,7 +92,7 @@ def test_entity_reference_subset():
 
 def test_cluster_entity_creation():
     """Test basic ClusterEntity functionality."""
-    ref = EntityReference({"dataset1": frozenset({"1", "2"})})
+    ref = EntityReference({"source1": frozenset({"1", "2"})})
     entity = ClusterEntity(source_pks=ref)
 
     assert entity.source_pks == ref
@@ -98,17 +101,17 @@ def test_cluster_entity_creation():
 
 def test_cluster_entity_addition():
     """Test combining ClusterEntity objects."""
-    entity1 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"1"})}))
-    entity2 = ClusterEntity(source_pks=EntityReference({"dataset1": frozenset({"2"})}))
+    entity1 = ClusterEntity(source_pks=EntityReference({"source1": frozenset({"1"})}))
+    entity2 = ClusterEntity(source_pks=EntityReference({"source1": frozenset({"2"})}))
 
     combined = entity1 + entity2
-    assert combined.source_pks["dataset1"] == frozenset({"1", "2"})
+    assert combined.source_pks["source1"] == frozenset({"1", "2"})
 
 
 def test_source_entity_creation():
     """Test basic SourceEntity functionality."""
     base_values = {"name": "John", "age": 30}
-    ref = EntityReference({"dataset1": frozenset({"1", "2"})})
+    ref = EntityReference({"source1": frozenset({"1", "2"})})
 
     entity = SourceEntity(base_values=base_values, source_pks=ref)
 
@@ -391,18 +394,18 @@ def test_diff_results(
 
 def test_source_to_results_conversion():
     """Test converting source entities to cluster entities and comparing them."""
-    # Create source entity present in multiple datasets
+    # Create source entity present in multiple sources
     source = SourceEntity(
         base_values={"name": "Test"},
         source_pks=EntityReference(
-            {"dataset1": frozenset({"1", "2"}), "dataset2": frozenset({"A", "B"})}
+            {"source1": frozenset({"1", "2"}), "source2": frozenset({"A", "B"})}
         ),
     )
 
     # Convert different subsets to cluster entities
-    results1 = source.to_cluster_entity("dataset1")
-    results2 = source.to_cluster_entity("dataset1", "dataset2")
-    results3 = source.to_cluster_entity("dataset2")
+    results1 = source.to_cluster_entity("source1")
+    results2 = source.to_cluster_entity("source1", "source2")
+    results3 = source.to_cluster_entity("source2")
 
     # Test different comparison scenarios
     identical, report = diff_results([results1], [results1])
@@ -412,14 +415,14 @@ def test_source_to_results_conversion():
     # Compare partial overlap
     identical, report = diff_results([results1], [results2])
     assert not identical
-    assert "dataset2" in str(results2 - results1)
+    assert "source2" in str(results2 - results1)
 
     # Compare disjoint sets
     identical, report = diff_results([results1], [results3])
     assert not identical
     assert results1.similarity_ratio(results3) == 0.0
 
-    # Test missing dataset returns None
+    # Test missing source returns None
     assert source.to_cluster_entity("nonexistent") is None
 
 

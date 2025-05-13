@@ -143,7 +143,7 @@ def create_dedupe_scenario(
     # Create and add deduplication models
     for testkit in dag.sources.values():
         source = testkit.source_config
-        model_name = f"naive_test.{source.address.full_name}"
+        name = f"naive_test.{source.address.full_name}"
 
         # Query the raw data
         source_query = backend.query(
@@ -152,19 +152,19 @@ def create_dedupe_scenario(
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_resolution=source.resolution_name,
+            left_resolution=source.name,
             left_query=source_query,
             left_source_pks={source.address.full_name: "source_pk"},
             true_entities=tuple(linked.true_entities),
-            name=model_name,
+            name=name,
             description=f"Deduplication of {source.address.full_name}",
             prob_range=(1.0, 1.0),
             seed=seed,
         )
 
         # Add to backend and DAG
-        backend.insert_model(model=model_testkit.model.metadata)
-        backend.set_model_results(model=model_name, results=model_testkit.probabilities)
+        backend.insert_model(model_config=model_testkit.model.model_config)
+        backend.set_model_results(name=name, results=model_testkit.probabilities)
         dag.add_model(model_testkit)
 
     return dag
@@ -193,17 +193,17 @@ def create_link_scenario(
     # Query data for each resolution
     crn_query = backend.query(
         source=linked.sources["crn"].source_config.address,
-        resolution_name=crn_model.name,
+        resolution=crn_model.name,
     )
 
     duns_query = backend.query(
         source=linked.sources["duns"].source_config.address,
-        resolution_name=duns_model.name,
+        resolution=duns_model.name,
     )
 
     cdms_query = backend.query(
         source=linked.sources["cdms"].source_config.address,
-        resolution_name=cdms_model.name,
+        resolution=cdms_model.name,
     )
 
     # Create CRN-DUNS link
@@ -223,8 +223,8 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_model(model=crn_duns_model.model.metadata)
-    backend.set_model_results(model=crn_duns_name, results=crn_duns_model.probabilities)
+    backend.insert_model(model_config=crn_duns_model.model.model_config)
+    backend.set_model_results(name=crn_duns_name, results=crn_duns_model.probabilities)
     dag.add_model(crn_duns_model)
 
     # Create CRN-CDMS link
@@ -242,20 +242,20 @@ def create_link_scenario(
         seed=seed,
     )
 
-    backend.insert_model(model=crn_cdms_model.model.metadata)
-    backend.set_model_results(model=crn_cdms_name, results=crn_cdms_model.probabilities)
-    backend.set_model_truth(model=crn_cdms_name, truth=75)
+    backend.insert_model(model_config=crn_cdms_model.model.model_config)
+    backend.set_model_results(name=crn_cdms_name, results=crn_cdms_model.probabilities)
+    backend.set_model_truth(name=crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
 
     # Create final join
     # Query the previous link's results
     crn_cdms_query_crn_only = backend.query(
         source=linked.sources["crn"].source_config.address,
-        resolution_name=crn_cdms_name,
+        resolution=crn_cdms_name,
     ).rename_columns(["id", "source_pk_crn"])
     crn_cdms_query_cdms_only = backend.query(
         source=linked.sources["cdms"].source_config.address,
-        resolution_name=crn_cdms_name,
+        resolution=crn_cdms_name,
     ).rename_columns(["id", "source_pk_cdms"])
     crn_cdms_query = pa.concat_tables(
         [crn_cdms_query_crn_only, crn_cdms_query_cdms_only],
@@ -264,7 +264,7 @@ def create_link_scenario(
 
     duns_query_linked = backend.query(
         source=linked.sources["duns"].source_config.address,
-        resolution_name=crn_duns_name,
+        resolution=crn_duns_name,
     )
 
     final_join_name = "final_join"
@@ -281,9 +281,9 @@ def create_link_scenario(
         seed=seed,
     )
 
-    backend.insert_model(model=final_join_model.model.metadata)
+    backend.insert_model(model_config=final_join_model.model.model_config)
     backend.set_model_results(
-        model=final_join_name, results=final_join_model.probabilities
+        name=final_join_name, results=final_join_model.probabilities
     )
     dag.add_model(final_join_model)
 
@@ -341,7 +341,7 @@ def create_convergent_scenario(
     # Create and add deduplication models
     for testkit in dag.sources.values():
         source = testkit.source_config
-        model_name = f"naive_test.{source.address.full_name}"
+        name = f"naive_test.{source.address.full_name}"
 
         # Query the raw data
         source_query = backend.query(
@@ -350,11 +350,11 @@ def create_convergent_scenario(
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
-            left_resolution=source.resolution_name,
+            left_resolution=source.name,
             left_query=source_query,
             left_source_pks={source.address.full_name: "source_pk"},
             true_entities=tuple(linked.true_entities),
-            name=model_name,
+            name=name,
             description=f"Deduplication of {source.address.full_name}",
             prob_range=(1.0, 1.0),
             seed=seed,

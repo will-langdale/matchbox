@@ -81,7 +81,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
 
     # Configure and run the deduper
     deduper = make_model(
-        model_name="exact_deduper",
+        name="exact_deduper",
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
@@ -131,7 +131,7 @@ def test_exact_duplicate_deduplication(
 
     # Configure and run the deduper
     deduper = make_model(
-        model_name="exact_deduper",
+        name="exact_deduper",
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),

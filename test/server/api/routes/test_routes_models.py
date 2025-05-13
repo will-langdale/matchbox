@@ -36,20 +36,20 @@ def test_insert_model(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
+    response = test_client.post("/models", json=testkit.model.model_config.model_dump())
 
     assert response.status_code == 201
     assert (
         response.json()
         == ResolutionOperationStatus(
             success=True,
-            resolution_name="test_model",
+            name="test_model",
             operation=CRUDOperation.CREATE,
             details=None,
         ).model_dump()
     )
 
-    mock_backend.insert_model.assert_called_once_with(testkit.model.metadata)
+    mock_backend.insert_model.assert_called_once_with(testkit.model.model_config)
 
 
 def test_insert_model_error(test_client: TestClient):
@@ -60,7 +60,7 @@ def test_insert_model_error(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
+    response = test_client.post("/models", json=testkit.model.model_config.model_dump())
 
     assert response.status_code == 500
     assert response.json()["success"] is False
@@ -70,7 +70,7 @@ def test_insert_model_error(test_client: TestClient):
 def test_get_model(test_client: TestClient):
     testkit = model_factory(name="test_model", description="test description")
     mock_backend = Mock()
-    mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+    mock_backend.get_model = Mock(return_value=testkit.model.model_config)
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -78,8 +78,8 @@ def test_get_model(test_client: TestClient):
     response = test_client.get("/models/test_model")
 
     assert response.status_code == 200
-    assert response.json()["name"] == testkit.model.metadata.name
-    assert response.json()["description"] == testkit.model.metadata.description
+    assert response.json()["name"] == testkit.model.model_config.name
+    assert response.json()["description"] == testkit.model.model_config.description
 
 
 def test_get_model_not_found(test_client: TestClient):
@@ -119,7 +119,7 @@ def test_model_upload(
     # Setup metadata store
     mock_metadata_store = Mock()
     store = MetadataStore()
-    upload_id = store.cache_model(testkit.model.metadata)
+    upload_id = store.cache_model(testkit.model.model_config)
 
     mock_metadata_store.get.side_effect = store.get
     mock_metadata_store.update_status.side_effect = store.update_status
@@ -171,17 +171,17 @@ async def test_complete_model_upload_process(
     testkit = model_factory(model_type=model_type)
 
     # Set up the mock to return the actual model metadata and data
-    mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+    mock_backend.get_model = Mock(return_value=testkit.model.model_config)
     mock_backend.get_model_results = Mock(return_value=testkit.probabilities)
 
     # Step 1: Create model
-    response = test_client.post("/models", json=testkit.model.metadata.model_dump())
+    response = test_client.post("/models", json=testkit.model.model_config.model_dump())
     assert response.status_code == 201
     assert response.json()["success"] is True
-    assert response.json()["resolution_name"] == testkit.model.metadata.name
+    assert response.json()["name"] == testkit.model.model_config.name
 
     # Step 2: Initialize results upload
-    response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
+    response = test_client.post(f"/models/{testkit.model.model_config.name}/results")
     assert response.status_code == 202
     upload_id = response.json()["id"]
     assert response.json()["status"] == "awaiting_upload"
@@ -231,38 +231,38 @@ async def test_complete_model_upload_process(
     mock_backend.set_model_results.assert_called_once()
     call_args = mock_backend.set_model_results.call_args
     assert (
-        call_args[1]["model"] == testkit.model.metadata.name
-    )  # Check model name matches
+        call_args[1]["name"] == testkit.model.model_config.name
+    )  # Check model resolution name matches
     assert call_args[1]["results"].equals(
         testkit.probabilities
     )  # Check results data matches
 
     # Step 6: Verify we can retrieve the results
-    response = test_client.get(f"/models/{testkit.model.metadata.name}/results")
+    response = test_client.get(f"/models/{testkit.model.model_config.name}/results")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
 
     # Step 7: Additional model-specific verifications
     if model_type == "linker":
         # For linker models, verify left and right resolutions are set
-        assert testkit.model.metadata.left_resolution is not None
-        assert testkit.model.metadata.right_resolution is not None
+        assert testkit.model.model_config.left_resolution is not None
+        assert testkit.model.model_config.right_resolution is not None
     else:
         # For deduper models, verify only left resolution is set
-        assert testkit.model.metadata.left_resolution is not None
-        assert testkit.model.metadata.right_resolution is None
+        assert testkit.model.model_config.left_resolution is not None
+        assert testkit.model.model_config.right_resolution is None
 
     # Verify the model truth can be set and retrieved
     truth_value = 85
     mock_backend.get_model_truth = Mock(return_value=truth_value)
 
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth",
+        f"/models/{testkit.model.model_config.name}/truth",
         json=truth_value,
     )
     assert response.status_code == 200
 
-    response = test_client.get(f"/models/{testkit.model.metadata.name}/truth")
+    response = test_client.get(f"/models/{testkit.model.model_config.name}/truth")
     assert response.status_code == 200
     assert response.json() == truth_value
 
@@ -274,12 +274,12 @@ async def test_complete_model_upload_process(
 def test_set_results(test_client: TestClient):
     testkit = model_factory()
     mock_backend = Mock()
-    mock_backend.get_model = Mock(return_value=testkit.model.metadata)
+    mock_backend.get_model = Mock(return_value=testkit.model.model_config)
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.post(f"/models/{testkit.model.metadata.name}/results")
+    response = test_client.post(f"/models/{testkit.model.model_config.name}/results")
 
     assert response.status_code == 202
     assert response.json()["status"] == "awaiting_upload"
@@ -307,7 +307,7 @@ def test_get_results(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get(f"/models/{testkit.model.metadata.name}/results")
+    response = test_client.get(f"/models/{testkit.model.model_config.name}/results")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
@@ -321,13 +321,13 @@ def test_set_truth(test_client: TestClient):
     app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=95
+        f"/models/{testkit.model.model_config.name}/truth", json=95
     )
 
     assert response.status_code == 200
     assert response.json()["success"] is True
     mock_backend.set_model_truth.assert_called_once_with(
-        model=testkit.model.metadata.name, truth=95
+        name=testkit.model.model_config.name, truth=95
     )
 
 
@@ -337,13 +337,13 @@ def test_set_truth_invalid_value(test_client: TestClient):
 
     # Test value > 1
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=150
+        f"/models/{testkit.model.model_config.name}/truth", json=150
     )
     assert response.status_code == 422
 
     # Test value < 0
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/truth", json=-50
+        f"/models/{testkit.model.model_config.name}/truth", json=-50
     )
     assert response.status_code == 422
 
@@ -356,7 +356,7 @@ def test_get_truth(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get(f"/models/{testkit.model.metadata.name}/truth")
+    response = test_client.get(f"/models/{testkit.model.model_config.name}/truth")
 
     assert response.status_code == 200
     assert response.json() == 95
@@ -374,7 +374,7 @@ def test_get_ancestors(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get(f"/models/{testkit.model.metadata.name}/ancestors")
+    response = test_client.get(f"/models/{testkit.model.model_config.name}/ancestors")
 
     assert response.status_code == 200
     assert len(response.json()) == 2
@@ -394,7 +394,9 @@ def test_get_ancestors_cache(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get(f"/models/{testkit.model.metadata.name}/ancestors_cache")
+    response = test_client.get(
+        f"/models/{testkit.model.model_config.name}/ancestors_cache"
+    )
 
     assert response.status_code == 200
     assert len(response.json()) == 2
@@ -415,7 +417,7 @@ def test_set_ancestors_cache(test_client: TestClient):
     ]
 
     response = test_client.patch(
-        f"/models/{testkit.model.metadata.name}/ancestors_cache",
+        f"/models/{testkit.model.model_config.name}/ancestors_cache",
         json=[a.model_dump() for a in ancestors_data],
     )
 
@@ -423,7 +425,7 @@ def test_set_ancestors_cache(test_client: TestClient):
     assert response.json()["success"] is True
     assert response.json()["operation"] == CRUDOperation.UPDATE
     mock_backend.set_model_ancestors_cache.assert_called_once_with(
-        model=testkit.model.metadata.name, ancestors_cache=ancestors_data
+        name=testkit.model.model_config.name, ancestors_cache=ancestors_data
     )
 
 
@@ -490,7 +492,7 @@ def test_delete_resolution(test_client: TestClient):
     """Test deletion of a resolution."""
     testkit = model_factory()
     response = test_client.delete(
-        f"/resolutions/{testkit.model.metadata.name}",
+        f"/resolutions/{testkit.model.model_config.name}",
         params={"certain": True},
     )
 
@@ -499,7 +501,7 @@ def test_delete_resolution(test_client: TestClient):
         response.json()
         == ResolutionOperationStatus(
             success=True,
-            resolution_name=testkit.model.metadata.name,
+            name=testkit.model.model_config.name,
             operation=CRUDOperation.DELETE,
             details=None,
         ).model_dump()
@@ -517,7 +519,7 @@ def test_delete_resolution_needs_confirmation(test_client: TestClient):
     app.dependency_overrides[backend] = lambda: mock_backend
 
     testkit = model_factory()
-    response = test_client.delete(f"/resolutions/{testkit.model.metadata.name}")
+    response = test_client.delete(f"/resolutions/{testkit.model.model_config.name}")
 
     assert response.status_code == 409
     assert response.json()["success"] is False

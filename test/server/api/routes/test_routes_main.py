@@ -393,7 +393,7 @@ def test_match(test_client: TestClient):
             "source_full_name": bar_address.full_name,
             "source_warehouse_hash_b64": bar_address.warehouse_hash_b64,
             "source_pk": 1,
-            "resolution_name": "res",
+            "resolution": "res",
             "threshold": 50,
         },
     )
@@ -419,7 +419,7 @@ def test_match_404_resolution(test_client: TestClient):
             "source_full_name": "bar",
             "source_warehouse_hash_b64": hash_to_base64(b"bar"),
             "source_pk": 1,
-            "resolution_name": "res",
+            "resolution": "res",
         },
     )
 
@@ -444,7 +444,7 @@ def test_match_404_source(test_client: TestClient):
             "source_full_name": "bar",
             "source_warehouse_hash_b64": hash_to_base64(b"bar"),
             "source_pk": 1,
-            "resolution_name": "res",
+            "resolution": "res",
         },
     )
 
@@ -460,7 +460,7 @@ def test_count_all_backend_items(test_client: TestClient):
     """Test the unparameterised entity counting endpoint."""
     mock_backend = Mock()
     entity_counts = {
-        "datasets": 1,
+        "sources": 1,
         "models": 2,
         "data": 3,
         "clusters": 4,
@@ -524,8 +524,8 @@ def test_api_key_authorisation(test_client: TestClient):
         (test_client.post, "/upload/upload_id"),
         (test_client.post, "/sources"),
         (test_client.post, "/models"),
-        (test_client.patch, "/models/model_name/truth"),
-        (test_client.delete, "/resolutions/model_name"),
+        (test_client.patch, "/models/name/truth"),
+        (test_client.delete, "/resolutions/name"),
         (test_client.delete, "/database"),
     ]
 

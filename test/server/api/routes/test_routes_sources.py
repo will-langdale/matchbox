@@ -64,7 +64,7 @@ def test_get_resolution_sources(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get("/sources", params={"resolution_name": "foo"})
+    response = test_client.get("/sources", params={"name": "foo"})
     assert response.status_code == 200
     for s in response.json():
         assert SourceConfig.model_validate(s)
@@ -79,7 +79,7 @@ def test_get_resolution_sources_404(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get("/sources", params={"resolution_name": "foo"})
+    response = test_client.get("/sources", params={"name": "foo"})
     assert response.status_code == 404
     assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
 

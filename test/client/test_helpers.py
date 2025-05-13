@@ -275,12 +275,12 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     assert dict(query_route.calls[-2].request.url.params) == {
         "full_name": address1.full_name,
         "warehouse_hash_b64": address1.warehouse_hash_b64,
-        "resolution_name": DEFAULT_RESOLUTION,
+        "resolution": DEFAULT_RESOLUTION,
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "full_name": address2.full_name,
         "warehouse_hash_b64": address2.warehouse_hash_b64,
-        "resolution_name": DEFAULT_RESOLUTION,
+        "resolution": DEFAULT_RESOLUTION,
     }
 
     # It also works with the selectors specified separately
@@ -825,7 +825,7 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         target2,
         source=source,
         source_pk="pk1",
-        resolution_name="foo",
+        resolution="foo",
     )
 
     # Verify results
@@ -844,7 +844,7 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             ("source_full_name", "test.source_config"),
             ("source_warehouse_hash_b64", expected_hash_b64),
             ("source_pk", "pk1"),
-            ("resolution_name", "foo"),
+            ("resolution", "foo"),
         ]
     )
 
@@ -871,7 +871,7 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
             target,
             source=source,
             source_pk="pk1",
-            resolution_name="foo",
+            resolution="foo",
         )
 
 
@@ -897,5 +897,5 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             target,
             source=source,
             source_pk="pk1",
-            resolution_name="foo",
+            resolution="foo",
         )
