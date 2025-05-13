@@ -258,12 +258,12 @@ class MatchboxDBAdapter(ABC):
         resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
-        """Matches an ID in a source source and returns the keys in the targets.
+        """Matches an ID in a source resolution and returns the keys in the targets.
 
         Args:
             source_pk: The primary key to match from the source.
-            source: The address of the source source.
-            targets: The addresses of the target sources.
+            source: The address of the source.
+            targets: The addresses of the targets.
             resolution: The name of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold

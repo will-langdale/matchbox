@@ -106,7 +106,7 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
 
     for resolution_id, threshold in lineage_thresholds.items():
         if threshold is None:
-            # This is a source - get all its clusters through ClusterSourcePK
+            # This is a source resolution - get all its clusters through ClusterSourcePK
             resolution_valid = (
                 select(ClusterSourcePK.cluster_id.label("cluster"))
                 .join(
@@ -544,15 +544,15 @@ def match(
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
-    """Matches an ID in a source source and returns the keys in the targets.
+    """Matches an ID in a source resolution and returns the keys in the targets.
 
     To accomplish this, the function:
 
     * Reconstructs the resolution lineage from the specified resolution
     * Iterates through each target, and
         * Retrieves its cluster hash according to the resolution
-        * Retrieves all other IDs in the cluster in the source source
-        * Retrieves all other IDs in the cluster in the target source
+        * Retrieves all other IDs in the cluster in the source source resolution
+        * Retrieves all other IDs in the cluster in the target source resolution
     * Returns the results as Match objects, one per target
     """
     with MBDB.get_session() as session:
