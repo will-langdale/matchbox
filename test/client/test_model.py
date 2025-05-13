@@ -35,7 +35,7 @@ def test_insert_model(matchbox_api: MockRouter):
             201,
             json=ResolutionOperationStatus(
                 success=True,
-                name=testkit.model.metadata.name,
+                name=testkit.model.model_config.name,
                 operation=CRUDOperation.CREATE,
             ).model_dump(),
         )
@@ -48,7 +48,7 @@ def test_insert_model(matchbox_api: MockRouter):
     assert route.called
     assert (
         route.calls.last.request.content.decode()
-        == testkit.model.metadata.model_dump_json()
+        == testkit.model.model_config.model_dump_json()
     )
 
 
@@ -62,7 +62,7 @@ def test_insert_model_error(matchbox_api: MockRouter):
             500,
             json=ResolutionOperationStatus(
                 success=False,
-                name=testkit.model.metadata.name,
+                name=testkit.model.model_config.name,
                 operation=CRUDOperation.CREATE,
                 details="Internal server error",
             ).model_dump(),
@@ -81,7 +81,7 @@ def test_results_getter(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     # Mock the GET /models/{name}/results endpoint
-    route = matchbox_api.get(f"/models/{testkit.model.metadata.name}/results").mock(
+    route = matchbox_api.get(f"/models/{testkit.model.model_config.name}/results").mock(
         return_value=Response(
             200, content=table_to_buffer(testkit.probabilities).read()
         )
@@ -101,7 +101,7 @@ def test_results_getter_not_found(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     # Mock the GET endpoint with a 404 response
-    route = matchbox_api.get(f"/models/{testkit.model.metadata.name}/results").mock(
+    route = matchbox_api.get(f"/models/{testkit.model.model_config.name}/results").mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -123,7 +123,7 @@ def test_results_setter(matchbox_api: MockRouter):
 
     # Mock the endpoints needed for results upload
     init_route = matchbox_api.post(
-        f"/models/{testkit.model.metadata.name}/results"
+        f"/models/{testkit.model.model_config.name}/results"
     ).mock(
         return_value=Response(
             202,
@@ -159,7 +159,7 @@ def test_results_setter(matchbox_api: MockRouter):
 
     # Set results
     test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.metadata
+        probabilities=testkit.probabilities, metadata=testkit.model.model_config
     )
     testkit.model.results = test_results
 
@@ -178,7 +178,7 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
 
     # Mock the initial POST endpoint
     init_route = matchbox_api.post(
-        f"/models/{testkit.model.metadata.name}/results"
+        f"/models/{testkit.model.model_config.name}/results"
     ).mock(
         return_value=Response(
             202,
@@ -205,7 +205,7 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
 
     # Attempt to set results and verify it raises an exception
     test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.metadata
+        probabilities=testkit.probabilities, metadata=testkit.model.model_config
     )
     with pytest.raises(MatchboxServerFileError, match="Invalid data format"):
         testkit.model.results = test_results
@@ -219,7 +219,7 @@ def test_truth_getter(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     # Mock the GET /models/{name}/truth endpoint
-    route = matchbox_api.get(f"/models/{testkit.model.metadata.name}/truth").mock(
+    route = matchbox_api.get(f"/models/{testkit.model.model_config.name}/truth").mock(
         return_value=Response(200, json=90)
     )
 
@@ -236,12 +236,12 @@ def test_truth_setter(matchbox_api: MockRouter):
     testkit = model_factory(model_type="linker")
 
     # Mock the PATCH /models/{name}/truth endpoint
-    route = matchbox_api.patch(f"/models/{testkit.model.metadata.name}/truth").mock(
+    route = matchbox_api.patch(f"/models/{testkit.model.model_config.name}/truth").mock(
         return_value=Response(
             200,
             json=ResolutionOperationStatus(
                 success=True,
-                name=testkit.model.metadata.name,
+                name=testkit.model.model_config.name,
                 operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )
@@ -274,9 +274,9 @@ def test_ancestors_getter(matchbox_api: MockRouter):
     ]
 
     # Mock the GET /models/{name}/ancestors endpoint
-    route = matchbox_api.get(f"/models/{testkit.model.metadata.name}/ancestors").mock(
-        return_value=Response(200, json=ancestors_data)
-    )
+    route = matchbox_api.get(
+        f"/models/{testkit.model.model_config.name}/ancestors"
+    ).mock(return_value=Response(200, json=ancestors_data))
 
     # Get ancestors
     ancestors = testkit.model.ancestors
@@ -292,7 +292,7 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
 
     # Mock the GET endpoint
     get_route = matchbox_api.get(
-        f"/models/{testkit.model.metadata.name}/ancestors_cache"
+        f"/models/{testkit.model.model_config.name}/ancestors_cache"
     ).mock(
         return_value=Response(
             200, json=[ModelAncestor(name="model1", truth=90).model_dump()]
@@ -301,13 +301,13 @@ def test_ancestors_cache_operations(matchbox_api: MockRouter):
 
     # Mock the POST endpoint
     set_route = matchbox_api.post(
-        f"/models/{testkit.model.metadata.name}/ancestors_cache"
+        f"/models/{testkit.model.model_config.name}/ancestors_cache"
     ).mock(
         return_value=Response(
             200,
             json=ResolutionOperationStatus(
                 success=True,
-                name=testkit.model.metadata.name,
+                name=testkit.model.model_config.name,
                 operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )
@@ -342,13 +342,13 @@ def test_delete_resolution(matchbox_api: MockRouter):
 
     # Mock the DELETE endpoint with success response
     route = matchbox_api.delete(
-        f"/resolutions/{testkit.model.metadata.name}", params={"certain": True}
+        f"/resolutions/{testkit.model.model_config.name}", params={"certain": True}
     ).mock(
         return_value=Response(
             200,
             json=ResolutionOperationStatus(
                 success=True,
-                name=testkit.model.metadata.name,
+                name=testkit.model.model_config.name,
                 operation=CRUDOperation.DELETE,
             ).model_dump(),
         )
@@ -370,12 +370,12 @@ def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter):
 
     # Mock the DELETE endpoint with 409 confirmation required response
     error_details = "Cannot delete model with dependent models: dedupe1, dedupe2"
-    route = matchbox_api.delete(f"/resolutions/{testkit.model.metadata.name}").mock(
+    route = matchbox_api.delete(f"/resolutions/{testkit.model.model_config.name}").mock(
         return_value=Response(
             409,
             json=ResolutionOperationStatus(
                 success=False,
-                name=testkit.model.metadata.name,
+                name=testkit.model.model_config.name,
                 operation=CRUDOperation.DELETE,
                 details=error_details,
             ).model_dump(),

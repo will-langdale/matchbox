@@ -5,7 +5,7 @@ import pyarrow.compute as pc
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.common.dtos import ModelAncestor, ModelMetadata, ModelType
+from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxResolutionAlreadyExists,
@@ -168,7 +168,7 @@ class TestMatchboxBackend:
         """Test getting a model from the database."""
         with self.scenario(self.backend, "dedupe"):
             model = self.backend.get_model(name="naive_test.crn")
-            assert isinstance(model, ModelMetadata)
+            assert isinstance(model, ModelConfig)
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_model(name="nonexistent")
@@ -232,7 +232,7 @@ class TestMatchboxBackend:
             models_count = self.backend.models.count()
 
             self.backend.insert_model(
-                model_metadata=ModelMetadata(
+                model_config=ModelConfig(
                     name="dedupe_1",
                     description="Test deduper 1",
                     type=ModelType.DEDUPER,
@@ -240,7 +240,7 @@ class TestMatchboxBackend:
                 )
             )
             self.backend.insert_model(
-                model_metadata=ModelMetadata(
+                model_config=ModelConfig(
                     name="dedupe_2",
                     description="Test deduper 2",
                     type=ModelType.DEDUPER,
@@ -252,7 +252,7 @@ class TestMatchboxBackend:
 
             # Test linker insertion
             self.backend.insert_model(
-                model_metadata=ModelMetadata(
+                model_config=ModelConfig(
                     name="link_1",
                     description="Test linker 1",
                     type=ModelType.LINKER,
@@ -266,7 +266,7 @@ class TestMatchboxBackend:
             # Test can't insert duplicate
             with pytest.raises(MatchboxResolutionAlreadyExists):
                 self.backend.insert_model(
-                    model_metadata=ModelMetadata(
+                    model_config=ModelConfig(
                         name="link_1",
                         description="Test upsert",
                         type=ModelType.LINKER,
@@ -321,7 +321,7 @@ class TestMatchboxBackend:
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag:
             for model_testkit in dag.models.values():
-                self.backend.insert_model(model_metadata=model_testkit.model.metadata)
+                self.backend.insert_model(model_config=model_testkit.model.model_config)
                 self.backend.set_model_results(
                     name=model_testkit.name, results=model_testkit.probabilities
                 )

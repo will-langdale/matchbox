@@ -14,7 +14,7 @@ from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
     ModelAncestor,
-    ModelMetadata,
+    ModelConfig,
     ModelResolutionName,
     NotFoundError,
     ResolutionName,
@@ -272,22 +272,22 @@ def get_resolution_graph() -> ResolutionGraph:
 # Model management
 
 
-def insert_model(model_metadata: ModelMetadata) -> ResolutionOperationStatus:
+def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
     """Insert a model in Matchbox."""
-    log_prefix = f"Model {model_metadata.name}"
+    log_prefix = f"Model {model_config.name}"
     logger.debug("Inserting metadata", prefix=log_prefix)
 
-    res = CLIENT.post("/models", json=model_metadata.model_dump())
+    res = CLIENT.post("/models", json=model_config.model_dump())
     return ResolutionOperationStatus.model_validate(res.json())
 
 
-def get_model(name: ModelResolutionName) -> ModelMetadata:
+def get_model(name: ModelResolutionName) -> ModelConfig:
     """Get model metadata from Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(f"/models/{name}")
-    return ModelMetadata.model_validate(res.json())
+    return ModelConfig.model_validate(res.json())
 
 
 def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus:

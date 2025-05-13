@@ -8,7 +8,7 @@ import pyarrow.compute as pc
 from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from matchbox.common.dtos import ModelMetadata
+from matchbox.common.dtos import ModelConfig
 from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
 
@@ -57,7 +57,7 @@ class Results(BaseModel):
     probabilities: pa.Table
     clusters: pa.Table | None = None
     model: Model | None = None
-    metadata: ModelMetadata
+    metadata: ModelConfig
 
     @field_validator("probabilities", mode="before")
     @classmethod
@@ -168,9 +168,9 @@ class Results(BaseModel):
         df = (
             self.probabilities.to_pandas(types_mapper=ArrowDtype)
             .assign(
-                left=self.model.metadata.left_resolution,
-                right=self.model.metadata.right_resolution,
-                model=self.metadata.name,
+                left=self.model.model_config.left_resolution,
+                right=self.model.model_config.right_resolution,
+                model=self.model_config.name,
             )
             .convert_dtypes(dtype_backend="pyarrow")[
                 ["model", "left", "left_id", "right", "right_id", "probability"]

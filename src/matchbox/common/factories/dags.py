@@ -76,7 +76,7 @@ class TestkitDAG(BaseModel):
     def add_source(self, testkit: SourceTestkit | LinkedSourcesTestkit):
         """Add a source testkit to the DAG."""
         if isinstance(testkit, LinkedSourcesTestkit):
-            # Create linked key as "linked_" + concatenated source names
+            # Create linked key as "linked_" + concatenated source resolution names
             source_names = sorted(testkit.sources.keys())
             linked_key = f"linked_{'_'.join(source_names)}"
 
@@ -100,8 +100,8 @@ class TestkitDAG(BaseModel):
         self.root_source_addresses[name] = set()
 
         # Validate dependencies
-        left_res = testkit.model.metadata.left_resolution
-        right_res = testkit.model.metadata.right_resolution
+        left_res = testkit.model.model_config.left_resolution
+        right_res = testkit.model.model_config.right_resolution
         self._validate_dependencies(left_res, right_res)
 
         # Track dependencies based on left/right resolution
@@ -117,14 +117,15 @@ class TestkitDAG(BaseModel):
     def get_sources_for_model(
         self, name: ModelResolutionName
     ) -> dict[str | None, set[SourceResolutionName]]:
-        """Find the LinkedSourcesTestkit keys and specific source names for a model.
+        """Find a model's LinkedSourcesTestkit keys and source resolution names.
 
         Args:
             name: The name of the model to analyze
 
         Returns:
             A dictionary mapping:
-            - LinkedSourcesTestkit keys (or None) to sets of model's source names
+            - LinkedSourcesTestkit keys (or None) to sets of model's source
+                resolution names
         """
         if name not in self.models:
             return {None: set()}

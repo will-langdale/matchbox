@@ -89,7 +89,7 @@ def test_model_type_creation(
     )
 
     # Basic type verification
-    assert model.model.metadata.type == expected_type
+    assert model.model.model_config.type == expected_type
     assert (model.right_query is not None) == should_have_right
     assert (model.right_clusters is not None) == should_have_right
 
@@ -380,9 +380,9 @@ def test_model_factory_basic_creation(
     )
 
     # Basic metadata checks
-    assert model.model.metadata.name == name
-    assert model.model.metadata.description == description
-    assert str(model.model.metadata.type) == expected_checks["type"]
+    assert model.model.model_config.name == name
+    assert model.model.model_config.description == description
+    assert str(model.model.model_config.type) == expected_checks["type"]
 
     # Structure checks
     assert (model.right_query is not None) == expected_checks["has_right"]
@@ -483,7 +483,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     )
 
     # Basic type checks
-    assert str(model.model.metadata.type) == expected_checks["type"]
+    assert str(model.model.model_config.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
@@ -515,15 +515,21 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
     dummy2 = model_factory(seed=seed2)
 
     if should_be_equal:
-        assert dummy1.model.metadata.name == dummy2.model.metadata.name
-        assert dummy1.model.metadata.description == dummy2.model.metadata.description
+        assert dummy1.model.model_config.name == dummy2.model.model_config.name
+        assert (
+            dummy1.model.model_config.description
+            == dummy2.model.model_config.description
+        )
         assert dummy1.left_query.equals(dummy2.left_query)
         assert set(dummy1.left_clusters) == set(dummy2.left_clusters)
         assert set(dummy1.entities) == set(dummy2.entities)
         assert dummy1.probabilities.equals(dummy2.probabilities)
     else:
-        assert dummy1.model.metadata.name != dummy2.model.metadata.name
-        assert dummy1.model.metadata.description != dummy2.model.metadata.description
+        assert dummy1.model.model_config.name != dummy2.model.model_config.name
+        assert (
+            dummy1.model.model_config.description
+            != dummy2.model.model_config.description
+        )
         assert not dummy1.left_query.equals(dummy2.left_query)
         assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
@@ -631,7 +637,7 @@ def test_query_to_model_factory_creation(
     )
 
     # Basic type checks
-    assert str(model.model.metadata.type) == expected_checks["type"]
+    assert str(model.model.model_config.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
@@ -681,12 +687,18 @@ def test_query_to_model_factory_seed_behavior(
     )
 
     if should_be_equal:
-        assert model1.model.metadata.name == model2.model.metadata.name
-        assert model1.model.metadata.description == model2.model.metadata.description
+        assert model1.model.model_config.name == model2.model.model_config.name
+        assert (
+            model1.model.model_config.description
+            == model2.model.model_config.description
+        )
         assert model1.probabilities.equals(model2.probabilities)
     else:
-        assert model1.model.metadata.name != model2.model.metadata.name
-        assert model1.model.metadata.description != model2.model.metadata.description
+        assert model1.model.model_config.name != model2.model.model_config.name
+        assert (
+            model1.model.model_config.description
+            != model2.model.model_config.description
+        )
         if len(model1.probabilities) > 0 and len(model2.probabilities) > 0:
             assert not model1.probabilities.equals(model2.probabilities)
 
@@ -736,6 +748,6 @@ def test_query_to_model_factory_compare_with_model_factory():
     assert len(standard_model.entities) == len(query_model.entities)
 
     # Compare model type
-    assert str(standard_model.model.metadata.type) == str(
-        query_model.model.metadata.type
+    assert str(standard_model.model.model_config.type) == str(
+        query_model.model.model_config.type
     )

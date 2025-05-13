@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.dtos import BackendUploadType, ModelMetadata, UploadStatus
+from matchbox.common.dtos import BackendUploadType, ModelConfig, UploadStatus
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
@@ -21,7 +21,7 @@ class MetadataCacheEntry(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    metadata: SourceConfig | ModelMetadata
+    metadata: SourceConfig | ModelConfig
     upload_type: BackendUploadType
     update_timestamp: datetime
     status: UploadStatus
@@ -72,7 +72,7 @@ class MetadataStore:
         )
         return cache_id
 
-    def cache_model(self, metadata: ModelMetadata) -> str:
+    def cache_model(self, metadata: ModelConfig) -> str:
         """Cache model results metadata and return ID."""
         self._cleanup_if_needed()
         cache_id = str(uuid.uuid4())

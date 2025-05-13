@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from matchbox.common.dtos import (
     ModelAncestor,
-    ModelMetadata,
+    ModelConfig,
     ModelResolutionName,
     ResolutionName,
 )
@@ -397,11 +397,11 @@ class MatchboxDBAdapter(ABC):
     # Model management
 
     @abstractmethod
-    def insert_model(self, model_metadata: ModelMetadata) -> None:
+    def insert_model(self, model_config: ModelConfig) -> None:
         """Writes a model to Matchbox.
 
         Args:
-            model_metadata: ModelMetadata object with the model's metadata
+            model_config: ModelConfig object with the model's metadata
 
         Raises:
             MatchboxDataNotFound: If, for a linker, the source models weren't found in
@@ -410,7 +410,7 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_model(self, name: ModelResolutionName) -> ModelMetadata:
+    def get_model(self, name: ModelResolutionName) -> ModelConfig:
         """Get a model from the database."""
         ...
 
@@ -438,8 +438,8 @@ class MatchboxDBAdapter(ABC):
     def get_model_ancestors(self, name: ModelResolutionName) -> list[ModelAncestor]:
         """Gets the current truth values of all ancestors.
 
-        Returns a list of ModelAncestor objects mapping model names to their current
-        truth thresholds.
+        Returns a list of ModelAncestor objects mapping model resolution names to
+        their current truth thresholds.
 
         Unlike ancestors_cache which returns cached values, this property returns
         the current truth values of all ancestor models.
@@ -454,8 +454,8 @@ class MatchboxDBAdapter(ABC):
 
         Args:
             name: The name of the model to update
-            ancestors_cache: List of ModelAncestor objects mapping model names to
-                their truth thresholds
+            ancestors_cache: List of ModelAncestor objects mapping model resolution
+                names to their truth thresholds
         """
         ...
 
@@ -463,10 +463,10 @@ class MatchboxDBAdapter(ABC):
     def get_model_ancestors_cache(
         self, name: ModelResolutionName
     ) -> list[ModelAncestor]:
-        """Gets the cached ancestor thresholds, converting hashes to model names.
+        """Gets the cached ancestor thresholds.
 
-        Returns a list of ModelAncestor objects mapping model names to their cached
-        truth thresholds.
+        Returns a list of ModelAncestor objects mapping model resolution names to
+        their cached truth thresholds.
 
         This is required because each point of truth needs to be stable, so we choose
         when to update it, caching the ancestor's values in the model itself.

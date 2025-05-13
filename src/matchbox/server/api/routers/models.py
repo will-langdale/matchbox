@@ -15,7 +15,7 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     CRUDOperation,
     ModelAncestor,
-    ModelMetadata,
+    ModelConfig,
     ModelResolutionName,
     NotFoundError,
     ResolutionOperationStatus,
@@ -46,7 +46,7 @@ router = APIRouter(prefix="/models", tags=["models"])
     dependencies=[Depends(validate_api_key)],
 )
 async def insert_model(
-    backend: BackendDependency, model: ModelMetadata
+    backend: BackendDependency, model: ModelConfig
 ) -> ResolutionOperationStatus:
     """Insert a model into the backend."""
     try:
@@ -74,7 +74,7 @@ async def insert_model(
 )
 async def get_model(
     backend: BackendDependency, name: ModelResolutionName
-) -> ModelMetadata:
+) -> ModelConfig:
     """Get a model from the backend."""
     try:
         return backend.get_model(name=name)

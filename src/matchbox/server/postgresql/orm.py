@@ -179,7 +179,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         res_type: Literal["model", "dataset", "human"] | None = None,
         session: Session | None = None,
     ) -> "Resolutions":
-        """Resolves a model name to a Resolution object.
+        """Resolves a model resolution name to a Resolution object.
 
         Args:
             name: The name of the model to resolve.

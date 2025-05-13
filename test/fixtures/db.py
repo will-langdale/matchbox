@@ -163,7 +163,7 @@ def create_dedupe_scenario(
         )
 
         # Add to backend and DAG
-        backend.insert_model(model_metadata=model_testkit.model.metadata)
+        backend.insert_model(model_config=model_testkit.model.model_config)
         backend.set_model_results(name=name, results=model_testkit.probabilities)
         dag.add_model(model_testkit)
 
@@ -223,7 +223,7 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_model(model_metadata=crn_duns_model.model.metadata)
+    backend.insert_model(model_config=crn_duns_model.model.model_config)
     backend.set_model_results(name=crn_duns_name, results=crn_duns_model.probabilities)
     dag.add_model(crn_duns_model)
 
@@ -242,7 +242,7 @@ def create_link_scenario(
         seed=seed,
     )
 
-    backend.insert_model(model_metadata=crn_cdms_model.model.metadata)
+    backend.insert_model(model_config=crn_cdms_model.model.model_config)
     backend.set_model_results(name=crn_cdms_name, results=crn_cdms_model.probabilities)
     backend.set_model_truth(name=crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
@@ -281,7 +281,7 @@ def create_link_scenario(
         seed=seed,
     )
 
-    backend.insert_model(model_metadata=final_join_model.model.metadata)
+    backend.insert_model(model_config=final_join_model.model.model_config)
     backend.set_model_results(
         name=final_join_name, results=final_join_model.probabilities
     )

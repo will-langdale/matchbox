@@ -193,7 +193,7 @@ class FeatureConfig(BaseModel):
 class EntityReference(frozendict):
     """Reference to an entity's presence in specific sources.
 
-    Maps source names to sets of primary keys.
+    Maps source resolution names to sets of primary keys.
     """
 
     def __init__(
@@ -296,7 +296,7 @@ class SourcePKMixin:
         so we maintain separation between sources.
 
         Args:
-            sources: Dictionary of source name to source data
+            sources: Dictionary of source resolution name to source data
 
         Returns:
             Dictionary mapping:
@@ -491,7 +491,7 @@ def query_to_cluster_entities(
 
     Args:
         query: A PyArrow table or DataFrame representing a query result
-        source_pks: Mapping of source names to primary key column names
+        source_pks: Mapping of source resolution names to primary key column names
 
     Returns:
         A set of ClusterEntity objects

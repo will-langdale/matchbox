@@ -6,7 +6,7 @@ from pyarrow import Table
 from sqlalchemy import and_, case, func, select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import ModelMetadata, ModelType
+from matchbox.common.dtos import ModelConfig, ModelType
 from matchbox.common.graph import ResolutionNodeType
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -78,7 +78,7 @@ def _get_source_info(resolution_id: int) -> SourceInfo:
     )
 
 
-def get_model_metadata(resolution: Resolutions) -> ModelMetadata:
+def get_model_config(resolution: Resolutions) -> ModelConfig:
     """Get metadata for a model resolution."""
     if resolution.type != ResolutionNodeType.MODEL:
         raise ValueError("Expected resolution of type model")
@@ -91,7 +91,7 @@ def get_model_metadata(resolution: Resolutions) -> ModelMetadata:
             session.get(Resolutions, source_info.right) if source_info.right else None
         )
 
-        return ModelMetadata(
+        return ModelConfig(
             name=resolution.name,
             description=resolution.description or "",
             type=ModelType.DEDUPER if source_info.right is None else ModelType.LINKER,

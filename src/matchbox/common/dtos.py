@@ -81,7 +81,7 @@ class CRUDOperation(StrEnum):
     DELETE = "delete"
 
 
-class ModelMetadata(BaseModel):
+class ModelConfig(BaseModel):
     """Metadata for a model."""
 
     name: ModelResolutionName

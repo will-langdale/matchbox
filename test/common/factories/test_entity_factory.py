@@ -46,7 +46,7 @@ def make_cluster_entity(id: int, *args) -> ClusterEntity:
 def make_source_entity(
     source: SourceResolutionName, pks: list[str], base_val: str
 ) -> SourceEntity:
-    """Helper to create a SourceEntity with specified source name and PKs."""
+    """Helper to create a SourceEntity with specified source resolution name and PKs."""
     entity = SourceEntity(base_values={"name": base_val})
     entity.add_source_reference(source, pks)
     return entity

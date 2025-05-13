@@ -302,7 +302,7 @@ class SourceAddress(BaseModel):
 
     @classmethod
     def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
-        """Generate a SourceAddress from a SQLAlchemy Engine and full source name."""
+        """Generate a SourceAddress from a SQLAlchemy Engine and schema.table name."""
         url = engine.url
         components = {
             "dialect": url.get_dialect().name,

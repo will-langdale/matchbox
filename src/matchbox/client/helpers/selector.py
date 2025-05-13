@@ -34,7 +34,8 @@ def select(
     """From one engine, builds and verifies a list of selectors.
 
     Args:
-        selection: Full source names and optionally a subset of columns to select
+        selection: Full source resolution names and optionally a subset of columns
+            to select
         engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
             `MB__CLIENT__DEFAULT_WAREHOUSE` environment variable.

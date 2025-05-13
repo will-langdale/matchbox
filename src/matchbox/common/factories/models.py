@@ -22,7 +22,7 @@ from matchbox.client.models.models import Model
 from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import (
-    ModelMetadata,
+    ModelConfig,
     ModelResolutionName,
     ModelType,
     ResolutionName,
@@ -540,7 +540,7 @@ class ModelTestkit(BaseModel):
     @property
     def name(self) -> str:
         """Return the full name of the Model."""
-        return self.model.metadata.name
+        return self.model.model_config.name
 
     @property
     def entities(self) -> tuple[ClusterEntity, ...]:
@@ -601,7 +601,7 @@ class ModelTestkit(BaseModel):
         mock_model = create_autospec(Model)
 
         # Set basic attributes
-        mock_model.metadata = self.model
+        mock_model.model_config = self.model
         mock_model.left_data = DataFrame()  # Default empty DataFrame
         mock_model.right_data = (
             DataFrame() if self.model.type == ModelType.LINKER else None
@@ -627,7 +627,7 @@ class ModelTestkit(BaseModel):
     @property
     def query(self) -> pa.Table:
         """Return a PyArrow table in the same format at matchbox.query()."""
-        if self.model.metadata.type == ModelType.DEDUPER:
+        if self.model.model_config.type == ModelType.DEDUPER:
             query = self.left_query
         else:
             query = pa.concat_tables(
@@ -800,7 +800,7 @@ def model_factory(
         model_type = resolved_model_type
 
     # ==== Model creation ====
-    metadata = ModelMetadata(
+    metadata = ModelConfig(
         name=name or generator.unique.word(),
         description=description or generator.sentence(),
         type=model_type,
@@ -867,16 +867,16 @@ def query_to_model_factory(
     Args:
         left_resolution: Name of the resolution used for the left query
         left_query: PyArrow table with left query data
-        left_source_pks: Dictionary mapping source names to primary key column names
-            in left query
+        left_source_pks: Dictionary mapping source resolution names to primary key
+            column names in left query
         true_entities: Ground truth SourceEntity objects to use for generating
             probabilities
         name: Name of the model
         description: Description of the model
         right_resolution: Name of the resolution used for the right query
         right_query: PyArrow table with right query data, if creating a linker
-        right_source_pks: Dictionary mapping source names to primary key column names
-            in right query
+        right_source_pks: Dictionary mapping source resolution names to primary key
+            column names in right query
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility
 
@@ -913,7 +913,7 @@ def query_to_model_factory(
         right_clusters = None
 
     # Create model metadata
-    metadata = ModelMetadata(
+    metadata = ModelConfig(
         name=name or generator.unique.word(),
         description=description or generator.sentence(),
         type=model_type,

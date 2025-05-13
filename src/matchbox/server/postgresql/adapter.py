@@ -8,7 +8,7 @@ from sqlalchemy import and_, bindparam, delete, func, or_, select
 
 from matchbox.common.dtos import (
     ModelAncestor,
-    ModelMetadata,
+    ModelConfig,
     ModelResolutionName,
     ModelType,
     ResolutionName,
@@ -49,7 +49,7 @@ from matchbox.server.postgresql.utils.insert import (
 )
 from matchbox.server.postgresql.utils.query import match, query
 from matchbox.server.postgresql.utils.results import (
-    get_model_metadata,
+    get_model_config,
     get_model_results,
 )
 
@@ -371,41 +371,39 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Model management
 
-    def insert_model(self, model_metadata: ModelMetadata) -> None:  # noqa: D102
+    def insert_model(self, model_config: ModelConfig) -> None:  # noqa: D102
         with MBDB.get_session() as session:
             left_resolution = (
                 session.query(Resolutions)
-                .filter(Resolutions.name == model_metadata.left_resolution)
+                .filter(Resolutions.name == model_config.left_resolution)
                 .first()
             )
             if not left_resolution:
-                raise MatchboxResolutionNotFoundError(
-                    name=model_metadata.left_resolution
-                )
+                raise MatchboxResolutionNotFoundError(name=model_config.left_resolution)
 
             # Overwritten with actual right model if in a link job
             right_resolution = left_resolution
-            if model_metadata.type == ModelType.LINKER:
+            if model_config.type == ModelType.LINKER:
                 right_resolution = (
                     session.query(Resolutions)
-                    .filter(Resolutions.name == model_metadata.right_resolution)
+                    .filter(Resolutions.name == model_config.right_resolution)
                     .first()
                 )
                 if not right_resolution:
                     raise MatchboxResolutionNotFoundError(
-                        name=model_metadata.right_resolution
+                        name=model_config.right_resolution
                     )
 
         insert_model(
-            name=model_metadata.name,
+            name=model_config.name,
             left=left_resolution,
             right=right_resolution,
-            description=model_metadata.description,
+            description=model_config.description,
         )
 
-    def get_model(self, name: ModelResolutionName) -> ModelMetadata:  # noqa: D102
+    def get_model(self, name: ModelResolutionName) -> ModelConfig:  # noqa: D102
         resolution = Resolutions.from_name(name=name, res_type="model")
-        return get_model_metadata(resolution=resolution)
+        return get_model_config(resolution=resolution)
 
     def set_model_results(self, name: ModelResolutionName, results: Table) -> None:  # noqa: D102
         resolution = Resolutions.from_name(name=name, res_type="model")
