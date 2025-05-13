@@ -133,8 +133,8 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
                 session.execute(insert(table), batch)
                 session.flush()
 
-            # Re-sync keys sequences
-            for key in table.primary_key:
+            # Re-sync primary key sequences
+            for pk in table.primary_key:
                 lock_stmt = text(
                     f"lock table {table.schema}.{table.name} in exclusive mode;"
                 )
@@ -142,9 +142,9 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
                     func.setval(
                         func.pg_get_serial_sequence(
                             text(f"'{table.schema}.{table.name}'"),
-                            text(f"'{key.name}'"),
+                            text(f"'{pk.name}'"),
                         ),
-                        func.coalesce(func.max(text(key.name)), 0),
+                        func.coalesce(func.max(text(pk.name)), 0),
                     )
                 ).select_from(text(f"{table.schema}.{table.name}"))
 

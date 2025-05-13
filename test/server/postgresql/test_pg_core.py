@@ -22,10 +22,10 @@ def test_reserve_id_block(
 
     assert first_cluster_id == second_cluster_id - 42
 
-    first_keys_id = PKSpace.reserve_block("cluster_keys", 42)
-    second_keys_id = PKSpace.reserve_block("cluster_keys", 42)
+    first_cluster_keys_id = PKSpace.reserve_block("cluster_keys", 42)
+    second_cluster_keys_id = PKSpace.reserve_block("cluster_keys", 42)
 
-    assert first_keys_id == second_keys_id - 42
+    assert first_cluster_keys_id == second_cluster_keys_id - 42
 
     with pytest.raises(ValueError):
         PKSpace.reserve_block("clusters", 0)

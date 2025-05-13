@@ -6,13 +6,13 @@ from polars.testing import assert_frame_equal
 from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
-from matchbox.client.extract import key_map
+from matchbox.client.extract import key_field_map
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
 from matchbox.common.factories.sources import source_from_tuple
 
 
-def test_primary_key_map(
+def test_key_field_map(
     sqlite_warehouse: Engine,
     matchbox_api: MockRouter,
 ):
@@ -91,13 +91,13 @@ def test_primary_key_map(
 
     # Case 0: no sources are found
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_map(resolution="companies", engine=create_engine("postgresql://"))
+        key_field_map(resolution="companies", engine=create_engine("postgresql://"))
 
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_map(resolution="companies", full_names=["nonexistent"])
+        key_field_map(resolution="companies", full_names=["nonexistent"])
 
     # Case 1: apply engine filter, and retrieve single table
-    foo_mapping = key_map(resolution="companies", engine=sqlite_warehouse)
+    foo_mapping = key_field_map(resolution="companies", engine=sqlite_warehouse)
 
     assert_frame_equal(
         pl.from_arrow(foo_mapping),
@@ -107,7 +107,7 @@ def test_primary_key_map(
     )
 
     # Case 2: without engine filter, and retrieve multiple tables
-    foo_bar_mapping = key_map(resolution="companies")
+    foo_bar_mapping = key_field_map(resolution="companies")
 
     assert_frame_equal(
         pl.from_arrow(foo_bar_mapping),

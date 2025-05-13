@@ -236,46 +236,59 @@ def generate_rows(
 ) -> tuple[
     dict[str, list], dict[int, list[str]], dict[int, list[str]], dict[int, bytes]
 ]:
-    """Generate raw data rows.
+    """Generate raw data rows with unique keys and shared IDs.
 
-    Adds an ID shared by unique rows, and a key for every row.
+    Each generated row gets:
 
-    Returns a tuple of:
+        * A unique `key` (like a primary key in a database)
+        * An `id` that's shared across rows with identical feature values
 
-    * raw_data: Dictionary of column arrays for DataFrame creation
-    * entity_keys: Maps SourceEntity.id to the set of keys where that entity appears
-    * id_keys: Maps each ID to the set of keys where that row appears
-    * id_hashes: Maps each ID to its hash value
+    Will return:
 
-    For example, if this is the raw data:
+        * raw_data: Dictionary of column arrays for DataFrame creation
+        * entity_keys: Which keys belong to each source entity
+        * id_keys: Which keys share the same row content (same id)
+        * id_hashes: Hash values for each unique row content
+
+    Example with 2 entities generating data:
 
     | id | key | company_name |
-    |----|----|--------------|
-    | 1  | 1  | alpha co     |
-    | 2  | 2  | alpha ltd    |
-    | 1  | 3  | alpha co     |
-    | 2  | 4  | alpha ltd    |
-    | 3  | 5  | beta co      |
-    | 4  | 6  | beta ltd     |
-    | 3  | 7  | beta co      |
-    | 4  | 8  | beta ltd     |
+    |----|-----|--------------|
+    | 1  | a   | alpha co     |
+    | 2  | b   | alpha ltd    |
+    | 1  | c   | alpha co     |  # Same content as row 'a'
+    | 2  | d   | alpha ltd    |  # Same content as row 'b'
+    | 3  | e   | beta co      |
+    | 4  | f   | beta ltd     |
+    | 3  | g   | beta co      |  # Same content as row 'e'
+    | 4  | h   | beta ltd     |  # Same content as row 'f'
 
+    **entity_keys**: Which keys came from each source entity
 
-    Entity keys would be this, because there are two true SourceEntities:
+    If entity 1 generated rows [a,b,c,d] and entity 2 generated [e,f,g,h]:
 
+    ```python
     {
-        1: [1, 2, 3, 4],
-        2: [5, 6, 7, 8],
+        1: ["a", "b", "c", "d"],  # All keys entity 1 produced
+        2: ["e", "f", "g", "h"],  # All keys entity 2 produced
     }
+    ```
 
-    And ID keys would be this, because there are four unique rows:
+    **id_keys**: Which keys have identical content (same id)
 
+    ```python
     {
-        1: [1, 3],
-        2: [2, 4],
-        3: [5, 7],
-        4: [6, 8],
+        1: ["a", "c"],  # Both have "alpha co" content
+        2: ["b", "d"],  # Both have "alpha ltd" content
+        3: ["e", "g"],  # Both have "beta co" content
+        4: ["f", "h"],  # Both have "beta ltd" content
     }
+    ```
+
+    The key insight:
+
+        * entity_keys groups by "who generated this row"
+        * id_keys groups by "what content does this row have"
     """
     raw_data = {"key": [], "id": []}
     for feature in features:
@@ -343,7 +356,7 @@ def generate_source(
         - data: PyArrow table with generated data
         - data_hashes: PyArrow table with hash groups
         - entity_keys: SourceEntity ID -> list of keys mapping
-        - row_keys: Results row ID -> list of keys mapping for identical rows
+        - id_keys: Unique row ID -> list of keys mapping for identical rows
     """
     # Select or generate entities
     if seed_entities is None:
@@ -356,7 +369,7 @@ def generate_source(
         )
 
     # Generate initial data
-    raw_data, entity_keys, row_keys, id_hashes = generate_rows(
+    raw_data, entity_keys, id_keys, id_hashes = generate_rows(
         generator, selected_entities, features
     )
 
@@ -366,12 +379,12 @@ def generate_source(
     # Handle repetition
     df = pd.concat([df] * (repetition + 1), ignore_index=True)
     entity_keys = {eid: keys * (repetition + 1) for eid, keys in entity_keys.items()}
-    row_keys = {rid: keys * (repetition + 1) for rid, keys in row_keys.items()}
+    id_keys = {rid: keys * (repetition + 1) for rid, keys in id_keys.items()}
 
     # Create hash groups
     keys = []
     hashes = []
-    for row_id, group_keys in row_keys.items():
+    for row_id, group_keys in id_keys.items():
         keys.append(list(group_keys))
         hashes.append(id_hashes[row_id])
 
@@ -394,7 +407,7 @@ def generate_source(
         pa.Table.from_pandas(df, preserve_index=False),
         data_hashes,
         entity_keys,
-        row_keys,
+        id_keys,
     )
 
 

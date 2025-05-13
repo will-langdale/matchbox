@@ -81,7 +81,7 @@ Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
     - The schema-qualified `full_name` of the dataset
     - The `engine` used to connect
 - A list of `columns` that will be used for matching
-- A key (`key`) that uniquely identifies each record
+- A key field (`key_field`) that uniquely identifies each record
 - A database engine
 
 ## 2. Defining data cleaners

@@ -13,7 +13,7 @@ def _combined_colname(source: SourceConfig, col_name: str):
     return source.address.full_name.replace(".", "_") + "_" + col_name
 
 
-def key_map(
+def key_field_map(
     resolution: ModelResolutionName,
     engine: Engine | None = None,
     full_names: list[str] | None = None,
@@ -39,7 +39,7 @@ def key_map(
         raise MatchboxSourceNotFoundError("No compatible source was found")
 
     source_mb_ids: list[ArrowTable] = []
-    keys: dict[str, str] = {}
+    source_to_key_field: dict[str, str] = {}
 
     for s in sources:
         # Get Matchbox IDs from backend
@@ -50,12 +50,16 @@ def key_map(
             )
         )
 
-        keys[s.address.full_name] = s.key_field
+        source_to_key_field[s.address.full_name] = s.key_field
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]
     mapping = mapping.rename_columns(
-        {"key": _combined_colname(sources[0], keys[sources[0].address.full_name])}
+        {
+            "key": _combined_colname(
+                sources[0], source_to_key_field[sources[0].address.full_name]
+            )
+        }
     )
     if len(sources) > 1:
         for s, mb_ids in zip(sources[1:], source_mb_ids[1:], strict=True):
@@ -63,7 +67,7 @@ def key_map(
                 right_table=mb_ids, keys="id", join_type="full outer"
             )
             mapping = mapping.rename_columns(
-                {"key": _combined_colname(s, keys[s.address.full_name])}
+                {"key": _combined_colname(s, source_to_key_field[s.address.full_name])}
             )
 
     return mapping
