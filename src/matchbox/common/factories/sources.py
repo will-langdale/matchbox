@@ -238,19 +238,30 @@ def generate_rows(
 ]:
     """Generate raw data rows with unique keys and shared IDs.
 
-    Each generated row gets:
+    This function generates rows of data plus maps between three types of identifiers:
 
-        * A unique `key` (like a primary key in a database)
-        * An `id` that's shared across rows with identical feature values
+        1. `id`: Is matchbox's unique identifier for each row, shared across rows with
+            identical feature values
+        2. `key`: Is the source's unique identifier for the row. It's like a primary key
+            in a database, but not guaranteed to be unique across different entities
+        3. `entity`: Is the identifier of the SourceEntity that generated the row.
+            This identifies the true linked data in the factory system.
 
-    Will return:
+    This function will therefore return:
 
-        * raw_data: Dictionary of column arrays for DataFrame creation
-        * entity_keys: Which keys belong to each source entity
-        * id_keys: Which keys share the same row content (same id)
-        * id_hashes: Hash values for each unique row content
+        * raw_data: A dictionary of column arrays for DataFrame creation
+        * entity_keys: A dictionary that maps which keys belong to each source entity
+        * id_keys: A dictionary that maps which keys share the same row content,
+            with the same `id`
+        * id_hashes: A dictionary that maps `id`s to hash values for each unique
+            row content
 
-    Example with 2 entities generating data:
+    The key insight:
+
+        * entity_* groups by "who generated this row"
+        * id_* groups by "what content does this row have"
+
+    Example with two entities generating data:
 
     | id | key | company_name |
     |----|-----|--------------|
@@ -263,32 +274,50 @@ def generate_rows(
     | 3  | g   | beta co      |  # Same content as row 'e'
     | 4  | h   | beta ltd     |  # Same content as row 'f'
 
-    **entity_keys**: Which keys came from each source entity
-
-    If entity 1 generated rows [a,b,c,d] and entity 2 generated [e,f,g,h]:
+    What does this table look like as raw data?
 
     ```python
-    {
+    raw_data = {
+        "id": [1, 2, 1, 2, 3, 4, 3, 4],
+        "key": ["a", "b", "c", "d", "e", "f", "g", "h"],
+        "company_name": [
+            "alpha co",
+            "alpha ltd",
+            "alpha co",
+            "alpha ltd",
+            "beta co",
+            "beta ltd",
+            "beta co",
+            "beta ltd",
+        ],
+    }
+    ```
+
+    Which keys came from each source entity?
+
+    ```python
+    entity_keys = {
         1: ["a", "b", "c", "d"],  # All keys entity 1 produced
         2: ["e", "f", "g", "h"],  # All keys entity 2 produced
     }
     ```
 
-    **id_keys**: Which keys have identical content (same id)
+    Which keys have identical content?
 
     ```python
-    {
+    id_keys = {
         1: ["a", "c"],  # Both have "alpha co" content
         2: ["b", "d"],  # Both have "alpha ltd" content
         3: ["e", "g"],  # Both have "beta co" content
         4: ["f", "h"],  # Both have "beta ltd" content
     }
+    id_hashes = {
+        1: b"hash1",  # Hash of "alpha co"
+        2: b"hash2",  # Hash of "alpha ltd"
+        3: b"hash3",  # Hash of "beta co"
+        4: b"hash4",  # Hash of "beta ltd"
+    }
     ```
-
-    The key insight:
-
-        * entity_keys groups by "who generated this row"
-        * id_keys groups by "what content does this row have"
     """
     raw_data = {"key": [], "id": []}
     for feature in features:
