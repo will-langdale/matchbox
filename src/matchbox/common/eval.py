@@ -1,21 +1,33 @@
 """Common operations to produce model evaluation scores."""
 
 from itertools import combinations
-from typing import TypeVar
+from typing import TypeAlias
 
-T = TypeVar("T")
+import polars as pl
 
-
-def sets_to_pairs(elements: list[T]) -> T:
-    """Convert set of cluster elements to implied pair-wise edges."""
-    return [pair for pairs in combinations(elements) for pair in pairs]
+Pairs: TypeAlias = set[tuple[int, int]]
 
 
-def leaf_overlap(eval_groups, model_groups):
-    """Compare overlap between eval and model clusters."""
-    ...
+def contains_to_pairs(contains: pl.DataFrame) -> Pairs:
+    """Convert clusters dataframe with parent, leaf columns to sets of pairs."""
+    pairs = set()
+    clusters = (
+        contains.group_by("parent")
+        .agg(pl.col("leaf").alias("leaves"))
+        .select("leaves")
+        .to_series()
+        .to_list()
+    )
+    for c in clusters:
+        pairs.update(combinations(sorted(c), r=2))
+
+    return pairs
 
 
-def roc(eval_pairs, model_pairs):
-    """Compute ROC scores."""
-    ...
+def precision_recall(model_pairs: Pairs, eval_pairs: Pairs) -> tuple[float, float]:
+    """Compute precision and recall scores."""
+    true_positives = len(eval_pairs.intersection(model_pairs))
+    precision = true_positives / len(model_pairs)
+    recall = true_positives / len(eval_pairs)
+
+    return precision, recall
