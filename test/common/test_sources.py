@@ -426,9 +426,9 @@ def test_source_check_columns(sqlite_warehouse: Engine):
 
     # Error is raised with missing key
     new_source = source_testkit.source_config.model_copy(
-        update={"key": "typo"}
+        update={"key_field": "typo"}
     ).set_engine(sqlite_warehouse)
-    with pytest.raises(MatchboxSourceColumnError, match="Key typo not available"):
+    with pytest.raises(MatchboxSourceColumnError, match="Key field typo not available"):
         new_source.check_columns()
 
     # Error is raised with missing column

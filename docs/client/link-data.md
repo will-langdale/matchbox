@@ -61,7 +61,7 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
             {"name": "company_number", "type": "VARCHAR"},
             {"name": "postcode", "type": "VARCHAR"},
         ],
-        key="id",
+        key_field="id",
     ).set_engine(engine)
     
     # Exporters data
@@ -71,7 +71,7 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
             {"name": "company_name", "type": "VARCHAR(500)"},
             {"name": "postcode", "type": "VARCHAR(8)"},
         ],
-        key="id",
+        key_field="id",
     ).set_engine(engine)
     ```
 

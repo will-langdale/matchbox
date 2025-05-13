@@ -189,29 +189,29 @@ def test_source_factory_mock_properties():
     full_name = "companies"
     engine = create_engine("sqlite:///:memory:")
 
-    source_testkit = source_factory(
+    source_config = source_factory(
         features=features, full_name=full_name, engine=engine
     ).source_config
 
     # Check source address properties
-    assert source_testkit.address.full_name == full_name
+    assert source_config.address.full_name == full_name
 
     # Warehouse hash should be consistent for same engine config
     expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
-    assert source_testkit.address.warehouse_hash == expected_address.warehouse_hash
+    assert source_config.address.warehouse_hash == expected_address.warehouse_hash
 
     # Check column configuration
-    assert len(source_testkit.columns) == len(features)
-    for feature, column in zip(features, source_testkit.columns, strict=False):
+    assert len(source_config.columns) == len(features)
+    for feature, column in zip(features, source_config.columns, strict=False):
         assert column.name == feature.name
         assert column.type == feature.sql_type
 
     # Check default resolution name and default key
-    assert source_testkit.name == str(expected_address)
-    assert source_testkit.key == "key"
+    assert source_config.name == str(expected_address)
+    assert source_config.key_field == "key"
 
     # Verify source properties are preserved through model_dump
-    dump = source_testkit.model_dump()
+    dump = source_config.model_dump()
     assert dump["address"]["full_name"] == full_name
     assert dump["columns"] == tuple(
         {"name": f.name, "type": f.sql_type} for f in features

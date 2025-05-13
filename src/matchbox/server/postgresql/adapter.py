@@ -31,7 +31,7 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourceKey,
     Contains,
-    KeySpace,
+    PKSpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
@@ -146,7 +146,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         MBDB.settings = settings
         MBDB.run_migrations()
 
-        KeySpace.initialise()
+        PKSpace.initialise()
 
         self.sources = SourceConfigs
         self.models = FilteredResolutions(sources=False, humans=False, models=True)
@@ -337,7 +337,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def drop(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.drop_database()
-            KeySpace.initialise()
+            PKSpace.initialise()
         else:
             raise MatchboxDeletionNotConfirmed(
                 "This operation will drop the entire database and recreate it."
@@ -348,7 +348,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def clear(self, certain: bool = False) -> None:  # noqa: D102
         if certain:
             MBDB.clear_database()
-            KeySpace.initialise()
+            PKSpace.initialise()
         else:
             raise MatchboxDeletionNotConfirmed(
                 "This operation will drop all rows in the database but not the "

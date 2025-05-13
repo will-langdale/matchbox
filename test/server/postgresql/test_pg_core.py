@@ -7,7 +7,7 @@ from matchbox.common.exceptions import MatchboxDatabaseWriteError
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
-from matchbox.server.postgresql.orm import KeySpace
+from matchbox.server.postgresql.orm import PKSpace
 from matchbox.server.postgresql.utils.db import large_ingest
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
@@ -17,18 +17,18 @@ def test_reserve_id_block(
     matchbox_postgres: MatchboxPostgres,  # Reset DB
 ):
     """Test that we can atomically reserve ID blocks."""
-    first_cluster_id = KeySpace.reserve_block("clusters", 42)
-    second_cluster_id = KeySpace.reserve_block("clusters", 42)
+    first_cluster_id = PKSpace.reserve_block("clusters", 42)
+    second_cluster_id = PKSpace.reserve_block("clusters", 42)
 
     assert first_cluster_id == second_cluster_id - 42
 
-    first_keys_id = KeySpace.reserve_block("cluster_keys", 42)
-    second_keys_id = KeySpace.reserve_block("cluster_keys", 42)
+    first_keys_id = PKSpace.reserve_block("cluster_keys", 42)
+    second_keys_id = PKSpace.reserve_block("cluster_keys", 42)
 
     assert first_keys_id == second_keys_id - 42
 
     with pytest.raises(ValueError):
-        KeySpace.reserve_block("clusters", 0)
+        PKSpace.reserve_block("clusters", 0)
 
 
 def test_hash_id_map():

@@ -357,7 +357,7 @@ class SourceConfig(BaseModel):
     name: SourceResolutionName = Field(
         default_factory=lambda data: str(data["address"])
     )
-    key: str
+    key_field: str
     # Columns need to be set at creation, or initialised with `.default_columns()`
     columns: tuple[SourceColumn, ...] | None = None
 
@@ -370,16 +370,16 @@ class SourceConfig(BaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Custom equality which ignores engine."""
-        return (self.address, self.name, self.key, self.columns) == (
+        return (self.address, self.name, self.key_field, self.columns) == (
             other.address,
             other.name,
-            other.key,
+            other.key_field,
             other.columns,
         )
 
     def __hash__(self) -> int:
         """Custom hash which ignores engine."""
-        return hash((self.address, self.name, self.key, self.columns))
+        return hash((self.address, self.name, self.key_field, self.columns))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the SourceConfig object."""
@@ -389,7 +389,7 @@ class SourceConfig(BaseModel):
         obj_copy = SourceConfig(
             address=deepcopy(self.address, memo),
             name=deepcopy(self.name, memo),
-            key=deepcopy(self.key, memo),
+            key_field=deepcopy(self.key_field, memo),
             columns=deepcopy(self.columns, memo),
         )
 
@@ -418,14 +418,14 @@ class SourceConfig(BaseModel):
         return {
             col.name: col.type
             for col in table.columns
-            if (col.name != self.key) or (not exclude_key)
+            if (col.name != self.key_field) or (not exclude_key)
         }
 
     @needs_engine
     def default_columns(self) -> "SourceConfig":
         """Returns a new source with default columns.
 
-        Default columns are all from the source warehouse other than `self.key`.
+        Default columns are all from the source warehouse other than `self.key_field`.
         All other attributes are copied, and its engine (if present) is set.
         """
         remote_columns = self.get_remote_columns(exclude_key=True)
@@ -437,7 +437,7 @@ class SourceConfig(BaseModel):
         new_source = SourceConfig(
             address=self.address,
             name=self.name,
-            key=self.key,
+            key_field=self.key_field,
             columns=columns_attribute,
         )
 
@@ -463,9 +463,9 @@ class SourceConfig(BaseModel):
         """
         remote_columns = self.get_remote_columns()
 
-        if self.key not in remote_columns:
+        if self.key_field not in remote_columns:
             raise MatchboxSourceColumnError(
-                f"Key {self.key} not available in {self.address}"
+                f"Key field {self.key_field} not available in {self.address}"
             )
 
         if columns:
@@ -504,13 +504,13 @@ class SourceConfig(BaseModel):
         if not fields:
             fields = [col.name for col in self.columns]
 
-        if self.key not in fields:
-            fields.append(self.key)
+        if self.key_field not in fields:
+            fields.append(self.key_field)
 
         def _get_column(col_name: str) -> ColumnElement:
             """Helper to get a column with proper casting and labeling for keys."""
             col = table.columns[col_name]
-            if col_name == self.key:
+            if col_name == self.key_field:
                 return cast(col, String).label(self.address.format_column(col_name))
             return col
 
@@ -524,7 +524,7 @@ class SourceConfig(BaseModel):
 
         if keys:
             string_keys = [str(key) for key in keys]
-            key_col = table.columns[self.key]
+            key_col = table.columns[self.key_field]
             stmt = stmt.where(cast(key_col, String).in_(string_keys))
 
         if limit:
@@ -693,7 +693,7 @@ class SourceConfig(BaseModel):
 
         slct_stmt = select(
             *[source_table.c[col] for col in cols_to_index],
-            source_table.c[self.key].cast(String).label("keys"),
+            source_table.c[self.key_field].cast(String).label("keys"),
         )
 
         def _process_batch(

@@ -194,7 +194,7 @@ def _process_selectors(
                 batches=raw_batches,
                 selector=selector,
                 mb_ids=mb_ids,
-                key=source.key,
+                key=source.key_field,
             )
         )
 

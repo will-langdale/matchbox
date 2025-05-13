@@ -585,7 +585,7 @@ def test_index_success(
     # Call the index function
     index(
         full_name=source.source_config.address.full_name,
-        key=source.source_config.key,
+        key_field=source.source_config.key_field,
         engine=sqlite_warehouse,
     )
 
@@ -656,7 +656,7 @@ def test_index_with_columns(
     # Call index with column definition
     index(
         full_name=source.source_config.address.full_name,
-        key=source.source_config.key,
+        key_field=source.source_config.key_field,
         engine=sqlite_warehouse,
         columns=columns,
     )
@@ -719,7 +719,7 @@ def test_index_upload_failure(
     with pytest.raises(MatchboxServerFileError):
         index(
             full_name=source.source_config.address.full_name,
-            key=source.source_config.key,
+            key_field=source.source_config.key_field,
             engine=sqlite_warehouse,
         )
 
@@ -773,7 +773,7 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
         # Call index with batch_size
         index(
             full_name=source.address.full_name,
-            key=source.key,
+            key_field=source.key_field,
             engine=sqlite_warehouse,
             batch_size=1,
         )

@@ -19,14 +19,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Rename pk_space table to key_space
-    op.rename_table("pk_space", "key_space", schema="mb")
-
-    # Rename column in key_space table
+    # Rename column in pk_space table
     op.alter_column(
-        "key_space",
+        "pk_space",
         "next_cluster_source_pk_id",
-        new_column_name="next_cluster_key_id",
+        new_column_name="next_cluster_keys_id",
         schema="mb",
     )
 
@@ -70,13 +67,13 @@ def upgrade() -> None:
     )
 
     # Rename column in source_configs table
-    op.alter_column("source_configs", "db_pk", new_column_name="key", schema="mb")
+    op.alter_column("source_configs", "db_pk", new_column_name="key_field", schema="mb")
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # Rename column in source_configs table back
-    op.alter_column("source_configs", "key", new_column_name="db_pk", schema="mb")
+    op.alter_column("source_configs", "key_field", new_column_name="db_pk", schema="mb")
 
     # Rename indexes back
     op.drop_index("ix_cluster_keys_cluster_id", table_name="cluster_keys", schema="mb")
@@ -110,13 +107,10 @@ def downgrade() -> None:
     # Rename cluster_keys table back to cluster_source_pks
     op.rename_table("cluster_keys", "cluster_source_pks", schema="mb")
 
-    # Rename column back in key_space table
+    # Rename column in pk_space table back to next_cluster_source_pk_id
     op.alter_column(
-        "key_space",
-        "next_cluster_key_id",
+        "pk_space",
+        "next_cluster_keys_id",
         new_column_name="next_cluster_source_pk_id",
         schema="mb",
     )
-
-    # Rename key_space table back to pk_space
-    op.rename_table("key_space", "pk_space", schema="mb")

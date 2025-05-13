@@ -165,7 +165,7 @@ class TestE2EAnalyticalUser:
             source = source_testkit.source_config
             index(
                 full_name=source.address.full_name,
-                key="key",  # Key in our test data
+                key_field="key",  # Key in our test data
                 engine=self.warehouse_engine,
                 columns=[col.model_dump() for col in source.columns],
             )

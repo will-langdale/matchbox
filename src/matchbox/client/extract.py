@@ -50,7 +50,7 @@ def key_map(
             )
         )
 
-        keys[s.address.full_name] = s.key
+        keys[s.address.full_name] = s.key_field
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]

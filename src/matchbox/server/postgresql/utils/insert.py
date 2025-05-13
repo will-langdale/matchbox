@@ -22,7 +22,7 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourceKey,
     Contains,
-    KeySpace,
+    PKSpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
@@ -160,7 +160,7 @@ def insert_source(
             resolution_id=resolution.resolution_id,
             full_name=source_config.address.full_name,
             warehouse_hash=source_config.address.warehouse_hash,
-            key=source_config.key,
+            key_field=source_config.key_field,
             columns=[
                 SourceColumns(
                     column_index=idx,
@@ -206,7 +206,7 @@ def insert_source(
 
     if new_hashes.shape[0]:
         # Create new cluster records with sequential IDs
-        next_cluster_id = KeySpace.reserve_block("clusters", len(new_hashes))
+        next_cluster_id = PKSpace.reserve_block("clusters", len(new_hashes))
     else:
         # The value of next_cluster_id is irrelevant as cluster_records will be empty
         next_cluster_id = 0
@@ -236,7 +236,7 @@ def insert_source(
     )
 
     if keys_records.shape[0] > 0:
-        next_key_id = KeySpace.reserve_block("cluster_keys", len(keys_records))
+        next_key_id = PKSpace.reserve_block("cluster_keys", len(keys_records))
     else:
         # The next_key_id is irrelevant if we don't write any keys records
         next_key_id = 0
@@ -463,9 +463,7 @@ def _results_to_insert_tables(
     num_new_hashes = pc.sum(pc.is_null(indices_old_hashes)).as_py()
 
     if num_new_hashes:
-        hm.next_int = KeySpace.reserve_block(
-            table="clusters", block_size=num_new_hashes
-        )
+        hm.next_int = PKSpace.reserve_block(table="clusters", block_size=num_new_hashes)
     else:
         # No new hashes means no new cluster IDs, so next_int won't matter
         hm.next_int = 0

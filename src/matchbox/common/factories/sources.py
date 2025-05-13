@@ -466,7 +466,7 @@ def source_factory(
 
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
-        key="key",
+        key_field="key",
         columns=(
             SourceColumn(name=feature.name, type=feature.sql_type)
             for feature in features
@@ -519,7 +519,7 @@ def source_from_tuple(
 
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
-        key="key",
+        key_field="key",
         columns=(
             SourceColumn(name=k, type=infer_sql_type_from_type(type(v)))
             for k, v in data_tuple[0].items()
@@ -724,7 +724,7 @@ def linked_sources_factory(
             address=SourceAddress.compose(
                 full_name=parameters.full_name, engine=parameters.engine
             ),
-            key="key",
+            key_field="key",
             columns=(
                 SourceColumn(name=feature.name, type=feature.sql_type)
                 for feature in parameters.features

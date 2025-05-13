@@ -14,7 +14,7 @@ erDiagram
         bigint resolution_id FK
         string full_name
         bytes warehouse_hash
-        string key
+        string key_field
     }
     SourceColumns {
         bigint column_id PK
@@ -28,14 +28,19 @@ erDiagram
         bytes cluster_hash
     }
     ClusterSourceKey {
-        bigint pk_id PK
+        bigint key_id PK
         bigint cluster_id FK
         bigint source_config_id FK
-        string source_pk
+        string key
     }
     Contains {
         bigint parent PK,FK
         bigint child PK,FK
+    }
+    PKSpace {
+        bigint id
+        bigint next_cluster_id
+        bigint next_cluster_key_id
     }
     Probabilities {
         bigint resolution PK,FK

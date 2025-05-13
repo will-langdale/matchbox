@@ -208,22 +208,22 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         )
 
 
-class KeySpace(MBDB.MatchboxBase):
+class PKSpace(MBDB.MatchboxBase):
     """Table used to reserve ranges of primary keys."""
 
-    __tablename__ = "key_space"
+    __tablename__ = "pk_space"
 
     id = Column(BIGINT, primary_key=True)
     next_cluster_id = Column(BIGINT, nullable=False)
-    next_cluster_key_id = Column(BIGINT, nullable=False)
+    next_cluster_keys_id = Column(BIGINT, nullable=False)
 
     @classmethod
     def initialise(cls) -> None:
-        """Create KeySpace tracking row if not exists."""
+        """Create PKSpace tracking row if not exists."""
         with MBDB.get_session() as session:
             init_statement = (
                 insert(cls)
-                .values(id=1, next_cluster_id=1, next_cluster_key_id=1)
+                .values(id=1, next_cluster_id=1, next_cluster_keys_id=1)
                 .on_conflict_do_nothing()
             )
 
@@ -242,7 +242,7 @@ class KeySpace(MBDB.MatchboxBase):
             case "clusters":
                 next_id_col = "next_cluster_id"
             case "cluster_keys":
-                next_id_col = "next_cluster_key_id"
+                next_id_col = "next_cluster_keys_id"
 
         with MBDB.get_session() as session:
             try:
@@ -330,7 +330,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     )
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
-    key = Column(TEXT, nullable=False)
+    key_field = Column(TEXT, nullable=False)
 
     # Relationships
     source_resolution = relationship("Resolutions", back_populates="source_config")
@@ -380,7 +380,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             address=SourceAddress(
                 full_name=self.full_name, warehouse_hash=self.warehouse_hash
             ),
-            key=self.key,
+            key_field=self.key_field,
             columns=[
                 CommonSourceColumn(
                     name=column.column_name,
