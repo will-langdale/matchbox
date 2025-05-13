@@ -15,8 +15,9 @@ def _combined_colname(source: SourceConfig, col_name: str):
 def primary_keys_map(
     resolution_name: str,
     engine: Engine | None = None,
+    full_names: list[str] | None = None,
 ) -> ArrowTable:
-    """Return matchbox IDs to source IDs mapping, optionally filtering by an engine."""
+    """Return matchbox IDs to source IDs mapping, optionally filtering."""
     # Get all sources in scope of the resolution
     sources = _handler.get_resolution_source_configs(resolution_name=resolution_name)
 
@@ -29,6 +30,9 @@ def primary_keys_map(
         sources = [
             s for s in sources if s.address.warehouse_hash_b64 == warehouse_hash_b64
         ]
+
+    if full_names:
+        sources = [s for s in sources if s.address.full_name in full_names]
 
     if not sources:
         raise MatchboxSourceNotFoundError("No compatible source was found")
