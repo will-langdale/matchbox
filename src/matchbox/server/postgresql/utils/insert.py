@@ -315,12 +315,6 @@ def insert_model(
     log_prefix = f"Model {name}"
     logger.info("Registering", prefix=log_prefix)
     with MBDB.get_session() as session:
-        model_name_hash = hash_values(
-            bytes(left.name, encoding="utf-8"),
-            bytes(right.name, encoding="utf-8"),
-            bytes(name, encoding="utf-8"),
-        )
-
         # Check if resolution exists
         exists_stmt = select(Resolutions).where(Resolutions.name == name)
         exists_obj = session.scalar(exists_stmt)
@@ -329,7 +323,6 @@ def insert_model(
             raise MatchboxResolutionAlreadyExists
         else:
             new_res = Resolutions(
-                hash=model_name_hash,
                 type=ResolutionNodeType.MODEL.value,
                 name=name,
                 description=description,
