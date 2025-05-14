@@ -499,6 +499,15 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
+    def get_judgements(self) -> Table:
+        """Retrieves all evaluation judgements.
+
+        Returns:
+            A PyArrow table with the clusters implied by the judgements.
+        """
+        ...
+
+    @abstractmethod
     def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:
         """Compare metrics of models based on evaluation data.
 

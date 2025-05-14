@@ -21,7 +21,7 @@ from matchbox.common.dtos import (
     ResolutionOperationStatus,
     UploadStatus,
 )
-from matchbox.common.eval import Judgement
+from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
     MatchboxDeletionNotConfirmed,
@@ -420,6 +420,11 @@ def sample_one(user_id: int, resolution: ModelResolutionName) -> Table:
             {"id": 3, "company_name": "Pippo pluto e paperino", "region": "Devon"},
         ]
     )
+
+
+def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
+    res = CLIENT.get("/eval/compare", params=url_params({"resolutions": resolutions}))
+    return res.json()
 
 
 def send_eval(user_id: int, judgement: Judgement):

@@ -506,6 +506,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def insert_judgement(self, user_id: int, judgement: Judgement) -> None:  # noqa: D102
         pass
 
+    def get_judgements(self) -> Table:  # noqa: D102
+        pass
+
     def compare_models(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
         pass
 

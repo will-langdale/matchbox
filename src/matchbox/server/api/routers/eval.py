@@ -1,6 +1,8 @@
 """Resolutions API routes for the Matchbox server."""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from matchbox.common.dtos import (
     ModelResolutionName,
@@ -9,6 +11,7 @@ from matchbox.common.dtos import (
 from matchbox.common.eval import ModelComparison
 from matchbox.server.api.dependencies import (
     BackendDependency,
+    ParquetResponse,
 )
 
 router = APIRouter(prefix="/eval", tags=["eval"])
@@ -28,10 +31,16 @@ async def login(
     "/",
 )
 async def insert_judgement(
-    backend: BackendDependency,
-    resolutions: list[ModelResolutionName],
+    backend: BackendDependency, resolutions: list[ModelResolutionName]
 ):
     """Submit judgement from human evaluator."""
+
+
+@router.get(
+    "/",
+)
+async def get_judgements(backend: BackendDependency) -> ParquetResponse:
+    """Retrieve all judgements from human evaluators."""
 
 
 @router.get(
@@ -39,7 +48,10 @@ async def insert_judgement(
 )
 async def compare_models(
     backend: BackendDependency,
-    resolutions: list[ModelResolutionName],
+    resolutions: Annotated[
+        list[ModelResolutionName],
+        Query(description="The resolution names for the models to compare."),
+    ],
 ) -> ModelComparison:
     """Return comparison of selected models."""
     return {
@@ -52,7 +64,6 @@ async def compare_models(
     "/sample",
 )
 async def sample_one(
-    backend: BackendDependency,
-    resolution: ModelResolutionName,
+    backend: BackendDependency, resolution: ModelResolutionName
 ) -> ResolutionOperationStatus:
     """Sample a cluster to validate."""

@@ -5,7 +5,13 @@ from matplotlib import pyplot as plt
 
 from matchbox.client import _handler
 from matchbox.client.results import Results
-from matchbox.common.eval import PrecisionRecall, contains_to_pairs, precision_recall
+from matchbox.common.dtos import ModelResolutionName
+from matchbox.common.eval import (
+    ModelComparison,
+    PrecisionRecall,
+    contains_to_pairs,
+    precision_recall,
+)
 
 
 class EvalData:
@@ -51,3 +57,15 @@ class EvalData:
         plt.grid()
 
         return plt
+
+
+def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
+    """Compare metrics of models based on evaluation data.
+
+    Args:
+        resolutions: List of names of model resolutions to be compared.
+
+    Returns:
+        A model comparison object, listing metrics for each model.
+    """
+    return _handler.compare_models(resolutions)
