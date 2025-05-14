@@ -89,7 +89,3 @@ volumes:
   warehouse_data:
   matchbox_data:
   matchbox_store:
-
-networks:
-  local:
-    driver: bridge
