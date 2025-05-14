@@ -165,7 +165,7 @@ class TestE2EAnalyticalUser:
             source = source_testkit.source_config
             index(
                 full_name=source.address.full_name,
-                db_pk="pk",  # Primary key in our test data
+                key_field="key",  # Key in our test data
                 engine=self.warehouse_engine,
                 columns=[col.model_dump() for col in source.columns],
             )
@@ -203,10 +203,10 @@ class TestE2EAnalyticalUser:
             prefix = fullname_to_prefix(source_name)
 
             # Query data from the source
-            # PK included then dropped to create ClusterEntity objects for later diff
+            # keys included then dropped to create ClusterEntity objects for later diff
             source_select = select(
                 {
-                    source_name: ["pk"]
+                    source_name: ["key"]
                     + [col.name for col in source_testkit.source_config.columns]
                 },
                 engine=self.warehouse_engine,
@@ -214,9 +214,9 @@ class TestE2EAnalyticalUser:
             raw_df = query(source_select, return_type="pandas")
             clusters = query_to_cluster_entities(
                 query=raw_df,
-                source_pks={source_name: f"{prefix}pk"},
+                keys={source_name: f"{prefix}key"},
             )
-            df = raw_df.drop(f"{prefix}pk", axis=1)
+            df = raw_df.drop(f"{prefix}key", axis=1)
 
             # Apply cleaning based on features in the source
             cleaned = _clean_company_name(df, prefix)
@@ -289,12 +289,12 @@ class TestE2EAnalyticalUser:
             )
 
             # Query deduplicated data
-            # PK included then dropped to create ClusterEntity objects for later diff
+            # keys included then dropped to create ClusterEntity objects for later diff
             left_raw_df = query(
                 select(
                     {
                         left_testkit.source_config.address.full_name: [
-                            "pk",
+                            "key",
                             common_field,
                         ]
                     },
@@ -305,17 +305,17 @@ class TestE2EAnalyticalUser:
             )
             left_clusters = query_to_cluster_entities(
                 query=left_raw_df,
-                source_pks={
-                    left_testkit.source_config.address.full_name: f"{left_prefix}pk"
+                keys={
+                    left_testkit.source_config.address.full_name: f"{left_prefix}key"
                 },
             )
-            left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
+            left_df = left_raw_df.drop(f"{left_prefix}key", axis=1)
 
             right_raw_df = query(
                 select(
                     {
                         right_testkit.source_config.address.full_name: [
-                            "pk",
+                            "key",
                             common_field,
                         ]
                     },
@@ -326,11 +326,11 @@ class TestE2EAnalyticalUser:
             )
             right_clusters = query_to_cluster_entities(
                 query=right_raw_df,
-                source_pks={
-                    right_testkit.source_config.address.full_name: f"{right_prefix}pk"
+                keys={
+                    right_testkit.source_config.address.full_name: f"{right_prefix}key"
                 },
             )
-            right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
+            right_df = right_raw_df.drop(f"{right_prefix}key", axis=1)
 
             # Apply cleaning based on features in the sources
             left_cleaned = _clean_company_name(left_df, left_prefix)
@@ -417,28 +417,31 @@ class TestE2EAnalyticalUser:
         cdms_prefix = fullname_to_prefix(cdms_source)
 
         # Query data from the first linked pair and the third source
-        # PK included then dropped to create ClusterEntity objects for later diff
+        # keys included then dropped to create ClusterEntity objects for later diff
         left_raw_df = query(
-            select({crn_source: ["pk", "crn"]}, engine=self.warehouse_engine),
-            select({duns_source: ["pk"]}, engine=self.warehouse_engine),
+            select({crn_source: ["key", "crn"]}, engine=self.warehouse_engine),
+            select({duns_source: ["key"]}, engine=self.warehouse_engine),
             resolution=linker_names[first_pair],
             return_type="pandas",
         )
         left_clusters = query_to_cluster_entities(
             query=left_raw_df,
-            source_pks={crn_source: f"{crn_prefix}pk", duns_source: f"{duns_prefix}pk"},
+            keys={
+                crn_source: f"{crn_prefix}key",
+                duns_source: f"{duns_prefix}key",
+            },
         )
-        left_df = left_raw_df.drop(f"{left_prefix}pk", axis=1)
+        left_df = left_raw_df.drop(f"{left_prefix}key", axis=1)
 
         right_raw_df = query(
-            select({cdms_source: ["pk", "crn"]}, engine=self.warehouse_engine),
+            select({cdms_source: ["key", "crn"]}, engine=self.warehouse_engine),
             resolution=deduper_names[cdms_source],
             return_type="pandas",
         )
         right_clusters = query_to_cluster_entities(
-            query=right_raw_df, source_pks={cdms_source: f"{cdms_prefix}pk"}
+            query=right_raw_df, keys={cdms_source: f"{cdms_prefix}key"}
         )
-        right_df = right_raw_df.drop(f"{right_prefix}pk", axis=1)
+        right_df = right_raw_df.drop(f"{right_prefix}key", axis=1)
 
         # Apply cleaning if needed
         left_cleaned = _clean_company_name(left_df, crn_prefix)
@@ -494,9 +497,9 @@ class TestE2EAnalyticalUser:
         final_df = query(
             select(
                 {
-                    crn_source: ["pk", "company_name", "crn"],
-                    duns_source: ["pk", "company_name", "duns"],
-                    cdms_source: ["pk", "crn", "cdms"],
+                    crn_source: ["key", "company_name", "crn"],
+                    duns_source: ["key", "company_name", "duns"],
+                    cdms_source: ["key", "crn", "cdms"],
                 },
                 engine=self.warehouse_engine,
             ),
@@ -506,10 +509,10 @@ class TestE2EAnalyticalUser:
 
         final_clusters = query_to_cluster_entities(
             query=final_df,
-            source_pks={
-                crn_source: f"{crn_prefix}pk",
-                duns_source: f"{duns_prefix}pk",
-                cdms_source: f"{cdms_prefix}pk",
+            keys={
+                crn_source: f"{crn_prefix}key",
+                duns_source: f"{duns_prefix}key",
+                cdms_source: f"{cdms_prefix}key",
             },
         )
 

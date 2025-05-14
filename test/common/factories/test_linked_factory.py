@@ -24,13 +24,13 @@ def test_linked_sources_factory_default():
     # Check that entities are properly tracked across sources
     for entity in linked.true_entities:
         # Each entity should have references to multiple sources
-        source_references = list(entity.source_pks.items())
+        source_references = list(entity.keys.items())
         assert len(source_references) > 0
 
-        # Each reference should have source resolution name and PKs
-        for source_name, pks in source_references:
+        # Each reference should have source resolution name and keys
+        for source_name, keys in source_references:
             assert source_name in linked.sources
-            assert len(pks) > 0
+            assert len(keys) > 0
 
 
 def test_linked_sources_custom_config():
@@ -72,11 +72,11 @@ def test_linked_sources_custom_config():
     assert len(linked.true_entities) == 5  # Max entities from configs
 
     # Check source A entities
-    source_a_entities = [e for e in linked.true_entities if "source_a" in e.source_pks]
+    source_a_entities = [e for e in linked.true_entities if "source_a" in e.keys]
     assert len(source_a_entities) == 5
 
     # Check source B entities
-    source_b_entities = [e for e in linked.true_entities if "source_b" in e.source_pks]
+    source_b_entities = [e for e in linked.true_entities if "source_b" in e.keys]
     assert len(source_b_entities) == 3
 
 
@@ -94,7 +94,7 @@ def test_linked_sources_find_entities():
     # Each entity should meet minimum appearance criteria
     for entity in common_entities:
         for source, min_count in min_appearances.items():
-            assert len(entity.get_source_pks(source)) >= min_count
+            assert len(entity.get_keys(source)) >= min_count
 
     # Find entities with maximum appearances
     max_appearances = {"duns": 1}
@@ -102,7 +102,7 @@ def test_linked_sources_find_entities():
 
     for entity in limited_entities:
         for source, max_count in max_appearances.items():
-            assert len(entity.get_source_pks(source)) <= max_count
+            assert len(entity.get_keys(source)) <= max_count
 
     # Combined criteria
     filtered_entities = linked.find_entities(
@@ -110,8 +110,8 @@ def test_linked_sources_find_entities():
     )
 
     for entity in filtered_entities:
-        assert len(entity.get_source_pks("crn")) >= 1
-        assert len(entity.get_source_pks("duns")) <= 2
+        assert len(entity.get_keys("crn")) >= 1
+        assert len(entity.get_keys("duns")) <= 2
 
 
 def test_entity_value_consistency():
@@ -122,12 +122,12 @@ def test_entity_value_consistency():
         base_values = entity.base_values
 
         # Get actual values from each source
-        for source_name, source_pks in entity.source_pks.items():
+        for source_name, keys in entity.keys.items():
             source = linked.sources[source_name]
             df = source.data.to_pandas()
 
             # Get rows for this entity
-            entity_rows = df[df["pk"].isin(source_pks)]
+            entity_rows = df[df["key"].isin(keys)]
 
             # For each feature in the source
             for feature in source.features:
@@ -252,11 +252,11 @@ def test_feature_inheritance():
         assert "name" in entity.base_values
 
         # Entities in source_a should have email
-        if "source_a" in entity.source_pks:
+        if "source_a" in entity.keys:
             assert "email" in entity.base_values
 
         # Entities in source_b should have phone
-        if "source_b" in entity.source_pks:
+        if "source_b" in entity.keys:
             assert "phone" in entity.base_values
 
 
@@ -293,19 +293,19 @@ def test_source_references():
     entity = next(iter(linked.true_entities))
 
     # Add new source reference
-    new_pks = {"pk1", "pk2"}
-    entity.add_source_reference("new_source", new_pks)
+    new_keys = {"keys1", "keys2"}
+    entity.add_source_reference("new_source", new_keys)
 
-    # Should be able to retrieve the PKs
-    assert entity.get_source_pks("new_source") == new_pks
+    # Should be able to retrieve the keys
+    assert entity.get_keys("new_source") == new_keys
 
     # Update existing reference
-    updated_pks = {"pk3"}
-    entity.add_source_reference("new_source", updated_pks)
-    assert entity.get_source_pks("new_source") == updated_pks
+    updated_keys = {"keys3"}
+    entity.add_source_reference("new_source", updated_keys)
+    assert entity.get_keys("new_source") == updated_keys
 
     # Non-existent source should return empty list
-    assert entity.get_source_pks("nonexistent") == set()
+    assert entity.get_keys("nonexistent") == set()
 
 
 def test_linked_sources_entity_hierarchy():
@@ -353,10 +353,10 @@ def test_linked_sources_entity_hierarchy():
                 f"ClusterEntity in {source_name} has no parent in true_entities"
             )
 
-            # The source PKs from the cluster entity should be a subset of
-            # at least one true entity's PKs
+            # The source keys from the cluster entity should be a subset of
+            # at least one true entity's keys
             assert any(
-                cluster_entity.source_pks <= true_entity.source_pks
+                cluster_entity.keys <= true_entity.keys
                 for true_entity in matching_parents
             ), f"ClusterEntity in {source_name} not a proper subset of any true entity"
 
@@ -406,8 +406,8 @@ def test_linked_sources_entity_count_behavior():
     assert len(linked.true_entities) == 10
 
     # Each source should have its specified number of entities
-    source_a_entities = [e for e in linked.true_entities if "source_a" in e.source_pks]
-    source_b_entities = [e for e in linked.true_entities if "source_b" in e.source_pks]
+    source_a_entities = [e for e in linked.true_entities if "source_a" in e.keys]
+    source_b_entities = [e for e in linked.true_entities if "source_b" in e.keys]
     assert len(source_a_entities) == 5, "SourceConfig A should have 5 entities"
     assert len(source_b_entities) == 10, "SourceConfig B should have 10 entities"
 
@@ -419,10 +419,10 @@ def test_linked_sources_entity_count_behavior():
 
     # Both sources should now have 15 entities
     override_source_a = [
-        e for e in linked_override.true_entities if "source_a" in e.source_pks
+        e for e in linked_override.true_entities if "source_a" in e.keys
     ]
     override_source_b = [
-        e for e in linked_override.true_entities if "source_b" in e.source_pks
+        e for e in linked_override.true_entities if "source_b" in e.keys
     ]
     assert len(override_source_a) == 15, (
         "SourceConfig A should be overridden to 15 entities"

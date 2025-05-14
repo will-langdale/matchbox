@@ -45,7 +45,7 @@ class NaiveDeduper(Deduper):
             join_clause.append(f"l.{field} = r.{field}")
         join_clause_compiled = " and ".join(join_clause)
 
-        # Generate a new PK to remove row self-match but ALLOW true duplicate
+        # Generate a key to remove row self-match but ALLOW true duplicate
         # rows where all data items are identical in the source
         df["_unique_e4003b"] = range(df.shape[0])
 

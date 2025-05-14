@@ -215,7 +215,7 @@ class PKSpace(MBDB.MatchboxBase):
 
     id = Column(BIGINT, primary_key=True)
     next_cluster_id = Column(BIGINT, nullable=False)
-    next_cluster_source_pk_id = Column(BIGINT, nullable=False)
+    next_cluster_keys_id = Column(BIGINT, nullable=False)
 
     @classmethod
     def initialise(cls) -> None:
@@ -223,7 +223,7 @@ class PKSpace(MBDB.MatchboxBase):
         with MBDB.get_session() as session:
             init_statement = (
                 insert(cls)
-                .values(id=1, next_cluster_id=1, next_cluster_source_pk_id=1)
+                .values(id=1, next_cluster_id=1, next_cluster_keys_id=1)
                 .on_conflict_do_nothing()
             )
 
@@ -232,7 +232,7 @@ class PKSpace(MBDB.MatchboxBase):
 
     @classmethod
     def reserve_block(
-        cls, table: Literal["clusters", "cluster_source_pks"], block_size: int
+        cls, table: Literal["clusters", "cluster_keys"], block_size: int
     ) -> int:
         """Atomically get next available ID for table, and increment it."""
         if block_size < 1:
@@ -241,8 +241,8 @@ class PKSpace(MBDB.MatchboxBase):
         match table:
             case "clusters":
                 next_id_col = "next_cluster_id"
-            case "cluster_source_pks":
-                next_id_col = "next_cluster_source_pk_id"
+            case "cluster_keys":
+                next_id_col = "next_cluster_keys_id"
 
         with MBDB.get_session() as session:
             try:
@@ -287,13 +287,13 @@ class SourceColumns(CountMixin, MBDB.MatchboxBase):
     )
 
 
-class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
+class ClusterSourceKey(CountMixin, MBDB.MatchboxBase):
     """Table for storing source primary keys for clusters."""
 
-    __tablename__ = "cluster_source_pks"
+    __tablename__ = "cluster_keys"
 
     # Columns
-    pk_id = Column(BIGINT, primary_key=True)
+    key_id = Column(BIGINT, primary_key=True)
     cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
@@ -302,17 +302,17 @@ class ClusterSourcePK(CountMixin, MBDB.MatchboxBase):
         ForeignKey("source_configs.source_config_id", ondelete="CASCADE"),
         nullable=False,
     )
-    source_pk = Column(TEXT, nullable=False)
+    key = Column(TEXT, nullable=False)
 
     # Relationships
-    cluster = relationship("Clusters", back_populates="source_pks")
-    source_config = relationship("SourceConfigs", back_populates="cluster_source_pks")
+    cluster = relationship("Clusters", back_populates="keys")
+    source_config = relationship("SourceConfigs", back_populates="cluster_keys")
 
     # Constraints and indices
     __table_args__ = (
-        Index("ix_cluster_source_pks_cluster_id", "cluster_id"),
-        Index("ix_cluster_source_pks_source_pk", "source_pk"),
-        UniqueConstraint("pk_id", "source_config_id", name="unique_pk_source"),
+        Index("ix_cluster_keys_cluster_id", "cluster_id"),
+        Index("ix_cluster_keys_keys", "key"),
+        UniqueConstraint("key_id", "source_config_id", name="unique_keys_source"),
     )
 
 
@@ -330,7 +330,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     )
     full_name = Column(TEXT, nullable=False)
     warehouse_hash = Column(BYTEA, nullable=False)
-    db_pk = Column(TEXT, nullable=False)
+    key_field = Column(TEXT, nullable=False)
 
     # Relationships
     source_resolution = relationship("Resolutions", back_populates="source_config")
@@ -339,18 +339,18 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         back_populates="source_config",
         passive_deletes=True,
     )
-    cluster_source_pks = relationship(
-        "ClusterSourcePK",
+    cluster_keys = relationship(
+        "ClusterSourceKey",
         back_populates="source_config",
         passive_deletes=True,
     )
     clusters = relationship(
         "Clusters",
-        secondary=ClusterSourcePK.__table__,
+        secondary=ClusterSourceKey.__table__,
         primaryjoin=(
-            "SourceConfigs.source_config_id == ClusterSourcePK.source_config_id"
+            "SourceConfigs.source_config_id == ClusterSourceKey.source_config_id"
         ),
-        secondaryjoin="ClusterSourcePK.cluster_id == Clusters.cluster_id",
+        secondaryjoin="ClusterSourceKey.cluster_id == Clusters.cluster_id",
         viewonly=True,
     )
 
@@ -380,7 +380,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             address=SourceAddress(
                 full_name=self.full_name, warehouse_hash=self.warehouse_hash
             ),
-            db_pk=self.db_pk,
+            key_field=self.key_field,
             columns=[
                 CommonSourceColumn(
                     name=column.column_name,
@@ -422,8 +422,8 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     cluster_hash = Column(BYTEA, nullable=False)
 
     # Relationships
-    source_pks = relationship(
-        "ClusterSourcePK",
+    keys = relationship(
+        "ClusterSourceKey",
         back_populates="cluster",
         passive_deletes=True,
     )
@@ -439,13 +439,13 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Clusters.cluster_id == Contains.child",
         backref="parents",
     )
-    # Add relationship to SourceConfigs through ClusterSourcePK
+    # Add relationship to SourceConfigs through ClusterSourceKey
     source_configs = relationship(
         "SourceConfigs",
-        secondary=ClusterSourcePK.__table__,
-        primaryjoin="Clusters.cluster_id == ClusterSourcePK.cluster_id",
+        secondary=ClusterSourceKey.__table__,
+        primaryjoin="Clusters.cluster_id == ClusterSourceKey.cluster_id",
         secondaryjoin=(
-            "ClusterSourcePK.source_config_id == SourceConfigs.source_config_id"
+            "ClusterSourceKey.source_config_id == SourceConfigs.source_config_id"
         ),
         viewonly=True,
     )

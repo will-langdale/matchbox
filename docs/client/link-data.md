@@ -61,7 +61,7 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
             {"name": "company_number", "type": "VARCHAR"},
             {"name": "postcode", "type": "VARCHAR"},
         ],
-        db_pk="id",
+        key_field="id",
     ).set_engine(engine)
     
     # Exporters data
@@ -71,7 +71,7 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
             {"name": "company_name", "type": "VARCHAR(500)"},
             {"name": "postcode", "type": "VARCHAR(8)"},
         ],
-        db_pk="id",
+        key_field="id",
     ).set_engine(engine)
     ```
 
@@ -81,7 +81,7 @@ Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
     - The schema-qualified `full_name` of the dataset
     - The `engine` used to connect
 - A list of `columns` that will be used for matching
-- A primary key (`db_pk`) that uniquely identifies each record
+- A key field (`key_field`) that uniquely identifies each record
 - A database engine
 
 ## 2. Defining data cleaners

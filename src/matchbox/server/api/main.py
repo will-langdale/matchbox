@@ -253,11 +253,11 @@ def match(
     target_warehouse_hashes_b64: Annotated[list[str], Query()],
     source_full_name: str,
     source_warehouse_hash_b64: str,
-    source_pk: str,
+    key: str,
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
-    """Match a source primary key against a list of target addresses."""
+    """Match a source key against a list of target addresses."""
     targets = [
         SourceAddress(full_name=n, warehouse_hash=w)
         for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)
@@ -267,7 +267,7 @@ def match(
     )
     try:
         res = backend.match(
-            source_pk=source_pk,
+            key=key,
             source=source,
             targets=targets,
             resolution=resolution,

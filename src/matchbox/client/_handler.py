@@ -160,7 +160,7 @@ def query(
 def match(
     targets: list[SourceAddress],
     source: SourceAddress,
-    source_pk: str,
+    key: str,
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> Match:
@@ -169,7 +169,7 @@ def match(
 
     log_prefix = f"Query {source.pretty}"
     logger.debug(
-        f"{source_pk} to {', '.join(str(t) for t in targets)} using {resolution}",
+        f"{key} to {', '.join(str(t) for t in targets)} using {resolution}",
         prefix=log_prefix,
     )
 
@@ -183,7 +183,7 @@ def match(
                 "source_full_name": source.full_name,
                 # Converted to b64 by `url_params()`
                 "source_warehouse_hash_b64": source.warehouse_hash,
-                "source_pk": source_pk,
+                "key": key,
                 "resolution": resolution,
                 "threshold": threshold,
             }

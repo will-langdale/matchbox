@@ -133,7 +133,7 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
                 session.execute(insert(table), batch)
                 session.flush()
 
-            # Re-sync PK sequences
+            # Re-sync primary key sequences
             for pk in table.primary_key:
                 lock_stmt = text(
                     f"lock table {table.schema}.{table.name} in exclusive mode;"
@@ -141,7 +141,8 @@ def restore(snapshot: MatchboxSnapshot, batch_size: int) -> None:
                 sync_statement = select(
                     func.setval(
                         func.pg_get_serial_sequence(
-                            text(f"'{table.schema}.{table.name}'"), text(f"'{pk.name}'")
+                            text(f"'{table.schema}.{table.name}'"),
+                            text(f"'{pk.name}'"),
                         ),
                         func.coalesce(func.max(text(pk.name)), 0),
                     )
@@ -264,20 +265,20 @@ def large_ingest(
 
         # Upsert mode (slower)
         else:
-            pk_names = [c.name for c in table.primary_key.columns]
+            keys_names = [c.name for c in table.primary_key.columns]
 
             # Validate upsert arguments
             if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
                 raise ValueError("Cannot update a custom upsert key")
 
-            if len(set(update_columns or []) & set(pk_names)) > 0:
+            if len(set(update_columns or []) & set(keys_names)) > 0:
                 raise ValueError(
                     "Cannot update a primary key without "
                     "setting a different custom upsert key"
                 )
 
             # If necessary, set defaults for upsert variables
-            upsert_keys = upsert_keys or pk_names
+            upsert_keys = upsert_keys or keys_names
 
             if not update_columns:
                 update_columns = [c for c in table_columns if c not in upsert_keys]

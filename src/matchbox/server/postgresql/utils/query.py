@@ -20,7 +20,7 @@ from matchbox.common.sources import Match, SourceAddress
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
-    ClusterSourcePK,
+    ClusterSourceKey,
     Contains,
     Probabilities,
     Resolutions,
@@ -106,12 +106,13 @@ def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
 
     for resolution_id, threshold in lineage_thresholds.items():
         if threshold is None:
-            # This is a source resolution - get all its clusters through ClusterSourcePK
+            # This is a source resolution
+            # Get all its clusters through ClusterSourceKey
             resolution_valid = (
-                select(ClusterSourcePK.cluster_id.label("cluster"))
+                select(ClusterSourceKey.cluster_id.label("cluster"))
                 .join(
                     SourceConfigs,
-                    SourceConfigs.source_config_id == ClusterSourcePK.source_config_id,
+                    SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
                 )
                 .where(SourceConfigs.resolution_id == resolution_id)
                 .distinct()
@@ -187,13 +188,13 @@ def _resolve_cluster_hierarchy(
         mapping_base = (
             select(
                 Clusters.cluster_id.label("cluster_id"),
-                ClusterSourcePK.source_pk.label("source_pk"),
+                ClusterSourceKey.key.label("key"),
             )
-            .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
+            .join(ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id)
             .where(
                 and_(
                     Clusters.cluster_id.in_(select(valid_clusters.c.cluster)),
-                    ClusterSourcePK.source_config_id == source_config.source_config_id,
+                    ClusterSourceKey.source_config_id == source_config.source_config_id,
                 )
             )
             .cte("mapping_base")
@@ -248,7 +249,7 @@ def _resolve_cluster_hierarchy(
         # Final mapping with coalesced results
         final_mapping = (
             select(
-                mapping_base.c.source_pk,
+                mapping_base.c.key,
                 func.coalesce(
                     highest_parents.c.highest_parent, mapping_base.c.cluster_id
                 ).label("final_parent"),
@@ -263,9 +264,7 @@ def _resolve_cluster_hierarchy(
         )
 
         # Final select statement
-        return select(
-            final_mapping.c.final_parent.label("id"), final_mapping.c.source_pk
-        )
+        return select(final_mapping.c.final_parent.label("id"), final_mapping.c.key)
 
 
 def query(
@@ -335,27 +334,27 @@ def _build_unnested_clusters() -> CTE:
     return (
         select(
             Clusters.cluster_id,
-            ClusterSourcePK.source_config_id.label("source_config"),
-            ClusterSourcePK.source_pk,
+            ClusterSourceKey.source_config_id.label("source_config"),
+            ClusterSourceKey.key,
         )
         .select_from(Clusters)
-        .join(ClusterSourcePK, ClusterSourcePK.cluster_id == Clusters.cluster_id)
+        .join(ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id)
         .cte("unnested_clusters")
         .prefix_with("MATERIALIZED")
     )
 
 
 def _find_source_cluster(
-    unnested_clusters: CTE, source_config_id: int, source_pk: str
+    unnested_clusters: CTE, source_config_id: int, key: str
 ) -> Select:
-    """Find the initial cluster containing the source primary key."""
+    """Find the initial cluster containing the source key."""
     return (
         select(unnested_clusters.c.cluster_id)
         .select_from(unnested_clusters)
         .where(
             and_(
                 unnested_clusters.c.source_config == source_config_id,
-                unnested_clusters.c.source_pk == source_pk,
+                unnested_clusters.c.key == key,
             )
         )
         .scalar_subquery()
@@ -442,7 +441,7 @@ def _build_hierarchy_down(
             child_col.label("child"),
             literal(1).label("level"),
             unnested_clusters.c.source_config.label("source_config"),
-            unnested_clusters.c.source_pk.label("source_pk"),
+            unnested_clusters.c.key.label("key"),
         )
         .select_from(contains_table)
         .join_from(
@@ -463,7 +462,7 @@ def _build_hierarchy_down(
             child_col.label("child"),
             (hierarchy_down.c.level + 1).label("level"),
             unnested_clusters.c.source_config.label("source_config"),
-            unnested_clusters.c.source_pk.label("source_pk"),
+            unnested_clusters.c.key.label("key"),
         )
         .select_from(hierarchy_down)
         .join_from(
@@ -477,14 +476,14 @@ def _build_hierarchy_down(
             unnested_clusters.c.cluster_id == child_col,
             isouter=True,
         )
-        .where(hierarchy_down.c.source_pk.is_(None))  # Only recurse on non-leaf nodes
+        .where(hierarchy_down.c.key.is_(None))  # Only recurse on non-leaf nodes
     )
 
     return hierarchy_down.union_all(recursive)
 
 
 def _build_match_query(
-    source_pk: str,
+    key: str,
     source_config: SourceConfigs,
     resolution: ResolutionName,
     session: Session,
@@ -516,9 +515,7 @@ def _build_match_query(
 
     # Build the query components
     unnested = _build_unnested_clusters()
-    source_cluster = _find_source_cluster(
-        unnested, source_config.source_config_id, source_pk
-    )
+    source_cluster = _find_source_cluster(unnested, source_config.source_config_id, key)
     hierarchy_up = _build_hierarchy_up(source_cluster, contains_table)
     highest = _find_highest_parent(hierarchy_up)
     hierarchy_down = _build_hierarchy_down(highest, unnested, contains_table)
@@ -528,7 +525,7 @@ def _build_match_query(
         select(
             hierarchy_down.c.parent.label("cluster"),
             hierarchy_down.c.source_config,
-            hierarchy_down.c.source_pk,
+            hierarchy_down.c.key,
         )
         .distinct()
         .select_from(hierarchy_down)
@@ -538,7 +535,7 @@ def _build_match_query(
 
 
 def match(
-    source_pk: str,
+    key: str,
     source: SourceAddress,
     targets: list[SourceAddress],
     resolution: ResolutionName,
@@ -556,11 +553,11 @@ def match(
     * Returns the results as Match objects, one per target
     """
     with MBDB.get_session() as session:
-        # Get all matches for source_pk in all possible targets
+        # Get all matches for keys in all possible targets
         source_config = _get_source_config(source, session)
 
         match_stmt = _build_match_query(
-            source_pk=source_pk,
+            key=key,
             source_config=source_config,
             resolution=resolution,
             session=session,

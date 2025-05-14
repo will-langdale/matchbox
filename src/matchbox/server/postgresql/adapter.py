@@ -30,7 +30,7 @@ from matchbox.server.postgresql.db import (
 )
 from matchbox.server.postgresql.orm import (
     Clusters,
-    ClusterSourcePK,
+    ClusterSourceKey,
     Contains,
     PKSpace,
     Probabilities,
@@ -78,8 +78,8 @@ class FilteredClusters(BaseModel):
             if self.has_source is not None:
                 if self.has_source:
                     query = query.join(
-                        ClusterSourcePK,
-                        ClusterSourcePK.cluster_id == Clusters.cluster_id,
+                        ClusterSourceKey,
+                        ClusterSourceKey.cluster_id == Clusters.cluster_id,
                     )
                 else:
                     query = query.join(
@@ -178,14 +178,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def match(  # noqa: D102
         self,
-        source_pk: str,
+        key: str,
         source: SourceAddress,
         targets: list[SourceAddress],
         resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
         return match(
-            source_pk=source_pk,
+            key=key,
             source=source,
             targets=targets,
             resolution=resolution,

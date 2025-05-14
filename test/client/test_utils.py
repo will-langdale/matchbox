@@ -25,7 +25,7 @@ def test_hash_conversion():
     all_companies = source_testkit.query.to_pandas()
     sha1_series_1 = columns_to_value_ordered_hash(
         data=all_companies,
-        columns=["id", "pk", "company_name", "address", "crn", "duns"],
+        columns=["id", "key", "company_name", "address", "crn", "duns"],
     )
 
     assert isinstance(sha1_series_1, Series)
@@ -41,7 +41,7 @@ def test_hash_conversion():
                 "crn": "duns",
             }
         )
-        .filter(["id", "pk", "company_name", "address", "crn", "duns"])
+        .filter(["id", "key", "company_name", "address", "crn", "duns"])
     )
 
     all_companies_reodered = concat(
@@ -50,7 +50,7 @@ def test_hash_conversion():
 
     sha1_series_2 = columns_to_value_ordered_hash(
         data=all_companies_reodered,
-        columns=["id", "pk", "company_name", "address", "crn", "duns"],
+        columns=["id", "key", "company_name", "address", "crn", "duns"],
     )
 
     assert sha1_series_1.equals(sha1_series_2)

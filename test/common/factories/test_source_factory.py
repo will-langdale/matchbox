@@ -54,12 +54,12 @@ def test_source_factory_repetition():
 
     # For each hash group, verify it contains the correct number of rows
     for _, group in hashes_df.groupby("hash"):
-        # Each hash should have repetition + 1 (base) number of PKs
-        source_pks = group["source_pk"].explode()
-        assert len(source_pks) == repetition + 1
+        # Each hash should have repetition + 1 (base) number of keys
+        keys = group["keys"].explode()
+        assert len(keys) == repetition + 1
 
-        # Get the actual rows for these PKs
-        rows = data_df[data_df["pk"].isin(source_pks)]
+        # Get the actual rows for these keys
+        rows = data_df[data_df["key"].isin(keys)]
 
         # Should have repetition + 1 (base) number of rows
         assert len(rows) == repetition + 1
@@ -101,18 +101,18 @@ def test_source_factory_data_hashes_integrity():
 
     # For each hash group, verify that the corresponding rows are identical
     for _, group in hashes_df.groupby("hash"):
-        pks = group["source_pk"].explode()
-        rows = data_df[data_df["pk"].isin(pks)]
+        keys = group["keys"].explode()
+        rows = data_df[data_df["key"].isin(keys)]
 
         # All rows in the same hash group should have identical feature values
         for feature in features:
             assert len(rows[feature.name].unique()) == 1
 
     # Due to repetition=1, each unique row should appear
-    # in exactly one hash group with two PKs
+    # in exactly one hash group with two keys
     # Repetition + 1 because we include the base value
     assert all(
-        len(group["source_pk"].explode()) == repetition + 1
+        len(group["keys"].explode()) == repetition + 1
         for _, group in hashes_df.groupby("hash")
     )
 
@@ -189,29 +189,29 @@ def test_source_factory_mock_properties():
     full_name = "companies"
     engine = create_engine("sqlite:///:memory:")
 
-    source_testkit = source_factory(
+    source_config = source_factory(
         features=features, full_name=full_name, engine=engine
     ).source_config
 
     # Check source address properties
-    assert source_testkit.address.full_name == full_name
+    assert source_config.address.full_name == full_name
 
     # Warehouse hash should be consistent for same engine config
     expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
-    assert source_testkit.address.warehouse_hash == expected_address.warehouse_hash
+    assert source_config.address.warehouse_hash == expected_address.warehouse_hash
 
     # Check column configuration
-    assert len(source_testkit.columns) == len(features)
-    for feature, column in zip(features, source_testkit.columns, strict=False):
+    assert len(source_config.columns) == len(features)
+    for feature, column in zip(features, source_config.columns, strict=False):
         assert column.name == feature.name
         assert column.type == feature.sql_type
 
-    # Check default resolution name and default pk
-    assert source_testkit.name == str(expected_address)
-    assert source_testkit.db_pk == "pk"
+    # Check default resolution name and default key
+    assert source_config.name == str(expected_address)
+    assert source_config.key_field == "key"
 
     # Verify source properties are preserved through model_dump
-    dump = source_testkit.model_dump()
+    dump = source_config.model_dump()
     assert dump["address"]["full_name"] == full_name
     assert dump["columns"] == tuple(
         {"name": f.name, "type": f.sql_type} for f in features
@@ -256,12 +256,12 @@ def test_entity_variations_tracking():
         # Verify the data values match expectations
         data_df = source.data.to_pandas()
 
-        # Get PKs for this cluster entity
-        result_pks = cluster_entity.get_source_pks(source_name)
-        assert result_pks is not None
+        # Get keys for this cluster entity
+        result_keys = cluster_entity.get_keys(source_name)
+        assert result_keys is not None
 
         # All rows for a given cluster entity should share the same company value
-        result_rows = data_df[data_df["pk"].isin(result_pks)]
+        result_rows = data_df[data_df["key"].isin(result_keys)]
         assert len(result_rows["company"].unique()) == 1
 
         company_values = result_rows["company"]
@@ -307,8 +307,8 @@ def test_base_and_variation_entities():
     variation_entity = None
 
     for entity in source.entities:
-        entity_pks = entity.get_source_pks(source_name)
-        rows = data_df[data_df["pk"].isin(entity_pks)]
+        entity_keys = entity.get_keys(source_name)
+        rows = data_df[data_df["key"].isin(entity_keys)]
         values = rows["company"]
         assert len(values.unique()) == 1
         value = values.iloc[0]
@@ -337,19 +337,18 @@ def test_base_and_variation_entities():
         [base_value, variation_value]
     )
 
-    # Verify that adding the entities produces the same result as having all PKs
+    # Verify that adding the entities produces the same result as having all keys
     assert (
-        combined.source_pks[source_name]
-        == base_entity.source_pks[source_name]
-        | variation_entity.source_pks[source_name]
+        combined.keys[source_name]
+        == base_entity.keys[source_name] | variation_entity.keys[source_name]
     )
 
-    # The diff between entities should match their respective PKs
+    # The diff between entities should match their respective keys
     base_diff = base_entity - variation_entity
-    assert base_diff.get(source_name) == base_entity.source_pks[source_name]
+    assert base_diff.get(source_name) == base_entity.keys[source_name]
 
     variation_diff = variation_entity - base_entity
-    assert variation_diff.get(source_name) == variation_entity.source_pks[source_name]
+    assert variation_diff.get(source_name) == variation_entity.keys[source_name]
 
 
 def test_source_factory_id_generation():
@@ -374,7 +373,7 @@ def test_source_factory_id_generation():
     # Convert to pandas for easier analysis
     data_df = source.data.to_pandas()
 
-    # Each unique row combination (excluding pk) should get a different ID
+    # Each unique row combination (excluding key) should get a different ID
     for _, group in data_df.groupby("company_name"):
         # All rows with same features should have same ID
         assert len(group["id"].unique()) == 1
@@ -391,17 +390,17 @@ def test_source_from_tuple():
     # Create a source from a tuple of values
     data_tuple = ({"a": 1, "b": "val"}, {"a": 2, "b": "val"})
     testkit = source_from_tuple(
-        data_tuple=data_tuple, data_pks=["0", "1"], full_name="foo"
+        data_tuple=data_tuple, data_keys=["0", "1"], full_name="foo"
     )
 
     # Verify the generated testkit has the expected properties
     assert len(testkit.entities) == 2
-    assert set(testkit.entities[0].source_pks["foo"]) | set(
-        testkit.entities[1].source_pks["foo"]
+    assert set(testkit.entities[0].keys["foo"]) | set(
+        testkit.entities[1].keys["foo"]
     ) == {"0", "1"}
 
     assert testkit.data.shape[0] == 2
-    assert set(testkit.data.column_names) == {"id", "pk", "a", "b"}
+    assert set(testkit.data.column_names) == {"id", "key", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2
     assert set(col.name for col in testkit.source_config.columns) == {"a", "b"}
 
@@ -515,23 +514,23 @@ def test_generate_rows(
 ):
     """Test generate_rows correctly tracks entities and row identities."""
     generator = Faker(seed=42)
-    raw_data, entity_pks, id_pks, id_hashes = generate_rows(
+    raw_data, entity_keys, id_keys, id_hashes = generate_rows(
         generator, selected_entities, features
     )
 
     # Check arrays have consistent lengths
-    n_rows = len(raw_data["pk"])
+    n_rows = len(raw_data["key"])
     assert len(raw_data["id"]) == n_rows
     assert all(len(values) == n_rows for values in raw_data.values())
 
     # Check entity tracking - each entity appears exactly once
-    assert len(selected_entities) == len(entity_pks)
+    assert len(selected_entities) == len(entity_keys)
 
     # Check row identity tracking - each unique value combo gets one ID
     unique_values = {
         tuple(raw_data[f.name][i] for f in features) for i in range(n_rows)
     }
-    assert len(unique_values) == len(id_pks)
+    assert len(unique_values) == len(id_keys)
 
     # When we have duplicate values, verify correct ID sharing
     value_counts = {}
@@ -540,28 +539,28 @@ def test_generate_rows(
         row_id = raw_data["id"][i]
         value_counts[values] = value_counts.get(values, 0) + 1
 
-    # Each ID's PKs set should match the number of times those values appear
+    # Each ID's keys set should match the number of times those values appear
     for i in range(n_rows):
         values = tuple(raw_data[f.name][i] for f in features)
         row_id = raw_data["id"][i]
-        assert len(id_pks[row_id]) == value_counts[values]
+        assert len(id_keys[row_id]) == value_counts[values]
 
-    # Verify all PKs are accounted for
-    all_pks = set(raw_data["pk"])
-    assert all(pk in all_pks for pks in entity_pks.values() for pk in pks)
-    assert all(pk in all_pks for pks in id_pks.values() for pk in pks)
+    # Verify all keys are accounted for
+    all_keys = set(raw_data["key"])
+    assert all(key in all_keys for keys in entity_keys.values() for key in keys)
+    assert all(key in all_keys for keys in id_keys.values() for key in keys)
 
     # For empty entities case, verify empty results
     if not selected_entities:
-        assert not raw_data["pk"]
-        assert not entity_pks
-        assert not id_pks
+        assert not raw_data["key"]
+        assert not entity_keys
+        assert not id_keys
         assert not id_hashes
 
     # Verify core variation behavior
     for entity in selected_entities:
         entity_rows = {
-            i for i, pk in enumerate(raw_data["pk"]) if pk in entity_pks[entity.id]
+            i for i, key in enumerate(raw_data["key"]) if key in entity_keys[entity.id]
         }
 
         for feature in features:
@@ -607,12 +606,12 @@ def test_generate_rows(
 
         # Multiply all counts together to get total combinations
         expected_rows = functools.reduce(lambda x, y: x * y, variation_counts, 1)
-        assert len(entity_pks[entity.id]) == expected_rows
+        assert len(entity_keys[entity.id]) == expected_rows
 
     # Verify hashing functionality
     # Each unique row should have a unique hash
-    assert len(id_hashes) == len(id_pks)
-    assert set(id_hashes.keys()) == set(id_pks.keys())
+    assert len(id_hashes) == len(id_keys)
+    assert set(id_hashes.keys()) == set(id_keys.keys())
 
     # Create a map from values to hash
     values_to_hash = {}

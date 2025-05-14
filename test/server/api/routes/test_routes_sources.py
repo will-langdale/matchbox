@@ -29,7 +29,7 @@ else:
 
 def test_get_source(test_client: TestClient):
     address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
-    source = SourceConfig(address=address, db_pk="pk")
+    source = SourceConfig(address=address, key_field="key")
     mock_backend = Mock()
     mock_backend.get_source_config = Mock(return_value=source)
 

@@ -253,7 +253,7 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def match(
         self,
-        source_pk: str,
+        key: str,
         source: SourceAddress,
         targets: list[SourceAddress],
         resolution: ResolutionName,
@@ -262,7 +262,7 @@ class MatchboxDBAdapter(ABC):
         """Matches an ID in a source resolution and returns the keys in the targets.
 
         Args:
-            source_pk: The primary key to match from the source.
+            key: The key to match from the source.
             source: The address of the source.
             targets: The addresses of the targets.
             resolution: The name of the resolution to use for matching.

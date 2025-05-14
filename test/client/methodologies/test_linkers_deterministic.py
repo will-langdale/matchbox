@@ -46,14 +46,16 @@ def configure_deterministic_linker(
     Returns:
         A dictionary with validated settings for DeterministicLinker
     """
-    # Extract column names excluding pk and id
+    # Extract column names excluding key and id
     left_fields = [
-        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
+        c.name
+        for c in left_testkit.source_config.columns
+        if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
         for c in right_testkit.source_config.columns
-        if c.name not in ("pk", "id")
+        if c.name not in ("key", "id")
     ]
 
     # Build comparison string
@@ -87,14 +89,16 @@ def configure_weighted_deterministic_linker(
     Returns:
         A dictionary with validated settings for WeightedDeterministicLinker
     """
-    # Extract column names excluding pk and id
+    # Extract column names excluding key and id
     left_fields = [
-        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
+        c.name
+        for c in left_testkit.source_config.columns
+        if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
         for c in right_testkit.source_config.columns
-        if c.name not in ("pk", "id")
+        if c.name not in ("key", "id")
     ]
 
     # Build weighted comparisons with equal weights
@@ -130,14 +134,16 @@ def configure_splink_linker(
     Returns:
         A dictionary with validated settings for SplinkLinker
     """
-    # Extract column names excluding pk and id
+    # Extract column names excluding key and id
     left_fields = [
-        c.name for c in left_testkit.source_config.columns if c.name not in ("pk", "id")
+        c.name
+        for c in left_testkit.source_config.columns
+        if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
         for c in right_testkit.source_config.columns
-        if c.name not in ("pk", "id")
+        if c.name not in ("key", "id")
     ]
 
     deterministic_matching_rules: list[str] = []
@@ -249,9 +255,9 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
         description="Linking with exact matches",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_data=left_source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_data=right_source.query.to_pandas().drop("key", axis=1),
         right_resolution="source_right",
     )
     results: Results = linker.run()
@@ -310,9 +316,9 @@ def test_exact_match_with_duplicates_linking(
         description="Linking with exact matches",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_data=left_source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_data=right_source.query.to_pandas().drop("key", axis=1),
         right_resolution="source_right",
     )
     results: Results = linker.run()
@@ -374,9 +380,9 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
         description="Linking with partial entity coverage",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_data=left_source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_data=right_source.query.to_pandas().drop("key", axis=1),
         right_resolution="source_right",
     )
     results = linker.run()
@@ -432,9 +438,9 @@ def test_no_matching_entities_linking(
         description="Linking with no matching entities",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("pk", axis=1),
+        left_data=left_source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("pk", axis=1),
+        right_data=right_source.query.to_pandas().drop("key", axis=1),
         right_resolution="source_right",
     )
     results = linker.run()
