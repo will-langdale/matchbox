@@ -68,7 +68,7 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
     try:
         sorted_vals = sorted(values)
     except TypeError as e:
-        raise TypeError("Can only order lists or columns of the same datatype.") from e
+        raise TypeError("Can only order lists or fields of the same datatype.") from e
 
     hashed_vals_list = [HASH_FUNC(prep_for_hash(i)) for i in sorted_vals]
 
@@ -79,55 +79,57 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
     return hashed_vals.digest()
 
 
-def process_column_for_hashing(col_name: str, schema_type: pl.DataType) -> plx.Expr:
-    """Process a column for hashing based on its type.
+def process_field_for_hashing(field_name: str, schema_type: pl.DataType) -> plx.Expr:
+    """Process a field for hashing based on its type.
 
     Args:
-        col_name: The column name
-        schema_type: The polars schema type of the column
+        field_name: The field name
+        schema_type: The polars schema type of the field
 
     Returns:
-        A polars expression for processing the column
+        A polars expression for processing the field
     """
     if isinstance(schema_type, pl.Binary):
-        return pl.col(col_name).fill_null("\x00").bin.encode("hex").alias(col_name)
+        return pl.col(field_name).fill_null("\x00").bin.encode("hex").alias(field_name)
     elif isinstance(schema_type, pl.Struct):
-        return pl.col(col_name).struct.json_encode().fill_null("\x00").alias(col_name)
+        return (
+            pl.col(field_name).struct.json_encode().fill_null("\x00").alias(field_name)
+        )
     elif isinstance(schema_type, pl.Object):
         return (
-            pl.col(col_name)
+            pl.col(field_name)
             .map_elements(lambda x: str(x), return_dtype=pl.Utf8)
             .fill_null("\x00")
-            .alias(col_name)
+            .alias(field_name)
         )
     else:
-        return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
+        return pl.col(field_name).cast(pl.Utf8).fill_null("\x00").alias(field_name)
 
 
 def hash_rows(
-    df: pl.DataFrame, columns: list[str], method: HashMethod = HashMethod.XXH3_128
+    df: pl.DataFrame, fields: list[str], method: HashMethod = HashMethod.XXH3_128
 ) -> pl.Series:
     """Hash all rows in a dataframe.
 
     Args:
         df: The DataFrame to hash rows from
-        columns: The column names to include in the hash
+        fields: The field names to include in the hash
         method: The hash method to use
 
     Returns:
         List of row hashes as bytes
     """
-    expr_list = [process_column_for_hashing(col, df.schema[col]) for col in columns]
+    expr_list = [process_field_for_hashing(field, df.schema[field]) for field in fields]
     df_processed = df.with_columns(expr_list)
 
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+            plh.concat_str(*fields, separator="␞").nchash.xxh3_128().alias("row_hash")
         )
         return row_hashes["row_hash"]
     elif method == HashMethod.SHA256:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞")
+            plh.concat_str(*fields, separator="␞")
             .chash.sha2_256()
             .str.decode("hex")
             .alias("row_hash")
@@ -141,7 +143,7 @@ def hash_arrow_table(
     table: pa.Table,
     method: HashMethod = HashMethod.XXH3_128,
 ) -> bytes:
-    """Computes a content hash of an Arrow table invariant to row and column order.
+    """Computes a content hash of an Arrow table invariant to row and field order.
 
     This is used to content-address an Arrow table for caching.
 
@@ -157,34 +159,34 @@ def hash_arrow_table(
     if df.height == 0:
         return b"empty_table_hash"
 
-    columns: list[str] = sorted(df.columns)
-    df = df.select(columns)
+    fields: list[str] = sorted(df.columns)
+    df = df.select(fields)
 
-    # Explode list columns
-    for col in columns:
-        if isinstance(df.schema[col], pl.List):
-            df = df.explode(col)
+    # Explode list fields
+    for field in fields:
+        if isinstance(df.schema[field], pl.List):
+            df = df.explode(field)
 
-    df = df.sort(by=columns)
+    df = df.sort(by=fields)
 
-    row_hashes = hash_rows(df, columns, method=method)
+    row_hashes = hash_rows(df, fields, method=method)
 
     all_hashes: bytes = b"".join(row_hashes.sort().to_list())
 
     return HASH_FUNC(all_hashes).digest()
 
 
-def columns_to_value_ordered_hash(data: DataFrame, columns: list[str]) -> Series:
-    """Returns the rowwise hash ordered by the row's values, ignoring column order.
+def fields_to_value_ordered_hash(data: DataFrame, fields: list[str]) -> Series:
+    """Returns the rowwise hash ordered by the row's values, ignoring field order.
 
-    This function is used to add a column to a dataframe that represents the
+    This function is used to add a field to a dataframe that represents the
     hash of each its rows, but where the order of the row values doesn't change the
-    hash value. Column order is ignored in favour of value order.
+    hash value. field order is ignored in favour of value order.
 
     This is primarily used to give a consistent hash to a new cluster no matter whether
     its parent hashes were used in the left or right table.
     """
-    bytes_records = data.filter(columns).astype(bytes).to_dict("records")
+    bytes_records = data.filter(fields).astype(bytes).to_dict("records")
 
     hashed_records = []
 

@@ -43,14 +43,15 @@ def configure_weighted_probabilistic(
         A dictionary with validated settings for WeightedDeterministicLinker
     """
 
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 
@@ -95,15 +96,15 @@ def configure_splink_probabilistic(
         A dictionary with validated settings for SplinkLinker
     """
 
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 
@@ -118,7 +119,11 @@ def configure_splink_probabilistic(
 
         field = l_field  # Use common field name after checking they match
         field_type = next(
-            (c.type for c in left_testkit.source_config.columns if c.name == field),
+            (
+                c.type
+                for c in left_testkit.source_config.index_fields
+                if c.name == field
+            ),
             "TEXT",
         )
 

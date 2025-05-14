@@ -17,17 +17,18 @@ from sqlglot.errors import ParseError
 
 from matchbox.client.helpers.selector import Match
 from matchbox.common.db import fullname_to_prefix
+from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import (
-    MatchboxSourceColumnError,
     MatchboxSourceExtractTransformError,
+    MatchboxSourceFieldError,
 )
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.sources import (
     Location,
     RelationalDBLocation,
     SourceAddress,
-    SourceColumn,
     SourceConfig,
+    SourceField,
 )
 
 
@@ -315,7 +316,7 @@ def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
     # Verify the result structure
     assert set(df.columns) == {"name", "company_name", "crn"}
 
-    # Verify the calculated columns
+    # Verify the calculated fields
     sample_str: str = df.select("company_name").row(0)[0]
     assert sample_str == sample_str.upper()
 
@@ -385,20 +386,20 @@ def test_source_address_compose():
     assert len(same_table_name_str) == 1
 
 
-def test_source_address_format_columns():
-    """Column names can get a standard prefix from a table name."""
+def test_source_address_format_fields():
+    """Field names can get a standard prefix from a table name."""
     address1 = SourceAddress(full_name="foo", warehouse_hash=b"bar")
     address2 = SourceAddress(full_name="foo.bar", warehouse_hash=b"bar")
 
-    assert address1.format_column("col") == "foo_col"
-    assert address2.format_column("col") == "foo_bar_col"
+    assert address1.format_field("field") == "foo_field"
+    assert address2.format_field("field") == "foo_bar_field"
 
 
 def test_source_set_engine(sqlite_warehouse: Engine):
     """Engine can be set on SourceConfig."""
     source_testkit = source_factory(engine=sqlite_warehouse)
 
-    # We can set engine with correct column specification
+    # We can set engine with correct field specification
     source = source_testkit.source_config.set_engine(sqlite_warehouse)
     assert isinstance(source, SourceConfig)
 
@@ -408,42 +409,42 @@ def test_source_set_engine(sqlite_warehouse: Engine):
         source.set_engine(wrong_engine)
 
 
-def test_source_check_columns(sqlite_warehouse: Engine):
-    """SourceConfig columns are checked against the warehouse."""
+def test_source_check_fields(sqlite_warehouse: Engine):
+    """SourceConfig fields are checked against the warehouse."""
     source_testkit = source_factory(
-        features=[{"name": "b", "base_generator": "random_int", "sql_type": "BIGINT"}],
+        features=[{"name": "b", "base_generator": "random_int", "datatype": "Int64"}],
         engine=sqlite_warehouse,
     )
     source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    # We can set engine with correct column specification
+    # We can set engine with correct field specification
     source = source_testkit.source_config.set_engine(sqlite_warehouse)
     assert isinstance(source, SourceConfig)
 
-    # Error is raised with custom columns
-    with pytest.raises(MatchboxSourceColumnError, match="Columns {'c'} not in"):
-        source.check_columns(columns=["c"])
+    # Error is raised with custom fields
+    with pytest.raises(MatchboxSourceFieldError, match="Fields {'c'} not in"):
+        source.check_fields(fields=["c"])
 
     # Error is raised with missing key
     new_source = source_testkit.source_config.model_copy(
         update={"key_field": "typo"}
     ).set_engine(sqlite_warehouse)
-    with pytest.raises(MatchboxSourceColumnError, match="Key field typo not available"):
-        new_source.check_columns()
+    with pytest.raises(MatchboxSourceFieldError, match="Key field typo not available"):
+        new_source.check_fields()
 
-    # Error is raised with missing column
+    # Error is raised with missing field
     new_source = source_testkit.source_config.model_copy(
-        update={"columns": (SourceColumn(name="c", type="TEXT"),)}
+        update={"index_fields": (SourceField(name="c", type=DataTypes.STRING),)}
     ).set_engine(sqlite_warehouse)
-    with pytest.raises(MatchboxSourceColumnError, match="Column c not available in"):
-        new_source.check_columns()
+    with pytest.raises(MatchboxSourceFieldError, match="Field c not available in"):
+        new_source.check_fields()
 
     # Error is raised with wrong type
     new_source = source_testkit.source_config.model_copy(
-        update={"columns": (SourceColumn(name="b", type="TEXT"),)}
+        update={"index_fields": (SourceField(name="b", type=DataTypes.STRING),)}
     ).set_engine(sqlite_warehouse)
-    with pytest.raises(MatchboxSourceColumnError, match="Type BIGINT != TEXT for b"):
-        new_source.check_columns()
+    with pytest.raises(MatchboxSourceFieldError, match="Type Int64 != String for b"):
+        new_source.check_fields()
 
 
 def test_source_hash_equality(sqlite_warehouse: Engine):
@@ -461,26 +462,26 @@ def test_source_hash_equality(sqlite_warehouse: Engine):
     assert hash(source) == hash(source_eq)
 
 
-def test_source_default_columns(sqlite_warehouse: Engine):
-    """Default columns from the warehouse can be assigned to a SourceConfig."""
+def test_source_default_fields(sqlite_warehouse: Engine):
+    """Default fields from the warehouse can be assigned to a SourceConfig."""
     source_testkit = source_factory(
         features=[
-            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
-            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+            {"name": "a", "base_generator": "random_int", "datatype": "Int64"},
+            {"name": "b", "base_generator": "word", "datatype": "String"},
         ],
         engine=sqlite_warehouse,
     )
 
     source_testkit.to_warehouse(engine=sqlite_warehouse)
 
-    expected_columns = (
-        SourceColumn(name="a", type="BIGINT"),
-        SourceColumn(name="b", type="TEXT"),
+    expected_fields = (
+        SourceField(name="a", type=DataTypes.INT64),
+        SourceField(name="b", type=DataTypes.STRING),
     )
 
-    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_columns()
+    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_fields()
 
-    assert source.columns == expected_columns
+    assert source.index_fields == expected_fields
     # We create a new source, but attributes and engine match
     assert source is not source_testkit.source_config
     assert source == source_testkit.source_config
@@ -525,14 +526,14 @@ def test_source_conversion_methods(
     """Check equivalence of SourceConfig to Arrow, Pandas or Polars, with options."""
     source_testkit = source_factory(
         features=[
-            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
-            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+            {"name": "a", "base_generator": "random_int", "datatype": "Int64"},
+            {"name": "b", "base_generator": "word", "datatype": "String"},
         ],
         engine=sqlite_warehouse,
         n_true_entities=2,
     )
     source_testkit.to_warehouse(engine=sqlite_warehouse)
-    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_columns()
+    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_fields()
     prefix = fullname_to_prefix(source_testkit.source_config.address.full_name)
     expected_df_prefixed = (
         source_testkit.data.to_pandas().drop(columns=["id"]).add_prefix(prefix)
@@ -571,8 +572,8 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     original = source_factory(
         full_name="original",
         features=[
-            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
-            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+            {"name": "a", "base_generator": "random_int", "datatype": "Int64"},
+            {"name": "b", "base_generator": "word", "datatype": "String"},
         ],
         engine=sqlite_warehouse,
         n_true_entities=2,
@@ -585,9 +586,9 @@ def test_source_hash_data(sqlite_warehouse: Engine):
             "address": original.source_config.address.model_copy(
                 update={"full_name": "reordered"}
             ),
-            "columns": (
-                original.source_config.columns[1],
-                original.source_config.columns[0],
+            "index_fields": (
+                original.source_config.index_fields[1],
+                original.source_config.index_fields[0],
             ),
         }
     )
@@ -599,9 +600,9 @@ def test_source_hash_data(sqlite_warehouse: Engine):
             "address": original.source_config.address.model_copy(
                 update={"full_name": "renamed"}
             ),
-            "columns": (
-                original.source_config.columns[0].model_copy(update={"name": "x"}),
-                original.source_config.columns[1],
+            "index_fields": (
+                original.source_config.index_fields[0].model_copy(update={"name": "x"}),
+                original.source_config.index_fields[1],
             ),
         }
     )
@@ -626,7 +627,7 @@ def test_source_hash_data(sqlite_warehouse: Engine):
     def sort_df(df: pd.DataFrame) -> pd.DataFrame:
         return df.sort_values(by="hash").reset_index(drop=True)
 
-    # Column order does not matter, column names do
+    # Field order does not matter, field names do
     assert sort_df(original_hash).equals(sort_df(reordered_hash))
     assert not sort_df(original_hash).equals(sort_df(renamed_hash))
 
@@ -677,14 +678,14 @@ def test_source_data_batching(method_name, return_type, sqlite_warehouse: Engine
     # Create a source with multiple rows of data
     source_testkit = source_factory(
         features=[
-            {"name": "a", "base_generator": "random_int", "sql_type": "BIGINT"},
-            {"name": "b", "base_generator": "word", "sql_type": "TEXT"},
+            {"name": "a", "base_generator": "random_int", "datatype": "Int64"},
+            {"name": "b", "base_generator": "word", "datatype": "String"},
         ],
         engine=sqlite_warehouse,
         n_true_entities=9,
     )
     source_testkit.to_warehouse(engine=sqlite_warehouse)
-    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_columns()
+    source = source_testkit.source_config.set_engine(sqlite_warehouse).default_fields()
 
     # Call the method with batching
     method = getattr(source, method_name)

@@ -144,16 +144,16 @@ def test_source_testkit_to_mock():
 
     # Test that method calls are tracked
     mock_source_config.set_engine("test_engine")
-    mock_source_config.default_columns()
+    mock_source_config.default_fields()
     mock_source_config.hash_data()
 
     mock_source_config.set_engine.assert_called_once_with("test_engine")
-    mock_source_config.default_columns.assert_called_once()
+    mock_source_config.default_fields.assert_called_once()
     mock_source_config.hash_data.assert_called_once()
 
     # Test method return values
     assert mock_source_config.set_engine("test_engine") == mock_source_config
-    assert mock_source_config.default_columns() == mock_source_config
+    assert mock_source_config.default_fields() == mock_source_config
     assert mock_source_config.hash_data() == source_testkit.data_hashes
 
     # Test model dump methods
@@ -200,11 +200,11 @@ def test_source_factory_mock_properties():
     expected_address = SourceAddress.compose(engine=engine, full_name=full_name)
     assert source_config.address.warehouse_hash == expected_address.warehouse_hash
 
-    # Check column configuration
-    assert len(source_config.columns) == len(features)
-    for feature, column in zip(features, source_config.columns, strict=False):
-        assert column.name == feature.name
-        assert column.type == feature.sql_type
+    # Check field configuration
+    assert len(source_config.index_fields) == len(features)
+    for feature, field in zip(features, source_config.index_fields, strict=False):
+        assert field.name == feature.name
+        assert field.type == feature.datatype
 
     # Check default resolution name and default key
     assert source_config.name == str(expected_address)
@@ -213,8 +213,8 @@ def test_source_factory_mock_properties():
     # Verify source properties are preserved through model_dump
     dump = source_config.model_dump()
     assert dump["address"]["full_name"] == full_name
-    assert dump["columns"] == tuple(
-        {"name": f.name, "type": f.sql_type} for f in features
+    assert dump["index_fields"] == tuple(
+        {"name": f.name, "type": f.datatype} for f in features
     )
 
 
@@ -402,7 +402,7 @@ def test_source_from_tuple():
     assert testkit.data.shape[0] == 2
     assert set(testkit.data.column_names) == {"id", "key", "a", "b"}
     assert testkit.data_hashes.shape[0] == 2
-    assert set(col.name for col in testkit.source_config.columns) == {"a", "b"}
+    assert set(field.name for field in testkit.source_config.index_fields) == {"a", "b"}
 
 
 @pytest.mark.parametrize(

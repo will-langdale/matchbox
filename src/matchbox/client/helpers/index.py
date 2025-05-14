@@ -4,21 +4,19 @@ from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.common.dtos import SourceResolutionName
-from matchbox.common.sources import SourceAddress, SourceColumn, SourceConfig
+from matchbox.common.sources import SourceAddress, SourceConfig, SourceField
 
 
-def _process_columns(
-    columns: list[str] | list[dict[str, dict[str, str]]] | None,
-) -> tuple[SourceColumn]:
-    if columns is None:
+def _process_fields(
+    fields: list[str] | list[dict[str, dict[str, str]]] | None,
+) -> tuple[SourceField]:
+    if fields is None:
         return []
 
-    if isinstance(columns[0], str):
-        return (SourceColumn(name=column) for column in columns)
+    if isinstance(fields[0], str):
+        return (SourceField(name=field) for field in fields)
 
-    return (
-        SourceColumn(name=column["name"], type=column["type"]) for column in columns
-    )
+    return (SourceField(name=field["name"], type=field["type"]) for field in fields)
 
 
 def index(
@@ -26,7 +24,7 @@ def index(
     key_field: str,
     engine: Engine,
     name: SourceResolutionName | None = None,
-    columns: list[str] | list[dict[str, dict[str, str]]] | None = None,
+    fields: list[str] | list[dict[str, dict[str, str]]] | None = None,
     batch_size: int | None = None,
 ) -> None:
     """Indexes data in Matchbox.
@@ -37,7 +35,7 @@ def index(
         engine: the engine to connect to a data warehouse
         name: a custom resolution name
             If missing, will use the default name for a `SourceConfig`
-        columns: the columns to index
+        fields: the fields to index
         batch_size: the size of each batch when fetching data from the warehouse,
             which helps reduce the load on the database. Default is None.
 
@@ -46,14 +44,14 @@ def index(
         index("mb.test_orig", "id", engine=engine)
         ```
         ```python
-        index("mb.test_cl2", "id", engine=engine, columns=["name", "age"])
+        index("mb.test_cl2", "id", engine=engine, fields=["name", "age"])
         ```
         ```python
         index(
             "mb.test_cl2",
             "id",
             engine=engine,
-            columns=[
+            fields=[
                 {"name": "name", "type": "TEXT"},
                 {"name": "age", "type": "BIGINT"},
             ],
@@ -63,25 +61,25 @@ def index(
         index("mb.test_orig", "id", engine=engine, batch_size=10_000)
         ```
     """
-    columns = _process_columns(columns)
+    index_fields = _process_fields(fields)
 
     address = SourceAddress.compose(engine=engine, full_name=full_name)
     if name:
         source_config = SourceConfig(
             address=address,
             name=name,
-            columns=columns,
+            index_fields=index_fields,
             key_field=key_field,
         )
     else:
         source_config = SourceConfig(
             address=address,
-            columns=columns,
+            index_fields=index_fields,
             key_field=key_field,
         )
 
     source_config.set_engine(engine)
-    if not columns:
-        source_config = source_config.default_columns()
+    if not fields:
+        source_config = source_config.default_fields()
 
     _handler.index(source_config=source_config, batch_size=batch_size)

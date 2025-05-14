@@ -14,7 +14,7 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.db import get_schema_table_names
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -23,11 +23,10 @@ from matchbox.common.factories.entities import (
     SuffixRule,
     diff_results,
     generate_entities,
-    infer_sql_type_from_type,
     probabilities_to_results_entities,
 )
 from matchbox.common.hash import hash_values
-from matchbox.common.sources import SourceAddress, SourceColumn, SourceConfig
+from matchbox.common.sources import SourceAddress, SourceConfig, SourceField
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -107,7 +106,7 @@ class SourceTestkit(BaseModel):
         mock_source_config = create_autospec(self.source_config)
 
         mock_source_config.set_engine.return_value = mock_source_config
-        mock_source_config.default_columns.return_value = mock_source_config
+        mock_source_config.default_fields.return_value = mock_source_config
         mock_source_config.hash_data.return_value = self.data_hashes
 
         mock_source_config.model_dump.side_effect = self.source_config.model_dump
@@ -509,8 +508,8 @@ def source_factory(
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         key_field="key",
-        columns=(
-            SourceColumn(name=feature.name, type=feature.sql_type)
+        index_fields=(
+            SourceField(name=feature.name, type=feature.datatype)
             for feature in features
         ),
     )
@@ -562,8 +561,8 @@ def source_from_tuple(
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
         key_field="key",
-        columns=(
-            SourceColumn(name=k, type=infer_sql_type_from_type(type(v)))
+        index_fields=(
+            SourceField(name=k, type=DataTypes.from_pytype(type(v)))
             for k, v in data_tuple[0].items()
         ),
     )
@@ -767,8 +766,8 @@ def linked_sources_factory(
                 full_name=parameters.full_name, engine=parameters.engine
             ),
             key_field="key",
-            columns=(
-                SourceColumn(name=feature.name, type=feature.sql_type)
+            index_fields=(
+                SourceField(name=feature.name, type=feature.datatype)
                 for feature in parameters.features
             ),
         )

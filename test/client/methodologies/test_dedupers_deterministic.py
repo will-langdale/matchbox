@@ -30,9 +30,11 @@ def configure_naive_deduper(testkit: SourceTestkit) -> dict[str, Any]:
     Returns:
         A dictionary with validated settings for NaiveDeduper
     """
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     fields = [
-        c.name for c in testkit.source_config.columns if c.name not in ("key", "id")
+        c.name
+        for c in testkit.source_config.index_fields
+        if c.name not in ("key", "id")
     ]
 
     settings_dict = {

@@ -46,15 +46,15 @@ def configure_deterministic_linker(
     Returns:
         A dictionary with validated settings for DeterministicLinker
     """
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 
@@ -89,15 +89,15 @@ def configure_weighted_deterministic_linker(
     Returns:
         A dictionary with validated settings for WeightedDeterministicLinker
     """
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 
@@ -134,15 +134,15 @@ def configure_splink_linker(
     Returns:
         A dictionary with validated settings for SplinkLinker
     """
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 

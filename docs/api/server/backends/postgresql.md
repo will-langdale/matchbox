@@ -16,12 +16,12 @@ erDiagram
         bytes warehouse_hash
         string key_field
     }
-    SourceColumns {
-        bigint column_id PK
+    SourceFields {
+        bigint field_id PK
         bigint source_config_id FK
-        int column_index
-        string column_name
-        string column_type
+        int index
+        string name
+        string type
     }
     Clusters {
         bigint cluster_id PK
@@ -63,7 +63,7 @@ erDiagram
     }
 
     SourceConfigs |o--|| Resolutions : ""
-    SourceConfigs ||--o{ SourceColumns : ""
+    SourceConfigs ||--o{ SourceFields : ""
     SourceConfigs ||--o{ ClusterSourceKey : ""
     Clusters ||--o{ ClusterSourceKey : ""
     Clusters ||--o{ Probabilities : ""
