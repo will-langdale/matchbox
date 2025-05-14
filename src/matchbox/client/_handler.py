@@ -428,3 +428,16 @@ def send_eval(user_id: int, judgement: Judgement):
     #     f"/eval/{judgement.user_id}",
     #     json=judgement.model_dump(),
     # )
+
+
+def download_eval_data() -> Table:
+    return Table.from_pylist(
+        [
+            {"parent": 1, "leaf": None},
+            {"parent": 2, "leaf": None},
+            {"parent": 3, "leaf": None},
+            {"parent": 4, "leaf": 5},
+            {"parent": 4, "leaf": 6},
+            {"parent": 4, "leaf": 7},
+        ]
+    )

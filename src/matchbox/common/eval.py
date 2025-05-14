@@ -41,4 +41,4 @@ def precision_recall(model_pairs: Pairs, eval_pairs: Pairs) -> PrecisionRecall:
     precision = true_positives / len(model_pairs)
     recall = true_positives / len(eval_pairs)
 
-    return precision, recall
+    return round(precision, 3), round(recall, 3)
