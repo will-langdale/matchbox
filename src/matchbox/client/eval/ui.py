@@ -8,26 +8,33 @@ from matchbox.common.eval import Judgement
 
 st.title("Matchbox evaluation session")
 
-original_df = pl.DataFrame(
-    [
-        {"id": 1, "company_name": "Pippo pluto PLC", "region": "England"},
-        {"id": 2, "company_name": "Pippo pluto e paperino UK LTD", "region": "England"},
-        {"id": 3, "company_name": "Pippo pluto e paperino", "region": "Devon"},
-    ]
-)
-orig_columns = list(set(original_df.columns) - {"id"})
 
 if "step" not in st.session_state:
     st.session_state.step = "eval"
-    st.session_state.df = original_df.with_columns(select=False)
-    st.session_state.judgement = []
     st.session_state.user_id = 42
+    st.session_state.user_name = _handler.login(user_id=st.session_state.user_id)
+    st.session_state.resolution = "__DEFAULT__"
 
 if st.session_state.step == "eval":
+    if "df" not in st.session_state:
+        original_df = pl.from_arrow(
+            _handler.sample_one(
+                user_id=st.session_state.user_id,
+                resolution=st.session_state.resolution,
+            )
+        )
+        st.session_state.judgement = []
+        st.session_state.orig_columns = list(set(original_df.columns) - {"id"})
+        st.session_state.df = original_df.with_columns(select=False)
+
+    st.html(
+        f"Welcome <b>{st.session_state.user_name}</b>. "
+        f"Sampling from resolution: <b>{st.session_state.resolution}.</b>"
+    )
     edited_df = st.data_editor(
         st.session_state.df,
-        disabled=orig_columns,
-        column_order=("select", *orig_columns),
+        disabled=st.session_state.orig_columns,
+        column_order=("select", *st.session_state.orig_columns),
     )
 
     def splinter():
@@ -51,7 +58,7 @@ if st.session_state.step == "eval":
         )
 
     if (edited_df.select("select").to_series().any()) and (
-        not st.session_state.df.select("select").to_series().all()
+        not edited_df.select("select").to_series().all()
     ):
         st.button("Splinter", icon="✂️", on_click=splinter)
     else:

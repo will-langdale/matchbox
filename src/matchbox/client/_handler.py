@@ -403,6 +403,25 @@ def delete_resolution(
 # Evaluation
 
 
+def login(user_id: int) -> str:
+    """Return name from user ID."""
+    return "Scott McGregor"
+
+
+def sample_one(user_id: int, resolution: ModelResolutionName) -> Table:
+    return Table.from_pylist(
+        [
+            {"id": 1, "company_name": "Pippo pluto PLC", "region": "England"},
+            {
+                "id": 2,
+                "company_name": "Pippo pluto e paperino UK LTD",
+                "region": "England",
+            },
+            {"id": 3, "company_name": "Pippo pluto e paperino", "region": "Devon"},
+        ]
+    )
+
+
 def send_eval(user_id: int, judgement: Judgement):
     print(f"Posting {judgement} for {user_id}")
     # CLIENT.post(
