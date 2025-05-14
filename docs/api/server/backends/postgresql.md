@@ -14,7 +14,6 @@ erDiagram
         bigint resolution_id FK
         string full_name
         bytes warehouse_hash
-        string key_field
     }
     SourceFields {
         bigint field_id PK
@@ -22,6 +21,7 @@ erDiagram
         int index
         string name
         string type
+        bool is_key
     }
     Clusters {
         bigint cluster_id PK

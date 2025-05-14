@@ -507,7 +507,7 @@ def source_factory(
 
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
-        key_field="key",
+        key_field=SourceField(name="key", type=DataTypes.STRING),
         index_fields=(
             SourceField(name=feature.name, type=feature.datatype)
             for feature in features
@@ -560,7 +560,7 @@ def source_from_tuple(
 
     source_config = SourceConfig(
         address=SourceAddress.compose(full_name=full_name, engine=engine),
-        key_field="key",
+        key_field=SourceField(name="key", type=DataTypes.STRING),
         index_fields=(
             SourceField(name=k, type=DataTypes.from_pytype(type(v)))
             for k, v in data_tuple[0].items()
@@ -765,7 +765,7 @@ def linked_sources_factory(
             address=SourceAddress.compose(
                 full_name=parameters.full_name, engine=parameters.engine
             ),
-            key_field="key",
+            key_field=SourceField(name="key", type=DataTypes.STRING),
             index_fields=(
                 SourceField(name=feature.name, type=feature.datatype)
                 for feature in parameters.features

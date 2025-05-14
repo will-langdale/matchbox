@@ -14,7 +14,7 @@ from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, SourceAddress, SourceConfig
+from matchbox.common.sources import Match, SourceAddress, SourceConfig, SourceField
 
 
 class Selector(BaseModel):
@@ -81,7 +81,10 @@ def select(
 
 
 def _process_query_result(
-    data: PolarsDataFrame, selector: Selector, mb_ids: PolarsDataFrame, key: str
+    data: PolarsDataFrame,
+    selector: Selector,
+    mb_ids: PolarsDataFrame,
+    key_field: SourceField,
 ) -> PolarsDataFrame:
     """Process query results by joining with matchbox IDs and filtering fields.
 
@@ -89,7 +92,7 @@ def _process_query_result(
         data: The raw data from the source
         selector: The selector with source and fields information
         mb_ids: The matchbox IDs
-        key: The key of the source
+        key_field: The key of the source
 
     Returns:
         The processed table with joined matchbox IDs and filtered fields
@@ -97,7 +100,7 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=selector.address.format_field(key),
+        left_on=selector.address.format_field(key_field.name),
         right_on="key",
         how="inner",
     )
@@ -166,11 +169,13 @@ def _process_selectors(
         batches: Iterator[PolarsDataFrame],
         selector: Selector,
         mb_ids: PolarsDataFrame,
-        key: str,
+        key_field: SourceField,
     ) -> Generator[PolarsDataFrame, None, None]:
         """Process and transform each batch of results."""
         for batch in batches:
-            yield _process_query_result(batch, selector, mb_ids, key=key)
+            yield _process_query_result(
+                data=batch, selector=selector, mb_ids=mb_ids, key_field=key_field
+            )
 
     for selector in selectors:
         mb_ids = pl.from_arrow(
@@ -194,7 +199,7 @@ def _process_selectors(
                 batches=raw_batches,
                 selector=selector,
                 mb_ids=mb_ids,
-                key=source.key_field,
+                key_field=source.key_field,
             )
         )
 

@@ -427,7 +427,7 @@ def test_source_check_fields(sqlite_warehouse: Engine):
 
     # Error is raised with missing key
     new_source = source_testkit.source_config.model_copy(
-        update={"key_field": "typo"}
+        update={"key_field": SourceField(name="typo", type=DataTypes.STRING)}
     ).set_engine(sqlite_warehouse)
     with pytest.raises(MatchboxSourceFieldError, match="Key field typo not available"):
         new_source.check_fields()

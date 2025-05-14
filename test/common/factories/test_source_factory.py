@@ -208,7 +208,7 @@ def test_source_factory_mock_properties():
 
     # Check default resolution name and default key
     assert source_config.name == str(expected_address)
-    assert source_config.key_field == "key"
+    assert source_config.key_field.name == "key"
 
     # Verify source properties are preserved through model_dump
     dump = source_config.model_dump()

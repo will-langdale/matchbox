@@ -362,7 +362,7 @@ class SourceConfig(BaseModel):
     name: SourceResolutionName = Field(
         default_factory=lambda data: str(data["address"])
     )
-    key_field: str
+    key_field: SourceField
     # Fields need to be set at creation, or initialised with `.default_fields()`
     index_fields: tuple[SourceField, ...] | None = None
 
@@ -423,7 +423,7 @@ class SourceConfig(BaseModel):
         return {
             field.name: DataTypes.from_pytype(field.type.python_type)
             for field in table.columns
-            if (field.name != self.key_field) or (not exclude_key)
+            if (field.name != self.key_field.name) or (not exclude_key)
         }
 
     @needs_engine
@@ -469,9 +469,9 @@ class SourceConfig(BaseModel):
         """
         remote_fields = self.get_remote_fields()
 
-        if self.key_field not in remote_fields:
+        if self.key_field.name not in remote_fields:
             raise MatchboxSourceFieldError(
-                f"Key field {self.key_field} not available in {self.address}"
+                f"Key field {self.key_field.name} not available in {self.address}"
             )
 
         if fields:
@@ -510,8 +510,8 @@ class SourceConfig(BaseModel):
         if not fields:
             fields = [field.name for field in self.index_fields]
 
-        if self.key_field not in fields:
-            fields.append(self.key_field)
+        if self.key_field.name not in fields:
+            fields.append(self.key_field.name)
 
         def _get_field(field_name: str) -> ColumnElement:
             """Helper to get a field with proper casting and labeling for keys."""
@@ -699,7 +699,7 @@ class SourceConfig(BaseModel):
 
         slct_stmt = select(
             *[source_table.c[field] for field in fields_to_index],
-            source_table.c[self.key_field].cast(String).label("keys"),
+            source_table.c[self.key_field.name].cast(String).label("keys"),
         )
 
         def _process_batch(

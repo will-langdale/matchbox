@@ -585,7 +585,7 @@ def test_index_success(
     # Call the index function
     index(
         full_name=source.source_config.address.full_name,
-        key_field=source.source_config.key_field,
+        key_field=source.source_config.key_field.name,
         engine=sqlite_warehouse,
     )
 
@@ -601,7 +601,7 @@ def test_index_success(
 
 @patch("matchbox.client.helpers.index.SourceConfig")
 @pytest.mark.parametrize(
-    "fields",
+    "index_fields",
     [
         pytest.param(["name", "age"], id="string_fields"),
         pytest.param(
@@ -617,7 +617,7 @@ def test_index_success(
 def test_index_with_fields(
     MockSource: Mock,
     matchbox_api: MockRouter,
-    fields: list[str] | list[dict[str, str]],
+    index_fields: list[str] | list[dict[str, str]],
     sqlite_warehouse: Engine,
 ):
     """Test indexing with different field definition formats."""
@@ -656,9 +656,9 @@ def test_index_with_fields(
     # Call index with field definition
     index(
         full_name=source.source_config.address.full_name,
-        key_field=source.source_config.key_field,
+        key_field=source.source_config.key_field.name,
         engine=sqlite_warehouse,
-        fields=fields,
+        index_fields=index_fields,
     )
 
     # Verify API calls and source creation
@@ -671,7 +671,7 @@ def test_index_with_fields(
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
     assert b"PAR1" in upload_route.calls.last.request.content
     mock_source_instance.set_engine.assert_called_once_with(sqlite_warehouse)
-    if fields:
+    if index_fields:
         mock_source_instance.default_fields.assert_not_called()
     else:
         mock_source_instance.default_fields.assert_called_once()
@@ -719,7 +719,7 @@ def test_index_upload_failure(
     with pytest.raises(MatchboxServerFileError):
         index(
             full_name=source.source_config.address.full_name,
-            key_field=source.source_config.key_field,
+            key_field=source.source_config.key_field.name,
             engine=sqlite_warehouse,
         )
 
@@ -773,7 +773,7 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
         # Call index with batch_size
         index(
             full_name=source.address.full_name,
-            key_field=source.key_field,
+            key_field=source.key_field.name,
             engine=sqlite_warehouse,
             batch_size=1,
         )

@@ -49,6 +49,8 @@ The first step in creating a matching pipeline is to define your data sources. E
 
 The `index_fields` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
 
+The `key_field` is the field in your source that contains some unique code that identifies each entitiy. For example, in a relational database, this would typically be your primary key.
+
 === "Example"
     ```python
     from matchbox.common.sources import SourceConfig, SourceAddress
@@ -57,21 +59,21 @@ The `index_fields` are what Matchbox will use to store a reference to your data,
     companies_house = SourceConfig(
         address=SourceAddress.compose(full_name="companieshouse.companies", engine=engine),
         index_fields=[
-            {"name": "company_name", "type": "VARCHAR"},
-            {"name": "company_number", "type": "VARCHAR"},
-            {"name": "postcode", "type": "VARCHAR"},
+            {"name": "company_name", "type": "String"},
+            {"name": "company_number", "type": "String"},
+            {"name": "postcode", "type": "String"},
         ],
-        key_field="id",
+        key_field={"name": "id", "type": "String"},
     ).set_engine(engine)
     
     # Exporters data
     exporters = SourceConfig(
         address=SourceAddress.compose(full_name="hmrc.trade__exporters", engine=engine),
         index_fields=[
-            {"name": "company_name", "type": "VARCHAR(500)"},
-            {"name": "postcode", "type": "VARCHAR(8)"},
+            {"name": "company_name", "type": "String"},
+            {"name": "postcode", "type": "String"},
         ],
-        key_field="id",
+        key_field={"name": "id", "type": "String"},
     ).set_engine(engine)
     ```
 

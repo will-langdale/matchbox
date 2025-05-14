@@ -167,7 +167,7 @@ class TestE2EAnalyticalUser:
                 full_name=source.address.full_name,
                 key_field="key",  # Key in our test data
                 engine=self.warehouse_engine,
-                fields=[field.model_dump() for field in source.index_fields],
+                index_fields=[field.model_dump() for field in source.index_fields],
             )
             logging.debug(f"Indexed source: {source.address.full_name}")
 
