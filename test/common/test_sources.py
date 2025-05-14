@@ -424,13 +424,11 @@ def test_source_check_columns(sqlite_warehouse: Engine):
     with pytest.raises(MatchboxSourceColumnError, match="Columns {'c'} not in"):
         source.check_columns(columns=["c"])
 
-    # Error is raised with missing primary key
+    # Error is raised with missing key
     new_source = source_testkit.source_config.model_copy(
-        update={"db_pk": "typo"}
+        update={"key_field": "typo"}
     ).set_engine(sqlite_warehouse)
-    with pytest.raises(
-        MatchboxSourceColumnError, match="Primary key typo not available"
-    ):
+    with pytest.raises(MatchboxSourceColumnError, match="Key field typo not available"):
         new_source.check_columns()
 
     # Error is raised with missing column
@@ -561,7 +559,7 @@ def test_source_conversion_methods(
     output_fields = converter(source, fields=["a"])
     result_df_fields = to_pandas_fn(output_fields)
     assert_frame_equal(
-        expected_df_prefixed[[f"{prefix}pk", f"{prefix}a"]],
+        expected_df_prefixed[[f"{prefix}key", f"{prefix}a"]],
         result_df_fields,
         check_like=True,
         check_dtype=False,
@@ -622,8 +620,8 @@ def test_source_hash_data(sqlite_warehouse: Engine):
 
     # Hash have the right shape
     assert len(original_hash) == 2
-    assert len(original_hash.source_pk.iloc[0]) == 2
-    assert len(original_hash.source_pk.iloc[1]) == 2
+    assert len(original_hash["keys"].iloc[0]) == 2
+    assert len(original_hash["keys"].iloc[1]) == 2
 
     def sort_df(df: pd.DataFrame) -> pd.DataFrame:
         return df.sort_values(by="hash").reset_index(drop=True)
@@ -637,7 +635,7 @@ def test_source_hash_nulls(sqlite_warehouse: Engine):
     """A SourceConfig can output hashed versions of rows with nulls."""
     testkit = source_from_tuple(
         data_tuple=({"a": 1.0}, {"a": None}),
-        data_pks=["a", "b"],
+        data_keys=["a", "b"],
         full_name="null_test",
         engine=sqlite_warehouse,
     )
@@ -650,21 +648,21 @@ def test_source_hash_nulls(sqlite_warehouse: Engine):
     # No nulls in the hash column
     assert pa.compute.count(hashed_data["hash"], mode="only_null").as_py() == 0
 
-    # Test hashing with null PKs
-    null_pk_testkit = source_from_tuple(
+    # Test hashing with null keys
+    null_keys_testkit = source_from_tuple(
         data_tuple=({"a": 1}, {"a": 2}, {"a": 3}),
-        data_pks=["a", None, None],
-        full_name="null_pk_test",
+        data_keys=["a", None, None],
+        full_name="null_keys_test",
         engine=sqlite_warehouse,
     )
 
-    # Null PKs should error
+    # Null keys should error
     with pytest.raises(ValueError):
-        source_with_null_pks = null_pk_testkit.source_config.set_engine(
+        source_with_null_keys = null_keys_testkit.source_config.set_engine(
             sqlite_warehouse
         )
-        null_pk_testkit.to_warehouse(engine=sqlite_warehouse)
-        source_with_null_pks.hash_data()
+        null_keys_testkit.to_warehouse(engine=sqlite_warehouse)
+        source_with_null_keys.hash_data()
 
 
 @pytest.mark.parametrize(

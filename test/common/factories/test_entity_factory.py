@@ -17,52 +17,52 @@ from matchbox.common.factories.entities import (
 
 
 def make_cluster_entity(id: int, *args) -> ClusterEntity:
-    """Helper to create a ClusterEntity with specified sources and PKs.
+    """Helper to create a ClusterEntity.
 
     Args:
         id: Entity ID
-        *args: Variable arguments in pairs of (source_name, pks_list)
+        *args: Variable arguments in pairs of (source_name, keys_list)
             e.g., "d1", ["1", "2"], "d2", ["3", "4"]
 
     Returns:
         ClusterEntity with the specified sources and primary keys
     """
     if len(args) % 2 != 0:
-        raise ValueError("Arguments must be pairs of source name and PKs list")
+        raise ValueError("Arguments must be pairs of source name and keys list")
 
-    source_pks = {}
+    keys = {}
     for i in range(0, len(args), 2):
         source = args[i]
-        pks = args[i + 1]
+        keys_list = args[i + 1]
         if not isinstance(source, str):
             raise TypeError(f"source name must be a string, got {type(source)}")
-        if not isinstance(pks, list):
-            raise TypeError(f"PKs must be a list, got {type(pks)}")
-        source_pks[source] = frozenset(pks)
+        if not isinstance(keys_list, list):
+            raise TypeError(f"keys must be a list, got {type(keys_list)}")
+        keys[source] = frozenset(keys_list)
 
-    return ClusterEntity(id=id, source_pks=EntityReference(source_pks))
+    return ClusterEntity(id=id, keys=EntityReference(keys))
 
 
 def make_source_entity(
-    source: SourceResolutionName, pks: list[str], base_val: str
+    source: SourceResolutionName, keys: list[str], base_val: str
 ) -> SourceEntity:
-    """Helper to create a SourceEntity with specified source resolution name and PKs."""
+    """Helper to create a SourceEntity."""
     entity = SourceEntity(base_values={"name": base_val})
-    entity.add_source_reference(source, pks)
+    entity.add_source_reference(source, keys)
     return entity
 
 
 @pytest.mark.parametrize(
-    ("name", "pks"),
+    ("name", "keys"),
     (
         ("source1", frozenset({"1", "2", "3"})),
         ("source2", frozenset({"A", "B"})),
     ),
 )
-def test_entity_reference_creation(name: SourceResolutionName, pks: frozenset[str]):
+def test_entity_reference_creation(name: SourceResolutionName, keys: frozenset[str]):
     """Test basic EntityReference creation and access."""
-    ref = EntityReference({name: pks})
-    assert ref[name] == pks
+    ref = EntityReference({name: keys})
+    assert ref[name] == keys
     assert name in ref
     with pytest.raises(KeyError):
         ref["nonexistent"]
@@ -93,19 +93,19 @@ def test_entity_reference_subset():
 def test_cluster_entity_creation():
     """Test basic ClusterEntity functionality."""
     ref = EntityReference({"source1": frozenset({"1", "2"})})
-    entity = ClusterEntity(source_pks=ref)
+    entity = ClusterEntity(keys=ref)
 
-    assert entity.source_pks == ref
+    assert entity.keys == ref
     assert isinstance(entity.id, int)
 
 
 def test_cluster_entity_addition():
     """Test combining ClusterEntity objects."""
-    entity1 = ClusterEntity(source_pks=EntityReference({"source1": frozenset({"1"})}))
-    entity2 = ClusterEntity(source_pks=EntityReference({"source1": frozenset({"2"})}))
+    entity1 = ClusterEntity(keys=EntityReference({"source1": frozenset({"1"})}))
+    entity2 = ClusterEntity(keys=EntityReference({"source1": frozenset({"2"})}))
 
     combined = entity1 + entity2
-    assert combined.source_pks["source1"] == frozenset({"1", "2"})
+    assert combined.keys["source1"] == frozenset({"1", "2"})
 
 
 def test_source_entity_creation():
@@ -113,10 +113,10 @@ def test_source_entity_creation():
     base_values = {"name": "John", "age": 30}
     ref = EntityReference({"source1": frozenset({"1", "2"})})
 
-    entity = SourceEntity(base_values=base_values, source_pks=ref)
+    entity = SourceEntity(base_values=base_values, keys=ref)
 
     assert entity.base_values == base_values
-    assert entity.source_pks == ref
+    assert entity.keys == ref
     assert isinstance(entity.id, int)
 
 
@@ -397,7 +397,7 @@ def test_source_to_results_conversion():
     # Create source entity present in multiple sources
     source = SourceEntity(
         base_values={"name": "Test"},
-        source_pks=EntityReference(
+        keys=EntityReference(
             {"source1": frozenset({"1", "2"}), "source2": frozenset({"A", "B"})}
         ),
     )

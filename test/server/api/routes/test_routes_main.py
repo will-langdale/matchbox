@@ -297,8 +297,8 @@ def test_query(test_client: TestClient):
     mock_backend.query = Mock(
         return_value=pa.Table.from_pylist(
             [
-                {"source_pk": "a", "id": 1},
-                {"source_pk": "b", "id": 2},
+                {"keys": "a", "id": 1},
+                {"keys": "b", "id": 2},
             ],
             schema=SCHEMA_MB_IDS,
         )
@@ -392,7 +392,7 @@ def test_match(test_client: TestClient):
             "target_warehouse_hashes_b64": [foo_address.warehouse_hash_b64],
             "source_full_name": bar_address.full_name,
             "source_warehouse_hash_b64": bar_address.warehouse_hash_b64,
-            "source_pk": 1,
+            "key": 1,
             "resolution": "res",
             "threshold": 50,
         },
@@ -418,7 +418,7 @@ def test_match_404_resolution(test_client: TestClient):
             "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
             "source_full_name": "bar",
             "source_warehouse_hash_b64": hash_to_base64(b"bar"),
-            "source_pk": 1,
+            "key": 1,
             "resolution": "res",
         },
     )
@@ -443,7 +443,7 @@ def test_match_404_source(test_client: TestClient):
             "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
             "source_full_name": "bar",
             "source_warehouse_hash_b64": hash_to_base64(b"bar"),
-            "source_pk": 1,
+            "key": 1,
             "resolution": "res",
         },
     )

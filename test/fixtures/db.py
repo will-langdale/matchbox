@@ -154,7 +154,7 @@ def create_dedupe_scenario(
         model_testkit = query_to_model_factory(
             left_resolution=source.name,
             left_query=source_query,
-            left_source_pks={source.address.full_name: "source_pk"},
+            left_keys={source.address.full_name: "key"},
             true_entities=tuple(linked.true_entities),
             name=name,
             description=f"Deduplication of {source.address.full_name}",
@@ -211,10 +211,10 @@ def create_link_scenario(
     crn_duns_model = query_to_model_factory(
         left_resolution=crn_model.name,
         left_query=crn_query,
-        left_source_pks={"crn": "source_pk"},
+        left_keys={"crn": "key"},
         right_resolution=duns_model.name,
         right_query=duns_query,
-        right_source_pks={"duns": "source_pk"},
+        right_keys={"duns": "key"},
         true_entities=tuple(linked.true_entities),
         name=crn_duns_name,
         description="Link between CRN and DUNS",
@@ -232,10 +232,10 @@ def create_link_scenario(
     crn_cdms_model = query_to_model_factory(
         left_resolution=crn_model.name,
         left_query=crn_query,
-        left_source_pks={"crn": "source_pk"},
+        left_keys={"crn": "key"},
         right_resolution=cdms_model.name,
         right_query=cdms_query,
-        right_source_pks={"cdms": "source_pk"},
+        right_keys={"cdms": "key"},
         true_entities=tuple(linked.true_entities),
         name=crn_cdms_name,
         description="Link between CRN and CDMS",
@@ -252,11 +252,11 @@ def create_link_scenario(
     crn_cdms_query_crn_only = backend.query(
         source=linked.sources["crn"].source_config.address,
         resolution=crn_cdms_name,
-    ).rename_columns(["id", "source_pk_crn"])
+    ).rename_columns(["id", "keys_crn"])
     crn_cdms_query_cdms_only = backend.query(
         source=linked.sources["cdms"].source_config.address,
         resolution=crn_cdms_name,
-    ).rename_columns(["id", "source_pk_cdms"])
+    ).rename_columns(["id", "keys_cdms"])
     crn_cdms_query = pa.concat_tables(
         [crn_cdms_query_crn_only, crn_cdms_query_cdms_only],
         promote_options="default",
@@ -271,10 +271,10 @@ def create_link_scenario(
     final_join_model = query_to_model_factory(
         left_resolution=crn_cdms_name,
         left_query=crn_cdms_query,
-        left_source_pks={"crn": "source_pk_crn", "cdms": "source_pk_cdms"},
+        left_keys={"crn": "keys_crn", "cdms": "keys_cdms"},
         right_resolution=duns_model.name,
         right_query=duns_query_linked,
-        right_source_pks={"duns": "source_pk"},
+        right_keys={"duns": "key"},
         true_entities=tuple(linked.true_entities),
         name=final_join_name,
         description="Final join of all entities",
@@ -352,7 +352,7 @@ def create_convergent_scenario(
         model_testkit = query_to_model_factory(
             left_resolution=source.name,
             left_query=source_query,
-            left_source_pks={source.address.full_name: "source_pk"},
+            left_keys={source.address.full_name: "key"},
             true_entities=tuple(linked.true_entities),
             name=name,
             description=f"Deduplication of {source.address.full_name}",

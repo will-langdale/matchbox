@@ -81,7 +81,7 @@ def select(
 
 
 def _process_query_result(
-    data: PolarsDataFrame, selector: Selector, mb_ids: PolarsDataFrame, db_pk: str
+    data: PolarsDataFrame, selector: Selector, mb_ids: PolarsDataFrame, key: str
 ) -> PolarsDataFrame:
     """Process query results by joining with matchbox IDs and filtering fields.
 
@@ -89,7 +89,7 @@ def _process_query_result(
         data: The raw data from the source
         selector: The selector with source and fields information
         mb_ids: The matchbox IDs
-        db_pk: The primary key of the source
+        key: The key of the source
 
     Returns:
         The processed table with joined matchbox IDs and filtered fields
@@ -97,8 +97,8 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=selector.address.format_column(db_pk),
-        right_on="source_pk",
+        left_on=selector.address.format_column(key),
+        right_on="key",
         how="inner",
     )
 
@@ -166,11 +166,11 @@ def _process_selectors(
         batches: Iterator[PolarsDataFrame],
         selector: Selector,
         mb_ids: PolarsDataFrame,
-        db_pk: str,
+        key: str,
     ) -> Generator[PolarsDataFrame, None, None]:
         """Process and transform each batch of results."""
         for batch in batches:
-            yield _process_query_result(batch, selector, mb_ids, db_pk=db_pk)
+            yield _process_query_result(batch, selector, mb_ids, key=key)
 
     for selector in selectors:
         mb_ids = pl.from_arrow(
@@ -194,7 +194,7 @@ def _process_selectors(
                 batches=raw_batches,
                 selector=selector,
                 mb_ids=mb_ids,
-                db_pk=source.db_pk,
+                key=source.key_field,
             )
         )
 
@@ -363,7 +363,7 @@ def query(
 def match(
     *targets: list[Selector],
     source: list[Selector],
-    source_pk: str,
+    key: str,
     resolution: ResolutionName = DEFAULT_RESOLUTION,
     threshold: int | None = None,
 ) -> list[Match]:
@@ -373,7 +373,7 @@ def match(
         targets: Each target is the output of `select()`.
             This allows matching against sources coming from different engines
         source: The output of using `select()` on a single source.
-        source_pk: The primary key value to match from the source.
+        key: The key value to match from the source.
         resolution (optional): The resolution name to use for filtering results.
             If not set, it will look for a default resolution.
         threshold (optional): The threshold to use for creating clusters.
@@ -386,7 +386,7 @@ def match(
         mb.match(
             select("datahub_companies", engine=engine),
             source=select("companies_house", engine=engine),
-            source_pk="8534735",
+            key="8534735",
             resolution="last_linker",
         )
         ```
@@ -401,7 +401,7 @@ def match(
     return _handler.match(
         targets=targets,
         source=source,
-        source_pk=source_pk,
+        key=key,
         resolution=resolution,
         threshold=threshold,
     )

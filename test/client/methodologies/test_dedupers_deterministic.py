@@ -30,9 +30,9 @@ def configure_naive_deduper(testkit: SourceTestkit) -> dict[str, Any]:
     Returns:
         A dictionary with validated settings for NaiveDeduper
     """
-    # Extract column names excluding pk and id
+    # Extract column names excluding key and id
     fields = [
-        c.name for c in testkit.source_config.columns if c.name not in ("pk", "id")
+        c.name for c in testkit.source_config.columns if c.name not in ("key", "id")
     ]
 
     settings_dict = {
@@ -85,7 +85,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_data=source.query.to_pandas().drop("pk", axis=1),
+        left_data=source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_exact",
     )
     results: Results = deduper.run()
@@ -135,7 +135,7 @@ def test_exact_duplicate_deduplication(
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_data=source.query.to_pandas().drop("pk", axis=1),
+        left_data=source.query.to_pandas().drop("key", axis=1),
         left_resolution="source_exact",
     )
     results: Results = deduper.run()

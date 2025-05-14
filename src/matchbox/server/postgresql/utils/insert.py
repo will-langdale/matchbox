@@ -20,7 +20,7 @@ from matchbox.common.transform import (
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
-    ClusterSourcePK,
+    ClusterSourceKey,
     Contains,
     PKSpace,
     Probabilities,
@@ -160,7 +160,7 @@ def insert_source(
             resolution_id=resolution.resolution_id,
             full_name=source_config.address.full_name,
             warehouse_hash=source_config.address.warehouse_hash,
-            db_pk=source_config.db_pk,
+            key_field=source_config.key_field,
             columns=[
                 SourceColumns(
                     column_index=idx,
@@ -181,7 +181,7 @@ def insert_source(
         # Store source_config_id and max primary keys for later use
         source_config_id = source_obj.source_config_id
 
-    # Don't insert new hashes, but new PKs need existing hash IDs
+    # Don't insert new hashes, but new keys need existing hash IDs
     with MBDB.get_adbc_connection() as conn:
         existing_hash_lookup: pl.DataFrame = sql_to_df(
             stmt=compile_sql(select(Clusters.cluster_id, Clusters.cluster_hash)),
@@ -228,21 +228,23 @@ def insert_source(
     # Add cluster_id values to data hashes
     hashes_with_ids = data_hashes.join(lookup, left_on="hash", right_on="cluster_hash")
 
-    # Explode source_pk
-    source_pk_records = hashes_with_ids.select(["cluster_id", "source_pk"]).explode(
-        "source_pk"
+    # Explode keys
+    keys_records = (
+        hashes_with_ids.select(["cluster_id", "keys"])
+        .explode("keys")
+        .rename({"keys": "key"})
     )
 
-    if source_pk_records.shape[0] > 0:
-        next_pk_id = PKSpace.reserve_block("cluster_source_pks", len(source_pk_records))
+    if keys_records.shape[0] > 0:
+        next_key_id = PKSpace.reserve_block("cluster_keys", len(keys_records))
     else:
-        # The next_pk_id is irrelevant if we don't write any PK records
-        next_pk_id = 0
+        # The next_key_id is irrelevant if we don't write any keys records
+        next_key_id = 0
 
     # Add required columns
-    source_pk_records = source_pk_records.with_row_index("pk_id").with_columns(
+    keys_records = keys_records.with_row_index("key_id").with_columns(
         [
-            (pl.col("pk_id") + next_pk_id).alias("pk_id"),
+            (pl.col("key_id") + next_key_id).alias("key_id"),
             pl.lit(source_config_id, dtype=pl.Int64).alias("source_config_id"),
         ]
     )
@@ -261,16 +263,15 @@ def insert_source(
                 prefix=log_prefix,
             )
 
-        # Bulk insert into ClusterSourcePK table (all links)
-        if not source_pk_records.is_empty():
+        # Bulk insert into ClusterSourceKey table (all links)
+        if not keys_records.is_empty():
             large_ingest(
-                data=source_pk_records.to_arrow(),
-                table_class=ClusterSourcePK,
+                data=keys_records.to_arrow(),
+                table_class=ClusterSourceKey,
                 max_chunksize=batch_size,
             )
             logger.info(
-                f"Added {len(source_pk_records):,} primary keys to "
-                "ClusterSourcePK table",
+                f"Added {len(keys_records):,} primary keys to ClusterSourceKey table",
                 prefix=log_prefix,
             )
     except IntegrityError as e:
@@ -280,7 +281,7 @@ def insert_source(
 
     # Insert successful, safe to update the resolution's content hash
     with MBDB.get_session() as session:
-        if not source_pk_records.is_empty():
+        if not keys_records.is_empty():
             stmt = (
                 update(Resolutions)
                 .where(Resolutions.resolution_id == resolution_id)
@@ -288,7 +289,7 @@ def insert_source(
             )
             session.execute(stmt)
 
-    if cluster_records.is_empty() and source_pk_records.is_empty():
+    if cluster_records.is_empty() and keys_records.is_empty():
         logger.info("No new records to add", prefix=log_prefix)
 
     logger.info("Finished", prefix=log_prefix)
