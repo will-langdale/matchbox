@@ -13,7 +13,7 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects.postgresql import BYTEA, TEXT
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, TEXT
 from sqlalchemy.orm import relationship
 
 from matchbox.common.graph import ResolutionNodeType
@@ -410,3 +410,38 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
         CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
         Index("ix_probabilities_resolution", "resolution"),
     )
+
+
+class ClustersArrays(CountMixin, MBDB.MatchboxBase):
+    """Mapping cluster_id to the full path and the leaves for visibility.
+
+    This table might not be kept, it's more currently for informative and debugging
+    value and in the end may not be needed (though could be interesting to run checks
+    to confirm the idea that storing the leaf values in an array is not a good one).
+    The interesting idea here was that there is only one row per cluster_id.
+    """
+
+    __tablename__ = "clusters_arrays"
+
+    # Columns
+    cluster_id = Column(BIGINT, primary_key=True)
+    full_paths = Column(ARRAY(BIGINT, dimensions=2), nullable=False)
+    leaf_cluster_ids = Column(ARRAY(BIGINT), nullable=False)
+
+
+class ClustersLeaves(CountMixin, MBDB.MatchboxBase):
+    """Mapping cluster_id to the leaves with repeat rows for cluster_id.
+
+    This is most likely the table that will be used, it has multiple rows per
+    cluster_id (depending how many leaves apply to that cluster_id). That means it
+    presumably occupies more space than the arrays used in clusters_arrays, but
+    will be easier to use for downstream operations (particularly joins on
+    leaf_cluster_id).
+    """
+
+    __tablename__ = "clusters_leaves"
+
+    # Columns
+    cluster_leaf_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    cluster_id = Column(BIGINT, nullable=False)
+    leaf_cluster_id = Column(BIGINT, nullable=False)

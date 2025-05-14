@@ -56,6 +56,13 @@ services:
       DD_AGENT_HOST: datadog-agent
     ports:
       - "8000:8000"
+      - "5678:5678"
+    command:
+      [
+        "sh",
+        "-c",
+        "python -m debugpy --listen 0.0.0.0:5678 -m fastapi dev --host 0.0.0.0 src/matchbox/server/api",
+      ]
     depends_on:
       matchbox-postgres:
         condition: service_started
