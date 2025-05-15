@@ -49,8 +49,8 @@ class MatchboxSourceColumnError(Exception):
     """Specified columns diverge with the warehouse."""
 
 
-class MatchboxSourceEngineError(Exception):
-    """Engine must be available in SourceConfig."""
+class MatchboxSourceCredentialsError(Exception):
+    """Location credentials must be set."""
 
 
 class MatchboxSourceExtractTransformError(Exception):

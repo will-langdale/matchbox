@@ -18,7 +18,6 @@ from typing import (
 import polars as pl
 from pandas import DataFrame as PandasDataframe
 from polars import DataFrame as PolarsDataFrame
-from pyarrow import RecordBatch as ArrowRecordBatch
 from pyarrow import Table as ArrowTable
 from pydantic import (
     AnyUrl,
@@ -44,6 +43,8 @@ from sqlalchemy import (
 from sqlalchemy.exc import OperationalError
 
 from matchbox.common.db import (
+    QueryReturnType,
+    ReturnTypeStr,
     fullname_to_prefix,
     get_schema_table_names,
     sql_to_df,
@@ -52,7 +53,7 @@ from matchbox.common.db import (
 from matchbox.common.dtos import SourceResolutionName
 from matchbox.common.exceptions import (
     MatchboxSourceColumnError,
-    MatchboxSourceEngineError,
+    MatchboxSourceCredentialsError,
 )
 from matchbox.common.hash import (
     HASH_FUNC,
@@ -70,6 +71,9 @@ R = TypeVar("R")
 LocationType = Union["RelationalDBLocation"]
 """Union type alias for Location class. Currently only supports RelationalDBLocation."""
 
+LocationTypeStr = Union[Literal["rdbms"]]
+"""String literal type for Location class. Currently only supports "rdbms"."""
+
 
 def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
     """Decorator that checks if credentials are set before executing a method.
@@ -77,17 +81,13 @@ def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
     A helper method for Location subclasses.
 
     Raises:
-        AttributeError: If the credentials are not set.
+        MatchboxSourceCredentialsError: If the credentials are not set.
     """
 
     @wraps(method)
-    def wrapper(self, *args, **kwargs) -> T:
+    def wrapper(self: "Location", *args, **kwargs) -> T:
         if self.credentials is None:
-            raise AttributeError(
-                f"Credentials are required for {method.__name__}. "
-                "Use add_credentials() method to set credentials for "
-                f"this {self.type} location."
-            )
+            raise MatchboxSourceCredentialsError
         return method(self, *args, **kwargs)
 
     return wrapper
@@ -96,9 +96,36 @@ def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
 class Location(ABC, BaseModel):
     """A location for a data source."""
 
-    type: LocationType
+    type: LocationTypeStr
     uri: AnyUrl
     credentials: Any | None = Field(exclude=True, default=None)
+
+    def __eq__(self, other: Any) -> bool:
+        """Custom equality which ignores credentials."""
+        return (self.type, self.uri) == (
+            other.type,
+            other.uri,
+        )
+
+    def __hash__(self) -> int:
+        """Custom hash which ignores credentials."""
+        return hash((self.type, self.uri))
+
+    def __deepcopy__(self, memo=None):
+        """Create a deep copy of the Location object."""
+        if memo is None:
+            memo = {}
+
+        obj_copy = Location(
+            type=deepcopy(self.type, memo),
+            uri=deepcopy(self.uri, memo),
+        )
+
+        # Both objects should share the same credentials
+        if self.credentials is not None:
+            obj_copy.credentials = self.credentials
+
+        return obj_copy
 
     @abstractmethod
     def add_credentials(self, credentials: Any) -> None:
@@ -125,9 +152,25 @@ class Location(ABC, BaseModel):
 
     @abstractmethod
     def execute(
-        self, extract_transform: str, batch_size: int
-    ) -> Iterator[ArrowRecordBatch]:
-        """Execute ET logic against this location and return Arrow RecordBatches.
+        self,
+        extract_transform: str,
+        batch_size: int,
+        rename: dict[str, str] | Callable | None = None,
+        return_batches: bool = False,
+        return_type: ReturnTypeStr = "polars",
+    ) -> Iterator[QueryReturnType] | QueryReturnType:
+        """Execute ET logic against location and return batches.
+
+        Args:
+            extract_transform: The ET logic to execute.
+            batch_size: The size of the batches to return.
+            rename: Renaming to apply after the ET logic is executed.
+
+                * If a dictionary is provided, it will be used to rename the columns.
+                * If a callable is provided, it will take the old name as input and
+                    return the new name.
+            return_batches: If True, return an iterator of batches.
+            return_type: The type of data to return. Defaults to "polars".
 
         Raises:
             AttributeError: If the credentials are not set.
@@ -141,7 +184,7 @@ class Location(ABC, BaseModel):
         Examples:
             ```python
             loc = Location.create({"type": "rdbms", "uri": "postgresql://..."})
-            isisntance(loc, RelationalDBLocation)  # True
+            isinstance(loc, RelationalDBLocation)  # True
             ```
         """
         location_type = data.get("type")
@@ -225,14 +268,20 @@ class RelationalDBLocation(Location):
 
     @requires_credentials
     def execute(  # noqa: D102
-        self, extract_transform: str, batch_size: int
-    ) -> Iterator[PolarsDataFrame]:
-        yield from sql_to_df(
+        self,
+        extract_transform: str,
+        batch_size: int,
+        rename: dict[str, str] | Callable | None = None,
+        return_batches: bool = True,
+        return_type: ReturnTypeStr = "polars",
+    ) -> Iterator[QueryReturnType] | QueryReturnType:
+        return sql_to_df(
             stmt=extract_transform,
             connection=self.credentials,
+            rename=rename,
             batch_size=batch_size,
-            return_batches=True,
-            return_type="polars",
+            return_batches=return_batches,
+            return_type=return_type,
         )
 
     @classmethod
@@ -336,7 +385,7 @@ def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(self: "SourceConfig", *args: P.args, **kwargs: P.kwargs) -> R:
         if not self.engine:
-            raise MatchboxSourceEngineError
+            raise MatchboxSourceCredentialsError
 
         return func(self, *args, **kwargs)
 
