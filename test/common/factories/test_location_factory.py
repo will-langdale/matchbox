@@ -10,8 +10,8 @@ from faker import Faker
 from sqlalchemy import Engine
 
 from matchbox.common.factories.locations import (
-    RelationalDBConfig,
-    RelationalDBConfigOptions,
+    RelationalDBTestkit,
+    RelationalDBTestkitParameters,
     location_factory,
 )
 from matchbox.common.sources import RelationalDBLocation, SourceColumn
@@ -24,7 +24,7 @@ class TestRelationalDBConfig:
         """Test creating a RelationalDBConfig and validating its attributes."""
         uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBConfig(uri=uri)
+        config = RelationalDBTestkit(uri=uri)
 
         assert config.location_type == "rdbms"
         assert str(config.uri) == uri
@@ -37,7 +37,7 @@ class TestRelationalDBConfig:
         """Test converting a RelationalDBConfig to a RelationalDBLocation."""
         uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBConfig(uri=uri)
+        config = RelationalDBTestkit(uri=uri)
 
         location = config.to_location()
 
@@ -104,9 +104,9 @@ class TestRelationalDBConfig:
 
         uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBConfig(
+        config = RelationalDBTestkit(
             uri=uri,
-            location_options=RelationalDBConfigOptions(
+            location_options=RelationalDBTestkitParameters(
                 table_strategy=table_strategy,
                 table_mapping=table_mapping,
             ),
@@ -163,9 +163,9 @@ class TestRelationalDBConfig:
             "table1": [field_configs[0]],  # Only id
         }
 
-        config = RelationalDBConfig(
+        config = RelationalDBTestkit(
             uri=uri,
-            location_options=RelationalDBConfigOptions(
+            location_options=RelationalDBTestkitParameters(
                 table_mapping=incomplete_mapping,
             ),
         )
@@ -256,9 +256,9 @@ class TestRelationalDBConfig:
         mock_location = MagicMock(spec=RelationalDBLocation)
         mock_location.uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBConfig(
+        config = RelationalDBTestkit(
             uri=str(sqlite_warehouse.url),
-            location_options=RelationalDBConfigOptions(
+            location_options=RelationalDBTestkitParameters(
                 table_strategy=table_strategy,
                 table_mapping=table_mapping,
             ),
@@ -290,7 +290,7 @@ class TestLocationFactory:
         """Test creating a default RDBMS location."""
         location_config = location_factory(location_type="rdbms")
 
-        assert isinstance(location_config, RelationalDBConfig)
+        assert isinstance(location_config, RelationalDBTestkit)
         assert location_config.location_type == "rdbms"
         assert str(location_config.uri) == "sqlite:///:memory:"
 
@@ -301,7 +301,7 @@ class TestLocationFactory:
     def test_custom_rdbms_location(self, sqlite_warehouse: Engine) -> None:
         """Test creating a custom RDBMS location."""
         uri = str(sqlite_warehouse.url)
-        location_options = RelationalDBConfigOptions(table_strategy="spread")
+        location_options = RelationalDBTestkitParameters(table_strategy="spread")
 
         location_config = location_factory(
             location_type="rdbms",
@@ -309,7 +309,7 @@ class TestLocationFactory:
             uri=uri,
         )
 
-        assert isinstance(location_config, RelationalDBConfig)
+        assert isinstance(location_config, RelationalDBTestkit)
         assert location_config.location_type == "rdbms"
         assert str(location_config.uri) == uri
         assert location_config.location_options.table_strategy == "spread"
@@ -344,4 +344,4 @@ class TestLocationFactory:
                 location_type=location_type,
                 location_options=options,
             )
-            assert isinstance(config, RelationalDBConfig)
+            assert isinstance(config, RelationalDBTestkit)

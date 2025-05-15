@@ -21,16 +21,16 @@ from matchbox.common.sources import (
     SourceColumn,
 )
 
-LocationConfigType = Union["RelationalDBConfig"]
+LocationTestkitParameters = Union["RelationalDBTestkitParameters"]
 
 
-class LocationConfig(ABC, BaseModel):
+class LocationTestkit(ABC, BaseModel):
     """Configuration for a location type."""
 
     model_config = ConfigDict(frozen=True)
 
     location_type: LocationTypeStr
-    location_options: LocationConfigType
+    location_options: LocationTestkitParameters
     uri: AnyUrl | None = Field(default=None)
 
     @abstractmethod
@@ -41,13 +41,15 @@ class LocationConfig(ABC, BaseModel):
     @abstractmethod
     def to_et_and_location_writer(
         self,
-        fields: list[FeatureConfig],
+        key_field: SourceColumn,
+        index_fields: list[SourceColumn],
         generator: Faker,
     ) -> tuple[str, Callable[[pa.Table, LocationType, Any], None]]:
         """Convert the configuration to an e/t string and location writer.
 
         Args:
-            fields: List of FeatureConfig objects to use for the location writer.
+            key_field: The key field for the location.
+            index_fields: List of index fields for the location.
             generator: Faker instance to use for generating metadata.
 
         Returns:
@@ -63,13 +65,13 @@ class LocationConfig(ABC, BaseModel):
         ...
 
 
-RelationalDBConfigTableMapping = Annotated[
+RelationalDBTestkitParametersTableMapping = Annotated[
     frozendict[str, tuple[FeatureConfig]],
     BeforeValidator(lambda v: frozendict(v) if isinstance(v, dict) else None),
 ]
 
 
-class RelationalDBConfigOptions(BaseModel):
+class RelationalDBTestkitParameters(BaseModel):
     """Configuration options for a relational database location."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -78,7 +80,7 @@ class RelationalDBConfigOptions(BaseModel):
         default="single",
         description="A high-level strategy for how to split the data into tables.",
     )
-    table_mapping: RelationalDBConfigTableMapping | None = Field(
+    table_mapping: RelationalDBTestkitParametersTableMapping | None = Field(
         default=None,
         description=(
             "A low-level mapping of features to tables. "
@@ -87,14 +89,14 @@ class RelationalDBConfigOptions(BaseModel):
     )
 
 
-class RelationalDBConfig(LocationConfig):
+class RelationalDBTestkit(LocationTestkit):
     """Configuration for a relational database location."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     location_type: Literal["rdbms"] = Field(default="rdbms")
-    location_options: RelationalDBConfigOptions = Field(
-        default=RelationalDBConfigOptions()
+    location_options: RelationalDBTestkitParameters = Field(
+        default=RelationalDBTestkitParameters()
     )
     uri: AnyUrl | None = Field(default="sqlite:///:memory:")
 
@@ -261,7 +263,7 @@ def location_factory(
     location_type: LocationTypeStr = "rdbms",
     location_options: dict[str, Any] | None = None,
     uri: AnyUrl | None = None,
-) -> LocationConfig:
+) -> LocationTestkit:
     """Generate a location configuration for a source.
 
     Provides default options, but also ensures all options agree with each other.
@@ -275,21 +277,23 @@ def location_factory(
             SQLite database.
 
     Returns:
-        A LocationConfig object with the specified options.
+        A LocationTestkit object with the specified options.
     """
     if location_type == "rdbms":
         if location_options is None:
-            location_options = RelationalDBConfigOptions(
+            location_options = RelationalDBTestkitParameters(
                 table_strategy="single",
                 table_mapping=None,
             )
 
-        location_options = RelationalDBConfigOptions.model_validate(location_options)
+        location_options = RelationalDBTestkitParameters.model_validate(
+            location_options
+        )
 
         if uri is None:
             uri = "sqlite:///:memory:"
 
-        return RelationalDBConfig(
+        return RelationalDBTestkit(
             location_type=location_type,
             location_options=location_options,
             uri=uri,
