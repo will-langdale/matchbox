@@ -363,7 +363,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         ),
         viewonly=True,
         uselist=False,
-        post_update=True,  # Handle circular dependency
     )
     index_fields = relationship(
         "SourceFields",

@@ -71,7 +71,7 @@ def sql_to_df(
             Default is False.
         batch_size (int | None): Indicate the size of each batch when processing
             data in batches. Default is None.
-        schema_overrides (dict[str, Any] | None): A dictionary mapping field names
+        schema_overrides (dict[str, Any] | None): A dictionary mapping column names
             to dtypes. Default is None.
         execute_options (dict[str, Any] | None): These options will be passed through
             into the underlying query execution method as kwargs. Default is None.

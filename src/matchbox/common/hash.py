@@ -79,57 +79,64 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
     return hashed_vals.digest()
 
 
-def process_field_for_hashing(field_name: str, schema_type: pl.DataType) -> plx.Expr:
-    """Process a field for hashing based on its type.
+def process_column_for_hashing(column_name: str, schema_type: pl.DataType) -> plx.Expr:
+    """Process a column for hashing based on its type.
 
     Args:
-        field_name: The field name
-        schema_type: The polars schema type of the field
+        column_name: The column name
+        schema_type: The polars schema type of the column
 
     Returns:
-        A polars expression for processing the field
+        A polars expression for processing the column
     """
     if isinstance(schema_type, pl.Binary):
-        return pl.col(field_name).fill_null("\x00").bin.encode("hex").alias(field_name)
+        return (
+            pl.col(column_name).fill_null("\x00").bin.encode("hex").alias(column_name)
+        )
     elif isinstance(schema_type, pl.Struct):
         return (
-            pl.col(field_name).struct.json_encode().fill_null("\x00").alias(field_name)
+            pl.col(column_name)
+            .struct.json_encode()
+            .fill_null("\x00")
+            .alias(column_name)
         )
     elif isinstance(schema_type, pl.Object):
         return (
-            pl.col(field_name)
+            pl.col(column_name)
             .map_elements(lambda x: str(x), return_dtype=pl.Utf8)
             .fill_null("\x00")
-            .alias(field_name)
+            .alias(column_name)
         )
     else:
-        return pl.col(field_name).cast(pl.Utf8).fill_null("\x00").alias(field_name)
+        return pl.col(column_name).cast(pl.Utf8).fill_null("\x00").alias(column_name)
 
 
 def hash_rows(
-    df: pl.DataFrame, fields: list[str], method: HashMethod = HashMethod.XXH3_128
+    df: pl.DataFrame, columns: list[str], method: HashMethod = HashMethod.XXH3_128
 ) -> pl.Series:
     """Hash all rows in a dataframe.
 
     Args:
         df: The DataFrame to hash rows from
-        fields: The field names to include in the hash
+        columns: The column names to include in the hash
         method: The hash method to use
 
     Returns:
         List of row hashes as bytes
     """
-    expr_list = [process_field_for_hashing(field, df.schema[field]) for field in fields]
+    expr_list = [
+        process_column_for_hashing(column, df.schema[column]) for column in columns
+    ]
     df_processed = df.with_columns(expr_list)
 
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
-            plh.concat_str(*fields, separator="␞").nchash.xxh3_128().alias("row_hash")
+            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
         )
         return row_hashes["row_hash"]
     elif method == HashMethod.SHA256:
         row_hashes = df_processed.select(
-            plh.concat_str(*fields, separator="␞")
+            plh.concat_str(*columns, separator="␞")
             .chash.sha2_256()
             .str.decode("hex")
             .alias("row_hash")
@@ -159,17 +166,17 @@ def hash_arrow_table(
     if df.height == 0:
         return b"empty_table_hash"
 
-    fields: list[str] = sorted(df.columns)
-    df = df.select(fields)
+    columns: list[str] = sorted(df.columns)
+    df = df.select(columns)
 
     # Explode list fields
-    for field in fields:
-        if isinstance(df.schema[field], pl.List):
-            df = df.explode(field)
+    for column in columns:
+        if isinstance(df.schema[column], pl.List):
+            df = df.explode(column)
 
-    df = df.sort(by=fields)
+    df = df.sort(by=columns)
 
-    row_hashes = hash_rows(df, fields, method=method)
+    row_hashes = hash_rows(df=df, columns=columns, method=method)
 
     all_hashes: bytes = b"".join(row_hashes.sort().to_list())
 

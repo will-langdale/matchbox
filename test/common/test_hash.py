@@ -80,7 +80,7 @@ def test_hash_rows(method: HashMethod):
     assert isinstance(data["object_col"].dtype, pl.Object)
     assert isinstance(data["binary_col"].dtype, pl.Binary)
 
-    hash_rows(data, fields=data.columns, method=method)
+    hash_rows(data, columns=data.columns, method=method)
 
 
 @pytest.mark.parametrize(

@@ -11,6 +11,7 @@ from typing import (
     Iterator,
     Literal,
     ParamSpec,
+    Self,
     TypeVar,
     Union,
 )
@@ -363,10 +364,32 @@ class SourceConfig(BaseModel):
         default_factory=lambda data: str(data["address"])
     )
     key_field: SourceField
-    # Fields need to be set at creation, or initialised with `.default_fields()`
+    # Index fields need to be set at creation, or initialised with `.default_fields()`
     index_fields: tuple[SourceField, ...] | None = None
 
     _engine: Engine | None = None
+
+    @field_validator("key_field", mode="before")
+    @classmethod
+    def validate_key_field(
+        cls: type[Self], key_field: str | dict[str, str] | SourceField
+    ) -> SourceField:
+        """Validate key field as valid SourceField."""
+        if isinstance(key_field, str):
+            return SourceField(name=key_field, type=DataTypes.STRING)
+        elif isinstance(key_field, dict):
+            key_field = SourceField.model_validate(key_field)
+        elif not isinstance(key_field, SourceField):
+            raise ValueError(
+                f"Key field must be a string, dict, or SourceField, but got {key_field}"
+            )
+
+        if key_field.type != DataTypes.STRING:
+            raise ValueError(
+                f"Key field must be a string type, but got {key_field.type}"
+            )
+
+        return key_field
 
     @property
     def engine(self) -> Engine | None:
@@ -723,7 +746,7 @@ class SourceConfig(BaseModel):
 
             row_hashes = hash_rows(
                 df=batch,
-                fields=list(sorted(fields_to_index)),
+                columns=list(sorted(fields_to_index)),
                 method=HashMethod.SHA256,
             )
 

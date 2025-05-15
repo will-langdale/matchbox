@@ -446,6 +446,21 @@ def test_source_check_fields(sqlite_warehouse: Engine):
     with pytest.raises(MatchboxSourceFieldError, match="Type Int64 != String for b"):
         new_source.check_fields()
 
+    # We can specify key field as a string
+    source_dump = source_testkit.source_config.model_dump()
+    source_dump["key_field"] = "b"
+    new_source = source_testkit.source_config.model_validate(source_dump).set_engine(
+        sqlite_warehouse
+    )
+    assert isinstance(new_source.key_field, SourceField)
+    assert new_source.key_field.type == DataTypes.STRING
+
+    # Setting key field as non-String errors
+    source_dump = source_testkit.source_config.model_dump()
+    source_dump["key_field"] = {"name": "b", "type": DataTypes.INT64}
+    with pytest.raises(ValueError, match="Key field"):
+        new_source = source_testkit.source_config.model_validate(source_dump)
+
 
 def test_source_hash_equality(sqlite_warehouse: Engine):
     """__eq__ and __hash__ behave as expected for a SourceConfig."""
