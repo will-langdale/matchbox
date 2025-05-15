@@ -19,6 +19,7 @@ from matchbox.client.helpers.selector import Match
 from matchbox.common.db import fullname_to_prefix
 from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import (
+    MatchboxSourceCredentialsError,
     MatchboxSourceExtractTransformError,
     MatchboxSourceFieldError,
 )
@@ -48,7 +49,7 @@ def test_location_empty_credentials_error():
     location = RelationalDBLocation(uri="postgresql://host:1234/db2")
 
     # Attempting to connect without credentials should raise an error
-    with pytest.raises(AttributeError):
+    with pytest.raises(MatchboxSourceCredentialsError):
         location.connect()
 
     # Invalid location type
