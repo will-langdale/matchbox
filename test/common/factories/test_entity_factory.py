@@ -4,7 +4,7 @@ import pyarrow as pa
 import pytest
 from faker import Faker
 
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -429,14 +429,14 @@ def test_source_to_results_conversion():
 @pytest.mark.parametrize(
     ("base_generator", "expected_type"),
     [
-        pytest.param("name", "TEXT", id="text_generator"),
-        pytest.param("random_int", "BIGINT", id="integer_generator"),
-        pytest.param("date_this_decade", "DATE", id="date_generator"),
+        pytest.param("name", DataTypes.STRING, id="text_generator"),
+        pytest.param("random_int", DataTypes.INT64, id="integer_generator"),
+        pytest.param("date_this_decade", DataTypes.DATE, id="date_generator"),
     ],
 )
-def test_feature_config_sql_type_inference(
+def test_feature_config_datatype_inference(
     base_generator: str, expected_type: str
 ) -> None:
     """Test that SQL types are correctly inferred from feature configurations."""
     feature_config = FeatureConfig(name=base_generator, base_generator=base_generator)
-    assert feature_config.sql_type == expected_type
+    assert feature_config.datatype == expected_type

@@ -92,7 +92,7 @@ class SplinkSettings(LinkerSettings):
             https://moj-analytical-services.github.io/splink/api_docs/settings_dict_guide.html
 
             * link_type must be set to "link_only"
-            * unique_id_column_name is overridden to the value of left_id and right_id,
+            * unique_id_name is overridden to the value of left_id and right_id,
                 which must match
 
             Example:

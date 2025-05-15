@@ -13,7 +13,7 @@ class NaiveSettings(DeduperSettings):
     """A data class to enforce the Naive deduper's settings dictionary shape."""
 
     unique_fields: list[str] = Field(
-        description="A list of columns that will form a unique, deduplicated record"
+        description="A list of fields that will form a unique, deduplicated record"
     )
 
 

@@ -26,7 +26,6 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     ResolutionFrom,
     Resolutions,
-    SourceColumns,
     SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import compile_sql, large_ingest
@@ -156,26 +155,12 @@ def insert_source(
             session.flush()
 
         # Create new source with relationship to resolution
-        source_obj = SourceConfigs(
-            resolution_id=resolution.resolution_id,
-            full_name=source_config.address.full_name,
-            warehouse_hash=source_config.address.warehouse_hash,
-            key_field=source_config.key_field,
-            columns=[
-                SourceColumns(
-                    column_index=idx,
-                    column_name=column.name,
-                    column_type=column.type,
-                )
-                for idx, column in enumerate(source_config.columns)
-            ],
-        )
-
+        source_obj = SourceConfigs.from_dto(resolution, source_config)
         session.add(source_obj)
         session.commit()
 
         logger.info(
-            "Added to Resolutions, SourceConfigs, SourceColumns", prefix=log_prefix
+            "Added to Resolutions, SourceConfigs, SourceFields", prefix=log_prefix
         )
 
         # Store source_config_id and max primary keys for later use

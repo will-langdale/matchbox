@@ -47,7 +47,9 @@ engine = get_database_engine()
 
 The first step in creating a matching pipeline is to define your data sources. Each source represents data that will be used in the matching process.
 
-The `columns` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
+The `index_fields` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
+
+The `key_field` is the field in your source that contains some unique code that identifies each entitiy. For example, in a relational database, this would typically be your primary key.
 
 === "Example"
     ```python
@@ -56,22 +58,22 @@ The `columns` are what Matchbox will use to store a reference to your data, and 
     # Companies House data
     companies_house = SourceConfig(
         address=SourceAddress.compose(full_name="companieshouse.companies", engine=engine),
-        columns=[
-            {"name": "company_name", "type": "VARCHAR"},
-            {"name": "company_number", "type": "VARCHAR"},
-            {"name": "postcode", "type": "VARCHAR"},
+        index_fields=[
+            {"name": "company_name", "type": "String"},
+            {"name": "company_number", "type": "String"},
+            {"name": "postcode", "type": "String"},
         ],
-        key_field="id",
+        key_field={"name": "id", "type": "String"},
     ).set_engine(engine)
     
     # Exporters data
     exporters = SourceConfig(
         address=SourceAddress.compose(full_name="hmrc.trade__exporters", engine=engine),
-        columns=[
-            {"name": "company_name", "type": "VARCHAR(500)"},
-            {"name": "postcode", "type": "VARCHAR(8)"},
+        index_fields=[
+            {"name": "company_name", "type": "String"},
+            {"name": "postcode", "type": "String"},
         ],
-        key_field="id",
+        key_field={"name": "id", "type": "String"},
     ).set_engine(engine)
     ```
 
@@ -80,7 +82,7 @@ Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
 - An `address` created with [`SourceAddress.compose()`][matchbox.common.sources.SourceAddress], comprised of
     - The schema-qualified `full_name` of the dataset
     - The `engine` used to connect
-- A list of `columns` that will be used for matching
+- A list of `index_fields` that will be used for matching
 - A key field (`key_field`) that uniquely identifies each record
 - A database engine
 

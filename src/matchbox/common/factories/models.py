@@ -867,7 +867,7 @@ def query_to_model_factory(
     Args:
         left_resolution: Name of the resolution used for the left query
         left_query: PyArrow table with left query data
-        left_keys: Dictionary mapping source resolution names to key column names
+        left_keys: Dictionary mapping source resolution names to key field names
             in left query
         true_entities: Ground truth SourceEntity objects to use for generating
             probabilities
@@ -875,7 +875,7 @@ def query_to_model_factory(
         description: Description of the model
         right_resolution: Name of the resolution used for the right query
         right_query: PyArrow table with right query data, if creating a linker
-        right_keys: Dictionary mapping source resolution names to key column names
+        right_keys: Dictionary mapping source resolution names to key field names
             in right query
         prob_range: Range of probabilities to generate
         seed: Random seed for reproducibility

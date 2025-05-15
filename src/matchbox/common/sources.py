@@ -11,6 +11,7 @@ from typing import (
     Iterator,
     Literal,
     ParamSpec,
+    Self,
     TypeVar,
     Union,
 )
@@ -49,10 +50,10 @@ from matchbox.common.db import (
     sql_to_df,
     validate_sql_for_data_extraction,
 )
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.exceptions import (
-    MatchboxSourceColumnError,
     MatchboxSourceEngineError,
+    MatchboxSourceFieldError,
 )
 from matchbox.common.hash import (
     HASH_FUNC,
@@ -248,14 +249,19 @@ class RelationalDBLocation(Location):
         return location
 
 
-class SourceColumn(BaseModel):
-    """A column in a source that can be indexed in the Matchbox database."""
+class SourceField(BaseModel):
+    """A field in a source that can be indexed in the Matchbox database."""
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
-    type: str | None = Field(
-        default=None, description="The type to cast the column to before hashing data."
+    name: str = Field(
+        description=(
+            "The name of the field in the source after the "
+            "extract/transform logic has been applied."
+        )
+    )
+    type: DataTypes = Field(
+        description="The cached field type. Used to ensure a stable hash.",
     )
 
 
@@ -318,16 +324,16 @@ class SourceAddress(BaseModel):
         hash = HASH_FUNC(stable_str).digest()
         return SourceAddress(full_name=full_name, warehouse_hash=hash)
 
-    def format_column(self, column: str) -> str:
-        """Outputs a full SQLAlchemy column representation.
+    def format_field(self, field: str) -> str:
+        """Outputs a full SQLAlchemy field representation.
 
         Args:
-            column: the name of the column
+            field: the name of the field
 
         Returns:
-            A string representing the table name and column
+            A string representing the table name and field
         """
-        return fullname_to_prefix(self.full_name) + column
+        return fullname_to_prefix(self.full_name) + field
 
 
 def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
@@ -357,11 +363,33 @@ class SourceConfig(BaseModel):
     name: SourceResolutionName = Field(
         default_factory=lambda data: str(data["address"])
     )
-    key_field: str
-    # Columns need to be set at creation, or initialised with `.default_columns()`
-    columns: tuple[SourceColumn, ...] | None = None
+    key_field: SourceField
+    # Index fields need to be set at creation, or initialised with `.default_fields()`
+    index_fields: tuple[SourceField, ...] | None = None
 
     _engine: Engine | None = None
+
+    @field_validator("key_field", mode="before")
+    @classmethod
+    def validate_key_field(
+        cls: type[Self], key_field: str | dict[str, str] | SourceField
+    ) -> SourceField:
+        """Validate key field as valid SourceField."""
+        if isinstance(key_field, str):
+            return SourceField(name=key_field, type=DataTypes.STRING)
+        elif isinstance(key_field, dict):
+            key_field = SourceField.model_validate(key_field)
+        elif not isinstance(key_field, SourceField):
+            raise ValueError(
+                f"Key field must be a string, dict, or SourceField, but got {key_field}"
+            )
+
+        if key_field.type != DataTypes.STRING:
+            raise ValueError(
+                f"Key field must be a string type, but got {key_field.type}"
+            )
+
+        return key_field
 
     @property
     def engine(self) -> Engine | None:
@@ -370,16 +398,16 @@ class SourceConfig(BaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Custom equality which ignores engine."""
-        return (self.address, self.name, self.key_field, self.columns) == (
+        return (self.address, self.name, self.key_field, self.index_fields) == (
             other.address,
             other.name,
             other.key_field,
-            other.columns,
+            other.index_fields,
         )
 
     def __hash__(self) -> int:
         """Custom hash which ignores engine."""
-        return hash((self.address, self.name, self.key_field, self.columns))
+        return hash((self.address, self.name, self.key_field, self.index_fields))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the SourceConfig object."""
@@ -390,7 +418,7 @@ class SourceConfig(BaseModel):
             address=deepcopy(self.address, memo),
             name=deepcopy(self.name, memo),
             key_field=deepcopy(self.key_field, memo),
-            columns=deepcopy(self.columns, memo),
+            index_fields=deepcopy(self.index_fields, memo),
         )
 
         # Both objects should share the same engine
@@ -400,7 +428,7 @@ class SourceConfig(BaseModel):
         return obj_copy
 
     def set_engine(self, engine: Engine):
-        """Adds engine, and use it to validate current columns."""
+        """Adds engine, and use it to validate current fields."""
         implied_address = SourceAddress.compose(
             full_name=self.address.full_name, engine=engine
         )
@@ -412,33 +440,33 @@ class SourceConfig(BaseModel):
         return self
 
     @needs_engine
-    def get_remote_columns(self, exclude_key=False) -> dict[str, str]:
-        """Returns a dictionary of column names and SQLAlchemy types."""
+    def get_remote_fields(self, exclude_key=False) -> dict[str, DataTypes]:
+        """Returns a dictionary of field names and Matchbox DataTypes."""
         table = self.to_table()
         return {
-            col.name: col.type
-            for col in table.columns
-            if (col.name != self.key_field) or (not exclude_key)
+            field.name: DataTypes.from_pytype(field.type.python_type)
+            for field in table.columns
+            if (field.name != self.key_field.name) or (not exclude_key)
         }
 
     @needs_engine
-    def default_columns(self) -> "SourceConfig":
-        """Returns a new source with default columns.
+    def default_fields(self) -> "SourceConfig":
+        """Returns a new source with default fields.
 
-        Default columns are all from the source warehouse other than `self.key_field`.
+        Default fields are all from the source warehouse other than `self.key_field`.
         All other attributes are copied, and its engine (if present) is set.
         """
-        remote_columns = self.get_remote_columns(exclude_key=True)
-        columns_attribute = (
-            SourceColumn(name=col_name, type=str(col_type))
-            for col_name, col_type in remote_columns.items()
+        remote_fields = self.get_remote_fields(exclude_key=True)
+        index_fields = (
+            SourceField(name=field_name, type=field_type)
+            for field_name, field_type in remote_fields.items()
         )
 
         new_source = SourceConfig(
             address=self.address,
             name=self.name,
             key_field=self.key_field,
-            columns=columns_attribute,
+            index_fields=index_fields,
         )
 
         if self.engine:
@@ -455,39 +483,40 @@ class SourceConfig(BaseModel):
         return table
 
     @needs_engine
-    def check_columns(self, columns: list[str] | None = None) -> None:
-        """Check that columns are available in the warehouse and correctly typed.
+    def check_fields(self, fields: list[str] | None = None) -> None:
+        """Check that fields are available in the warehouse and correctly typed.
 
         Args:
-            columns: List of column names to check. If None, it will check self.columns
+            fields: List of field names to check. If None, it will check
+                self.index_fields
         """
-        remote_columns = self.get_remote_columns()
+        remote_fields = self.get_remote_fields()
 
-        if self.key_field not in remote_columns:
-            raise MatchboxSourceColumnError(
-                f"Key field {self.key_field} not available in {self.address}"
+        if self.key_field.name not in remote_fields:
+            raise MatchboxSourceFieldError(
+                f"Key field {self.key_field.name} not available in {self.address}"
             )
 
-        if columns:
-            columns = set(columns)
-            remote_names = set(remote_columns.keys())
-            if not columns <= remote_names:
-                raise MatchboxSourceColumnError(
-                    f"Columns {columns - remote_names} not in {self.address}"
+        if fields:
+            fields = set(fields)
+            remote_names = set(remote_fields.keys())
+            if not fields <= remote_names:
+                raise MatchboxSourceFieldError(
+                    f"Fields {fields - remote_names} not in {self.address}"
                 )
         else:
-            if not self.columns:
-                raise ValueError("No columns passed, and none set on the SourceConfig.")
+            if not self.index_fields:
+                raise ValueError("No fields passed, and none set on the SourceConfig.")
 
-            for col in self.columns:
-                if col.name not in remote_columns:
-                    raise MatchboxSourceColumnError(
-                        f"Column {col.name} not available in {self.address.full_name}"
+            for field in self.index_fields:
+                if field.name not in remote_fields:
+                    raise MatchboxSourceFieldError(
+                        f"Field {field.name} not available in {self.address.full_name}"
                     )
-                actual_type = str(remote_columns[col.name])
-                if actual_type != col.type:
-                    raise MatchboxSourceColumnError(
-                        f"Type {actual_type} != {col.type} for {col.name}"
+                actual_type = remote_fields[field.name]
+                if actual_type != field.type:
+                    raise MatchboxSourceFieldError(
+                        f"Type {actual_type} != {field.type} for {field.name}"
                     )
 
     def _select(
@@ -499,33 +528,33 @@ class SourceConfig(BaseModel):
         """Returns a SQL query to retrieve data from the source."""
         table = self.to_table()
 
-        # Ensure all set columns are available and the expected type
-        self.check_columns(columns=fields)
+        # Ensure all set fields are available and the expected type
+        self.check_fields(fields=fields)
         if not fields:
-            fields = [col.name for col in self.columns]
+            fields = [field.name for field in self.index_fields]
 
-        if self.key_field not in fields:
-            fields.append(self.key_field)
+        if self.key_field.name not in fields:
+            fields.append(self.key_field.name)
 
-        def _get_column(col_name: str) -> ColumnElement:
-            """Helper to get a column with proper casting and labeling for keys."""
-            col = table.columns[col_name]
-            if col_name == self.key_field:
-                return cast(col, String).label(self.address.format_column(col_name))
-            return col
+        def _get_field(field_name: str) -> ColumnElement:
+            """Helper to get a field with proper casting and labeling for keys."""
+            field = table.columns[field_name]
+            if field_name == self.key_field:
+                return cast(field, String).label(self.address.format_field(field_name))
+            return field
 
-        # Determine which columns to select
+        # Determine which fields to select
         if fields:
-            select_cols = [_get_column(field) for field in fields]
+            select_fields = [_get_field(field) for field in fields]
         else:
-            select_cols = [_get_column(col.name) for col in table.columns]
+            select_fields = [_get_field(field.name) for field in table.columns]
 
-        stmt = select(*select_cols)
+        stmt = select(*select_fields)
 
         if keys:
             string_keys = [str(key) for key in keys]
-            key_col = table.columns[self.key_field]
-            stmt = stmt.where(cast(key_col, String).in_(string_keys))
+            key_field = table.columns[self.key_field]
+            stmt = stmt.where(cast(key_field, String).in_(string_keys))
 
         if limit:
             stmt = stmt.limit(limit)
@@ -551,14 +580,14 @@ class SourceConfig(BaseModel):
         """Returns the source as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
-            fields: List of column names to retrieve. If None, retrieves all columns.
+            fields: List of field names to retrieve. If None, retrieves all fields.
             keys: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
             return_batches:
                 * If True, return an iterator that yields each batch separately
                 * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
-            schema_overrides: A dictionary mapping column names to dtypes.
+            schema_overrides: A dictionary mapping field names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
 
@@ -594,14 +623,14 @@ class SourceConfig(BaseModel):
         """Returns the source as a PyArrow Table or an iterator of PyArrow Tables.
 
         Args:
-            fields: List of column names to retrieve. If None, retrieves all columns.
+            fields: List of field names to retrieve. If None, retrieves all fields.
             keys: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
             return_batches:
                 * If True, return an iterator that yields each batch separately
                 * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
-            schema_overrides: A dictionary mapping column names to dtypes.
+            schema_overrides: A dictionary mapping field names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
 
@@ -637,14 +666,14 @@ class SourceConfig(BaseModel):
         """Returns the source as a pandas DataFrame or an iterator of DataFrames.
 
         Args:
-            fields: List of column names to retrieve. If None, retrieves all columns.
+            fields: List of field names to retrieve. If None, retrieves all fields.
             keys: List of primary keys to filter by. If None, retrieves all rows.
             limit: Maximum number of rows to retrieve. If None, retrieves all rows.
             return_batches:
                 * If True, return an iterator that yields each batch separately
                 * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
-            schema_overrides: A dictionary mapping column names to dtypes.
+            schema_overrides: A dictionary mapping field names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
 
@@ -678,46 +707,46 @@ class SourceConfig(BaseModel):
         Args:
             batch_size: If set, process data in batches internally. Indicates the
                 size of each batch.
-            schema_overrides: A dictionary mapping column names to dtypes.
+            schema_overrides: A dictionary mapping field names to dtypes.
             execute_options: These options will be passed through into the underlying
                 query execution method as kwargs.
 
         Returns:
             A PyArrow Table containing source primary keys and their hashes.
         """
-        # Ensure all set columns are available and the expected type
-        self.check_columns()
+        # Ensure all set fields are available and the expected type
+        self.check_fields()
 
         source_table = self.to_table()
-        cols_to_index = tuple([col.name for col in self.columns])
+        fields_to_index = tuple([field.name for field in self.index_fields])
 
         slct_stmt = select(
-            *[source_table.c[col] for col in cols_to_index],
-            source_table.c[self.key_field].cast(String).label("keys"),
+            *[source_table.c[field] for field in fields_to_index],
+            source_table.c[self.key_field.name].cast(String).label("keys"),
         )
 
         def _process_batch(
             batch: PolarsDataFrame,
-            cols_to_index: tuple,
+            fields_to_index: tuple,
         ) -> PolarsDataFrame:
             """Process a single batch of data using Polars.
 
             Args:
                 batch: Polars DataFrame containing the data
-                cols_to_index: Columns to include in the hash
+                fields_to_index: fields to include in the hash
 
             Returns:
-                Polars DataFrame with hash and key columns
+                Polars DataFrame with hash and key fields
 
             Raises:
                 ValueError: If any key values are null
             """
             if batch["keys"].is_null().any():
-                raise ValueError("key column contains null values")
+                raise ValueError("key field contains null values")
 
             row_hashes = hash_rows(
                 df=batch,
-                columns=list(sorted(cols_to_index)),
+                columns=list(sorted(fields_to_index)),
                 method=HashMethod.SHA256,
             )
 
@@ -741,7 +770,7 @@ class SourceConfig(BaseModel):
 
             all_results = []
             for batch in raw_batches:
-                batch_result = _process_batch(batch, cols_to_index)
+                batch_result = _process_batch(batch, fields_to_index)
                 all_results.append(batch_result)
 
             processed_df = pl.concat(all_results)
@@ -756,7 +785,7 @@ class SourceConfig(BaseModel):
                 execute_options=execute_options,
             )
 
-            processed_df = _process_batch(raw_result, cols_to_index)
+            processed_df = _process_batch(raw_result, fields_to_index)
 
         return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
 
