@@ -69,9 +69,6 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-LocationType = Union["RelationalDBLocation"]
-"""Union type alias for Location class. Currently only supports RelationalDBLocation."""
-
 LocationTypeStr = Union[Literal["rdbms"]]
 """String literal type for Location class. Currently only supports "rdbms"."""
 
