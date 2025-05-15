@@ -97,7 +97,7 @@ def test_hash_arrow_table(method: HashMethod):
             "b": [4, 5, 6],
         }
     )
-    # Column order should not matter
+    # Field order should not matter
     b = pa.Table.from_pydict(
         {
             "b": [4, 5, 6],
@@ -111,7 +111,7 @@ def test_hash_arrow_table(method: HashMethod):
             "b": [6, 5, 4],
         }
     )
-    # Column and row order should not matter
+    # Field and row order should not matter
     d = pa.Table.from_pydict(
         {
             "b": [6, 5, 4],
@@ -132,14 +132,14 @@ def test_hash_arrow_table(method: HashMethod):
             "b": [4, 5, 7],
         }
     )
-    # If column name change their order, the hash should change
+    # If field name change their order, the hash should change
     g = pa.Table.from_pydict(
         {
             "b": [1, 2, 3],
             "a": [4, 5, 6],
         }
     )
-    # List columns are handled
+    # List fields are handled
     h = pa.Table.from_pydict(
         {
             "a": [1, 2, 3],
@@ -153,7 +153,7 @@ def test_hash_arrow_table(method: HashMethod):
             "b": [[2, 1], [4, 3], [6, 5]],
         }
     )
-    # Binary columns are handled, including non-UTF-8 bytes
+    # Binary fields are handled, including non-UTF-8 bytes
     j = pa.Table.from_pydict(
         {
             "a": [1, 2, 3],
@@ -182,7 +182,7 @@ def test_hash_arrow_table(method: HashMethod):
     assert h_a != h_f
     assert h_a != h_g
     assert h_a != h_j
-    # List type table should be consistent regardless of column order
+    # List type table should be consistent regardless of field order
     assert h_h == h_i
 
 

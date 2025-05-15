@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendRetrievableType,
+    DataTypes,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -17,7 +18,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import SourceAddress, SourceConfig
+from matchbox.common.sources import SourceAddress, SourceConfig, SourceField
 from matchbox.server.api.dependencies import backend
 from matchbox.server.api.main import app
 
@@ -29,7 +30,10 @@ else:
 
 def test_get_source(test_client: TestClient):
     address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
-    source = SourceConfig(address=address, key_field="key")
+    source = SourceConfig(
+        address=address,
+        key_field=SourceField(name="key", type=DataTypes.STRING),
+    )
     mock_backend = Mock()
     mock_backend.get_source_config = Mock(return_value=source)
 

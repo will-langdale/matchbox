@@ -162,7 +162,7 @@ def get_schema_table_names(full_name: str) -> tuple[str, str]:
 
 
 def fullname_to_prefix(fullname: str) -> str:
-    """Converts a full name to a prefix for column names."""
+    """Converts a full name to a prefix for field names."""
     db_schema, db_table = get_schema_table_names(fullname)
     if db_schema:
         return f"{db_schema}_{db_table}_"

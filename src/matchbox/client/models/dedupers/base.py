@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 class DeduperSettings(BaseModel):
     """A data class to enforce basic settings dictionary shapes."""
 
-    id: str = Field(description="A unique ID column in the table to dedupe")
+    id: str = Field(description="A unique ID field in the data to dedupe")
 
     @field_validator("id")
     @classmethod

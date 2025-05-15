@@ -14,11 +14,11 @@ from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, SourceAddress, SourceConfig
+from matchbox.common.sources import Match, SourceAddress, SourceConfig, SourceField
 
 
 class Selector(BaseModel):
-    """A selector to choose a source and optionally a subset of columns to select."""
+    """A selector to choose a source and optionally a subset of fields to select."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -34,7 +34,7 @@ def select(
     """From one engine, builds and verifies a list of selectors.
 
     Args:
-        selection: Full source resolution names and optionally a subset of columns
+        selection: Full source resolution names and optionally a subset of fields
             to select
         engine: The engine to connect to the data warehouse hosting the source.
             If not provided, will use a connection string from the
@@ -81,7 +81,10 @@ def select(
 
 
 def _process_query_result(
-    data: PolarsDataFrame, selector: Selector, mb_ids: PolarsDataFrame, key: str
+    data: PolarsDataFrame,
+    selector: Selector,
+    mb_ids: PolarsDataFrame,
+    key_field: SourceField,
 ) -> PolarsDataFrame:
     """Process query results by joining with matchbox IDs and filtering fields.
 
@@ -89,7 +92,7 @@ def _process_query_result(
         data: The raw data from the source
         selector: The selector with source and fields information
         mb_ids: The matchbox IDs
-        key: The key of the source
+        key_field: The key of the source
 
     Returns:
         The processed table with joined matchbox IDs and filtered fields
@@ -97,18 +100,18 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=selector.address.format_column(key),
+        left_on=selector.address.format_field(key_field.name),
         right_on="key",
         how="inner",
     )
 
     # Apply field filtering if needed
     if selector.fields:
-        keep_cols = ["id"] + [
-            selector.address.format_column(f) for f in selector.fields
+        keep_fields = ["id"] + [
+            selector.address.format_field(f) for f in selector.fields
         ]
-        match_cols = [col for col in joined_table.columns if col in keep_cols]
-        return joined_table.select(match_cols)
+        match_fields = [field for field in joined_table.columns if field in keep_fields]
+        return joined_table.select(match_fields)
     else:
         return joined_table
 
@@ -122,13 +125,13 @@ def _source_query(
     """From a Selector, query a source and join to matchbox IDs."""
     source = _handler.get_source_config(selector.address).set_engine(selector.engine)
 
-    indexed_columns = set()
-    if source.columns:
-        indexed_columns = set([col.name for col in source.columns])
+    index_fields = set()
+    if source.index_fields:
+        index_fields = set([field.name for field in source.index_fields])
 
-    # If only_indexed is True and source.columns is unset, we will raise
-    if only_indexed and selector.fields and not set(selector.fields) <= indexed_columns:
-        raise ValueError("Attempting to query unindexed columns.")
+    # If only_indexed is True and source.fields is unset, we will raise
+    if only_indexed and selector.fields and not set(selector.fields) <= index_fields:
+        raise ValueError("Attempting to query unindexed fields.")
 
     selected_fields = None
     if selector.fields:
@@ -166,11 +169,13 @@ def _process_selectors(
         batches: Iterator[PolarsDataFrame],
         selector: Selector,
         mb_ids: PolarsDataFrame,
-        key: str,
+        key_field: SourceField,
     ) -> Generator[PolarsDataFrame, None, None]:
         """Process and transform each batch of results."""
         for batch in batches:
-            yield _process_query_result(batch, selector, mb_ids, key=key)
+            yield _process_query_result(
+                data=batch, selector=selector, mb_ids=mb_ids, key_field=key_field
+            )
 
     for selector in selectors:
         mb_ids = pl.from_arrow(
@@ -194,7 +199,7 @@ def _process_selectors(
                 batches=raw_batches,
                 selector=selector,
                 mb_ids=mb_ids,
-                key=source.key_field,
+                key_field=source.key_field,
             )
         )
 
@@ -251,7 +256,7 @@ def query(
             single combined result, which is useful for processing large data with
             limited memory. Default is False.
         only_indexed (optional): If True, it will raise an exception when attempting to
-            query un-indexed columns, which should never be done if querying for
+            query un-indexed fields, which should never be done if querying for
             subsequent matching. Default is False.
 
     Returns:
@@ -346,7 +351,9 @@ def query(
                 if combine_type == "set_agg":
                     # Aggregate into lists
                     agg_expressions = [
-                        pl.col(col).unique() for col in result.columns if col != "id"
+                        pl.col(field).unique()
+                        for field in result.columns
+                        if field != "id"
                     ]
                     result = result.group_by("id").agg(agg_expressions)
 

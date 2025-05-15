@@ -167,7 +167,7 @@ class TestE2EAnalyticalUser:
                 full_name=source.address.full_name,
                 key_field="key",  # Key in our test data
                 engine=self.warehouse_engine,
-                columns=[col.model_dump() for col in source.columns],
+                index_fields=[field.model_dump() for field in source.index_fields],
             )
             logging.debug(f"Indexed source: {source.address.full_name}")
 
@@ -179,7 +179,7 @@ class TestE2EAnalyticalUser:
         clean_company_name = cleaning_function(
             steps.tokenise,  # returns array
             remove_stopwords_redux,
-            steps.list_join_to_string,  # returns col
+            steps.list_join_to_string,  # returns column
             steps.trim,
         )
 
@@ -199,7 +199,7 @@ class TestE2EAnalyticalUser:
         deduper_names = {}
 
         for source_name, source_testkit in self.linked_testkit.sources.items():
-            # Get prefix for column names
+            # Get prefix for field names
             prefix = fullname_to_prefix(source_name)
 
             # Query data from the source
@@ -207,7 +207,10 @@ class TestE2EAnalyticalUser:
             source_select = select(
                 {
                     source_name: ["key"]
-                    + [col.name for col in source_testkit.source_config.columns]
+                    + [
+                        field.name
+                        for field in source_testkit.source_config.index_fields
+                    ]
                 },
                 engine=self.warehouse_engine,
             )
@@ -280,7 +283,7 @@ class TestE2EAnalyticalUser:
         ]
 
         for left_testkit, right_testkit, common_field in linking_pairs:
-            # Get prefixes for column names
+            # Get prefixes for field names
             left_prefix = fullname_to_prefix(
                 left_testkit.source_config.address.full_name
             )
@@ -411,7 +414,7 @@ class TestE2EAnalyticalUser:
         cdms_source = "e2e.cdms"
         first_pair = (crn_source, duns_source)
 
-        # Get prefixes for column names
+        # Get prefixes for field names
         crn_prefix = fullname_to_prefix(crn_source)
         duns_prefix = fullname_to_prefix(duns_source)
         cdms_prefix = fullname_to_prefix(cdms_source)
@@ -488,12 +491,12 @@ class TestE2EAnalyticalUser:
         logging.debug("Successfully linked all sources")
 
         # === FINAL VERIFICATION PHASE ===
-        # Query the final linked data with specific columns
+        # Query the final linked data with specific fields
         crn_source = "e2e.crn"
         duns_source = "e2e.duns"
         cdms_source = "e2e.cdms"
 
-        # Get necessary columns from each source
+        # Get necessary field from each source
         final_df = query(
             select(
                 {

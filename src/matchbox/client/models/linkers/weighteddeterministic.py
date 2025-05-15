@@ -18,7 +18,7 @@ class WeightedComparison(BaseModel):
             A valid ON clause to compare fields between the left and 
             the right data.
 
-            Use left.field and right.field to refer to columns in the 
+            Use left.field and right.field to refer to fields in the 
             respective sources.
 
             For example:

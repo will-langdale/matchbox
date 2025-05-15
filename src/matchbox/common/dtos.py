@@ -4,6 +4,7 @@ from enum import StrEnum
 from importlib.metadata import version
 from typing import Literal, TypeAlias
 
+import polars as pl
 from pydantic import BaseModel, Field
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
@@ -233,3 +234,106 @@ class NotFoundError(BaseModel):
 
     details: str
     entity: BackendRetrievableType
+
+
+class DataTypes(StrEnum):
+    """Enumeration of supported data types.
+
+    Uses polars datatypes as its backend.
+    """
+
+    # Boolean
+    BOOLEAN = "Boolean"
+
+    # Integers
+    INT8 = "Int8"
+    INT16 = "Int16"
+    INT32 = "Int32"
+    INT64 = "Int64"
+
+    # Unsigned integers
+    UINT8 = "UInt8"
+    UINT16 = "UInt16"
+    UINT32 = "UInt32"
+    UINT64 = "UInt64"
+
+    # Floating point
+    FLOAT32 = "Float32"
+    FLOAT64 = "Float64"
+
+    # Decimal
+    DECIMAL = "Decimal"
+
+    # String & Binary
+    STRING = "String"
+    BINARY = "Binary"
+
+    # Date & Time related
+    DATE = "Date"
+    TIME = "Time"
+    DATETIME = "Datetime"
+    DURATION = "Duration"
+
+    # Container types
+    ARRAY = "Array"
+    LIST = "List"
+
+    # Special types
+    OBJECT = "Object"
+    CATEGORICAL = "Categorical"
+    ENUM = "Enum"
+    STRUCT = "Struct"
+    NULL = "Null"
+
+    def to_dtype(self) -> pl.DataType:
+        """Convert enum value to actual polars dtype."""
+        # Map from enum values to actual polars datatypes
+        # We do this because polars datatypes are not directly serialisable in Pydantic
+        dtype_map = {
+            self.BOOLEAN: pl.Boolean,
+            self.INT8: pl.Int8,
+            self.INT16: pl.Int16,
+            self.INT32: pl.Int32,
+            self.INT64: pl.Int64,
+            self.UINT8: pl.UInt8,
+            self.UINT16: pl.UInt16,
+            self.UINT32: pl.UInt32,
+            self.UINT64: pl.UInt64,
+            self.FLOAT32: pl.Float32,
+            self.FLOAT64: pl.Float64,
+            self.DECIMAL: pl.Decimal,
+            self.STRING: pl.String,
+            self.BINARY: pl.Binary,
+            self.DATE: pl.Date,
+            self.TIME: pl.Time,
+            self.DATETIME: pl.Datetime,
+            self.DURATION: pl.Duration,
+            self.ARRAY: pl.Array,
+            self.LIST: pl.List,
+            self.OBJECT: pl.Object,
+            self.CATEGORICAL: pl.Categorical,
+            self.ENUM: pl.Enum,
+            self.STRUCT: pl.Struct,
+            self.NULL: pl.Null,
+        }
+        return dtype_map[self]
+
+    def to_pytype(self) -> type:
+        """Convert enum value to actual Python type."""
+        return self.to_dtype().to_python()
+
+    @classmethod
+    def from_dtype(cls, dtype: pl.DataType) -> "DataTypes":
+        """Get enum value from a polars dtype."""
+        # Find the name of the dtype class
+        dtype_name = dtype.__class__.__name__
+        # Find the matching enum value
+        for enum_val in cls:
+            if enum_val.value == dtype_name:
+                return enum_val
+        raise ValueError(f"No matching polars DataTypes for dtype: {dtype_name}")
+
+    @classmethod
+    def from_pytype(cls, pytype: type) -> "DataTypes":
+        """Get enum value from a Python type."""
+        return DataTypes.from_dtype(pl.DataType.from_python(pytype))

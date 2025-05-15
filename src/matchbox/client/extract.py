@@ -50,7 +50,7 @@ def key_field_map(
             )
         )
 
-        source_to_key_field[s.address.full_name] = s.key_field
+        source_to_key_field[s.address.full_name] = s.key_field.name
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]

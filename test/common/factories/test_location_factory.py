@@ -9,12 +9,13 @@ import pytest
 from faker import Faker
 from sqlalchemy import Engine
 
+from matchbox.common.dtos import DataTypes
 from matchbox.common.factories.locations import (
     RelationalDBTestkit,
     RelationalDBTestkitParameters,
     location_factory,
 )
-from matchbox.common.sources import RelationalDBLocation, SourceColumn
+from matchbox.common.sources import RelationalDBLocation, SourceField
 
 
 class TestRelationalDBTestkit:
@@ -53,19 +54,19 @@ class TestRelationalDBTestkit:
                 "single",
                 {
                     "table1": (
-                        SourceColumn(
+                        SourceField(
                             name="jobcode",
-                            type="TEXT",
+                            type=DataTypes.STRING,
                         ),
-                        SourceColumn(
+                        SourceField(
                             name="name",
-                            type="TEXT",
+                            type=DataTypes.STRING,
                         ),
                     ),
                     "table2": (
-                        SourceColumn(
+                        SourceField(
                             name="age",
-                            type="INTEGER",
+                            type=DataTypes.INT64,
                         ),
                     ),
                 },
@@ -78,7 +79,7 @@ class TestRelationalDBTestkit:
         self,
         sqlite_warehouse: Engine,
         table_strategy: Literal["single", "spread"],
-        table_mapping: dict[str, list[SourceColumn]] | None,
+        table_mapping: dict[str, list[SourceField]] | None,
         has_joins: bool,
     ) -> None:
         """Test to_et_and_location_writer with different table strategies."""
@@ -88,17 +89,17 @@ class TestRelationalDBTestkit:
 
         # Define feature configs with faker generators
         field_configs = (
-            SourceColumn(
+            SourceField(
                 name="jobcode",
-                type="TEXT",
+                type=DataTypes.STRING,
             ),
-            SourceColumn(
+            SourceField(
                 name="name",
-                type="TEXT",
+                type=DataTypes.STRING,
             ),
-            SourceColumn(
+            SourceField(
                 name="age",
-                type="INTEGER",
+                type=DataTypes.INT64,
             ),
         )
 
@@ -113,7 +114,7 @@ class TestRelationalDBTestkit:
         )
 
         sql, writer = location_testkit.to_et_and_location_writer(
-            key_field=SourceColumn(name="pk", type="TEXT"),
+            key_field=SourceField(name="pk", type=DataTypes.STRING),
             index_fields=field_configs,
             generator=faker,
         )
@@ -142,17 +143,17 @@ class TestRelationalDBTestkit:
 
         # Define field configs with faker generators
         field_configs = (
-            SourceColumn(
+            SourceField(
                 name="jobcode",
-                type="TEXT",
+                type=DataTypes.STRING,
             ),
-            SourceColumn(
+            SourceField(
                 name="name",
-                type="TEXT",
+                type=DataTypes.STRING,
             ),
-            SourceColumn(
+            SourceField(
                 name="age",
-                type="INTEGER",
+                type=DataTypes.INT64,
             ),
         )
 
@@ -173,7 +174,7 @@ class TestRelationalDBTestkit:
         # This should raise a ValueError due to incomplete mapping
         with pytest.raises(ValueError):
             location_testkit.to_et_and_location_writer(
-                key_field=SourceColumn(name="pk", type="TEXT"),
+                key_field=SourceField(name="pk", type="TEXT"),
                 index_fields=field_configs,
                 generator=faker,
             )
@@ -189,19 +190,19 @@ class TestRelationalDBTestkit:
                 "single",
                 {
                     "table1": (
-                        SourceColumn(
+                        SourceField(
                             name="jobcode",
-                            type="TEXT",
+                            type=DataTypes.STRING,
                         ),
-                        SourceColumn(
+                        SourceField(
                             name="name",
-                            type="TEXT",
+                            type=DataTypes.STRING,
                         ),
                     ),
                     "table2": (
-                        SourceColumn(
+                        SourceField(
                             name="age",
-                            type="INTEGER",
+                            type=DataTypes.INT64,
                         ),
                     ),
                 },
@@ -216,7 +217,7 @@ class TestRelationalDBTestkit:
         mock_to_sql: MagicMock,
         sqlite_warehouse: Engine,
         table_strategy: Literal["single", "spread"],
-        table_mapping: dict[str, list[SourceColumn]] | None,
+        table_mapping: dict[str, list[SourceField]] | None,
         expected_calls: int,
     ) -> None:
         """Test the writer function with different table strategies."""
@@ -226,17 +227,17 @@ class TestRelationalDBTestkit:
 
         # Define field configs with faker generators
         field_configs = (
-            SourceColumn(
+            SourceField(
                 name="jobcode",
-                type="TEXT",
+                type=DataTypes.STRING,
             ),
-            SourceColumn(
+            SourceField(
                 name="name",
-                type="TEXT",
+                type=DataTypes.STRING,
             ),
-            SourceColumn(
+            SourceField(
                 name="age",
-                type="INTEGER",
+                type=DataTypes.INT64,
             ),
         )
 
@@ -265,7 +266,7 @@ class TestRelationalDBTestkit:
         )
 
         _, writer = location_testkit.to_et_and_location_writer(
-            key_field=SourceColumn(name="pk", type="TEXT"),
+            key_field=SourceField(name="pk", type=DataTypes.STRING),
             index_fields=field_configs,
             generator=faker,
         )

@@ -18,7 +18,7 @@ from matchbox.common.sources import (
     LocationType,
     LocationTypeStr,
     RelationalDBLocation,
-    SourceColumn,
+    SourceField,
 )
 
 LocationTestkitParameters = Union["RelationalDBTestkitParameters"]
@@ -41,8 +41,8 @@ class LocationTestkit(ABC, BaseModel):
     @abstractmethod
     def to_et_and_location_writer(
         self,
-        key_field: SourceColumn,
-        index_fields: list[SourceColumn],
+        key_field: SourceField,
+        index_fields: list[SourceField],
         generator: Faker,
     ) -> tuple[str, Callable[[pa.Table, LocationType, Any], None]]:
         """Convert the configuration to an e/t string and location writer.
@@ -105,8 +105,8 @@ class RelationalDBTestkit(LocationTestkit):
 
     def to_et_and_location_writer(  # noqa: D102
         self,
-        key_field: SourceColumn,
-        index_fields: list[SourceColumn],
+        key_field: SourceField,
+        index_fields: list[SourceField],
         generator: Faker,
     ) -> tuple[str, Callable[[pa.Table, RelationalDBLocation, Engine], None]]:
         _to_location: Callable[[pa.Table, RelationalDBLocation, Engine], None]
