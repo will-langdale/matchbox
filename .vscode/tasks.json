@@ -1,12 +1,22 @@
 {
-    // See https://go.microsoft.com/fwlink/?LinkId=733558
-    // for the documentation about the tasks.json format
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "docker-run: debug",
+            "label": "docker compose up",
             "type": "shell",
-            "command": "docker compose --file docker-compose.debug.yml up"
+            "command": "docker compose --file docker-compose.debug.yml up",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "Application startup complete",
+                    "line": 1,
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Application startup complete",
+                    "endsPattern": "Application startup complete",
+                }
+            }
         }
     ]
 }
