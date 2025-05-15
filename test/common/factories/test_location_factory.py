@@ -17,29 +17,29 @@ from matchbox.common.factories.locations import (
 from matchbox.common.sources import RelationalDBLocation, SourceColumn
 
 
-class TestRelationalDBConfig:
-    """Tests for the RelationalDBConfig class."""
+class TestRelationalDBTestkit:
+    """Tests for the RelationalDBTestkit class."""
 
     def test_creation_and_validation(self, sqlite_warehouse: Engine) -> None:
-        """Test creating a RelationalDBConfig and validating its attributes."""
+        """Test creating a RelationalDBTestkit and validating its attributes."""
         uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBTestkit(uri=uri)
+        location_testkit = RelationalDBTestkit(uri=uri)
 
-        assert config.location_type == "rdbms"
-        assert str(config.uri) == uri
+        assert location_testkit.location_type == "rdbms"
+        assert str(location_testkit.uri) == uri
 
         # Test default options
-        assert config.location_options.table_strategy == "single"
-        assert config.location_options.table_mapping is None
+        assert location_testkit.location_options.table_strategy == "single"
+        assert location_testkit.location_options.table_mapping is None
 
     def test_to_location(self, sqlite_warehouse: Engine) -> None:
-        """Test converting a RelationalDBConfig to a RelationalDBLocation."""
+        """Test converting a RelationalDBTestkit to a RelationalDBLocation."""
         uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBTestkit(uri=uri)
+        location_testkit = RelationalDBTestkit(uri=uri)
 
-        location = config.to_location()
+        location = location_testkit.to_location()
 
         assert isinstance(location, RelationalDBLocation)
         assert str(location.uri) == uri
@@ -104,7 +104,7 @@ class TestRelationalDBConfig:
 
         uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBTestkit(
+        location_testkit = RelationalDBTestkit(
             uri=uri,
             location_options=RelationalDBTestkitParameters(
                 table_strategy=table_strategy,
@@ -112,7 +112,7 @@ class TestRelationalDBConfig:
             ),
         )
 
-        sql, writer = config.to_et_and_location_writer(
+        sql, writer = location_testkit.to_et_and_location_writer(
             key_field=SourceColumn(name="pk", type="TEXT"),
             index_fields=field_configs,
             generator=faker,
@@ -163,7 +163,7 @@ class TestRelationalDBConfig:
             "table1": [field_configs[0]],  # Only id
         }
 
-        config = RelationalDBTestkit(
+        location_testkit = RelationalDBTestkit(
             uri=uri,
             location_options=RelationalDBTestkitParameters(
                 table_mapping=incomplete_mapping,
@@ -172,7 +172,7 @@ class TestRelationalDBConfig:
 
         # This should raise a ValueError due to incomplete mapping
         with pytest.raises(ValueError):
-            config.to_et_and_location_writer(
+            location_testkit.to_et_and_location_writer(
                 key_field=SourceColumn(name="pk", type="TEXT"),
                 index_fields=field_configs,
                 generator=faker,
@@ -256,7 +256,7 @@ class TestRelationalDBConfig:
         mock_location = MagicMock(spec=RelationalDBLocation)
         mock_location.uri = str(sqlite_warehouse.url)
 
-        config = RelationalDBTestkit(
+        location_testkit = RelationalDBTestkit(
             uri=str(sqlite_warehouse.url),
             location_options=RelationalDBTestkitParameters(
                 table_strategy=table_strategy,
@@ -264,7 +264,7 @@ class TestRelationalDBConfig:
             ),
         )
 
-        _, writer = config.to_et_and_location_writer(
+        _, writer = location_testkit.to_et_and_location_writer(
             key_field=SourceColumn(name="pk", type="TEXT"),
             index_fields=field_configs,
             generator=faker,
@@ -288,31 +288,31 @@ class TestLocationFactory:
 
     def test_default_rdbms_location(self) -> None:
         """Test creating a default RDBMS location."""
-        location_config = location_factory(location_type="rdbms")
+        location_testkit = location_factory(location_type="rdbms")
 
-        assert isinstance(location_config, RelationalDBTestkit)
-        assert location_config.location_type == "rdbms"
-        assert str(location_config.uri) == "sqlite:///:memory:"
+        assert isinstance(location_testkit, RelationalDBTestkit)
+        assert location_testkit.location_type == "rdbms"
+        assert str(location_testkit.uri) == "sqlite:///:memory:"
 
         # Check default options
-        assert location_config.location_options.table_strategy == "single"
-        assert location_config.location_options.table_mapping is None
+        assert location_testkit.location_options.table_strategy == "single"
+        assert location_testkit.location_options.table_mapping is None
 
     def test_custom_rdbms_location(self, sqlite_warehouse: Engine) -> None:
         """Test creating a custom RDBMS location."""
         uri = str(sqlite_warehouse.url)
         location_options = RelationalDBTestkitParameters(table_strategy="spread")
 
-        location_config = location_factory(
+        location_testkit = location_factory(
             location_type="rdbms",
             location_options=location_options,
             uri=uri,
         )
 
-        assert isinstance(location_config, RelationalDBTestkit)
-        assert location_config.location_type == "rdbms"
-        assert str(location_config.uri) == uri
-        assert location_config.location_options.table_strategy == "spread"
+        assert isinstance(location_testkit, RelationalDBTestkit)
+        assert location_testkit.location_type == "rdbms"
+        assert str(location_testkit.uri) == uri
+        assert location_testkit.location_options.table_strategy == "spread"
 
     @pytest.mark.parametrize(
         ("location_type", "options", "exception_expected"),
@@ -340,8 +340,8 @@ class TestLocationFactory:
                     location_options=options,
                 )
         else:
-            config = location_factory(
+            location_testkit = location_factory(
                 location_type=location_type,
                 location_options=options,
             )
-            assert isinstance(config, RelationalDBTestkit)
+            assert isinstance(location_testkit, RelationalDBTestkit)
