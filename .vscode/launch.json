@@ -9,7 +9,7 @@
                 "host": "localhost",
                 "port": 5678
             },
-            "preLaunchTask": "docker-run: debug",
+            "preLaunchTask": "docker compose up",
             "pathMappings": [
                 {
                     "localRoot": "${workspaceFolder}",
