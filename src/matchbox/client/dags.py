@@ -138,7 +138,7 @@ class ModelStep(Step):
             selectors,
             return_type="pandas",
             threshold=step_input.threshold,
-            name=step_input.name,
+            resolution=step_input.name,
             only_indexed=True,
             batch_size=step_input.batch_size,
             return_batches=False,
