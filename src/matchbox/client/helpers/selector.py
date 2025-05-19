@@ -5,7 +5,7 @@ from typing import Any, Generator, Iterator, Literal, Self, get_args
 
 import polars as pl
 from polars import DataFrame as PolarsDataFrame
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from sqlalchemy import create_engine
 
 from matchbox.client import _handler
@@ -25,6 +25,16 @@ class Selector(BaseModel):
     source: SourceConfig
     fields: list[SourceField]
 
+    @property
+    def qualified_key(self) -> str:
+        """Get the qualified key name for the selected source."""
+        return self.source.qualified_key
+
+    @property
+    def qualified_fields(self: Self) -> list[str]:
+        """Get the qualified field names for the selected fields."""
+        return [self.source.qualify_field(field.name) for field in self.fields]
+
     @field_validator("source", mode="after")
     @classmethod
     def ensure_credentials(cls: type[Self], source: SourceConfig) -> SourceConfig:
@@ -33,15 +43,16 @@ class Selector(BaseModel):
             raise ValueError("Source credentials are not set")
         return source
 
-    @property
-    def qualified_identifier(self) -> str:
-        """Get the qualified identifier for the source."""
-        return self.source.name + "_" + self.source.identifier
-
-    @property
-    def qualified_fields(self) -> list[str]:
-        """Get the qualified fields for the source."""
-        return [self.source.name + "_" + field.name for field in self.fields]
+    @model_validator(mode="after")
+    def ensure_fields(self: Self) -> Self:
+        """Ensure that the fields are valid."""
+        allowed_fields = set((self.source.key_field,) + self.source.index_fields)
+        if set(self.fields) > allowed_fields:
+            raise ValueError(
+                "Selected fields are not valid for the source. "
+                f"Valid fields are: {allowed_fields}"
+            )
+        return self
 
     @classmethod
     def from_name_and_credentials(
@@ -58,13 +69,21 @@ class Selector(BaseModel):
             fields: A list of fields to select from the source
         """
         source = _handler.get_source_config(name=name)
-        selected_fields: list[SourceField] = []
+        allowed_fields = set((source.key_field,) + source.index_fields)
+        field_map = {f.name: f for f in allowed_fields}
+
+        # Handle field selection
         if fields:
-            for index_field in source.index_fields:
-                if index_field.name in fields:
-                    selected_fields.append(index_field)
+            invalid = set(fields) - field_map.keys()
+            if invalid:
+                raise ValueError(
+                    f"Invalid fields for source {name}: {', '.join(invalid)}. "
+                    f"Valid options: {', '.join(field_map.keys())}"
+                )
+            selected_fields = [field_map[f] for f in fields]
         else:
-            selected_fields = source.index_fields
+            selected_fields = list(source.index_fields)  # Must actively select key
+
         source.set_credentials(credentials=credentials)
         return cls(source=source, fields=selected_fields)
 
@@ -73,12 +92,12 @@ def select(
     *selection: SourceResolutionName | dict[SourceResolutionName, list[str]],
     credentials: Any | None = None,
 ) -> list[Selector]:
-    """From one engine, builds and verifies a list of selectors.
+    """From one set of credentials, builds and verifies a list of selectors.
 
-    Can we used on any number of sources as long as they share the same credentials.
+    Can be used on any number of sources as long as they share the same credentials.
 
     Args:
-        selection: The source relations to retrieve data from
+        selection: The source resolutions to retrieve data from
         credentials: The credentials to use for the source. Datatype will depend on
             the source's location type. For example, a RelationalDBLocation will require
             a SQLAlchemy engine. If not provided, will populate with a SQLAlchemy engine
@@ -148,8 +167,8 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=selector.qualified_identifier,
-        right_on="source_identifier",
+        left_on=selector.qualified_key,
+        right_on="key",
         how="inner",
     )
 
@@ -372,18 +391,18 @@ def query(
 
 
 def match(
-    *targets: list[SourceResolutionName],
+    *target: list[SourceResolutionName],
     source: SourceResolutionName,
-    identifier: str,
+    key: str,
     resolution: ResolutionName = DEFAULT_RESOLUTION,
     threshold: int | None = None,
 ) -> list[Match]:
     """Matches IDs against the selected backend.
 
     Args:
-        targets: A list of source resolutions to find identifiers in
-        source: The source resolution the provided identifier belongs to
-        identifier: The value to match from the source. Usually a primary key
+        target: A list of source resolutions to find keys in
+        source: The source resolution the provided key belongs to
+        key: The value to match from the source. Usually a primary key
         resolution (optional): The resolution to use to resolve matches against
             If not set, it will look for a default resolution.
         threshold (optional): The threshold to use for creating clusters.
@@ -397,19 +416,19 @@ def match(
             "datahub_companies",
             "hmrc_exporters",
             source="companies_house",
-            source_identifier="8534735",
+            key="8534735",
             resolution="last_linker",
         )
         ```
     """
     # Validate arguments
-    for name in targets + [source]:
+    for name in target + (source,):
         _ = _handler.get_source_config(name=name)
 
     return _handler.match(
-        targets=targets,
+        target=target,
         source=source,
-        identifier=identifier,
+        key=key,
         resolution=resolution,
         threshold=threshold,
     )

@@ -1,13 +1,12 @@
 """Classes and functions for working with data sources in Matchbox."""
 
-import json
+import re
 import textwrap
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
 from typing import (
-    Annotated,
     Any,
     Callable,
     Iterator,
@@ -26,9 +25,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    PlainSerializer,
-    PlainValidator,
-    WithJsonSchema,
     field_validator,
     model_validator,
 )
@@ -38,8 +34,8 @@ from sqlalchemy.exc import OperationalError
 from matchbox.common.db import (
     QueryReturnType,
     ReturnTypeStr,
-    fullname_to_prefix,
     sql_to_df,
+    strip_driver_from_uri,
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes, SourceResolutionName
@@ -49,9 +45,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.hash import (
     HASH_FUNC,
     HashMethod,
-    base64_to_hash,
     hash_rows,
-    hash_to_base64,
 )
 
 T = TypeVar("T")
@@ -107,7 +101,7 @@ class Location(ABC, BaseModel):
         if memo is None:
             memo = {}
 
-        obj_copy = Location(
+        obj_copy = type(self)(
             type=deepcopy(self.type, memo),
             uri=deepcopy(self.uri, memo),
         )
@@ -168,23 +162,6 @@ class Location(ABC, BaseModel):
         """
         ...
 
-    @classmethod
-    def create(cls, data: dict[str, Any]) -> "Location":
-        """Factory method to create the appropriate Location subclass.
-
-        Examples:
-            ```python
-            loc = Location.create({"type": "rdbms", "uri": "postgresql://..."})
-            isinstance(loc, RelationalDBLocation)  # True
-            ```
-        """
-        location_type = data["type"]
-
-        if location_type == "rdbms":
-            return RelationalDBLocation.model_validate(data)
-
-        raise ValueError(f"Unknown location type: {location_type}")
-
 
 class RelationalDBLocation(Location):
     """A location for a relational database."""
@@ -209,9 +186,7 @@ class RelationalDBLocation(Location):
             raise ValueError("Credentials should not be in the URI.")
         if value.query or value.fragment:
             raise ValueError("Query params and fragments should not be in the URI.")
-        if "+" in value.scheme:
-            raise ValueError("Driver should not be in the URI.")
-        return value
+        return strip_driver_from_uri(value)
 
     def _validate_engine(self, credentials: Engine) -> None:
         """Validate an engine matches the URI.
@@ -304,90 +279,6 @@ class SourceField(BaseModel):
     )
 
 
-def b64_bytes_validator(val: bytes | str) -> bytes:
-    """Ensure that a value is a base64 encoded string or bytes."""
-    if isinstance(val, bytes):
-        return val
-    elif isinstance(val, str):
-        return base64_to_hash(val)
-    raise ValueError(f"Value {val} could not be converted to bytes")
-
-
-SerialisableBytes = Annotated[
-    bytes,
-    PlainValidator(b64_bytes_validator),
-    PlainSerializer(lambda v: hash_to_base64(v)),
-    WithJsonSchema(
-        {"type": "string", "format": "base64", "description": "Base64 encoded bytes"}
-    ),
-]
-
-
-class SourceAddress(BaseModel):
-    """A unique identifier for a dataset in a warehouse."""
-
-    model_config = ConfigDict(frozen=True)
-
-    full_name: str
-    warehouse_hash: SerialisableBytes
-
-    def __str__(self) -> str:
-        """Convert to a string."""
-        return self.full_name + "@" + self.warehouse_hash_b64
-
-    @property
-    def pretty(self) -> str:
-        """Return a pretty representation of the address."""
-        return self.full_name + "@" + self.warehouse_hash_b64[:5] + "..."
-
-    @property
-    def warehouse_hash_b64(self) -> str:
-        """Return warehouse hash as a base64 encoded string."""
-        return hash_to_base64(self.warehouse_hash)
-
-    @classmethod
-    def compose(cls, engine: Engine, full_name: str) -> "SourceAddress":
-        """Generate a SourceAddress from a SQLAlchemy Engine and schema.table name."""
-        url = engine.url
-        components = {
-            "dialect": url.get_dialect().name,
-            "database": url.database or "",
-            "host": url.host or "",
-            "port": url.port or "",
-            "schema": getattr(url, "schema", "") or "",
-            "service_name": url.query.get("service_name", ""),
-        }
-
-        stable_str = json.dumps(components, sort_keys=True).encode()
-
-        hash = HASH_FUNC(stable_str).digest()
-        return SourceAddress(full_name=full_name, warehouse_hash=hash)
-
-    def format_field(self, field: str) -> str:
-        """Outputs a full SQLAlchemy field representation.
-
-        Args:
-            field: the name of the field
-
-        Returns:
-            A string representing the table name and field
-        """
-        return fullname_to_prefix(self.full_name) + field
-
-
-def needs_engine(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to check that engine is set."""
-
-    @wraps(func)
-    def wrapper(self: "SourceConfig", *args: P.args, **kwargs: P.kwargs) -> R:
-        if not self.engine:
-            raise MatchboxSourceCredentialsError
-
-        return func(self, *args, **kwargs)
-
-    return wrapper
-
-
 class SourceConfig(BaseModel):
     """Configuration of a source that can, or has been, indexed in the backend.
 
@@ -449,6 +340,32 @@ class SourceConfig(BaseModel):
         ),
     )
 
+    @property
+    def prefix(self) -> str:
+        """Get the prefix for the source."""
+        return self.name + "_"
+
+    @property
+    def qualified_key(self) -> str:
+        """Get the qualified key for the source."""
+        return self.qualify_field(self.key_field.name)
+
+    @property
+    def qualified_fields(self) -> list[str]:
+        """Get the qualified fields for the source."""
+        return [self.qualify_field(field.name) for field in self.index_fields]
+
+    def qualify_field(self, field: str) -> str:
+        """Qualify a field name with the source name.
+
+        Args:
+            field: The field name to qualify.
+
+        Returns:
+            The qualified field name.
+        """
+        return self.prefix + field
+
     def _detect_fields(
         self, location: Location, extract_transform: str, key_field: str | None = None
     ) -> tuple[SourceField, tuple[SourceField, ...]]:
@@ -485,6 +402,20 @@ class SourceConfig(BaseModel):
             )
 
         return key_field, tuple(index_fields)
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Ensure the name is a valid source resolution name.
+
+        Raises:
+            ValueError: If the name is not a valid source resolution name.
+        """
+        if not re.match(r"^[a-z0-9_]+$", value):
+            raise ValueError(
+                "Source resolution names must be alphanumeric and underscore only. "
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_key_field(self) -> Self:
@@ -603,7 +534,7 @@ class SourceConfig(BaseModel):
         if qualify_names:
 
             def _rename(c: str) -> str:
-                self.name + "_" + c
+                return self.name + "_" + c
 
         return self.location.execute(
             extract_transform=self.extract_transform,
@@ -684,9 +615,9 @@ class Match(BaseModel):
     """A match between primary keys in the Matchbox database."""
 
     cluster: int | None
-    source: SourceAddress
+    source: SourceResolutionName
     source_id: set[str] = Field(default_factory=set)
-    target: SourceAddress
+    target: SourceResolutionName
     target_id: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")

@@ -11,13 +11,14 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     NotFoundError,
     ResolutionName,
+    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.sources import SourceAddress, SourceConfig
+from matchbox.common.sources import SourceConfig
 from matchbox.server.api.dependencies import (
     BackendDependency,
     MetadataStoreDependency,
@@ -41,18 +42,16 @@ async def add_source(
 
 
 @router.get(
-    "/{warehouse_hash_b64}/{full_name}",
+    "/{name}",
     responses={404: {"model": NotFoundError}},
 )
 async def get_source_config(
     backend: BackendDependency,
-    warehouse_hash_b64: str,
-    full_name: str,
+    name: SourceResolutionName,
 ) -> SourceConfig:
     """Get a source from the backend."""
-    address = SourceAddress(full_name=full_name, warehouse_hash=warehouse_hash_b64)
     try:
-        return backend.get_source_config(address)
+        return backend.get_source_config(name=name)
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,

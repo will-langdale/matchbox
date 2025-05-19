@@ -1,85 +1,21 @@
 """Functions to index data sources to the Matchbox server."""
 
-from sqlalchemy import Engine
-
 from matchbox.client import _handler
-from matchbox.common.dtos import DataTypes, SourceResolutionName
-from matchbox.common.sources import SourceAddress, SourceConfig, SourceField
-
-
-def _process_fields(
-    fields: list[str] | list[dict[str, dict[str, str]]] | None,
-) -> tuple[SourceField]:
-    if fields is None:
-        return []
-
-    if isinstance(fields[0], str):
-        return (SourceField(name=field) for field in fields)
-
-    return (SourceField(name=field["name"], type=field["type"]) for field in fields)
+from matchbox.common.sources import SourceConfig
 
 
 def index(
-    full_name: str,
-    key_field: str,
-    engine: Engine,
-    name: SourceResolutionName | None = None,
-    index_fields: list[str] | list[dict[str, dict[str, str]]] | None = None,
+    source_config: SourceConfig,
     batch_size: int | None = None,
 ) -> None:
     """Indexes data in Matchbox.
 
     Args:
-        full_name: the full name of the source
-        key_field: the unique identifier of the entity the source config describes
-        engine: the engine to connect to a data warehouse
-        name: a custom resolution name
-            If missing, will use the default name for a `SourceConfig`
-        index_fields: the fields to index
+        source_config: A SourceConfig with credentials set
         batch_size: the size of each batch when fetching data from the warehouse,
             which helps reduce the load on the database. Default is None.
-
-    Examples:
-        ```python
-        index("mb.test_orig", "id", engine=engine)
-        ```
-        ```python
-        index("mb.test_cl2", "id", engine=engine, fields=["name", "age"])
-        ```
-        ```python
-        index(
-            "mb.test_cl2",
-            key_field={"name": "id", "type": "String"},
-            engine=engine,
-            index_fields=[
-                {"name": "name", "type": "String"},
-                {"name": "age", "type": "Int64"},
-            ],
-        )
-        ```
-        ```python
-        index("mb.test_orig", "id", engine=engine, batch_size=10_000)
-        ```
     """
-    index_fields = _process_fields(index_fields)
-
-    address = SourceAddress.compose(engine=engine, full_name=full_name)
-    if name:
-        source_config = SourceConfig(
-            address=address,
-            name=name,
-            index_fields=index_fields,
-            key_field=SourceField(name=key_field, type=DataTypes.STRING),
-        )
-    else:
-        source_config = SourceConfig(
-            address=address,
-            index_fields=index_fields,
-            key_field=SourceField(name=key_field, type=DataTypes.STRING),
-        )
-
-    source_config.set_engine(engine)
-    if not index_fields:
-        source_config = source_config.default_fields()
+    if not source_config.location.credentials:
+        raise ValueError("Source credentials are not set")
 
     _handler.index(source_config=source_config, batch_size=batch_size)

@@ -53,13 +53,13 @@ def test_key_field_map(
         return_value=Response(
             200,
             json=[
-                foo.source_config.model_dump(),
-                bar.source_config.model_dump(),
+                foo.source_config.model_dump(mode="json"),
+                bar.source_config.model_dump(mode="json"),
             ],
         )
     )
 
-    matchbox_api.get("/query", params={"full_name": "foo"}).mock(
+    matchbox_api.get("/query", params={"source": "foo"}).mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -75,7 +75,7 @@ def test_key_field_map(
         )
     )
 
-    matchbox_api.get("/query", params={"full_name": "bar"}).mock(
+    matchbox_api.get("/query", params={"source": "bar"}).mock(
         return_value=Response(
             200,
             content=table_to_buffer(
@@ -93,13 +93,15 @@ def test_key_field_map(
 
     # Case 0: no sources are found
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_field_map(resolution="companies", engine=create_engine("postgresql://"))
+        key_field_map(resolution="companies", uri_filter="postgresql://")
 
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_field_map(resolution="companies", full_names=["nonexistent"])
+        key_field_map(resolution="companies", uri_filter=["nonexistent"])
 
     # Case 1: apply engine filter, and retrieve single table
-    foo_mapping = key_field_map(resolution="companies", engine=sqlite_warehouse)
+    foo_mapping = key_field_map(
+        resolution="companies", uri_filter=str(sqlite_warehouse.url)
+    )
 
     assert_frame_equal(
         pl.from_arrow(foo_mapping),

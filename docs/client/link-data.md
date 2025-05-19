@@ -240,11 +240,11 @@ Link steps connect records between different sources.
             "left_id": "id",
             "right_id": "id",
             "comparisons": """
-                        l.hmrc_trade__exporters_company_name
-                            = r.hmrc_trade__importers_company_name
-                        and l.hmrc_trade__exporters_postcode
-                            = r.hmrc_trade__importers_postcode
-                    """,
+                l.hmrc_trade__exporters_company_name
+                    = r.hmrc_trade__importers_company_name
+                and l.hmrc_trade__exporters_postcode
+                    = r.hmrc_trade__importers_postcode
+            """,
         },
         truth=1.0,
     )
@@ -448,7 +448,7 @@ You can link across multiple sources in a single step:
                         r.hmrc_trade__exporters_postcode,
                         r.hmrc_trade__importers_postcode
                     )
-                """,
+            """,
         },
         truth=1.0,
     )

@@ -157,7 +157,7 @@ def query(
 
 
 def match(
-    targets: list[SourceResolutionName],
+    target: list[SourceResolutionName],
     source: SourceResolutionName,
     key: str,
     resolution: ResolutionName,
@@ -166,7 +166,7 @@ def match(
     """Match a source against a list of targets."""
     log_prefix = f"Query {source}"
     logger.debug(
-        f"{key} to {', '.join(targets)} using {resolution}",
+        f"{key} to {', '.join(target)} using {resolution}",
         prefix=log_prefix,
     )
 
@@ -174,7 +174,7 @@ def match(
         "/match",
         params=url_params(
             {
-                "targets": targets,
+                "target": target,
                 "source": source,
                 "key": key,
                 "resolution": resolution,
@@ -206,7 +206,7 @@ def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadS
     # Upload metadata
     logger.debug("Uploading metadata", prefix=log_prefix)
 
-    metadata_res = CLIENT.post("/sources", json=source_config.model_dump())
+    metadata_res = CLIENT.post("/sources", json=source_config.model_dump(mode="json"))
 
     upload = UploadStatus.model_validate(metadata_res.json())
 

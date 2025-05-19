@@ -129,10 +129,7 @@ class ModelStep(Step):
         Returns:
             Pandas dataframe with retrieved results.
         """
-        selectors = [
-            Selector(engine=s.engine, address=s.address, fields=f)
-            for s, f in step_input.select.items()
-        ]
+        selectors = [Selector(source=s, fields=f) for s, f in step_input.select.items()]
         return query(
             selectors,
             return_type="pandas",

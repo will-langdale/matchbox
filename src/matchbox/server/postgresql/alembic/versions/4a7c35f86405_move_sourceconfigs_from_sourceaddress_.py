@@ -96,12 +96,6 @@ def upgrade() -> None:
     op.drop_constraint(
         "unique_source_address", "source_configs", schema="mb", type_="unique"
     )
-    op.create_unique_constraint(
-        "unique_location_transform",
-        "source_configs",
-        ["location_type", "location_uri", "extract_transform"],
-        schema="mb",
-    )
 
     # Drop old columns
     op.drop_column("source_configs", "warehouse_hash", schema="mb")
@@ -167,10 +161,7 @@ def downgrade() -> None:
     op.alter_column("source_configs", "full_name", nullable=False, schema="mb")
     op.alter_column("source_configs", "warehouse_hash", nullable=False, schema="mb")
 
-    # Drop new constraint and create old one
-    op.drop_constraint(
-        "unique_location_transform", "source_configs", schema="mb", type_="unique"
-    )
+    # Recreate old unique constraint
     op.create_unique_constraint(
         "unique_source_address",
         "source_configs",

@@ -25,7 +25,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.sources import Location
 from matchbox.common.sources import SourceConfig as CommonSourceConfig
 from matchbox.common.sources import SourceField as CommonSourceField
 from matchbox.server.postgresql.db import MBDB
@@ -390,20 +389,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         viewonly=True,
     )
 
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint(
-            "location_type",
-            "location_uri",
-            "extract_transform",
-            name="unique_location_transform",
-        ),
-        CheckConstraint(
-            "location_type IN ('rdbms')",
-            name="location_type_constraints",
-        ),
-    )
-
     def __init__(
         self,
         key_field: SourceFields | None = None,
@@ -442,7 +427,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         return cls(
             resolution_id=resolution.resolution_id,
             location_type=source_config.location.type,
-            location_uri=source_config.location.uri,
+            location_uri=str(source_config.location.uri),
             extract_transform=source_config.extract_transform,
             key_field=SourceFields(
                 index=0,
@@ -463,12 +448,10 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         """Convert ORM source to a matchbox.common SourceConfig object."""
         return CommonSourceConfig(
             name=self.name,
-            location=Location.create(
-                data={
-                    "type": self.location_type,
-                    "uri": self.location_uri,
-                },
-            ),
+            location={
+                "type": self.location_type,
+                "uri": self.location_uri,
+            },
             extract_transform=self.extract_transform,
             key_field=CommonSourceField(
                 name=self.key_field.name, type=self.key_field.type

@@ -13,8 +13,8 @@ from matchbox.common.factories.sources import source_factory
 
 def test_step_input_validation(sqlite_warehouse: Engine):
     """Cannot select sources not available to a step."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
 
     i_foo = IndexStep(source_config=foo)
 
@@ -37,9 +37,9 @@ def test_step_input_validation(sqlite_warehouse: Engine):
 
 
 def test_model_step_validation(sqlite_warehouse: Engine):
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
-    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
+    baz = source_factory(name="baz", engine=sqlite_warehouse).source_config
 
     i_foo = IndexStep(source_config=foo)
     i_bar = IndexStep(source_config=bar)
@@ -75,21 +75,19 @@ def test_model_step_validation(sqlite_warehouse: Engine):
     )
 
     # Inherit from a source directly
-    assert d_foo.sources == {str(foo.address)}
+    assert d_foo.sources == {foo.name}
 
     # Inherit one source from a previous step
-    assert foo_bar.sources == {str(foo.address), str(bar.address)}
+    assert foo_bar.sources == {foo.name, bar.name}
 
     # Inherit multiple sources from a previous step
-    assert foo_bar_baz.sources == {str(foo.address), str(bar.address), str(baz.address)}
+    assert foo_bar_baz.sources == {foo.name, bar.name, baz.name}
 
 
 @patch("matchbox.client.dags._handler.index")
 def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     """Tests that an index step correctly calls the index handler."""
-    foo = source_factory(
-        full_name="foo", engine=sqlite_warehouse
-    ).source_config.set_engine(sqlite_warehouse)
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
 
     # Test with batch size
     batch_size = 100
@@ -135,9 +133,9 @@ def test_dedupe_step_run(
         model_mock.run = Mock(return_value=results_mock)
 
         # Set up and run deduper
-        foo = source_factory(
-            full_name="foo", engine=sqlite_warehouse
-        ).source_config.set_engine(sqlite_warehouse)
+        foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
+        foo_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        foo = foo_testkit.source_config
 
         i_foo = IndexStep(source_config=foo)
 
@@ -159,7 +157,7 @@ def test_dedupe_step_run(
 
         # Right data is queried
         query_mock.assert_called_once_with(
-            [Selector(engine=sqlite_warehouse, address=foo.address, fields=[])],
+            [Selector(source=foo, fields=[])],
             return_type="pandas",
             threshold=d_foo.left.threshold,
             resolution=d_foo.left.name,
@@ -214,13 +212,14 @@ def test_link_step_run(
 
         model_mock.run = Mock(return_value=results_mock)
 
-        # Set up and run deduper
-        foo = source_factory(
-            full_name="foo", engine=sqlite_warehouse
-        ).source_config.set_engine(sqlite_warehouse)
-        bar = source_factory(
-            full_name="bar", engine=sqlite_warehouse
-        ).source_config.set_engine(sqlite_warehouse)
+        # Set up and run linker
+        foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
+        foo_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        foo = foo_testkit.source_config
+
+        bar_testkit = source_factory(name="bar", engine=sqlite_warehouse)
+        bar_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        bar = bar_testkit.source_config
 
         i_foo = IndexStep(source_config=foo)
         i_bar = IndexStep(source_config=bar)
@@ -250,7 +249,7 @@ def test_link_step_run(
         # Right data is queried
         assert query_mock.call_count == 2
         assert query_mock.call_args_list[0] == call(
-            [Selector(engine=sqlite_warehouse, address=foo.address, fields=[])],
+            [Selector(source=foo, fields=[])],
             return_type="pandas",
             threshold=foo_bar.left.threshold,
             resolution=foo_bar.left.name,
@@ -259,7 +258,7 @@ def test_link_step_run(
             return_batches=False,
         )
         assert query_mock.call_args_list[1] == call(
-            [Selector(engine=sqlite_warehouse, address=bar.address, fields=[])],
+            [Selector(source=bar, fields=[])],
             return_type="pandas",
             threshold=foo_bar.right.threshold,
             resolution=foo_bar.right.name,
@@ -306,9 +305,9 @@ def test_dag_runs(
     dag = DAG()
 
     # Set up constituents
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
-    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
+    baz = source_factory(name="baz", engine=sqlite_warehouse).source_config
 
     # Structure: SourceConfigs can be added directly, with and without IndexStep
     i_foo = IndexStep(source_config=foo, batch_size=100)
@@ -316,11 +315,7 @@ def test_dag_runs(
 
     i_bar, i_baz = dag.add_sources(bar, baz, batch_size=200)
 
-    assert set(dag.nodes.keys()) == {
-        str(foo.address),
-        str(bar.address),
-        str(baz.address),
-    }
+    assert set(dag.nodes.keys()) == {foo.name, bar.name, baz.name}
 
     # Structure: IndexSteps can be deduped
     d_foo = DedupeStep(
@@ -372,9 +367,9 @@ def test_dag_runs(
 
     dag.add_steps(d_foo, foo_bar, foo_bar_baz)
     assert set(dag.nodes.keys()) == {
-        str(foo.address),
-        str(bar.address),
-        str(baz.address),
+        foo.name,
+        bar.name,
+        baz.name,
         d_foo.name,
         foo_bar.name,
         foo_bar_baz.name,
@@ -383,8 +378,8 @@ def test_dag_runs(
     # Prepare DAG
     dag.prepare()
     s_foo, s_bar, s_d_foo, s_foo_bar, s_foo_bar_baz = (
-        dag.sequence.index(str(foo.address)),
-        dag.sequence.index(str(bar.address)),
+        dag.sequence.index(foo.name),
+        dag.sequence.index(bar.name),
         dag.sequence.index(d_foo.name),
         dag.sequence.index(foo_bar.name),
         dag.sequence.index(foo_bar_baz.name),
@@ -459,7 +454,7 @@ def test_dag_runs(
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):
     """Steps cannot be added before their dependencies."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
 
     i_foo = IndexStep(source_config=foo)
 
@@ -479,8 +474,8 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
 
 def test_dag_name_clash(sqlite_warehouse: Engine):
     """Names across sources and steps must be unique."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
 
     i_foo = IndexStep(source_config=foo)
     i_bar = IndexStep(source_config=bar)
@@ -512,13 +507,13 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     # DAG is not modified by failed attempt
     assert dag.nodes["d_foo"] == d_foo
     # We didn't overwrite d_foo's dependencies
-    assert dag.graph["d_foo"] == [str(foo.address)]
+    assert dag.graph["d_foo"] == [foo.name]
 
 
 def test_dag_disconnected(sqlite_warehouse: Engine):
     """Nodes cannot be disconnected."""
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
 
     dag = DAG()
     _ = dag.add_sources(foo, bar)
@@ -532,9 +527,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
     # Set up a simple DAG
     dag = DAG()
 
-    foo = source_factory(full_name="foo", engine=sqlite_warehouse).source_config
-    bar = source_factory(full_name="bar", engine=sqlite_warehouse).source_config
-    baz = source_factory(full_name="baz", engine=sqlite_warehouse).source_config
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
+    baz = source_factory(name="baz", engine=sqlite_warehouse).source_config
 
     i_foo, i_bar, i_baz = dag.add_sources(foo, bar, baz)
 
@@ -584,9 +579,9 @@ def test_dag_draw(sqlite_warehouse: Engine):
 
     # Check that all nodes are present
     node_names = [
-        str(foo.address),
-        str(bar.address),
-        str(baz.address),
+        foo.name,
+        bar.name,
+        baz.name,
         d_foo.name,
         foo_bar.name,
         foo_bar_baz.name,
@@ -620,14 +615,12 @@ def test_dag_draw(sqlite_warehouse: Engine):
 
     # Check specific statuses: foo_bar done, d_foo working, others awaiting
     for line in status_lines:
-        if "foo_bar" in line and "foo_bar_baz" not in line:
+        name = line.split()[-1]
+        if name == "foo_bar":
             assert "✅" in line
-        elif "d_foo" in line:
+        elif name == "d_foo":
             assert "🔄" in line
-        elif any(
-            address in line
-            for address in [str(foo.address), str(bar.address), str(baz.address)]
-        ):
+        elif name in [foo.name, bar.name, baz.name]:
             assert "⏸️" in line
 
     # Test 3: Check that node names are still present with status indicators
@@ -638,7 +631,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         )
 
     # Test 4: Drawing with skipped nodes
-    skipped_nodes = [str(foo.address), d_foo.name]
+    skipped_nodes = [foo.name, d_foo.name]
     tree_str_with_skipped = dag.draw(
         start_time=start_time, doing=doing, skipped=skipped_nodes
     )
@@ -646,7 +639,8 @@ def test_dag_draw(sqlite_warehouse: Engine):
 
     # Check that skipped nodes have the skipped indicator
     for line in skipped_lines:
-        if any(skipped in line for skipped in skipped_nodes):
+        name = line.split()[-1]
+        if any(name == skipped for skipped in skipped_nodes):
             assert "⏭️" in line
 
     # Test all status indicators together

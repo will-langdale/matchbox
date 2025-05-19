@@ -16,10 +16,11 @@ from matchbox.common.dtos import (
     ModelConfig,
     ModelResolutionName,
     ResolutionName,
+    SourceResolutionName,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.logging import LogLevelType
-from matchbox.common.sources import Match, SourceAddress, SourceConfig
+from matchbox.common.sources import Match, SourceConfig
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -227,7 +228,7 @@ class MatchboxDBAdapter(ABC):
     @abstractmethod
     def query(
         self,
-        source: SourceAddress,
+        source: SourceResolutionName,
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
         limit: int = None,
@@ -235,7 +236,7 @@ class MatchboxDBAdapter(ABC):
         """Queries the database from an optional point of truth.
 
         Args:
-            source: the `SourceAddress` object identifying the source to query
+            source: the `SourceResolutionName` string identifying the source to query
             resolution (optional): the resolution to use for filtering results
                 If not specified, will use the source resolution for the queried source
             threshold (optional): the threshold to use for creating clusters
@@ -253,8 +254,8 @@ class MatchboxDBAdapter(ABC):
     def match(
         self,
         key: str,
-        source: SourceAddress,
-        targets: list[SourceAddress],
+        source: SourceResolutionName,
+        targets: list[SourceResolutionName],
         resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
@@ -262,8 +263,8 @@ class MatchboxDBAdapter(ABC):
 
         Args:
             key: The key to match from the source.
-            source: The address of the source.
-            targets: The addresses of the targets.
+            source: The name of the source resolution.
+            targets: The names of the target source resolutions.
             resolution: The name of the resolution to use for matching.
             threshold (optional): the threshold to use for creating clusters
                 If None, uses the resolutions' default threshold
@@ -286,11 +287,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_source_config(self, address: SourceAddress) -> SourceConfig:
-        """Get a source configuration from its address.
+    def get_source_config(self, name: SourceResolutionName) -> SourceConfig:
+        """Get a source configuration from its resolution name.
 
         Args:
-            address: The name address for the source
+            name: The name resolution name for the source
 
         Returns:
             A SourceConfig object

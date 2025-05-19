@@ -1,39 +1,32 @@
 """Functions to extract data out of the Matchbox server."""
 
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Engine
 
 from matchbox.client import _handler
 from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
-from matchbox.common.sources import SourceAddress, SourceConfig
-
-
-def _combined_colname(source: SourceConfig, col_name: str):
-    return source.address.full_name.replace(".", "_") + "_" + col_name
 
 
 def key_field_map(
     resolution: ModelResolutionName,
-    engine: Engine | None = None,
-    full_names: list[str] | None = None,
+    uri_filter: list[str] | str | None = None,
 ) -> ArrowTable:
-    """Return matchbox IDs to source key mapping, optionally filtering."""
+    """Return matchbox IDs to source key mapping, optionally filtering.
+
+    Args:
+        resolution: The resolution name to use for the query.
+        uri_filter: A substring or list of substrings to filter location URIs.
+    """
     # Get all sources in scope of the resolution
     sources = _handler.get_resolution_source_configs(name=resolution)
+    if uri_filter:
+        if isinstance(uri_filter, str):
+            uri_filter = [uri_filter]
 
-    if engine:
-        # Filter only sources compatible with engine
-        warehouse_hash_b64 = SourceAddress.compose(
-            full_name="", engine=engine
-        ).warehouse_hash_b64
-
+        # Filter sources by location URI
         sources = [
-            s for s in sources if s.address.warehouse_hash_b64 == warehouse_hash_b64
+            s for s in sources if any(sub in str(s.location.uri) for sub in uri_filter)
         ]
-
-    if full_names:
-        sources = [s for s in sources if s.address.full_name in full_names]
 
     if not sources:
         raise MatchboxSourceNotFoundError("No compatible source was found")
@@ -45,29 +38,21 @@ def key_field_map(
         # Get Matchbox IDs from backend
         source_mb_ids.append(
             _handler.query(
-                source=s.address,
+                source=s.name,
                 resolution=resolution,
             )
         )
 
-        source_to_key_field[s.address.full_name] = s.key_field.name
+        source_to_key_field[s.name] = s.key_field.name
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]
-    mapping = mapping.rename_columns(
-        {
-            "key": _combined_colname(
-                sources[0], source_to_key_field[sources[0].address.full_name]
-            )
-        }
-    )
+    mapping = mapping.rename_columns({"key": sources[0].qualified_key})
     if len(sources) > 1:
         for s, mb_ids in zip(sources[1:], source_mb_ids[1:], strict=True):
             mapping = mapping.join(
                 right_table=mb_ids, keys="id", join_type="full outer"
             )
-            mapping = mapping.rename_columns(
-                {"key": _combined_colname(s, source_to_key_field[s.address.full_name])}
-            )
+            mapping = mapping.rename_columns({"key": s.qualified_key})
 
     return mapping

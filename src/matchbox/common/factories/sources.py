@@ -15,6 +15,7 @@ from sqlglot import select
 from sqlglot.expressions import column
 
 from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.db import strip_credentials_from_uri, strip_driver_from_uri
 from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -96,8 +97,16 @@ def create_single_table_location_resources(
         data: pa.Table, location: RelationalDBLocation, credentials: Engine
     ) -> None:
         """Write all data to a single table."""
-        if str(credentials.url) != str(location.uri):
-            raise ValueError("The credentials provided do not match the location URI.")
+        stripped_creds = strip_credentials_from_uri(
+            strip_driver_from_uri(str(credentials.url))
+        )
+        stripped_location = strip_driver_from_uri(str(location.uri))
+        if stripped_creds != stripped_location:
+            raise ValueError(
+                "The credentials provided do not match the location URI."
+                f"\nCredentials: {stripped_creds}"
+                f"\nLocation: {stripped_location}"
+            )
 
         df = data.to_pandas()
 
@@ -254,7 +263,7 @@ class LinkedSourcesTestkit(BaseModel):
     def diff_results(
         self,
         probabilities: pa.Table,
-        sources: list[str],
+        sources: list[SourceResolutionName],
         left_clusters: tuple[ClusterEntity, ...],
         right_clusters: tuple[ClusterEntity, ...] | None = None,
         threshold: int | float = 0,
@@ -287,6 +296,21 @@ class LinkedSourcesTestkit(BaseModel):
                 threshold=threshold,
             ),
         )
+
+    def write_to_location(
+        self, credentials: Any, set_credentials: bool = False
+    ) -> None:
+        """Write the data to the SourceConfig's location.
+
+        Credentials aren't set in testkits, so they must be provided here.
+
+        Args:
+            credentials: Credentials to use for the location.
+            set_credentials: Whether to set the credentials on the SourceConfig.
+                Offered here for convenience as it's often the next step.
+        """
+        for source in self.sources.values():
+            source.write_to_location(credentials, set_credentials)
 
 
 def generate_rows(
@@ -589,7 +613,9 @@ def source_factory(
     )
 
     # Create location, extract transform logic, and location writer function
-    location = RelationalDBLocation(uri=str(engine.url))
+    location = RelationalDBLocation(
+        uri=str(engine.url._replace(username=None, password=None))
+    )
     extract_transform, location_writer = create_single_table_location_resources(
         key_field=key_field,
         index_fields=index_fields,
@@ -658,7 +684,9 @@ def source_from_tuple(
     )
 
     # Create location, extract transform logic, and location writer function
-    location = RelationalDBLocation(uri=str(engine.url))
+    location = RelationalDBLocation(
+        uri=str(engine.url._replace(username=None, password=None))
+    )
     extract_transform, location_writer = create_single_table_location_resources(
         key_field=key_field,
         index_fields=index_fields,
@@ -874,7 +902,9 @@ def linked_sources_factory(
         )
 
         # Create location, extract transform logic, and location writer function
-        location = RelationalDBLocation(uri=str(parameters.engine.url))
+        location = RelationalDBLocation(
+            uri=str(parameters.engine.url._replace(username=None, password=None))
+        )
         extract_transform, location_writer = create_single_table_location_resources(
             key_field=key_field,
             index_fields=index_fields,

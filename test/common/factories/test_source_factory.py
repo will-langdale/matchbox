@@ -137,7 +137,7 @@ def test_source_testkit_to_mock():
     ]
 
     source_testkit = source_factory(
-        features=features, name="test.config", n_true_entities=2, seed=42
+        features=features, name="test_config", n_true_entities=2, seed=42
     )
 
     # Create the mock

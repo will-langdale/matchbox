@@ -11,6 +11,7 @@ from sqlglot import select
 from sqlglot.errors import ParseError
 
 from matchbox.client.helpers.selector import Match
+from matchbox.common.db import strip_driver_from_uri
 from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import (
     MatchboxSourceCredentialsError,
@@ -18,25 +19,12 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.sources import (
-    Location,
     RelationalDBLocation,
-    SourceAddress,
     SourceConfig,
     SourceField,
 )
 
 # Locations
-
-
-def test_location_factory():
-    """Test we can construct appropriate Location classes from raw data."""
-    location = Location.create(
-        {
-            "type": "rdbms",
-            "uri": "postgresql://host:1234/db2",
-        }
-    )
-    assert isinstance(location, RelationalDBLocation)
 
 
 def test_location_empty_credentials_error():
@@ -46,14 +34,6 @@ def test_location_empty_credentials_error():
     # Attempting to connect without credentials should raise an error
     with pytest.raises(MatchboxSourceCredentialsError):
         location.connect()
-
-    # Invalid location type
-    with pytest.raises(ValueError, match="Unknown location type"):
-        Location.create({"type": "unknown", "uri": "http://example.com"})
-
-    # Missing required index_fields
-    with pytest.raises(ValueError):
-        Location.create({"type": "rdbms"})
 
 
 def test_location_serialisation():
@@ -91,7 +71,7 @@ def test_relational_db_location_instantiation():
         ),
         pytest.param(
             "postgresql+psycopg://localhost:5432/testdb",
-            False,
+            True,
             id="driver-in-uri",
         ),
         pytest.param("sqlite:///test.db?mode=ro", False, id="invalid-query-params"),
@@ -102,7 +82,7 @@ def test_relational_db_location_uri_validation(uri_str: str, should_pass: bool):
     """Test URI validation in RelationalDBLocation."""
     if should_pass:
         location = RelationalDBLocation(uri=uri_str)
-        assert str(location.uri) == uri_str
+        assert location.uri == strip_driver_from_uri(uri_str)
     else:
         with pytest.raises(ValueError):
             RelationalDBLocation(uri=AnyUrl(uri_str))
@@ -774,9 +754,9 @@ def test_match_validates():
     """Match objects are validated when they're instantiated."""
     Match(
         cluster=1,
-        source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
+        source="test.source_config",
         source_id={"a"},
-        target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
+        target="test.target",
         target_id={"b"},
     )
 
@@ -784,17 +764,17 @@ def test_match_validates():
     with pytest.raises(ValueError):
         Match(
             cluster=1,
-            source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
-            target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
+            source="test.source_config",
+            target="test.target",
             target_id={"b"},
         )
 
     # Missing cluster with target_id
     with pytest.raises(ValueError):
         Match(
-            source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
+            source="test.source_config",
             source_id={"a"},
-            target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
+            target="test.target",
             target_id={"b"},
         )
 
@@ -802,6 +782,6 @@ def test_match_validates():
     with pytest.raises(ValueError):
         Match(
             cluster=1,
-            source=SourceAddress(full_name="test.source_config", warehouse_hash=b"bar"),
-            target=SourceAddress(full_name="test.target", warehouse_hash=b"bar"),
+            source="test.source_config",
+            target="test.target",
         )
