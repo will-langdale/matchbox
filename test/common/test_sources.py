@@ -457,23 +457,17 @@ def test_source_field_detection_from_location(sqlite_warehouse: Engine):
 def test_source_set_credentials(sqlite_warehouse: Engine):
     """Test that credentials can be set on the Location via SourceConfig."""
     # Create a location without credentials
-    location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
-    assert location.credentials is None
-
-    # Create a source with this location
-    source = SourceConfig(
-        location=location,
-        name="test_source",
-        extract_transform="SELECT key, name FROM users",
-        key_field=SourceField(name="key", type=DataTypes.STRING),
-        index_fields=(SourceField(name="name", type=DataTypes.STRING),),
+    source_testkit = source_factory(name="test_source", engine=sqlite_warehouse)
+    source_testkit.write_to_location(
+        credentials=sqlite_warehouse, set_credentials=False
     )
+    assert source_testkit.source_config.location.credentials is None
 
     # Set credentials through the source
-    source.set_credentials(sqlite_warehouse)
+    source_testkit.source_config.set_credentials(sqlite_warehouse)
 
     # Verify credentials are set on the location
-    assert source.location.credentials == sqlite_warehouse
+    assert source_testkit.source_config.location.credentials == sqlite_warehouse
 
 
 def test_source_query(sqlite_warehouse: Engine):

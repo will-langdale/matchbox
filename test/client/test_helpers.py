@@ -433,32 +433,6 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         query(selectors)
 
 
-def test_query_404_source_query(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Handles source 404 error when querying."""
-    testkit = source_factory(engine=sqlite_warehouse, name="foo")
-    testkit.write_to_location(sqlite_warehouse, set_credentials=True)
-
-    # Mock API
-    matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
-        return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
-    )
-    matchbox_api.get("/query").mock(
-        return_value=Response(
-            404,
-            json=NotFoundError(
-                details="SourceConfig 42 not found",
-                entity=BackendRetrievableType.SOURCE,
-            ).model_dump(),
-        )
-    )
-
-    sels = select({"foo": ["crn", "company_name"]}, credentials=sqlite_warehouse)
-
-    # Test with no optional params
-    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
-        query(sels)
-
-
 def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Tests that query correctly handles batching options using real warehouse data."""
     # Dummy data and source

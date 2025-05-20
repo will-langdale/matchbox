@@ -419,7 +419,7 @@ class SourceConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_key_field(self) -> Self:
-        """Ensure that the key field is a string."""
+        """Ensure that the key field is a string and not in the index fields."""
         if self.key_field in self.index_fields:
             raise ValueError("Key field must not be in the index fields. ")
 
@@ -505,6 +505,7 @@ class SourceConfig(BaseModel):
             credentials: The credentials to set.
         """
         self.location.add_credentials(credentials)
+        self.validate_location_et_fields()
 
     def query(
         self,

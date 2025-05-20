@@ -98,7 +98,7 @@ def test_key_field_map(
     with pytest.raises(MatchboxSourceNotFoundError):
         key_field_map(resolution="companies", uri_filter=["nonexistent"])
 
-    # Case 1: apply engine filter, and retrieve single table
+    # Case 1: apply URI filter, and retrieve single table
     foo_mapping = key_field_map(
         resolution="companies", uri_filter=str(sqlite_warehouse.url)
     )
@@ -112,6 +112,18 @@ def test_key_field_map(
 
     # Case 2: without engine filter, and retrieve multiple tables
     foo_bar_mapping = key_field_map(resolution="companies")
+
+    assert_frame_equal(
+        pl.from_arrow(foo_bar_mapping),
+        expected_foo_bar_mapping,
+        check_row_order=False,
+        check_column_order=False,
+    )
+
+    # Case 3: apply source filter, and retrieve multiple tables
+    foo_bar_mapping = key_field_map(
+        resolution="companies", source_filter=["foo", "bar"]
+    )
 
     assert_frame_equal(
         pl.from_arrow(foo_bar_mapping),
