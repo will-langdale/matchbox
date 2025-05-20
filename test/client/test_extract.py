@@ -110,7 +110,7 @@ def test_key_field_map(
         check_column_order=False,
     )
 
-    # Case 2: without engine filter, and retrieve multiple tables
+    # Case 2: without URI filter, and retrieve multiple tables
     foo_bar_mapping = key_field_map(resolution="companies")
 
     assert_frame_equal(

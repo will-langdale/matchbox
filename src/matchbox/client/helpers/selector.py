@@ -69,17 +69,10 @@ class Selector(BaseModel):
             fields: A list of fields to select from the source
         """
         source = _handler.get_source_config(name=name)
-        allowed_fields = set((source.key_field,) + source.index_fields)
-        field_map = {f.name: f for f in allowed_fields}
+        field_map = {f.name: f for f in set((source.key_field,) + source.index_fields)}
 
         # Handle field selection
         if fields:
-            invalid = set(fields) - field_map.keys()
-            if invalid:
-                raise ValueError(
-                    f"Invalid fields for source {name}: {', '.join(invalid)}. "
-                    f"Valid options: {', '.join(field_map.keys())}"
-                )
             selected_fields = [field_map[f] for f in fields]
         else:
             selected_fields = list(source.index_fields)  # Must actively select key

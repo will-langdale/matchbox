@@ -96,7 +96,7 @@ The `key_field` is the field in your source that contains some unique code that 
 
 Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
 
-- A `location`, which is a subclass of [`Location`][matchbox.common.sources.Location]. This will need a `type`, a `uri`, and `credentials`, the type of which changes depending on the type of location you're using
+- A `location`, such as [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation]. This will need a `type`, a `uri`, and `credentials`, the type of which changes depending on the type of location you're using
     - For most users [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation] and its `.from_engine()` constructor is all you need
     - For a relational database, a SQLAlchemy engine is your credentials
 - An `extract_transform` string, which will take data from the location and transform it into your key and index fields. Its syntax will depend on the type of location

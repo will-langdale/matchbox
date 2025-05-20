@@ -708,9 +708,7 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
     """The client can handle a resolution not found error."""
     # Set up mocks
     source_testkit = source_factory(engine=sqlite_warehouse, name="source")
-    source_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
-    target_testkit = source_factory(engine=sqlite_warehouse, name="target1")
-    target_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    target_testkit = source_factory(engine=sqlite_warehouse, name="target")
 
     matchbox_api.get("/match").mock(
         return_value=Response(
@@ -735,7 +733,7 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
     # Use match function
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         match(
-            "target1",
+            "target",
             source="source",
             key="pk1",
             resolution="foo",
@@ -744,10 +742,7 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
 
 def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a source not found error."""
-    source_testkit = source_factory(engine=sqlite_warehouse, name="source")
-    source_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
     target_testkit = source_factory(engine=sqlite_warehouse, name="target")
-    target_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
 
     matchbox_api.get("/sources/source").mock(
         return_value=Response(
