@@ -34,8 +34,8 @@ from sqlalchemy.exc import OperationalError
 from matchbox.common.db import (
     QueryReturnType,
     ReturnTypeStr,
+    clean_uri,
     sql_to_df,
-    strip_driver_from_uri,
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes, SourceResolutionName
@@ -182,11 +182,7 @@ class RelationalDBLocation(Location):
     @classmethod
     def validate_uri(cls, value: AnyUrl) -> AnyUrl:
         """Ensure no credentials, query params, or fragments are in the URI."""
-        if value.username or value.password:
-            raise ValueError("Credentials should not be in the URI.")
-        if value.query or value.fragment:
-            raise ValueError("Query params and fragments should not be in the URI.")
-        return strip_driver_from_uri(value)
+        return clean_uri(value)
 
     def _validate_engine(self, credentials: Engine) -> None:
         """Validate an engine matches the URI.
@@ -194,12 +190,11 @@ class RelationalDBLocation(Location):
         Raises:
             ValueError: If the Engine and URI do not match.
         """
-        uri = AnyUrl(str(credentials.url))
-        scheme_without_driver = uri.scheme.split("+")[0]
+        uri = clean_uri(str(credentials.url))
 
         if any(
             [
-                scheme_without_driver != self.uri.scheme,
+                uri.scheme != self.uri.scheme,
                 uri.host != self.uri.host,
                 uri.port != self.uri.port,
                 uri.path != self.uri.path,
@@ -207,7 +202,7 @@ class RelationalDBLocation(Location):
         ):
             raise ValueError(
                 "The Engine location URI does not match the location model URI. \n"
-                f"Scheme: {scheme_without_driver}, {self.uri.scheme} \n"
+                f"Scheme: {uri.scheme}, {self.uri.scheme} \n"
                 f"Host: {uri.host}, {self.uri.host} \n"
                 f"Port: {uri.port}, {self.uri.port} \n"
                 f"Path: {uri.path}, {self.uri.path} \n"
@@ -367,41 +362,23 @@ class SourceConfig(BaseModel):
         return self.prefix + field
 
     def _detect_fields(
-        self, location: Location, extract_transform: str, key_field: str | None = None
-    ) -> tuple[SourceField, tuple[SourceField, ...]]:
+        self, location: Location, extract_transform: str
+    ) -> tuple[SourceField, ...]:
         """A helper method to detect the fields from the extract/transform logic.
 
-        Return a tuple of the key_field, and the index fields, as SourceFields.
+        Return all detected fields as SourceFields.
         """
-        id = key_field or "id"
         df: pl.DataFrame = next(
             location.execute(extract_transform=extract_transform, batch_size=100)
         )
 
-        key_field: SourceField
-        index_fields: list[SourceField] = []
-
-        for col in df.iter_columns():
-            if col.name == id:
-                key_field = SourceField(
-                    name=col.name,
-                    type=DataTypes.STRING,
-                )
-            else:
-                index_fields.append(
-                    SourceField(
-                        name=col.name,
-                        type=DataTypes.from_dtype(col.dtype),
-                    )
-                )
-
-        if not key_field:
-            raise ValueError(
-                "No key field found in the extract/transform logic. "
-                "Please set the key field manually."
+        return tuple(
+            SourceField(
+                name=col.name,
+                type=DataTypes.from_dtype(col.dtype),
             )
-
-        return key_field, tuple(index_fields)
+            for col in df.iter_columns()
+        )
 
     @field_validator("name", mode="after")
     @classmethod
@@ -435,23 +412,18 @@ class SourceConfig(BaseModel):
             # We can't validate
             return self
 
-        key_field, index_fields = self._detect_fields(
-            location=self.location,
-            extract_transform=self.extract_transform,
-            key_field=self.key_field.name,
+        fields = self._detect_fields(
+            location=self.location, extract_transform=self.extract_transform
         )
 
-        if (set(self.index_fields) != set(index_fields)) or (
-            self.key_field != key_field
-        ):
+        if set(self.index_fields + (self.key_field,)) != set(fields):
             raise ValueError(
                 "The index fields or key field do not match the "
                 "extract/transform logic. "
                 "Please check the index fields, key field and logic. \n"
                 f"Declared index fields: {self.index_fields} \n"
-                f"Index fields from logic: {index_fields} \n"
                 f"Declared key field: {self.key_field} \n"
-                f"Key field from logic: {key_field} \n"
+                f"Fields from logic: {tuple(fields)} \n"
             )
 
         return self
@@ -475,13 +447,23 @@ class SourceConfig(BaseModel):
         Returns:
             A SourceConfig object with the location set.
         """
-        et_hash = HASH_FUNC(extract_transform.encode("utf-8")).hexdigest()[:6]
-        key_field, index_fields = cls._detect_fields(
+        # Detect fields
+        fields: tuple[SourceField, ...] = cls._detect_fields(
             cls,
             location=location,
             extract_transform=extract_transform,
-            key_field="id",
         )
+        index_fields: tuple[SourceField] = tuple(
+            field for field in fields if field.name != "id"
+        )
+        if len(index_fields) != len(fields) - 1:
+            raise ValueError(
+                "The extract/transform logic must return a column "
+                "aliased as 'id' to be used as the key field."
+            )
+
+        # Create name
+        et_hash = HASH_FUNC(extract_transform.encode("utf-8")).hexdigest()[:6]
         default_name: str | None = (
             location.uri.host or Path(location.uri.path).stem or None
         )
@@ -490,11 +472,12 @@ class SourceConfig(BaseModel):
                 "Could not detect a default name for the source. "
                 "Please create the source manually."
             )
+
         return cls(
             name=default_name + "_" + et_hash,
             location=location,
             extract_transform=extract_transform,
-            key_field=key_field,
+            key_field=SourceField(name="id", type=DataTypes.STRING),
             index_fields=index_fields,
         )
 

@@ -11,7 +11,6 @@ from sqlglot import select
 from sqlglot.errors import ParseError
 
 from matchbox.client.helpers.selector import Match
-from matchbox.common.db import strip_driver_from_uri
 from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import (
     MatchboxSourceCredentialsError,
@@ -60,32 +59,39 @@ def test_relational_db_location_instantiation():
 
 
 @pytest.mark.parametrize(
-    ["uri_str", "should_pass"],
+    ["uri", "expected"],
     [
-        pytest.param("sqlite:///test.db", True, id="valid-sqlite"),
-        pytest.param("postgresql://localhost:5432/testdb", True, id="valid-postgres"),
+        pytest.param("sqlite:///test.db", "sqlite:///test.db", id="valid-sqlite"),
+        pytest.param(
+            "postgresql://localhost:5432/testdb",
+            "postgresql://localhost:5432/testdb",
+            id="valid-postgres",
+        ),
         pytest.param(
             "postgresql://user:pass@localhost:5432/testdb",
-            False,
-            id="invalid-credentials-in-uri",
+            "postgresql://localhost:5432/testdb",
+            id="credentials-in-uri",
         ),
         pytest.param(
             "postgresql+psycopg://localhost:5432/testdb",
-            True,
+            "postgresql://localhost:5432/testdb",
             id="driver-in-uri",
         ),
-        pytest.param("sqlite:///test.db?mode=ro", False, id="invalid-query-params"),
-        pytest.param("sqlite:///test.db#fragment", False, id="invalid-fragment"),
+        pytest.param(
+            "sqlite:///test.db?mode=ro", "sqlite:///test.db", id="query-params"
+        ),
+        pytest.param("sqlite:///test.db#fragment", "sqlite:///test.db", id="fragment"),
+        pytest.param(
+            "sqlite:///var/folders/14/6nvsrw1n2ls1xncz_bvy2x8m0000gq/T/db.sqlite",
+            "sqlite:///var/folders/14/6nvsrw1n2ls1xncz_bvy2x8m0000gq/T/db.sqlite",
+            id="no-hostname",
+        ),
     ],
 )
-def test_relational_db_location_uri_validation(uri_str: str, should_pass: bool):
+def test_relational_db_location_uri_clean(uri: str, expected: str):
     """Test URI validation in RelationalDBLocation."""
-    if should_pass:
-        location = RelationalDBLocation(uri=uri_str)
-        assert location.uri == strip_driver_from_uri(uri_str)
-    else:
-        with pytest.raises(ValueError):
-            RelationalDBLocation(uri=AnyUrl(uri_str))
+    location = RelationalDBLocation(uri=uri)
+    assert location.uri == AnyUrl(expected)
 
 
 def test_relational_db_add_credentials(sqlite_warehouse: Engine):

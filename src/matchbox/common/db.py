@@ -185,52 +185,57 @@ def validate_sql_for_data_extraction(sql: str) -> bool:
     return True
 
 
-def strip_driver_from_uri(uri: str | AnyUrl) -> AnyUrl:
-    """Strip the driver component from a database URI.
+def clean_uri(
+    uri: str | AnyUrl,
+    strip_driver: bool = True,
+    strip_credentials: bool = True,
+    strip_query_fragment: bool = True,
+) -> AnyUrl:
+    """Clean a database URI.
+
+    Optionally removes driver, credentials, and/or query/fragment components.
 
     Args:
         uri: A database URI as a string or AnyUrl object
+        strip_driver: Whether to strip the driver component
+            (e.g., 'postgresql+psycopg2' -> 'postgresql')
+        strip_credentials: Whether to strip username and password components
+        strip_query_fragment: Whether to strip query and fragment components
 
     Returns:
-        An AnyUrl object with the driver component removed
+        An AnyUrl object with the specified components removed
     """
     if isinstance(uri, str):
         uri = AnyUrl(uri)
 
-    if "+" in uri.scheme:
-        base_scheme = uri.scheme.split("+")[0]
-        uri_str = str(uri)
-        new_uri_str = uri_str.replace(uri.scheme, base_scheme, 1)
-        uri = AnyUrl(new_uri_str)
+    # Strip driver if requested
+    scheme = uri.scheme
+    if strip_driver and "+" in scheme:
+        scheme = scheme.split("+")[0]
 
-    return uri
+    # Build netloc (username:password@host:port)
+    netloc = ""
+    if not strip_credentials and (uri.username or uri.password):
+        auth = uri.username or ""
+        if uri.password:
+            auth += f":{uri.password}"
+        netloc += f"{auth}@"
 
+    if uri.host:
+        netloc += uri.host
+        if uri.port:
+            netloc += f":{uri.port}"
 
-def strip_credentials_from_uri(uri: str | AnyUrl) -> AnyUrl:
-    """Strip the username and password components from a database URI.
+    # Build path
+    path = uri.path or ""
 
-    Args:
-        uri: A database URI as a string or AnyUrl object
+    # Build query and fragment
+    query = "" if strip_query_fragment else (f"?{uri.query}" if uri.query else "")
+    fragment = (
+        "" if strip_query_fragment else (f"#{uri.fragment}" if uri.fragment else "")
+    )
 
-    Returns:
-        An AnyUrl object with the username and password components removed
-    """
-    if isinstance(uri, str):
-        uri = AnyUrl(uri)
+    # Construct the URI
+    new_uri = f"{scheme}://{netloc}{path}{query}{fragment}"
 
-    if uri.username or uri.password:
-        scheme = uri.scheme
-        host = uri.host
-        port = f":{uri.port}" if uri.port else ""
-        path = uri.path or ""
-
-        new_uri_str = f"{scheme}://{host}{port}{path}"
-
-        if uri.query:
-            new_uri_str += f"?{uri.query}"
-        if uri.fragment:
-            new_uri_str += f"#{uri.fragment}"
-
-        uri = AnyUrl(new_uri_str)
-
-    return uri
+    return AnyUrl(new_uri)

@@ -7,15 +7,15 @@ from typing import Any, Callable, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 from faker import Faker
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, create_engine
-from sqlglot import select
+from sqlglot import cast, select
 from sqlglot.expressions import column
 
 from matchbox.common.arrow import SCHEMA_INDEX
-from matchbox.common.db import strip_credentials_from_uri, strip_driver_from_uri
 from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -29,7 +29,6 @@ from matchbox.common.factories.entities import (
 )
 from matchbox.common.hash import hash_values
 from matchbox.common.sources import (
-    Location,
     RelationalDBLocation,
     SourceConfig,
     SourceField,
@@ -69,57 +68,6 @@ def make_features_hashable(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-def create_single_table_location_resources(
-    key_field: SourceField,
-    index_fields: list[SourceField],
-    table_name: str,
-) -> tuple[str, Callable[[pa.Table, RelationalDBLocation, Engine], None]]:
-    """Create SQL and writer function for a single table.
-
-    A helper function to generate SQL and a writer for a RelationalDBLocation.
-    All fields are written to a single table with the specified name.
-
-    Args:
-        key_field: The identifier field (typically 'pk').
-        index_fields: List of SourceField objects to use as index fields.
-        table_name: Name of the table to create.
-
-    Returns:
-        A tuple containing:
-        - SQL query string to retrieve data from the single table
-        - Writer function that takes a PyArrow table, location, and credentials
-    """
-    all_field_names = [key_field.name] + [field.name for field in index_fields]
-
-    sql = select(*[column(name) for name in all_field_names]).from_(table_name).sql()
-
-    def _write_single_table(
-        data: pa.Table, location: RelationalDBLocation, credentials: Engine
-    ) -> None:
-        """Write all data to a single table."""
-        stripped_creds = strip_credentials_from_uri(
-            strip_driver_from_uri(str(credentials.url))
-        )
-        stripped_location = strip_driver_from_uri(str(location.uri))
-        if stripped_creds != stripped_location:
-            raise ValueError(
-                "The credentials provided do not match the location URI."
-                f"\nCredentials: {stripped_creds}"
-                f"\nLocation: {stripped_location}"
-            )
-
-        df = data.to_pandas()
-
-        df[all_field_names].to_sql(
-            name=table_name,
-            con=credentials,
-            index=False,
-            if_exists="replace",
-        )
-
-    return sql, _write_single_table
-
-
 class SourceTestkitParameters(BaseModel):
     """Configuration for generating a source."""
 
@@ -151,12 +99,6 @@ class SourceTestkit(BaseModel):
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
-    )
-    location_writer: Callable[[pa.Table, Location], None] = Field(
-        description=(
-            "A function that takes the data and location and writes the data to "
-            "the location."
-        )
     )
 
     @property
@@ -208,7 +150,11 @@ class SourceTestkit(BaseModel):
             set_credentials: Whether to set the credentials on the SourceConfig.
                 Offered here for convenience as it's often the next step.
         """
-        self.location_writer(self.data, self.source_config.location, credentials)
+        pl.from_arrow(self.data).write_database(
+            table_name=self.source_config.name,
+            connection=credentials,
+            if_table_exists="replace",
+        )
         if set_credentials:
             self.set_credentials(credentials)
 
@@ -309,8 +255,8 @@ class LinkedSourcesTestkit(BaseModel):
             set_credentials: Whether to set the credentials on the SourceConfig.
                 Offered here for convenience as it's often the next step.
         """
-        for source in self.sources.values():
-            source.write_to_location(credentials, set_credentials)
+        for source_testkit in self.sources.values():
+            source_testkit.write_to_location(credentials, set_credentials)
 
 
 def generate_rows(
@@ -612,21 +558,16 @@ def source_factory(
         SourceField(name=feature.name, type=feature.datatype) for feature in features
     )
 
-    # Create location, extract transform logic, and location writer function
-    location = RelationalDBLocation(
-        uri=str(engine.url._replace(username=None, password=None))
-    )
-    extract_transform, location_writer = create_single_table_location_resources(
-        key_field=key_field,
-        index_fields=index_fields,
-        table_name=name,
-    )
-
     # Create source config
     source_config = SourceConfig(
-        location=location,
+        location=RelationalDBLocation(uri=str(engine.url)),
         name=name,
-        extract_transform=extract_transform,
+        extract_transform=select(
+            cast(column(key_field.name), "string").as_(key_field.name),
+            *[column(field.name) for field in index_fields],
+        )
+        .from_(name)
+        .sql(),
         key_field=key_field,
         index_fields=index_fields,
     )
@@ -637,7 +578,6 @@ def source_factory(
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
-        location_writer=location_writer,
     )
 
 
@@ -683,21 +623,16 @@ def source_from_tuple(
         for k, v in data_tuple[0].items()
     )
 
-    # Create location, extract transform logic, and location writer function
-    location = RelationalDBLocation(
-        uri=str(engine.url._replace(username=None, password=None))
-    )
-    extract_transform, location_writer = create_single_table_location_resources(
-        key_field=key_field,
-        index_fields=index_fields,
-        table_name=name,
-    )
-
     # Create source config
     source_config = SourceConfig(
-        location=location,
+        location=RelationalDBLocation(uri=str(engine.url)),
         name=name,
-        extract_transform=extract_transform,
+        extract_transform=select(
+            cast(column(key_field.name), "string").as_(key_field.name),
+            *[column(field.name) for field in index_fields],
+        )
+        .from_(name)
+        .sql(),
         key_field=key_field,
         index_fields=index_fields,
     )
@@ -723,7 +658,6 @@ def source_from_tuple(
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
-        location_writer=location_writer,
     )
 
 
@@ -901,21 +835,16 @@ def linked_sources_factory(
             for feature in parameters.features
         )
 
-        # Create location, extract transform logic, and location writer function
-        location = RelationalDBLocation(
-            uri=str(parameters.engine.url._replace(username=None, password=None))
-        )
-        extract_transform, location_writer = create_single_table_location_resources(
-            key_field=key_field,
-            index_fields=index_fields,
-            table_name=parameters.name,
-        )
-
         # Create source config
         source_config = SourceConfig(
-            location=location,
+            location=RelationalDBLocation(uri=str(parameters.engine.url)),
             name=parameters.name,
-            extract_transform=extract_transform,
+            extract_transform=select(
+                cast(column(key_field.name), "string").as_(key_field.name),
+                *[column(field.name) for field in index_fields],
+            )
+            .from_(parameters.name)
+            .sql(),
             key_field=key_field,
             index_fields=index_fields,
         )
@@ -927,7 +856,6 @@ def linked_sources_factory(
             data=data,
             data_hashes=data_hashes,
             entities=tuple(sorted(results_entities)),
-            location_writer=location_writer,
         )
 
         # Update entities with source references

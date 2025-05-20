@@ -91,14 +91,18 @@ def test_key_field_map(
         )
     )
 
-    # Case 0: no sources are found
+    # Case 0: No sources are found
+    with pytest.raises(MatchboxSourceNotFoundError):
+        key_field_map(resolution="companies", source_filter=["nonexistent"])
+
     with pytest.raises(MatchboxSourceNotFoundError):
         key_field_map(resolution="companies", uri_filter="postgresql://")
 
     with pytest.raises(MatchboxSourceNotFoundError):
         key_field_map(resolution="companies", uri_filter=["nonexistent"])
 
-    # Case 1: apply URI filter, and retrieve single table
+    # Case 1: Retrieve single table
+    # With URI filter
     foo_mapping = key_field_map(
         resolution="companies", uri_filter=str(sqlite_warehouse.url)
     )
@@ -110,7 +114,32 @@ def test_key_field_map(
         check_column_order=False,
     )
 
-    # Case 2: without URI filter, and retrieve multiple tables
+    # With source filter
+    foo_mapping = key_field_map(resolution="companies", source_filter="foo")
+
+    assert_frame_equal(
+        pl.from_arrow(foo_mapping),
+        expected_foo_mapping,
+        check_row_order=False,
+        check_column_order=False,
+    )
+
+    # With both filters
+    foo_mapping = key_field_map(
+        resolution="companies",
+        source_filter="foo",
+        uri_filter=str(sqlite_warehouse.url),
+    )
+
+    assert_frame_equal(
+        pl.from_arrow(foo_mapping),
+        expected_foo_mapping,
+        check_row_order=False,
+        check_column_order=False,
+    )
+
+    # Case 2: Retrieve multiple tables
+    # With no filter
     foo_bar_mapping = key_field_map(resolution="companies")
 
     assert_frame_equal(
@@ -120,7 +149,7 @@ def test_key_field_map(
         check_column_order=False,
     )
 
-    # Case 3: apply source filter, and retrieve multiple tables
+    # With source filter
     foo_bar_mapping = key_field_map(
         resolution="companies", source_filter=["foo", "bar"]
     )
