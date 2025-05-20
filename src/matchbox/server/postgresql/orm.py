@@ -484,8 +484,8 @@ class Contains(CountMixin, MBDB.MatchboxBase):
     # Constraints and indices
     __table_args__ = (
         CheckConstraint("root != leaf", name="no_self_containment"),
-        Index("ix_contains_parent_child", "root", "leaf"),
-        Index("ix_contains_child_parent", "leaf", "root"),
+        Index("ix_contains_root_leaf", "root", "leaf"),
+        Index("ix_contains_leaf_root", "leaf", "root"),
     )
 
 
