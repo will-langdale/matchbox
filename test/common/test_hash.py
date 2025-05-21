@@ -295,14 +295,22 @@ class TestClusterHierarchy:
     def leaf_nodes(self, intmap: IntMap) -> list[Cluster]:
         """Create six leaf nodes for testing."""
         return [
-            Cluster(intmap=intmap, leaves=None, id=i, hash=f"hash{i}".encode())
+            Cluster(
+                intmap=intmap,
+                probability=None,
+                leaves=None,
+                id=i,
+                hash=f"hash{i}".encode(),
+            )
             for i in range(1, 7)
         ]
 
     def test_create_leaf_nodes(self, intmap: IntMap):
         """Test that leaf nodes can be created properly."""
         # Create a leaf node
-        node = Cluster(intmap=intmap, leaves=None, id=1, hash=b"hash1")
+        node = Cluster(
+            intmap=intmap, probability=None, leaves=None, id=1, hash=b"hash1"
+        )
 
         # Verify its properties
         assert node.id == 1
@@ -360,7 +368,7 @@ class TestClusterHierarchy:
             if len(component_list) == 1:
                 cluster = component_list[0]
             else:
-                cluster = Cluster.combine_many(component_list)
+                cluster = Cluster.combine_many(component_list, probability=100)
             clusters.append(cluster)
 
         # Verify we have three clusters
@@ -370,6 +378,11 @@ class TestClusterHierarchy:
         for cluster in clusters:
             if cluster.leaves is not None:
                 assert len(cluster.leaves) == 2
+
+        # Verify probability is as expected for non-leaf clusters
+        for cluster in clusters:
+            if cluster.leaves is not None:
+                assert cluster.probability == 100
 
     def test_level1_clusters_in_disjoint_set(self, leaf_nodes: list[Cluster]):
         """Test using level-1 clusters in another DisjointSet."""
@@ -430,8 +443,12 @@ class TestClusterHierarchy:
             if len(component_list) == 1:
                 cluster = component_list[0]
             else:
-                cluster = Cluster.combine_many(component_list)
+                cluster = Cluster.combine_many(component_list, probability=90)
             level1_clusters.append(cluster)
+
+        # Verify probability as expected
+        for cluster in level1_clusters:
+            assert cluster.probability == 90
 
         # Step 2: Union level-1 clusters
         dsj2 = DisjointSet[Cluster]()
@@ -450,7 +467,7 @@ class TestClusterHierarchy:
         assert larger_component is not None
 
         # Create a level-2 cluster from the larger component
-        level2_cluster = Cluster.combine_many(larger_component)
+        level2_cluster = Cluster.combine_many(larger_component, probability=80)
 
         # Verify the level-2 cluster contains exactly the leaf nodes 1, 2, 3, and 4
         expected_leaves = set(leaf_nodes[:4])  # Nodes 1-4
@@ -461,6 +478,8 @@ class TestClusterHierarchy:
         # Verify leaf nodes match
         assert actual_leaves == expected_leaves
         assert len(actual_leaves) == 4
+        # Verify probability as expected
+        assert level2_cluster.probability == 80
 
     def test_combine_many_with_single_cluster(self, leaf_nodes: list[Cluster]):
         """Test that combine_many works correctly with a single cluster."""
@@ -468,10 +487,12 @@ class TestClusterHierarchy:
         clusters = [leaf_nodes[0]]
 
         # Combine
-        result = Cluster.combine_many(clusters)
+        result = Cluster.combine_many(clusters, probability=None)
 
         # Should return the original cluster
         assert result is leaf_nodes[0]
+        # Verify probability as expected
+        assert result.probability is None
 
     def test_combine_many_with_leaf_and_non_leaf(
         self, intmap: IntMap, leaf_nodes: list[Cluster]
@@ -481,7 +502,7 @@ class TestClusterHierarchy:
         non_leaf = Cluster(intmap=intmap, leaves=[leaf_nodes[0], leaf_nodes[1]])
 
         # Combine with a leaf node
-        result = Cluster.combine_many([non_leaf, leaf_nodes[2]])
+        result = Cluster.combine_many([non_leaf, leaf_nodes[2]], probability=70)
 
         # Should contain three leaves
         assert len(collect_all_leaves(result)) == 3
@@ -489,6 +510,9 @@ class TestClusterHierarchy:
         # The specific leaves should be 1, 2, and 3
         expected = {leaf_nodes[0], leaf_nodes[1], leaf_nodes[2]}
         assert collect_all_leaves(result) == expected
+
+        # Verify probability as expected
+        assert result.probability == 70
 
     def test_add_operation_with_leaves(self, leaf_nodes: list[Cluster]):
         """Test the __add__ operation with leaf nodes."""

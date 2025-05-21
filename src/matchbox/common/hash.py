@@ -12,6 +12,8 @@ import polars_hash as plh
 import pyarrow as pa
 from pandas import DataFrame, Series
 
+from matchbox.common.logging import logger
+
 T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
 
@@ -283,6 +285,7 @@ class Cluster:
     """
 
     id: int
+    probability: int | None
     hash: bytes
     leaves: tuple["Cluster"] | None
 
@@ -291,6 +294,7 @@ class Cluster:
     def __init__(
         self,
         intmap: IntMap,
+        probability: int | None = None,
         leaves: tuple["Cluster"] | list["Cluster"] | None = None,
         id: int | None = None,
         hash: bytes | None = None,
@@ -299,6 +303,8 @@ class Cluster:
 
         Args:
             intmap: An IntMap instance for generating unique IDs
+            probability: probability of the cluster from its resolution, or None if
+        source
             leaves: A list of Cluster objects that are the leaves of this cluster
             id: The ID of the cluster (only for leaf nodes)
             hash: The hash of the cluster (only for leaf nodes)
@@ -326,8 +332,23 @@ class Cluster:
         else:
             self.id = intmap.index(leaf.id for leaf in self.leaves)
 
-    def __add__(self, other: "Cluster") -> "Cluster":
-        """Combine two clusters into a new one."""
+        # Set probability
+        if probability is not None:
+            self.probability = probability
+        elif self.leaves is not None:
+            logger.debug(
+                "Potentially invalid to have a non-leaf cluster without a probability"
+            )
+            self.probability = probability
+        else:
+            self.probability = None
+
+    def __add__(self, other: "Cluster", probability: int | None = None) -> "Cluster":
+        """Combine two clusters into a new one.
+
+        Note that use of this syntax means we can't add the probability, it would
+        have to be set afterwards - this is permitted but creates a debug log.
+        """
         if self.leaves is None and other.leaves is None:
             return Cluster(intmap=self._intmap, leaves=[self, other])
 
@@ -349,7 +370,10 @@ class Cluster:
 
     @classmethod
     def combine_many(
-        cls: type[Self], clusters: Iterable["Cluster"], intmap: IntMap | None = None
+        cls: type[Self],
+        clusters: Iterable["Cluster"],
+        intmap: IntMap | None = None,
+        probability: int | None = None,
     ) -> "Cluster":
         """Efficiently combine multiple clusters at once.
 
@@ -360,6 +384,7 @@ class Cluster:
             clusters: An iterable of Cluster objects to combine
             intmap: An IntMap instance for generating unique IDs. Defaults to the
                 first cluster's IntMap if not provided.
+            probability: the probability of the cluster from its resolution
 
         Returns:
             A new Cluster containing all unique leaves from the input clusters
@@ -381,4 +406,6 @@ class Cluster:
                 for leaf in cluster.leaves:
                     unique_dict[id(leaf)] = leaf
 
-        return cls(intmap=intmap, leaves=list(unique_dict.values()))
+        return cls(
+            intmap=intmap, probability=probability, leaves=list(unique_dict.values())
+        )

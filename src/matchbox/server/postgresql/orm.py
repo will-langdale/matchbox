@@ -509,12 +509,12 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         back_populates="proposes",
         passive_deletes=True,
     )
-    children = relationship(
+    leaves = relationship(
         "Clusters",
         secondary=Contains.__table__,
-        primaryjoin="Clusters.cluster_id == Contains.parent",
-        secondaryjoin="Clusters.cluster_id == Contains.child",
-        backref="parents",
+        primaryjoin="Clusters.cluster_id == Contains.root",
+        secondaryjoin="Clusters.cluster_id == Contains.leaf",
+        backref="roots",
     )
     # Add relationship to SourceConfigs through ClusterSourceKey
     source_configs = relationship(
@@ -546,6 +546,7 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
     probability = Column(SMALLINT, nullable=False)
+    component_cluster = Column(BOOLEAN, nullable=False)
 
     # Relationships
     proposed_by = relationship("Resolutions", back_populates="probabilities")
