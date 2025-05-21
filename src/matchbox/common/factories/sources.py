@@ -112,7 +112,6 @@ class SourceTestkit(BaseModel):
         mock_source_config = create_autospec(self.source_config)
 
         mock_source_config.set_credentials.return_value = mock_source_config
-        mock_source_config.from_location.return_value = mock_source_config
         mock_source_config.hash_data.return_value = self.data_hashes
 
         mock_source_config.model_dump.side_effect = self.source_config.model_dump

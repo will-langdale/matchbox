@@ -5,7 +5,6 @@ import textwrap
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import wraps
-from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -43,7 +42,6 @@ from matchbox.common.exceptions import (
     MatchboxSourceCredentialsError,
 )
 from matchbox.common.hash import (
-    HASH_FUNC,
     HashMethod,
     hash_rows,
 )
@@ -427,59 +425,6 @@ class SourceConfig(BaseModel):
             )
 
         return self
-
-    @classmethod
-    def from_location(
-        cls, location: Location, extract_transform: str
-    ) -> "SourceConfig":
-        """Create a SourceConfig from a Location.
-
-        A convenience method to create a SourceConfig from minimal options.
-
-        * Assumes a column aliasesed as "id" is the key field
-        * Autodetects datatypes from a small sample
-        * Uses the location's URI host and truncated ETL hash as the resolution name
-
-        Args:
-            location: The location of the source.
-            extract_transform: The logic to extract and transform data from the source.
-
-        Returns:
-            A SourceConfig object with the location set.
-        """
-        # Detect fields
-        fields: tuple[SourceField, ...] = cls._detect_fields(
-            cls,
-            location=location,
-            extract_transform=extract_transform,
-        )
-        index_fields: tuple[SourceField] = tuple(
-            field for field in fields if field.name != "id"
-        )
-        if len(index_fields) != len(fields) - 1:
-            raise ValueError(
-                "The extract/transform logic must return a column "
-                "aliased as 'id' to be used as the key field."
-            )
-
-        # Create name
-        et_hash = HASH_FUNC(extract_transform.encode("utf-8")).hexdigest()[:6]
-        default_name: str | None = (
-            location.uri.host or Path(location.uri.path).stem or None
-        )
-        if default_name is None:
-            raise ValueError(
-                "Could not detect a default name for the source. "
-                "Please create the source manually."
-            )
-
-        return cls(
-            name=default_name + "_" + et_hash,
-            location=location,
-            extract_transform=extract_transform,
-            key_field=SourceField(name="id", type=DataTypes.STRING),
-            index_fields=index_fields,
-        )
 
     def set_credentials(self, credentials: Any) -> None:
         """Set the credentials for the location.

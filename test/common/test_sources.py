@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 import polars as pl
@@ -381,83 +380,6 @@ def test_source_identifier_validation():
             key_field=int_identifier,
             index_fields=index_fields,
         )
-
-
-def test_source_from_location(sqlite_warehouse: Engine):
-    """Test the from_location factory method with minimal parameters."""
-    # Create a location with credentials
-    location = RelationalDBLocation.from_engine(sqlite_warehouse)
-
-    # Create test data and write to warehouse
-    source_testkit = source_factory(
-        n_true_entities=5,
-        features=[
-            {"name": "name", "base_generator": "word", "datatype": DataTypes.STRING},
-        ],
-        engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-
-    # Use the factory method
-    extract_transform = select("key AS id", "name").from_(source_testkit.name).sql()
-    source = SourceConfig.from_location(
-        location=location, extract_transform=extract_transform
-    )
-
-    # Verify the created source
-    assert source.location == location
-    assert source.extract_transform == extract_transform
-    assert source.key_field.name == "id"
-    assert source.key_field.type == DataTypes.STRING
-    assert len(source.index_fields) == 1
-    assert source.index_fields[0].name == "name"
-    assert source.index_fields[0].type == DataTypes.STRING
-    assert source.name.startswith(Path(str(sqlite_warehouse.url)).stem)
-
-
-def test_source_field_detection_from_location(sqlite_warehouse: Engine):
-    """Test automatic field detection through from_location factory method."""
-    # Create a location with credentials
-    location = RelationalDBLocation.from_engine(sqlite_warehouse)
-
-    # Create test data with different column types
-    source_testkit = source_factory(
-        n_true_entities=5,
-        features=[
-            {
-                "name": "age",
-                "base_generator": "random_int",
-                "datatype": DataTypes.INT64,
-            },
-            {
-                "name": "score",
-                "base_generator": "pyfloat",
-                "datatype": DataTypes.FLOAT64,
-            },
-        ],
-        engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-
-    # Use the from_location factory method which internally uses field detection
-    extract_transform = (
-        select("key AS id", "age", "score").from_(source_testkit.name).sql()
-    )
-    source = SourceConfig.from_location(
-        location=location, extract_transform=extract_transform
-    )
-
-    # Verify detection results through the created source
-    assert source.key_field.name == "id"
-    assert source.key_field.type == DataTypes.STRING
-    assert len(source.index_fields) == 2
-
-    # Check field names and types
-    field_dict = {field.name: field.type for field in source.index_fields}
-    assert "age" in field_dict
-    assert "score" in field_dict
-    assert field_dict["age"] == DataTypes.INT64
-    assert field_dict["score"] == DataTypes.FLOAT64
 
 
 def test_source_set_credentials(sqlite_warehouse: Engine):

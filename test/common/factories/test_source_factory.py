@@ -145,19 +145,13 @@ def test_source_testkit_to_mock():
 
     # Test that method calls are tracked
     mock_source.set_credentials(credentials="test_engine")
-    mock_source.from_location(location="test_location", extract_transform="test_et")
     mock_source.hash_data()
 
     mock_source.set_credentials.assert_called_once_with("test_engine")
-    mock_source.from_location.assert_called_once_with("test_location", "test_et")
     mock_source.hash_data.assert_called_once()
 
     # Test method return values
     assert mock_source.set_credentials(credentials="test_engine") == mock_source
-    assert (
-        mock_source.from_location(location="test_location", extract_transform="test_et")
-        == mock_source
-    )
     assert mock_source.hash_data() == source_testkit.data_hashes
 
     # Test model dump methods
