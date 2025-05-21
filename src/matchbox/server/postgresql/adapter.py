@@ -12,15 +12,15 @@ from matchbox.common.dtos import (
     ModelResolutionName,
     ModelType,
     ResolutionName,
+    SourceResolutionName,
 )
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
-from matchbox.common.sources import Match, SourceAddress, SourceConfig
+from matchbox.common.sources import Match, SourceConfig
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -47,7 +47,7 @@ from matchbox.server.postgresql.utils.insert import (
     insert_results,
     insert_source,
 )
-from matchbox.server.postgresql.utils.query import match, query
+from matchbox.server.postgresql.utils.query import get_source_config, match, query
 from matchbox.server.postgresql.utils.results import (
     get_model_config,
     get_model_results,
@@ -163,7 +163,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def query(  # noqa: D102
         self,
-        source: SourceAddress,
+        source: SourceResolutionName,
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
         limit: int | None = None,
@@ -178,8 +178,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def match(  # noqa: D102
         self,
         key: str,
-        source: SourceAddress,
-        targets: list[SourceAddress],
+        source: SourceResolutionName,
+        targets: list[SourceResolutionName],
         resolution: ResolutionName,
         threshold: int | None = None,
     ) -> list[Match]:
@@ -200,22 +200,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
-    def get_source_config(self, address: SourceAddress) -> SourceConfig:  # noqa: D102
+    def get_source_config(self, name: SourceResolutionName) -> SourceConfig:  # noqa: D102
         with MBDB.get_session() as session:
-            source: SourceConfigs = (
-                session.query(SourceConfigs)
-                .where(
-                    and_(
-                        SourceConfigs.full_name == address.full_name,
-                        SourceConfigs.warehouse_hash == address.warehouse_hash,
-                    )
-                )
-                .first()
-            )
-            if source:
+            if source := get_source_config(name, session):
                 return source.to_dto()
-            else:
-                raise MatchboxSourceNotFoundError(address=str(address))
 
     def get_resolution_source_configs(  # noqa: D102
         self,

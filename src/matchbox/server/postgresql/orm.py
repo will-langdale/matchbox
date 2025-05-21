@@ -25,7 +25,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.sources import SourceAddress
 from matchbox.common.sources import SourceConfig as CommonSourceConfig
 from matchbox.common.sources import SourceField as CommonSourceField
 from matchbox.server.postgresql.db import MBDB
@@ -339,8 +338,9 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         nullable=False,
     )
-    full_name = Column(TEXT, nullable=False)
-    warehouse_hash = Column(BYTEA, nullable=False)
+    location_type = Column(TEXT, nullable=False)
+    location_uri = Column(TEXT, nullable=False)
+    extract_transform = Column(TEXT, nullable=False)
 
     @property
     def name(self) -> str:
@@ -389,11 +389,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         viewonly=True,
     )
 
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint("full_name", "warehouse_hash", name="unique_source_address"),
-    )
-
     def __init__(
         self,
         key_field: SourceFields | None = None,
@@ -431,8 +426,9 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         """Create a SourceConfigs instance from a CommonSource object."""
         return cls(
             resolution_id=resolution.resolution_id,
-            full_name=source_config.address.full_name,
-            warehouse_hash=source_config.address.warehouse_hash,
+            location_type=source_config.location.type,
+            location_uri=str(source_config.location.uri),
+            extract_transform=source_config.extract_transform,
             key_field=SourceFields(
                 index=0,
                 name=source_config.key_field.name,
@@ -452,9 +448,11 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         """Convert ORM source to a matchbox.common SourceConfig object."""
         return CommonSourceConfig(
             name=self.name,
-            address=SourceAddress(
-                full_name=self.full_name, warehouse_hash=self.warehouse_hash
-            ),
+            location={
+                "type": self.location_type,
+                "uri": self.location_uri,
+            },
+            extract_transform=self.extract_transform,
             key_field=CommonSourceField(
                 name=self.key_field.name, type=self.key_field.type
             ),

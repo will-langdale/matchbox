@@ -72,7 +72,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
     )
 
     source_parameters = SourceTestkitParameters(
-        full_name="source_exact",
+        name="source_exact",
         features=features,
         n_true_entities=10,
         repetition=0,  # Each entity appears once
@@ -122,7 +122,7 @@ def test_exact_duplicate_deduplication(
     )
 
     source_parameters = SourceTestkitParameters(
-        full_name="source_exact",
+        name="source_exact",
         features=features,
         n_true_entities=10,
         repetition=2,  # Each entity appears 3 times (base + 2 repetitions)

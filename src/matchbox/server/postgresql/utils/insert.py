@@ -112,7 +112,7 @@ def insert_source(
     source_config: SourceConfig, data_hashes: pa.Table, batch_size: int
 ) -> None:
     """Indexes a source within Matchbox."""
-    log_prefix = f"Index {source_config.address.pretty}"
+    log_prefix = f"Index {source_config.name}"
     content_hash = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:

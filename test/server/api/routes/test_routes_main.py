@@ -23,8 +23,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match
 from matchbox.server.api.cache import MetadataStore, process_upload
 from matchbox.server.api.dependencies import backend, metadata_store
 from matchbox.server.api.main import app
@@ -310,10 +309,7 @@ def test_query(test_client: TestClient):
     # Hit endpoint
     response = test_client.get(
         "/query",
-        params={
-            "full_name": "foo",
-            "warehouse_hash_b64": hash_to_base64(b"bar"),
-        },
+        params={"source": "foo"},
     )
 
     # Process response
@@ -335,10 +331,7 @@ def test_query_404_resolution(test_client: TestClient):
     # Hit endpoint
     response = test_client.get(
         "/query",
-        params={
-            "full_name": "foo",
-            "warehouse_hash_b64": hash_to_base64(b"bar"),
-        },
+        params={"source": "foo", "resolution": "bar"},
     )
 
     # Check response
@@ -355,10 +348,7 @@ def test_query_404_source(test_client: TestClient):
     # Hit endpoint
     response = test_client.get(
         "/query",
-        params={
-            "full_name": "foo",
-            "warehouse_hash_b64": hash_to_base64(b"bar"),
-        },
+        params={"source": "foo"},
     )
 
     # Check response
@@ -367,15 +357,12 @@ def test_query_404_source(test_client: TestClient):
 
 def test_match(test_client: TestClient):
     mock_backend = Mock()
-    foo_address = SourceAddress(full_name="foo", warehouse_hash=b"foo")
-    bar_address = SourceAddress(full_name="bar", warehouse_hash=b"bar")
-
     mock_matches = [
         Match(
             cluster=1,
-            source=foo_address,
+            source="foo",
             source_id={"1"},
-            target=bar_address,
+            target="bar",
             target_id={"a"},
         )
     ]
@@ -388,10 +375,8 @@ def test_match(test_client: TestClient):
     response = test_client.get(
         "/match",
         params={
-            "target_full_names": [foo_address.full_name],
-            "target_warehouse_hashes_b64": [foo_address.warehouse_hash_b64],
-            "source_full_name": bar_address.full_name,
-            "source_warehouse_hash_b64": bar_address.warehouse_hash_b64,
+            "targets": "foo",
+            "source": "bar",
             "key": 1,
             "resolution": "res",
             "threshold": 50,
@@ -414,10 +399,8 @@ def test_match_404_resolution(test_client: TestClient):
     response = test_client.get(
         "/match",
         params={
-            "target_full_names": ["foo"],
-            "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
-            "source_full_name": "bar",
-            "source_warehouse_hash_b64": hash_to_base64(b"bar"),
+            "targets": ["foo"],
+            "source": "bar",
             "key": 1,
             "resolution": "res",
         },
@@ -439,10 +422,8 @@ def test_match_404_source(test_client: TestClient):
     response = test_client.get(
         "/match",
         params={
-            "target_full_names": ["foo"],
-            "target_warehouse_hashes_b64": [hash_to_base64(b"foo")],
-            "source_full_name": "bar",
-            "source_warehouse_hash_b64": hash_to_base64(b"bar"),
+            "targets": ["foo"],
+            "source": "bar",
             "key": 1,
             "resolution": "res",
         },

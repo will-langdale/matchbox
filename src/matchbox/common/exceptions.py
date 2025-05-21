@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from matchbox.common.dtos import ResolutionName
+from matchbox.common.dtos import ResolutionName, SourceResolutionName
 
 # -- Configuration exceptions
 
@@ -120,16 +120,16 @@ class MatchboxSourceNotFoundError(Exception):
     def __init__(
         self,
         message: str = None,
-        address: str | None = None,
+        name: SourceResolutionName | None = None,
     ):
         """Initialise the exception."""
         if message is None:
             message = "SourceConfig not found on matchbox."
-            if address:
-                message = f"SourceConfig ({address}) not found."
+            if name:
+                message = f"SourceConfig ({name}) not found."
 
         super().__init__(message)
-        self.address = address
+        self.name = name
 
 
 class MatchboxDataNotFound(Exception):

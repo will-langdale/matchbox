@@ -8,15 +8,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE, Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import (
-    ResolutionName,
-)
+from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -31,20 +29,16 @@ from matchbox.server.postgresql.utils.db import compile_sql
 T = TypeVar("T")
 
 
-def _get_source_config(address: SourceAddress, session: Session) -> SourceConfigs:
-    """Converts the named address of source to a SourceConfigs ORM object."""
+def get_source_config(name: SourceResolutionName, session: Session) -> SourceConfigs:
+    """Converts the named source to a SourceConfigs ORM object."""
     source_config = (
         session.query(SourceConfigs)
-        .filter(
-            SourceConfigs.full_name == address.full_name,
-            SourceConfigs.warehouse_hash == address.warehouse_hash,
-        )
+        .join(Resolutions, Resolutions.resolution_id == SourceConfigs.resolution_id)
+        .filter(Resolutions.name == name)
         .first()
     )
     if source_config is None:
-        raise MatchboxSourceNotFoundError(
-            address=str(address),
-        )
+        raise MatchboxSourceNotFoundError(name=name)
 
     return source_config
 
@@ -268,7 +262,7 @@ def _resolve_cluster_hierarchy(
 
 
 def query(
-    source: SourceAddress,
+    source: SourceResolutionName,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int = None,
@@ -293,7 +287,7 @@ def query(
         with the hash key of each row in Matchbox
     """
     with MBDB.get_session() as session:
-        source_config = _get_source_config(source, session)
+        source_config = get_source_config(source, session)
         source_resolution = session.get(Resolutions, source_config.resolution_id)
 
         if resolution:
@@ -536,8 +530,8 @@ def _build_match_query(
 
 def match(
     key: str,
-    source: SourceAddress,
-    targets: list[SourceAddress],
+    source: SourceResolutionName,
+    targets: list[SourceResolutionName],
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
@@ -554,7 +548,7 @@ def match(
     """
     with MBDB.get_session() as session:
         # Get all matches for keys in all possible targets
-        source_config = _get_source_config(source, session)
+        source_config = get_source_config(source, session)
 
         match_stmt = _build_match_query(
             key=key,
@@ -579,15 +573,15 @@ def match(
             matches_by_source_id[source_id].add(id_in_source)
 
         result = []
-        for target_address in targets:
-            target_source = _get_source_config(target_address, session)
+        for target in targets:
+            target_source = get_source_config(target, session)
             match_obj = Match(
                 cluster=cluster,
                 source=source,
                 source_id=matches_by_source_id.get(
                     source_config.source_config_id, set()
                 ),
-                target=target_address,
+                target=target,
                 target_id=matches_by_source_id.get(
                     target_source.source_config_id, set()
                 ),

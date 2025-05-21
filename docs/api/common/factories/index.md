@@ -116,7 +116,7 @@ Inserting results.
 ```python
 model_testkit = model_factory()
 backend.set_model_results(
-    name=model_testkit.model.model_config.full_name, 
+    name=model_testkit.model.model_config.name, 
     results=model_testkit.probabilities
 )
 ```
@@ -139,7 +139,7 @@ model_testkit = model_factory(
 
 backend.insert_model(model_config=model_testkit.model.model_config)
 backend.set_model_results(
-    name=model_testkit.model.model_config.full_name, 
+    name=model_testkit.model.model_config.name, 
     results=model_testkit.probabilities
 )
 ```
