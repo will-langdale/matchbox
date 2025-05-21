@@ -47,14 +47,14 @@ def parallel_pool_for_tests(
             executor.shutdown(wait=False, cancel_futures=True)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def patch_multiprocessing() -> Iterator[None]:
-    """Patch ProcessPoolExecutor to use ThreadPoolExecutor in tests."""
-    with patch(
-        "matchbox.common.transform.ProcessPoolExecutor",
-        lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
-    ):
-        yield
+# @pytest.fixture(scope="session", autouse=True)
+# def patch_multiprocessing() -> Iterator[None]:
+#     """Patch ProcessPoolExecutor to use ThreadPoolExecutor in tests."""
+#     with patch(
+#         "matchbox.common.transform.ProcessPoolExecutor",
+#         lambda *args, **kwargs: parallel_pool_for_tests(timeout=30),
+#     ):
+#         yield
 
 
 @pytest.fixture(scope="session", autouse=True)
