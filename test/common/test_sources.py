@@ -382,20 +382,31 @@ def test_source_identifier_validation():
         )
 
 
-def test_source_set_credentials(sqlite_warehouse: Engine):
-    """Test that credentials can be set on the Location via SourceConfig."""
-    # Create a location without credentials
-    source_testkit = source_factory(name="test_source", engine=sqlite_warehouse)
-    source_testkit.write_to_location(
-        credentials=sqlite_warehouse, set_credentials=False
+def test_source_factory_method(sqlite_warehouse):
+    # Create test data
+    source_testkit = source_factory(
+        n_true_entities=5,
+        features=[
+            {"name": "name", "base_generator": "word", "datatype": DataTypes.STRING},
+        ],
+        engine=sqlite_warehouse,
     )
-    assert source_testkit.source_config.location.credentials is None
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
-    # Set credentials through the source
-    source_testkit.source_config.location.add_credentials(sqlite_warehouse)
+    # Create location and source
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+    source = SourceConfig.new(
+        location=location,
+        name="test_source",
+        extract_transform=source_testkit.source_config.extract_transform,
+        key_field="key",
+        index_fields=["name"],
+    )
 
-    # Verify credentials are set on the location
-    assert source_testkit.source_config.location.credentials == sqlite_warehouse
+    assert source.key_field == SourceField(name="key", type=DataTypes.STRING)
+    assert source.index_fields == tuple(
+        [SourceField(name="name", type=DataTypes.STRING)]
+    )
 
 
 def test_source_query(sqlite_warehouse: Engine):
@@ -587,86 +598,6 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
     # hash_data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):
         source.hash_data()
-
-
-def test_source_validation_location_et_fields(sqlite_warehouse: Engine):
-    """Test SourceConfig validation of location, ext/trans, and index_fields alignment.
-
-    Tests three scenarios:
-    1. Valid alignment between location, extract_transform, and index_fields
-    2. Skip validation when credentials are not set
-    3. Error when index_fields don't match the results of extract_transform
-    """
-    # Create test data
-    source_testkit = source_factory(
-        n_true_entities=2,
-        features=[
-            {"name": "name", "base_generator": "word", "datatype": DataTypes.STRING},
-        ],
-        engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-
-    # Scenario 1: Valid alignment
-    location = RelationalDBLocation.from_engine(sqlite_warehouse)
-    extract_transform = source_testkit.source_config.extract_transform
-
-    # This should validate successfully
-    SourceConfig(
-        location=location,
-        name="test_source",
-        extract_transform=extract_transform,
-        key_field=SourceField(name="key", type=DataTypes.STRING),
-        index_fields=(SourceField(name="name", type=DataTypes.STRING),),
-    )
-
-    # Scenario 2: Skip validation when credentials are not set
-    location_no_creds = RelationalDBLocation(
-        uri=str(sqlite_warehouse.url).split("?")[0]
-    )
-
-    # This should not raise validation errors as credentials aren't set
-    SourceConfig(
-        location=location_no_creds,
-        name="test_source",
-        extract_transform=extract_transform,
-        key_field=SourceField(name="key", type=DataTypes.STRING),
-        # Index fields don't match what extract_transform would return,
-        # but we don't validate
-        index_fields=(
-            SourceField(name="name", type=DataTypes.STRING),
-            SourceField(name="nonexistent", type=DataTypes.STRING),
-        ),
-    )
-
-    # Scenario 3: Error when index_fields don't match
-    with pytest.raises(
-        ValidationError, match="do not match the extract/transform logic"
-    ):
-        SourceConfig(
-            location=location,
-            name="test_source",
-            extract_transform=extract_transform,
-            key_field=SourceField(name="key", type=DataTypes.STRING),
-            # This doesn't match the extract_transform
-            index_fields=(
-                SourceField(name="name", type=DataTypes.STRING),
-                SourceField(name="nonexistent", type=DataTypes.STRING),
-            ),
-        )
-
-    # Additional test: key_field doesn't match
-    with pytest.raises(
-        ValidationError, match="do not match the extract/transform logic"
-    ):
-        SourceConfig(
-            location=location,
-            name="test_source",
-            extract_transform=extract_transform,
-            # Wrong key_field name
-            key_field=SourceField(name="wrong_id", type=DataTypes.STRING),
-            index_fields=(SourceField(name="name", type=DataTypes.STRING),),
-        )
 
 
 # Match

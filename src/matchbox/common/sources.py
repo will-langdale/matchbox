@@ -359,25 +359,6 @@ class SourceConfig(BaseModel):
         """
         return self.prefix + field
 
-    def _detect_fields(
-        self, location: Location, extract_transform: str
-    ) -> tuple[SourceField, ...]:
-        """A helper method to detect the fields from the extract/transform logic.
-
-        Return all detected fields as SourceFields.
-        """
-        df: pl.DataFrame = next(
-            location.execute(extract_transform=extract_transform, batch_size=100)
-        )
-
-        return tuple(
-            SourceField(
-                name=col.name,
-                type=DataTypes.from_dtype(col.dtype),
-            )
-            for col in df.iter_columns()
-        )
-
     @field_validator("name", mode="after")
     @classmethod
     def validate_name(cls, value: str) -> str:
@@ -403,28 +384,36 @@ class SourceConfig(BaseModel):
 
         return self
 
-    @model_validator(mode="after")
-    def validate_location_et_fields(self) -> "SourceConfig":
-        """Ensure that the location, extract_transform, and fields are aligned."""
-        if self.location.credentials is None:
-            # We can't validate
-            return self
-
-        fields = self._detect_fields(
-            location=self.location, extract_transform=self.extract_transform
+    @classmethod
+    def new(
+        cls,
+        location: Location,
+        name: str,
+        extract_transform: str,
+        key_field: str,
+        index_fields: list[str],
+    ) -> "SourceConfig":
+        """Create a new SourceConfig for an indexing operation."""
+        # Assumes credentials have been set on location
+        sample: pl.DataFrame = next(
+            location.execute(extract_transform=extract_transform, batch_size=100)
         )
 
-        if set(self.index_fields + (self.key_field,)) != set(fields):
-            raise ValueError(
-                "The index fields or key field do not match the "
-                "extract/transform logic. "
-                "Please check the index fields, key field and logic. \n"
-                f"Declared index fields: {self.index_fields} \n"
-                f"Declared key field: {self.key_field} \n"
-                f"Fields from logic: {tuple(fields)} \n"
-            )
+        remote_fields = {
+            col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))
+            for col in sample.iter_columns()
+        }
 
-        return self
+        typed_key_field = remote_fields[key_field]
+        typed_index_fields = tuple(remote_fields[field] for field in index_fields)
+
+        return cls(
+            location=location,
+            name=name,
+            extract_transform=extract_transform,
+            key_field=typed_key_field,
+            index_fields=typed_index_fields,
+        )
 
     def query(
         self,
