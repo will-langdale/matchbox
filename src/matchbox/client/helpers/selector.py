@@ -77,7 +77,7 @@ class Selector(BaseModel):
         else:
             selected_fields = list(source.index_fields)  # Must actively select key
 
-        source.set_credentials(credentials=credentials)
+        source.location.add_credentials(credentials=credentials)
         return cls(source=source, fields=selected_fields)
 
 

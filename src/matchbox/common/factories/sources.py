@@ -111,7 +111,6 @@ class SourceTestkit(BaseModel):
         """Create a mock SourceConfig object with this testkit's configuration."""
         mock_source_config = create_autospec(self.source_config)
 
-        mock_source_config.set_credentials.return_value = mock_source_config
         mock_source_config.hash_data.return_value = self.data_hashes
 
         mock_source_config.model_dump.side_effect = self.source_config.model_dump
@@ -133,10 +132,6 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["key"]], names=["id", "key"]
         )
 
-    def set_credentials(self, credentials: Any) -> None:
-        """Set the credentials for the SourceConfig."""
-        self.source_config.set_credentials(credentials)
-
     def write_to_location(
         self, credentials: Any, set_credentials: bool = False
     ) -> None:
@@ -155,7 +150,7 @@ class SourceTestkit(BaseModel):
             if_table_exists="replace",
         )
         if set_credentials:
-            self.set_credentials(credentials)
+            self.source_config.location.add_credentials(credentials)
 
 
 class LinkedSourcesTestkit(BaseModel):

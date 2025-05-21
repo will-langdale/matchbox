@@ -426,15 +426,6 @@ class SourceConfig(BaseModel):
 
         return self
 
-    def set_credentials(self, credentials: Any) -> None:
-        """Set the credentials for the location.
-
-        Args:
-            credentials: The credentials to set.
-        """
-        self.location.add_credentials(credentials)
-        self.validate_location_et_fields()
-
     def query(
         self,
         qualify_names: bool = False,

@@ -392,7 +392,7 @@ def test_source_set_credentials(sqlite_warehouse: Engine):
     assert source_testkit.source_config.location.credentials is None
 
     # Set credentials through the source
-    source_testkit.source_config.set_credentials(sqlite_warehouse)
+    source_testkit.source_config.location.add_credentials(sqlite_warehouse)
 
     # Verify credentials are set on the location
     assert source_testkit.source_config.location.credentials == sqlite_warehouse
