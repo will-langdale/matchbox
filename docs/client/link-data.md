@@ -75,9 +75,6 @@ The `key_field` is the field in your source that contains some unique code that 
         key_field={"name": "id", "type": "String"},
     )
     
-    # Credentials set separate to declaring the source
-    companies_house.set_credentials(engine)
-    
     # Exporters data
     exporters = SourceConfig(
         location=RelationalDBLocation.from_engine(engine),
@@ -95,9 +92,6 @@ The `key_field` is the field in your source that contains some unique code that 
         ],
         key_field={"name": "id", "type": "String"},
     )
-
-    # Credentials set separate to declaring the source
-    exporters.set_credentials(engine)
     ```
 
 Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
