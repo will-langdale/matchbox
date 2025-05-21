@@ -73,7 +73,7 @@ The `key_field` is the field in your source that contains some unique code that 
             {"name": "postcode", "type": "String"},
         ],
         key_field={"name": "id", "type": "String"},
-    ).set_engine(engine)
+    )
     
     # Exporters data
     exporters = SourceConfig(
@@ -91,7 +91,7 @@ The `key_field` is the field in your source that contains some unique code that 
             {"name": "postcode", "type": "String"},
         ],
         key_field={"name": "id", "type": "String"},
-    ).set_engine(engine)
+    )
     ```
 
 Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
