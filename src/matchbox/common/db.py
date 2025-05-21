@@ -98,11 +98,21 @@ def sql_to_df(
         If return_batches is True: An iterator of dataframes in the specified format.
 
     Raises:
-        ValueError: If the connection is not properly configured or if an unsupported
-            return type is specified.
+        ValueError:
+
+            * If the connection is not properly configured or if an unsupported
+                return type is specified.
+            * If batch_size and return_batches are either both set or both unset.
+
     """
     if return_type not in get_args(ReturnTypeStr):
         raise ValueError(f"return_type of {return_type} not valid")
+
+    if not batch_size and return_batches:
+        raise ValueError("A batch size must be specified if return_batches is True")
+
+    if batch_size and not return_batches:
+        raise ValueError("Cannot set a batch size if return_batches if False")
 
     def _to_format(results: PolarsDataFrame) -> QueryReturnType:
         """Convert the results to the specified format."""
@@ -124,9 +134,6 @@ def sql_to_df(
         schema_overrides=schema_overrides,
         execute_options=execute_options,
     )
-
-    if not bool(batch_size):
-        return _to_format(res)
 
     if not return_batches:
         return _to_format(pl.concat(res))
