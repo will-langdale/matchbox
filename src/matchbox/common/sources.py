@@ -29,6 +29,7 @@ from pydantic import (
 )
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
+from sqlglot import parse_one
 
 from matchbox.common.db import (
     QueryReturnType,
@@ -137,7 +138,7 @@ class Location(ABC, BaseModel):
     def execute(
         self,
         extract_transform: str,
-        batch_size: int,
+        batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_batches: bool = False,
         return_type: ReturnTypeStr = "polars",
@@ -229,9 +230,9 @@ class RelationalDBLocation(Location):
     def execute(  # noqa: D102
         self,
         extract_transform: str,
-        batch_size: int,
+        batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
-        return_batches: bool = True,
+        return_batches: bool = False,
         return_type: ReturnTypeStr = "polars",
     ) -> Iterator[QueryReturnType] | QueryReturnType:
         return sql_to_df(
@@ -395,8 +396,8 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes credentials have been set on location
-        sample: pl.DataFrame = next(
-            location.execute(extract_transform=extract_transform, batch_size=100)
+        sample: pl.DataFrame = location.execute(
+            parse_one(extract_transform).limit(1).sql()
         )
 
         remote_fields = {
