@@ -8,7 +8,7 @@ from matchbox.common.dtos import (
     ModelResolutionName,
     ResolutionOperationStatus,
 )
-from matchbox.common.eval import ModelComparison
+from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -31,7 +31,8 @@ async def login(
     "/",
 )
 async def insert_judgement(
-    backend: BackendDependency, resolutions: list[ModelResolutionName]
+    backend: BackendDependency,
+    judgement: Judgement,
 ):
     """Submit judgement from human evaluator."""
 
