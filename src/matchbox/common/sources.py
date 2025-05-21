@@ -17,7 +17,6 @@ from typing import (
 )
 
 import polars as pl
-from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from pydantic import (
     AnyUrl,
@@ -138,11 +137,10 @@ class Location(ABC, BaseModel):
     def execute(
         self,
         extract_transform: str,
-        batch_size: int | None = None,
+        batch_size: int,
         rename: dict[str, str] | Callable | None = None,
-        return_batches: bool = False,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType] | QueryReturnType:
+    ) -> Iterator[QueryReturnType]:
         """Execute ET logic against location and return batches.
 
         Args:
@@ -153,7 +151,6 @@ class Location(ABC, BaseModel):
                 * If a dictionary is provided, it will be used to rename the columns.
                 * If a callable is provided, it will take the old name as input and
                     return the new name.
-            return_batches: If True, return an iterator of batches.
             return_type: The type of data to return. Defaults to "polars".
 
         Raises:
@@ -230,19 +227,19 @@ class RelationalDBLocation(Location):
     def execute(  # noqa: D102
         self,
         extract_transform: str,
-        batch_size: int | None = None,
+        batch_size: int,
         rename: dict[str, str] | Callable | None = None,
-        return_batches: bool = False,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType] | QueryReturnType:
-        return sql_to_df(
-            stmt=extract_transform,
-            connection=self.credentials,
-            rename=rename,
-            batch_size=batch_size,
-            return_batches=return_batches,
-            return_type=return_type,
-        )
+    ) -> Iterator[QueryReturnType]:
+        with self.credentials.connect() as conn:
+            yield from sql_to_df(
+                stmt=extract_transform,
+                connection=conn,
+                rename=rename,
+                batch_size=batch_size,
+                return_batches=True,
+                return_type=return_type,
+            )
 
     @classmethod
     def from_engine(cls, engine: Engine) -> "RelationalDBLocation":
@@ -396,8 +393,8 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes credentials have been set on location
-        sample: pl.DataFrame = location.execute(
-            parse_one(extract_transform).limit(1).sql()
+        sample: pl.DataFrame = next(
+            location.execute(parse_one(extract_transform).limit(1).sql(), batch_size=1)
         )
 
         remote_fields = {
@@ -419,26 +416,19 @@ class SourceConfig(BaseModel):
     def query(
         self,
         qualify_names: bool = False,
-        return_batches: bool = False,
-        batch_size: int | None = None,
+        batch_size: int = None,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType] | QueryReturnType:
+    ) -> Iterator[QueryReturnType]:
         """Applies the extract/transform logic to the source and returns the results.
 
         Args:
             qualify_names: If True, qualify the names of the columns with the
                 source name.
-            return_batches:
-                * If True, return an iterator that yields each batch separately
-                * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
             return_type: The type of data to return. Defaults to "polars".
 
         Returns:
-            The requested data in the specified format.
-
-                * If return_batches is False: a single table
-                * If return_batches is True: an iterator of tables
+            The requested data in the specified format, as an iterator of tables.
         """
         _rename: Callable | None = None
         if qualify_names:
@@ -446,15 +436,14 @@ class SourceConfig(BaseModel):
             def _rename(c: str) -> str:
                 return self.name + "_" + c
 
-        return self.location.execute(
+        yield from self.location.execute(
             extract_transform=self.extract_transform,
             rename=_rename,
             batch_size=batch_size,
-            return_batches=return_batches,
             return_type=return_type,
         )
 
-    def hash_data(self, batch_size: int | None = None) -> ArrowTable:
+    def hash_data(self, batch_size: int) -> ArrowTable:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.
 
         Hashes the index fields defined in the source based on the
@@ -472,21 +461,15 @@ class SourceConfig(BaseModel):
         key_field: str = self.key_field.name
         index_fields: list[str] = [field.name for field in self.index_fields]
 
-        def _process_batch(batch: PolarsDataFrame) -> PolarsDataFrame:
-            """Process a single batch of data using Polars.
+        all_results: list[pl.DataFrame] = []
+        for batch in self.query(
+            return_batches=True,
+            batch_size=batch_size,
+            return_type="polars",
+        ):
+            batch: pl.DataFrame
 
-            Args:
-                batch: Polars DataFrame containing the data
-
-            Returns:
-                Polars DataFrame with hash and keys columns
-
-            Raises:
-                ValueError: If any keys values are null
-            """
-            batch: pl.DataFrame = batch.rename({key_field: "keys"})
-
-            if batch["keys"].is_null().any():
+            if batch[key_field].is_null().any():
                 raise ValueError("keys column contains null values")
 
             row_hashes: pl.Series = hash_rows(
@@ -495,28 +478,14 @@ class SourceConfig(BaseModel):
                 method=HashMethod.SHA256,
             )
 
-            result = batch.with_columns(row_hashes.alias("hash")).select(
-                ["hash", "keys"]
+            result = (
+                batch.rename({key_field: "keys"})
+                .with_columns(row_hashes.alias("hash"))
+                .select(["hash", "keys"])
             )
+            all_results.append(result)
 
-            return result
-
-        if bool(batch_size):
-            # Process in batches
-            all_results: list[pl.DataFrame] = []
-            for batch in self.query(
-                return_batches=True,
-                batch_size=batch_size,
-                return_type="polars",
-            ):
-                batch_result = _process_batch(batch)
-                all_results.append(batch_result)
-
-            processed_df = pl.concat(all_results)
-
-        else:
-            # Non-batched processing
-            processed_df = _process_batch(self.query())
+        processed_df = pl.concat(all_results)
 
         return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
 
