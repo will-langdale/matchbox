@@ -530,7 +530,17 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
-    """Table of probabilities that a cluster is correct, according to a resolution."""
+    """Table of probabilities that a cluster is correct, according to a resolution.
+
+    The role flag is used to efficiently store whether the probability is:
+        - 0: a pair cluster, only to be used when recovering pairwise probabilities
+        - 1: both a component and pair cluster, returned in both cases
+        - 2: a component cluster, to be returned as the resolution's proposition
+            at this threshold
+
+    The role flag allows queries to use >= 1 to get the correct clusters proposed by
+    the resolution, and <= 1 to get the pair clusters.
+    """
 
     __tablename__ = "probabilities"
 
@@ -544,7 +554,7 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
     probability = Column(SMALLINT, nullable=False)
-    component_cluster = Column(BOOLEAN, nullable=False)
+    role_flag = Column(SMALLINT, nullable=False)
 
     # Relationships
     proposed_by = relationship("Resolutions", back_populates="probabilities")

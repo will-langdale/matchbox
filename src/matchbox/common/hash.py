@@ -2,7 +2,7 @@
 
 import base64
 import hashlib
-from enum import StrEnum
+from enum import Flag, StrEnum
 from typing import Iterable, Self, TypeVar
 from uuid import UUID
 
@@ -11,8 +11,6 @@ import polars.expr as plx
 import polars_hash as plh
 import pyarrow as pa
 from pandas import DataFrame, Series
-
-from matchbox.common.logging import logger
 
 T = TypeVar("T")
 HashableItem = TypeVar("HashableItem", bytes, bool, str, int, float, bytearray)
@@ -280,14 +278,15 @@ class Cluster:
     Can be a leaf node (a single data point) or a non-leaf node (a cluster of
     clusters). The hash of a cluster is the hash of its leaves.
 
-    We generate negative Cantor pair integers for IDs, allowing us to generate
-    a true ID with the database after we've calculated components using these objects.
+    We generate negative integers for IDs, allowing us to generate a true ID with
+    the database after we've calculated components using these objects.
     """
 
     id: int
     probability: int | None
     hash: bytes
     leaves: tuple["Cluster"] | None
+    flag: Flag | None = None
 
     _intmap: IntMap  # Reference to the IntMap singleton
 
@@ -298,6 +297,7 @@ class Cluster:
         leaves: tuple["Cluster"] | list["Cluster"] | None = None,
         id: int | None = None,
         hash: bytes | None = None,
+        flag: Flag | None = None,
     ):
         """Initialise the Cluster.
 
@@ -308,8 +308,15 @@ class Cluster:
             leaves: A list of Cluster objects that are the leaves of this cluster
             id: The ID of the cluster (only for leaf nodes)
             hash: The hash of the cluster (only for leaf nodes)
+            flag: A flag indicating the role of the cluster (optional). This field can
+                be used to attach additional information to the cluster that's
+                particular to the hierarchical representation the Cluster is
+                involved in forming. For example, in a closure table system
+                we might flag pair clusters.
         """
         self._intmap = intmap
+        self.flag = flag
+        self.probability = probability
 
         if leaves:
             self.leaves = tuple(sorted(leaves, key=lambda leaf: leaf.hash))
@@ -332,59 +339,33 @@ class Cluster:
         else:
             self.id = intmap.index(leaf.id for leaf in self.leaves)
 
-        # Set probability
-        if probability is not None:
-            self.probability = probability
-        elif self.leaves is not None:
-            logger.debug(
-                "Potentially invalid to have a non-leaf cluster without a probability"
-            )
-            self.probability = probability
-        else:
-            self.probability = None
+    def add_flag(self, flag: Flag) -> None:
+        """Add a flag to the cluster.
 
-    def __add__(self, other: "Cluster", probability: int | None = None) -> "Cluster":
-        """Combine two clusters into a new one.
-
-        Note that use of this syntax means we can't add the probability, it would
-        have to be set afterwards - this is permitted but creates a debug log.
+        Args:
+            flag: The flag to add
         """
-        if self.leaves is None and other.leaves is None:
-            return Cluster(intmap=self._intmap, leaves=[self, other])
-
-        unique_dict: dict[int, Cluster] = {}
-
-        if self.leaves is None:
-            unique_dict[id(self)] = self
+        if self.flag is None:
+            self.flag = flag
         else:
-            for leaf in self.leaves:
-                unique_dict[id(leaf)] = leaf
-
-        if other.leaves is None:
-            unique_dict[id(other)] = other
-        else:
-            for leaf in other.leaves:
-                unique_dict[id(leaf)] = leaf
-
-        return Cluster(intmap=self._intmap, leaves=list(unique_dict.values()))
+            self.flag |= flag
 
     @classmethod
-    def combine_many(
+    def combine(
         cls: type[Self],
         clusters: Iterable["Cluster"],
         intmap: IntMap | None = None,
         probability: int | None = None,
+        flag: Flag | None = None,
     ) -> "Cluster":
         """Efficiently combine multiple clusters at once.
-
-        This is much faster than sequentially adding clusters with the + operator
-        when dealing with many clusters.
 
         Args:
             clusters: An iterable of Cluster objects to combine
             intmap: An IntMap instance for generating unique IDs. Defaults to the
                 first cluster's IntMap if not provided.
             probability: the probability of the cluster from its resolution
+            flag: A flag indicating the role of the cluster
 
         Returns:
             A new Cluster containing all unique leaves from the input clusters
@@ -407,5 +388,8 @@ class Cluster:
                     unique_dict[id(leaf)] = leaf
 
         return cls(
-            intmap=intmap, probability=probability, leaves=list(unique_dict.values())
+            intmap=intmap,
+            probability=probability,
+            leaves=list(unique_dict.values()),
+            flag=flag,
         )

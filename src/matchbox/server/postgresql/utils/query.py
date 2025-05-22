@@ -145,120 +145,71 @@ def _resolve_cluster_hierarchy(
 ) -> Select:
     """Resolves the final cluster assignments for all records in a source.
 
+    1. Threshold the probabilities table and filter to role_flag >= 1
+    2. Join to clusters table (as ClusterLeaf)
+    3. Left join to contains table (leaf side)
+    4. Join to clusters table again (as ClusterRoot)
+    5. Join to clustersourcekey
+    6. Return root cluster ID and source key
+
     Args:
         source_config: SourceConfig object of the source to query
         truth_resolution: Resolution object representing the point of truth
         threshold: Optional threshold value
 
     Returns:
-        SQLAlchemy Select statement that will resolve to (hash, id) pairs, where
-        hash is the ultimate parent cluster hash and id is the original record ID
+        SQLAlchemy Select statement that will resolve to (id, key) pairs, where
+        id is the root cluster id and key is the original record key
     """
-    with MBDB.get_session() as session:
-        source_resolution = session.get(Resolutions, source_config.resolution_id)
-        if source_resolution is None:
-            raise MatchboxSourceNotFoundError()
-
-        try:
-            lineage_truths = truth_resolution.get_lineage_to_source(
-                source=source_resolution
-            )
-        except ValueError as e:
-            raise MatchboxResolutionNotFoundError(
-                f"Invalid resolution lineage: {str(e)}"
-            ) from e
-
-        thresholds = _resolve_thresholds(
-            lineage_truths=lineage_truths,
-            resolution=truth_resolution,
-            threshold=threshold,
-        )
-
-        # Get clusters and contains valid across all resolutions in lineage
-        valid_clusters = _union_valid_clusters(thresholds)
-        valid_contains = _build_valid_contains(valid_clusters, name="valid_contains")
-
-        # Get base mapping of IDs to clusters
-        mapping_base = (
-            select(
-                Clusters.cluster_id.label("cluster_id"),
-                ClusterSourceKey.key.label("key"),
-            )
+    # If truth_resolution is the same as source resolution, just return clusters
+    if truth_resolution.resolution_id == source_config.resolution_id:
+        return (
+            select(Clusters.cluster_id.label("id"), ClusterSourceKey.key.label("key"))
+            .select_from(Clusters)
             .join(ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id)
-            .where(
-                and_(
-                    Clusters.cluster_id.in_(select(valid_clusters.c.cluster)),
-                    ClusterSourceKey.source_config_id == source_config.source_config_id,
-                )
-            )
-            .cte("mapping_base")
-            .prefix_with("MATERIALIZED")
+            .where(ClusterSourceKey.source_config_id == source_config.source_config_id)
         )
 
-        # Build recursive hierarchy CTE
-        hierarchy = (
-            # Base case: direct parents
-            select(
-                mapping_base.c.cluster_id.label("original_cluster"),
-                mapping_base.c.cluster_id.label("child"),
-                valid_contains.c.parent.label("parent"),
-                literal(1).label("level"),
-            )
-            .select_from(mapping_base)
-            .join(
-                valid_contains,
-                valid_contains.c.child == mapping_base.c.cluster_id,
-                isouter=True,
-            )
-            .cte("hierarchy", recursive=True)
+    # Use resolution's default truth if no threshold provided
+    final_threshold = threshold if threshold is not None else truth_resolution.truth
+
+    ClusterLeaf = Clusters.__table__.alias("cluster_leaf")
+    ClusterRoot = Clusters.__table__.alias("cluster_root")
+
+    # Build where conditions
+    where_conditions = [
+        Probabilities.resolution == truth_resolution.resolution_id,
+        Probabilities.role_flag >= 1,
+    ]
+
+    # Only add threshold condition if we have a threshold
+    if final_threshold is not None:
+        where_conditions.append(Probabilities.probability >= final_threshold)
+
+    query = (
+        select(
+            func.coalesce(Contains.root, ClusterLeaf.c.cluster_id).label("id"),
+            ClusterSourceKey.key.label("key"),
         )
-
-        # Recursive case
-        recursive = (
-            select(
-                hierarchy.c.original_cluster,
-                hierarchy.c.parent.label("child"),
-                valid_contains.c.parent.label("parent"),
-                (hierarchy.c.level + 1).label("level"),
-            )
-            .select_from(hierarchy)
-            .join(valid_contains, valid_contains.c.child == hierarchy.c.parent)
-            .where(hierarchy.c.parent.is_not(None))  # Only recurse on non-leaf nodes
+        .select_from(Probabilities)
+        .join(ClusterLeaf, Probabilities.cluster == ClusterLeaf.c.cluster_id)
+        .outerjoin(Contains, Contains.leaf == ClusterLeaf.c.cluster_id)
+        .join(
+            ClusterRoot,
+            func.coalesce(Contains.root, ClusterLeaf.c.cluster_id)
+            == ClusterRoot.c.cluster_id,
         )
-
-        hierarchy = hierarchy.union_all(recursive)
-
-        # Get highest parents
-        highest_parents = (
-            select(
-                hierarchy.c.original_cluster,
-                hierarchy.c.parent.label("highest_parent"),
-                hierarchy.c.level,
-            )
-            .distinct(hierarchy.c.original_cluster)
-            .order_by(hierarchy.c.original_cluster, hierarchy.c.level.desc())
-            .cte("highest_parents")
+        .join(
+            ClusterSourceKey,
+            and_(
+                ClusterSourceKey.cluster_id == ClusterRoot.c.cluster_id,
+                ClusterSourceKey.source_config_id == source_config.source_config_id,
+            ),
         )
+        .where(and_(*where_conditions))
+    )
 
-        # Final mapping with coalesced results
-        final_mapping = (
-            select(
-                mapping_base.c.key,
-                func.coalesce(
-                    highest_parents.c.highest_parent, mapping_base.c.cluster_id
-                ).label("final_parent"),
-            )
-            .select_from(mapping_base)
-            .join(
-                highest_parents,
-                highest_parents.c.original_cluster == mapping_base.c.cluster_id,
-                isouter=True,
-            )
-            .cte("final_mapping")
-        )
-
-        # Final select statement
-        return select(final_mapping.c.final_parent.label("id"), final_mapping.c.key)
+    return query
 
 
 def query(
