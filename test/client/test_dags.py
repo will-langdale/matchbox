@@ -163,7 +163,6 @@ def test_dedupe_step_run(
             resolution=d_foo.left.name,
             only_indexed=True,
             batch_size=100 if batched else None,
-            return_batches=False,
         )
         # Data is pre-processed
         process_mock.assert_called_once_with(
@@ -255,7 +254,6 @@ def test_link_step_run(
             resolution=foo_bar.left.name,
             only_indexed=True,
             batch_size=100 if batched else None,
-            return_batches=False,
         )
         assert query_mock.call_args_list[1] == call(
             [Selector(source=bar, fields=[])],
@@ -264,7 +262,6 @@ def test_link_step_run(
             resolution=foo_bar.right.name,
             only_indexed=True,
             batch_size=100 if batched else None,
-            return_batches=False,
         )
 
         # Data is pre-processed

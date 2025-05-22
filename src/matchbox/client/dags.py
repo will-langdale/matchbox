@@ -82,7 +82,8 @@ class IndexStep(Step):
     batch_size: int | None = Field(default=None)
 
     @model_validator(mode="before")
-    def source_to_atrtibutes(cls, data: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def source_to_attributes(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Convert source config to name and sources attributes."""
         if "source_config" not in data:
             raise ValueError("SourceConfig must be provided")
@@ -137,7 +138,6 @@ class ModelStep(Step):
             resolution=step_input.name,
             only_indexed=True,
             batch_size=step_input.batch_size,
-            return_batches=False,
         )
 
 
