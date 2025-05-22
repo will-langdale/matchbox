@@ -382,7 +382,8 @@ def test_source_identifier_validation():
         )
 
 
-def test_source_factory_method(sqlite_warehouse):
+def test_source_from_new(sqlite_warehouse):
+    """Creating a source config using new(), which infers types, works."""
     # Create test data
     source_testkit = source_factory(
         n_true_entities=5,
@@ -393,7 +394,6 @@ def test_source_factory_method(sqlite_warehouse):
     )
     source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
 
-    # Create location and source
     location = RelationalDBLocation.from_engine(sqlite_warehouse)
     source = SourceConfig.new(
         location=location,
@@ -407,6 +407,35 @@ def test_source_factory_method(sqlite_warehouse):
     assert source.index_fields == tuple(
         [SourceField(name="name", type=DataTypes.STRING)]
     )
+
+
+def test_source_from_new_errors(sqlite_warehouse):
+    """Creating a source config using new() errors with non-string key."""
+    # Create test data
+    source_testkit = source_factory(
+        n_true_entities=5,
+        features=[
+            {"name": "name", "base_generator": "word", "datatype": DataTypes.STRING},
+            {
+                "name": "int_pk",
+                "base_generator": "random_int",
+                "datatype": DataTypes.INT64,
+            },
+        ],
+        engine=sqlite_warehouse,
+    )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    with pytest.raises(ValueError):
+        SourceConfig.new(
+            location=location,
+            name="test_source",
+            extract_transform=source_testkit.source_config.extract_transform,
+            key_field="int_pk",
+            index_fields=["name"],
+        )
 
 
 def test_source_query(sqlite_warehouse: Engine):

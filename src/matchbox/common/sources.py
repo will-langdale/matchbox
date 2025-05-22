@@ -404,7 +404,12 @@ class SourceConfig(BaseModel):
             for col in sample.iter_columns()
         }
 
-        typed_key_field = remote_fields[key_field]
+        if remote_fields[key_field].type != DataTypes.STRING:
+            raise ValueError(
+                "The keys read from the extract transform logic must be strings."
+            )
+
+        typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
         typed_index_fields = tuple(remote_fields[field] for field in index_fields)
 
         return cls(
