@@ -406,7 +406,8 @@ class SourceConfig(BaseModel):
 
         if remote_fields[key_field].type != DataTypes.STRING:
             raise ValueError(
-                "The keys read from the extract transform logic must be strings."
+                f"Your key_field, {key_field}, must coerce to a string "
+                "in the extract transform logic. "
             )
 
         typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
