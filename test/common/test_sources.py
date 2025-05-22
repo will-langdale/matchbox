@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import polars as pl
 import pyarrow as pa
@@ -456,7 +456,7 @@ def test_source_query_name_qualification(
 ):
     """Test that column names are qualified when requested."""
     # Mock the location execute method to verify parameters
-    mock_execute.return_value = MagicMock()
+    mock_execute.return_value = (x for x in [None])  # execute needs to be a generator
     location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
 
     # Create source
@@ -469,7 +469,7 @@ def test_source_query_name_qualification(
     )
 
     # Call query with qualification parameter
-    source.query(qualify_names=qualify_names)
+    next(source.query(qualify_names=qualify_names))
 
     # Verify the rename parameter passed to execute
     _, kwargs = mock_execute.call_args
@@ -505,7 +505,7 @@ def test_source_query_batching(
 ):
     """Test query with batching options."""
     # Mock the location execute method to verify parameters
-    mock_execute.return_value = MagicMock()
+    mock_execute.return_value = (x for x in [None])  # execute needs to be a generator
     location = RelationalDBLocation(uri=str(sqlite_warehouse.url))
 
     # Create source
@@ -518,7 +518,7 @@ def test_source_query_batching(
     )
 
     # Call query with batching parameters
-    source.query(batch_size=batch_size)
+    next(source.query(batch_size=batch_size))
 
     # Verify parameters passed to execute
     _, kwargs = mock_execute.call_args
@@ -592,7 +592,7 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
 
     # Mock query to return data with null keys
     mock_df = pl.DataFrame({"key": ["1", None], "name": ["a", "b"]})
-    mock_query.return_value = mock_df
+    mock_query.return_value = (x for x in [mock_df])
 
     # hash_data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):

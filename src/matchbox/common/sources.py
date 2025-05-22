@@ -232,7 +232,7 @@ class RelationalDBLocation(Location):
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
     ) -> Generator[QueryReturnType, None, None]:
-        batch_size = 10_000 or batch_size
+        batch_size = batch_size or 10_000
         with self.credentials.connect() as conn:
             yield from sql_to_df(
                 stmt=extract_transform,
