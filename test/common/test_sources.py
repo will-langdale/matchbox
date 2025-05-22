@@ -432,7 +432,7 @@ def test_source_query(sqlite_warehouse: Engine):
     )
 
     # Execute query
-    result = source.query()
+    result = next(source.query())
 
     # Verify result
     assert isinstance(result, pl.DataFrame)
@@ -486,24 +486,20 @@ def test_source_query_name_qualification(
 
 
 @pytest.mark.parametrize(
-    ("return_batches", "batch_size", "expected_call_kwargs"),
+    ("batch_size", "expected_call_kwargs"),
     [
         pytest.param(
-            False,
             None,
-            {"return_batches": False, "batch_size": None},
+            {"batch_size": None},
             id="single_return",
         ),
-        pytest.param(
-            True, 3, {"return_batches": True, "batch_size": 3}, id="multiple_batches"
-        ),
+        pytest.param(3, {"batch_size": 3}, id="multiple_batches"),
     ],
 )
 @patch("matchbox.common.sources.RelationalDBLocation.execute")
 def test_source_query_batching(
     mock_execute: Mock,
     sqlite_warehouse: Engine,
-    return_batches: bool,
     batch_size: int,
     expected_call_kwargs: dict,
 ):
@@ -522,7 +518,7 @@ def test_source_query_batching(
     )
 
     # Call query with batching parameters
-    source.query(return_batches=return_batches, batch_size=batch_size)
+    source.query(batch_size=batch_size)
 
     # Verify parameters passed to execute
     _, kwargs = mock_execute.call_args
@@ -569,7 +565,10 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     )
 
     # Execute hash_data with different batching parameters
-    result = source.hash_data(batch_size=batch_size)
+    if batch_size:
+        result = source.hash_data(batch_size=batch_size)
+    else:
+        result = source.hash_data()
 
     # Verify result
     assert isinstance(result, pa.Table)

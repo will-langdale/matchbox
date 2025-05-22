@@ -8,6 +8,7 @@ from functools import wraps
 from typing import (
     Any,
     Callable,
+    Generator,
     Iterator,
     Literal,
     ParamSpec,
@@ -137,7 +138,7 @@ class Location(ABC, BaseModel):
     def execute(
         self,
         extract_transform: str,
-        batch_size: int,
+        batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
     ) -> Iterator[QueryReturnType]:
@@ -227,10 +228,11 @@ class RelationalDBLocation(Location):
     def execute(  # noqa: D102
         self,
         extract_transform: str,
-        batch_size: int,
+        batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType]:
+    ) -> Generator[QueryReturnType, None, None]:
+        batch_size = 10_000 or batch_size
         with self.credentials.connect() as conn:
             yield from sql_to_df(
                 stmt=extract_transform,
@@ -416,9 +418,9 @@ class SourceConfig(BaseModel):
     def query(
         self,
         qualify_names: bool = False,
-        batch_size: int = None,
+        batch_size: int | None = None,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType]:
+    ) -> Generator[QueryReturnType, None, None]:
         """Applies the extract/transform logic to the source and returns the results.
 
         Args:
@@ -443,7 +445,7 @@ class SourceConfig(BaseModel):
             return_type=return_type,
         )
 
-    def hash_data(self, batch_size: int) -> ArrowTable:
+    def hash_data(self, batch_size: int | None = None) -> ArrowTable:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.
 
         Hashes the index fields defined in the source based on the
@@ -463,7 +465,6 @@ class SourceConfig(BaseModel):
 
         all_results: list[pl.DataFrame] = []
         for batch in self.query(
-            return_batches=True,
             batch_size=batch_size,
             return_type="polars",
         ):

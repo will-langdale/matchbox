@@ -138,7 +138,6 @@ class ModelStep(Step):
             resolution=step_input.name,
             only_indexed=True,
             batch_size=step_input.batch_size,
-            return_batches=False,
         )
 
 
