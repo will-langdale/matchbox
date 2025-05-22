@@ -221,10 +221,10 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
 
     configs = (
         SourceTestkitParameters(
-            full_name="source_left", features=features, n_true_entities=10
+            name="source_left", features=features, n_true_entities=10
         ),
         SourceTestkitParameters(
-            full_name="source_right", features=features, n_true_entities=10
+            name="source_right", features=features, n_true_entities=10
         ),
     )
 

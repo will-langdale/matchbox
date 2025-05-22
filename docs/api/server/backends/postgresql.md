@@ -12,8 +12,9 @@ erDiagram
     SourceConfigs {
         bigint source_config_id PK
         bigint resolution_id FK
-        string full_name
-        bytes warehouse_hash
+        string location_type
+        string location_uri
+        string extract_transform
     }
     SourceFields {
         bigint field_id PK
@@ -40,7 +41,7 @@ erDiagram
     PKSpace {
         bigint id
         bigint next_cluster_id
-        bigint next_cluster_key_id
+        bigint next_cluster_keys_id
     }
     Probabilities {
         bigint resolution PK,FK
