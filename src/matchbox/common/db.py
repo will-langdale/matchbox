@@ -135,10 +135,10 @@ def sql_to_df(
         execute_options=execute_options,
     )
 
-    if not return_batches:
-        return _to_format(pl.concat(res))
+    if return_batches:
+        return (_to_format(batch) for batch in res)
 
-    return (_to_format(batch) for batch in res)
+    return _to_format(res)
 
 
 def validate_sql_for_data_extraction(sql: str) -> bool:
