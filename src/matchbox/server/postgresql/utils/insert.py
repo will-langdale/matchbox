@@ -1,13 +1,12 @@
 """Utilities for inserting data into the PostgreSQL backend."""
 
-from collections import defaultdict
 from enum import Flag, auto
 from typing import Iterator
 
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
@@ -34,6 +33,7 @@ from matchbox.server.postgresql.utils.db import (
     ingest_to_temporary_table,
     large_ingest,
 )
+from matchbox.server.postgresql.utils.query import _get_clusters_with_leaves
 
 
 class ClusterClosureRole(Flag):
@@ -374,90 +374,6 @@ def insert_model(
     logger.info("Done!", prefix=log_prefix)
 
 
-def _get_clusters_with_leaves(
-    resolution: Resolutions,
-) -> dict[int, dict[str, list[dict]]]:
-    """Query clusters and their leaves, returning a nested dictionary structure.
-
-    Args:
-        resolution: Resolution object whose parents proposed the clusters
-            we need to recover
-
-    Returns:
-        Dict mapping cluster_id to a dict with cluster info and leaves list
-    """
-    with MBDB.get_session() as session:
-        # Get parent resolution IDs
-        parent_ids = [
-            row[0]
-            for row in session.execute(
-                select(ResolutionFrom.parent)
-                .where(ResolutionFrom.child == resolution.resolution_id)
-                .where(ResolutionFrom.level == 1)
-            ).all()
-        ]
-
-        if not parent_ids:
-            return {}
-
-        # Create alias for root clusters
-        RootClusters = Clusters.__table__.alias("root_clusters")
-
-        # One unified query that handles all cases
-        stmt = (
-            select(
-                # Use coalesce to get root from Contains, fallback to cluster itself
-                func.coalesce(Contains.root, Clusters.cluster_id).label("root_id"),
-                func.coalesce(RootClusters.c.cluster_hash, Clusters.cluster_hash).label(
-                    "root_hash"
-                ),
-                Clusters.cluster_id.label("leaf_id"),
-                Clusters.cluster_hash.label("leaf_hash"),
-                Probabilities.probability.label("probability"),
-            )
-            .select_from(Clusters)
-            # Get clusters from source resolutions
-            .outerjoin(
-                ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id
-            )
-            .outerjoin(
-                SourceConfigs,
-                SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
-            )
-            # Get clusters from model resolutions
-            .outerjoin(Probabilities, Probabilities.cluster == Clusters.cluster_id)
-            # Get hierarchy info (may be empty)
-            .outerjoin(Contains, Contains.leaf == Clusters.cluster_id)
-            .outerjoin(RootClusters, Contains.root == RootClusters.c.cluster_id)
-            # Filter to parent resolutions only
-            .where(
-                or_(
-                    SourceConfigs.resolution_id.in_(parent_ids),
-                    Probabilities.resolution.in_(parent_ids),
-                )
-            )
-            .distinct()
-        )
-
-        # Create nested structure
-        result = defaultdict(
-            lambda: {"root_hash": None, "leaves": [], "probability": None}
-        )
-
-        for row in session.execute(stmt):
-            root_id = row.root_id
-
-            if result[root_id]["root_hash"] is None:
-                result[root_id]["root_hash"] = row.root_hash
-                result[root_id]["probability"] = row.probability
-
-            result[root_id]["leaves"].append(
-                {"leaf_id": row.leaf_id, "leaf_hash": row.leaf_hash}
-            )
-
-        return dict(result)
-
-
 def _build_cluster_objects(
     nested_dict: dict[int, dict[str, list[dict]]],
     intmap: IntMap,
@@ -547,8 +463,26 @@ def _build_cluster_hierarchy(
 
     djs = DisjointSet[Cluster]()
     all_clusters: dict[bytes, Cluster] = {}
-    component_cache: set[set[Cluster]] = set()
+    component_cache: set[frozenset[Cluster]] = set()
     threshold: int = int(pa.compute.max(probabilities["probability"]).as_py())
+
+    def _process_components(probability: int) -> None:
+        """Process components at the current threshold."""
+        components: set[frozenset[Cluster]] = {
+            frozenset(component) for component in djs.get_components()
+        }
+        for component in components.difference(component_cache):
+            cluster = Cluster.combine(
+                clusters=component,
+                probability=probability,
+                flag=ClusterClosureRole.COMPONENT,
+            )
+            if cluster.hash in all_clusters:
+                all_clusters[cluster.hash].add_flag(ClusterClosureRole.COMPONENT)
+            else:
+                all_clusters[cluster.hash] = cluster
+
+        return components
 
     for left_cluster, right_cluster, probability in _results_to_cluster_pairs(
         cluster_lookup, probabilities
@@ -563,25 +497,13 @@ def _build_cluster_hierarchy(
 
         if probability < threshold:
             # Process the components at the previous threshold
-            components: set[frozenset[Cluster]] = {
-                frozenset(component) for component in djs.get_components()
-            }
-            for component in components.difference(component_cache):
-                cluster = Cluster.combine(
-                    clusters=component,
-                    probability=probability,
-                    flag=ClusterClosureRole.COMPONENT,
-                )
-                if cluster.hash in all_clusters:
-                    all_clusters[cluster.hash].add_flag(ClusterClosureRole.COMPONENT)
-                else:
-                    all_clusters[cluster.hash] = cluster
-
-            # Continue to next threshold
+            component_cache = _process_components(probability)
             threshold = probability
-            component_cache = components
 
         djs.union(left_cluster, right_cluster)
+
+    # Process any remaining components
+    _process_components(probability)
 
     return all_clusters
 
@@ -717,13 +639,13 @@ def _results_to_insert_tables(
     # Filter to new clusters and explode leaves for Contains table
     new_contains_df = (
         all_clusters_df.filter(pl.col("new"))
-        .select("cluster_hash", "cluster")
-        .rename({"cluster_hash": "root"})
+        .select("cluster_id", "cluster")
+        .rename({"cluster_id": "root"})
         .with_columns(
             pl.col("cluster")
             .map_elements(
-                lambda cluster: [leaf.hash for leaf in cluster.leaves],
-                return_dtype=pl.List(pl.Binary),
+                lambda cluster: [leaf.id for leaf in cluster.leaves],
+                return_dtype=pl.List(pl.Int64),
             )
             .alias("leaf")
         )
@@ -757,7 +679,7 @@ def _results_to_insert_tables(
         .drop("cluster")
         .rename({"cluster_id": "cluster"})
         .with_columns(
-            pl.lit(resolution.resolution_id, dtype=pl.Int8).alias("resolution")
+            pl.lit(resolution.resolution_id, dtype=pl.Int64).alias("resolution")
         )
         .select("resolution", "cluster", "probability", "role_flag")
     )
