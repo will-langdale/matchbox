@@ -3,9 +3,9 @@
 from typing import TypeVar
 
 import pyarrow as pa
-from sqlalchemy import BIGINT, and_, cast, func, literal, null, select, union
+from sqlalchemy import and_, func, literal, select, union
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.selectable import CTE, Select
+from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ResolutionName, SourceResolutionName
@@ -80,63 +80,6 @@ def _resolve_thresholds(
             raise ValueError(f"Invalid threshold type: {type(threshold)}")
 
     return resolved_thresholds
-
-
-def _get_valid_clusters_for_resolution(resolution_id: int, threshold: int) -> Select:
-    """Get clusters that meet the threshold for a specific resolution."""
-    return select(Probabilities.cluster.label("cluster")).where(
-        and_(
-            Probabilities.resolution == resolution_id,
-            Probabilities.probability >= threshold,
-        )
-    )
-
-
-def _union_valid_clusters(lineage_thresholds: dict[int, float]) -> Select:
-    """Creates a CTE of clusters that are valid for any resolution in the lineage.
-
-    Each resolution may have a different threshold.
-    """
-    valid_clusters = None
-
-    for resolution_id, threshold in lineage_thresholds.items():
-        if threshold is None:
-            # This is a source resolution
-            # Get all its clusters through ClusterSourceKey
-            resolution_valid = (
-                select(ClusterSourceKey.cluster_id.label("cluster"))
-                .join(
-                    SourceConfigs,
-                    SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
-                )
-                .where(SourceConfigs.resolution_id == resolution_id)
-                .distinct()
-            )
-        else:
-            # This is a model - get clusters meeting threshold
-            resolution_valid = _get_valid_clusters_for_resolution(
-                resolution_id, threshold
-            )
-
-        if valid_clusters is None:
-            valid_clusters = resolution_valid
-        else:
-            valid_clusters = union(valid_clusters, resolution_valid)
-
-    if valid_clusters is None:
-        # Handle empty lineage case
-        return select(cast(null(), BIGINT).label("cluster")).where(False)
-
-    return valid_clusters.cte("valid_clusters").prefix_with("MATERIALIZED")
-
-
-def _build_valid_contains(valid_clusters_cte: CTE, name: str) -> CTE:
-    """Filters the Contains table to only include relationships with valid parents."""
-    valid_contains = select(Contains.child, Contains.parent).where(
-        Contains.parent.in_(select(valid_clusters_cte.c.cluster))
-    )
-
-    return valid_contains.cte(name).prefix_with("MATERIALIZED")
 
 
 def _resolve_hierarchy_assignments(
@@ -370,52 +313,6 @@ def _resolve_hierarchy_assignments(
     ).where(ranked_decisions.c.rank == 1)
 
 
-def _get_cluster_hierarchy_base_query() -> Select:
-    """Get the base query for cluster hierarchy relationships.
-
-    Returns a Select query with columns:
-    - root_id: The root cluster ID (from Contains.root, or cluster itself)
-    - root_hash: Hash of the root cluster
-    - leaf_id: The leaf cluster ID (original cluster)
-    - leaf_hash: Hash of the leaf cluster
-    - probability: Probability from Probabilities (None for source clusters)
-    - source_config_id: Which source this leaf cluster belongs to
-    - resolution_id: Which resolution this relates to
-    """
-    RootClusters = Clusters.__table__.alias("root_clusters")
-
-    return (
-        select(
-            func.coalesce(Contains.root, Clusters.cluster_id).label("root_id"),
-            func.coalesce(RootClusters.c.cluster_hash, Clusters.cluster_hash).label(
-                "root_hash"
-            ),
-            Clusters.cluster_id.label("leaf_id"),
-            Clusters.cluster_hash.label("leaf_hash"),
-            Probabilities.probability.label("probability"),
-            ClusterSourceKey.source_config_id.label("source_config_id"),
-            func.coalesce(Probabilities.resolution, SourceConfigs.resolution_id).label(
-                "resolution_id"
-            ),
-        )
-        .select_from(Clusters)
-        # Connect to source keys
-        .join(ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id)
-        .join(
-            SourceConfigs,
-            SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
-        )
-        # Connect to hierarchy (may be empty)
-        .outerjoin(Contains, Contains.leaf == Clusters.cluster_id)
-        .outerjoin(RootClusters, Contains.root == RootClusters.c.cluster_id)
-        # Connect to model decisions (may be empty for source resolutions)
-        .outerjoin(
-            Probabilities,
-            Probabilities.cluster == func.coalesce(Contains.root, Clusters.cluster_id),
-        )
-    )
-
-
 def _resolve_cluster_hierarchy(
     source_config: SourceConfigs,
     truth_resolution: Resolutions,
@@ -588,211 +485,6 @@ def query(
         return mb_ids
 
 
-def _build_unnested_clusters() -> CTE:
-    """Create CTE that unnests cluster IDs for easier joining."""
-    return (
-        select(
-            Clusters.cluster_id,
-            ClusterSourceKey.source_config_id.label("source_config"),
-            ClusterSourceKey.key,
-        )
-        .select_from(Clusters)
-        .join(ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id)
-        .cte("unnested_clusters")
-        .prefix_with("MATERIALIZED")
-    )
-
-
-def _find_source_cluster(
-    unnested_clusters: CTE, source_config_id: int, key: str
-) -> Select:
-    """Find the initial cluster containing the source key."""
-    return (
-        select(unnested_clusters.c.cluster_id)
-        .select_from(unnested_clusters)
-        .where(
-            and_(
-                unnested_clusters.c.source_config == source_config_id,
-                unnested_clusters.c.key == key,
-            )
-        )
-        .scalar_subquery()
-    )
-
-
-def _build_hierarchy_up(
-    source_cluster: Select,
-    contains_table: CTE | Contains,
-) -> CTE:
-    """Build recursive CTE that finds all parent clusters.
-
-    Args:
-        source_cluster: Subquery that finds starting cluster
-        contains_table: Contains or CTE of valid clusters to filter by
-    """
-    if isinstance(contains_table, CTE):
-        child_col = contains_table.c.child
-        parent_col = contains_table.c.parent
-    else:
-        child_col = contains_table.child
-        child_col = contains_table.parent
-
-    # Base case: direct parents
-    base = (
-        select(
-            source_cluster.label("original_cluster"),
-            source_cluster.label("child"),
-            parent_col.label("parent"),
-            literal(1).label("level"),
-        )
-        .select_from(contains_table)
-        .where(child_col == source_cluster)
-    )
-
-    hierarchy_up = base.cte("hierarchy_up", recursive=True)
-
-    # Recursive case
-    recursive = (
-        select(
-            hierarchy_up.c.original_cluster,
-            hierarchy_up.c.parent.label("child"),
-            parent_col.label("parent"),
-            (hierarchy_up.c.level + 1).label("level"),
-        )
-        .select_from(hierarchy_up)
-        .join(contains_table, child_col == hierarchy_up.c.parent)
-    )
-
-    return hierarchy_up.union_all(recursive)
-
-
-def _find_highest_parent(hierarchy_up: CTE) -> Select:
-    """Find the topmost parent cluster from the hierarchy."""
-    return (
-        select(hierarchy_up.c.parent)
-        .order_by(hierarchy_up.c.level.desc())
-        .limit(1)
-        .scalar_subquery()
-    )
-
-
-def _build_hierarchy_down(
-    highest_parent: Select, unnested_clusters: CTE, contains_table: CTE | Contains
-) -> CTE:
-    """Build recursive CTE that finds all child clusters and their IDs.
-
-    Args:
-        highest_parent: Subquery that finds top cluster
-        unnested_clusters: CTE with unnested cluster IDs
-        contains_table: Contains or CTE of valid clusters to filter by
-    """
-    if isinstance(contains_table, CTE):
-        child_col = contains_table.c.child
-        parent_col = contains_table.c.parent
-    else:
-        child_col = contains_table.child
-        child_col = contains_table.parent
-
-    # Base case: Get both direct children and their IDs
-    base = (
-        select(
-            highest_parent.label("parent"),
-            child_col.label("child"),
-            literal(1).label("level"),
-            unnested_clusters.c.source_config.label("source_config"),
-            unnested_clusters.c.key.label("key"),
-        )
-        .select_from(contains_table)
-        .join_from(
-            contains_table,
-            unnested_clusters,
-            unnested_clusters.c.cluster_id == child_col,
-            isouter=True,
-        )
-        .where(parent_col == highest_parent)
-    )
-
-    hierarchy_down = base.cte("hierarchy_down", recursive=True)
-
-    # Recursive case: Get both intermediate nodes AND their leaf records
-    recursive = (
-        select(
-            hierarchy_down.c.parent,
-            child_col.label("child"),
-            (hierarchy_down.c.level + 1).label("level"),
-            unnested_clusters.c.source_config.label("source_config"),
-            unnested_clusters.c.key.label("key"),
-        )
-        .select_from(hierarchy_down)
-        .join_from(
-            hierarchy_down,
-            contains_table,
-            parent_col == hierarchy_down.c.child,
-        )
-        .join_from(
-            contains_table,
-            unnested_clusters,
-            unnested_clusters.c.cluster_id == child_col,
-            isouter=True,
-        )
-        .where(hierarchy_down.c.key.is_(None))  # Only recurse on non-leaf nodes
-    )
-
-    return hierarchy_down.union_all(recursive)
-
-
-def _build_match_query(
-    key: str,
-    source_config: SourceConfigs,
-    resolution: ResolutionName,
-    session: Session,
-    threshold: int | None = None,
-) -> Select:
-    """Builds the SQL query that powers the match function."""
-    # Get truth resolution
-    truth_resolution = (
-        session.query(Resolutions).filter(Resolutions.name == resolution).first()
-    )
-    if truth_resolution is None:
-        raise MatchboxResolutionNotFoundError(name=resolution)
-
-    # Get resolution lineage and resolve thresholds
-    lineage_truths = truth_resolution.get_lineage()
-    thresholds = _resolve_thresholds(
-        lineage_truths=lineage_truths,
-        resolution=truth_resolution,
-        threshold=threshold,
-    )
-
-    # Get valid clusters across all resolutions
-    valid_clusters = _union_valid_clusters(thresholds)
-
-    # Pre-filter Contains table if valid_clusters is provided
-    contains_table = Contains
-    if valid_clusters is not None:
-        contains_table = _build_valid_contains(valid_clusters, name="valid_contains_up")
-
-    # Build the query components
-    unnested = _build_unnested_clusters()
-    source_cluster = _find_source_cluster(unnested, source_config.source_config_id, key)
-    hierarchy_up = _build_hierarchy_up(source_cluster, contains_table)
-    highest = _find_highest_parent(hierarchy_up)
-    hierarchy_down = _build_hierarchy_down(highest, unnested, contains_table)
-
-    # Get all matched IDs
-    final_stmt = (
-        select(
-            hierarchy_down.c.parent.label("cluster"),
-            hierarchy_down.c.source_config,
-            hierarchy_down.c.key,
-        )
-        .distinct()
-        .select_from(hierarchy_down)
-    )
-
-    return final_stmt
-
-
 def match(
     key: str,
     source: SourceResolutionName,
@@ -803,43 +495,71 @@ def match(
     """Matches an ID in a source resolution and returns the keys in the targets.
 
     To accomplish this, the function:
-
-    * Reconstructs the resolution lineage from the specified resolution
-    * Iterates through each target, and
-        * Retrieves its cluster hash according to the resolution
-        * Retrieves all other IDs in the cluster in the source source resolution
-        * Retrieves all other IDs in the cluster in the target source resolution
+    * Uses the resolution lineage to determine what cluster the source key belongs to
+    * Finds all other keys in that same cluster across all target sources
     * Returns the results as Match objects, one per target
     """
     with MBDB.get_session() as session:
-        # Get all matches for keys in all possible targets
+        # Get source config and truth resolution
         source_config = get_source_config(source, session)
+        truth_resolution = (
+            session.query(Resolutions).filter(Resolutions.name == resolution).first()
+        )
+        if truth_resolution is None:
+            raise MatchboxResolutionNotFoundError(name=resolution)
 
-        match_stmt = _build_match_query(
-            key=key,
-            source_config=source_config,
-            resolution=resolution,
-            session=session,
+        # Get all target source configs
+        target_configs = []
+        for target in targets:
+            target_config = get_source_config(target, session)
+            target_configs.append(target_config)
+
+        # Use our hierarchy resolution to get all cluster assignments
+        # This gives us what cluster each key belongs to
+        # according to the truth resolution
+        hierarchy_assignments = _resolve_hierarchy_assignments(
+            resolution=truth_resolution,
+            sources=None,  # Get assignments for all sources
             threshold=threshold,
+        ).cte("hierarchy_assignments")
+
+        # Find what cluster our source key belongs to
+        source_key_cluster = (
+            select(hierarchy_assignments.c.root_id)
+            .where(
+                and_(
+                    hierarchy_assignments.c.leaf_key == key,
+                    hierarchy_assignments.c.source_config_id
+                    == source_config.source_config_id,
+                )
+            )
+            .scalar_subquery()
         )
 
-        logger.debug(f"Match SQL: \n {compile_sql(match_stmt)}")
+        # Find all keys in the same cluster across all sources
+        cluster_matches = select(
+            hierarchy_assignments.c.root_id.label("cluster"),
+            hierarchy_assignments.c.source_config_id.label("source_config"),
+            hierarchy_assignments.c.leaf_key.label("key"),
+        ).where(hierarchy_assignments.c.root_id == source_key_cluster)
 
-        matches = session.execute(match_stmt).all()
+        logger.debug(f"Match SQL: \n {compile_sql(cluster_matches)}")
 
-        # Return matches in target sources only
+        matches = session.execute(cluster_matches).all()
+
+        # Organize matches by source config
         cluster = None
         matches_by_source_id: dict[int, set] = {}
-        for cluster_id, source_id, id_in_source in matches:
+        for cluster_id, source_config_id, key_in_source in matches:
             if cluster is None:
                 cluster = cluster_id
-            if source_id not in matches_by_source_id:
-                matches_by_source_id[source_id] = set()
-            matches_by_source_id[source_id].add(id_in_source)
+            if source_config_id not in matches_by_source_id:
+                matches_by_source_id[source_config_id] = set()
+            matches_by_source_id[source_config_id].add(key_in_source)
 
+        # Build result objects for each target
         result = []
-        for target in targets:
-            target_source = get_source_config(target, session)
+        for target, target_config in zip(targets, target_configs, strict=False):
             match_obj = Match(
                 cluster=cluster,
                 source=source,
@@ -848,7 +568,7 @@ def match(
                 ),
                 target=target,
                 target_id=matches_by_source_id.get(
-                    target_source.source_config_id, set()
+                    target_config.source_config_id, set()
                 ),
             )
             result.append(match_obj)
