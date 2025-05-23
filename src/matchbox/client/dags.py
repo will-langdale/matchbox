@@ -148,7 +148,6 @@ class ModelStep(Step):
             return_type="pandas",
             threshold=step_input.threshold,
             resolution=step_input.name,
-            only_indexed=True,
             batch_size=step_input.batch_size,
         )
 

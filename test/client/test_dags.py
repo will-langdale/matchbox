@@ -186,7 +186,6 @@ def test_dedupe_step_run(
             return_type="pandas",
             threshold=d_foo.left.threshold,
             resolution=d_foo.left.name,
-            only_indexed=True,
             batch_size=100 if batched else None,
         )
         # Data is pre-processed
@@ -277,7 +276,6 @@ def test_link_step_run(
             return_type="pandas",
             threshold=foo_bar.left.threshold,
             resolution=foo_bar.left.name,
-            only_indexed=True,
             batch_size=100 if batched else None,
         )
         assert query_mock.call_args_list[1] == call(
@@ -285,7 +283,6 @@ def test_link_step_run(
             return_type="pandas",
             threshold=foo_bar.right.threshold,
             resolution=foo_bar.right.name,
-            only_indexed=True,
             batch_size=100 if batched else None,
         )
 
