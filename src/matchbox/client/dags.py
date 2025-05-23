@@ -18,7 +18,7 @@ from matchbox.common.dtos import (
     ResolutionName,
 )
 from matchbox.common.logging import logger
-from matchbox.common.sources import SourceConfig
+from matchbox.common.sources import SourceConfig, SourceField
 
 
 class Step(BaseModel, ABC):
@@ -130,7 +130,19 @@ class ModelStep(Step):
         Returns:
             Pandas dataframe with retrieved results.
         """
-        selectors = [Selector(source=s, fields=f) for s, f in step_input.select.items()]
+        selectors: list[Selector] = []
+
+        for source, fields in step_input.select.items():
+            field_lookup: dict[str, SourceField] = {
+                field.name: field for field in source.index_fields
+            }
+
+            selected_fields: list[SourceField] = []
+            for field in fields:
+                selected_fields.append(field_lookup[field])
+
+            selectors.append(Selector(source=source, fields=selected_fields))
+
         return query(
             selectors,
             return_type="pandas",
