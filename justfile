@@ -2,6 +2,9 @@
 build:
     docker compose --env-file=environments/server.env up --build -d --wait
 
+load_data:
+    uv run python load_data.py
+
 # Delete all compiled Python files
 clean:
     find . -type f -name "*.py[co]" -delete
