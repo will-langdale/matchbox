@@ -10,7 +10,7 @@ def delete_resolution(name: ResolutionName, certain: bool = False) -> None:
     Will delete:
 
     * The resolution itself
-    * All descdencents of the resolution
+    * All descendants of the resolution
     * All endorsements of clusters made by those resolutions, either
         probabilities for models, or keys for sources
 
