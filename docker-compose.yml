@@ -43,7 +43,7 @@ services:
     profiles:
       - monitoring
     env_file:
-      - environments/datadog.env
+      - .datadog.env
     environment:
       # Sets tags attached to logs/metrics/errors
       DD_SERVICE: matchbox
