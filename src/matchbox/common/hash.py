@@ -125,9 +125,16 @@ def hash_rows(
     record_separator = "␞"
     unit_separator = "␟"
 
-    str_concatenation = [
-        f"{c}{unit_separator}" + pl.col(c) + record_separator for c in columns
-    ]
+    str_concatenation: list[pl.Expr] = []
+    for c in columns:
+        str_concatenation.extend(
+            [
+                pl.lit(c),  # column name
+                pl.lit(unit_separator),
+                pl.col(c),  # column value
+                pl.lit(record_separator),
+            ]
+        )
 
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
