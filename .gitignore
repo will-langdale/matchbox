@@ -21,6 +21,9 @@ notebooks/tmp*
 # Documentation
 site/
 
+# Datadog
+datadog.env
+
 ##########################
 # Boilerplate .gitignore #
 ##########################
