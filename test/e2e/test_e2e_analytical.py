@@ -7,9 +7,10 @@ from pandas import DataFrame
 from sqlalchemy import Engine, text
 
 from matchbox import index, make_model, process, query
+from matchbox.client import _handler
 from matchbox.client.clean import steps
 from matchbox.client.clean.utils import cleaning_function
-from matchbox.client.helpers import cleaner, cleaners, select
+from matchbox.client.helpers import cleaner, cleaners, delete_resolution, select
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.entities import query_to_cluster_entities
@@ -513,5 +514,34 @@ class TestE2EAnalyticalUser:
         }
 
         assert true_entities == set(final_clusters), "Final clusters do not match"
+
+        # Delete some resolutions as if my experimental model wasn't good enough
+
+        final_linker_name = "__DEFAULT__"
+        crn_source_name = self.linked_testkit.sources["crn"].source_config.name
+
+        counts = _handler.count_backend_items()
+        source_config_count = counts["entities"]["sources"]
+        model_count = counts["entities"]["models"]
+
+        # Delete the final linker resolution
+        delete_resolution(name=final_linker_name, certain=True)
+
+        counts = _handler.count_backend_items()
+        assert counts["entities"]["sources"] == source_config_count
+        assert counts["entities"]["models"] == model_count - 1, (
+            "Expected one less model after deleting the final linker"
+        )
+
+        # Delete a source resolution
+        delete_resolution(name=crn_source_name, certain=True)
+
+        counts = _handler.count_backend_items()
+        assert counts["entities"]["sources"] == source_config_count - 1, (
+            "Expected one less source after deleting crn source"
+        )
+        assert counts["entities"]["models"] == model_count - 4, (
+            "Expected all CRN descendant models to be deleted"
+        )
 
         logging.debug("E2E test completed successfully!")

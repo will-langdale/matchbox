@@ -56,7 +56,7 @@ The `key_field` is the field in your source that contains some unique code that 
     from matchbox.common.sources import SourceConfig, RelationalDBLocation
     
     # Companies House data
-    companies_house = SourceConfig(
+    companies_house = SourceConfig.new(
         location=RelationalDBLocation.from_engine(engine),
         extract_transform="""
             select
@@ -67,16 +67,12 @@ The `key_field` is the field in your source that contains some unique code that 
             from
                 companieshouse.companies;
         """,
-        index_fields=[
-            {"name": "company_name", "type": "String"},
-            {"name": "company_number", "type": "String"},
-            {"name": "postcode", "type": "String"},
-        ],
-        key_field={"name": "id", "type": "String"},
-    ).set_engine(engine)
+        index_fields=["company_name", "company_number", "postcode"],
+        key_field="id",
+    )
     
     # Exporters data
-    exporters = SourceConfig(
+    exporters = SourceConfig.new(
         location=RelationalDBLocation.from_engine(engine),
         extract_transform="""
             select
@@ -86,12 +82,9 @@ The `key_field` is the field in your source that contains some unique code that 
             from
                 hmrc.trade__exporters;
         """,
-        index_fields=[
-            {"name": "company_name", "type": "String"},
-            {"name": "postcode", "type": "String"},
-        ],
-        key_field={"name": "id", "type": "String"},
-    ).set_engine(engine)
+        index_fields=["company_name", "postcode"],
+        key_field="id",
+    )
     ```
 
 Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:

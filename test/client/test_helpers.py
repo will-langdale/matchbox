@@ -433,62 +433,6 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         query(selectors)
 
 
-def test_query_with_batches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Tests that query correctly handles batching options using real warehouse data."""
-    # Dummy data and source
-    source_testkit = source_from_tuple(
-        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
-        data_keys=["0", "1"],
-        name="foo",
-        engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-
-    # Mock API responses
-    matchbox_api.get(f"/sources/{source_testkit.source_config.name}").mock(
-        return_value=Response(
-            200, json=source_testkit.source_config.model_dump(mode="json")
-        )
-    )
-    matchbox_api.get("/query").mock(
-        return_value=Response(
-            200,
-            content=table_to_buffer(
-                pa.Table.from_pylist(
-                    [
-                        {"key": "0", "id": 1},
-                        {"key": "1", "id": 2},
-                    ],
-                    schema=SCHEMA_MB_IDS,
-                )
-            ).read(),
-        )
-    )
-
-    sels = select({"foo": ["a", "b"]}, credentials=sqlite_warehouse)
-
-    # Test with return_batches=True
-    batch_iterator = query(sels, return_batches=True, batch_size=1, return_type="arrow")
-
-    # Check first batch
-    first_batch = next(batch_iterator)
-    assert isinstance(first_batch, pa.Table)
-    assert len(first_batch) == 1
-    assert {"foo_a", "foo_b", "id"} == set(first_batch.column_names)
-
-    # Verify we can get the remaining batch
-    remaining_batches = list(batch_iterator)
-    assert len(remaining_batches) == 1
-
-    # Test with return_batches=False
-    results = query(sels, return_batches=False, batch_size=1000, return_type="arrow")
-
-    # Basic verification
-    assert isinstance(results, pa.Table)
-    assert len(results) == 2
-    assert {"foo_a", "foo_b", "id"} == set(results.column_names)
-
-
 def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Test successful indexing flow through the API."""
     # Mock Source

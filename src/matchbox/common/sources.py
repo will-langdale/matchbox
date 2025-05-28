@@ -5,10 +5,10 @@ import textwrap
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import wraps
-from pathlib import Path
 from typing import (
     Any,
     Callable,
+    Generator,
     Iterator,
     Literal,
     ParamSpec,
@@ -18,7 +18,6 @@ from typing import (
 )
 
 import polars as pl
-from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from pydantic import (
     AnyUrl,
@@ -30,6 +29,7 @@ from pydantic import (
 )
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
+from sqlglot import parse_one
 
 from matchbox.common.db import (
     QueryReturnType,
@@ -39,14 +39,8 @@ from matchbox.common.db import (
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes, SourceResolutionName
-from matchbox.common.exceptions import (
-    MatchboxSourceCredentialsError,
-)
-from matchbox.common.hash import (
-    HASH_FUNC,
-    HashMethod,
-    hash_rows,
-)
+from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.hash import HashMethod, hash_rows
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -139,11 +133,10 @@ class Location(ABC, BaseModel):
     def execute(
         self,
         extract_transform: str,
-        batch_size: int,
+        batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
-        return_batches: bool = False,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType] | QueryReturnType:
+    ) -> Iterator[QueryReturnType]:
         """Execute ET logic against location and return batches.
 
         Args:
@@ -154,7 +147,6 @@ class Location(ABC, BaseModel):
                 * If a dictionary is provided, it will be used to rename the columns.
                 * If a callable is provided, it will take the old name as input and
                     return the new name.
-            return_batches: If True, return an iterator of batches.
             return_type: The type of data to return. Defaults to "polars".
 
         Raises:
@@ -231,19 +223,20 @@ class RelationalDBLocation(Location):
     def execute(  # noqa: D102
         self,
         extract_transform: str,
-        batch_size: int,
+        batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
-        return_batches: bool = True,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType] | QueryReturnType:
-        return sql_to_df(
-            stmt=extract_transform,
-            connection=self.credentials,
-            rename=rename,
-            batch_size=batch_size,
-            return_batches=return_batches,
-            return_type=return_type,
-        )
+    ) -> Generator[QueryReturnType, None, None]:
+        batch_size = batch_size or 10_000
+        with self.credentials.connect() as conn:
+            yield from sql_to_df(
+                stmt=extract_transform,
+                connection=conn,
+                rename=rename,
+                batch_size=batch_size,
+                return_batches=True,
+                return_type=return_type,
+            )
 
     @classmethod
     def from_engine(cls, engine: Engine) -> "RelationalDBLocation":
@@ -361,25 +354,6 @@ class SourceConfig(BaseModel):
         """
         return self.prefix + field
 
-    def _detect_fields(
-        self, location: Location, extract_transform: str
-    ) -> tuple[SourceField, ...]:
-        """A helper method to detect the fields from the extract/transform logic.
-
-        Return all detected fields as SourceFields.
-        """
-        df: pl.DataFrame = next(
-            location.execute(extract_transform=extract_transform, batch_size=100)
-        )
-
-        return tuple(
-            SourceField(
-                name=col.name,
-                type=DataTypes.from_dtype(col.dtype),
-            )
-            for col in df.iter_columns()
-        )
-
     @field_validator("name", mode="after")
     @classmethod
     def validate_name(cls, value: str) -> str:
@@ -405,114 +379,59 @@ class SourceConfig(BaseModel):
 
         return self
 
-    @model_validator(mode="after")
-    def validate_location_et_fields(self) -> "SourceConfig":
-        """Ensure that the location, extract_transform, and fields are aligned."""
-        if self.location.credentials is None:
-            # We can't validate
-            return self
-
-        fields = self._detect_fields(
-            location=self.location, extract_transform=self.extract_transform
-        )
-
-        if set(self.index_fields + (self.key_field,)) != set(fields):
-            raise ValueError(
-                "The index fields or key field do not match the "
-                "extract/transform logic. "
-                "Please check the index fields, key field and logic. \n"
-                f"Declared index fields: {self.index_fields} \n"
-                f"Declared key field: {self.key_field} \n"
-                f"Fields from logic: {tuple(fields)} \n"
-            )
-
-        return self
-
     @classmethod
-    def from_location(
-        cls, location: Location, extract_transform: str
+    def new(
+        cls,
+        location: Location,
+        name: str,
+        extract_transform: str,
+        key_field: str,
+        index_fields: list[str],
     ) -> "SourceConfig":
-        """Create a SourceConfig from a Location.
-
-        A convenience method to create a SourceConfig from minimal options.
-
-        * Assumes a column aliasesed as "id" is the key field
-        * Autodetects datatypes from a small sample
-        * Uses the location's URI host and truncated ETL hash as the resolution name
-
-        Args:
-            location: The location of the source.
-            extract_transform: The logic to extract and transform data from the source.
-
-        Returns:
-            A SourceConfig object with the location set.
-        """
-        # Detect fields
-        fields: tuple[SourceField, ...] = cls._detect_fields(
-            cls,
-            location=location,
-            extract_transform=extract_transform,
+        """Create a new SourceConfig for an indexing operation."""
+        # Assumes credentials have been set on location
+        sample: pl.DataFrame = next(
+            location.execute(parse_one(extract_transform).limit(1).sql(), batch_size=1)
         )
-        index_fields: tuple[SourceField] = tuple(
-            field for field in fields if field.name != "id"
-        )
-        if len(index_fields) != len(fields) - 1:
+
+        remote_fields = {
+            col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))
+            for col in sample.iter_columns()
+        }
+
+        if remote_fields[key_field].type != DataTypes.STRING:
             raise ValueError(
-                "The extract/transform logic must return a column "
-                "aliased as 'id' to be used as the key field."
+                f"Your key_field, {key_field}, must coerce to a string "
+                "in the extract transform logic. "
             )
 
-        # Create name
-        et_hash = HASH_FUNC(extract_transform.encode("utf-8")).hexdigest()[:6]
-        default_name: str | None = (
-            location.uri.host or Path(location.uri.path).stem or None
-        )
-        if default_name is None:
-            raise ValueError(
-                "Could not detect a default name for the source. "
-                "Please create the source manually."
-            )
+        typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
+        typed_index_fields = tuple(remote_fields[field] for field in index_fields)
 
         return cls(
-            name=default_name + "_" + et_hash,
             location=location,
+            name=name,
             extract_transform=extract_transform,
-            key_field=SourceField(name="id", type=DataTypes.STRING),
-            index_fields=index_fields,
+            key_field=typed_key_field,
+            index_fields=typed_index_fields,
         )
-
-    def set_credentials(self, credentials: Any) -> None:
-        """Set the credentials for the location.
-
-        Args:
-            credentials: The credentials to set.
-        """
-        self.location.add_credentials(credentials)
-        self.validate_location_et_fields()
 
     def query(
         self,
         qualify_names: bool = False,
-        return_batches: bool = False,
         batch_size: int | None = None,
         return_type: ReturnTypeStr = "polars",
-    ) -> Iterator[QueryReturnType] | QueryReturnType:
+    ) -> Generator[QueryReturnType, None, None]:
         """Applies the extract/transform logic to the source and returns the results.
 
         Args:
             qualify_names: If True, qualify the names of the columns with the
                 source name.
-            return_batches:
-                * If True, return an iterator that yields each batch separately
-                * If False, return a single Table with all results
             batch_size: Indicate the size of each batch when processing data in batches.
             return_type: The type of data to return. Defaults to "polars".
 
         Returns:
-            The requested data in the specified format.
-
-                * If return_batches is False: a single table
-                * If return_batches is True: an iterator of tables
+            The requested data in the specified format, as an iterator of tables.
         """
         _rename: Callable | None = None
         if qualify_names:
@@ -520,11 +439,10 @@ class SourceConfig(BaseModel):
             def _rename(c: str) -> str:
                 return self.name + "_" + c
 
-        return self.location.execute(
+        yield from self.location.execute(
             extract_transform=self.extract_transform,
             rename=_rename,
             batch_size=batch_size,
-            return_batches=return_batches,
             return_type=return_type,
         )
 
@@ -546,21 +464,14 @@ class SourceConfig(BaseModel):
         key_field: str = self.key_field.name
         index_fields: list[str] = [field.name for field in self.index_fields]
 
-        def _process_batch(batch: PolarsDataFrame) -> PolarsDataFrame:
-            """Process a single batch of data using Polars.
+        all_results: list[pl.DataFrame] = []
+        for batch in self.query(
+            batch_size=batch_size,
+            return_type="polars",
+        ):
+            batch: pl.DataFrame
 
-            Args:
-                batch: Polars DataFrame containing the data
-
-            Returns:
-                Polars DataFrame with hash and keys columns
-
-            Raises:
-                ValueError: If any keys values are null
-            """
-            batch: pl.DataFrame = batch.rename({key_field: "keys"})
-
-            if batch["keys"].is_null().any():
+            if batch[key_field].is_null().any():
                 raise ValueError("keys column contains null values")
 
             row_hashes: pl.Series = hash_rows(
@@ -569,28 +480,14 @@ class SourceConfig(BaseModel):
                 method=HashMethod.SHA256,
             )
 
-            result = batch.with_columns(row_hashes.alias("hash")).select(
-                ["hash", "keys"]
+            result = (
+                batch.rename({key_field: "keys"})
+                .with_columns(row_hashes.alias("hash"))
+                .select(["hash", "keys"])
             )
+            all_results.append(result)
 
-            return result
-
-        if bool(batch_size):
-            # Process in batches
-            all_results: list[pl.DataFrame] = []
-            for batch in self.query(
-                return_batches=True,
-                batch_size=batch_size,
-                return_type="polars",
-            ):
-                batch_result = _process_batch(batch)
-                all_results.append(batch_result)
-
-            processed_df = pl.concat(all_results)
-
-        else:
-            # Non-batched processing
-            processed_df = _process_batch(self.query())
+        processed_df = pl.concat(all_results)
 
         return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
 

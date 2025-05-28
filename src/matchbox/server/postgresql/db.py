@@ -179,8 +179,12 @@ class MatchboxDatabase:
     def clear_database(self):
         """Delete all rows in every table in the database schema."""
         with self.get_engine().connect() as conn:
-            for table in self.MatchboxBase.metadata.sorted_tables:
-                conn.execute(table.delete())
+            table_names = [
+                f"{self.MatchboxBase.metadata.schema}.{table.name}"
+                for table in self.MatchboxBase.metadata.sorted_tables
+            ]
+            tables_str = ", ".join(table_names)
+            conn.execute(text(f"TRUNCATE TABLE {tables_str} CASCADE;"))
             conn.commit()
 
     def drop_database(self):
