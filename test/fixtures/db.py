@@ -253,7 +253,7 @@ def create_link_scenario(
         left_resolution=crn_cdms_name,
         left_query=crn_cdms_query,
         left_keys={"crn": "keys_crn", "cdms": "keys_cdms"},
-        right_resolution=duns_model.name,
+        right_resolution=crn_duns_name,
         right_query=duns_query_linked,
         right_keys={"duns": "key"},
         true_entities=tuple(linked.true_entities),
