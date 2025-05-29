@@ -43,8 +43,24 @@ services:
     profiles:
       - monitoring
     env_file:
-      - environments/datadog-agent-public.env
-      - environments/.datadog-agent-private.env
+      - .datadog.env
+    environment:
+      # Sets tags attached to logs/metrics/errors
+      DD_SERVICE: matchbox
+      DD_ENV: local
+      # What integrations are enabled
+      DD_APM_ENABLED: true
+      DD_LOGS_ENABLED: true
+      DD_PROFILING_ENABLED: true
+      DD_PROCESS_AGENT_PROCESS_COLLECTION_ENABLED: true
+      # Allows connections not from localhost to the agent (crucial when running as a sidecar container)
+      DD_APM_NON_LOCAL_TRAFFIC: true
+      # Where logs and traces are sent to
+      DD_SITE: datadoghq.eu
+      # The hostname of the agent itself (which is the service name when running via docker compose)
+      DD_HOSTNAME: datadog-agent
+    ports:
+      - "8126:8126"
   api:
     build:
       context: .
@@ -54,6 +70,7 @@ services:
       target: dev
     environment:
       DD_AGENT_HOST: datadog-agent
+      DD_LOGS_INJECTION: true
     ports:
       - "${MB__DEV__API_PORT-8000}:8000"
     depends_on:
