@@ -1,9 +1,9 @@
 """Utilities for querying and matching in the PostgreSQL backend."""
 
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import pyarrow as pa
-from sqlalchemy import and_, func, literal, select, union
+from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Select
 
@@ -45,19 +45,19 @@ def get_source_config(name: SourceResolutionName, session: Session) -> SourceCon
 
 
 def _resolve_thresholds(
-    lineage_truths: dict[str, float],
+    lineage_truths: dict[int, float | None],
     resolution: Resolutions,
     threshold: int | None,
-) -> dict[int, float]:
+) -> dict[int, float | None]:
     """Resolves final thresholds for each resolution in the lineage based on user input.
 
     Args:
-        lineage_truths: Dict from with resolution hash -> cached truth
+        lineage_truths: Dict from resolution_id -> cached truth
         resolution: The target resolution being used for clustering
         threshold: User-supplied threshold value
 
     Returns:
-        Dict mapping resolution hash to their final threshold values
+        Dict mapping resolution_id to their final threshold values
     """
     resolved_thresholds = {}
 
@@ -86,231 +86,235 @@ def _resolve_hierarchy_assignments(
     resolution: Resolutions,
     sources: list[Resolutions] | None = None,
     threshold: int | None = None,
-) -> Select:
+) -> select:
     """Resolve cluster assignments across a resolution's lineage.
 
-    Args:
-        resolution: Single resolution to start from
-        sources: Optional list of sources to filter to. If None, includes all sources
-            in lineage
-        threshold: Optional threshold override
-
-    Returns:
-        Select query with columns:
-        - root_id: The root cluster ID assigned by highest priority resolution
-        - root_hash: Hash of the assigned root cluster
-        - leaf_id: The leaf cluster ID
-        - leaf_hash: Hash of the leaf cluster
-        - leaf_key: The original source key
-        - source_config_id: Which source config this key belongs to
+    Simplified version that leverages ORM relationships and existing methods.
     """
-    # Get lineage - if sources specified, lineage to each source; otherwise full lineage
+    # Step 1: Get lineage using existing method
     if sources:
-        # Get lineage to specific sources
+        # Get lineage to specific sources only
         lineage_truths = {}
         for source in sources:
             try:
                 source_lineage = resolution.get_lineage_to_source(source=source)
                 lineage_truths.update(source_lineage)
             except ValueError:
-                continue  # Skip sources not reachable from this resolution
+                continue
+
+        if not lineage_truths:
+            return _empty_result()
     else:
-        # Get full lineage to discover all available sources
+        # Get full lineage
         lineage_truths = resolution.get_lineage()
 
-    if not lineage_truths:
-        # Return empty result if no valid lineage
-        return select(
-            literal(None).label("root_id"),
-            literal(None).label("root_hash"),
-            literal(None).label("leaf_id"),
-            literal(None).label("leaf_hash"),
-            literal(None).label("leaf_key"),
-            literal(None).label("source_config_id"),
-        ).where(False)
-
-    # Resolve thresholds for each resolution in lineage
-    thresholds = _resolve_thresholds(
-        lineage_truths=lineage_truths,
-        resolution=resolution,
-        threshold=threshold,
-    )
-
-    # Separate source and model resolutions from lineage
-    source_resolutions = []
-    model_resolutions = []
-
-    for resolution_id, threshold_val in thresholds.items():
-        if threshold_val is None:
-            source_resolutions.append(resolution_id)
-        else:
-            model_resolutions.append((resolution_id, threshold_val))
-
-    # Filter to specific source configs if sources provided
+    # Step 2: Build source config filter if needed
     source_config_filter = True
     if sources:
         source_config_ids = []
-        with MBDB.get_session() as session:
-            for source in sources:
-                source_configs = (
-                    session.execute(
-                        select(SourceConfigs.source_config_id).where(
-                            SourceConfigs.resolution_id == source.resolution_id
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                source_config_ids.extend(source_configs)
+        for source in sources:
+            if source.source_config:
+                source_config_ids.append(source.source_config.source_config_id)
 
         if source_config_ids:
             source_config_filter = ClusterSourceKey.source_config_id.in_(
                 source_config_ids
             )
 
-    decisions = []
+    # Step 3: Resolve thresholds
+    resolved_thresholds = _resolve_thresholds(lineage_truths, resolution, threshold)
 
-    # Get source decisions (type = 'source')
-    if source_resolutions:
-        source_decisions = (
-            select(
-                ClusterSourceKey.key.label("leaf_key"),
-                Clusters.cluster_id.label("leaf_id"),
-                Clusters.cluster_hash.label("leaf_hash"),
-                Clusters.cluster_id.label("root_id"),  # No hierarchy for sources
-                Clusters.cluster_hash.label("root_hash"),
-                ClusterSourceKey.source_config_id.label("source_config_id"),
-                SourceConfigs.resolution_id.label("deciding_resolution_id"),
-                literal(999).label("priority"),  # Source has lowest priority
-            )
-            .select_from(ClusterSourceKey)
-            .join(Clusters, ClusterSourceKey.cluster_id == Clusters.cluster_id)
-            .join(
-                SourceConfigs,
-                SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
-            )
-            .join(Resolutions, Resolutions.resolution_id == SourceConfigs.resolution_id)
-            .where(
-                and_(
-                    Resolutions.type == "source",
-                    SourceConfigs.resolution_id.in_(source_resolutions),
-                    source_config_filter,
-                )
-            )
-        )
-        decisions.append(source_decisions)
+    # Step 4: Build the unified query
+    return _build_unified_query(resolved_thresholds, source_config_filter, resolution)
 
-    # Get model decisions (type = 'model')
-    for model_resolution_id, threshold_val in model_resolutions:
-        # Build threshold conditions
-        prob_conditions = [
-            Probabilities.resolution == model_resolution_id,
-            Probabilities.role_flag >= 1,
-        ]
-        if threshold_val is not None:
-            prob_conditions.append(Probabilities.probability >= threshold_val)
 
-        # Create aliases for this model resolution query
-        RootClusters = Clusters.__table__.alias("root_clusters")
-        ModelResolutions = Resolutions.__table__.alias("model_res")
+def _build_source_query(
+    source_conditions: list[tuple[Any, int, int]], source_config_filter: Any
+) -> select:
+    """Build query for source resolutions (no hierarchy traversal)."""
+    source_priority_case = case(
+        *[(condition, priority) for condition, priority, _ in source_conditions],
+        else_=9999,
+    ).label("priority")
 
-        model_decisions = (
-            select(
-                ClusterSourceKey.key.label("leaf_key"),
-                Clusters.cluster_id.label("leaf_id"),
-                Clusters.cluster_hash.label("leaf_hash"),
-                func.coalesce(Contains.root, Clusters.cluster_id).label("root_id"),
-                func.coalesce(RootClusters.c.cluster_hash, Clusters.cluster_hash).label(
-                    "root_hash"
-                ),
-                ClusterSourceKey.source_config_id.label("source_config_id"),
-                literal(model_resolution_id).label("deciding_resolution_id"),
-                ResolutionFrom.level.label("priority"),
-            )
-            .select_from(ClusterSourceKey)
-            .join(Clusters, ClusterSourceKey.cluster_id == Clusters.cluster_id)
-            .join(
-                SourceConfigs,
-                SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
-            )
-            # Connect to hierarchy
-            .outerjoin(Contains, Contains.leaf == Clusters.cluster_id)
-            .outerjoin(RootClusters, Contains.root == RootClusters.c.cluster_id)
-            # Connect to model decisions
-            .join(
-                Probabilities,
-                Probabilities.cluster
-                == func.coalesce(Contains.root, Clusters.cluster_id),
-            )
-            .join(
-                ModelResolutions,
-                ModelResolutions.c.resolution_id == Probabilities.resolution,
-            )
-            .join(
-                ResolutionFrom,
-                and_(
-                    ResolutionFrom.parent == model_resolution_id,
-                    ResolutionFrom.child == resolution.resolution_id,
-                ),
-            )
-            .where(
-                and_(
-                    ModelResolutions.c.type == "model",
-                    source_config_filter,
-                    *prob_conditions,
-                )
-            )
-        )
-        decisions.append(model_decisions)
+    source_deciding_case = case(
+        *[(condition, res_id) for condition, _, res_id in source_conditions], else_=None
+    ).label("deciding_resolution_id")
 
-    # Combine all decisions
-    if not decisions:
-        return select(
-            literal(None).label("root_id"),
-            literal(None).label("root_hash"),
-            literal(None).label("leaf_id"),
-            literal(None).label("leaf_hash"),
-            literal(None).label("leaf_key"),
-            literal(None).label("source_config_id"),
-        ).where(False)
-
-    all_decisions = decisions[0]
-    for decision in decisions[1:]:
-        all_decisions = union(all_decisions, decision)
-
-    all_decisions = all_decisions.cte("all_decisions")
-
-    # For each source key, pick the decision with highest priority
-    # (lowest priority number)
-    ranked_decisions = (
+    return (
         select(
-            all_decisions.c.leaf_key,
-            all_decisions.c.leaf_id,
-            all_decisions.c.leaf_hash,
-            all_decisions.c.root_id,
-            all_decisions.c.root_hash,
-            all_decisions.c.source_config_id,
-            func.row_number()
-            .over(
-                partition_by=all_decisions.c.leaf_key,
-                order_by=[
-                    all_decisions.c.priority.asc(),
-                    all_decisions.c.deciding_resolution_id.desc(),
-                ],
-            )
-            .label("rank"),
+            ClusterSourceKey.key.label("leaf_key"),
+            Clusters.cluster_id.label("leaf_id"),
+            Clusters.cluster_hash.label("leaf_hash"),
+            Clusters.cluster_id.label("root_id"),  # No hierarchy for sources
+            Clusters.cluster_hash.label("root_hash"),  # No hierarchy for sources
+            ClusterSourceKey.source_config_id,
+            source_priority_case,
+            source_deciding_case,
         )
+        .select_from(ClusterSourceKey)
+        .join(Clusters, ClusterSourceKey.cluster_id == Clusters.cluster_id)
+        .join(
+            SourceConfigs,
+            SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
+        )
+        .where(
+            and_(
+                or_(*[condition for condition, _, _ in source_conditions]),
+                source_config_filter,
+            )
+        )
+    )
+
+
+def _build_model_query(
+    model_conditions: list[tuple[Any, int, int]], source_config_filter: Any
+) -> select:
+    """Build query for model resolutions (with hierarchy traversal)."""
+    RootClusters = Clusters.__table__.alias("root_clusters")
+
+    model_priority_case = case(
+        *[(condition, priority) for condition, priority, _ in model_conditions],
+        else_=9999,
+    ).label("priority")
+
+    model_deciding_case = case(
+        *[(condition, res_id) for condition, _, res_id in model_conditions], else_=None
+    ).label("deciding_resolution_id")
+
+    return (
+        select(
+            ClusterSourceKey.key.label("leaf_key"),
+            Clusters.cluster_id.label("leaf_id"),
+            Clusters.cluster_hash.label("leaf_hash"),
+            func.coalesce(Contains.root, Clusters.cluster_id).label("root_id"),
+            func.coalesce(RootClusters.c.cluster_hash, Clusters.cluster_hash).label(
+                "root_hash"
+            ),
+            ClusterSourceKey.source_config_id,
+            model_priority_case,
+            model_deciding_case,
+        )
+        .select_from(ClusterSourceKey)
+        .join(Clusters, ClusterSourceKey.cluster_id == Clusters.cluster_id)
+        .join(
+            SourceConfigs,
+            SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
+        )
+        .outerjoin(Contains, Contains.leaf == Clusters.cluster_id)
+        .outerjoin(RootClusters, Contains.root == RootClusters.c.cluster_id)
+        .outerjoin(
+            Probabilities,
+            Probabilities.cluster == func.coalesce(Contains.root, Clusters.cluster_id),
+        )
+        .where(
+            and_(
+                or_(*[condition for condition, _, _ in model_conditions]),
+                source_config_filter,
+            )
+        )
+    )
+
+
+def _build_unified_query(
+    resolved_thresholds: dict[int, float | None],
+    source_config_filter: Any,
+    resolution: Resolutions,
+) -> select:
+    """Build a single unified query instead of separate source/model queries."""
+    # Separate source and model resolutions
+    source_conditions = []
+    model_conditions = []
+
+    for res_id, threshold_val in resolved_thresholds.items():
+        if threshold_val is None:
+            # Source resolution - direct cluster assignment, no hierarchy
+            priority = 999
+            condition = SourceConfigs.resolution_id == res_id
+            source_conditions.append((condition, priority, res_id))
+        else:
+            # Model resolution - probability-based assignment with hierarchy
+            priority = _get_resolution_priority(res_id, resolution)
+            prob_conditions = [
+                Probabilities.resolution == res_id,
+                Probabilities.role_flag >= 1,
+                Probabilities.probability >= threshold_val,
+            ]
+            condition = and_(*prob_conditions)
+            model_conditions.append((condition, priority, res_id))
+
+    # Build separate queries WITHOUT ranking
+    queries = []
+
+    if source_conditions:
+        queries.append(_build_source_query(source_conditions, source_config_filter))
+
+    if model_conditions:
+        queries.append(_build_model_query(model_conditions, source_config_filter))
+
+    if not queries:
+        return _empty_result()
+
+    # Union all queries
+    if len(queries) == 1:
+        combined = queries[0]
+    else:
+        combined = queries[0]
+        for query in queries[1:]:
+            combined = combined.union(query)
+
+    all_decisions = combined.cte("all_decisions")
+
+    # Apply ranking AFTER union
+    ranked = select(
+        all_decisions,
+        func.row_number()
+        .over(
+            partition_by=all_decisions.c.leaf_key,
+            order_by=[
+                all_decisions.c.priority.asc(),
+                all_decisions.c.deciding_resolution_id.desc(),
+            ],
+        )
+        .label("rank"),
     ).cte("ranked_decisions")
 
-    # Return only the highest priority decision for each key
+    # Return only rank=1 per key
     return select(
-        ranked_decisions.c.root_id,
-        ranked_decisions.c.root_hash,
-        ranked_decisions.c.leaf_id,
-        ranked_decisions.c.leaf_hash,
-        ranked_decisions.c.leaf_key,
-        ranked_decisions.c.source_config_id,
-    ).where(ranked_decisions.c.rank == 1)
+        ranked.c.root_id,
+        ranked.c.root_hash,
+        ranked.c.leaf_id,
+        ranked.c.leaf_hash,
+        ranked.c.leaf_key,
+        ranked.c.source_config_id,
+    ).where(ranked.c.rank == 1)
+
+
+def _get_resolution_priority(
+    resolution_id: int, context_resolution: Resolutions
+) -> int:
+    """Get priority level for a resolution (lower = higher priority)."""
+    with MBDB.get_session() as session:
+        priority_query = select(ResolutionFrom.level).where(
+            and_(
+                ResolutionFrom.parent == resolution_id,
+                ResolutionFrom.child == context_resolution.resolution_id,
+            )
+        )
+        level = session.execute(priority_query).scalar()
+        return level if level is not None else 0
+
+
+def _empty_result() -> select:
+    """Return empty result with correct column structure."""
+    return select(
+        literal(None).label("root_id"),
+        literal(None).label("root_hash"),
+        literal(None).label("leaf_id"),
+        literal(None).label("leaf_hash"),
+        literal(None).label("leaf_key"),
+        literal(None).label("source_config_id"),
+    ).where(False)
 
 
 def _resolve_cluster_hierarchy(
@@ -364,7 +368,7 @@ def _resolve_cluster_hierarchy(
         )
 
 
-def _get_clusters_with_leaves(
+def get_clusters_with_leaves(
     resolution: Resolutions,
 ) -> dict[int, dict[str, list[dict]]]:
     """Query clusters and their leaves for all parent resolutions.
@@ -392,6 +396,7 @@ def _get_clusters_with_leaves(
 
         # For each parent, get all cluster assignments it endorses
         all_clusters = {}
+        cluster_leaves: dict[int, set[tuple[int, bytes]]] = {}
 
         for parent_id in parent_ids:
             parent_resolution = session.get(Resolutions, parent_id)
@@ -409,16 +414,22 @@ def _get_clusters_with_leaves(
             for row in session.execute(parent_assignments):
                 root_id = row.root_id
 
-                if root_id not in all_clusters:
+                if root_id not in cluster_leaves:
+                    cluster_leaves[root_id] = set()
                     all_clusters[root_id] = {
                         "root_hash": row.root_hash,
                         "leaves": [],
-                        "probability": None,  # Could get from base query if needed
+                        "probability": None,
                     }
 
-                all_clusters[root_id]["leaves"].append(
-                    {"leaf_id": row.leaf_id, "leaf_hash": row.leaf_hash}
-                )
+                cluster_leaves[root_id].add((row.leaf_id, row.leaf_hash))
+
+        # Convert tuple sets to dict lists
+        for cluster_id, leaf_tuples in cluster_leaves.items():
+            all_clusters[cluster_id]["leaves"] = [
+                {"leaf_id": leaf_id, "leaf_hash": leaf_hash}
+                for leaf_id, leaf_hash in leaf_tuples
+            ]
 
         return all_clusters
 
