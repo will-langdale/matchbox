@@ -1,5 +1,7 @@
 """Move ORM to root-leaf contains structure.
 
+Note that this migration is destructive and will clear the data subgraph.
+
 Revision ID: 3754ae042254
 Revises: 4a7c35f86405
 Create Date: 2025-05-22 05:48:36.049641
@@ -19,7 +21,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    """Upgrade schema - DESTRUCTIVE: clears the data subgraph."""
+    # Clear all data first since this is a destructive migration
+    op.execute("TRUNCATE TABLE mb.probabilities CASCADE")
+    op.execute("TRUNCATE TABLE mb.cluster_keys CASCADE")
+    op.execute("TRUNCATE TABLE mb.contains CASCADE")
+    op.execute("TRUNCATE TABLE mb.clusters CASCADE")
+
+    # Now perform the schema changes
     op.add_column(
         "contains", sa.Column("root", sa.BIGINT(), nullable=False), schema="mb"
     )
@@ -41,7 +50,7 @@ def upgrade() -> None:
         "contains_parent_fkey", "contains", schema="mb", type_="foreignkey"
     )
     op.create_foreign_key(
-        None,
+        "contains_root_fkey",
         "contains",
         "clusters",
         ["root"],
@@ -51,7 +60,7 @@ def upgrade() -> None:
         ondelete="CASCADE",
     )
     op.create_foreign_key(
-        None,
+        "contains_leaf_fkey",
         "contains",
         "clusters",
         ["leaf"],
@@ -70,7 +79,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Downgrade schema - DESTRUCTIVE: clears the data subgraph."""
+    # Clear all data first since this is a destructive migration
+    op.execute("TRUNCATE TABLE mb.probabilities CASCADE")
+    op.execute("TRUNCATE TABLE mb.cluster_keys CASCADE")
+    op.execute("TRUNCATE TABLE mb.contains CASCADE")
+    op.execute("TRUNCATE TABLE mb.clusters CASCADE")
+
+    # Now perform the schema changes
     op.drop_column("probabilities", "role_flag", schema="mb")
     op.add_column(
         "contains",
@@ -82,8 +98,12 @@ def downgrade() -> None:
         sa.Column("parent", sa.BIGINT(), autoincrement=False, nullable=False),
         schema="mb",
     )
-    op.drop_constraint(None, "contains", schema="mb", type_="foreignkey")
-    op.drop_constraint(None, "contains", schema="mb", type_="foreignkey")
+    op.drop_constraint(
+        "contains_root_fkey", "contains", schema="mb", type_="foreignkey"
+    )
+    op.drop_constraint(
+        "contains_leaf_fkey", "contains", schema="mb", type_="foreignkey"
+    )
     op.create_foreign_key(
         "contains_parent_fkey",
         "contains",

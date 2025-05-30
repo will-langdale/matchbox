@@ -17,6 +17,7 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
+    MatchboxModelConfigError,
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
@@ -37,25 +38,14 @@ from matchbox.server.postgresql.orm import (
     Resolutions,
     SourceConfigs,
 )
-from matchbox.server.postgresql.utils.db import (
-    dump,
-    get_resolution_graph,
-    restore,
-)
+from matchbox.server.postgresql.utils.db import dump, get_resolution_graph, restore
 from matchbox.server.postgresql.utils.insert import (
     insert_model,
     insert_results,
     insert_source,
 )
-from matchbox.server.postgresql.utils.query import (
-    get_source_config,
-    match,
-    query,
-)
-from matchbox.server.postgresql.utils.results import (
-    get_model_config,
-    get_model_results,
-)
+from matchbox.server.postgresql.utils.query import get_source_config, match, query
+from matchbox.server.postgresql.utils.results import get_model_config, get_model_results
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -384,6 +374,18 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 if not right_resolution:
                     raise MatchboxResolutionNotFoundError(
                         name=model_config.right_resolution
+                    )
+
+                left_ancestors = {a.name for a in left_resolution.ancestors}
+                right_ancestors = {a.name for a in right_resolution.ancestors}
+                shared_ancestors = left_ancestors & right_ancestors
+
+                if shared_ancestors:
+                    raise MatchboxModelConfigError(
+                        f"Resolutions '{left_resolution.name}' and "
+                        f"'{right_resolution.name}' "
+                        f"share common ancestor(s): {', '.join(shared_ancestors)}. "
+                        f"Resolutions cannot share ancestors."
                     )
 
         insert_model(

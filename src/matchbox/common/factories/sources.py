@@ -263,6 +263,7 @@ def generate_rows(
     generator: Faker,
     selected_entities: tuple[SourceEntity, ...],
     features: tuple[FeatureConfig, ...],
+    repetition: int,
 ) -> tuple[
     dict[str, list], dict[int, list[str]], dict[int, list[str]], dict[int, bytes]
 ]:
@@ -394,9 +395,9 @@ def generate_rows(
             values = variations if feature.drop_base else variations + [base]
             possible_values.append(values or [base])
 
-        # Create a row for each combination
         for values in product(*possible_values):
-            add_row(entity.id, values)
+            for _ in range(repetition + 1):
+                add_row(entity.id, values)
 
     return raw_data, entity_keys, id_keys, id_hashes
 
@@ -429,16 +430,14 @@ def generate_source(
 
     # Generate initial data
     raw_data, entity_keys, id_keys, id_hashes = generate_rows(
-        generator, selected_entities, features
+        generator=generator,
+        selected_entities=selected_entities,
+        features=features,
+        repetition=repetition,
     )
 
     # Create DataFrame
     df = pd.DataFrame(raw_data)
-
-    # Handle repetition
-    df = pd.concat([df] * (repetition + 1), ignore_index=True)
-    entity_keys = {eid: keys * (repetition + 1) for eid, keys in entity_keys.items()}
-    id_keys = {rid: keys * (repetition + 1) for rid, keys in id_keys.items()}
 
     # Create hash groups
     keys = []

@@ -329,23 +329,21 @@ def insert_model(
             session.add(new_res)
             session.flush()
 
-            # Collect all unique closure entries to avoid duplicates
-            # This happens if two models have a common ancestor
-            # (parent_id, level) -> truth_cache
-            closure_entries: dict[tuple[int, int], int] = {}
-
-            def _collect_closure_entries(parent_resolution: Resolutions) -> None:
-                """Collect closure entries for the new model without duplicates.
+            def _create_closure_entries(parent_resolution: Resolutions) -> None:
+                """Create closure entries for the new model.
 
                 This is made up of mappings between nodes and any of their direct or
                 indirect parents.
                 """
-                # Direct parent entry
-                key = (parent_resolution.resolution_id, 1)
-                if key not in closure_entries:
-                    closure_entries[key] = parent_resolution.truth
+                session.add(
+                    ResolutionFrom(
+                        parent=parent_resolution.resolution_id,
+                        child=new_res.resolution_id,
+                        level=1,
+                        truth_cache=parent_resolution.truth,
+                    )
+                )
 
-                # Ancestor entries
                 ancestor_entries = (
                     session.query(ResolutionFrom)
                     .filter(ResolutionFrom.child == parent_resolution.resolution_id)
@@ -353,25 +351,20 @@ def insert_model(
                 )
 
                 for entry in ancestor_entries:
-                    key = (entry.parent, entry.level + 1)
-                    if key not in closure_entries:
-                        closure_entries[key] = entry.truth_cache
-
-            # Collect entries from both parents
-            _collect_closure_entries(parent_resolution=left)
-            if right != left:
-                _collect_closure_entries(parent_resolution=right)
-
-            # Insert all unique closure entries
-            for (parent_id, level), truth_cache in closure_entries.items():
-                session.add(
-                    ResolutionFrom(
-                        parent=parent_id,
-                        child=new_res.resolution_id,
-                        level=level,
-                        truth_cache=truth_cache,
+                    session.add(
+                        ResolutionFrom(
+                            parent=entry.parent,
+                            child=new_res.resolution_id,
+                            level=entry.level + 1,
+                            truth_cache=entry.truth_cache,
+                        )
                     )
-                )
+
+            # Create resolution lineage entries
+            _create_closure_entries(parent_resolution=left)
+
+            if right != left:
+                _create_closure_entries(parent_resolution=right)
 
             status = "Inserted new"
             resolution_id = new_res.resolution_id

@@ -246,14 +246,14 @@ def create_link_scenario(
         promote_options="default",
     ).combine_chunks()
 
-    duns_query_linked = backend.query(source="duns", resolution=crn_duns_name)
+    duns_query_linked = backend.query(source="duns", resolution=duns_model.name)
 
     final_join_name = "final_join"
     final_join_model = query_to_model_factory(
         left_resolution=crn_cdms_name,
         left_query=crn_cdms_query,
         left_keys={"crn": "keys_crn", "cdms": "keys_cdms"},
-        right_resolution=crn_duns_name,
+        right_resolution=duns_model.name,
         right_query=duns_query_linked,
         right_keys={"duns": "key"},
         true_entities=tuple(linked.true_entities),

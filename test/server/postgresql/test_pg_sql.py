@@ -1,4 +1,13 @@
-"""Test SQL functions for the Matchbox PostgreSQL backend."""
+"""Test SQL functions for the Matchbox PostgreSQL backend.
+
+The backend adapter tests provide the key coverage we want for any backend. However,
+the PostgreSQL SQL functions are complex, and we've found having lower-level tests is
+useful for debugging the complex logic required to query a hierarchical system.
+
+Nevertheless, these tests are completely ephemeral, and if the hierarchical
+representation changes, they should be rewritten in whatever form best-aids the
+development of the new query functions. Don't be precious.
+"""
 
 from typing import Generator
 
@@ -985,7 +994,7 @@ class TestGetClustersWithLeaves:
 
 
 class TestQueryFunction:
-    """Test main query function."""
+    """Test main query function with various scenarios."""
 
     def test_query_source_only(self, populated_postgres_db: MatchboxPostgres):
         """Should query source data without resolution."""
@@ -996,14 +1005,166 @@ class TestQueryFunction:
         assert "id" in result.column_names
         assert "key" in result.column_names
 
-    def test_query_with_resolution(self, populated_postgres_db: MatchboxPostgres):
-        """Should query source data through resolution."""
-        result = query("source_a", resolution="dedupe_a", threshold=80, limit=None)
+        # For source-only queries, id should be the original cluster ID
+        assert set(result["id"].to_pylist()) == {
+            101,
+            102,
+            103,
+            104,
+            105,
+        }  # Two keys in 101
+        assert set(result["key"].to_pylist()) == {
+            "src_a_key1",
+            "src_a_key2",
+            "src_a_key3",
+            "src_a_key4",
+            "src_a_key5",
+            "src_a_key6",
+        }
 
-        # Should return keys mapped through dedupe_a at threshold 80
-        assert result.shape[0] <= 6  # May be fewer due to clustering
+    def test_query_source_b_only(self, populated_postgres_db: MatchboxPostgres):
+        """Should query source_b which has one key per cluster."""
+        result = query("source_b", resolution=None, threshold=None, limit=None)
+
+        # Should return all keys from source_b
+        assert result.shape[0] == 5
         assert "id" in result.column_names
         assert "key" in result.column_names
+
+        # Source B has one key per cluster
+        assert set(result["id"].to_pylist()) == {201, 202, 203, 204, 205}
+        assert set(result["key"].to_pylist()) == {
+            "src_b_key1",
+            "src_b_key2",
+            "src_b_key3",
+            "src_b_key4",
+            "src_b_key5",
+        }
+
+    def test_query_through_deduper(self, populated_postgres_db: MatchboxPostgres):
+        """Should query source through its deduper resolution."""
+        result = query("source_a", resolution="dedupe_a", threshold=None, limit=None)
+
+        # Should return all 6 keys, but some mapped to dedupe clusters
+        assert result.shape[0] == 6
+        assert "id" in result.column_names
+        assert "key" in result.column_names
+
+        # At dedupe_a's default threshold (80), should see C301 for some keys
+        cluster_ids = set(result["id"].to_pylist())
+        assert 301 in cluster_ids  # C301 should appear
+
+        # Keys 1,2,3 should map to C301 (dedupe of clusters 101+102)
+        keys_in_301 = [row["key"] for row in result.to_pylist() if row["id"] == 301]
+        expected_301_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
+        assert set(keys_in_301) == expected_301_keys
+
+    def test_query_through_deduper_with_threshold(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should query source through deduper with threshold override."""
+        # Test with threshold=90 (higher than dedupe_a's clusters)
+        result = query("source_a", resolution="dedupe_a", threshold=90, limit=None)
+
+        # Should return all 6 keys, but no dedupe clusters qualify
+        assert result.shape[0] == 6
+
+        # No dedupe clusters should qualify at threshold=90
+        cluster_ids = set(result["id"].to_pylist())
+        assert 301 not in cluster_ids  # C301 excluded (prob=80 < 90)
+
+        # Should fall back to original source clusters
+        expected_source_clusters = {101, 102, 103, 104, 105}
+        assert cluster_ids.issubset(expected_source_clusters)
+
+    def test_query_through_linker(self, populated_postgres_db: MatchboxPostgres):
+        """Should query source through complex linker resolution."""
+        result = query("source_a", resolution="linker_ab", threshold=None, limit=None)
+
+        # Should return all 6 keys with linker cluster assignments
+        assert result.shape[0] == 6
+
+        cluster_ids = set(result["id"].to_pylist())
+
+        # Should see linker clusters at default threshold (90)
+        assert 503 in cluster_ids  # C503 should appear
+        # C504 has prob=80 < default=90, so may not appear depending on role_flag
+
+        # Verify specific key mappings
+        key_cluster_map = {row["key"]: row["id"] for row in result.to_pylist()}
+
+        # src_a_key6 should map to C503 (linker cluster containing C105)
+        assert key_cluster_map["src_a_key6"] == 503
+
+    def test_query_both_sources_through_linker(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should query both sources through linker with consistent results."""
+        result_a = query("source_a", resolution="linker_ab", threshold=80, limit=None)
+        result_b = query("source_b", resolution="linker_ab", threshold=80, limit=None)
+
+        # Both should return their respective key counts
+        assert result_a.shape[0] == 6  # source_a keys
+        assert result_b.shape[0] == 5  # source_b keys
+
+        # Should see overlapping cluster assignments
+        clusters_a = set(result_a["id"].to_pylist())
+        clusters_b = set(result_b["id"].to_pylist())
+
+        # Both should include linker clusters that link across sources
+        linker_clusters = {503, 504}  # Both qualify at threshold=80
+        assert linker_clusters.intersection(clusters_a)  # Some linker clusters in A
+        assert linker_clusters.intersection(clusters_b)  # Some linker clusters in B
+
+        # Specific cross-source linking: C503 contains C105+C205
+        a_key6_cluster = [
+            row["id"] for row in result_a.to_pylist() if row["key"] == "src_a_key6"
+        ][0]
+        b_key5_cluster = [
+            row["id"] for row in result_b.to_pylist() if row["key"] == "src_b_key5"
+        ][0]
+        assert (
+            a_key6_cluster == b_key5_cluster == 503
+        )  # Both map to same linker cluster
+
+    def test_query_with_limit(self, populated_postgres_db: MatchboxPostgres):
+        """Should respect limit parameter."""
+        result = query("source_a", resolution=None, threshold=None, limit=3)
+
+        # Should return only 3 rows
+        assert result.shape[0] == 3
+        assert "id" in result.column_names
+        assert "key" in result.column_names
+
+    def test_query_multiple_keys_per_cluster_scenario(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should handle case where multiple keys belong to same cluster."""
+        # This tests the scenario causing your test failure
+        result = query("source_a", resolution="dedupe_a", threshold=80, limit=None)
+
+        # source_a has 6 keys but some share clusters:
+        # - keys 1,2 both in cluster 101 → both map to C301
+        # - key 3 in cluster 102 → also maps to C301
+        # - keys 4,5,6 in separate clusters → keep original assignments
+
+        assert result.shape[0] == 6  # Still 6 keys total
+
+        # Count unique clusters vs total keys
+        unique_clusters = len(set(result["id"].to_pylist()))
+        total_keys = result.shape[0]
+
+        # Should have fewer unique clusters than total keys (due to C301 grouping)
+        assert unique_clusters < total_keys
+
+        # Verify the specific multiple-keys-to-one-cluster mapping
+        key_cluster_map = {row["key"]: row["id"] for row in result.to_pylist()}
+
+        # Keys 1,2,3 should all map to the same dedupe cluster C301
+        dedupe_cluster = key_cluster_map["src_a_key1"]
+        assert key_cluster_map["src_a_key2"] == dedupe_cluster
+        assert key_cluster_map["src_a_key3"] == dedupe_cluster
+        assert dedupe_cluster == 301
 
     def test_query_nonexistent_source(self, populated_postgres_db: MatchboxPostgres):
         """Should raise exception for nonexistent source."""

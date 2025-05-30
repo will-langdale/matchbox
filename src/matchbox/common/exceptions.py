@@ -97,6 +97,20 @@ class MatchboxServerFileError(Exception):
         super().__init__(message)
 
 
+# -- ModelConfig exceptions --
+
+
+class MatchboxModelConfigError(Exception):
+    """There was a problem with ModelConfig."""
+
+    def __init__(self, message: str | None = None):
+        """Initialise the exception."""
+        if message is None:
+            message = "There was a problem with ModelConfig."
+
+        super().__init__(message)
+
+
 # -- Resource not found on server exceptions --
 
 
