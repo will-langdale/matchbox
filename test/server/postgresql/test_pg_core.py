@@ -8,7 +8,7 @@ from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 from matchbox.server.postgresql.orm import PKSpace
-from matchbox.server.postgresql.utils.db import large_ingest
+from matchbox.server.postgresql.utils.db import ingest_to_temporary_table, large_ingest
 from matchbox.server.postgresql.utils.insert import HashIDMap
 
 
@@ -269,3 +269,56 @@ def test_large_ingest_upsert_custom_key(
     metadata.clear()  # clear all Table objects from this MetaData, doesn't touch DB
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
+
+
+@pytest.mark.docker
+def test_ingest_to_temporary_table(
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+):
+    """Test temporary table creation, data ingestion, and automatic cleanup."""
+    from sqlalchemy.dialects.postgresql import BIGINT, TEXT
+
+    # Create sample arrow data
+    data = pa.Table.from_pylist(
+        [
+            {"id": 1, "value": "test1"},
+            {"id": 2, "value": "test2"},
+        ]
+    )
+
+    schema_name = MBDB.MatchboxBase.metadata.schema
+    table_name = "test_temp_ingest"
+
+    # Define the column types for the temporary table
+    column_types = {
+        "id": BIGINT,
+        "value": TEXT,
+    }
+
+    # Use the context manager to create and populate a temporary table
+    with ingest_to_temporary_table(
+        table_name=table_name,
+        schema_name=schema_name,
+        data=data,
+        column_types=column_types,
+    ) as temp_table:
+        # Verify the table exists and has the expected data
+        with MBDB.get_session() as session:
+            # Check that the table exists using SQLAlchemy syntax
+            from sqlalchemy import func, select
+
+            result = session.execute(
+                select(func.count()).select_from(temp_table)
+            ).scalar()
+            assert result == 2
+
+            # Check a specific value using SQLAlchemy syntax
+            value = session.execute(
+                select(temp_table.c.value).where(temp_table.c.id == 1)
+            ).scalar()
+            assert value == "test1"
+
+    # After context exit, verify the table no longer exists
+    with MBDB.get_session() as session:
+        with pytest.raises(Exception):  # Should fail as table is dropped # noqa: B017
+            session.execute(select(func.count()).select_from(temp_table))
