@@ -100,13 +100,6 @@ def process_column_for_hashing(column_name: str, schema_type: pl.DataType) -> pl
             .fill_null("\x00")
             .alias(column_name)
         )
-    elif isinstance(schema_type, pl.Object):
-        return (
-            pl.col(column_name)
-            .map_elements(lambda x: str(x), return_dtype=pl.Utf8)
-            .fill_null("\x00")
-            .alias(column_name)
-        )
     else:
         return pl.col(column_name).cast(pl.Utf8).fill_null("\x00").alias(column_name)
 
@@ -129,14 +122,28 @@ def hash_rows(
     ]
     df_processed = df.with_columns(expr_list)
 
+    record_separator = "␞"
+    unit_separator = "␟"
+
+    str_concatenation: list[pl.Expr] = []
+    for c in columns:
+        str_concatenation.extend(
+            [
+                pl.lit(c),  # column name
+                pl.lit(unit_separator),
+                pl.col(c),  # column value
+                pl.lit(record_separator),
+            ]
+        )
+
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+            plh.concat_str(str_concatenation).nchash.xxh3_128().alias("row_hash")
         )
         return row_hashes["row_hash"]
     elif method == HashMethod.SHA256:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞")
+            plh.concat_str(str_concatenation)
             .chash.sha2_256()
             .str.decode("hex")
             .alias("row_hash")
