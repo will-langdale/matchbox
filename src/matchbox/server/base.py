@@ -407,6 +407,8 @@ class MatchboxDBAdapter(ABC):
         Raises:
             MatchboxDataNotFound: If, for a linker, the source models weren't found in
                 the database
+            MatchboxModelConfigError: If the model configuration is invalid, such as
+                the resolutions sharing ancestors
         """
         ...
 
