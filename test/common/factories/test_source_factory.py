@@ -57,6 +57,7 @@ def test_source_factory_repetition():
     for _, group in hashes_df.groupby("hash"):
         # Each hash should have repetition + 1 (base) number of keys
         keys = group["keys"].explode()
+        assert len(keys) == len(keys.unique())
         assert len(keys) == repetition + 1
 
         # Get the actual rows for these keys
@@ -404,28 +405,41 @@ def test_source_from_tuple():
 
 
 @pytest.mark.parametrize(
-    ("selected_entities", "features"),
+    ("selected_entities", "features", "repetition"),
     [
         pytest.param(
-            # Base case: Two entities, one feature, unique values
+            # Base case: Two entities, one feature, unique values, no repetition
             (
                 SourceEntity(base_values={"name": "alpha"}),
                 SourceEntity(base_values={"name": "beta"}),
             ),
             (FeatureConfig(name="name", base_generator="name"),),
-            id="two_entities_unique_values",
+            0,
+            id="two_entities_unique_values_no_repetition",
         ),
         pytest.param(
-            # Case: Two entities with identical values - should share IDs
+            # Same case with repetition
+            (
+                SourceEntity(base_values={"name": "alpha"}),
+                SourceEntity(base_values={"name": "beta"}),
+            ),
+            (FeatureConfig(name="name", base_generator="name"),),
+            3,  # 3 repetitions
+            id="two_entities_unique_values_with_repetition",
+        ),
+        pytest.param(
+            # Case: Two entities with identical values - should share IDs,
+            # two repetitions
             (
                 SourceEntity(base_values={"name": "alpha"}),
                 SourceEntity(base_values={"name": "alpha"}),
             ),
             (FeatureConfig(name="name", base_generator="name"),),
-            id="two_entities_same_values",
+            2,
+            id="two_entities_same_values_with_repetition",
         ),
         pytest.param(
-            # Case: Multiple features, tests tuple-based identity
+            # Case: Multiple features, tests tuple-based identity, one repetition
             (
                 SourceEntity(base_values={"name": "alpha", "user_id": "123"}),
                 SourceEntity(base_values={"name": "alpha", "user_id": "456"}),
@@ -434,16 +448,18 @@ def test_source_from_tuple():
                 FeatureConfig(name="name", base_generator="name"),
                 FeatureConfig(name="user_id", base_generator="uuid4"),
             ),
-            id="multiple_features_partial_match",
+            1,
+            id="multiple_features_partial_match_with_repetition",
         ),
         pytest.param(
-            # Case: Empty entities list - should handle gracefully
+            # Case: Empty entities list - should handle gracefully, even with repetition
             (),
             (FeatureConfig(name="name", base_generator="name"),),
-            id="empty_entities",
+            5,
+            id="empty_entities_with_repetition",
         ),
         pytest.param(
-            # Case: Entity with variations and drop_base
+            # Case: Entity with variations and drop_base, two repetitions
             (SourceEntity(base_values={"name": "alpha"}),),
             (
                 FeatureConfig(
@@ -456,10 +472,11 @@ def test_source_from_tuple():
                     ),
                 ),
             ),
-            id="variations_with_drop_base",
+            2,
+            id="variations_with_drop_base_and_repetition",
         ),
         pytest.param(
-            # Case: Entity with variations and drop_base
+            # Case: Entity with variations and drop_base, one repetition
             (SourceEntity(base_values={"name": "alpha", "user_id": "123"}),),
             (
                 FeatureConfig(
@@ -477,10 +494,11 @@ def test_source_from_tuple():
                     # No variations, keeps base value
                 ),
             ),
-            id="mixed_variations_and_drop_base",
+            1,
+            id="mixed_variations_and_drop_base_with_repetition",
         ),
         pytest.param(
-            # Case: Multiple entities with mixed variation configs
+            # Case: Multiple entities with mixed variation configs, four repetitions
             (
                 SourceEntity(base_values={"name": "alpha", "title": "ceo"}),
                 SourceEntity(base_values={"name": "beta", "title": "cto"}),
@@ -502,18 +520,23 @@ def test_source_from_tuple():
                     ),
                 ),
             ),
-            id="multiple_entities_mixed_variations",
+            4,
+            id="multiple_entities_mixed_variations_with_repetition",
         ),
     ],
 )
 def test_generate_rows(
     selected_entities: tuple[SourceEntity, ...],
     features: tuple[FeatureConfig, ...],
+    repetition: int,
 ):
     """Test generate_rows correctly tracks entities and row identities."""
     generator = Faker(seed=42)
     raw_data, entity_keys, id_keys, id_hashes = generate_rows(
-        generator, selected_entities, features
+        generator=generator,
+        selected_entities=selected_entities,
+        features=features,
+        repetition=repetition,
     )
 
     # Check arrays have consistent lengths
@@ -529,6 +552,12 @@ def test_generate_rows(
         tuple(raw_data[f.name][i] for f in features) for i in range(n_rows)
     }
     assert len(unique_values) == len(id_keys)
+
+    # Test repetition behavior
+    if repetition > 0:
+        # All keys in each ID group should be unique (no duplicate keys)
+        for id_group_keys in id_keys.values():
+            assert len(id_group_keys) == len(set(id_group_keys))
 
     # When we have duplicate values, verify correct ID sharing
     value_counts = {}
@@ -585,7 +614,7 @@ def test_generate_rows(
                 )
                 assert len(values) == expected_count
 
-    # Verify row count matches expectations
+    # Verify row count matches expectations with repetition
     for entity in selected_entities:
         # Count effective variations for each feature
         variation_counts = []
@@ -602,9 +631,12 @@ def test_generate_rows(
             else:
                 variation_counts.append(len(effective_variations) + 1)
 
-        # Multiply all counts together to get total combinations
-        expected_rows = functools.reduce(lambda x, y: x * y, variation_counts, 1)
-        assert len(entity_keys[entity.id]) == expected_rows
+        # Multiply all counts together to get total combinations, then by repetition
+        expected_unique_combinations = functools.reduce(
+            lambda x, y: x * y, variation_counts, 1
+        )
+        expected_total_rows = expected_unique_combinations * (repetition + 1)
+        assert len(entity_keys[entity.id]) == expected_total_rows
 
     # Verify hashing functionality
     # Each unique row should have a unique hash

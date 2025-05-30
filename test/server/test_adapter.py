@@ -718,7 +718,7 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "link") as dag:
             linker_name = "probabilistic_naive_test.crn_naive_test.cdms"
             crn_testkit = dag.sources.get("crn")
-            cdms_testkit = dag.sources.get("cdms")
+            duns_testkit = dag.sources.get("duns")
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -726,14 +726,14 @@ class TestMatchboxBackend:
 
             # A random one:many entity
             source_entity: SourceEntity = linked.find_entities(
-                min_appearances={"crn": 2, "cdms": 1},
-                max_appearances={"cdms": 1},
+                min_appearances={"crn": 2, "duns": 1},
+                max_appearances={"duns": 1},
             )[0]
 
             res = self.backend.match(
                 key=next(iter(source_entity.keys["crn"])),
                 source=crn_testkit.source_config.name,
-                targets=[cdms_testkit.source_config.name],
+                targets=[duns_testkit.source_config.name],
                 resolution=linker_name,
                 threshold=100,
             )
@@ -741,11 +741,11 @@ class TestMatchboxBackend:
             assert len(res) == 1
             assert isinstance(res[0], Match)
             assert res[0].source == crn_testkit.source_config.name
-            assert res[0].target == cdms_testkit.source_config.name
+            assert res[0].target == duns_testkit.source_config.name
             assert res[0].source_id == source_entity.keys["crn"]
             # Match does not return true target ids when threshold
             # exceeds match probability
-            assert len(res[0].target_id) < len(source_entity.keys["cdms"])
+            assert len(res[0].target_id) < len(source_entity.keys["duns"])
 
     def test_clear(self):
         """Test deleting all rows in the database."""
