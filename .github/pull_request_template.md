@@ -18,6 +18,10 @@
 
 ## ✅ Checklist:
 
-- [ ] All new code fullfills a defined and current need, and follows [our standards](https://uktrade.github.io/matchbox/contributing/)
-- [ ] I've tested new behaviour and thought about potential regressions
-- [ ] I've changed or updated all relevant documentation (tutorials, API docs and dev docs)
+- [ ] This is the smallest, simplest solution to the problem
+- [ ] I've read [our code standards](https://uktrade.github.io/matchbox/contributing/) and this code follows them  
+- [ ] All new code is tested
+- I've updated all relevant documentation (select all that apply)
+    - [ ] API documentation (docstrings and indexes)
+    - [ ] Tutorials
+    - [ ] Developer docs
