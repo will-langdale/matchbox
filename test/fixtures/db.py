@@ -246,7 +246,7 @@ def create_link_scenario(
         promote_options="default",
     ).combine_chunks()
 
-    duns_query_linked = backend.query(source="duns", resolution=crn_duns_name)
+    duns_query_linked = backend.query(source="duns", resolution=duns_model.name)
 
     final_join_name = "final_join"
     final_join_model = query_to_model_factory(
