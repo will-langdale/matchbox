@@ -177,15 +177,58 @@ class MatchboxDatabase:
             command.upgrade(self.alembic_config, "head")
 
     def clear_database(self):
-        """Delete all rows in every table in the database schema."""
-        with self.get_engine().connect() as conn:
-            table_names = [
-                f"{self.MatchboxBase.metadata.schema}.{table.name}"
-                for table in self.MatchboxBase.metadata.sorted_tables
-            ]
-            tables_str = ", ".join(table_names)
-            conn.execute(text(f"TRUNCATE TABLE {tables_str} CASCADE;"))
-            conn.commit()
+        """Delete all rows in every table in the database schema.
+
+        - TRUNCATE tables that are part of the core ORM (preserves structure)
+        - DROP tables that are not in the ORM (removes temporary/test tables)
+        """
+        schema_name = self.MatchboxBase.metadata.schema
+        engine = self.get_engine()  # Get the engine
+
+        with self.get_session() as session:
+            try:
+                # Get all tables that actually exist in the database
+                discovered_metadata = MetaData(schema=schema_name)
+                discovered_metadata.reflect(
+                    bind=engine, schema=schema_name
+                )  # Use engine here
+
+                # Get table names from the core ORM
+                orm_table_names = {
+                    table.name for table in self.MatchboxBase.metadata.tables.values()
+                }
+
+                # Categorise discovered tables
+                tables_to_truncate: list[Table] = []
+                tables_to_drop: list[Table] = []
+
+                for table in discovered_metadata.tables.values():
+                    if table.name == "alembic_version":
+                        # Alembic version is in public but just in case
+                        continue
+                    elif table.name in orm_table_names:
+                        tables_to_truncate.append(table)
+                    else:
+                        tables_to_drop.append(table)
+
+                # TRUNCATE core ORM tables (preserves schema structure)
+                if tables_to_truncate:
+                    for table in tables_to_truncate:
+                        session.execute(
+                            text(f"TRUNCATE TABLE {table.fullname} CASCADE")
+                        )
+
+                # DROP temporary/test tables (removes them completely)
+                if tables_to_drop:
+                    for table in tables_to_drop:
+                        session.execute(text(f"DROP TABLE {table.fullname} CASCADE"))
+
+                session.commit()
+
+            except Exception as e:
+                logger.error(f"Error clearing database: {e}")
+                session.rollback()
+                raise
 
     def drop_database(self):
         """Drop all tables in the database schema and re-recreate them."""

@@ -6,17 +6,18 @@ import cProfile
 import io
 import pstats
 import uuid
+from typing import Generator
 
 import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
-from adbc_driver_postgresql import dbapi as adbc_dbapi
 from pyarrow import Table as ArrowTable
-from sqlalchemy import Column, Table, func, select, text
+from sqlalchemy import Column, MetaData, Table, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeMeta
 from sqlalchemy.sql import Select
+from sqlalchemy.sql.type_api import TypeEngine
 
 from matchbox.common.exceptions import (
     MatchboxDatabaseWriteError,
@@ -27,12 +28,10 @@ from matchbox.common.graph import (
     ResolutionNode,
     ResolutionNodeType,
 )
+from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxBackends, MatchboxSnapshot
 from matchbox.server.postgresql.db import MBDB
-from matchbox.server.postgresql.orm import (
-    ResolutionFrom,
-    Resolutions,
-)
+from matchbox.server.postgresql.orm import ResolutionFrom, Resolutions
 
 # Retrieval
 
@@ -199,21 +198,22 @@ def _copy_to_table(
     table_name: str,
     schema_name: str,
     data: ArrowTable,
-    connection: adbc_dbapi.Connection,
     max_chunksize: int | None = None,
 ):
+    """Copy data to table using ADBC with isolated connection."""
     batch_reader = pa.RecordBatchReader.from_batches(
         data.schema, data.to_batches(max_chunksize=max_chunksize)
     )
 
-    with connection.cursor() as cursor:
-        cursor.adbc_ingest(
-            table_name=table_name,
-            data=batch_reader,
-            mode="append",
-            db_schema_name=schema_name,
-        )
-        connection.commit()
+    with MBDB.get_adbc_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.adbc_ingest(
+                table_name=table_name,
+                data=batch_reader,
+                mode="append",
+                db_schema_name=schema_name,
+            )
+            connection.commit()
 
 
 def large_ingest(
@@ -239,69 +239,67 @@ def large_ingest(
             If passed, it will run ingest in slower upsert mode.
             If not passed and `upsert_keys` is passed, defaults to all other columns.
     """
-    with (
-        MBDB.get_adbc_connection() as conn,
-        MBDB.get_session() as session,
-    ):
-        table: Table = table_class.__table__
-        metadata = table.metadata
+    table: Table = table_class.__table__
+    metadata = table.metadata
 
-        table_columns = [c.name for c in table.columns]
-        col_diff = set(data.column_names) - set(table_columns)
-        if len(col_diff) > 0:
-            raise ValueError(f"Table {table.name} does not have columns {col_diff}")
+    table_columns = [c.name for c in table.columns]
+    col_diff = set(data.column_names) - set(table_columns)
+    if len(col_diff) > 0:
+        raise ValueError(f"Table {table.name} does not have columns {col_diff}")
 
-        if not update_columns and not upsert_keys:
-            try:
-                _copy_to_table(
-                    table_name=table.name,
-                    schema_name=table.schema,
-                    data=data,
-                    connection=conn,
-                    max_chunksize=max_chunksize,
-                )
-            except ADBCProgrammingError as e:
-                raise MatchboxDatabaseWriteError from e
+    if not update_columns and not upsert_keys:
+        try:
+            _copy_to_table(
+                table_name=table.name,
+                schema_name=table.schema,
+                data=data,
+                max_chunksize=max_chunksize,
+            )
+        except ADBCProgrammingError as e:
+            raise MatchboxDatabaseWriteError from e
 
-        # Upsert mode (slower)
-        else:
-            keys_names = [c.name for c in table.primary_key.columns]
+    # Upsert mode (slower)
+    else:
+        keys_names = [c.name for c in table.primary_key.columns]
 
-            # Validate upsert arguments
-            if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
-                raise ValueError("Cannot update a custom upsert key")
+        # Validate upsert arguments
+        if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
+            raise ValueError("Cannot update a custom upsert key")
 
-            if len(set(update_columns or []) & set(keys_names)) > 0:
-                raise ValueError(
-                    "Cannot update a primary key without "
-                    "setting a different custom upsert key"
-                )
+        if len(set(update_columns or []) & set(keys_names)) > 0:
+            raise ValueError(
+                "Cannot update a primary key without "
+                "setting a different custom upsert key"
+            )
 
-            # If necessary, set defaults for upsert variables
-            upsert_keys = upsert_keys or keys_names
+        # If necessary, set defaults for upsert variables
+        upsert_keys = upsert_keys or keys_names
 
-            if not update_columns:
-                update_columns = [c for c in table_columns if c not in upsert_keys]
-            try:
-                # Create temp table
-                temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
-                temp_cols = [
-                    Column(c.name, c.type, primary_key=c.primary_key)
-                    for c in table.columns
-                ]
-                temp_table = Table(temp_table_name, metadata, *temp_cols)
+        if not update_columns:
+            update_columns = [c for c in table_columns if c not in upsert_keys]
+
+        # Create temp table
+        temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
+        temp_cols = [
+            Column(c.name, c.type, primary_key=c.primary_key) for c in table.columns
+        ]
+        temp_table = Table(temp_table_name, metadata, *temp_cols)
+
+        try:
+            with MBDB.get_session() as session:
                 temp_table.create(session.bind)
+                session.commit()
 
-                # Add new records to temp table
-                _copy_to_table(
-                    table_name=temp_table_name,
-                    schema_name=table.schema,
-                    data=data,
-                    connection=conn,
-                    max_chunksize=max_chunksize,
-                )
+            # Add new records to temp table
+            _copy_to_table(
+                table_name=temp_table_name,
+                schema_name=table.schema,
+                data=data,
+                max_chunksize=max_chunksize,
+            )
 
-                # Copy new records to original table
+            # Copy new records to original table
+            with MBDB.get_session() as session:
                 insert_stmt = insert(table).from_select(
                     [c.name for c in temp_table.columns], temp_table.select()
                 )
@@ -313,9 +311,75 @@ def large_ingest(
                 session.execute(upsert_stmt)
                 session.commit()
 
-            except (ADBCProgrammingError, IntegrityError) as e:
-                raise MatchboxDatabaseWriteError from e
+        except (ADBCProgrammingError, IntegrityError) as e:
+            raise MatchboxDatabaseWriteError from e
 
-            finally:
-                # Drop temp table
+        finally:
+            # Drop temp table - use a fresh session to ensure clean state
+            try:
+                with MBDB.get_session() as cleanup_session:
+                    temp_table.drop(cleanup_session.bind, checkfirst=True)
+                    cleanup_session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to drop temp table {temp_table_name}: {e}")
+
+
+@contextlib.contextmanager
+def ingest_to_temporary_table(
+    table_name: str,
+    schema_name: str,
+    data: ArrowTable,
+    column_types: dict[str, type[TypeEngine]],
+    max_chunksize: int | None = None,
+) -> Generator[Table, None, None]:
+    """Context manager to ingest Arrow data to a temporary table with explicit types.
+
+    Args:
+        table_name: Base name for the temporary table
+        schema_name: Schema where the temporary table will be created
+        data: PyArrow table containing the data to ingest
+        column_types: Map of column names to SQLAlchemy types
+        max_chunksize: Optional maximum chunk size for batches
+
+    Returns:
+        A SQLAlchemy Table object representing the temporary table
+    """
+    temp_table_name = f"{table_name}_tmp_{uuid.uuid4().hex}"
+
+    # Validate that all data columns have type mappings
+    missing_columns = set(data.column_names) - set(column_types.keys())
+    if missing_columns:
+        raise ValueError(f"Missing type mappings for columns: {missing_columns}")
+
+    try:
+        # Create SQLAlchemy Table from explicit type mapping
+        metadata = MetaData(schema=schema_name)
+        columns = [
+            Column(column_name, column_type())
+            for column_name, column_type in column_types.items()
+            if column_name in data.column_names
+        ]
+        temp_table = Table(temp_table_name, metadata, *columns)
+
+        with MBDB.get_session() as session:
+            temp_table.create(session.bind)
+            session.commit()
+
+        # Ingest data into the temporary table
+        _copy_to_table(
+            table_name=temp_table_name,
+            schema_name=schema_name,
+            data=data,
+            max_chunksize=max_chunksize,
+        )
+
+        yield temp_table
+
+    finally:
+        # Step 3: Clean up
+        try:
+            with MBDB.get_session() as session:
                 temp_table.drop(session.bind, checkfirst=True)
+                session.commit()
+        except Exception as e:
+            logger.warning(f"Failed to drop temp table {temp_table_name}: {e}")
