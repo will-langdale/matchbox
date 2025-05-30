@@ -239,64 +239,67 @@ def large_ingest(
             If passed, it will run ingest in slower upsert mode.
             If not passed and `upsert_keys` is passed, defaults to all other columns.
     """
-    with MBDB.get_session() as session:
-        table: Table = table_class.__table__
-        metadata = table.metadata
+    table: Table = table_class.__table__
+    metadata = table.metadata
 
-        table_columns = [c.name for c in table.columns]
-        col_diff = set(data.column_names) - set(table_columns)
-        if len(col_diff) > 0:
-            raise ValueError(f"Table {table.name} does not have columns {col_diff}")
+    table_columns = [c.name for c in table.columns]
+    col_diff = set(data.column_names) - set(table_columns)
+    if len(col_diff) > 0:
+        raise ValueError(f"Table {table.name} does not have columns {col_diff}")
 
-        if not update_columns and not upsert_keys:
-            try:
-                _copy_to_table(
-                    table_name=table.name,
-                    schema_name=table.schema,
-                    data=data,
-                    max_chunksize=max_chunksize,
-                )
-            except ADBCProgrammingError as e:
-                raise MatchboxDatabaseWriteError from e
+    if not update_columns and not upsert_keys:
+        try:
+            _copy_to_table(
+                table_name=table.name,
+                schema_name=table.schema,
+                data=data,
+                max_chunksize=max_chunksize,
+            )
+        except ADBCProgrammingError as e:
+            raise MatchboxDatabaseWriteError from e
 
-        # Upsert mode (slower)
-        else:
-            keys_names = [c.name for c in table.primary_key.columns]
+    # Upsert mode (slower)
+    else:
+        keys_names = [c.name for c in table.primary_key.columns]
 
-            # Validate upsert arguments
-            if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
-                raise ValueError("Cannot update a custom upsert key")
+        # Validate upsert arguments
+        if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
+            raise ValueError("Cannot update a custom upsert key")
 
-            if len(set(update_columns or []) & set(keys_names)) > 0:
-                raise ValueError(
-                    "Cannot update a primary key without "
-                    "setting a different custom upsert key"
-                )
+        if len(set(update_columns or []) & set(keys_names)) > 0:
+            raise ValueError(
+                "Cannot update a primary key without "
+                "setting a different custom upsert key"
+            )
 
-            # If necessary, set defaults for upsert variables
-            upsert_keys = upsert_keys or keys_names
+        # If necessary, set defaults for upsert variables
+        upsert_keys = upsert_keys or keys_names
 
-            if not update_columns:
-                update_columns = [c for c in table_columns if c not in upsert_keys]
-            try:
-                # Create temp table
-                temp_table_name = f"{table.name}_tmp_{secrets.token_hex(3)}"
-                temp_cols = [
-                    Column(c.name, c.type, primary_key=c.primary_key)
-                    for c in table.columns
-                ]
-                temp_table = Table(temp_table_name, metadata, *temp_cols)
+        if not update_columns:
+            update_columns = [c for c in table_columns if c not in upsert_keys]
+
+        # Create temp table
+        temp_table_name = f"{table.name}_tmp_{secrets.token_hex(3)}"
+        temp_cols = [
+            Column(c.name, c.type, primary_key=c.primary_key) for c in table.columns
+        ]
+        temp_table = Table(temp_table_name, metadata, *temp_cols)
+
+        try:
+            with MBDB.get_session() as session:
                 temp_table.create(session.bind)
+                session.commit()
 
-                # Add new records to temp table
-                _copy_to_table(
-                    table_name=temp_table_name,
-                    schema_name=table.schema,
-                    data=data,
-                    max_chunksize=max_chunksize,
-                )
+            # Add new records to temp table
+            _copy_to_table(
+                table_name=temp_table_name,
+                schema_name=table.schema,
+                data=data,
+                max_chunksize=max_chunksize,
+            )
 
-                # Copy new records to original table
+            # Copy new records to original table
+            with MBDB.get_session() as session:
                 insert_stmt = insert(table).from_select(
                     [c.name for c in temp_table.columns], temp_table.select()
                 )
@@ -308,12 +311,17 @@ def large_ingest(
                 session.execute(upsert_stmt)
                 session.commit()
 
-            except (ADBCProgrammingError, IntegrityError) as e:
-                raise MatchboxDatabaseWriteError from e
+        except (ADBCProgrammingError, IntegrityError) as e:
+            raise MatchboxDatabaseWriteError from e
 
-            finally:
-                # Drop temp table
-                temp_table.drop(session.bind, checkfirst=True)
+        finally:
+            # Drop temp table - use a fresh session to ensure clean state
+            try:
+                with MBDB.get_session() as cleanup_session:
+                    temp_table.drop(cleanup_session.bind, checkfirst=True)
+                    cleanup_session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to drop temp table {temp_table_name}: {e}")
 
 
 @contextlib.contextmanager
