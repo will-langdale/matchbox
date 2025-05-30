@@ -7,6 +7,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
@@ -529,8 +530,11 @@ def _create_clusters_dataframe(all_clusters: dict[bytes, Cluster]) -> pl.DataFra
 
     # Look up existing clusters in the database
     with ingest_to_temporary_table(
-        table_name="tmp_hashes",
+        table_name="hashes",
         schema_name="mb",
+        column_types={
+            "cluster_hash": BYTEA,
+        },
         data=all_clusters_df.select("cluster_hash").to_arrow(),
     ) as temp_table:
         existing_cluster_stmt = select(Clusters.cluster_id, Clusters.cluster_hash).join(

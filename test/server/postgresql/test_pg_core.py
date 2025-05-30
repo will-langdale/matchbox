@@ -1,6 +1,6 @@
 import pyarrow as pa
 import pytest
-from sqlalchemy import BIGINT, TEXT, Column, MetaData, UniqueConstraint, text
+from sqlalchemy import BIGINT, TEXT, Column, MetaData, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
 from matchbox.common.exceptions import MatchboxDatabaseWriteError
@@ -276,6 +276,8 @@ def test_ingest_to_temporary_table(
     matchbox_postgres: MatchboxPostgres,  # will drop dummy table
 ):
     """Test temporary table creation, data ingestion, and automatic cleanup."""
+    from sqlalchemy.dialects.postgresql import BIGINT, TEXT
+
     # Create sample arrow data
     data = pa.Table.from_pylist(
         [
@@ -287,32 +289,36 @@ def test_ingest_to_temporary_table(
     schema_name = MBDB.MatchboxBase.metadata.schema
     table_name = "test_temp_ingest"
 
+    # Define the column types for the temporary table
+    column_types = {
+        "id": BIGINT,
+        "value": TEXT,
+    }
+
     # Use the context manager to create and populate a temporary table
     with ingest_to_temporary_table(
         table_name=table_name,
         schema_name=schema_name,
         data=data,
+        column_types=column_types,
     ) as temp_table:
         # Verify the table exists and has the expected data
         with MBDB.get_session() as session:
-            # Check that the table exists
+            # Check that the table exists using SQLAlchemy syntax
+            from sqlalchemy import func, select
+
             result = session.execute(
-                text(f"SELECT COUNT(*) FROM {schema_name}.{temp_table.name}")
+                select(func.count()).select_from(temp_table)
             ).scalar()
             assert result == 2
 
-            # Check a specific value to confirm data was correctly inserted
+            # Check a specific value using SQLAlchemy syntax
             value = session.execute(
-                text(f"SELECT value FROM {schema_name}.{temp_table.name} WHERE id = 1")
+                select(temp_table.c.value).where(temp_table.c.id == 1)
             ).scalar()
             assert value == "test1"
-
-            # Store the temporary table name for later verification
-            temp_table_name = temp_table.name
 
     # After context exit, verify the table no longer exists
     with MBDB.get_session() as session:
         with pytest.raises(Exception):  # Should fail as table is dropped # noqa: B017
-            session.execute(
-                text(f"SELECT COUNT(*) FROM {schema_name}.{temp_table_name}")
-            )
+            session.execute(select(func.count()).select_from(temp_table))

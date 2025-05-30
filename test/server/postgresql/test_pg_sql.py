@@ -397,6 +397,7 @@ def populated_postgres_db(
     yield matchbox_postgres
 
 
+@pytest.mark.docker
 class TestGetSourceConfig:
     """Test source config retrieval."""
 
@@ -414,6 +415,7 @@ class TestGetSourceConfig:
                 get_source_config("nonexistent", session)
 
 
+@pytest.mark.docker
 class TestResolveThresholds:
     """Test threshold resolution logic."""
 
@@ -445,6 +447,7 @@ class TestResolveThresholds:
             assert result[5] == 85  # target gets override
 
 
+@pytest.mark.docker
 class TestGetResolutionPriority:
     """Test resolution priority calculation."""
 
@@ -476,6 +479,7 @@ class TestGetResolutionPriority:
             assert priority == 0
 
 
+@pytest.mark.docker
 class TestEmptyResult:
     """Test empty result generation."""
 
@@ -528,6 +532,7 @@ class TestBuildSourceQuery:
         assert set(result["leaf_key"]) == expected_keys
 
 
+@pytest.mark.docker
 class TestBuildModelQuery:
     """Test model query building."""
 
@@ -560,6 +565,7 @@ class TestBuildModelQuery:
         assert len(hierarchical_rows) > 0
 
 
+@pytest.mark.docker
 class TestBuildUnifiedQuery:
     """Test unified query building."""
 
@@ -640,6 +646,7 @@ class TestBuildUnifiedQuery:
         assert 401 in root_ids  # from dedupe_b cached=70
 
 
+@pytest.mark.docker
 class TestResolveHierarchyAssignments:
     """Test hierarchy assignment resolution."""
 
@@ -755,6 +762,7 @@ class TestResolveHierarchyAssignments:
             assert 401 in root_ids  # C401 has keys not captured by linker clusters
 
 
+@pytest.mark.docker
 class TestResolveClusterHierarchy:
     """Test cluster hierarchy resolution for specific source."""
 
@@ -817,6 +825,7 @@ class TestResolveClusterHierarchy:
             assert set(original_keys["key"]) == expected_original_keys
 
 
+@pytest.mark.docker
 class TestGetClustersWithLeaves:
     """Test cluster-leaf relationship extraction."""
 
@@ -993,6 +1002,7 @@ class TestGetClustersWithLeaves:
                     )
 
 
+@pytest.mark.docker
 class TestQueryFunction:
     """Test main query function with various scenarios."""
 
@@ -1179,6 +1189,7 @@ class TestQueryFunction:
             query("source_a", resolution="nonexistent")
 
 
+@pytest.mark.docker
 class TestMatchFunction:
     """Test matching function."""
 
