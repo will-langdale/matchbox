@@ -127,10 +127,13 @@ class TestE2EAnalyticalUser:
         yield
 
         # Teardown code
+
         # Clean up database tables
         with postgres_warehouse.connect() as conn:
+            # Drop all tables created by the test
             for source_name in self.linked_testkit.sources:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
+
             conn.commit()
 
         response = matchbox_client.delete("/database", params={"certain": "true"})

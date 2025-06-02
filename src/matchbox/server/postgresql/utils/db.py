@@ -5,7 +5,7 @@ import contextlib
 import cProfile
 import io
 import pstats
-import secrets
+import uuid
 from typing import Generator
 
 import pyarrow as pa
@@ -279,7 +279,7 @@ def large_ingest(
             update_columns = [c for c in table_columns if c not in upsert_keys]
 
         # Create temp table
-        temp_table_name = f"{table.name}_tmp_{secrets.token_hex(3)}"
+        temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
         temp_cols = [
             Column(c.name, c.type, primary_key=c.primary_key) for c in table.columns
         ]
@@ -344,7 +344,7 @@ def ingest_to_temporary_table(
     Returns:
         A SQLAlchemy Table object representing the temporary table
     """
-    temp_table_name = f"{table_name}_tmp_{secrets.token_hex(3)}"
+    temp_table_name = f"{table_name}_tmp_{uuid.uuid4().hex}"
 
     # Validate that all data columns have type mappings
     missing_columns = set(data.column_names) - set(column_types.keys())
