@@ -273,6 +273,7 @@ def insert_source(
                 .values(hash=content_hash)
             )
             session.execute(stmt)
+            session.commit()
 
     if cluster_records.is_empty() and keys_records.is_empty():
         logger.info("No new records to add", prefix=log_prefix)
