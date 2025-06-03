@@ -382,7 +382,7 @@ def test_source_identifier_validation():
         )
 
 
-def test_source_from_new(sqlite_warehouse):
+def test_source_from_new(sqlite_warehouse: Engine):
     """Creating a source config using new(), which infers types, works."""
     # Create test data
     source_testkit = source_factory(
@@ -409,7 +409,7 @@ def test_source_from_new(sqlite_warehouse):
     )
 
 
-def test_source_from_new_errors(sqlite_warehouse):
+def test_source_from_new_errors(sqlite_warehouse: Engine):
     """Creating a source config using new() errors with non-string key."""
     # Create test data
     source_testkit = source_factory(
@@ -436,6 +436,57 @@ def test_source_from_new_errors(sqlite_warehouse):
             key_field="int_pk",
             index_fields=["name"],
         )
+
+
+def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
+    """Test that ensures the SQL on RelationalDBLocation is preserved.
+
+    SQLGlot transpiles INSTR() to STR_POSITION() in its default dialect.
+    """
+    # Create test data
+    source_testkit = source_factory(
+        n_true_entities=3,
+        features=[
+            {
+                "name": "text_col",
+                "base_generator": "word",
+                "datatype": DataTypes.STRING,
+            },
+        ],
+        engine=sqlite_warehouse,
+    )
+    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+
+    location = RelationalDBLocation.from_engine(sqlite_warehouse)
+
+    # Use SQLite's INSTR function (returns position of substring)
+    # Other databases use CHARINDEX, POSITION, etc.
+    extract_transform = f"""
+        SELECT
+            key,
+            text_col,
+            INSTR(text_col, 'a') as position_of_a
+        FROM
+            "{source_testkit.source_config.name}"
+    """
+
+    # This should work since INSTR is valid SQLite
+    # Would fail if validation transpiles INSTR to POSITION() or similar
+    source = SourceConfig.new(
+        location=location,
+        name="test_source",
+        extract_transform=extract_transform,
+        key_field="key",
+        index_fields=["text_col", "position_of_a"],
+    )
+
+    assert source.key_field == SourceField(name="key", type=DataTypes.STRING)
+    assert len(source.index_fields) == 2
+
+    # This should work if the SQL is preserved exactly
+    df = next(source.query())
+    assert isinstance(df, pl.DataFrame)
+    assert len(df) == 3
 
 
 def test_source_query(sqlite_warehouse: Engine):
