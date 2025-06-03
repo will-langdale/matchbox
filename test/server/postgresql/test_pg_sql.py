@@ -56,111 +56,113 @@ def populated_postgres_db(
 
     - Source A: 6 keys → 5 clusters (keys 1&2 share cluster 101)
     - Source B: 5 keys → 5 clusters (one key per cluster)
-    - Dedupe A: Creates 80% cluster (101+102) and 70% 3-way cluster (102+103+104)
-        with pairwise (101+103)
-    - Dedupe B: Creates simple 70% cluster (201+202)
-    - Linker: Caches truth D1=80, D2=70. Creates:
-      * 90% clusters: dedupe outputs (301+401) and raw leaves (105+205)
-      * 80% clusters: dedupe+raw mix as pairwise (301+205) and 3-way component
-        (301+205+105)
+    - Dedupe A: Creates
+        * 80% cluster (301=101+102)
+        * 70% 3-way cluster (302=101+102+103) with pairwise (303=101+103)
+    - Dedupe B: Creates simple 70% cluster (401=201+202)
+    - Linker: Caches truth DA=80, DB=70. Creates:
+        * Cluster 503, which shows connected dedupe outputs and dedupe+raw mix:
+            * At 90%, pairwise component 501=301+401=101+102+201+202
+            * At 80%, pairwise 502=301+205=101+102+205, which forms component
+                503=301+205+401=101+102+201+202+205
+        * Cluster 504, which mixes raw leaves:
+            * At 90%, pairwise component 504=103+203 (103 undeduped at DA=80)
+
+    This diagram shows the structure of the test dataset. Each node shows the pairwise
+    clusters that would be formed by a model's results, but can also be traced back to
+    the sources to show the root-leaf relationships that are created. For example,
+    cluster 502 is stored only so we can recover pairs, because 503 is the true cluster.
+
+    The diagram also shows query results: if we query Dedupe A at 70%, clusters 101,
+    102, and 103 would all map to component 302 (the highest cluster containing them
+    at ≥70%), while 104 and 105 would return as themselves since they're not
+    processed by Dedupe A.
 
     Tests: threshold filtering, role flags, complex hierarchy, cross-source linking,
     truth inheritance.
 
-    This diagram shows the structure of the test dataset:
-
     ```mermaid
-    graph LR
-        %% Resolution hierarchy
-        subgraph "Resolutions"
-            S1[Source A]
-            S2[Source B]
-            D1[Dedupe A]
-            D2[Dedupe B]
-            L1[Linker AB]
+    graph TD
+        %% Legend showing resolution hierarchy
+        subgraph Legend["🔄 Resolution Subgraph"]
+            SA_key["🔵 Source A"]
+            SB_key["🟠 Source B"]
+            DA_key["🟢 Dedupe A"]
+            DB_key["🟣 Dedupe B"]
+            L_key["🔴 Linker (caches: DA=80%, DB=70%)"]
 
-            S1 --> D1
-            S2 --> D2
-            D1 --> L1
-            D2 --> L1
+            DA_key --> SA_key
+            DB_key --> SB_key
+            L_key --> DA_key
+            L_key --> DB_key
         end
 
-        %% Source data
-        subgraph "Source A: 6 keys → 5 clusters"
-            C101[C101: key1,key2]
-            C102[C102: key3]
-            C103[C103: key4]
-            C104[C104: key5]
-            C105[C105: key6]
+        %% Main cluster formation tree
+        subgraph ClusterTree["📊 Data Subgraph"]
+            %% Final Linker Components
+            C503["503 @80%"]
+            C504["504 @90%"]
+
+            %% Linker Pairwise Formation
+            C503 --> C501["501 @90%"]
+            C503 --> C502["502 @80%"]
+
+            %% Dedupe Formation - Used by Linker
+            C501 --> C301["301 @80%"]
+            C501 --> C401["401 @70%"]
+
+            C502 --> C301
+            C502 --> C205["205"]
+
+            %% Raw leaves for C504
+            C504 --> C103["103"]
+            C504 --> C203["203"]
+
+            %% Dedupe Sub-formation - Used clusters
+            C301 --> C101["101, two keys"]
+            C301 --> C102["102"]
+
+            C401 --> C201["201"]
+            C401 --> C202["202"]
+
+            %% Additional Dedupe A clusters
+            %% (below cache threshold - not connected to linker)
+            C302["302 @70%"]
+            C303["303 @70%"]
+
+            %% Hierarchical formation: 302 comprises 301 + 303
+            C302 --> C301
+            C302 --> C303
+
+            %% 303 pairwise formation
+            C303 --> C101
+            C303 --> C103
+
+            %% Disconnected source clusters
+            %% (not processed by any dedupe/linker)
+            C104["104"]
+            C105["105"]
+            C204["204"]
         end
 
-        subgraph "Source B: 5 keys → 5 clusters"
-            C201[C201: key1]
-            C202[C202: key2]
-            C203[C203: key3]
-            C204[C204: key4]
-            C205[C205: key5]
-        end
+        %% Styling by source/model
+        classDef source_a fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+        classDef source_b fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+        classDef dedupe_a fill:#e8f5e8,stroke:#2e7d32,stroke-width:3px
+        classDef dedupe_b fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px
+        classDef linker fill:#ffebee,stroke:#d32f2f,stroke-width:4px
+        classDef legend fill:#f9f9f9,stroke:#666666,stroke-width:1px
 
-        %% Dedupe A results
-        subgraph "Dedupe A clusters"
-            subgraph "80% threshold: C101+C102"
-                C301[C301: prob=80, both]
-            end
-            subgraph "70% threshold: C102+C103+C104"
-                C303[C303: prob=70, pairwise]
-                C302[C302: prob=70, component]
-            end
-        end
-
-        %% Dedupe B results
-        subgraph "Dedupe B clusters"
-            subgraph "70% threshold: C201+C202"
-                C401[C401: prob=70, both]
-            end
-        end
-
-        %% Linker results
-        subgraph "Linker clusters"
-            subgraph "90% threshold: C105+C205"
-                C503[C503: prob=90, both]
-            end
-            subgraph "90% threshold: C301+C401"
-                C501[C501: prob=90, pairwise]
-            end
-            subgraph "80% threshold: C301+C205+C105"
-                C502[C502: prob=80, pairwise]
-                C504[C504: prob=80, component]
-            end
-        end
-
-        %% Relationships
-        C101 -.-> C301
-        C102 -.-> C301
-        C102 -.-> C302
-        C103 -.-> C302
-        C104 -.-> C302
-        C101 -.-> C303
-        C103 -.-> C303
-
-        C201 -.-> C401
-        C202 -.-> C401
-
-        C301 -.-> C501
-        C401 -.-> C501
-        C301 -.-> C502
-        C205 -.-> C502
-        C105 -.-> C503
-        C205 -.-> C503
-        C301 -.-> C504
-        C205 -.-> C504
-        C105 -.-> C504
-
-        style S1 fill:#e3f2fd
-        style S2 fill:#e3f2fd
-        style D1 fill:#fce4ec
-        style D2 fill:#fce4ec
-        style L1 fill:#fff8e1
+        class C101,C102,C103,C104,C105 source_a
+        class C201,C202,C203,C204,C205 source_b
+        class C301,C302,C303 dedupe_a
+        class C401 dedupe_b
+        class C501,C502,C503,C504 linker
+        class SA_key source_a
+        class SB_key source_b
+        class DA_key dedupe_a
+        class DB_key dedupe_b
+        class L_key linker
     ```
     """
 
@@ -193,14 +195,14 @@ def populated_postgres_db(
         # === SOURCE CONFIGS ===
         source_configs = [
             SourceConfigs(
-                source_config_id=1,
+                source_config_id=11,
                 resolution_id=1,
                 location_type="test",
                 location_uri="test://source_a",
                 extract_transform="identity",
             ),
             SourceConfigs(
-                source_config_id=2,
+                source_config_id=22,
                 resolution_id=2,
                 location_type="test",
                 location_uri="test://source_b",
@@ -213,7 +215,7 @@ def populated_postgres_db(
             # Source A fields
             SourceFields(
                 field_id=1,
-                source_config_id=1,
+                source_config_id=11,
                 index=0,
                 name="key",
                 type="TEXT",
@@ -221,7 +223,7 @@ def populated_postgres_db(
             ),
             SourceFields(
                 field_id=2,
-                source_config_id=1,
+                source_config_id=11,
                 index=1,
                 name="value",
                 type="TEXT",
@@ -230,7 +232,7 @@ def populated_postgres_db(
             # Source B fields
             SourceFields(
                 field_id=3,
-                source_config_id=2,
+                source_config_id=22,
                 index=0,
                 name="key",
                 type="TEXT",
@@ -238,7 +240,7 @@ def populated_postgres_db(
             ),
             SourceFields(
                 field_id=4,
-                source_config_id=2,
+                source_config_id=22,
                 index=1,
                 name="value",
                 type="TEXT",
@@ -277,38 +279,38 @@ def populated_postgres_db(
         cluster_keys = [
             # Source A: 6 keys → 5 clusters (key1,key2 share cluster 101)
             ClusterSourceKey(
-                key_id=1, cluster_id=101, source_config_id=1, key="src_a_key1"
+                key_id=1, cluster_id=101, source_config_id=11, key="src_a_key1"
             ),
             ClusterSourceKey(
-                key_id=2, cluster_id=101, source_config_id=1, key="src_a_key2"
+                key_id=2, cluster_id=101, source_config_id=11, key="src_a_key2"
             ),
             ClusterSourceKey(
-                key_id=3, cluster_id=102, source_config_id=1, key="src_a_key3"
+                key_id=3, cluster_id=102, source_config_id=11, key="src_a_key3"
             ),
             ClusterSourceKey(
-                key_id=4, cluster_id=103, source_config_id=1, key="src_a_key4"
+                key_id=4, cluster_id=103, source_config_id=11, key="src_a_key4"
             ),
             ClusterSourceKey(
-                key_id=5, cluster_id=104, source_config_id=1, key="src_a_key5"
+                key_id=5, cluster_id=104, source_config_id=11, key="src_a_key5"
             ),
             ClusterSourceKey(
-                key_id=6, cluster_id=105, source_config_id=1, key="src_a_key6"
+                key_id=6, cluster_id=105, source_config_id=11, key="src_a_key6"
             ),
             # Source B: 5 keys → 5 clusters (one key per cluster)
             ClusterSourceKey(
-                key_id=7, cluster_id=201, source_config_id=2, key="src_b_key1"
+                key_id=7, cluster_id=201, source_config_id=22, key="src_b_key1"
             ),
             ClusterSourceKey(
-                key_id=8, cluster_id=202, source_config_id=2, key="src_b_key2"
+                key_id=8, cluster_id=202, source_config_id=22, key="src_b_key2"
             ),
             ClusterSourceKey(
-                key_id=9, cluster_id=203, source_config_id=2, key="src_b_key3"
+                key_id=9, cluster_id=203, source_config_id=22, key="src_b_key3"
             ),
             ClusterSourceKey(
-                key_id=10, cluster_id=204, source_config_id=2, key="src_b_key4"
+                key_id=10, cluster_id=204, source_config_id=22, key="src_b_key4"
             ),
             ClusterSourceKey(
-                key_id=11, cluster_id=205, source_config_id=2, key="src_b_key5"
+                key_id=11, cluster_id=205, source_config_id=22, key="src_b_key5"
             ),
         ]
 
@@ -317,10 +319,10 @@ def populated_postgres_db(
             # Dedupe A: C301 contains C101+C102 (80% cluster)
             Contains(root=301, leaf=101),
             Contains(root=301, leaf=102),
-            # Dedupe A: C302 contains C102+C103+C104 (70% component)
+            # Dedupe A: C302 contains C101+C102+C103 (70% component)
+            Contains(root=302, leaf=101),
             Contains(root=302, leaf=102),
             Contains(root=302, leaf=103),
-            Contains(root=302, leaf=104),
             # Dedupe A: C303 contains C101+C103 (70% pairwise)
             Contains(root=303, leaf=101),
             Contains(root=303, leaf=103),
@@ -336,14 +338,15 @@ def populated_postgres_db(
             Contains(root=502, leaf=101),  # from C301
             Contains(root=502, leaf=102),  # from C301
             Contains(root=502, leaf=205),  # direct source leaf
-            # Linker: C503 contains C105+C205 (90% both)
-            Contains(root=503, leaf=105),
-            Contains(root=503, leaf=205),
-            # Linker: C504 contains C301+C205+C105 (80% component)
-            Contains(root=504, leaf=101),  # from C301
-            Contains(root=504, leaf=102),  # from C301
-            Contains(root=504, leaf=205),  # direct source leaf
-            Contains(root=504, leaf=105),  # direct source leaf
+            # Linker: C503 contains C501+C502 (80% component)
+            Contains(root=503, leaf=101),  # from C301 (via C501 and C502)
+            Contains(root=503, leaf=102),  # from C301 (via C501 and C502)
+            Contains(root=503, leaf=201),  # from C401 (via C501)
+            Contains(root=503, leaf=202),  # from C401 (via C501)
+            Contains(root=503, leaf=205),  # direct (via C502)
+            # Linker: C504 contains C103+C203 (90% raw leaves)
+            Contains(root=504, leaf=103),  # direct source leaf
+            Contains(root=504, leaf=203),  # direct source leaf
         ]
 
         # === PROBABILITIES ===
@@ -370,11 +373,11 @@ def populated_postgres_db(
                 resolution=5, cluster=502, probability=80, role_flag=0
             ),  # pairwise
             Probabilities(
-                resolution=5, cluster=503, probability=90, role_flag=1
-            ),  # both
-            Probabilities(
-                resolution=5, cluster=504, probability=80, role_flag=2
+                resolution=5, cluster=503, probability=80, role_flag=2
             ),  # component
+            Probabilities(
+                resolution=5, cluster=504, probability=90, role_flag=1
+            ),  # both
         ]
 
         # Insert all objects
@@ -405,7 +408,7 @@ class TestGetSourceConfig:
         """Should return source config for existing source."""
         with MBDB.get_session() as session:
             source_config = get_source_config("source_a", session)
-            assert source_config.source_config_id == 1
+            assert source_config.source_config_id == 11
             assert source_config.resolution_id == 1
 
     def test_get_nonexistent_source(self, populated_postgres_db: MatchboxPostgres):
@@ -639,9 +642,11 @@ class TestBuildUnifiedQuery:
         # Should have linker clusters as roots for some keys
         root_ids = set(result["root_id"])
 
-        # At threshold 85, only C503 (prob=90) should qualify from linker
-        # But we should also see dedupe clusters from cached thresholds
-        assert 503 in root_ids  # This is what we're trying to fix!
+        # At threshold 85, only C504 (prob=90, role_flag=1) should qualify from linker
+        assert 504 in root_ids  # C504 qualifies: 90% >= 85% and role_flag=1
+        assert 503 not in root_ids  # C503 excluded: 80% < 85%
+
+        # Should still see dedupe clusters from cached thresholds
         assert 301 in root_ids  # from dedupe_a cached=80
         assert 401 in root_ids  # from dedupe_b cached=70
 
@@ -706,7 +711,7 @@ class TestResolveHierarchyAssignments:
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            # Test with threshold=85 - should include C503 (prob=90) but exclude others
+            # Test with threshold=85 - should include C504 (prob=90) but exclude others
             # Parents still use cached: dedupe_a=80, dedupe_b=70
             query = _resolve_hierarchy_assignments(linker_res, None, threshold=85)
 
@@ -718,23 +723,28 @@ class TestResolveHierarchyAssignments:
 
             root_ids = set(result["root_id"])
 
-            # From linker (threshold=85): only C503 qualifies (prob=90, flag=1)
-            assert 503 in root_ids
+            # From linker (threshold=85): only C504 qualifies (prob=90, flag=1)
+            assert 504 in root_ids
 
             # Other linker clusters should not appear
-            excluded_linker_clusters = {501, 502, 504}  # prob < 85 or wrong role_flag
+            excluded_linker_clusters = {
+                501,
+                502,
+                503,
+            }  # C501: flag=0, C502: 80%<85%, C503: 80%<85%
             assert excluded_linker_clusters.isdisjoint(root_ids)
 
             # Parents should still contribute their cached-truth clusters
             assert 301 in root_ids  # from dedupe_a (cached=80)
             assert 401 in root_ids  # from dedupe_b (cached=70)
 
-    def test_linker_with_low_threshold(self, populated_postgres_db):
+    def test_linker_with_low_threshold(self, populated_postgres_db: MatchboxPostgres):
         """Should include most linker clusters at low threshold."""
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            # Test with threshold=80 - should include C503 (90) and C504 (80, flag=2)
+            # Test with threshold=80
+            # Should include C503 (80, flag=2) and C504 (90, flag=1)
             # C501 (90, flag=0) and C502 (80, flag=0) excluded by role_flag >= 1 filter
             query = _resolve_hierarchy_assignments(linker_res, None, threshold=80)
 
@@ -746,8 +756,7 @@ class TestResolveHierarchyAssignments:
 
             root_ids = set(result["root_id"])
 
-            # From linker: C503 (prob=90, flag=1) and C504 (prob=80, flag=2)
-            # should qualify
+            # From linker: C503 (prob=80, flag=2) and C504 (prob=90, flag=1)
             assert 503 in root_ids
             assert 504 in root_ids
 
@@ -755,11 +764,14 @@ class TestResolveHierarchyAssignments:
             pairwise_only_clusters = {501, 502}
             assert pairwise_only_clusters.isdisjoint(root_ids)
 
-            # C301's keys (101,102) should be captured by C504 (higher priority)
-            # So C301 should NOT appear as root
-            assert 301 not in root_ids  # C301's keys captured by C504
-            # Only C401 should appear for uncaptured keys
-            assert 401 in root_ids  # C401 has keys not captured by linker clusters
+            # C503 captures ALL dedupe cluster keys (101,102,201,202) plus 205
+            # So NEITHER C301 nor C401 should appear as roots
+            assert 301 not in root_ids  # C301's keys captured by C503
+            assert 401 not in root_ids  # C401's keys captured by C503
+
+            # Only uncaptured source clusters should remain
+            remaining_source_clusters = {104, 105, 204}
+            assert remaining_source_clusters.issubset(root_ids)
 
 
 @pytest.mark.docker
@@ -769,7 +781,7 @@ class TestResolveClusterHierarchy:
     def test_same_resolution_passthrough(self, populated_postgres_db: MatchboxPostgres):
         """Should return direct mapping when truth resolution equals source."""
         with MBDB.get_session() as session:
-            source_config = session.get(SourceConfigs, 1)  # source_a
+            source_config = session.get(SourceConfigs, 11)  # source_a
             source_res = session.get(Resolutions, 1)  # source_a resolution
 
             query = _resolve_cluster_hierarchy(source_config, source_res, None)
@@ -796,7 +808,7 @@ class TestResolveClusterHierarchy:
     def test_hierarchy_through_model(self, populated_postgres_db: MatchboxPostgres):
         """Should resolve hierarchy through model resolution."""
         with MBDB.get_session() as session:
-            source_config = session.get(SourceConfigs, 1)  # source_a
+            source_config = session.get(SourceConfigs, 11)  # source_a
             dedupe_res = session.get(Resolutions, 3)  # dedupe_a
 
             query = _resolve_cluster_hierarchy(source_config, dedupe_res, threshold=80)
@@ -1096,15 +1108,19 @@ class TestQueryFunction:
 
         cluster_ids = set(result["id"].to_pylist())
 
-        # Should see linker clusters at default threshold (90)
-        assert 503 in cluster_ids  # C503 should appear
-        # C504 has prob=80 < default=90, so may not appear depending on role_flag
+        # At linker's default threshold (90), only C504 qualifies (prob=90, role_flag=1)
+        # C503 is excluded because prob=80 < threshold=90
+        assert 504 in cluster_ids  # C504 should appear (90% >= 90%)
+        assert 503 not in cluster_ids  # C503 should be excluded (80% < 90%)
 
         # Verify specific key mappings
         key_cluster_map = {row["key"]: row["id"] for row in result.to_pylist()}
 
-        # src_a_key6 should map to C503 (linker cluster containing C105)
-        assert key_cluster_map["src_a_key6"] == 503
+        # src_a_key4 (cluster 103) should map to C504 (contains 103+203)
+        assert key_cluster_map["src_a_key4"] == 504
+
+        # src_a_key6 (cluster 105) is not contained in any linker cluster
+        assert key_cluster_map["src_a_key6"] == 105
 
     def test_query_both_sources_through_linker(
         self, populated_postgres_db: MatchboxPostgres
@@ -1121,21 +1137,32 @@ class TestQueryFunction:
         clusters_a = set(result_a["id"].to_pylist())
         clusters_b = set(result_b["id"].to_pylist())
 
-        # Both should include linker clusters that link across sources
-        linker_clusters = {503, 504}  # Both qualify at threshold=80
+        # At threshold=80, both C503 (prob=80, role_flag=2) and
+        # C504 (prob=90, role_flag=1) qualify
+        linker_clusters = {503, 504}
         assert linker_clusters.intersection(clusters_a)  # Some linker clusters in A
         assert linker_clusters.intersection(clusters_b)  # Some linker clusters in B
 
-        # Specific cross-source linking: C503 contains C105+C205
-        a_key6_cluster = [
-            row["id"] for row in result_a.to_pylist() if row["key"] == "src_a_key6"
-        ][0]
-        b_key5_cluster = [
-            row["id"] for row in result_b.to_pylist() if row["key"] == "src_b_key5"
-        ][0]
-        assert (
-            a_key6_cluster == b_key5_cluster == 503
-        )  # Both map to same linker cluster
+        # Get key cluster mappings
+        key_cluster_map_a = {row["key"]: row["id"] for row in result_a.to_pylist()}
+        key_cluster_map_b = {row["key"]: row["id"] for row in result_b.to_pylist()}
+
+        # Cross-source linking via C503:
+        # C503 contains: 101, 102, 201, 202, 205
+
+        # Keys that should map to C503
+        assert key_cluster_map_a["src_a_key1"] == 503  # cluster 101 → C503
+        assert key_cluster_map_a["src_a_key2"] == 503  # cluster 101 → C503
+        assert key_cluster_map_a["src_a_key3"] == 503  # cluster 102 → C503
+
+        assert key_cluster_map_b["src_b_key1"] == 503  # cluster 201 → C503
+        assert key_cluster_map_b["src_b_key2"] == 503  # cluster 202 → C503
+        assert key_cluster_map_b["src_b_key5"] == 503  # cluster 205 → C503
+
+        # Cross-source linking via C504:
+        # C504 contains: 103, 203
+        assert key_cluster_map_a["src_a_key4"] == 504  # cluster 103 → C504
+        assert key_cluster_map_b["src_b_key3"] == 504  # cluster 203 → C504
 
     def test_query_with_limit(self, populated_postgres_db: MatchboxPostgres):
         """Should respect limit parameter."""
@@ -1239,16 +1266,3 @@ class TestMatchFunction:
 
         assert len(matches) == 1
         assert len(matches[0].target_id) == 0  # No matches for nonexistent key
-
-
-def test_sources_none_vs_none(populated_postgres_db: MatchboxPostgres):
-    with MBDB.get_session() as session:
-        resolution = session.get(Resolutions, 5)
-
-        # Test 1: sources=None (keyword)
-        query1 = _resolve_hierarchy_assignments(resolution, sources=None, threshold=80)
-        # Test 2: None as positional
-        query2 = _resolve_hierarchy_assignments(resolution, None, threshold=80)
-
-        # Are they the same?
-        print("Queries identical:", str(query1) == str(query2))

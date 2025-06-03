@@ -261,7 +261,7 @@ def _build_unified_query(
     else:
         combined = queries[0]
         for query in queries[1:]:
-            combined = combined.union(query)
+            combined = combined.union_all(query)
 
     all_decisions = combined.cte("all_decisions")
 
