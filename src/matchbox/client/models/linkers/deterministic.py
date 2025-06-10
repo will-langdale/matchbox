@@ -67,22 +67,27 @@ class DeterministicLinker(Linker):
         left_pl = pl.from_pandas(left).lazy()  # noqa: F841
         right_pl = pl.from_pandas(right).lazy()  # noqa: F841
 
-        results: list[pl.DataFrame] = []
-        for condition in self.settings.comparisons:
-            query = f"""
-                SELECT DISTINCT
-                    l.{self.settings.left_id} AS left_id,
-                    r.{self.settings.right_id} AS right_id,
+        subqueries = []
+        for i, condition in enumerate(self.settings.comparisons):
+            subquery = f"""
+                SELECT
+                    l_{i}.{self.settings.left_id} AS left_id,
+                    r_{i}.{self.settings.right_id} AS right_id,
                     1.0 AS probability
-                FROM left_pl l 
-                INNER JOIN right_pl r 
+                FROM left_pl l_{i}
+                INNER JOIN right_pl r_{i}
                     ON {condition}
             """
-            results.append(pl.sql(query))
+            subqueries.append(subquery)
 
-        concatenated_results: pl.DataFrame = pl.concat(results, how="vertical").unique(
-            subset=["left_id", "right_id"], maintain_order=True
-        )
+        union_query = " UNION ALL ".join(subqueries)
 
-        # Return as to pandas DataFrame
-        return concatenated_results.collect().to_pandas()
+        final_query = f"""
+            SELECT DISTINCT 
+                final.left_id, 
+                final.right_id, 
+                final.probability
+            FROM ({union_query}) as final
+        """
+
+        return pl.sql(final_query).collect().to_pandas()
