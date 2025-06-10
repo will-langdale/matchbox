@@ -58,17 +58,19 @@ def configure_deterministic_linker(
         if c.name not in ("key", "id")
     ]
 
-    # Build comparison string
-    comparisons = []
+    # Build comparison strings
+    # Doing this redundantly to check OR logic works
+    comparisons: list[str] = []
+
     for l_field, r_field in zip(left_fields, right_fields, strict=True):
         comparisons.append(f"l.{l_field} = r.{r_field}")
+
+    comparisons.append(" and ".join(comparisons))
 
     settings_dict = {
         "left_id": "id",
         "right_id": "id",
-        "comparisons": " and ".join(
-            comparisons,
-        ),
+        "comparisons": comparisons,
     }
 
     # Validate the settings dictionary
