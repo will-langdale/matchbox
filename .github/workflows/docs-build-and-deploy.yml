@@ -6,6 +6,10 @@ on:
 
 jobs:
   build:
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +34,10 @@ jobs:
           path: site/
 
   deploy:
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
     needs: build
     runs-on: ubuntu-latest
     
