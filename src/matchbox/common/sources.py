@@ -29,7 +29,6 @@ from pydantic import (
 )
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
-from sqlglot import parse_one
 
 from matchbox.common.db import (
     QueryReturnType,
@@ -39,13 +38,8 @@ from matchbox.common.db import (
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes, SourceResolutionName
-from matchbox.common.exceptions import (
-    MatchboxSourceCredentialsError,
-)
-from matchbox.common.hash import (
-    HashMethod,
-    hash_rows,
-)
+from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.hash import HashMethod, hash_rows
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -395,9 +389,7 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes credentials have been set on location
-        sample: pl.DataFrame = next(
-            location.execute(parse_one(extract_transform).limit(1).sql(), batch_size=1)
-        )
+        sample: pl.DataFrame = next(location.execute(extract_transform, batch_size=1))
 
         remote_fields = {
             col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))

@@ -130,10 +130,10 @@ def insert_source(
                 logger.info("Source data matches index. Finished", prefix=log_prefix)
                 return
         else:
-            # Create new resolution
+            # Create new resolution without content hash
             resolution = Resolutions(
                 name=source_config.name,
-                hash=content_hash,
+                hash=None,
                 type=ResolutionNodeType.SOURCE.value,
             )
             session.add(resolution)
@@ -273,6 +273,7 @@ def insert_source(
                 .values(hash=content_hash)
             )
             session.execute(stmt)
+            session.commit()
 
     if cluster_records.is_empty() and keys_records.is_empty():
         logger.info("No new records to add", prefix=log_prefix)

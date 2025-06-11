@@ -12,6 +12,7 @@ from pyarrow.parquet import read_table
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
+    BackendCountableType,
     BackendRetrievableType,
     ModelAncestor,
     ModelConfig,
@@ -275,13 +276,16 @@ def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
     return ResolutionOperationStatus.model_validate(res.json())
 
 
-def get_model(name: ModelResolutionName) -> ModelConfig:
+def get_model(name: ModelResolutionName) -> ModelConfig | None:
     """Get model metadata from Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
-    res = CLIENT.get(f"/models/{name}")
-    return ModelConfig.model_validate(res.json())
+    try:
+        res = CLIENT.get(f"/models/{name}")
+        return ModelConfig.model_validate(res.json())
+    except MatchboxResolutionNotFoundError:
+        return None
 
 
 def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus:
@@ -391,3 +395,28 @@ def delete_resolution(
 
     res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
     return ResolutionOperationStatus.model_validate(res.json())
+
+
+# Admin
+
+
+def count_backend_items(
+    entity: BackendCountableType | None = None,
+) -> dict[str, int]:
+    """Count the number of various entities in the backend."""
+    if entity is not None and entity not in BackendCountableType:
+        raise ValueError(
+            f"Invalid entity type: {entity}. "
+            f"Must be one of {list(BackendCountableType)} "
+        )
+
+    log_prefix = "Backend count"
+    logger.debug("Counting", prefix=log_prefix)
+
+    params = {"entity": entity} if entity else {}
+    res = CLIENT.get("/database/count", params=url_params(params))
+
+    counts = res.json()
+    logger.debug(f"Counts: {counts}", prefix=log_prefix)
+
+    return counts
