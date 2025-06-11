@@ -361,7 +361,7 @@ class SourceConfig(BaseModel):
         Raises:
             ValueError: If the name is not a valid source resolution name.
         """
-        if not re.match(r"^[a-z0-9_]+$", value):
+        if not re.match(r"^[a-zA-Z0-9_]+$", value):
             raise ValueError(
                 "Source resolution names must be alphanumeric and underscore only. "
             )
