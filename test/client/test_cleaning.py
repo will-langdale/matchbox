@@ -203,14 +203,14 @@ def test_function_tokenise():
 def test_function_passthrough():
     """Test composed passthrough function."""
     func = cleaning_function(passthrough)
+    expected = "unchanged text"
     cleaned, _ = run_composed_test(
         func,
         ["unchanged text"],
-        ["unchanged text"],
+        [expected],
     )
 
     result = cleaned["col"].iloc[0]
-    expected = "unchanged text"
 
     assert result == expected, f"Got {result} instead of {expected}"
 
@@ -226,14 +226,14 @@ def test_function_clean_names(
         stopwords_remover,
         list_join_to_string,
     )
+    expected = "company limited"
     cleaned, _ = run_composed_test(
         func,
         ["co. ltd!@#"],
-        ["company limited"],
+        [expected],
     )
 
     result = cleaned["col"].iloc[0]
-    expected = "company limited"
 
     assert result == expected, f"Got {result} instead of {expected}"
 
