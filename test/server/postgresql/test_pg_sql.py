@@ -9,10 +9,9 @@ representation changes, they should be rewritten in whatever form best-aids the
 development of the new query functions. Don't be precious.
 """
 
-from typing import Generator
+from typing import Generator, Literal
 
 import pytest
-from sqlalchemy import and_
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.exceptions import (
@@ -33,13 +32,8 @@ from matchbox.server.postgresql.orm import (
 )
 from matchbox.server.postgresql.utils.db import compile_sql
 from matchbox.server.postgresql.utils.query import (
-    _build_model_query,
-    _build_source_query,
     _build_unified_query,
-    _empty_result,
     _get_resolution_priority,
-    _resolve_cluster_hierarchy,
-    _resolve_hierarchy_assignments,
     _resolve_thresholds,
     get_clusters_with_leaves,
     get_source_config,
@@ -483,104 +477,26 @@ class TestGetResolutionPriority:
 
 
 @pytest.mark.docker
-class TestEmptyResult:
-    """Test empty result generation."""
-
-    def test_empty_result_structure(self, populated_postgres_db: MatchboxPostgres):
-        """Should return empty result with correct columns."""
-        query = _empty_result()
-
-        with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
-
-        assert len(result) == 0
-        expected_columns = {
-            "root_id",
-            "root_hash",
-            "leaf_id",
-            "leaf_hash",
-            "leaf_key",
-            "source_config_id",
-        }
-        assert set(result.columns) == expected_columns
-
-
-class TestBuildSourceQuery:
-    """Test source query building."""
-
-    def test_build_simple_source_query(self, populated_postgres_db: MatchboxPostgres):
-        """Should build query for source resolutions."""
-        # Simple condition: source_config belongs to resolution 1 (source_a)
-        source_conditions = [
-            (SourceConfigs.resolution_id == 1, 999, 1)  # condition, priority, res_id
-        ]
-        source_config_filter = True  # no filtering
-
-        query = _build_source_query(source_conditions, source_config_filter)
-
-        with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
-
-        # Should return 6 keys from source_a, root_id == leaf_id
-        assert len(result) == 6
-        assert all(result["root_id"] == result["leaf_id"])
-        expected_keys = {
-            "src_a_key1",
-            "src_a_key2",
-            "src_a_key3",
-            "src_a_key4",
-            "src_a_key5",
-            "src_a_key6",
-        }
-        assert set(result["leaf_key"]) == expected_keys
-
-
-@pytest.mark.docker
-class TestBuildModelQuery:
-    """Test model query building."""
-
-    def test_build_simple_model_query(self, populated_postgres_db: MatchboxPostgres):
-        """Should build query for model resolutions."""
-        # Condition: probabilities from resolution 3 (dedupe_a) with prob >= 80
-        model_conditions = [
-            (
-                and_(
-                    Probabilities.resolution == 3,
-                    Probabilities.role_flag >= 1,
-                    Probabilities.probability >= 80,
-                ),
-                1,
-                3,
-            )  # condition, priority, res_id
-        ]
-        source_config_filter = SourceConfigs.resolution_id == 1  # only source_a
-
-        query = _build_model_query(model_conditions, source_config_filter)
-
-        with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
-
-        # Should return keys that belong to clusters with prob >= 80
-        # Only C301 qualifies (prob=80), which contains C101+C102 (3 keys)
-        assert len(result) > 0
-        # Check that we have hierarchy - some root_ids should be different from leaf_ids
-        hierarchical_rows = result.filter(result["root_id"] != result["leaf_id"])
-        assert len(hierarchical_rows) > 0
-
-
-@pytest.mark.docker
+@pytest.mark.parametrize("columns", ["full", "id_key"])
 class TestBuildUnifiedQuery:
-    """Test unified query building."""
+    """Test unified query building with both column modes."""
 
-    def test_build_unified_source_only(self, populated_postgres_db: MatchboxPostgres):
+    def test_build_unified_source_only(
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
+    ):
         """Should build unified query for source-only scenario."""
         resolved_thresholds = {1: None}  # source_a only
-        source_config_filter = True
+        source_config_filter = ClusterSourceKey.source_config_id == 11  # source_a
 
         with MBDB.get_session() as session:
             resolution = session.get(Resolutions, 1)
             query = _build_unified_query(
-                resolved_thresholds, source_config_filter, resolution
+                resolution=resolution,
+                resolved_thresholds=resolved_thresholds,
+                source_config_filter=source_config_filter,
+                columns=columns,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -588,34 +504,80 @@ class TestBuildUnifiedQuery:
 
         # Should return all 6 keys from source_a
         assert len(result) == 6
-        assert all(result["root_id"] == result["leaf_id"])
+
+        if columns == "full":
+            expected_columns = {
+                "root_id",
+                "root_hash",
+                "leaf_id",
+                "leaf_hash",
+                "leaf_key",
+                "source_config_id",
+            }
+            assert set(result.columns) == expected_columns
+            assert all(result["root_id"] == result["leaf_id"])
+        else:  # id_key
+            expected_columns = {"id", "key"}
+            assert set(result.columns) == expected_columns
+            assert set(result["id"]) == {101, 102, 103, 104, 105}
 
     def test_build_unified_mixed_scenario(
-        self, populated_postgres_db: MatchboxPostgres
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
     ):
         """Should build unified query mixing sources and models."""
         resolved_thresholds = {
             1: None,  # source_a
             3: 80,  # dedupe_a with threshold 80
         }
-        source_config_filter = True
+        source_config_filter = ClusterSourceKey.source_config_id == 11  # source_a
 
         with MBDB.get_session() as session:
             resolution = session.get(Resolutions, 3)  # dedupe_a context
             query = _build_unified_query(
-                resolved_thresholds, source_config_filter, resolution
+                resolution=resolution,
+                resolved_thresholds=resolved_thresholds,
+                source_config_filter=source_config_filter,
+                columns=columns,
             )
 
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
         # Should return keys, with some potentially mapped to dedupe clusters
-        assert len(result) > 0
-        assert "root_id" in result.columns
-        assert "leaf_key" in result.columns
+        assert len(result) == 6
+
+        if columns == "full":
+            assert "root_id" in result.columns
+            assert "leaf_key" in result.columns
+            cluster_ids = set(result["root_id"])
+        else:  # id_key
+            assert "id" in result.columns
+            assert "key" in result.columns
+            cluster_ids = set(result["id"])
+
+        # At threshold 80, should see C301 for some keys
+        assert 301 in cluster_ids  # C301 should appear
+
+        # Keys 1,2,3 should map to C301 (dedupe of clusters 101+102)
+        if columns == "full":
+            keys_in_301 = [
+                row["leaf_key"]
+                for row in result.iter_rows(named=True)
+                if row["root_id"] == 301
+            ]
+        else:
+            keys_in_301 = [
+                row["key"] for row in result.iter_rows(named=True) if row["id"] == 301
+            ]
+        expected_301_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
+        assert set(keys_in_301) == expected_301_keys
 
     def test_build_unified_linker_scenario(
-        self, populated_postgres_db: MatchboxPostgres
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
     ):
         """Should build unified query for complex linker scenario."""
         resolved_thresholds = {
@@ -630,7 +592,10 @@ class TestBuildUnifiedQuery:
         with MBDB.get_session() as session:
             resolution = session.get(Resolutions, 5)  # linker context
             query = _build_unified_query(
-                resolved_thresholds, source_config_filter, resolution
+                resolution=resolution,
+                resolved_thresholds=resolved_thresholds,
+                source_config_filter=source_config_filter,
+                columns=columns,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -639,202 +604,19 @@ class TestBuildUnifiedQuery:
         # Should return all 11 keys from both sources
         assert len(result) == 11
 
-        # Should have linker clusters as roots for some keys
-        root_ids = set(result["root_id"])
+        # Get cluster IDs based on column mode
+        if columns == "full":
+            cluster_ids = set(result["root_id"])
+        else:  # id_key
+            cluster_ids = set(result["id"])
 
         # At threshold 85, only C504 (prob=90, role_flag=1) should qualify from linker
-        assert 504 in root_ids  # C504 qualifies: 90% >= 85% and role_flag=1
-        assert 503 not in root_ids  # C503 excluded: 80% < 85%
+        assert 504 in cluster_ids  # C504 qualifies: 90% >= 85% and role_flag=1
+        assert 503 not in cluster_ids  # C503 excluded: 80% < 85%
 
         # Should still see dedupe clusters from cached thresholds
-        assert 301 in root_ids  # from dedupe_a cached=80
-        assert 401 in root_ids  # from dedupe_b cached=70
-
-
-@pytest.mark.docker
-class TestResolveHierarchyAssignments:
-    """Test hierarchy assignment resolution."""
-
-    def test_source_only_resolution(self, populated_postgres_db: MatchboxPostgres):
-        """Should return direct cluster assignments for source resolution."""
-        with MBDB.get_session() as session:
-            source_res = session.get(Resolutions, 1)  # source_a
-
-            query = _resolve_hierarchy_assignments(source_res, None, None)
-
-            with MBDB.get_adbc_connection() as conn:
-                result = sql_to_df(compile_sql(query), conn, "polars")
-
-            # Source A has 6 keys, root_id should equal leaf_id for sources
-            assert len(result) == 6
-            assert all(result["root_id"] == result["leaf_id"])
-            expected_keys = {
-                "src_a_key1",
-                "src_a_key2",
-                "src_a_key3",
-                "src_a_key4",
-                "src_a_key5",
-                "src_a_key6",
-            }
-            assert set(result["leaf_key"]) == expected_keys
-
-    def test_linker_with_high_threshold(self, populated_postgres_db: MatchboxPostgres):
-        """Should filter linker clusters only, using cached truth for parents."""
-        with MBDB.get_session() as session:
-            linker_res = session.get(Resolutions, 5)  # linker_ab
-
-            # Test with threshold=95 - should exclude all linker clusters (max is 90)
-            # But parents should still use cached values: dedupe_a=80, dedupe_b=70
-            query = _resolve_hierarchy_assignments(linker_res, None, threshold=95)
-
-            with MBDB.get_adbc_connection() as conn:
-                result = sql_to_df(compile_sql(query), conn, "polars")
-
-            # Should return all 11 keys (6 from source_a + 5 from source_b)
-            assert len(result) == 11
-
-            # No linker clusters qualify, so keys should fall back to parent assignments
-            # From dedupe_a (cached truth=80): C301 should still be used
-            # From dedupe_b (cached truth=70): C401 should still be used
-            root_ids = set(result["root_id"])
-            assert 301 in root_ids  # dedupe_a's cluster (uses cached truth=80)
-            assert 401 in root_ids  # dedupe_b's cluster (uses cached truth=70)
-
-            # Linker clusters should NOT appear as roots
-            linker_cluster_ids = {501, 502, 503, 504}
-            assert linker_cluster_ids.isdisjoint(root_ids)
-
-    def test_linker_with_medium_threshold(
-        self, populated_postgres_db: MatchboxPostgres
-    ):
-        """Should include some linker clusters, parents still use cached truth."""
-        with MBDB.get_session() as session:
-            linker_res = session.get(Resolutions, 5)  # linker_ab
-
-            # Test with threshold=85 - should include C504 (prob=90) but exclude others
-            # Parents still use cached: dedupe_a=80, dedupe_b=70
-            query = _resolve_hierarchy_assignments(linker_res, None, threshold=85)
-
-            with MBDB.get_adbc_connection() as conn:
-                result = sql_to_df(compile_sql(query), conn, "polars")
-
-            # Should return all 11 keys
-            assert len(result) == 11
-
-            root_ids = set(result["root_id"])
-
-            # From linker (threshold=85): only C504 qualifies (prob=90, flag=1)
-            assert 504 in root_ids
-
-            # Other linker clusters should not appear
-            excluded_linker_clusters = {
-                501,
-                502,
-                503,
-            }  # C501: flag=0, C502: 80%<85%, C503: 80%<85%
-            assert excluded_linker_clusters.isdisjoint(root_ids)
-
-            # Parents should still contribute their cached-truth clusters
-            assert 301 in root_ids  # from dedupe_a (cached=80)
-            assert 401 in root_ids  # from dedupe_b (cached=70)
-
-    def test_linker_with_low_threshold(self, populated_postgres_db: MatchboxPostgres):
-        """Should include most linker clusters at low threshold."""
-        with MBDB.get_session() as session:
-            linker_res = session.get(Resolutions, 5)  # linker_ab
-
-            # Test with threshold=80
-            # Should include C503 (80, flag=2) and C504 (90, flag=1)
-            # C501 (90, flag=0) and C502 (80, flag=0) excluded by role_flag >= 1 filter
-            query = _resolve_hierarchy_assignments(linker_res, None, threshold=80)
-
-            with MBDB.get_adbc_connection() as conn:
-                result = sql_to_df(compile_sql(query), conn, "polars")
-
-            # Should return all 11 keys
-            assert len(result) == 11
-
-            root_ids = set(result["root_id"])
-
-            # From linker: C503 (prob=80, flag=2) and C504 (prob=90, flag=1)
-            assert 503 in root_ids
-            assert 504 in root_ids
-
-            # C501 and C502 have flag=0, so excluded by role_flag >= 1 filter
-            pairwise_only_clusters = {501, 502}
-            assert pairwise_only_clusters.isdisjoint(root_ids)
-
-            # C503 captures ALL dedupe cluster keys (101,102,201,202) plus 205
-            # So NEITHER C301 nor C401 should appear as roots
-            assert 301 not in root_ids  # C301's keys captured by C503
-            assert 401 not in root_ids  # C401's keys captured by C503
-
-            # Only uncaptured source clusters should remain
-            remaining_source_clusters = {104, 105, 204}
-            assert remaining_source_clusters.issubset(root_ids)
-
-
-@pytest.mark.docker
-class TestResolveClusterHierarchy:
-    """Test cluster hierarchy resolution for specific source."""
-
-    def test_same_resolution_passthrough(self, populated_postgres_db: MatchboxPostgres):
-        """Should return direct mapping when truth resolution equals source."""
-        with MBDB.get_session() as session:
-            source_config = session.get(SourceConfigs, 11)  # source_a
-            source_res = session.get(Resolutions, 1)  # source_a resolution
-
-            query = _resolve_cluster_hierarchy(source_config, source_res, None)
-
-            with MBDB.get_adbc_connection() as conn:
-                result = sql_to_df(compile_sql(query), conn, "polars")
-
-            # Should return all 6 keys with their original cluster IDs
-            assert len(result) == 6
-            # For same resolution, id should equal original cluster assignments
-            expected_pairs = {
-                ("src_a_key1", 101),
-                ("src_a_key2", 101),
-                ("src_a_key3", 102),
-                ("src_a_key4", 103),
-                ("src_a_key5", 104),
-                ("src_a_key6", 105),
-            }
-            actual_pairs = {
-                (row["key"], row["id"]) for row in result.iter_rows(named=True)
-            }
-            assert actual_pairs == expected_pairs
-
-    def test_hierarchy_through_model(self, populated_postgres_db: MatchboxPostgres):
-        """Should resolve hierarchy through model resolution."""
-        with MBDB.get_session() as session:
-            source_config = session.get(SourceConfigs, 11)  # source_a
-            dedupe_res = session.get(Resolutions, 3)  # dedupe_a
-
-            query = _resolve_cluster_hierarchy(source_config, dedupe_res, threshold=80)
-
-            with MBDB.get_adbc_connection() as conn:
-                result = sql_to_df(compile_sql(query), conn, "polars")
-
-            print(f"Result: {len(result)} rows")
-            print("Key assignments:")
-            for row in result.iter_rows(named=True):
-                print(f"  {row['key']} -> cluster {row['id']}")
-
-            # At threshold 80, only C301 qualifies (prob=80), which contains
-            # clusters 101+102
-            # Keys from clusters 101+102: src_a_key1, src_a_key2, src_a_key3
-            # Keys 1,2,3 should map to C301, others keep original clusters
-            c301_keys = result.filter(result["id"] == 301)
-            original_keys = result.filter(result["id"] != 301)
-
-            assert len(c301_keys) == 3  # Keys that qualify for dedupe
-            expected_301_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
-            assert set(c301_keys["key"]) == expected_301_keys
-
-            assert len(original_keys) == 3  # Keys that don't qualify
-            expected_original_keys = {"src_a_key4", "src_a_key5", "src_a_key6"}
-            assert set(original_keys["key"]) == expected_original_keys
+        assert 301 in cluster_ids  # from dedupe_a cached=80
+        assert 401 in cluster_ids  # from dedupe_b cached=70
 
 
 @pytest.mark.docker
