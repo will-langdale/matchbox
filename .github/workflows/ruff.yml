@@ -9,6 +9,8 @@ on:
 
 jobs:
   ruff:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +19,8 @@ jobs:
           args: 'format --check'
 
   ruff-lint:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -235,7 +235,7 @@ class TestE2EPipelineBuilder:
                 "left_id": "id",
                 "right_id": "id",
                 "comparisons": (
-                    "l.source_a_registration_id = r.source_b_registration_id"
+                    "l.source_a_registration_id = r.source_b_registration_id",
                 ),
             },
             truth=1.0,

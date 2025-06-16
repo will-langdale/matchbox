@@ -314,7 +314,7 @@ class TestE2EAnalyticalUser:
             # Build comparison clause
             comparison_clause = (
                 f"l.{left_source.prefix}{common_field} "
-                f"= r.{right_source.prefix}{common_field}"
+                f"= r.{right_source.prefix}{common_field}",
             )
 
             # Create and run linker model
@@ -418,7 +418,9 @@ class TestE2EAnalyticalUser:
             model_settings={
                 "left_id": "id",
                 "right_id": "id",
-                "comparisons": f"l.{crn_source.prefix}crn = r.{cdms_source.prefix}crn",
+                "comparisons": [
+                    f"l.{crn_source.prefix}crn = r.{cdms_source.prefix}crn"
+                ],
             },
             left_data=left_cleaned,
             left_resolution=linker_names[first_pair],

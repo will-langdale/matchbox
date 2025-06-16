@@ -4,6 +4,8 @@ import sqlglot.expressions as exp
 from sqlglot import parse_one
 from sqlglot.errors import ParseError
 
+from matchbox.common.logging import logger
+
 
 def comparison(sql_condition: str, dialect: str = "postgres") -> str:
     """Validates any number of SQL conditions and prepares for a WHERE clause.
@@ -18,6 +20,11 @@ def comparison(sql_condition: str, dialect: str = "postgres") -> str:
         ):
             raise ParseError(
                 f"Must be valid WHERE clause statements. Found {type(node[0])}"
+            )
+
+        if isinstance(node[0], exp.Or):
+            logger.warning(
+                "Or conditions are computationally expensive. Expect slow performance."
             )
 
     left = False

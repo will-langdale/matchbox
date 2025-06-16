@@ -29,7 +29,6 @@ from pydantic import (
 )
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
-from sqlglot import parse_one
 
 from matchbox.common.db import (
     QueryReturnType,
@@ -362,7 +361,7 @@ class SourceConfig(BaseModel):
         Raises:
             ValueError: If the name is not a valid source resolution name.
         """
-        if not re.match(r"^[a-z0-9_]+$", value):
+        if not re.match(r"^[a-zA-Z0-9_]+$", value):
             raise ValueError(
                 "Source resolution names must be alphanumeric and underscore only. "
             )
@@ -390,9 +389,7 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes credentials have been set on location
-        sample: pl.DataFrame = next(
-            location.execute(parse_one(extract_transform).limit(1).sql(), batch_size=1)
-        )
+        sample: pl.DataFrame = next(location.execute(extract_transform, batch_size=1))
 
         remote_fields = {
             col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))
