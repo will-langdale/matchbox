@@ -95,151 +95,6 @@ def _get_resolution_priority(
         return level if level is not None else 0
 
 
-def _build_unified_query(
-    resolution: Resolutions,
-    resolved_thresholds: dict[int, float | None],
-    source_config_filter: Any,
-    columns: Literal["full", "id_key"] = "full",
-) -> Select:
-    """Build unified query to resolve cluster assignments across resolutions."""
-    # Extract and sort model resolutions by hierarchy priority
-    model_resolutions: list[tuple[int, float, int]] = [
-        (res_id, threshold_val, _get_resolution_priority(res_id, resolution))
-        for res_id, threshold_val in resolved_thresholds.items()
-        if threshold_val is not None
-    ]
-    model_resolutions.sort(key=lambda x: (x[2], x[0]))  # priority, then res_id
-
-    # Create proper aliases for clusters tables
-    leaf_clusters = aliased(Clusters, name="leaf_clusters")
-    root_clusters = aliased(Clusters, name="root_clusters")
-
-    # Handle source-only case
-    if not model_resolutions:
-        if columns == "id_key":
-            return select(
-                ClusterSourceKey.cluster_id.label("id"),
-                ClusterSourceKey.key,
-            ).where(source_config_filter)
-        else:  # "full"
-            return (
-                select(
-                    ClusterSourceKey.cluster_id.label("root_id"),
-                    leaf_clusters.cluster_hash.label("root_hash"),
-                    ClusterSourceKey.cluster_id.label("leaf_id"),
-                    leaf_clusters.cluster_hash.label("leaf_hash"),
-                    ClusterSourceKey.key.label("leaf_key"),
-                    ClusterSourceKey.source_config_id,
-                )
-                .select_from(
-                    join(
-                        ClusterSourceKey,
-                        leaf_clusters,
-                        ClusterSourceKey.cluster_id == leaf_clusters.cluster_id,
-                    )
-                )
-                .where(source_config_filter)
-            )
-
-    # Build subqueries for each model resolution
-    subqueries: list[Select] = []
-    priority_columns: list[ColumnElement] = []
-    cluster_columns: list[ColumnElement] = []
-
-    for i, (res_id, threshold_val, _) in enumerate(model_resolutions):
-        priority_value: int = 2**i  # 1, 2, 4, 8, etc.
-
-        subquery_alias: Select = (
-            select(
-                Contains.leaf,
-                Probabilities.cluster.label(f"cluster{i + 1}"),
-                literal(priority_value).label(f"priority{i + 1}"),
-            )
-            .select_from(
-                join(Contains, Probabilities, Contains.root == Probabilities.cluster)
-            )
-            .where(
-                and_(
-                    Probabilities.resolution == res_id,
-                    Probabilities.probability >= threshold_val,
-                    Probabilities.role_flag >= 1,
-                )
-            )
-            .subquery(f"j{i + 1}")
-        )
-
-        subqueries.append(subquery_alias)
-        priority_columns.append(func.coalesce(subquery_alias.c[f"priority{i + 1}"], 0))
-        cluster_columns.append(subquery_alias.c[f"cluster{i + 1}"])
-
-    # Build FROM clause - start with cluster_keys
-    # Optionally join leaf clusters for hashes
-    if columns == "full":
-        from_clause: FromClause = join(
-            ClusterSourceKey,
-            leaf_clusters,
-            ClusterSourceKey.cluster_id == leaf_clusters.cluster_id,
-        )
-    else:
-        from_clause = ClusterSourceKey
-
-    # Add LEFT JOINs for each model resolution subquery
-    for subquery_alias in subqueries:
-        from_clause: FromClause = outerjoin(
-            from_clause,
-            subquery_alias,
-            ClusterSourceKey.cluster_id == subquery_alias.c.leaf,
-        )
-
-    # Build combined priority using bitwise OR
-    combined_priority: ColumnElement = priority_columns[0]
-    for col in priority_columns[1:]:
-        combined_priority = combined_priority.op("|")(col)
-
-    # Build CASE conditions in priority order
-    # model_resolutions is sorted by priority (highest priority first)
-    # Each gets a power-of-2 bit value: 1st gets bit 1, 2nd gets bit 2, etc.
-    # Check bits in ascending order (1, 2, 4...) = check resolutions in priority order
-    case_conditions: list[tuple[ColumnElement, ColumnElement]] = []
-    for i in range(len(model_resolutions)):
-        bit_value = 2**i
-        case_conditions.append(
-            (combined_priority.op("&")(bit_value) > 0, cluster_columns[i])
-        )
-
-    final_root_cluster_id: ColumnElement = case(
-        *case_conditions, else_=ClusterSourceKey.cluster_id
-    )
-
-    # Build final query with appropriate columns
-    if columns == "id_key":
-        return (
-            select(
-                final_root_cluster_id.label("id"),
-                ClusterSourceKey.key,
-            )
-            .select_from(from_clause)
-            .where(source_config_filter)
-        )
-    else:  # "full"
-        return (
-            select(
-                final_root_cluster_id.label("root_id"),
-                root_clusters.cluster_hash.label("root_hash"),
-                ClusterSourceKey.cluster_id.label("leaf_id"),
-                leaf_clusters.cluster_hash.label("leaf_hash"),
-                ClusterSourceKey.key.label("leaf_key"),
-                ClusterSourceKey.source_config_id,
-            )
-            .select_from(
-                from_clause.outerjoin(
-                    root_clusters, final_root_cluster_id == root_clusters.cluster_id
-                )
-            )
-            .where(source_config_filter)
-        )
-
-
 def _get_lineage_and_source_filter(
     resolution: Resolutions, sources: list[Resolutions] | None = None
 ) -> tuple[dict[int, float | None], Any]:
@@ -279,6 +134,175 @@ def _get_lineage_and_source_filter(
     return lineage_truths, source_config_filter
 
 
+def _process_model_resolutions_by_priority(
+    resolved_thresholds: dict[int, float | None], resolution: Resolutions
+) -> list[tuple[int, float, int]]:
+    """Extract and sort model resolutions by hierarchy priority."""
+    model_resolutions = [
+        (res_id, threshold_val, _get_resolution_priority(res_id, resolution))
+        for res_id, threshold_val in resolved_thresholds.items()
+        if threshold_val is not None
+    ]
+    return sorted(model_resolutions, key=lambda x: (x[2], x[0]))
+
+
+def _build_probability_subquery(
+    res_id: int, threshold_val: float, priority_value: int, subquery_name: str
+) -> Select:
+    """Build a probability subquery for a given resolution."""
+    return (
+        select(
+            Contains.leaf,
+            Probabilities.cluster.label(f"cluster{subquery_name}"),
+            literal(priority_value).label(f"priority{subquery_name}"),
+        )
+        .select_from(
+            join(Contains, Probabilities, Contains.root == Probabilities.cluster)
+        )
+        .where(
+            and_(
+                Probabilities.resolution == res_id,
+                Probabilities.probability >= threshold_val,
+                Probabilities.role_flag >= 1,
+            )
+        )
+        .subquery(f"j{subquery_name}")
+    )
+
+
+def _build_bitwise_priority_case(
+    subqueries: list, cluster_columns: list[ColumnElement]
+) -> ColumnElement:
+    """Build combined priority using bitwise OR and create CASE expression."""
+    if not subqueries:
+        return ClusterSourceKey.cluster_id
+
+    # Build combined priority using bitwise OR
+    priority_columns = [
+        func.coalesce(subquery.c[f"priority{i + 1}"], 0)
+        for i, subquery in enumerate(subqueries)
+    ]
+    combined_priority = priority_columns[0]
+    for col in priority_columns[1:]:
+        combined_priority = combined_priority.op("|")(col)
+
+    # Build CASE conditions in priority order
+    case_conditions = []
+    for i in range(len(subqueries)):
+        bit_value = 2**i
+        case_conditions.append(
+            (combined_priority.op("&")(bit_value) > 0, cluster_columns[i])
+        )
+
+    return case(*case_conditions, else_=ClusterSourceKey.cluster_id)
+
+
+def _build_unified_query(
+    resolution: Resolutions,
+    resolved_thresholds: dict[int, float | None],
+    source_config_filter: Any,
+    columns: Literal["full", "id_key"] = "full",
+) -> Select:
+    """Build unified query to resolve cluster assignments across resolutions."""
+    # Extract and sort model resolutions by hierarchy priority
+    model_resolutions = _process_model_resolutions_by_priority(
+        resolved_thresholds, resolution
+    )
+
+    # Create proper aliases for clusters tables
+    leaf_clusters = aliased(Clusters, name="leaf_clusters")
+    root_clusters = aliased(Clusters, name="root_clusters")
+
+    # Handle source-only case
+    if not model_resolutions:
+        if columns == "id_key":
+            return select(
+                ClusterSourceKey.cluster_id.label("id"),
+                ClusterSourceKey.key,
+            ).where(source_config_filter)
+        else:  # "full"
+            return (
+                select(
+                    ClusterSourceKey.cluster_id.label("root_id"),
+                    leaf_clusters.cluster_hash.label("root_hash"),
+                    ClusterSourceKey.cluster_id.label("leaf_id"),
+                    leaf_clusters.cluster_hash.label("leaf_hash"),
+                    ClusterSourceKey.key.label("leaf_key"),
+                    ClusterSourceKey.source_config_id,
+                )
+                .select_from(
+                    join(
+                        ClusterSourceKey,
+                        leaf_clusters,
+                        ClusterSourceKey.cluster_id == leaf_clusters.cluster_id,
+                    )
+                )
+                .where(source_config_filter)
+            )
+
+    # Build subqueries for each model resolution
+    subqueries: list[Select] = []
+    cluster_columns: list[ColumnElement] = []
+
+    for i, (res_id, threshold_val, _) in enumerate(model_resolutions):
+        priority_value: int = 2**i  # 1, 2, 4, 8, etc.
+        subquery = _build_probability_subquery(
+            res_id, threshold_val, priority_value, str(i + 1)
+        )
+        subqueries.append(subquery)
+        cluster_columns.append(subquery.c[f"cluster{i + 1}"])
+
+    # Build FROM clause - start with cluster_keys
+    # Optionally join leaf clusters for hashes
+    if columns == "full":
+        from_clause: FromClause = join(
+            ClusterSourceKey,
+            leaf_clusters,
+            ClusterSourceKey.cluster_id == leaf_clusters.cluster_id,
+        )
+    else:
+        from_clause = ClusterSourceKey
+
+    # Add LEFT JOINs for each model resolution subquery
+    for subquery in subqueries:
+        from_clause: FromClause = outerjoin(
+            from_clause,
+            subquery,
+            ClusterSourceKey.cluster_id == subquery.c.leaf,
+        )
+
+    # Build final cluster ID using bitwise priority logic
+    final_root_cluster_id = _build_bitwise_priority_case(subqueries, cluster_columns)
+
+    # Build final query with appropriate columns
+    if columns == "id_key":
+        return (
+            select(
+                final_root_cluster_id.label("id"),
+                ClusterSourceKey.key,
+            )
+            .select_from(from_clause)
+            .where(source_config_filter)
+        )
+    else:  # "full"
+        return (
+            select(
+                final_root_cluster_id.label("root_id"),
+                root_clusters.cluster_hash.label("root_hash"),
+                ClusterSourceKey.cluster_id.label("leaf_id"),
+                leaf_clusters.cluster_hash.label("leaf_hash"),
+                ClusterSourceKey.key.label("leaf_key"),
+                ClusterSourceKey.source_config_id,
+            )
+            .select_from(
+                from_clause.outerjoin(
+                    root_clusters, final_root_cluster_id == root_clusters.cluster_id
+                )
+            )
+            .where(source_config_filter)
+        )
+
+
 def _build_target_cluster_cte(
     key: str,
     source_config_id: int,
@@ -292,37 +316,20 @@ def _build_target_cluster_cte(
     resolved_thresholds = _resolve_thresholds(lineage_truths, resolution, threshold)
 
     # Extract model resolutions and sort by priority
-    model_resolutions = [
-        (res_id, threshold_val, _get_resolution_priority(res_id, resolution))
-        for res_id, threshold_val in resolved_thresholds.items()
-        if threshold_val is not None
-    ]
-    model_resolutions.sort(key=lambda x: (x[2], x[0]))
+    model_resolutions = _process_model_resolutions_by_priority(
+        resolved_thresholds, resolution
+    )
 
     # Build subqueries for each resolution
     subqueries = []
+    cluster_columns = []
     for i, (res_id, threshold_val, _) in enumerate(model_resolutions):
         priority_value = 2**i  # 1, 2, 4, 8, etc.
-
-        subquery = (
-            select(
-                Contains.leaf,
-                Probabilities.cluster.label(f"cluster{i + 1}"),
-                literal(priority_value).label(f"priority{i + 1}"),
-            )
-            .select_from(
-                join(Contains, Probabilities, Contains.root == Probabilities.cluster)
-            )
-            .where(
-                and_(
-                    Probabilities.resolution == res_id,
-                    Probabilities.probability >= threshold_val,
-                    Probabilities.role_flag >= 1,
-                )
-            )
-            .subquery(f"j{i + 1}")
+        subquery = _build_probability_subquery(
+            res_id, threshold_val, priority_value, str(i + 1)
         )
         subqueries.append(subquery)
+        cluster_columns.append(subquery.c[f"cluster{i + 1}"])
 
     # Build FROM clause starting with cluster_keys
     from_clause = ClusterSourceKey
@@ -335,28 +342,8 @@ def _build_target_cluster_cte(
             ClusterSourceKey.cluster_id == subquery.c.leaf,
         )
 
-    # Build combined priority using bitwise OR
-    if subqueries:
-        priority_columns = [
-            func.coalesce(sq.c[f"priority{i + 1}"], 0)
-            for i, sq in enumerate(subqueries)
-        ]
-        combined_priority = priority_columns[0]
-        for col in priority_columns[1:]:
-            combined_priority = combined_priority.op("|")(col)
-
-        # Build CASE conditions in priority order
-        case_conditions = []
-        for i in range(len(model_resolutions)):
-            bit_value = 2**i
-            cluster_column = subqueries[i].c[f"cluster{i + 1}"]
-            case_conditions.append(
-                (combined_priority.op("&")(bit_value) > 0, cluster_column)
-            )
-
-        final_cluster_id = case(*case_conditions, else_=ClusterSourceKey.cluster_id)
-    else:
-        final_cluster_id = ClusterSourceKey.cluster_id
+    # Build final cluster ID using bitwise priority logic
+    final_cluster_id = _build_bitwise_priority_case(subqueries, cluster_columns)
 
     return (
         select(final_cluster_id.label("cluster_id"))
@@ -491,7 +478,21 @@ def query(
     threshold: int | None = None,
     limit: int = None,
 ) -> pa.Table:
-    """Queries Matchbox to retrieve linked data for a source."""
+    """Queries Matchbox to retrieve linked data for a source.
+
+    Retrieves all linked data for a given source, resolving through hierarchy if needed.
+
+    * Simple case: If querying the same resolution as the source, just select cluster
+        IDs and keys directly from ClusterSourceKey
+    * Hierarchy case: Uses the unified query builder to traverse up the resolution
+        hierarchy, applying bitwise priority logic to determine which parent cluster
+        each source record belongs to
+    * Priority resolution: When multiple model resolutions could assign a record to
+        different clusters, uses powers-of-2 bit flags to ensure higher-priority
+        resolutions win
+
+    Returns all records with their final resolved cluster IDs.
+    """
     with MBDB.get_session() as session:
         source_config: SourceConfigs = get_source_config(source, session)
         source_resolution: Resolutions = session.get(
@@ -544,7 +545,21 @@ def query(
 def get_clusters_with_leaves(
     resolution: Resolutions,
 ) -> dict[int, dict[str, list[dict]]]:
-    """Query clusters and their leaves for all parent resolutions."""
+    """Query clusters and their leaves for all parent resolutions.
+
+    For a given resolution, find all its parent resolutions and return complete
+    cluster compositions.
+
+    * Parent discovery: Queries ResolutionFrom to find all direct parent
+        resolutions (level 1)
+    * Cluster building: For each parent, runs the full unified query to get all
+        cluster assignments with both root and leaf information
+    * Aggregation: Collects all leaf nodes belonging to each root cluster across all
+        parent resolutions
+
+    Return a dictionary mapping cluster IDs to their complete leaf compositions
+    and metadata.
+    """
     with MBDB.get_session() as session:
         # Get parent resolution IDs
         parent_ids: list[int] = [
@@ -612,7 +627,22 @@ def match(
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
-    """Matches an ID in a source resolution and returns the keys in the targets."""
+    """Matches an ID in a source resolution and returns the keys in the targets.
+
+    Given a specific key in a source, find what it matches to in target sources
+    through a resolution hierarchy.
+
+    * Target cluster identification: Uses bitwise priority CTE to determine which
+        cluster the input key belongs to at the resolution level
+    * Matching leaves discovery: Builds UNION ALL query with branches for:
+        * Direct cluster members (source-only case)
+        * Members connected through each model resolution in the hierarchy
+    * Cross-reference: Joins the target cluster with all possible matching leaves,
+        filtering for the requested target sources
+
+    Organises matches by source configuration and returns structured Match objects
+    for each target.
+    """
     with MBDB.get_session() as session:
         # Get configurations
         source_config: SourceConfigs = get_source_config(source, session)
@@ -640,7 +670,7 @@ def match(
         logger.debug(f"Match SQL: \n {compile_sql(matches_query)}")
         matches = session.execute(matches_query).all()
 
-        # Organize matches by source config
+        # Organise matches by source config
         cluster: int | None = None
         matches_by_source_id: dict[int, set] = {}
 
