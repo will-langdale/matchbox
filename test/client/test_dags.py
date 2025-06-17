@@ -4,7 +4,14 @@ from unittest.mock import Mock, call, patch
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
+from matchbox.client.dags import (
+    DAG,
+    DAGDebugOptions,
+    DedupeStep,
+    IndexStep,
+    LinkStep,
+    StepInput,
+)
 from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
@@ -409,6 +416,8 @@ def test_dag_runs(
     # Run DAG
     dag.run()
 
+    assert not dag.debug_outputs
+
     assert handler_index.call_count == 3
 
     # Verify sources and batch sizes passed to handler.index
@@ -431,13 +440,20 @@ def test_dag_runs(
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 2
 
+    # Test keeping outputs for debugging
+    dag.run(DAGDebugOptions(keep_outputs=True))
+    assert len(dag.debug_outputs.keys()) == 6
+
+    dag.run()
+    assert not dag.debug_outputs
+
     # Reset mocks to test the start argument
     handler_index.reset_mock()
     dedupe_run.reset_mock()
     link_run.reset_mock()
 
     # Run DAG again, starting from foo_bar step
-    dag.run(start="foo_bar")
+    dag.run(DAGDebugOptions(start="foo_bar"))
 
     # Verify only steps from foo_bar onward were executed
     assert handler_index.call_count == 0
@@ -450,7 +466,7 @@ def test_dag_runs(
     link_run.reset_mock()
 
     # Run DAG with finish at foo_bar step (should not execute foo_bar_baz)
-    dag.run(finish="foo_bar")
+    dag.run(DAGDebugOptions(finish="foo_bar"))
 
     # Verify steps up to foo_bar were executed but foo_bar_baz was not
     assert handler_index.call_count == 3
@@ -463,7 +479,7 @@ def test_dag_runs(
     link_run.reset_mock()
 
     # Run from d_foo to foo_bar (skipping sources at start and foo_bar_baz at end)
-    dag.run(start="d_foo", finish="foo_bar")
+    dag.run(DAGDebugOptions(start="d_foo", finish="foo_bar"))
 
     # Verify only the specified segment was executed
     assert handler_index.call_count == 0
