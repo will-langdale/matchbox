@@ -13,6 +13,7 @@ from sqlalchemy import (
     literal,
     outerjoin,
     select,
+    union_all,
 )
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
@@ -278,6 +279,212 @@ def _get_lineage_and_source_filter(
     return lineage_truths, source_config_filter
 
 
+def _build_target_cluster_cte(
+    key: str,
+    source_config_id: int,
+    resolution: Resolutions,
+    threshold: int | None,
+    session: Session,
+) -> Select:
+    """Build the target_cluster CTE using bitwise priority logic."""
+    # Get lineage and resolve thresholds
+    lineage_truths, _ = _get_lineage_and_source_filter(resolution, None)
+    resolved_thresholds = _resolve_thresholds(lineage_truths, resolution, threshold)
+
+    # Extract model resolutions and sort by priority
+    model_resolutions = [
+        (res_id, threshold_val, _get_resolution_priority(res_id, resolution))
+        for res_id, threshold_val in resolved_thresholds.items()
+        if threshold_val is not None
+    ]
+    model_resolutions.sort(key=lambda x: (x[2], x[0]))
+
+    # Build subqueries for each resolution
+    subqueries = []
+    for i, (res_id, threshold_val, _) in enumerate(model_resolutions):
+        priority_value = 2**i  # 1, 2, 4, 8, etc.
+
+        subquery = (
+            select(
+                Contains.leaf,
+                Probabilities.cluster.label(f"cluster{i + 1}"),
+                literal(priority_value).label(f"priority{i + 1}"),
+            )
+            .select_from(
+                join(Contains, Probabilities, Contains.root == Probabilities.cluster)
+            )
+            .where(
+                and_(
+                    Probabilities.resolution == res_id,
+                    Probabilities.probability >= threshold_val,
+                    Probabilities.role_flag >= 1,
+                )
+            )
+            .subquery(f"j{i + 1}")
+        )
+        subqueries.append(subquery)
+
+    # Build FROM clause starting with cluster_keys
+    from_clause = ClusterSourceKey
+
+    # Add LEFT JOINs for each resolution subquery
+    for subquery in subqueries:
+        from_clause = outerjoin(
+            from_clause,
+            subquery,
+            ClusterSourceKey.cluster_id == subquery.c.leaf,
+        )
+
+    # Build combined priority using bitwise OR
+    if subqueries:
+        priority_columns = [
+            func.coalesce(sq.c[f"priority{i + 1}"], 0)
+            for i, sq in enumerate(subqueries)
+        ]
+        combined_priority = priority_columns[0]
+        for col in priority_columns[1:]:
+            combined_priority = combined_priority.op("|")(col)
+
+        # Build CASE conditions in priority order
+        case_conditions = []
+        for i in range(len(model_resolutions)):
+            bit_value = 2**i
+            cluster_column = subqueries[i].c[f"cluster{i + 1}"]
+            case_conditions.append(
+                (combined_priority.op("&")(bit_value) > 0, cluster_column)
+            )
+
+        final_cluster_id = case(*case_conditions, else_=ClusterSourceKey.cluster_id)
+    else:
+        final_cluster_id = ClusterSourceKey.cluster_id
+
+    return (
+        select(final_cluster_id.label("cluster_id"))
+        .select_from(from_clause)
+        .where(
+            and_(
+                ClusterSourceKey.key == key,
+                ClusterSourceKey.source_config_id == source_config_id,
+            )
+        )
+    )
+
+
+def _build_matching_leaves_cte(
+    target_source_config_ids: list[int],
+    resolution: Resolutions,
+    threshold: int | None,
+    target_cluster_cte,  # Pass the CTE so we can reference it properly
+    session: Session,
+) -> Select:
+    """Build the matching_leaves CTE with UNION ALL branches."""
+    # Get lineage and resolve thresholds
+    lineage_truths, _ = _get_lineage_and_source_filter(resolution, None)
+    resolved_thresholds = _resolve_thresholds(lineage_truths, resolution, threshold)
+
+    # Extract model resolutions
+    model_resolutions = [
+        (res_id, threshold_val)
+        for res_id, threshold_val in resolved_thresholds.items()
+        if threshold_val is not None
+    ]
+
+    # Start with direct members branch
+    branches = [
+        select(
+            ClusterSourceKey.cluster_id,
+            ClusterSourceKey.key,
+            ClusterSourceKey.source_config_id,
+        )
+        .select_from(
+            ClusterSourceKey, target_cluster_cte
+        )  # CROSS JOIN with target_cluster
+        .where(
+            and_(
+                ClusterSourceKey.source_config_id.in_(target_source_config_ids),
+                ClusterSourceKey.cluster_id == target_cluster_cte.c.cluster_id,
+            )
+        )
+    ]
+
+    # Add branches for each model resolution
+    for res_id, threshold_val in model_resolutions:
+        branch = (
+            select(
+                ClusterSourceKey.cluster_id,
+                ClusterSourceKey.key,
+                ClusterSourceKey.source_config_id,
+            )
+            .select_from(
+                join(
+                    join(
+                        ClusterSourceKey,
+                        Contains,
+                        ClusterSourceKey.cluster_id == Contains.leaf,
+                    ),
+                    Probabilities,
+                    and_(
+                        Contains.root == Probabilities.cluster,
+                        Probabilities.resolution == res_id,
+                        Probabilities.probability >= threshold_val,
+                        Probabilities.role_flag >= 1,
+                    ),
+                ),
+                target_cluster_cte,  # CROSS JOIN with target_cluster
+            )
+            .where(
+                and_(
+                    ClusterSourceKey.source_config_id.in_(target_source_config_ids),
+                    Probabilities.cluster == target_cluster_cte.c.cluster_id,
+                )
+            )
+        )
+        branches.append(branch)
+
+    # Combine all branches with UNION ALL
+    if len(branches) == 1:
+        return branches[0]
+
+    # Use SQLAlchemy 2.0 union_all function
+    return union_all(*branches)
+
+
+def _build_match_query(
+    key: str,
+    source_config_id: int,
+    target_source_config_ids: list[int],
+    resolution: Resolutions,
+    threshold: int | None,
+    session: Session,
+) -> Select:
+    """Combine CTEs into the final match query."""
+    target_cluster_cte = _build_target_cluster_cte(
+        key, source_config_id, resolution, threshold, session
+    ).cte("target_cluster")
+
+    # Include both source and target configs to get all keys in the cluster
+    all_source_config_ids = [source_config_id] + target_source_config_ids
+    matching_leaves_cte = _build_matching_leaves_cte(
+        all_source_config_ids, resolution, threshold, target_cluster_cte, session
+    ).cte("matching_leaves")
+
+    # LEFT JOIN to ensure we always get the cluster even if no target matches
+    return (
+        select(
+            target_cluster_cte.c.cluster_id.label("cluster"),
+            matching_leaves_cte.c.source_config_id,
+            matching_leaves_cte.c.key,
+        )
+        .select_from(
+            target_cluster_cte.outerjoin(
+                matching_leaves_cte,
+                literal(True),  # Always join - we want all target_cluster rows
+            )
+        )
+        .distinct()
+    )
+
+
 def query(
     source: SourceResolutionName,
     resolution: ResolutionName | None = None,
@@ -409,64 +616,43 @@ def match(
     with MBDB.get_session() as session:
         # Get configurations
         source_config: SourceConfigs = get_source_config(source, session)
-        truth_resolution: Resolutions | None = (
-            session.query(Resolutions).filter(Resolutions.name == resolution).first()
-        )
+        truth_resolution: Resolutions | None = session.execute(
+            select(Resolutions).where(Resolutions.name == resolution)
+        ).scalar()
         if truth_resolution is None:
             raise MatchboxResolutionNotFoundError(name=resolution)
 
         target_configs: list[SourceConfigs] = [
             get_source_config(target, session) for target in targets
         ]
+        target_source_config_ids = [tc.source_config_id for tc in target_configs]
 
-        # Get all cluster assignments
-        lineage_truths, source_config_filter = _get_lineage_and_source_filter(
-            truth_resolution, None
+        # Build and execute the match query
+        matches_query = _build_match_query(
+            key,
+            source_config.source_config_id,
+            target_source_config_ids,
+            truth_resolution,
+            threshold,
+            session,
         )
-        resolved_thresholds: dict[int, float | None] = _resolve_thresholds(
-            lineage_truths, truth_resolution, threshold
-        )
-
-        # Build query to find source key's cluster and all matches
-        all_assignments: Select = _build_unified_query(
-            resolution=truth_resolution,
-            resolved_thresholds=resolved_thresholds,
-            source_config_filter=source_config_filter,
-            columns="full",
-        ).subquery("all_assignments")
-
-        # Find cluster for our source key
-        source_cluster_query: Select = (
-            select(all_assignments.c.root_id)
-            .where(
-                and_(
-                    all_assignments.c.leaf_key == key,
-                    all_assignments.c.source_config_id
-                    == source_config.source_config_id,
-                )
-            )
-            .scalar_subquery()
-        )
-
-        # Find all matches in that cluster
-        matches_query: Select = select(
-            all_assignments.c.root_id.label("cluster"),
-            all_assignments.c.source_config_id.label("source_config"),
-            all_assignments.c.leaf_key.label("key"),
-        ).where(all_assignments.c.root_id == source_cluster_query)
 
         logger.debug(f"Match SQL: \n {compile_sql(matches_query)}")
         matches = session.execute(matches_query).all()
 
-        # Organise matches by source config
+        # Organize matches by source config
         cluster: int | None = None
         matches_by_source_id: dict[int, set] = {}
-        for cluster_id, source_config_id, key_in_source in matches:
+
+        for cluster_id, source_config_id_result, key_in_source in matches:
             if cluster is None:
                 cluster = cluster_id
-            if source_config_id not in matches_by_source_id:
-                matches_by_source_id[source_config_id] = set()
-            matches_by_source_id[source_config_id].add(key_in_source)
+
+            # Skip NULL results from LEFT JOIN (when no target matches)
+            if source_config_id_result is not None and key_in_source is not None:
+                if source_config_id_result not in matches_by_source_id:
+                    matches_by_source_id[source_config_id_result] = set()
+                matches_by_source_id[source_config_id_result].add(key_in_source)
 
         # Build result objects
         result: list[Match] = []

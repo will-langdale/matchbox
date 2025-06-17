@@ -1048,3 +1048,159 @@ class TestMatchFunction:
 
         assert len(matches) == 1
         assert len(matches[0].target_id) == 0  # No matches for nonexistent key
+
+    def test_match_one_to_many_via_linker(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should find one-to-many matches through linker resolution."""
+        # Use linker to connect source_a key to multiple source_b keys via C503
+        # C503 contains: 101, 102, 201, 202, 205
+        # src_a_key1 (cluster 101) should match src_b_key1, src_b_key2, src_b_key5
+        matches = match(
+            key="src_a_key1",
+            source="source_a",
+            targets=["source_b"],
+            resolution="linker_ab",
+            threshold=80,
+        )
+
+        assert len(matches) == 1
+        source_b_match = matches[0]
+        assert source_b_match.target == "source_b"
+        assert len(source_b_match.target_id) > 1  # Should match multiple keys
+
+        # Should contain the expected keys from C503
+        expected_keys = {"src_b_key1", "src_b_key2", "src_b_key5"}
+        assert expected_keys.issubset(source_b_match.target_id)
+
+    def test_match_many_to_one_within_same_source_cluster(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should find other keys in the same source cluster AND all target keys."""
+        # Use one of the two keys in C101 (src_a_key1, src_a_key2)
+        # When matching src_a_key1, should get:
+        # - Source: both src_a_key1 and src_a_key2 (and src_a_key3 via C301)
+        # - Target: all source_b keys linked via C503
+        matches = match(
+            key="src_a_key1",  # One key from C101
+            source="source_a",
+            targets=["source_b"],  # Cross-source target
+            resolution="linker_ab",
+            threshold=80,
+        )
+
+        assert len(matches) == 1
+        source_b_match = matches[0]
+        assert source_b_match.target == "source_b"
+
+        # Source should contain ALL keys from the same cluster (C301 via C503)
+        expected_source_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
+        assert expected_source_keys.issubset(source_b_match.source_id)
+
+        # Target should contain ALL linked source_b keys via C503
+        # C503 contains: 101, 102, 201, 202, 205
+        expected_target_keys = {"src_b_key1", "src_b_key2", "src_b_key5"}
+        assert expected_target_keys.issubset(source_b_match.target_id)
+
+    def test_match_one_to_none_isolated_cluster(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should handle one-to-none scenario with isolated clusters."""
+        # src_a_key5 (cluster 104) is not connected to any source_b clusters
+        matches = match(
+            key="src_a_key5",
+            source="source_a",
+            targets=["source_b"],
+            resolution="linker_ab",
+            threshold=80,
+        )
+
+        assert len(matches) == 1
+        source_b_match = matches[0]
+        assert source_b_match.target == "source_b"
+        assert len(source_b_match.target_id) == 0  # No matches in source_b
+        assert source_b_match.cluster is not None  # Should still have cluster info
+
+    def test_match_none_to_none_nonexistent_key(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should handle none-to-none scenario with nonexistent key."""
+        matches = match(
+            key="completely_nonexistent_key",
+            source="source_a",
+            targets=["source_b"],
+            resolution="linker_ab",
+            threshold=80,
+        )
+
+        assert len(matches) == 1
+        source_b_match = matches[0]
+        assert source_b_match.target == "source_b"
+        assert len(source_b_match.source_id) == 0  # No source key found
+        assert len(source_b_match.target_id) == 0  # No target matches
+        assert source_b_match.cluster is None  # No cluster for nonexistent key
+
+    def test_match_with_threshold_filtering(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should respect threshold filtering in match results."""
+        # At threshold=90, only C504 qualifies from linker (prob=90)
+        # C503 is excluded (prob=80 < 90)
+        matches = match(
+            key="src_a_key4",  # cluster 103, part of C504
+            source="source_a",
+            targets=["source_b"],
+            resolution="linker_ab",
+            threshold=90,
+        )
+
+        assert len(matches) == 1
+        source_b_match = matches[0]
+        assert source_b_match.target == "source_b"
+
+        # Should match src_b_key3 (cluster 203) via C504
+        assert "src_b_key3" in source_b_match.target_id
+        assert len(source_b_match.target_id) == 1  # Only one match at this threshold
+
+    def test_match_multiple_targets(self, populated_postgres_db: MatchboxPostgres):
+        """Should handle matching against multiple target sources."""
+        matches = match(
+            key="src_a_key1",
+            source="source_a",
+            targets=["source_a", "source_b"],  # Multiple targets
+            resolution="linker_ab",
+            threshold=80,
+        )
+
+        assert len(matches) == 2  # One match per target
+
+        targets = {m.target for m in matches}
+        assert targets == {"source_a", "source_b"}
+
+        # Self-match in source_a should contain the key itself
+        source_a_match = next(m for m in matches if m.target == "source_a")
+        assert "src_a_key1" in source_a_match.target_id
+
+        # Cross-source match should contain linked keys
+        source_b_match = next(m for m in matches if m.target == "source_b")
+        assert len(source_b_match.target_id) > 0
+
+    def test_match_dedupe_only_no_cross_source(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should handle dedupe-only resolution with no cross-source linking."""
+        # dedupe_a only processes source_a, so no source_b matches expected
+        matches = match(
+            key="src_a_key1",
+            source="source_a",
+            targets=["source_b"],
+            resolution="dedupe_a",
+            threshold=80,
+        )
+
+        assert len(matches) == 1
+        source_b_match = matches[0]
+        assert source_b_match.target == "source_b"
+        assert (
+            len(source_b_match.target_id) == 0
+        )  # No cross-source links at dedupe level
