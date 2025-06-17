@@ -3,10 +3,11 @@
 import datetime
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Iterator
+from typing import Any
 
 import polars as pl
 from pandas import DataFrame
+from pyarrow import Table
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import create_engine
 
@@ -112,13 +113,11 @@ class IndexStep(Step):
         """Return all inputs to this step."""
         return []
 
-    def run(self) -> Iterator[pl.DataFrame]:
+    def run(self) -> Table:
         """Run indexing step."""
         _handler.index(source_config=self.source_config, batch_size=self.batch_size)
 
-        return self.source_config.query(
-            batch_size=self.batch_size, return_type="polars"
-        )
+        return self.source_config.hash_data(batch_size=self.batch_size)
 
 
 class ModelStep(Step):
