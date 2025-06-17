@@ -169,7 +169,7 @@ def select_cleaners(*sources: tuple[dict, list[str]]) -> dict[str, dict[str, Any
     Examples:
         ```python
         from matchbox.client import clean
-        from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
+        from matchbox.client.dags import LinkStep, StepInput
         from matchbox.client.helpers.cleaner import cleaner, cleaners
 
         foo_cleaners = {
