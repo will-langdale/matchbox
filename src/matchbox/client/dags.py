@@ -8,6 +8,7 @@ from typing import Any, Iterator
 import polars as pl
 from pandas import DataFrame
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy import create_engine
 
 from matchbox.client import _handler
 from matchbox.client.helpers.cleaner import process
@@ -18,7 +19,7 @@ from matchbox.client.models.models import make_model
 from matchbox.client.results import Results
 from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
-from matchbox.common.sources import SourceConfig, SourceField
+from matchbox.common.sources import RelationalDBLocation, SourceConfig, SourceField
 
 
 class DAGDebugOptions(BaseModel):
@@ -412,10 +413,9 @@ class DAG:
             debug_options: configuration options for debug run
         """
         debug_options = debug_options or DAGDebugOptions()
+        start_time = datetime.datetime.now()
 
         self.prepare()
-
-        start_time = datetime.datetime.now()
 
         # Identify skipped nodes
         skipped_nodes = []
@@ -440,17 +440,42 @@ class DAG:
 
         self.debug_outputs.clear()
 
+        # Create debug warehouse if needed
+        if len(debug_options.override_sources):
+            debug_sqlite_uri = "sqlite:///debug_location.db"
+            debug_engine = create_engine(debug_sqlite_uri)
+            debug_location = RelationalDBLocation(
+                uri=debug_sqlite_uri, credentials=debug_engine
+            )
+
         for step_name in self.sequence[start_index:end_index]:
             node = self.nodes[step_name]
-
-            try:
-                logger.info(
-                    "\n"
-                    + self.draw(
-                        start_time=start_time, doing=node.name, skipped=skipped_nodes
+            if step_name in debug_options.override_sources and isinstance(
+                node, IndexStep
+            ):
+                with debug_engine.connect() as conn:
+                    debug_options.override_sources[step_name].write_database(
+                        table_name=step_name,
+                        connection=conn,
+                        if_table_exists="replace",
+                    )
+                node = IndexStep(
+                    source_config=SourceConfig(
+                        location=debug_location,
+                        name=step_name,
+                        extract_transform=f"select * from {step_name}",
+                        key_field=node.source_config.key_field,
+                        index_fields=node.source_config.index_fields,
                     )
                 )
 
+            logger.info(
+                "\n"
+                + self.draw(
+                    start_time=start_time, doing=node.name, skipped=skipped_nodes
+                )
+            )
+            try:
                 if debug_options.keep_outputs:
                     self.debug_outputs[step_name] = node.run()
                 else:

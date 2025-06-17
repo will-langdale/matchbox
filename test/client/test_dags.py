@@ -1,6 +1,7 @@
 import datetime
 from unittest.mock import Mock, call, patch
 
+import polars as pl
 import pytest
 from sqlalchemy import Engine
 
@@ -331,7 +332,8 @@ def test_dag_runs(
     dag = DAG()
 
     # Set up constituents
-    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
+    foo = foo_testkit.source_config
     bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
     baz = source_factory(name="baz", engine=sqlite_warehouse).source_config
 
@@ -416,6 +418,7 @@ def test_dag_runs(
     # Run DAG
     dag.run()
 
+    # By default outputs are discarded
     assert not dag.debug_outputs
 
     assert handler_index.call_count == 3
@@ -440,11 +443,22 @@ def test_dag_runs(
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 2
 
-    # Test keeping outputs for debugging
+    # Real sources can be overridden for debugging
+    handler_index.reset_mock()
+    dag.run(
+        DAGDebugOptions(
+            override_sources={foo.name: pl.from_arrow(foo_testkit.data)[:2]}
+        )
+    )
+    overridden = handler_index.call_args.kwargs["source_config"]
+    assert overridden != foo
+    assert len(next(overridden.query())) == 2
+
+    # Outputs can be kept for debugging
     dag.run(DAGDebugOptions(keep_outputs=True))
     assert len(dag.debug_outputs.keys()) == 6
-
     dag.run()
+    # Re-running DAG drops debug outputs
     assert not dag.debug_outputs
 
     # Reset mocks to test the start argument
@@ -452,7 +466,7 @@ def test_dag_runs(
     dedupe_run.reset_mock()
     link_run.reset_mock()
 
-    # Run DAG again, starting from foo_bar step
+    # Can specify a start
     dag.run(DAGDebugOptions(start="foo_bar"))
 
     # Verify only steps from foo_bar onward were executed
