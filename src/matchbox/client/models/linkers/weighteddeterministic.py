@@ -3,7 +3,7 @@
 from typing import Any, Type
 
 import duckdb
-from pandas import ArrowDtype, DataFrame
+import polars as pl
 from pydantic import BaseModel, Field, field_validator
 
 from matchbox.client.helpers import comparison
@@ -101,18 +101,18 @@ class WeightedDeterministicLinker(Linker):
         )
         return cls(settings=settings)
 
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
         pass
 
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
         self._id_dtype_l = type(left[self.settings.left_id][0])
         self._id_dtype_r = type(right[self.settings.right_id][0])
 
         # Used below but ruff can't detect
-        left_df = left.copy()  # noqa: F841
-        right_df = right.copy()  # noqa: F841
+        left_df = left.clone()  # noqa: F841
+        right_df = right.clone()  # noqa: F841
 
         match_subquery = []
         weights = []
@@ -155,13 +155,17 @@ class WeightedDeterministicLinker(Linker):
                     {total_weight} >= {self.settings.threshold};
         """
         df_arrow = duckdb.sql(sql).arrow()
-        res = df_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
+        result_pl = pl.from_arrow(df_arrow)
         del df_arrow
 
-        # Convert bytearray back to bytes
-        return res.assign(
-            left_id=lambda df: df.left_id.apply(self._id_dtype_l),
-            right_id=lambda df: df.right_id.apply(self._id_dtype_r),
-        )
+        # Convert bytearray back to original type
+        # Check if we need to convert IDs to uint64 (expected by Results validation)
+        if result_pl.schema["left_id"] != pl.UInt64:
+            result_pl = result_pl.with_columns(
+                [
+                    pl.col("left_id").cast(pl.UInt64),
+                    pl.col("right_id").cast(pl.UInt64),
+                ]
+            )
+
+        return result_pl

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any
 
-from pandas import DataFrame
+import polars as pl
 from pydantic import BaseModel, Field, model_validator
 
 from matchbox.client import _handler
@@ -121,14 +121,14 @@ class ModelStep(Step):
 
         return self
 
-    def query(self, step_input: StepInput) -> DataFrame:
+    def query(self, step_input: StepInput) -> pl.DataFrame:
         """Retrieve data for declared step input.
 
         Args:
             step_input: Declared input to this DAG step.
 
         Returns:
-            Pandas dataframe with retrieved results.
+            Polars dataframe with retrieved results.
         """
         selectors: list[Selector] = []
 
@@ -145,7 +145,7 @@ class ModelStep(Step):
 
         return query(
             selectors,
-            return_type="pandas",
+            return_type="polars",
             threshold=step_input.threshold,
             resolution=step_input.name,
             batch_size=step_input.batch_size,

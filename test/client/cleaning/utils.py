@@ -3,15 +3,14 @@
 from typing import Any, Callable, Tuple
 
 import duckdb
-import pandas as pd
-import pyarrow as pa
+import polars as pl
 
 
 def create_test_case(
     input_data: list[Any],
     expected_output: list[Any],
     column_name: str = "col",
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pl.DataFrame, pl.DataFrame]:
     """Create a test case with dirty and clean dataframes.
 
     Args:
@@ -22,23 +21,15 @@ def create_test_case(
     Returns:
         A tuple of (dirty, clean) dataframes
     """
-    dirty = pd.DataFrame({column_name: input_data})
-    clean = pd.DataFrame({column_name: expected_output})
-
-    # Convert to PyArrow types
-    dirty = dirty.convert_dtypes(dtype_backend="pyarrow")
-    clean = clean.convert_dtypes(dtype_backend="pyarrow")
+    dirty = pl.DataFrame({column_name: input_data})
+    clean = pl.DataFrame({column_name: expected_output})
 
     # Handle list data type inference
     if any(isinstance(item, list) for item in input_data):
-        dirty[column_name] = dirty[column_name].astype(
-            pd.ArrowDtype(pa.list_(pa.string()))
-        )
+        dirty = dirty.with_columns(pl.col(column_name).cast(pl.List(pl.Utf8)))
 
     if any(isinstance(item, list) for item in expected_output):
-        clean[column_name] = clean[column_name].astype(
-            pd.ArrowDtype(pa.list_(pa.string()))
-        )
+        clean = clean.with_columns(pl.col(column_name).cast(pl.List(pl.Utf8)))
 
     return dirty, clean
 
@@ -48,7 +39,7 @@ def run_cleaner_test(
     input_data: list[Any],
     expected_output: list[Any],
     column_name: str = "col",
-) -> Tuple[pd.DataFrame, bool]:
+) -> Tuple[pl.DataFrame, bool]:
     """Test a cleaner function against input data and expected output.
 
     Args:
@@ -60,10 +51,10 @@ def run_cleaner_test(
     Returns:
         A tuple of (cleaned_df, success)
     """
-    dirty, clean = create_test_case(input_data, expected_output, column_name)
+    dirty, clean = create_test_case(input_data, expected_output, column_name)  # noqa: F841
 
     # Apply the cleaner function using duckdb
-    cleaned = (
+    cleaned = pl.from_arrow(
         duckdb.sql(
             f"""
             select
@@ -71,16 +62,14 @@ def run_cleaner_test(
             from
                 dirty
             """
-        )
-        .arrow()
-        .to_pandas(types_mapper=pd.ArrowDtype)
+        ).arrow()
     )
 
     # Handle list-type columns for equality comparison
     if any(isinstance(item, list) for item in expected_output):
         # Convert to Python lists for comparison
-        cleaned_values = cleaned[column_name].tolist()
-        expected_values = clean[column_name].tolist()
+        cleaned_values = cleaned[column_name].to_list()
+        expected_values = clean[column_name].to_list()
 
         # Check if lists match by converting to string representation
         cleaned_str = str(cleaned_values)
@@ -92,11 +81,11 @@ def run_cleaner_test(
 
 
 def run_composed_test(
-    composed_func: Callable[[pd.DataFrame, str], pd.DataFrame],
+    composed_func: Callable[[pl.DataFrame, str], pl.DataFrame],
     input_data: list[Any],
     expected_output: list[Any],
     column_name: str = "col",
-) -> Tuple[pd.DataFrame, bool]:
+) -> Tuple[pl.DataFrame, bool]:
     """Test a composed cleaning function against input data and expected output.
 
     Args:
@@ -116,8 +105,8 @@ def run_composed_test(
     # Handle list-type columns for equality comparison
     if any(isinstance(item, list) for item in expected_output):
         # Convert to Python lists for comparison
-        cleaned_values = cleaned[column_name].tolist()
-        expected_values = clean[column_name].tolist()
+        cleaned_values = cleaned[column_name].to_list()
+        expected_values = clean[column_name].to_list()
 
         # Check if lists match by converting to string representation
         cleaned_str = str(cleaned_values)

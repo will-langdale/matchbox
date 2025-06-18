@@ -3,7 +3,6 @@
 from typing import Iterable, Type
 
 import polars as pl
-from pandas import DataFrame
 from pydantic import Field, field_validator
 
 from matchbox.client.helpers import comparison
@@ -58,14 +57,14 @@ class DeterministicLinker(Linker):
         )
         return cls(settings=settings)
 
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
         pass
 
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
-        left_pl = pl.from_pandas(left).lazy()  # noqa: F841
-        right_pl = pl.from_pandas(right).lazy()  # noqa: F841
+        left_pl = left.lazy()  # noqa: F841
+        right_pl = right.lazy()  # noqa: F841
 
         subqueries = []
         for i, condition in enumerate(self.settings.comparisons):
@@ -90,4 +89,15 @@ class DeterministicLinker(Linker):
             FROM ({union_query}) as final
         """
 
-        return pl.sql(final_query).collect().to_pandas()
+        result = pl.sql(final_query).collect()
+
+        # Ensure ID columns are uint64 (required by Results validation)
+        if result.schema["left_id"] != pl.UInt64:
+            result = result.with_columns(
+                [
+                    pl.col("left_id").cast(pl.UInt64),
+                    pl.col("right_id").cast(pl.UInt64),
+                ]
+            )
+
+        return result

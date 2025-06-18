@@ -2,11 +2,11 @@ from importlib.metadata import version
 from typing import Callable
 from unittest.mock import patch
 
+import polars as pl
 import pyarrow as pa
 import pytest
 from httpx import Response
 from numpy import ndarray
-from pandas import DataFrame
 from respx import MockRouter
 from sqlalchemy import Engine
 
@@ -70,7 +70,7 @@ def test_process():
 
     df_name_cleaned = process(data=crn, pipeline=cleaner_name_number)
 
-    assert isinstance(df_name_cleaned, DataFrame)
+    assert isinstance(df_name_cleaned, pl.DataFrame)
     assert df_name_cleaned.shape[0] == 10
 
 

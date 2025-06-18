@@ -95,11 +95,11 @@ def test_tokenise_basic():
         [["hello", "world"]],
     )
 
-    # Convert numpy array to list for comparison
-    result = cleaned["col"].iloc[0]
+    # Use Polars indexing to get the first element
+    result = cleaned["col"].to_list()[0]
     expected = ["hello", "world"]
 
-    assert list(result) == expected, f"Got {list(result)} instead of {expected}"
+    assert result == expected, f"Got {result} instead of {expected}"
 
 
 def test_tokenise_multi_words():
@@ -110,10 +110,10 @@ def test_tokenise_multi_words():
         [["one", "two", "three"]],
     )
 
-    result = cleaned["col"].iloc[0]
+    result = cleaned["col"].to_list()[0]
     expected = ["one", "two", "three"]
 
-    assert list(result) == expected, f"Got {list(result)} instead of {expected}"
+    assert result == expected, f"Got {result} instead of {expected}"
 
 
 def test_remove_stopwords_basic(stopwords_remover: Callable[[str], str]):
@@ -124,10 +124,10 @@ def test_remove_stopwords_basic(stopwords_remover: Callable[[str], str]):
         [["company"]],
     )
 
-    result = cleaned["col"].iloc[0]
+    result = cleaned["col"].to_list()[0]
     expected = ["company"]
 
-    assert list(result) == expected, f"Got {list(result)} instead of {expected}"
+    assert result == expected, f"Got {result} instead of {expected}"
 
 
 def test_remove_stopwords_middle(stopwords_remover: Callable[[str], str]):
@@ -138,10 +138,10 @@ def test_remove_stopwords_middle(stopwords_remover: Callable[[str], str]):
         [["hello", "world"]],
     )
 
-    result = cleaned["col"].iloc[0]
+    result = cleaned["col"].to_list()[0]
     expected = ["hello", "world"]
 
-    assert list(result) == expected, f"Got {list(result)} instead of {expected}"
+    assert result == expected, f"Got {result} instead of {expected}"
 
 
 def test_list_join_basic():
@@ -210,7 +210,7 @@ def test_function_passthrough():
         [expected],
     )
 
-    result = cleaned["col"].iloc[0]
+    result = cleaned["col"].to_list()[0]
 
     assert result == expected, f"Got {result} instead of {expected}"
 
@@ -233,7 +233,7 @@ def test_function_clean_names(
         [expected],
     )
 
-    result = cleaned["col"].iloc[0]
+    result = cleaned["col"].to_list()[0]
 
     assert result == expected, f"Got {result} instead of {expected}"
 
@@ -255,8 +255,8 @@ def test_nest_unnest_abbreviations(abbreviation_expander: Callable[[str], str]):
     cleaned = unnested_func(dirty, column="col")
 
     # Convert to Python lists for deep comparison
-    cleaned_list = cleaned["col"].tolist()
-    clean_list = clean["col"].tolist()
+    cleaned_list = cleaned["col"].to_list()
+    clean_list = clean["col"].to_list()
 
     # Compare the lists directly - they should be identical nested lists
     assert cleaned_list == clean_list, (
@@ -276,8 +276,8 @@ def test_nest_unnest_passthrough():
     cleaned = unnested_func(dirty, column="col")
 
     # Convert to Python lists for deep comparison
-    cleaned_list = cleaned["col"].tolist()
-    clean_list = clean["col"].tolist()
+    cleaned_list = cleaned["col"].to_list()
+    clean_list = clean["col"].to_list()
 
     # Compare the lists directly - they should be identical nested lists
     assert cleaned_list == clean_list, (
