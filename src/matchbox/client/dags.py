@@ -24,7 +24,7 @@ from matchbox.common.sources import RelationalDBLocation, SourceConfig, SourceFi
 
 
 class DAGDebugOptions(BaseModel):
-    """Devug configuration options for DAG."""
+    """Debug configuration options for DAG."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -48,7 +48,7 @@ class Step(BaseModel, ABC):
         ...
 
     @abstractmethod
-    def run(self) -> Any:
+    def run(self) -> Table | Results:
         """Run the step."""
         ...
 
@@ -241,7 +241,7 @@ class DAG:
         self.nodes: dict[ResolutionName, Step] = {}
         self.graph: dict[ResolutionName, list[ResolutionName]] = {}
         self.sequence: list[ResolutionName] = []
-        self.debug_outputs: dict[ResolutionName, Any] = {}
+        self.debug_outputs: dict[ResolutionName, Table | Results] = {}
 
     def _validate_node(self, name: ResolutionName) -> None:
         """Validate that a node name is unique in the DAG."""
