@@ -6,7 +6,9 @@ from collections import defaultdict
 from typing import Any
 
 import polars as pl
-from pydantic import BaseModel, Field, model_validator
+from pyarrow import Table
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy import create_engine
 
 from matchbox.client import _handler
 from matchbox.client.helpers.cleaner import process
@@ -14,11 +16,21 @@ from matchbox.client.helpers.selector import Selector, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
-from matchbox.common.dtos import (
-    ResolutionName,
-)
+from matchbox.client.results import Results
+from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
-from matchbox.common.sources import SourceConfig, SourceField
+from matchbox.common.sources import RelationalDBLocation, SourceConfig, SourceField
+
+
+class DAGDebugOptions(BaseModel):
+    """Debug configuration options for DAG."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    start: ResolutionName | None = None
+    finish: ResolutionName | None = None
+    override_sources: dict[SourceResolutionName, pl.DataFrame] = {}
+    keep_outputs: bool = False
 
 
 class Step(BaseModel, ABC):
@@ -35,7 +47,7 @@ class Step(BaseModel, ABC):
         ...
 
     @abstractmethod
-    def run(self) -> None:
+    def run(self) -> Table | Results:
         """Run the step."""
         ...
 
@@ -100,9 +112,12 @@ class IndexStep(Step):
         """Return all inputs to this step."""
         return []
 
-    def run(self) -> None:
+    def run(self) -> Table:
         """Run indexing step."""
-        _handler.index(source_config=self.source_config, batch_size=self.batch_size)
+        data_hashes = self.source_config.hash_data(batch_size=self.batch_size)
+        _handler.index(source_config=self.source_config, data_hashes=data_hashes)
+
+        return data_hashes
 
 
 class ModelStep(Step):
@@ -162,7 +177,7 @@ class DedupeStep(ModelStep):
         """Return all inputs to this step."""
         return [self.left]
 
-    def run(self) -> None:
+    def run(self) -> Results:
         """Run full deduping pipeline and store results."""
         left_raw = self.query(self.left)
         left_clean = process(left_raw, self.left.cleaners)
@@ -179,6 +194,7 @@ class DedupeStep(ModelStep):
         results = deduper.run()
         results.to_matchbox()
         deduper.truth = self.truth
+        return results
 
 
 class LinkStep(ModelStep):
@@ -192,7 +208,7 @@ class LinkStep(ModelStep):
         """Return all `StepInputs` to this step."""
         return [self.left, self.right]
 
-    def run(self) -> None:
+    def run(self) -> Results:
         """Run whole linking step."""
         left_raw = self.query(self.left)
         left_clean = process(left_raw, self.left.cleaners)
@@ -214,6 +230,7 @@ class LinkStep(ModelStep):
         results = linker.run()
         results.to_matchbox()
         linker.truth = self.truth
+        return results
 
 
 class DAG:
@@ -224,6 +241,7 @@ class DAG:
         self.nodes: dict[ResolutionName, Step] = {}
         self.graph: dict[ResolutionName, list[ResolutionName]] = {}
         self.sequence: list[ResolutionName] = []
+        self.debug_outputs: dict[ResolutionName, Table | Results] = {}
 
     def _validate_node(self, name: ResolutionName) -> None:
         """Validate that a node name is unique in the DAG."""
@@ -387,51 +405,80 @@ class DAG:
 
         return "\n".join(result)
 
-    def run(
-        self, start: ResolutionName | None = None, finish: ResolutionName | None = None
-    ):
+    def run(self, debug_options: DAGDebugOptions | None = None):
         """Run entire DAG.
 
         Args:
-            start: Name of the step to start from (if not from the beginning)
-            finish: Name of the step to finish at (if not to the end)
+            debug_options: configuration options for debug run
         """
-        self.prepare()
-
+        debug_options = debug_options or DAGDebugOptions()
         start_time = datetime.datetime.now()
+
+        self.prepare()
 
         # Identify skipped nodes
         skipped_nodes = []
-        if start:
+        if debug_options.start:
             try:
-                start_index = self.sequence.index(start)
+                start_index = self.sequence.index(debug_options.start)
                 skipped_nodes = self.sequence[:start_index]
             except ValueError as e:
-                raise ValueError(f"Step {start} not in DAG") from e
+                raise ValueError(f"Step {debug_options.start} not in DAG") from e
         else:
             start_index = 0
 
         # Determine end index
-        if finish:
+        if debug_options.finish:
             try:
-                end_index = self.sequence.index(finish) + 1
+                end_index = self.sequence.index(debug_options.finish) + 1
                 skipped_nodes.extend(self.sequence[end_index:])
             except ValueError as e:
-                raise ValueError(f"Step {finish} not in DAG") from e
+                raise ValueError(f"Step {debug_options.finish} not in DAG") from e
         else:
             end_index = len(self.sequence)
 
+        self.debug_outputs.clear()
+
+        # Create debug warehouse if needed
+        if len(debug_options.override_sources):
+            debug_sqlite_uri = "sqlite:///:memory:"
+            debug_engine = create_engine(debug_sqlite_uri)
+            debug_location = RelationalDBLocation(
+                uri=debug_sqlite_uri, credentials=debug_engine
+            )
+
         for step_name in self.sequence[start_index:end_index]:
             node = self.nodes[step_name]
-
-            try:
-                logger.info(
-                    "\n"
-                    + self.draw(
-                        start_time=start_time, doing=node.name, skipped=skipped_nodes
+            if step_name in debug_options.override_sources and isinstance(
+                node, IndexStep
+            ):
+                with debug_engine.connect() as conn:
+                    debug_options.override_sources[step_name].write_database(
+                        table_name=step_name,
+                        connection=conn,
+                        if_table_exists="replace",
+                    )
+                node = IndexStep(
+                    source_config=SourceConfig(
+                        location=debug_location,
+                        name=step_name,
+                        extract_transform=f"select * from {step_name}",
+                        key_field=node.source_config.key_field,
+                        index_fields=node.source_config.index_fields,
                     )
                 )
-                node.run()
+
+            logger.info(
+                "\n"
+                + self.draw(
+                    start_time=start_time, doing=node.name, skipped=skipped_nodes
+                )
+            )
+            try:
+                if debug_options.keep_outputs:
+                    self.debug_outputs[step_name] = node.run()
+                else:
+                    node.run()
                 node.last_run = datetime.datetime.now()
             except Exception as e:
                 logger.error(f"❌ {node.name} failed: {e}")

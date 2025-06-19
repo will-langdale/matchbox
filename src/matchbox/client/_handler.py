@@ -192,15 +192,9 @@ def match(
 # Data management
 
 
-def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadStatus:
+def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
     """Index from a SourceConfig in Matchbox."""
     log_prefix = f"Index {source_config.name}"
-    log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
-    logger.debug(f"Started {log_batch}", prefix=log_prefix)
-
-    logger.debug("Retrieving and hashing", prefix=log_prefix)
-
-    data_hashes = source_config.hash_data(batch_size=batch_size)
 
     buffer = table_to_buffer(table=data_hashes)
 

@@ -9,6 +9,7 @@ from typing import (
     Any,
     Callable,
     Generator,
+    Iterable,
     Iterator,
     Literal,
     ParamSpec,
@@ -40,6 +41,7 @@ from matchbox.common.db import (
 from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.exceptions import MatchboxSourceCredentialsError
 from matchbox.common.hash import HashMethod, hash_rows
+from matchbox.common.logging import logger
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -335,23 +337,26 @@ class SourceConfig(BaseModel):
     @property
     def qualified_key(self) -> str:
         """Get the qualified key for the source."""
-        return self.qualify_field(self.key_field.name)
+        return self.f(self.key_field.name)
 
     @property
     def qualified_fields(self) -> list[str]:
         """Get the qualified fields for the source."""
-        return [self.qualify_field(field.name) for field in self.index_fields]
+        return self.f([field.name for field in self.index_fields])
 
-    def qualify_field(self, field: str) -> str:
-        """Qualify a field name with the source name.
+    def f(self, fields: str | Iterable[str]) -> str | list[str]:
+        """Qualify one or more field names with the source name.
 
         Args:
-            field: The field name to qualify.
+            fields: The field name to qualify, or a list of field names.
 
         Returns:
-            The qualified field name.
+            A single qualified field, or a list of qualified field names.
+
         """
-        return self.prefix + field
+        if isinstance(fields, str):
+            return self.prefix + fields
+        return [self.prefix + field_name for field_name in fields]
 
     @field_validator("name", mode="after")
     @classmethod
@@ -458,6 +463,12 @@ class SourceConfig(BaseModel):
         Returns:
             A PyArrow Table containing source keys and their hashes.
         """
+        log_prefix = f"Hash {self.name}"
+        batch_info = (
+            f"with batch size {batch_size:,}" if batch_size else "without batching"
+        )
+        logger.debug(f"Retrieving and hashing {batch_info}", prefix=log_prefix)
+
         key_field: str = self.key_field.name
         index_fields: list[str] = [field.name for field in self.index_fields]
 

@@ -330,6 +330,8 @@ def test_source_init():
     assert source.extract_transform == "SELECT key, name, age FROM users"
     assert source.key_field == key_field
     assert source.index_fields == index_fields
+    assert source.qualified_key == "test_source_key"
+    assert source.qualified_fields == ["test_source_name", "test_source_age"]
 
 
 def test_source_model_validation():
