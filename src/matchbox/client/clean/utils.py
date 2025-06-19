@@ -3,7 +3,7 @@
 from typing import Callable
 
 import duckdb
-from pandas import ArrowDtype, DataFrame
+import polars as pl
 
 STOPWORDS = [
     "limited",
@@ -45,28 +45,26 @@ def cleaning_function(*functions: Callable) -> Callable:
             See clean_basic for some examples
     """
 
-    def cleaning_method(df: DataFrame, column: str) -> DataFrame:
-        to_run = []
+    def cleaning_method(df: pl.DataFrame, column: str) -> pl.DataFrame:  # noqa: ARG001
+        """Applies a series of cleaning functions to a specified column.
+
+        Create a single SQL statement that applies all transformations
+        This maintains proper DuckDB context for lambda expressions
+        """
+        nested_transform: str = column
 
         for f in functions:
-            to_run.append(
-                f"""
-                select
-                    *
-                    replace ({f(column)} as {column})
-                from
-                    df;
-                """
-            )
+            nested_transform: str = f(nested_transform)
 
-        for sql in to_run:
-            df_arrow = duckdb.sql(sql).arrow()
-            df = df_arrow.to_pandas(
-                split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-            )
-            del df_arrow
+        sql = f"""
+            select
+                *
+                replace ({nested_transform} as {column})
+            from
+                df;
+        """
 
-        return df
+        return duckdb.sql(sql).pl()
 
     return cleaning_method
 
@@ -79,7 +77,7 @@ def alias(function: Callable, alias: str) -> Callable:
         alias: the new column name to use
     """
 
-    def cleaning_method(df: DataFrame, column: str) -> DataFrame:
+    def cleaning_method(df: pl.DataFrame, column: str) -> pl.DataFrame:
         aliased_sql = f"""
             select
                 *,
@@ -87,15 +85,7 @@ def alias(function: Callable, alias: str) -> Callable:
             from
                 df;
         """
-        aliased_arrow = duckdb.sql(aliased_sql).arrow()
-        aliased = aliased_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
-        del aliased_arrow
-
-        processed = function(aliased, alias)
-
-        return processed
+        return function(duckdb.sql(aliased_sql).pl(), alias)
 
     return cleaning_method
 
@@ -110,7 +100,7 @@ def unnest_renest(function: Callable) -> Callable:
         function: an outut from a cleaning_function function
     """
 
-    def cleaning_method(df: DataFrame, column: str) -> DataFrame:
+    def cleaning_method(df: pl.DataFrame, column: str) -> pl.DataFrame:
         unnest_sql = f"""
             select
                 row_number() over () as nest_id,
@@ -119,14 +109,7 @@ def unnest_renest(function: Callable) -> Callable:
             from
                 df;
         """
-
-        unnest_arrow = duckdb.sql(unnest_sql).arrow()
-        unnest = unnest_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
-        del unnest_arrow
-
-        processed = function(unnest, column)
+        processed = function(duckdb.sql(unnest_sql).pl(), column)
 
         any_value = [
             f"any_value({col}) as {col}"
@@ -147,12 +130,6 @@ def unnest_renest(function: Callable) -> Callable:
             group by nest_id;
         """
 
-        renest_arrow = duckdb.sql(renest_sql).arrow()
-        renest = renest_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
-        del renest_arrow
-
-        return renest
+        return duckdb.sql(renest_sql).pl()
 
     return cleaning_method

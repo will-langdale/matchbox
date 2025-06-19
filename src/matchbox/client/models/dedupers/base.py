@@ -3,7 +3,7 @@
 import warnings
 from abc import ABC, abstractmethod
 
-from pandas import DataFrame
+import polars as pl
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
@@ -44,11 +44,11 @@ class Deduper(BaseModel, ABC):
         )
 
     @abstractmethod
-    def prepare(self, data: DataFrame) -> None:
+    def prepare(self, data: pl.DataFrame) -> None:
         """Prepare the deduper for deduplication."""
         return
 
     @abstractmethod
-    def dedupe(self, data: DataFrame) -> DataFrame:
+    def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Deduplicate the dataframe."""
         return
