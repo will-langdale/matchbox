@@ -17,6 +17,7 @@ from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_factory
+from matchbox.common.sources import SourceConfig
 
 
 def test_step_input_validation(sqlite_warehouse: Engine):
@@ -118,7 +119,10 @@ def test_model_step_validation(sqlite_warehouse: Engine):
 
 
 @patch("matchbox.client.dags._handler.index")
-def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
+@patch.object(SourceConfig, "hash_data")
+def test_index_step_run(
+    hash_data: Mock, handler_index_mock: Mock, sqlite_warehouse: Engine
+):
     """Tests that an index step correctly calls the index handler."""
     foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
 
@@ -128,15 +132,11 @@ def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     i_foo = IndexStep(source_config=foo, batch_size=batch_size)
     i_foo.run()
 
-    handler_index_mock.assert_called_once_with(source_config=foo, batch_size=batch_size)
-
-    # Test without batch size
-    handler_index_mock.reset_mock()
-
-    i_foo_no_batch = IndexStep(source_config=foo, batch_size=None)
-    i_foo_no_batch.run()
-
-    handler_index_mock.assert_called_once_with(source_config=foo, batch_size=None)
+    hash_data.assert_called_once_with(batch_size=batch_size)
+    assert (
+        handler_index_mock.call_args_list[0].kwargs["source_config"].model_dump()
+        == foo.model_dump()
+    )
 
 
 @pytest.mark.parametrize(
@@ -322,10 +322,15 @@ def test_link_step_run(
 
 
 @patch("matchbox.client.dags._handler.index")
+@patch.object(SourceConfig, "hash_data")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
 def test_dag_runs(
-    link_run: Mock, dedupe_run: Mock, handler_index: Mock, sqlite_warehouse: Engine
+    link_run: Mock,
+    dedupe_run: Mock,
+    hash_data: Mock,
+    handler_index: Mock,
+    sqlite_warehouse: Engine,
 ):
     """A legal DAG can be built and run."""
     # Assemble DAG
@@ -423,15 +428,19 @@ def test_dag_runs(
 
     assert handler_index.call_count == 3
 
-    # Verify sources and batch sizes passed to handler.index
-    calls = {
-        call.kwargs["source_config"]: call.kwargs["batch_size"]
-        for call in handler_index.call_args_list
-    }
+    # Verify batch sizes passed to source_config.hash_data
+    assert {
+        hash_data.call_args_list[0].kwargs["batch_size"],
+        hash_data.call_args_list[1].kwargs["batch_size"],
+        hash_data.call_args_list[2].kwargs["batch_size"],
+    } == {100, 200}
 
-    assert calls[foo] == 100
-    assert calls[bar] == 200
-    assert calls[baz] == 200
+    # Verify the right sources were sent to index
+    assert {
+        handler_index.call_args_list[0].kwargs["source_config"],
+        handler_index.call_args_list[1].kwargs["source_config"],
+        handler_index.call_args_list[2].kwargs["source_config"],
+    } == {foo, bar, baz}
 
     # Verify the right sources were sent to index
     assert {

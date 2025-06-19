@@ -115,9 +115,10 @@ class IndexStep(Step):
 
     def run(self) -> Table:
         """Run indexing step."""
-        _handler.index(source_config=self.source_config, batch_size=self.batch_size)
+        data_hashes = self.source_config.hash_data(batch_size=self.batch_size)
+        _handler.index(source_config=self.source_config, data_hashes=data_hashes)
 
-        return self.source_config.hash_data(batch_size=self.batch_size)
+        return data_hashes
 
 
 class ModelStep(Step):
@@ -441,7 +442,7 @@ class DAG:
 
         # Create debug warehouse if needed
         if len(debug_options.override_sources):
-            debug_sqlite_uri = "sqlite:///debug_location.db"
+            debug_sqlite_uri = "sqlite:///:memory:"
             debug_engine = create_engine(debug_sqlite_uri)
             debug_location = RelationalDBLocation(
                 uri=debug_sqlite_uri, credentials=debug_engine

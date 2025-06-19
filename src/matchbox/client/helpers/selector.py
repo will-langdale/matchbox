@@ -33,7 +33,7 @@ class Selector(BaseModel):
     @property
     def qualified_fields(self: Self) -> list[str]:
         """Get the qualified field names for the selected fields."""
-        return self.source.f(self.fields)
+        return self.source.f([field.name for field in self.fields])
 
     @field_validator("source", mode="after")
     @classmethod
