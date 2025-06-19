@@ -6,7 +6,6 @@ from collections import defaultdict
 from typing import Any
 
 import polars as pl
-from pandas import DataFrame
 from pyarrow import Table
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import create_engine
