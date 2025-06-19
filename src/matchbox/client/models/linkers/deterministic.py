@@ -1,6 +1,6 @@
 """A linking methodology based on a deterministic set of conditions."""
 
-from typing import Iterable, Type
+from typing import Iterable
 
 import polars as pl
 from pydantic import Field, field_validator
@@ -44,9 +44,6 @@ class DeterministicLinker(Linker):
 
     settings: DeterministicSettings
 
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
-
     @classmethod
     def from_settings(
         cls, left_id: str, right_id: str, comparisons: str
@@ -89,15 +86,12 @@ class DeterministicLinker(Linker):
             FROM ({union_query}) as final
         """
 
-        result = pl.sql(final_query).collect()
-
-        # Ensure ID columns are uint64 (required by Results validation)
-        if result.schema["left_id"] != pl.UInt64:
-            result = result.with_columns(
+        return (
+            pl.sql(final_query)
+            .with_columns(
                 [
-                    pl.col("left_id").cast(pl.UInt64),
-                    pl.col("right_id").cast(pl.UInt64),
+                    pl.col("probability").cast(pl.Float32),
                 ]
             )
-
-        return result
+            .collect()
+        )

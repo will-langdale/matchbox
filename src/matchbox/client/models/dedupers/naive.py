@@ -1,7 +1,5 @@
 """A deduplication methodology based on a deterministic set of conditions."""
 
-from typing import Type
-
 import duckdb
 import polars as pl
 from pydantic import Field
@@ -22,7 +20,7 @@ class NaiveDeduper(Deduper):
 
     settings: NaiveSettings
 
-    _id_dtype: Type = None
+    _id_dtype: pl.DataType
 
     @classmethod
     def from_settings(cls, id: str, unique_fields: list[str]) -> "NaiveDeduper":
@@ -36,7 +34,7 @@ class NaiveDeduper(Deduper):
 
     def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Deduplicate the dataframe."""
-        self._id_dtype = type(data[self.settings.id][0])
+        self._id_dtype = data[self.settings.id].dtype
 
         df = data.clone()
 
@@ -76,8 +74,9 @@ class NaiveDeduper(Deduper):
             .pl()
             .with_columns(
                 [
-                    pl.col("left_id").cast(pl.UInt64),
-                    pl.col("right_id").cast(pl.UInt64),
+                    pl.col("left_id").cast(self._id_dtype),
+                    pl.col("right_id").cast(self._id_dtype),
+                    pl.col("probability").cast(pl.Float32),
                 ]
             )
         )

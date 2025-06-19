@@ -1,6 +1,6 @@
 """A linking methodology that applies different weights to field comparisons."""
 
-from typing import Any, Type
+from typing import Any
 
 import duckdb
 import polars as pl
@@ -77,8 +77,8 @@ class WeightedDeterministicLinker(Linker):
 
     settings: WeightedDeterministicSettings
 
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
+    _id_dtype_l: pl.DataType
+    _id_dtype_r: pl.DataType
 
     @classmethod
     def from_settings(
@@ -107,8 +107,8 @@ class WeightedDeterministicLinker(Linker):
 
     def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
-        self._id_dtype_l = type(left[self.settings.left_id][0])
-        self._id_dtype_r = type(right[self.settings.right_id][0])
+        self._id_dtype_l = left[self.settings.left_id].dtype
+        self._id_dtype_r = right[self.settings.right_id].dtype
 
         # Used below but ruff can't detect
         left_df = left.clone()  # noqa: F841
@@ -160,8 +160,9 @@ class WeightedDeterministicLinker(Linker):
             .pl()
             .with_columns(
                 [
-                    pl.col("left_id").cast(pl.UInt64),
-                    pl.col("right_id").cast(pl.UInt64),
+                    pl.col("left_id").cast(self._id_dtype_l),
+                    pl.col("right_id").cast(self._id_dtype_r),
+                    pl.col("probability").cast(pl.Float32),
                 ]
             )
         )

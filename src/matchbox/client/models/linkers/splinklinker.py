@@ -1,11 +1,9 @@
 """A linking methodology leveraging Splink."""
 
-import ast
 import inspect
 from typing import Any, Type
 
 import polars as pl
-import pyarrow as pa
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
@@ -164,9 +162,9 @@ class SplinkLinker(Linker):
 
     settings: SplinkSettings
 
-    _linker: SplinkLibLinkerClass = None
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
+    _linker: SplinkLibLinkerClass
+    _id_dtype_l: pl.DataType
+    _id_dtype_r: pl.DataType
 
     @classmethod
     def from_settings(
@@ -197,15 +195,8 @@ class SplinkLinker(Linker):
                 "share the same column names and data formats."
             )
 
-        self._id_dtype_l = type(left[self.settings.left_id][0])
-        self._id_dtype_r = type(right[self.settings.right_id][0])
-
-        # Deal with converting back to bytes from string b-representation,
-        # the most common datatype we expect
-        if self._id_dtype_l.__name__ == "bytes":
-            self._id_dtype_l = ast.literal_eval
-        if self._id_dtype_r.__name__ == "bytes":
-            self._id_dtype_r = ast.literal_eval
+        self._id_dtype_l = left[self.settings.left_id].dtype
+        self._id_dtype_r = right[self.settings.right_id].dtype
 
         # Convert to pandas for Splink compatibility
         left_pd = left.with_columns(
@@ -240,21 +231,29 @@ class SplinkLinker(Linker):
             threshold_match_probability=self.settings.threshold
         )
 
-        df = res.as_pandas_dataframe().drop_duplicates()
-
-        result_arrow = pa.table(
-            [
-                pa.array(
-                    df[f"{self.settings.left_id}_l"].apply(self._id_dtype_l),
-                    type=pa.uint64(),
-                ),
-                pa.array(
-                    df[f"{self.settings.right_id}_r"].apply(self._id_dtype_r),
-                    type=pa.uint64(),
-                ),
-                pa.array(df["match_probability"], type=pa.float32()),
-            ],
-            names=["left_id", "right_id", "probability"],
+        return (
+            res.as_duckdbpyrelation()
+            .pl()
+            .lazy()
+            .select(
+                [
+                    f"{self.settings.left_id}_l",
+                    f"{self.settings.right_id}_r",
+                    "match_probability",
+                ]
+            )
+            .unique()
+            .with_columns(
+                [
+                    pl.col(f"{self.settings.left_id}_l")
+                    .cast(self._id_dtype_l)
+                    .alias("left_id"),
+                    pl.col(f"{self.settings.right_id}_r")
+                    .cast(self._id_dtype_r)
+                    .alias("right_id"),
+                    pl.col("match_probability").cast(pl.Float32).alias("probability"),
+                ]
+            )
+            .select(["left_id", "right_id", "probability"])
+            .collect()
         )
-
-        return pl.from_arrow(result_arrow)
