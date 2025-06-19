@@ -82,6 +82,11 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         back_populates="proposed_by",
         passive_deletes=True,
     )
+    results = relationship(
+        "Results",
+        back_populates="proposed_by",
+        passive_deletes=True,
+    )
     children = relationship(
         "Resolutions",
         secondary=ResolutionFrom.__table__,
@@ -530,31 +535,20 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
 
 
 class Probabilities(CountMixin, MBDB.MatchboxBase):
-    """Table of probabilities that a cluster is correct, according to a resolution.
-
-    The role flag is used to efficiently store whether the probability is:
-        - 0: a pair cluster, only to be used when recovering pairwise probabilities
-        - 1: both a component and pair cluster, returned in both cases
-        - 2: a component cluster, to be returned as the resolution's proposition
-            at this threshold
-
-    The role flag allows queries to use >= 1 to get the correct clusters proposed by
-    the resolution, and <= 1 to get the pair clusters.
-    """
+    """Table of probabilities that a cluster is correct, according to a resolution."""
 
     __tablename__ = "probabilities"
 
     # Columns
-    resolution = Column(
+    resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    cluster = Column(
+    cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
     probability = Column(SMALLINT, nullable=False)
-    role_flag = Column(SMALLINT, nullable=False)
 
     # Relationships
     proposed_by = relationship("Resolutions", back_populates="probabilities")
@@ -563,5 +557,37 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     # Constraints
     __table_args__ = (
         CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
-        Index("ix_probabilities_resolution", "resolution"),
+        Index("ix_probabilities_resolution", "resolution_id"),
+    )
+
+
+class Results(CountMixin, MBDB.MatchboxBase):
+    """Table of results for a resolution.
+
+    Stores the raw left/right probabilities created by a model.
+    """
+
+    __tablename__ = "results"
+
+    # Columns
+    resolution_id = Column(
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    left_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+    )
+    right_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+    )
+    probability = Column(SMALLINT, nullable=False)
+
+    # Relationships
+    proposed_by = relationship("Resolutions", back_populates="results")
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
+        Index("ix_results_resolution", "resolution_id"),
     )

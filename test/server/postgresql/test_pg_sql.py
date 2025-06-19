@@ -27,6 +27,7 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     ResolutionFrom,
     Resolutions,
+    Results,
     SourceConfigs,
     SourceFields,
 )
@@ -344,34 +345,45 @@ def populated_postgres_db(
         ]
 
         # === PROBABILITIES ===
+        # Probabilities for formed clusters
         probabilities = [
             # Dedupe A probabilities
-            Probabilities(
-                resolution=3, cluster=301, probability=80, role_flag=1
-            ),  # both
-            Probabilities(
-                resolution=3, cluster=302, probability=70, role_flag=2
-            ),  # component
-            Probabilities(
-                resolution=3, cluster=303, probability=70, role_flag=0
-            ),  # pairwise
+            Probabilities(resolution_id=3, cluster_id=301, probability=80),
+            Probabilities(resolution_id=3, cluster_id=302, probability=70),
             # Dedupe B probabilities
-            Probabilities(
-                resolution=4, cluster=401, probability=70, role_flag=1
-            ),  # both
+            Probabilities(resolution_id=4, cluster_id=401, probability=70),
             # Linker probabilities
-            Probabilities(
-                resolution=5, cluster=501, probability=90, role_flag=0
-            ),  # pairwise
-            Probabilities(
-                resolution=5, cluster=502, probability=80, role_flag=0
-            ),  # pairwise
-            Probabilities(
-                resolution=5, cluster=503, probability=80, role_flag=2
-            ),  # component
-            Probabilities(
-                resolution=5, cluster=504, probability=90, role_flag=1
-            ),  # both
+            Probabilities(resolution_id=5, cluster_id=503, probability=80),
+            Probabilities(resolution_id=5, cluster_id=504, probability=90),
+        ]
+
+        # === RESULTS ===
+        # Pairwise probabilities
+        results = [
+            # Dedupe A results - pairwise that formed components
+            Results(
+                resolution_id=3, left_id=101, right_id=102, probability=80
+            ),  # forms C301
+            Results(
+                resolution_id=3, left_id=101, right_id=103, probability=70
+            ),  # forms C303
+            Results(
+                resolution_id=3, left_id=102, right_id=103, probability=70
+            ),  # part of C302
+            # Dedupe B results
+            Results(
+                resolution_id=4, left_id=201, right_id=202, probability=70
+            ),  # forms C401
+            # Linker results
+            Results(
+                resolution_id=5, left_id=301, right_id=401, probability=90
+            ),  # forms C501
+            Results(
+                resolution_id=5, left_id=301, right_id=205, probability=80
+            ),  # forms C502
+            Results(
+                resolution_id=5, left_id=103, right_id=203, probability=90
+            ),  # forms C504
         ]
 
         # Insert all objects
@@ -384,6 +396,7 @@ def populated_postgres_db(
             cluster_keys,
             contains,
             probabilities,
+            results,
         ):
             if isinstance(obj, list):
                 session.add_all(obj)
@@ -610,8 +623,8 @@ class TestBuildUnifiedQuery:
         else:  # id_key
             cluster_ids = set(result["id"])
 
-        # At threshold 85, only C504 (prob=90, role_flag=1) should qualify from linker
-        assert 504 in cluster_ids  # C504 qualifies: 90% >= 85% and role_flag=1
+        # At threshold 85, only C504 (prob=90) should qualify from linker
+        assert 504 in cluster_ids  # C504 qualifies: 90% >= 85%
         assert 503 not in cluster_ids  # C503 excluded: 80% < 85%
 
         # Should still see dedupe clusters from cached thresholds
@@ -890,7 +903,7 @@ class TestQueryFunction:
 
         cluster_ids = set(result["id"].to_pylist())
 
-        # At linker's default threshold (90), only C504 qualifies (prob=90, role_flag=1)
+        # At linker's default threshold (90), only C504 qualifies (prob=90)
         # C503 is excluded because prob=80 < threshold=90
         assert 504 in cluster_ids  # C504 should appear (90% >= 90%)
         assert 503 not in cluster_ids  # C503 should be excluded (80% < 90%)
@@ -919,8 +932,8 @@ class TestQueryFunction:
         clusters_a = set(result_a["id"].to_pylist())
         clusters_b = set(result_b["id"].to_pylist())
 
-        # At threshold=80, both C503 (prob=80, role_flag=2) and
-        # C504 (prob=90, role_flag=1) qualify
+        # At threshold=80, both C503 (prob=80) and
+        # C504 (prob=90) qualify
         linker_clusters = {503, 504}
         assert linker_clusters.intersection(clusters_a)  # Some linker clusters in A
         assert linker_clusters.intersection(clusters_b)  # Some linker clusters in B

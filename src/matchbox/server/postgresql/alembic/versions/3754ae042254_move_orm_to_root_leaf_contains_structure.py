@@ -28,7 +28,7 @@ def upgrade() -> None:
     op.execute("TRUNCATE TABLE mb.contains CASCADE")
     op.execute("TRUNCATE TABLE mb.clusters CASCADE")
 
-    # Now perform the schema changes
+    # Update contains table structure (parent/child -> root/leaf)
     op.add_column(
         "contains", sa.Column("root", sa.BIGINT(), nullable=False), schema="mb"
     )
@@ -71,9 +71,94 @@ def upgrade() -> None:
     )
     op.drop_column("contains", "parent", schema="mb")
     op.drop_column("contains", "child", schema="mb")
-    op.add_column(
+
+    # Update probabilities table column names
+    # (resolution -> resolution_id, cluster -> cluster_id)
+    # First drop constraints and indexes
+    op.drop_constraint(
+        "probabilities_pkey", "probabilities", schema="mb", type_="primary"
+    )
+    op.drop_constraint(
+        "probabilities_resolution_fkey",
         "probabilities",
-        sa.Column("role_flag", sa.SMALLINT(), nullable=False),
+        schema="mb",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "probabilities_cluster_fkey", "probabilities", schema="mb", type_="foreignkey"
+    )
+    op.drop_index(
+        "ix_probabilities_resolution", table_name="probabilities", schema="mb"
+    )
+
+    # Rename columns
+    op.alter_column(
+        "probabilities", "resolution", new_column_name="resolution_id", schema="mb"
+    )
+    op.alter_column(
+        "probabilities", "cluster", new_column_name="cluster_id", schema="mb"
+    )
+
+    # Recreate constraints and indexes with new column names
+    op.create_primary_key(
+        "probabilities_pkey",
+        "probabilities",
+        ["resolution_id", "cluster_id"],
+        schema="mb",
+    )
+    op.create_foreign_key(
+        "probabilities_resolution_id_fkey",
+        "probabilities",
+        "resolutions",
+        ["resolution_id"],
+        ["resolution_id"],
+        source_schema="mb",
+        referent_schema="mb",
+        ondelete="CASCADE",
+    )
+    op.create_foreign_key(
+        "probabilities_cluster_id_fkey",
+        "probabilities",
+        "clusters",
+        ["cluster_id"],
+        ["cluster_id"],
+        source_schema="mb",
+        referent_schema="mb",
+        ondelete="CASCADE",
+    )
+    op.create_index(
+        "ix_probabilities_resolution",
+        "probabilities",
+        ["resolution_id"],
+        unique=False,
+        schema="mb",
+    )
+
+    # Create results table
+    op.create_table(
+        "results",
+        sa.Column("resolution_id", sa.BIGINT(), nullable=False),
+        sa.Column("left_id", sa.BIGINT(), nullable=False),
+        sa.Column("right_id", sa.BIGINT(), nullable=False),
+        sa.Column("probability", sa.SMALLINT(), nullable=False),
+        sa.CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
+        sa.ForeignKeyConstraint(
+            ["resolution_id"], ["mb.resolutions.resolution_id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["left_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["right_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("resolution_id", "left_id", "right_id"),
+        schema="mb",
+    )
+    op.create_index(
+        "ix_results_resolution",
+        "results",
+        ["resolution_id"],
+        unique=False,
         schema="mb",
     )
 
@@ -85,9 +170,74 @@ def downgrade() -> None:
     op.execute("TRUNCATE TABLE mb.cluster_keys CASCADE")
     op.execute("TRUNCATE TABLE mb.contains CASCADE")
     op.execute("TRUNCATE TABLE mb.clusters CASCADE")
+    op.execute("TRUNCATE TABLE mb.results CASCADE")
 
-    # Now perform the schema changes
-    op.drop_column("probabilities", "role_flag", schema="mb")
+    # Drop results table
+    op.drop_table("results", schema="mb")
+
+    # Revert probabilities table column names
+    # (resolution_id -> resolution, cluster_id -> cluster)
+    # First drop constraints and indexes
+    op.drop_constraint(
+        "probabilities_pkey", "probabilities", schema="mb", type_="primary"
+    )
+    op.drop_constraint(
+        "probabilities_resolution_id_fkey",
+        "probabilities",
+        schema="mb",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "probabilities_cluster_id_fkey",
+        "probabilities",
+        schema="mb",
+        type_="foreignkey",
+    )
+    op.drop_index(
+        "ix_probabilities_resolution", table_name="probabilities", schema="mb"
+    )
+
+    # Rename columns back
+    op.alter_column(
+        "probabilities", "resolution_id", new_column_name="resolution", schema="mb"
+    )
+    op.alter_column(
+        "probabilities", "cluster_id", new_column_name="cluster", schema="mb"
+    )
+
+    # Recreate constraints and indexes with old column names
+    op.create_primary_key(
+        "probabilities_pkey", "probabilities", ["resolution", "cluster"], schema="mb"
+    )
+    op.create_foreign_key(
+        "probabilities_resolution_fkey",
+        "probabilities",
+        "resolutions",
+        ["resolution"],
+        ["resolution_id"],
+        source_schema="mb",
+        referent_schema="mb",
+        ondelete="CASCADE",
+    )
+    op.create_foreign_key(
+        "probabilities_cluster_fkey",
+        "probabilities",
+        "clusters",
+        ["cluster"],
+        ["cluster_id"],
+        source_schema="mb",
+        referent_schema="mb",
+        ondelete="CASCADE",
+    )
+    op.create_index(
+        "ix_probabilities_resolution",
+        "probabilities",
+        ["resolution"],
+        unique=False,
+        schema="mb",
+    )
+
+    # Revert contains table structure (root/leaf -> parent/child)
     op.add_column(
         "contains",
         sa.Column("child", sa.BIGINT(), autoincrement=False, nullable=False),

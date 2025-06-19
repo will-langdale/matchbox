@@ -153,17 +153,16 @@ def _build_probability_subquery(
     return (
         select(
             Contains.leaf,
-            Probabilities.cluster.label(f"cluster{subquery_name}"),
+            Probabilities.cluster_id.label(f"cluster{subquery_name}"),
             literal(priority_value).label(f"priority{subquery_name}"),
         )
         .select_from(
-            join(Contains, Probabilities, Contains.root == Probabilities.cluster)
+            join(Contains, Probabilities, Contains.root == Probabilities.cluster_id)
         )
         .where(
             and_(
-                Probabilities.resolution == res_id,
+                Probabilities.resolution_id == res_id,
                 Probabilities.probability >= threshold_val,
-                Probabilities.role_flag >= 1,
             )
         )
         .subquery(f"j{subquery_name}")
@@ -411,10 +410,9 @@ def _build_matching_leaves_cte(
                     ),
                     Probabilities,
                     and_(
-                        Contains.root == Probabilities.cluster,
-                        Probabilities.resolution == res_id,
+                        Contains.root == Probabilities.cluster_id,
+                        Probabilities.resolution_id == res_id,
                         Probabilities.probability >= threshold_val,
-                        Probabilities.role_flag >= 1,
                     ),
                 ),
                 target_cluster_cte,  # CROSS JOIN with target_cluster
@@ -422,7 +420,7 @@ def _build_matching_leaves_cte(
             .where(
                 and_(
                     ClusterSourceKey.source_config_id.in_(target_source_config_ids),
-                    Probabilities.cluster == target_cluster_cte.c.cluster_id,
+                    Probabilities.cluster_id == target_cluster_cte.c.cluster_id,
                 )
             )
         )

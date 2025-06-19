@@ -1,6 +1,5 @@
 """Utilities for inserting data into the PostgreSQL backend."""
 
-from enum import Flag, auto
 from typing import Iterator
 
 import polars as pl
@@ -27,6 +26,7 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     ResolutionFrom,
     Resolutions,
+    Results,
     SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import (
@@ -35,13 +35,6 @@ from matchbox.server.postgresql.utils.db import (
     large_ingest,
 )
 from matchbox.server.postgresql.utils.query import get_clusters_with_leaves
-
-
-class ClusterClosureRole(Flag):
-    """Flags for cluster roles in the closure hierarchy system."""
-
-    PAIR = auto()
-    COMPONENT = auto()
 
 
 class HashIDMap:
@@ -466,7 +459,7 @@ def _build_cluster_hierarchy(
 
     djs = DisjointSet[Cluster]()
     all_clusters: dict[bytes, Cluster] = {}
-    component_cache: set[frozenset[Cluster]] = set()
+    seen_components: set[frozenset[Cluster]] = set()
     threshold: int = int(pa.compute.max(probabilities["probability"]).as_py())
 
     def _process_components(probability: int) -> None:
@@ -474,33 +467,21 @@ def _build_cluster_hierarchy(
         components: set[frozenset[Cluster]] = {
             frozenset(component) for component in djs.get_components()
         }
-        for component in components.difference(component_cache):
+        for component in components.difference(seen_components):
             cluster = Cluster.combine(
                 clusters=component,
                 probability=probability,
-                flag=ClusterClosureRole.COMPONENT,
             )
-            if cluster.hash in all_clusters:
-                all_clusters[cluster.hash].add_flag(ClusterClosureRole.COMPONENT)
-            else:
-                all_clusters[cluster.hash] = cluster
+            all_clusters[cluster.hash] = cluster
 
         return components
 
     for left_cluster, right_cluster, probability in _results_to_cluster_pairs(
         cluster_lookup, probabilities
     ):
-        # Process pairwise probabilities
-        pair_cluster = Cluster.combine(
-            clusters=(left_cluster, right_cluster),
-            probability=probability,
-            flag=ClusterClosureRole.PAIR,
-        )
-        all_clusters[pair_cluster.hash] = pair_cluster
-
         if probability < threshold:
             # Process the components at the previous threshold
-            component_cache = _process_components(probability)
+            seen_components = _process_components(probability)
             threshold = probability
 
         djs.union(left_cluster, right_cluster)
@@ -608,11 +589,11 @@ def _results_to_insert_tables(
             schema=pa.schema([("root", pa.uint64()), ("leaf", pa.uint64())]),
         )
         probabilities = pa.table(
-            {"resolution": [], "cluster": [], "probability": []},
+            {"resolution_id": [], "cluster_id": [], "probability": []},
             schema=pa.schema(
                 [
-                    ("resolution", pa.uint64()),
-                    ("cluster", pa.uint64()),
+                    ("resolution_id", pa.uint64()),
+                    ("cluster_id", pa.uint64()),
                     ("probability", pa.uint8()),
                 ]
             ),
@@ -660,7 +641,7 @@ def _results_to_insert_tables(
         .select("root", "leaf")
     )
 
-    # Use all clusters and unnest probabilities and role flag for Probabilities table
+    # Use all clusters and unnest probabilities for Probabilities table
     new_probabilities_df = (
         all_clusters_df.select("cluster_id", "cluster")
         .with_columns(
@@ -668,26 +649,13 @@ def _results_to_insert_tables(
                 pl.col("cluster")
                 .map_elements(lambda cluster: cluster.probability, return_dtype=pl.Int8)
                 .alias("probability"),
-                pl.col("cluster")
-                .map_elements(
-                    lambda cluster: (
-                        0
-                        if cluster.flag == ClusterClosureRole.PAIR
-                        else 2
-                        if cluster.flag == ClusterClosureRole.COMPONENT
-                        else 1  # union of both
-                    ),
-                    return_dtype=pl.Int8,
-                )
-                .alias("role_flag"),
             ]
         )
         .drop("cluster")
-        .rename({"cluster_id": "cluster"})
         .with_columns(
-            pl.lit(resolution.resolution_id, dtype=pl.Int64).alias("resolution")
+            pl.lit(resolution.resolution_id, dtype=pl.Int64).alias("resolution_id")
         )
-        .select("resolution", "cluster", "probability", "role_flag")
+        .select("resolution_id", "cluster_id", "probability")
     )
 
     logger.info("Wrangling complete!", prefix=log_prefix)
@@ -739,19 +707,25 @@ def insert_results(
 
     with MBDB.get_session() as session:
         try:
-            # Clear existing probabilities for this resolution
+            # Clear existing probabilities and results for this resolution
             stmt = delete(Probabilities).where(
-                Probabilities.resolution == resolution.resolution_id
+                Probabilities.resolution_id == resolution.resolution_id
+            )
+            session.execute(stmt)
+
+            stmt = delete(Results).where(
+                Results.resolution_id == resolution.resolution_id
             )
             session.execute(stmt)
 
             session.commit()
-            logger.info("Removed old probabilities", prefix=log_prefix)
+            logger.info("Removed old probabilities and results", prefix=log_prefix)
 
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(
-                f"Failed to clear old probabilities or update content hash: {str(e)}",
+                "Failed to clear old probabilities and results "
+                f"or update content hash: {str(e)}",
                 prefix=log_prefix,
             )
             raise
@@ -792,6 +766,22 @@ def insert_results(
         logger.info(
             f"Successfully inserted "
             f"{probabilities.shape[0]:,} objects into Probabilities table",
+            prefix=log_prefix,
+        )
+
+        large_ingest(
+            data=pl.from_arrow(results)
+            .with_columns(
+                pl.lit(resolution.resolution_id).cast(pl.UInt64).alias("resolution_id")
+            )
+            .select("resolution_id", "left_id", "right_id", "probability")
+            .to_arrow(),
+            table_class=Results,
+            max_chunksize=batch_size,
+        )
+
+        logger.info(
+            f"Successfully inserted {results.shape[0]:,} objects into Results table",
             prefix=log_prefix,
         )
 
