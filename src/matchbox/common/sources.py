@@ -41,6 +41,7 @@ from matchbox.common.db import (
 from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.exceptions import MatchboxSourceCredentialsError
 from matchbox.common.hash import HashMethod, hash_rows
+from matchbox.common.logging import logger
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -462,6 +463,12 @@ class SourceConfig(BaseModel):
         Returns:
             A PyArrow Table containing source keys and their hashes.
         """
+        log_prefix = f"Hash {self.name}"
+        batch_info = (
+            f"with batch size {batch_size:,}" if batch_size else "without batching"
+        )
+        logger.debug(f"Retrieving and hashing {batch_info}", log_prefix=log_prefix)
+
         key_field: str = self.key_field.name
         index_fields: list[str] = [field.name for field in self.index_fields]
 
