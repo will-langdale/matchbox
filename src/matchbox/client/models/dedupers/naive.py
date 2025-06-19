@@ -70,17 +70,14 @@ class NaiveDeduper(Deduper):
             ) raw
                 where raw.left_id != raw.right_id;
         """
-        df_arrow = duckdb.sql(sql).arrow()
-        result_pl = pl.from_arrow(df_arrow)
-        del df_arrow
 
-        # Ensure ID columns are uint64 (required by Results validation)
-        if result_pl.schema["left_id"] != pl.UInt64:
-            result_pl = result_pl.with_columns(
+        return (
+            duckdb.sql(sql)
+            .pl()
+            .with_columns(
                 [
                     pl.col("left_id").cast(pl.UInt64),
                     pl.col("right_id").cast(pl.UInt64),
                 ]
             )
-
-        return result_pl
+        )

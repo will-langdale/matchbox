@@ -54,16 +54,14 @@ def run_cleaner_test(
     dirty, clean = create_test_case(input_data, expected_output, column_name)  # noqa: F841
 
     # Apply the cleaner function using duckdb
-    cleaned = pl.from_arrow(
-        duckdb.sql(
-            f"""
-            select
-                {cleaner_func(column_name)} as {column_name}
-            from
-                dirty
-            """
-        ).arrow()
-    )
+    cleaned = duckdb.sql(
+        f"""
+        select
+            {cleaner_func(column_name)} as {column_name}
+        from
+            dirty
+        """
+    ).pl()
 
     # Handle list-type columns for equality comparison
     if any(isinstance(item, list) for item in expected_output):

@@ -45,12 +45,16 @@ def cleaning_function(*functions: Callable) -> Callable:
             See clean_basic for some examples
     """
 
-    def cleaning_method(df: pl.DataFrame, column: str) -> pl.DataFrame:
-        # Create a single SQL statement that applies all transformations
-        # This maintains proper DuckDB context for lambda expressions
-        nested_transform = column
+    def cleaning_method(df: pl.DataFrame, column: str) -> pl.DataFrame:  # noqa: ARG001
+        """Applies a series of cleaning functions to a specified column.
+
+        Create a single SQL statement that applies all transformations
+        This maintains proper DuckDB context for lambda expressions
+        """
+        nested_transform: str = column
+
         for f in functions:
-            nested_transform = f(nested_transform)
+            nested_transform: str = f(nested_transform)
 
         sql = f"""
             select
@@ -60,11 +64,7 @@ def cleaning_function(*functions: Callable) -> Callable:
                 df;
         """
 
-        df_arrow = duckdb.sql(sql).arrow()
-        result_df = pl.from_arrow(df_arrow)
-        del df_arrow
-
-        return result_df
+        return duckdb.sql(sql).pl()
 
     return cleaning_method
 
@@ -85,13 +85,7 @@ def alias(function: Callable, alias: str) -> Callable:
             from
                 df;
         """
-        aliased_arrow = duckdb.sql(aliased_sql).arrow()
-        aliased = pl.from_arrow(aliased_arrow)
-        del aliased_arrow
-
-        processed = function(aliased, alias)
-
-        return processed
+        return function(duckdb.sql(aliased_sql).pl(), alias)
 
     return cleaning_method
 
@@ -115,12 +109,7 @@ def unnest_renest(function: Callable) -> Callable:
             from
                 df;
         """
-
-        unnest_arrow = duckdb.sql(unnest_sql).arrow()
-        unnest = pl.from_arrow(unnest_arrow)
-        del unnest_arrow
-
-        processed = function(unnest, column)
+        processed = function(duckdb.sql(unnest_sql).pl(), column)
 
         any_value = [
             f"any_value({col}) as {col}"
@@ -141,10 +130,6 @@ def unnest_renest(function: Callable) -> Callable:
             group by nest_id;
         """
 
-        renest_arrow = duckdb.sql(renest_sql).arrow()
-        renest = pl.from_arrow(renest_arrow)
-        del renest_arrow
-
-        return renest
+        return duckdb.sql(renest_sql).pl()
 
     return cleaning_method
