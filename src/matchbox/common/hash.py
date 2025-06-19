@@ -2,7 +2,7 @@
 
 import base64
 import hashlib
-from enum import Flag, StrEnum
+from enum import StrEnum
 from typing import Iterable, Self, TypeVar
 from uuid import UUID
 
@@ -282,8 +282,8 @@ class IntMap:
 class Cluster:
     """A cluster of connected components.
 
-    Can be a leaf node (a single data point) or a non-leaf node (a cluster of
-    clusters). The hash of a cluster is the hash of its leaves.
+    Can be a source cluster (a single data point) or a model cluster (a cluster of
+    clusters). The hash of a cluster is the hash of its source clusters -- its leaves.
 
     We generate negative integers for IDs, allowing us to generate a true ID with
     the database after we've calculated components using these objects.
@@ -293,7 +293,6 @@ class Cluster:
     probability: int | None
     hash: bytes
     leaves: tuple["Cluster"] | None
-    flag: Flag | None = None
 
     _intmap: IntMap  # Reference to the IntMap singleton
 
@@ -304,7 +303,6 @@ class Cluster:
         leaves: tuple["Cluster"] | list["Cluster"] | None = None,
         id: int | None = None,
         hash: bytes | None = None,
-        flag: Flag | None = None,
     ):
         """Initialise the Cluster.
 
@@ -315,14 +313,8 @@ class Cluster:
             leaves: A list of Cluster objects that are the leaves of this cluster
             id: The ID of the cluster (only for leaf nodes)
             hash: The hash of the cluster (only for leaf nodes)
-            flag: A flag indicating the role of the cluster (optional). This field can
-                be used to attach additional information to the cluster that's
-                particular to the hierarchical representation the Cluster is
-                involved in forming. For example, in a closure table system
-                we might flag pair clusters.
         """
         self._intmap = intmap
-        self.flag = flag
         self.probability = probability
 
         if leaves:
@@ -336,7 +328,7 @@ class Cluster:
         elif self.leaves is None:
             raise ValueError("Leaf nodes must have hash specified")
         else:
-            self.hash = HASH_FUNC(b"".join(leaf.hash for leaf in self.leaves)).digest()
+            self.hash = HASH_FUNC(b"|".join(leaf.hash for leaf in self.leaves)).digest()
 
         # Set ID - use provided ID or calculate
         if id is not None:
@@ -346,24 +338,12 @@ class Cluster:
         else:
             self.id = intmap.index(leaf.id for leaf in self.leaves)
 
-    def add_flag(self, flag: Flag) -> None:
-        """Add a flag to the cluster.
-
-        Args:
-            flag: The flag to add
-        """
-        if self.flag is None:
-            self.flag = flag
-        else:
-            self.flag |= flag
-
     @classmethod
     def combine(
         cls: type[Self],
         clusters: Iterable["Cluster"],
         intmap: IntMap | None = None,
         probability: int | None = None,
-        flag: Flag | None = None,
     ) -> "Cluster":
         """Efficiently combine multiple clusters at once.
 
@@ -372,14 +352,10 @@ class Cluster:
             intmap: An IntMap instance for generating unique IDs. Defaults to the
                 first cluster's IntMap if not provided.
             probability: the probability of the cluster from its resolution
-            flag: A flag indicating the role of the cluster
 
         Returns:
             A new Cluster containing all unique leaves from the input clusters
         """
-        if not clusters:
-            return None
-
         clusters = list(clusters)
         if len(clusters) == 1:
             return clusters[0]
@@ -398,5 +374,4 @@ class Cluster:
             intmap=intmap,
             probability=probability,
             leaves=list(unique_dict.values()),
-            flag=flag,
         )
