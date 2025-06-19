@@ -203,12 +203,12 @@ class TestE2EAnalyticalUser:
                 },
                 credentials=self.warehouse_engine,
             )
-            raw_df = query(source_select, return_type="pandas")
+            raw_df = query(source_select, return_type="polars")
             clusters = query_to_cluster_entities(
                 query=raw_df,
                 keys={source_config.name: source_config.qualified_key},
             )
-            df = raw_df.drop(columns=[source_config.qualified_key])
+            df = raw_df.drop(source_config.qualified_key)
 
             # Apply cleaning based on features in the source
             cleaned = _clean_company_name(df, source_config.prefix)
@@ -285,13 +285,13 @@ class TestE2EAnalyticalUser:
                     credentials=self.warehouse_engine,
                 ),
                 resolution=deduper_names[left_source.name],
-                return_type="pandas",
+                return_type="polars",
             )
             left_clusters = query_to_cluster_entities(
                 query=left_raw_df,
                 keys={left_source.name: left_source.qualified_key},
             )
-            left_df = left_raw_df.drop(columns=[left_source.qualified_key])
+            left_df = left_raw_df.drop(left_source.qualified_key)
 
             right_raw_df = query(
                 select(
@@ -299,13 +299,13 @@ class TestE2EAnalyticalUser:
                     credentials=self.warehouse_engine,
                 ),
                 resolution=deduper_names[right_source.name],
-                return_type="pandas",
+                return_type="polars",
             )
             right_clusters = query_to_cluster_entities(
                 query=right_raw_df,
                 keys={right_source.name: right_source.qualified_key},
             )
-            right_df = right_raw_df.drop(columns=[right_source.qualified_key])
+            right_df = right_raw_df.drop(right_source.qualified_key)
 
             # Apply cleaning based on features in the sources
             left_cleaned = _clean_company_name(left_df, left_source.prefix)
@@ -380,7 +380,7 @@ class TestE2EAnalyticalUser:
             ),
             select({duns_source.name: ["key"]}, credentials=self.warehouse_engine),
             resolution=linker_names[first_pair],
-            return_type="pandas",
+            return_type="polars",
         )
         left_clusters = query_to_cluster_entities(
             query=left_raw_df,
@@ -390,7 +390,7 @@ class TestE2EAnalyticalUser:
             },
         )
         left_df = left_raw_df.drop(
-            columns=[crn_source.qualified_key, duns_source.qualified_key]
+            [crn_source.qualified_key, duns_source.qualified_key]
         )
 
         right_raw_df = query(
@@ -398,12 +398,12 @@ class TestE2EAnalyticalUser:
                 {cdms_source.name: ["key", "crn"]}, credentials=self.warehouse_engine
             ),
             resolution=deduper_names[cdms_source.name],
-            return_type="pandas",
+            return_type="polars",
         )
         right_clusters = query_to_cluster_entities(
             query=right_raw_df, keys={cdms_source.name: cdms_source.qualified_key}
         )
-        right_df = right_raw_df.drop(columns=[cdms_source.qualified_key])
+        right_df = right_raw_df.drop(cdms_source.qualified_key)
 
         # Apply cleaning if needed
         left_cleaned = _clean_company_name(left_df, crn_source.prefix)
@@ -468,7 +468,7 @@ class TestE2EAnalyticalUser:
                 credentials=self.warehouse_engine,
             ),
             resolution=final_linker_name,
-            return_type="pandas",
+            return_type="polars",
         )
 
         final_clusters = query_to_cluster_entities(
@@ -482,12 +482,12 @@ class TestE2EAnalyticalUser:
 
         # Verify the final data structure - number of unique entities
         assert (
-            final_df["id"].nunique()
+            final_df["id"].n_unique()
             == len(self.linked_testkit.true_entities)
             == self.n_true_entities
         ), (
             f"Expected {len(self.linked_testkit.true_entities)} unique entities, "
-            f"got {final_df['id'].nunique()}"
+            f"got {final_df['id'].n_unique()}"
         )
 
         # Verify the final cluster membership -- the golden check
