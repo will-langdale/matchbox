@@ -467,7 +467,7 @@ class SourceConfig(BaseModel):
         batch_info = (
             f"with batch size {batch_size:,}" if batch_size else "without batching"
         )
-        logger.debug(f"Retrieving and hashing {batch_info}", log_prefix=log_prefix)
+        logger.debug(f"Retrieving and hashing {batch_info}", prefix=log_prefix)
 
         key_field: str = self.key_field.name
         index_fields: list[str] = [field.name for field in self.index_fields]
