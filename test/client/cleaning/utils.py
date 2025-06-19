@@ -63,18 +63,6 @@ def run_cleaner_test(
         """
     ).pl()
 
-    # Handle list-type columns for equality comparison
-    if any(isinstance(item, list) for item in expected_output):
-        # Convert to Python lists for comparison
-        cleaned_values = cleaned[column_name].to_list()
-        expected_values = clean[column_name].to_list()
-
-        # Check if lists match by converting to string representation
-        cleaned_str = str(cleaned_values)
-        expected_str = str(expected_values)
-
-        return cleaned, cleaned_str == expected_str
-
     return cleaned, cleaned.equals(clean)
 
 
@@ -99,17 +87,5 @@ def run_composed_test(
 
     # Apply the composed function
     cleaned = composed_func(dirty, column=column_name)
-
-    # Handle list-type columns for equality comparison
-    if any(isinstance(item, list) for item in expected_output):
-        # Convert to Python lists for comparison
-        cleaned_values = cleaned[column_name].to_list()
-        expected_values = clean[column_name].to_list()
-
-        # Check if lists match by converting to string representation
-        cleaned_str = str(cleaned_values)
-        expected_str = str(expected_values)
-
-        return cleaned, cleaned_str == expected_str
 
     return cleaned, cleaned.equals(clean)

@@ -60,9 +60,9 @@ def abbreviation_expander() -> Callable[[str], str]:
 def test_clean_punctuation_basic():
     """Test clean_punctuation with basic inputs."""
     cleaned, success = run_cleaner_test(
-        clean_punctuation,
-        ["!@#$%^&*()_+=-{}[]\"|\\'\\§±<>,./?`~`£__foo"],
-        ["foo"],
+        cleaner_func=clean_punctuation,
+        input_data=["!@#$%^&*()_+=-{}[]\"|\\'\\§±<>,./?`~`£__foo"],
+        expected_output=["foo"],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -70,9 +70,9 @@ def test_clean_punctuation_basic():
 def test_clean_punctuation_spaces():
     """Test clean_punctuation with spaces and periods."""
     cleaned, success = run_cleaner_test(
-        clean_punctuation,
-        ["        bar.       "],
-        ["bar"],
+        cleaner_func=clean_punctuation,
+        input_data=["        bar.       "],
+        expected_output=["bar"],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -80,76 +80,49 @@ def test_clean_punctuation_spaces():
 def test_clean_punctuation_case():
     """Test clean_punctuation with uppercase."""
     cleaned, success = run_cleaner_test(
-        clean_punctuation,
-        ["BAZ"],
-        ["baz"],
+        cleaner_func=clean_punctuation,
+        input_data=["BAZ"],
+        expected_output=["baz"],
     )
     assert success, f"Failed with output: {cleaned}"
 
 
-def test_tokenise_basic():
-    """Test tokenise with basic inputs."""
-    cleaned, _ = run_cleaner_test(
-        tokenise,
-        ["hello world"],
-        [["hello", "world"]],
-    )
-
-    # Use Polars indexing to get the first element
-    result = cleaned["col"].to_list()[0]
-    expected = ["hello", "world"]
-
-    assert result == expected, f"Got {result} instead of {expected}"
-
-
-def test_tokenise_multi_words():
+def test_tokenise():
     """Test tokenise with multiple words."""
-    cleaned, _ = run_cleaner_test(
-        tokenise,
-        ["one two three"],
-        [["one", "two", "three"]],
+    cleaned, success = run_cleaner_test(
+        cleaner_func=tokenise,
+        input_data=["one two three"],
+        expected_output=[["one", "two", "three"]],
     )
-
-    result = cleaned["col"].to_list()[0]
-    expected = ["one", "two", "three"]
-
-    assert result == expected, f"Got {result} instead of {expected}"
+    assert success, f"Failed with output: {cleaned}"
 
 
 def test_remove_stopwords_basic(stopwords_remover: Callable[[str], str]):
     """Test remove_stopwords with basic inputs."""
-    cleaned, _ = run_cleaner_test(
-        stopwords_remover,
-        [["company", "ltd"]],
-        [["company"]],
+    cleaned, success = run_cleaner_test(
+        cleaner_func=stopwords_remover,
+        input_data=[["company", "ltd"]],
+        expected_output=[["company"]],
     )
-
-    result = cleaned["col"].to_list()[0]
-    expected = ["company"]
-
-    assert result == expected, f"Got {result} instead of {expected}"
+    assert success, f"Failed with output: {cleaned}"
 
 
 def test_remove_stopwords_middle(stopwords_remover: Callable[[str], str]):
     """Test remove_stopwords with stopword in the middle."""
-    cleaned, _ = run_cleaner_test(
-        stopwords_remover,
-        [["hello", "plc", "world"]],
-        [["hello", "world"]],
+    cleaned, success = run_cleaner_test(
+        cleaner_func=stopwords_remover,
+        input_data=[["hello", "plc", "world"]],
+        expected_output=[["hello", "world"]],
     )
-
-    result = cleaned["col"].to_list()[0]
-    expected = ["hello", "world"]
-
-    assert result == expected, f"Got {result} instead of {expected}"
+    assert success, f"Failed with output: {cleaned}"
 
 
 def test_list_join_basic():
     """Test list_join_to_string with basic inputs."""
     cleaned, success = run_cleaner_test(
-        list_join_to_string,
-        [["hello", "world"]],
-        ["hello world"],
+        cleaner_func=list_join_to_string,
+        input_data=[["hello", "world"]],
+        expected_output=["hello world"],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -157,9 +130,9 @@ def test_list_join_basic():
 def test_list_join_multi():
     """Test list_join_to_string with multiple words."""
     cleaned, success = run_cleaner_test(
-        list_join_to_string,
-        [["one", "two", "three"]],
-        ["one two three"],
+        cleaner_func=list_join_to_string,
+        input_data=[["one", "two", "three"]],
+        expected_output=["one two three"],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -167,9 +140,9 @@ def test_list_join_multi():
 def test_expand_abbreviations_both(abbreviation_expander: Callable[[str], str]):
     """Test expand_abbreviations with both replacements."""
     cleaned, success = run_cleaner_test(
-        abbreviation_expander,
-        ["co ltd"],
-        ["company limited"],
+        cleaner_func=abbreviation_expander,
+        input_data=["co ltd"],
+        expected_output=["company limited"],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -177,9 +150,9 @@ def test_expand_abbreviations_both(abbreviation_expander: Callable[[str], str]):
 def test_expand_abbreviations_single(abbreviation_expander: Callable[[str], str]):
     """Test expand_abbreviations with one replacement."""
     cleaned, success = run_cleaner_test(
-        abbreviation_expander,
-        ["co only"],
-        ["company only"],
+        cleaner_func=abbreviation_expander,
+        input_data=["co only"],
+        expected_output=["company only"],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -193,9 +166,9 @@ def test_function_tokenise():
     """Test composed tokenise function."""
     func = cleaning_function(tokenise)
     cleaned, success = run_composed_test(
-        func,
-        ["hello world"],
-        [["hello", "world"]],
+        composed_func=func,
+        input_data=["hello world"],
+        expected_output=[["hello", "world"]],
     )
     assert success, f"Failed with output: {cleaned}"
 
@@ -203,16 +176,12 @@ def test_function_tokenise():
 def test_function_passthrough():
     """Test composed passthrough function."""
     func = cleaning_function(passthrough)
-    expected = "unchanged text"
-    cleaned, _ = run_composed_test(
-        func,
-        ["unchanged text"],
-        [expected],
+    cleaned, success = run_composed_test(
+        composed_func=func,
+        input_data=["unchanged text"],
+        expected_output=["unchanged text"],
     )
-
-    result = cleaned["col"].to_list()[0]
-
-    assert result == expected, f"Got {result} instead of {expected}"
+    assert success, f"Failed with output: {cleaned}"
 
 
 def test_function_clean_names(
@@ -226,16 +195,12 @@ def test_function_clean_names(
         stopwords_remover,
         list_join_to_string,
     )
-    expected = "company limited"
-    cleaned, _ = run_composed_test(
-        func,
-        ["co. ltd!@#"],
-        [expected],
+    cleaned, success = run_composed_test(
+        composed_func=func,
+        input_data=["co. ltd!@#"],
+        expected_output=["company limited"],
     )
-
-    result = cleaned["col"].to_list()[0]
-
-    assert result == expected, f"Got {result} instead of {expected}"
+    assert success, f"Failed with output: {cleaned}"
 
 
 # ---------------------------
@@ -249,19 +214,12 @@ def test_nest_unnest_abbreviations(abbreviation_expander: Callable[[str], str]):
     unnested_func = unnest_renest(test_func)
 
     dirty, clean = create_test_case(
-        [["co ltd", "another co"]],
-        [["company limited", "another company"]],
+        input_data=[["co ltd", "another co"]],
+        expected_output=[["company limited", "another company"]],
     )
     cleaned = unnested_func(dirty, column="col")
 
-    # Convert to Python lists for deep comparison
-    cleaned_list = cleaned["col"].to_list()
-    clean_list = clean["col"].to_list()
-
-    # Compare the lists directly - they should be identical nested lists
-    assert cleaned_list == clean_list, (
-        f"Failed with output: {cleaned_list}, expected: {clean_list}"
-    )
+    assert all((cleaned == clean)["col"].to_list()), f"Failed with output: {cleaned}"
 
 
 def test_nest_unnest_passthrough():
@@ -270,19 +228,12 @@ def test_nest_unnest_passthrough():
     unnested_func = unnest_renest(test_func)
 
     dirty, clean = create_test_case(
-        [["text1", "text2"]],
-        [["text1", "text2"]],
+        input_data=[["text1", "text2"]],
+        expected_output=[["text1", "text2"]],
     )
     cleaned = unnested_func(dirty, column="col")
 
-    # Convert to Python lists for deep comparison
-    cleaned_list = cleaned["col"].to_list()
-    clean_list = clean["col"].to_list()
-
-    # Compare the lists directly - they should be identical nested lists
-    assert cleaned_list == clean_list, (
-        f"Failed with output: {cleaned_list}, expected: {clean_list}"
-    )
+    assert all((cleaned == clean)["col"].to_list()), f"Failed with output: {cleaned}"
 
 
 # ---------------------
@@ -295,7 +246,10 @@ def test_alias():
     test_func = cleaning_function(passthrough)
     alias_func = alias(test_func, "foo")
 
-    dirty, _ = create_test_case(["test text"], ["test text"])
+    dirty, _ = create_test_case(
+        input_data=["test text"],
+        expected_output=["test text"],
+    )
     cleaned = alias_func(dirty, column="col")
 
     assert "foo" in cleaned.columns, f"Alias column not found in {cleaned.columns}"
@@ -303,7 +257,10 @@ def test_alias():
 
 def test_drop():
     """Test the drop function."""
-    dirty, _ = create_test_case(["text to drop"], [""])
+    dirty, _ = create_test_case(
+        input_data=["text to drop"],
+        expected_output=[""],
+    )
     cleaned = drop(dirty, column="col")
 
     assert len(cleaned.columns) == 0, (
