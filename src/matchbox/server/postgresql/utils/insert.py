@@ -4,7 +4,6 @@ from typing import Iterator
 
 import polars as pl
 import pyarrow as pa
-import pyarrow.compute as pc
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -13,10 +12,10 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.exceptions import MatchboxResolutionAlreadyExists
 from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.hash import Cluster, IntMap, hash_arrow_table
+from matchbox.common.hash import IntMap, hash_arrow_table
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
-from matchbox.common.transform import DisjointSet
+from matchbox.common.transform import Cluster, DisjointSet
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
     Clusters,
@@ -35,83 +34,6 @@ from matchbox.server.postgresql.utils.db import (
     large_ingest,
 )
 from matchbox.server.postgresql.utils.query import get_clusters_with_leaves
-
-
-class HashIDMap:
-    """An object to help map between IDs and hashes.
-
-    When given a set of IDs, returns their hashes. If any ID doesn't have a hash,
-    it will error.
-
-    When given a set of hashes, it will return their IDs. If any don't have IDs, it
-    will create one and return it as part of the set.
-
-    Args:
-        start: The first integer to use for new IDs
-        lookup (optional): A lookup table to use for existing hashes
-    """
-
-    def __init__(self, start: int | None = None, lookup: pa.Table | None = None):
-        """Initialise the HashIDMap object."""
-        self.next_int = start
-        if not lookup:
-            self.lookup = pa.Table.from_arrays(
-                [
-                    pa.array([], type=pa.uint64()),
-                    pa.array([], type=pa.large_binary()),
-                    pa.array([], type=pa.bool_()),
-                ],
-                names=["id", "hash", "new"],
-            )
-        else:
-            new_column = pa.array([False] * lookup.shape[0], type=pa.bool_())
-            self.lookup = pa.Table.from_arrays(
-                [lookup["id"], lookup["hash"], new_column], names=["id", "hash", "new"]
-            )
-
-    def get_hashes(self, ids: pa.UInt64Array) -> pa.LargeBinaryArray:
-        """Returns the hashes of the given IDs."""
-        indices = pc.index_in(ids, self.lookup["id"])
-
-        if pc.any(pc.is_null(indices)).as_py():
-            m_mask = pc.is_null(indices)
-            m_ids = pc.filter(ids, m_mask)
-
-            raise ValueError(
-                f"The following IDs were not found in lookup table: {m_ids.to_pylist()}"
-            )
-
-        return pc.take(self.lookup["hash"], indices)
-
-    def generate_ids(self, hashes: pa.BinaryArray) -> pa.UInt64Array:
-        """Returns the IDs of the given hashes, assigning new IDs for unknown hashes."""
-        if self.next_int is None:
-            raise RuntimeError("`next_int` was unset for HasIDMap")
-
-        indices = pc.index_in(hashes, self.lookup["hash"])
-        new_hashes = pc.unique(pc.filter(hashes, pc.is_null(indices)))
-
-        if len(new_hashes) > 0:
-            new_ids = pa.array(
-                range(self.next_int, self.next_int + len(new_hashes)),
-                type=pa.uint64(),
-            )
-
-            new_entries = pa.Table.from_arrays(
-                [
-                    new_ids,
-                    new_hashes,
-                    pa.array([True] * len(new_hashes), type=pa.bool_()),
-                ],
-                names=["id", "hash", "new"],
-            )
-
-            self.next_int += len(new_hashes)
-            self.lookup = pa.concat_tables([self.lookup, new_entries])
-
-            indices = pc.index_in(hashes, self.lookup["hash"])
-
-        return pc.take(self.lookup["id"], indices)
 
 
 def insert_source(
