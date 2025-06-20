@@ -1,9 +1,8 @@
 """A linking methodology based on a deterministic set of conditions."""
 
-from typing import Iterable, Type
+from typing import Iterable
 
 import polars as pl
-from pandas import DataFrame
 from pydantic import Field, field_validator
 
 from matchbox.client.helpers import comparison
@@ -45,9 +44,6 @@ class DeterministicLinker(Linker):
 
     settings: DeterministicSettings
 
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
-
     @classmethod
     def from_settings(
         cls, left_id: str, right_id: str, comparisons: str
@@ -58,14 +54,14 @@ class DeterministicLinker(Linker):
         )
         return cls(settings=settings)
 
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
         pass
 
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
-        left_pl = pl.from_pandas(left).lazy()  # noqa: F841
-        right_pl = pl.from_pandas(right).lazy()  # noqa: F841
+        left_pl = left.lazy()  # noqa: F841
+        right_pl = right.lazy()  # noqa: F841
 
         subqueries = []
         for i, condition in enumerate(self.settings.comparisons):
@@ -90,4 +86,12 @@ class DeterministicLinker(Linker):
             FROM ({union_query}) as final
         """
 
-        return pl.sql(final_query).collect().to_pandas()
+        return (
+            pl.sql(final_query)
+            .with_columns(
+                [
+                    pl.col("probability").cast(pl.Float32),
+                ]
+            )
+            .collect()
+        )

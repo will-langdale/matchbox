@@ -3,9 +3,9 @@
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from matchbox.common.arrow import SCHEMA_RESULTS
@@ -62,13 +62,13 @@ class Results(BaseModel):
 
     @field_validator("probabilities", mode="before")
     @classmethod
-    def check_probabilities(cls, value: pa.Table | DataFrame) -> pa.Table:
+    def check_probabilities(cls, value: pa.Table | pl.DataFrame) -> pa.Table:
         """Verifies the probabilities table contains the expected fields."""
-        if isinstance(value, DataFrame):
-            value = pa.Table.from_pandas(value, preserve_index=False)
+        if isinstance(value, pl.DataFrame):
+            value = value.to_arrow()
 
         if not isinstance(value, pa.Table):
-            raise ValueError("Expected a pandas DataFrame or pyarrow Table.")
+            raise ValueError("Expected a polars DataFrame or pyarrow Table.")
 
         expected_fields = set(SCHEMA_RESULTS.names)
         if set(value.column_names) != expected_fields:
@@ -114,56 +114,60 @@ class Results(BaseModel):
 
     def _merge_with_source_data(
         self,
-        base_df: DataFrame,
+        base_df: pl.DataFrame,
         base_df_cols: list[str],
-        left_data: DataFrame,
+        left_data: pl.DataFrame,
         left_key: str,
-        right_data: DataFrame,
+        right_data: pl.DataFrame,
         right_key: str,
         left_merge_col: str,
         right_merge_col: str,
-    ) -> DataFrame:
+    ) -> pl.DataFrame:
         """Helper method to merge results with source data frames."""
         return (
-            base_df.filter(base_df_cols)
-            .merge(
+            base_df.select(base_df_cols)
+            .join(
                 left_data,
                 how="left",
                 left_on=left_merge_col,
                 right_on=left_key,
             )
-            .drop(columns=[left_key])
-            .merge(
+            .drop(left_key)
+            .join(
                 right_data,
                 how="left",
                 left_on=right_merge_col,
                 right_on=right_key,
             )
-            .drop(columns=[right_key])
+            .drop(right_key)
         )
 
-    def probabilities_to_pandas(self) -> DataFrame:
-        """Returns the probability results as a DataFrame."""
+    def probabilities_to_polars(self) -> pl.DataFrame:
+        """Returns the probability results as a polars DataFrame."""
         df = (
-            self.probabilities.to_pandas(types_mapper=ArrowDtype)
-            .assign(
-                left=self.model.model_config.left_resolution,
-                right=self.model.model_config.right_resolution,
-                model=self.model_config.name,
+            pl.from_arrow(self.probabilities)
+            .with_columns(
+                [
+                    pl.lit(self.model.model_config.left_resolution).alias("left"),
+                    pl.lit(self.model.model_config.right_resolution).alias("right"),
+                    pl.lit(self.metadata.name).alias("model"),
+                ]
             )
-            .convert_dtypes(dtype_backend="pyarrow")[
-                ["model", "left", "left_id", "right", "right_id", "probability"]
-            ]
+            .select(["model", "left", "left_id", "right", "right_id", "probability"])
         )
 
         return df
 
     def inspect_probabilities(
-        self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
-    ) -> DataFrame:
+        self,
+        left_data: pl.DataFrame,
+        left_key: str,
+        right_data: pl.DataFrame,
+        right_key: str,
+    ) -> pl.DataFrame:
         """Enriches the probability results with the source data."""
         return self._merge_with_source_data(
-            base_df=self.probabilities_to_pandas(),
+            base_df=self.probabilities_to_polars(),
             base_df_cols=["left_id", "right_id", "probability"],
             left_data=left_data,
             left_key=left_key,
@@ -174,21 +178,21 @@ class Results(BaseModel):
         )
 
     @calculate_clusters
-    def clusters_to_pandas(self) -> DataFrame:
-        """Returns the cluster results as a DataFrame."""
-        return self.clusters.to_pandas(types_mapper=ArrowDtype)
+    def clusters_to_polars(self) -> pl.DataFrame:
+        """Returns the cluster results as a polars DataFrame."""
+        return pl.from_arrow(self.clusters)
 
     @calculate_clusters
     def inspect_clusters(
         self,
-        left_data: DataFrame,
+        left_data: pl.DataFrame,
         left_key: str,
-        right_data: DataFrame,
+        right_data: pl.DataFrame,
         right_key: str,
-    ) -> DataFrame:
+    ) -> pl.DataFrame:
         """Enriches the cluster results with the source data."""
         return self._merge_with_source_data(
-            base_df=self.clusters_to_pandas(),
+            base_df=self.clusters_to_polars(),
             base_df_cols=["parent", "child", "probability"],
             left_data=left_data,
             left_key=left_key,

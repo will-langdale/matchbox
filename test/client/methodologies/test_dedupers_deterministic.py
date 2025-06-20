@@ -2,6 +2,7 @@
 
 from typing import Any, Callable
 
+import polars as pl
 import pytest
 
 from matchbox import make_model
@@ -87,7 +88,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_data=source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(source.query).drop("key"),
         left_resolution="source_exact",
     )
     results: Results = deduper.run()
@@ -137,7 +138,7 @@ def test_exact_duplicate_deduplication(
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_data=source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(source.query).drop("key"),
         left_resolution="source_exact",
     )
     results: Results = deduper.run()

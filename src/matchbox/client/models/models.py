@@ -2,7 +2,7 @@
 
 from typing import Any, ParamSpec, TypeVar
 
-from pandas import DataFrame
+import polars as pl
 
 from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
@@ -29,8 +29,8 @@ class Model:
         self,
         metadata: ModelConfig,
         model_instance: Linker | Deduper,
-        left_data: DataFrame,
-        right_data: DataFrame | None = None,
+        left_data: pl.DataFrame,
+        right_data: pl.DataFrame | None = None,
     ):
         """Create a new model instance."""
         self.model_config = metadata
@@ -139,9 +139,9 @@ def make_model(
     description: str,
     model_class: type[Linker] | type[Deduper],
     model_settings: dict[str, Any],
-    left_data: DataFrame,
+    left_data: pl.DataFrame,
     left_resolution: ResolutionName,
-    right_data: DataFrame | None = None,
+    right_data: pl.DataFrame | None = None,
     right_resolution: ResolutionName | None = None,
 ) -> Model:
     """Create a unified model instance for either linking or deduping operations.

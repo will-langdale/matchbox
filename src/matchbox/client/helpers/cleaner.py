@@ -2,7 +2,7 @@
 
 from typing import Any, Callable
 
-from pandas import DataFrame
+import polars as pl
 
 
 def cleaner(function: Callable, arguments: dict) -> dict[str, dict[str, Any]]:
@@ -47,7 +47,7 @@ def cleaners(*cleaner: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {k: v for d in cleaner for k, v in d.items()}
 
 
-def process(data: DataFrame, pipeline: dict[str, dict[str, Any]]) -> DataFrame:
+def process(data: pl.DataFrame, pipeline: dict[str, dict[str, Any]]) -> pl.DataFrame:
     """Apply cleaners to input dataframe.
 
     Args:
