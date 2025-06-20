@@ -213,7 +213,7 @@ class Cluster:
         Args:
             intmap: An IntMap instance for generating unique IDs
             probability: probability of the cluster from its resolution, or None if
-        source
+                source
             leaves: A list of Cluster objects that are the leaves of this cluster
             id: The ID of the cluster (only for leaf nodes)
             hash: The hash of the cluster (only for leaf nodes)
@@ -246,15 +246,12 @@ class Cluster:
     def combine(
         cls: type[Self],
         clusters: Iterable["Cluster"],
-        intmap: IntMap | None = None,
         probability: int | None = None,
     ) -> "Cluster":
         """Efficiently combine multiple clusters at once.
 
         Args:
             clusters: An iterable of Cluster objects to combine
-            intmap: An IntMap instance for generating unique IDs. Defaults to the
-                first cluster's IntMap if not provided.
             probability: the probability of the cluster from its resolution
 
         Returns:
@@ -264,7 +261,7 @@ class Cluster:
         if len(clusters) == 1:
             return clusters[0]
 
-        intmap = intmap if intmap is not None else clusters[0]._intmap
+        intmap = clusters[0]._intmap
         unique_dict: dict[int, Cluster] = {}
 
         for cluster in clusters:

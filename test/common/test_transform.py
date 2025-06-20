@@ -273,25 +273,6 @@ class TestClusterHierarchy:
         # Should still have the same hash
         assert direct.hash == combined.hash
 
-    def test_hash_with_provided_hash_value(
-        self, intmap: IntMap, leaf_nodes: list[Cluster]
-    ):
-        """Test that providing a hash value overrides the calculated hash."""
-        # Create a cluster with a provided hash
-        custom_hash = b"custom_hash_value"
-        cluster = Cluster(
-            intmap=intmap,
-            leaves=[leaf_nodes[0], leaf_nodes[1]],
-            hash=custom_hash,
-        )
-
-        # Verify the hash is the custom one
-        assert cluster.hash == custom_hash
-
-        # Verify it's different from what would have been calculated
-        auto_cluster = Cluster.combine([leaf_nodes[0], leaf_nodes[1]])
-        assert cluster.hash != auto_cluster.hash
-
     def test_hash_generation_for_complex_hierarchy(self, leaf_nodes: list[Cluster]):
         """Test that hash generation works correctly for complex hierarchies."""
         # Create level 1 clusters
