@@ -1,13 +1,13 @@
 """Utilities for querying and matching in the PostgreSQL backend."""
 
-from typing import Any, Literal, TypeVar
+from typing import Literal, TypeVar
 
 import pyarrow as pa
 from sqlalchemy import (
+    CTE,
     ColumnElement,
     FromClause,
     and_,
-    case,
     func,
     join,
     literal,
@@ -55,170 +55,102 @@ def get_source_config(name: SourceResolutionName, session: Session) -> SourceCon
     return source_config
 
 
-def _resolve_thresholds(
-    lineage_truths: dict[int, float | None],
-    resolution: Resolutions,
-    threshold: int | None,
-) -> dict[int, float | None]:
-    """Resolves final thresholds for each resolution in the lineage."""
-    resolved_thresholds = {}
-
-    for resolution_id, default_truth in lineage_truths.items():
-        if default_truth is None:  # Source
-            resolved_thresholds[resolution_id] = None
-        elif threshold is None:  # Model with default threshold
-            resolved_thresholds[resolution_id] = default_truth
-        elif isinstance(threshold, int):  # Model with override
-            resolved_thresholds[resolution_id] = (
-                threshold
-                if resolution_id == resolution.resolution_id
-                else default_truth
-            )
-        else:
-            raise ValueError(f"Invalid threshold type: {type(threshold)}")
-
-    return resolved_thresholds
-
-
-def _get_resolution_priority(
-    resolution_id: int, context_resolution: Resolutions
-) -> int:
-    """Get priority level for a resolution (lower = higher priority)."""
-    with MBDB.get_session() as session:
-        priority_query = select(ResolutionFrom.level).where(
-            and_(
-                ResolutionFrom.parent == resolution_id,
-                ResolutionFrom.child == context_resolution.resolution_id,
-            )
-        )
-        level = session.execute(priority_query).scalar()
-        return level if level is not None else 0
-
-
-def _get_lineage_and_source_filter(
-    resolution: Resolutions, sources: list[Resolutions] | None = None
-) -> tuple[dict[int, float | None], Any]:
-    """Get lineage truths and build source config filter."""
-    if sources:
-        # Get lineage to specific sources only
-        lineage_truths: dict[int, float | None] = {}
-        for source in sources:
-            try:
-                source_lineage = resolution.get_lineage_to_source(source=source)
-                lineage_truths.update(source_lineage)
-            except ValueError:
-                continue
-        if not lineage_truths:
-            raise ValueError("No valid lineage found")
-    else:
-        # Get full lineage
-        lineage_truths: dict[int, float | None] = resolution.get_lineage()
-
-    # Build source config filter from lineage
-    with MBDB.get_session() as session:
-        source_config_ids: list[int] = []
-        for res_id, threshold_val in lineage_truths.items():
-            if threshold_val is None:  # Source resolution
-                source_resolution = session.get(Resolutions, res_id)
-                if source_resolution and source_resolution.source_config:
-                    source_config_ids.append(
-                        source_resolution.source_config.source_config_id
-                    )
-
-        source_config_filter: ColumnElement = (
-            ClusterSourceKey.source_config_id.in_(source_config_ids)
-            if source_config_ids
-            else True
-        )
-
-    return lineage_truths, source_config_filter
-
-
-def _process_model_resolutions_by_priority(
-    resolved_thresholds: dict[int, float | None], resolution: Resolutions
-) -> list[tuple[int, float, int]]:
-    """Extract and sort model resolutions by hierarchy priority."""
-    model_resolutions = [
-        (res_id, threshold_val, _get_resolution_priority(res_id, resolution))
-        for res_id, threshold_val in resolved_thresholds.items()
-        if threshold_val is not None
-    ]
-    return sorted(model_resolutions, key=lambda x: (x[2], x[0]))
-
-
 def _build_probability_subquery(
-    res_id: int, threshold_val: float, priority_value: int, subquery_name: str
+    res_id: int, threshold_val: float, subquery_name: str
 ) -> Select:
     """Build a probability subquery for a given resolution."""
+    # Create unique aliases for this subquery to avoid parameter conflicts
+    contains_alias = aliased(Contains, name=f"contains_{subquery_name}")
+    probabilities_alias = aliased(Probabilities, name=f"prob_{subquery_name}")
+
     return (
         select(
-            Contains.leaf,
-            Probabilities.cluster_id.label(f"cluster{subquery_name}"),
-            literal(priority_value).label(f"priority{subquery_name}"),
+            contains_alias.leaf,
+            probabilities_alias.cluster_id.label(f"cluster_{subquery_name}"),
         )
         .select_from(
-            join(Contains, Probabilities, Contains.root == Probabilities.cluster_id)
+            join(
+                contains_alias,
+                probabilities_alias,
+                contains_alias.root == probabilities_alias.cluster_id,
+            )
         )
         .where(
             and_(
-                Probabilities.resolution_id == res_id,
-                Probabilities.probability >= threshold_val,
+                probabilities_alias.resolution_id == res_id,
+                probabilities_alias.probability >= threshold_val,
             )
         )
-        .subquery(f"j{subquery_name}")
+        .subquery(f"prob_{subquery_name}")
     )
-
-
-def _build_bitwise_priority_case(
-    subqueries: list, cluster_columns: list[ColumnElement]
-) -> ColumnElement:
-    """Build combined priority using bitwise OR and create CASE expression."""
-    if not subqueries:
-        return ClusterSourceKey.cluster_id
-
-    # Build combined priority using bitwise OR
-    priority_columns = [
-        func.coalesce(subquery.c[f"priority{i + 1}"], 0)
-        for i, subquery in enumerate(subqueries)
-    ]
-    combined_priority = priority_columns[0]
-    for col in priority_columns[1:]:
-        combined_priority = combined_priority.op("|")(col)
-
-    # Build CASE conditions in priority order
-    case_conditions = []
-    for i in range(len(subqueries)):
-        bit_value = 2**i
-        case_conditions.append(
-            (combined_priority.op("&")(bit_value) > 0, cluster_columns[i])
-        )
-
-    return case(*case_conditions, else_=ClusterSourceKey.cluster_id)
 
 
 def _build_unified_query(
     resolution: Resolutions,
-    resolved_thresholds: dict[int, float | None],
-    source_config_filter: Any,
+    sources: list[SourceConfigs] | None = None,
+    threshold: int | None = None,
     columns: Literal["full", "id_key"] = "full",
 ) -> Select:
-    """Build unified query to resolve cluster assignments across resolutions."""
-    # Extract and sort model resolutions by hierarchy priority
-    model_resolutions = _process_model_resolutions_by_priority(
-        resolved_thresholds, resolution
-    )
+    """Build a query to resolve cluster assignments across resolution hierarchies.
+
+    This function creates SQL that determines which cluster each source record belongs
+    to by traversing up a resolution hierarchy and applying priority-based cluster
+    selection.
+
+    The query uses `COALESCE` to implement a priority system where higher-level
+    resolutions can "claim" records, with lower levels only processing unclaimed
+    records:
+
+    ```sql
+    COALESCE(highest_priority_cluster, medium_priority_cluster, ..., source_cluster)
+    ```
+
+    1. **Lineage discovery**: Queries the resolution hierarchy to find all ancestor
+        resolutions, ordered by priority (lowest level = highest priority)
+    2. **Source filtering**: When `sources` is provided, constrains results to only
+        include clusters from those specific source configurations
+    3. **Threshold application**: Applies probability thresholds to determine which
+        clusters qualify at each resolution level
+    4. **Subquery construction**: For each model resolution in the lineage, builds
+        a subquery that finds qualifying clusters via the Contains→Probabilities
+        join. Each joined subquery adds a new cluster column which is then merged
+        via...
+    5. **`COALESCE` assembly**: Joins all subqueries to source data and uses `COALESCE`
+        to select the highest-priority cluster assignment for each record
+    """
+    # Get ordered lineage (already sorted by priority)
+    lineage = resolution.get_lineage(sources=sources, threshold=threshold)
+
+    # Filter to model resolutions only
+    model_resolutions = [
+        (res_id, truth) for res_id, truth in lineage if truth is not None
+    ]
+
+    # Build source config filter
+    if sources:
+        source_config_ids = [sc.source_config_id for sc in sources]
+        source_filter = ClusterSourceKey.source_config_id.in_(source_config_ids)
+    elif resolution.type == "source":
+        # If querying a source resolution with no sources filter,
+        # filter to just that source
+        source_filter = (
+            ClusterSourceKey.source_config_id
+            == resolution.source_config.source_config_id
+        )
+    else:
+        source_filter = literal(True)  # No filtering
 
     # Create proper aliases for clusters tables
     leaf_clusters = aliased(Clusters, name="leaf_clusters")
     root_clusters = aliased(Clusters, name="root_clusters")
 
-    # Handle source-only case
+    # Handle source-only case (no model resolutions in lineage)
     if not model_resolutions:
         if columns == "id_key":
             return select(
                 ClusterSourceKey.cluster_id.label("id"),
                 ClusterSourceKey.key,
-            ).where(source_config_filter)
+            ).where(source_filter)
         else:  # "full"
             return (
                 select(
@@ -236,23 +168,20 @@ def _build_unified_query(
                         ClusterSourceKey.cluster_id == leaf_clusters.cluster_id,
                     )
                 )
-                .where(source_config_filter)
+                .where(source_filter)
             )
 
     # Build subqueries for each model resolution
+    # Note both subqueries and cluster_columns are in priority order
     subqueries: list[Select] = []
     cluster_columns: list[ColumnElement] = []
 
-    for i, (res_id, threshold_val, _) in enumerate(model_resolutions):
-        priority_value: int = 2**i  # 1, 2, 4, 8, etc.
-        subquery = _build_probability_subquery(
-            res_id, threshold_val, priority_value, str(i + 1)
-        )
+    for i, (res_id, threshold_val) in enumerate(model_resolutions):
+        subquery = _build_probability_subquery(res_id, threshold_val, str(i))
         subqueries.append(subquery)
-        cluster_columns.append(subquery.c[f"cluster{i + 1}"])
+        cluster_columns.append(subquery.c[f"cluster_{i}"])
 
     # Build FROM clause - start with cluster_keys
-    # Optionally join leaf clusters for hashes
     if columns == "full":
         from_clause: FromClause = join(
             ClusterSourceKey,
@@ -264,14 +193,15 @@ def _build_unified_query(
 
     # Add LEFT JOINs for each model resolution subquery
     for subquery in subqueries:
-        from_clause: FromClause = outerjoin(
+        from_clause = outerjoin(
             from_clause,
             subquery,
             ClusterSourceKey.cluster_id == subquery.c.leaf,
         )
 
-    # Build final cluster ID using bitwise priority logic
-    final_root_cluster_id = _build_bitwise_priority_case(subqueries, cluster_columns)
+    # Build final cluster ID
+    # First non-null wins (highest priority first)
+    final_root_cluster_id = func.coalesce(*cluster_columns, ClusterSourceKey.cluster_id)
 
     # Build final query with appropriate columns
     if columns == "id_key":
@@ -281,7 +211,7 @@ def _build_unified_query(
                 ClusterSourceKey.key,
             )
             .select_from(from_clause)
-            .where(source_config_filter)
+            .where(source_filter)
         )
     else:  # "full"
         return (
@@ -298,7 +228,7 @@ def _build_unified_query(
                     root_clusters, final_root_cluster_id == root_clusters.cluster_id
                 )
             )
-            .where(source_config_filter)
+            .where(source_filter)
         )
 
 
@@ -307,28 +237,22 @@ def _build_target_cluster_cte(
     source_config_id: int,
     resolution: Resolutions,
     threshold: int | None,
-    session: Session,
 ) -> Select:
-    """Build the target_cluster CTE using bitwise priority logic."""
-    # Get lineage and resolve thresholds
-    lineage_truths, _ = _get_lineage_and_source_filter(resolution, None)
-    resolved_thresholds = _resolve_thresholds(lineage_truths, resolution, threshold)
+    """Build the target_cluster CTE."""
+    # Get ordered lineage
+    lineage = resolution.get_lineage(threshold=threshold)
+    model_resolutions = [
+        (res_id, truth) for res_id, truth in lineage if truth is not None
+    ]
 
-    # Extract model resolutions and sort by priority
-    model_resolutions = _process_model_resolutions_by_priority(
-        resolved_thresholds, resolution
-    )
-
-    # Build subqueries for each resolution
+    # Build subqueries for each model resolution
+    # Note both subqueries and cluster_columns are in priority order
     subqueries = []
     cluster_columns = []
-    for i, (res_id, threshold_val, _) in enumerate(model_resolutions):
-        priority_value = 2**i  # 1, 2, 4, 8, etc.
-        subquery = _build_probability_subquery(
-            res_id, threshold_val, priority_value, str(i + 1)
-        )
+    for i, (res_id, threshold_val) in enumerate(model_resolutions):
+        subquery = _build_probability_subquery(res_id, threshold_val, str(i))
         subqueries.append(subquery)
-        cluster_columns.append(subquery.c[f"cluster{i + 1}"])
+        cluster_columns.append(subquery.c[f"cluster_{i}"])
 
     # Build FROM clause starting with cluster_keys
     from_clause = ClusterSourceKey
@@ -341,8 +265,8 @@ def _build_target_cluster_cte(
             ClusterSourceKey.cluster_id == subquery.c.leaf,
         )
 
-    # Build final cluster ID using bitwise priority logic
-    final_cluster_id = _build_bitwise_priority_case(subqueries, cluster_columns)
+    # Build final cluster ID using COALESCE - first non-null wins
+    final_cluster_id = func.coalesce(*cluster_columns, ClusterSourceKey.cluster_id)
 
     return (
         select(final_cluster_id.label("cluster_id"))
@@ -360,19 +284,13 @@ def _build_matching_leaves_cte(
     target_source_config_ids: list[int],
     resolution: Resolutions,
     threshold: int | None,
-    target_cluster_cte,  # Pass the CTE so we can reference it properly
-    session: Session,
+    target_cluster_cte: CTE,  # Pass the CTE so we can reference it properly
 ) -> Select:
     """Build the matching_leaves CTE with UNION ALL branches."""
-    # Get lineage and resolve thresholds
-    lineage_truths, _ = _get_lineage_and_source_filter(resolution, None)
-    resolved_thresholds = _resolve_thresholds(lineage_truths, resolution, threshold)
-
-    # Extract model resolutions
+    # Get ordered lineage and extract model resolutions
+    lineage = resolution.get_lineage(threshold=threshold)
     model_resolutions = [
-        (res_id, threshold_val)
-        for res_id, threshold_val in resolved_thresholds.items()
-        if threshold_val is not None
+        (res_id, truth) for res_id, truth in lineage if truth is not None
     ]
 
     # Start with direct members branch
@@ -430,7 +348,6 @@ def _build_matching_leaves_cte(
     if len(branches) == 1:
         return branches[0]
 
-    # Use SQLAlchemy 2.0 union_all function
     return union_all(*branches)
 
 
@@ -440,17 +357,48 @@ def _build_match_query(
     target_source_config_ids: list[int],
     resolution: Resolutions,
     threshold: int | None,
-    session: Session,
 ) -> Select:
-    """Combine CTEs into the final match query."""
+    """Build a match query to find all keys that cluster with a given input key.
+
+    This function creates SQL that identifies which cluster an input key belongs to,
+    then finds all other keys from specified target sources that belong to the same
+    cluster through the resolution hierarchy.
+
+    The query uses two CTEs to solve the matching problem:
+
+        1. **Target cluster identification**: Determines which cluster the input key
+            belongs to at the specified resolution level
+        2. **Matching leaves discovery**: Finds all keys from target sources that
+            belong to the same target cluster
+
+    The overall process:
+
+        1. **Target cluster CTE**: Uses the same `COALESCE` hierarchy logic as
+            `_build_unified_query` to resolve which cluster the input key belongs to.
+            This handles the full resolution hierarchy with proper priority ordering.
+        2. **Matching leaves CTE**: Builds a `UNION ALL` query with multiple branches:
+
+            - **Direct members**: Keys that belong directly to the target cluster
+            - **Hierarchy branches**: For each model resolution, finds keys that are
+                connected to the target cluster through the Contains→Probabilities joins
+
+        3. **Final assembly**: `LEFT JOINs` the target cluster with matching leaves,
+            ensuring we always get the cluster ID even if no target matches exist
+    """
     target_cluster_cte = _build_target_cluster_cte(
-        key, source_config_id, resolution, threshold, session
+        key=key,
+        source_config_id=source_config_id,
+        resolution=resolution,
+        threshold=threshold,
     ).cte("target_cluster")
 
     # Include both source and target configs to get all keys in the cluster
     all_source_config_ids = [source_config_id] + target_source_config_ids
     matching_leaves_cte = _build_matching_leaves_cte(
-        all_source_config_ids, resolution, threshold, target_cluster_cte, session
+        target_source_config_ids=all_source_config_ids,
+        resolution=resolution,
+        threshold=threshold,
+        target_cluster_cte=target_cluster_cte,
     ).cte("matching_leaves")
 
     # LEFT JOIN to ensure we always get the cluster even if no target matches
@@ -483,11 +431,10 @@ def query(
     * Simple case: If querying the same resolution as the source, just select cluster
         IDs and keys directly from ClusterSourceKey
     * Hierarchy case: Uses the unified query builder to traverse up the resolution
-        hierarchy, applying bitwise priority logic to determine which parent cluster
+        hierarchy, applying COALESCE priority logic to determine which parent cluster
         each source record belongs to
     * Priority resolution: When multiple model resolutions could assign a record to
-        different clusters, uses powers-of-2 bit flags to ensure higher-priority
-        resolutions win
+        different clusters, COALESCE ensures higher-priority resolutions win
 
     Returns all records with their final resolved cluster IDs.
     """
@@ -516,18 +463,10 @@ def query(
             ).where(ClusterSourceKey.source_config_id == source_config.source_config_id)
         else:
             # Use hierarchy resolution
-            lineage_truths, _ = _get_lineage_and_source_filter(
-                truth_resolution, [source_resolution]
-            )
-            resolved_thresholds: dict[int, float | None] = _resolve_thresholds(
-                lineage_truths, truth_resolution, threshold
-            )
-
             id_query: Select = _build_unified_query(
                 resolution=truth_resolution,
-                resolved_thresholds=resolved_thresholds,
-                source_config_filter=ClusterSourceKey.source_config_id
-                == source_config.source_config_id,
+                sources=[source_config],
+                threshold=threshold,
                 columns="id_key",
             )
 
@@ -559,7 +498,7 @@ def get_clusters_with_leaves(
     and metadata.
     """
     with MBDB.get_session() as session:
-        # Get parent resolution IDs
+        # Get direct parent resolution IDs
         parent_ids: list[int] = [
             row[0]
             for row in session.execute(
@@ -581,18 +520,9 @@ def get_clusters_with_leaves(
             if parent_resolution is None:
                 continue
 
-            # Get lineage and build query
-            lineage_truths, source_config_filter = _get_lineage_and_source_filter(
-                parent_resolution, None
-            )
-            resolved_thresholds: dict[int, float | None] = _resolve_thresholds(
-                lineage_truths, parent_resolution, None
-            )
-
             parent_assignments: Select = _build_unified_query(
                 resolution=parent_resolution,
-                resolved_thresholds=resolved_thresholds,
-                source_config_filter=source_config_filter,
+                sources=None,
                 columns="full",
             )
 
@@ -630,7 +560,7 @@ def match(
     Given a specific key in a source, find what it matches to in target sources
     through a resolution hierarchy.
 
-    * Target cluster identification: Uses bitwise priority CTE to determine which
+    * Target cluster identification: Uses COALESCE priority CTE to determine which
         cluster the input key belongs to at the resolution level
     * Matching leaves discovery: Builds UNION ALL query with branches for:
         * Direct cluster members (source-only case)
@@ -657,12 +587,11 @@ def match(
 
         # Build and execute the match query
         matches_query = _build_match_query(
-            key,
-            source_config.source_config_id,
-            target_source_config_ids,
-            truth_resolution,
-            threshold,
-            session,
+            key=key,
+            source_config_id=source_config.source_config_id,
+            target_source_config_ids=target_source_config_ids,
+            resolution=truth_resolution,
+            threshold=threshold,
         )
 
         logger.debug(f"Match SQL: \n {compile_sql(matches_query)}")

@@ -34,8 +34,6 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.db import compile_sql
 from matchbox.server.postgresql.utils.query import (
     _build_unified_query,
-    _get_resolution_priority,
-    _resolve_thresholds,
     get_clusters_with_leaves,
     get_source_config,
     match,
@@ -408,6 +406,190 @@ def populated_postgres_db(
 
 
 @pytest.mark.docker
+class TestGetLineage:
+    """Test get_lineage method with minimal coverage."""
+
+    def test_get_lineage_source_no_parents(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Source resolutions should return only themselves."""
+        with MBDB.get_session() as session:
+            source_a = session.get(Resolutions, 1)  # source_a
+
+            lineage = source_a.get_lineage()
+
+            # Source has no parents, should only return itself
+            assert lineage == [(1, None)]
+
+    def test_get_lineage_dedupe_has_source_parent(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Dedupe resolution should return itself + source parent."""
+        with MBDB.get_session() as session:
+            dedupe_a = session.get(Resolutions, 3)  # dedupe_a
+
+            lineage = dedupe_a.get_lineage()
+
+            # Should return: self (dedupe_a) + parent (source_a)
+            # Ordered by priority: self first (level 0), then parent (level 1)
+            assert lineage == [(3, 80), (1, None)]
+
+    def test_get_lineage_linker_has_multiple_parents(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Linker resolution should return itself + all parents in hierarchy."""
+        with MBDB.get_session() as session:
+            linker = session.get(Resolutions, 5)  # linker_ab
+
+            lineage = linker.get_lineage()
+
+            # Should return: self + direct parents + indirect parents
+            # Expected order by (level, resolution_id):
+            # - Level 0: linker (5, 90)
+            # - Level 1: dedupe_a (3, 80), dedupe_b (4, 70)
+            # - Level 2: source_a (1, None), source_b (2, None)
+            expected = [
+                (5, 90),  # self (linker)
+                (3, 80),  # dedupe_a (level 1, cached truth)
+                (4, 70),  # dedupe_b (level 1, cached truth)
+                (1, None),  # source_a (level 2, source)
+                (2, None),  # source_b (level 2, source)
+            ]
+            assert lineage == expected
+
+    def test_get_lineage_with_source_filter(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should filter lineage to specific source configs."""
+        with MBDB.get_session() as session:
+            linker = session.get(Resolutions, 5)  # linker_ab
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+
+            lineage = linker.get_lineage(sources=[source_a_config])
+
+            # Should only include lineage path to source_a:
+            # - Level 0: linker (5, 90)
+            # - Level 1: dedupe_a (3, 80) - leads to source_a
+            # - Level 2: source_a (1, None) - the target
+            # Should NOT include dedupe_b or source_b
+            expected = [
+                (5, 90),  # self (linker)
+                (3, 80),  # dedupe_a (leads to source_a)
+                (1, None),  # source_a (target)
+            ]
+            assert lineage == expected
+
+    def test_get_lineage_with_threshold_override(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should override only the query resolution's threshold."""
+        with MBDB.get_session() as session:
+            linker = session.get(Resolutions, 5)  # linker_ab
+
+            lineage = linker.get_lineage(threshold=75)
+
+            # Should override linker's threshold (90 -> 75) but keep cached thresholds
+            expected = [
+                (5, 75),  # self with overridden threshold
+                (3, 80),  # dedupe_a (cached truth unchanged)
+                (4, 70),  # dedupe_b (cached truth unchanged)
+                (1, None),  # source_a (unchanged)
+                (2, None),  # source_b (unchanged)
+            ]
+            assert lineage == expected
+
+    def test_get_lineage_with_multiple_source_filter(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should filter lineage to multiple source configs."""
+        with MBDB.get_session() as session:
+            linker = session.get(Resolutions, 5)  # linker_ab
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+            source_b_config = session.get(SourceConfigs, 22)  # source_b config
+
+            lineage = linker.get_lineage(sources=[source_a_config, source_b_config])
+
+            # Should include both lineage paths (same as no filter for linker):
+            expected = [
+                (5, 90),  # self (linker)
+                (3, 80),  # dedupe_a (leads to source_a)
+                (4, 70),  # dedupe_b (leads to source_b)
+                (1, None),  # source_a
+                (2, None),  # source_b
+            ]
+            assert lineage == expected
+
+    def test_get_lineage_ordering_by_level_then_id(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should verify ordering is by level ASC, then resolution_id ASC."""
+        with MBDB.get_session() as session:
+            linker = session.get(Resolutions, 5)  # linker_ab
+
+            lineage = linker.get_lineage()
+
+            # Verify ordering: self first, then by level, then by resolution_id
+            levels = []
+            for i, (res_id, _) in enumerate(lineage):
+                if i == 0:
+                    levels.append(0)  # self is level 0
+                elif res_id in [3, 4]:  # dedupe_a, dedupe_b
+                    levels.append(1)  # level 1 parents
+                elif res_id in [1, 2]:  # source_a, source_b
+                    levels.append(2)  # level 2 parents
+
+            # Should be sorted: [0, 1, 1, 2, 2]
+            assert levels == [0, 1, 1, 2, 2]
+
+            # Within same level, should be sorted by resolution_id
+            level_1_ids = [lineage[1][0], lineage[2][0]]  # dedupe_a, dedupe_b
+            assert level_1_ids == [3, 4]  # sorted by ID
+
+            level_2_ids = [lineage[3][0], lineage[4][0]]  # source_a, source_b
+            assert level_2_ids == [1, 2]  # sorted by ID
+
+    def test_get_lineage_threshold_override_only_affects_self(
+        self, populated_postgres_db: MatchboxPostgres
+    ):
+        """Should verify threshold override only affects the query resolution."""
+        with MBDB.get_session() as session:
+            linker = session.get(Resolutions, 5)  # linker_ab
+
+            # Test with threshold override
+            lineage_with_override = linker.get_lineage(threshold=80)
+
+            # Should be: [(5, 80), (3, 80), (4, 70), (1, None), (2, None)]
+            # Where:
+            # - Resolution 5 (linker): Uses override 80 instead of default 90
+            # - Resolution 3 (dedupe_a): Uses cached 80 (unchanged)
+            # - Resolution 4 (dedupe_b): Uses cached 70 (unchanged)
+            # - Resolutions 1,2 (sources): Use None (unchanged)
+
+            expected = [
+                (5, 80),  # linker with override
+                (3, 80),  # dedupe_a with cached threshold
+                (4, 70),  # dedupe_b with cached threshold
+                (1, None),  # source_a unchanged
+                (2, None),  # source_b unchanged
+            ]
+
+            assert lineage_with_override == expected
+
+            # Compare with no override to confirm only self changed
+            lineage_no_override = linker.get_lineage()
+
+            expected_no_override = [
+                (5, 90),  # linker with default threshold
+                (3, 80),  # dedupe_a with cached threshold (same)
+                (4, 70),  # dedupe_b with cached threshold (same)
+                (1, None),  # source_a unchanged (same)
+                (2, None),  # source_b unchanged (same)
+            ]
+
+            assert lineage_no_override == expected_no_override
+
+
+@pytest.mark.docker
 class TestGetSourceConfig:
     """Test source config retrieval."""
 
@@ -426,73 +608,9 @@ class TestGetSourceConfig:
 
 
 @pytest.mark.docker
-class TestResolveThresholds:
-    """Test threshold resolution logic."""
-
-    def test_resolve_with_no_threshold(self, populated_postgres_db: MatchboxPostgres):
-        """Should use default truth values when no threshold provided."""
-        with MBDB.get_session() as session:
-            resolution = session.get(Resolutions, 5)  # linker_ab
-            lineage_truths = {1: None, 3: 80, 4: 70, 5: 90}  # mix of sources and models
-
-            result = _resolve_thresholds(lineage_truths, resolution, threshold=None)
-
-            assert result[1] is None  # source keeps None
-            assert result[3] == 80  # model keeps default
-            assert result[4] == 70  # model keeps default
-            assert result[5] == 90  # target resolution keeps default
-
-    def test_resolve_with_threshold_override(
-        self, populated_postgres_db: MatchboxPostgres
-    ):
-        """Should override target resolution threshold only."""
-        with MBDB.get_session() as session:
-            resolution = session.get(Resolutions, 5)  # linker_ab
-            lineage_truths = {3: 80, 4: 70, 5: 90}
-
-            result = _resolve_thresholds(lineage_truths, resolution, threshold=85)
-
-            assert result[3] == 80  # parent keeps default
-            assert result[4] == 70  # parent keeps default
-            assert result[5] == 85  # target gets override
-
-
-@pytest.mark.docker
-class TestGetResolutionPriority:
-    """Test resolution priority calculation."""
-
-    def test_direct_parent_priority(self, populated_postgres_db: MatchboxPostgres):
-        """Should return level 1 for direct parent."""
-        with MBDB.get_session() as session:
-            linker_res = session.get(Resolutions, 5)  # linker_ab
-
-            # dedupe_a is level 1 parent of linker
-            priority = _get_resolution_priority(3, linker_res)  # dedupe_a -> linker
-            assert priority == 1
-
-    def test_indirect_parent_priority(self, populated_postgres_db: MatchboxPostgres):
-        """Should return level 2 for indirect parent."""
-        with MBDB.get_session() as session:
-            linker_res = session.get(Resolutions, 5)  # linker_ab
-
-            # source_a is level 2 parent of linker (through dedupe_a)
-            priority = _get_resolution_priority(1, linker_res)  # source_a -> linker
-            assert priority == 2
-
-    def test_nonexistent_relationship(self, populated_postgres_db: MatchboxPostgres):
-        """Should return 0 for non-parent resolution."""
-        with MBDB.get_session() as session:
-            source_res = session.get(Resolutions, 1)  # source_a
-
-            # dedupe_b has no relationship to source_a
-            priority = _get_resolution_priority(4, source_res)  # dedupe_b -> source_a
-            assert priority == 0
-
-
-@pytest.mark.docker
 @pytest.mark.parametrize("columns", ["full", "id_key"])
 class TestBuildUnifiedQuery:
-    """Test unified query building with both column modes."""
+    """Test unified query building with correct COALESCE expectations."""
 
     def test_build_unified_source_only(
         self,
@@ -500,15 +618,14 @@ class TestBuildUnifiedQuery:
         columns: Literal["full", "id_key"],
     ):
         """Should build unified query for source-only scenario."""
-        resolved_thresholds = {1: None}  # source_a only
-        source_config_filter = ClusterSourceKey.source_config_id == 11  # source_a
-
         with MBDB.get_session() as session:
-            resolution = session.get(Resolutions, 1)
+            source_a_resolution = session.get(Resolutions, 1)  # source_a resolution
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+
             query = _build_unified_query(
-                resolution=resolution,
-                resolved_thresholds=resolved_thresholds,
-                source_config_filter=source_config_filter,
+                resolution=source_a_resolution,
+                sources=[source_a_config],  # Pass source config directly
+                threshold=None,
                 columns=columns,
             )
 
@@ -529,6 +646,7 @@ class TestBuildUnifiedQuery:
             }
             assert set(result.columns) == expected_columns
             assert all(result["root_id"] == result["leaf_id"])
+            assert all(result["source_config_id"] == 11)
         else:  # id_key
             expected_columns = {"id", "key"}
             assert set(result.columns) == expected_columns
@@ -540,74 +658,60 @@ class TestBuildUnifiedQuery:
         columns: Literal["full", "id_key"],
     ):
         """Should build unified query mixing sources and models."""
-        resolved_thresholds = {
-            1: None,  # source_a
-            3: 80,  # dedupe_a with threshold 80
-        }
-        source_config_filter = ClusterSourceKey.source_config_id == 11  # source_a
-
         with MBDB.get_session() as session:
-            resolution = session.get(Resolutions, 3)  # dedupe_a context
+            dedupe_a_resolution = session.get(Resolutions, 3)  # dedupe_a context
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+
             query = _build_unified_query(
-                resolution=resolution,
-                resolved_thresholds=resolved_thresholds,
-                source_config_filter=source_config_filter,
+                resolution=dedupe_a_resolution,
+                sources=[source_a_config],  # Query source_a through dedupe_a
+                threshold=80,  # Override threshold to 80
                 columns=columns,
             )
 
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return keys, with some potentially mapped to dedupe clusters
+        # Should return keys, with some mapped to dedupe clusters
         assert len(result) == 6
 
         if columns == "full":
-            assert "root_id" in result.columns
-            assert "leaf_key" in result.columns
             cluster_ids = set(result["root_id"])
+            assert all(result["source_config_id"] == 11)
         else:  # id_key
-            assert "id" in result.columns
-            assert "key" in result.columns
             cluster_ids = set(result["id"])
 
-        # At threshold 80, should see C301 for some keys
-        assert 301 in cluster_ids  # C301 should appear
+        # At threshold 80, C301 qualifies (prob=80 >= 80)
+        assert 301 in cluster_ids
 
-        # Keys 1,2,3 should map to C301 (dedupe of clusters 101+102)
-        if columns == "full":
-            keys_in_301 = [
-                row["leaf_key"]
-                for row in result.iter_rows(named=True)
-                if row["root_id"] == 301
-            ]
-        else:
-            keys_in_301 = [
-                row["key"] for row in result.iter_rows(named=True) if row["id"] == 301
-            ]
+        # Keys that should map to C301 (contains clusters 101, 102)
+        keys_in_301 = [
+            row["key" if columns == "id_key" else "leaf_key"]
+            for row in result.to_dicts()
+            if row["id" if columns == "id_key" else "root_id"] == 301
+        ]
         expected_301_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
         assert set(keys_in_301) == expected_301_keys
 
-    def test_build_unified_linker_scenario(
+        # Keys not processed by dedupe_a should keep original clusters
+        remaining_clusters = cluster_ids - {301}
+        assert remaining_clusters == {103, 104, 105}
+
+    def test_build_unified_linker_all_sources(
         self,
         populated_postgres_db: MatchboxPostgres,
         columns: Literal["full", "id_key"],
     ):
-        """Should build unified query for complex linker scenario."""
-        resolved_thresholds = {
-            1: None,  # source_a
-            2: None,  # source_b
-            3: 80,  # dedupe_a cached
-            4: 70,  # dedupe_b cached
-            5: 85,  # linker with threshold 85
-        }
-        source_config_filter = True
-
+        """Should build unified query for linker with all sources."""
         with MBDB.get_session() as session:
-            resolution = session.get(Resolutions, 5)  # linker context
+            linker_resolution = session.get(Resolutions, 5)  # linker context
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+            source_b_config = session.get(SourceConfigs, 22)  # source_b config
+
             query = _build_unified_query(
-                resolution=resolution,
-                resolved_thresholds=resolved_thresholds,
-                source_config_filter=source_config_filter,
+                resolution=linker_resolution,
+                sources=[source_a_config, source_b_config],  # Both sources
+                threshold=80,  # Override linker threshold to 80 (from default 90)
                 columns=columns,
             )
 
@@ -617,19 +721,197 @@ class TestBuildUnifiedQuery:
         # Should return all 11 keys from both sources
         assert len(result) == 11
 
-        # Get cluster IDs based on column mode
+        if columns == "full":
+            cluster_ids = set(result["root_id"])
+            source_configs = set(result["source_config_id"])
+            assert source_configs == {11, 22}
+        else:  # id_key
+            cluster_ids = set(result["id"])
+
+        # At threshold 80 for linker:
+        # - C503 (prob=80): 80% >= 80% ✓
+        # - C504 (prob=90): 90% >= 80% ✓
+        assert 503 in cluster_ids
+        assert 504 in cluster_ids
+
+        # Keys claimed by linker clusters:
+        # C503 contains: 101, 102, 201, 202, 205 (5 keys)
+        # C504 contains: 103, 203 (2 keys)
+        # Remaining unclaimed: 104, 105, 204 (3 keys)
+
+        # Dedupe clusters should NOT appear - their keys are claimed by linker
+        assert 301 not in cluster_ids  # All C301 keys (101,102) claimed by C503
+        assert 401 not in cluster_ids  # All C401 keys (201,202) claimed by C503
+
+        # Only unclaimed source clusters should appear
+        unclaimed_clusters = cluster_ids - {503, 504}
+        assert unclaimed_clusters == {104, 105, 204}
+
+    def test_build_unified_linker_high_threshold(
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
+    ):
+        """Should exclude linker clusters that don't meet high threshold."""
+        with MBDB.get_session() as session:
+            linker_resolution = session.get(Resolutions, 5)  # linker context
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+            source_b_config = session.get(SourceConfigs, 22)  # source_b config
+
+            query = _build_unified_query(
+                resolution=linker_resolution,
+                sources=[source_a_config, source_b_config],  # Both sources
+                threshold=95,  # Very high threshold excludes all linker clusters
+                columns=columns,
+            )
+
+        with MBDB.get_adbc_connection() as conn:
+            result = sql_to_df(compile_sql(query), conn, "polars")
+
+        # Should return all 11 keys from both sources
+        assert len(result) == 11
+
         if columns == "full":
             cluster_ids = set(result["root_id"])
         else:  # id_key
             cluster_ids = set(result["id"])
 
-        # At threshold 85, only C504 (prob=90) should qualify from linker
-        assert 504 in cluster_ids  # C504 qualifies: 90% >= 85%
-        assert 503 not in cluster_ids  # C503 excluded: 80% < 85%
+        # No linker clusters qualify at threshold=95
+        assert 503 not in cluster_ids  # 80% < 95%
+        assert 504 not in cluster_ids  # 90% < 95%
 
-        # Should still see dedupe clusters from cached thresholds
-        assert 301 in cluster_ids  # from dedupe_a cached=80
-        assert 401 in cluster_ids  # from dedupe_b cached=70
+        # But dedupe clusters should appear (use cached thresholds):
+        # - C301 from dedupe_a: cached=80, prob=80, so 80% >= 80% ✓
+        # - C401 from dedupe_b: cached=70, prob=70, so 70% >= 70% ✓
+        assert 301 in cluster_ids
+        assert 401 in cluster_ids
+
+        # Remaining clusters should be unclaimed sources
+        expected_clusters = {103, 104, 105, 203, 204, 205}
+        assert cluster_ids == expected_clusters | {301, 401}
+
+    def test_build_unified_single_source_filter(
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
+    ):
+        """Should filter to single source lineage."""
+        with MBDB.get_session() as session:
+            linker_resolution = session.get(Resolutions, 5)  # linker context
+            source_b_config = session.get(SourceConfigs, 22)  # source_b only
+
+            query = _build_unified_query(
+                resolution=linker_resolution,
+                sources=[source_b_config],  # Only source_b
+                threshold=80,  # Override linker threshold to 80
+                columns=columns,
+            )
+
+        with MBDB.get_adbc_connection() as conn:
+            result = sql_to_df(compile_sql(query), conn, "polars")
+
+        # Should return only 5 keys from source_b
+        assert len(result) == 5
+
+        if columns == "full":
+            cluster_ids = set(result["root_id"])
+            # All results should be from source_b only
+            assert all(result["source_config_id"] == 22)
+        else:  # id_key
+            cluster_ids = set(result["id"])
+
+        # Should see linker clusters that contain source_b data:
+        # C503 contains source_b keys: 201, 202, 205
+        # C504 contains source_b key: 203
+        assert 503 in cluster_ids
+        assert 504 in cluster_ids
+
+        # Should NOT see dedupe_b cluster - its keys claimed by C503
+        assert 401 not in cluster_ids
+
+        # Should NOT see any source_a related clusters (filtered out)
+        assert 301 not in cluster_ids
+        for source_a_cluster in [101, 102, 103, 104, 105]:
+            assert source_a_cluster not in cluster_ids
+
+        # Should see only unclaimed source_b cluster
+        unclaimed_source_b = cluster_ids - {503, 504}
+        assert unclaimed_source_b == {204}
+
+    def test_build_unified_no_source_filter(
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
+    ):
+        """Should include all sources when no filtering."""
+        with MBDB.get_session() as session:
+            linker_resolution = session.get(Resolutions, 5)  # linker context
+
+            query = _build_unified_query(
+                resolution=linker_resolution,
+                sources=None,  # No filtering - all sources
+                threshold=80,  # Override linker threshold to 80
+                columns=columns,
+            )
+
+        with MBDB.get_adbc_connection() as conn:
+            result = sql_to_df(compile_sql(query), conn, "polars")
+
+        # Should return all 11 keys from both sources
+        assert len(result) == 11
+
+        if columns == "full":
+            cluster_ids = set(result["root_id"])
+            source_configs = set(result["source_config_id"])
+            assert source_configs == {11, 22}
+        else:  # id_key
+            cluster_ids = set(result["id"])
+
+        # At threshold 80 for linker, both clusters qualify:
+        assert 503 in cluster_ids  # 80% >= 80%
+        assert 504 in cluster_ids  # 90% >= 80%
+
+        # Dedupe clusters should NOT appear - claimed by linker
+        assert 301 not in cluster_ids  # Claimed by C503
+        assert 401 not in cluster_ids  # Claimed by C503
+
+        # Only unclaimed source clusters appear
+        unclaimed_clusters = cluster_ids - {503, 504}
+        assert unclaimed_clusters == {104, 105, 204}
+
+    def test_build_unified_source_only_no_sources_filter(
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
+    ):
+        """Source resolution with sources=None returns that source only."""
+        with MBDB.get_session() as session:
+            source_a_resolution = session.get(Resolutions, 1)  # source_a resolution
+
+            query = _build_unified_query(
+                resolution=source_a_resolution,  # Query source_a
+                sources=None,  # No source filtering
+                threshold=None,
+                columns=columns,
+            )
+
+        with MBDB.get_adbc_connection() as conn:
+            result = sql_to_df(compile_sql(query), conn, "polars")
+
+        if columns == "full":
+            cluster_ids = set(result["root_id"])
+        else:  # id_key
+            cluster_ids = set(result["id"])
+
+        if columns == "full":
+            # Should only have source_a data
+            assert all(result["source_config_id"] == 11)
+            assert cluster_ids == {101, 102, 103, 104, 105}
+        else:
+            assert cluster_ids == {101, 102, 103, 104, 105}
+
+        # Should only return 6 keys from source_a, not 11 from both sources
+        assert len(result) == 6
 
 
 @pytest.mark.docker
