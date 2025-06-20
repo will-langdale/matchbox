@@ -131,7 +131,7 @@ class Location(ABC, BaseModel):
         ...
 
     @abstractmethod
-    def sample(self, extract_transform: str) -> list:
+    def head(self, extract_transform: str) -> list:
         """Extract lightweight data sample using ET logic."""
         ...
 
@@ -225,8 +225,10 @@ class RelationalDBLocation(Location):
         # using least privilege credentials
         return validate_sql_for_data_extraction(extract_transform)
 
-    def sample(self, extract_transform: str) -> pl.DataFrame:  # noqa: D102
-        return next(self.execute(extract_transform, batch_size=1))
+    def head(self, extract_transform: str) -> pl.DataFrame:  # noqa: D102
+        return next(
+            self.execute(extract_transform.rstrip().rstrip(";") + " limit 100;")
+        )
 
     @requires_credentials
     def execute(  # noqa: D102
@@ -402,7 +404,7 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes credentials have been set on location
-        sample: pl.DataFrame = location.sample(extract_transform)
+        sample: pl.DataFrame = location.head(extract_transform)
 
         remote_fields = {
             col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))
