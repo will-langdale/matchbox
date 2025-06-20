@@ -238,7 +238,11 @@ def _build_target_cluster_cte(
     resolution: Resolutions,
     threshold: int | None,
 ) -> Select:
-    """Build the target_cluster CTE."""
+    """Build the target_cluster CTE.
+
+    Follows very similar logic to `_build_unified_query`, but with filtering
+    specifically for a single key and source_config_id.
+    """
     # Get ordered lineage
     lineage = resolution.get_lineage(threshold=threshold)
     model_resolutions = [
@@ -284,9 +288,26 @@ def _build_matching_leaves_cte(
     target_source_config_ids: list[int],
     resolution: Resolutions,
     threshold: int | None,
-    target_cluster_cte: CTE,  # Pass the CTE so we can reference it properly
+    target_cluster_cte: CTE,
 ) -> Select:
-    """Build the matching_leaves CTE with UNION ALL branches."""
+    """Find all keys from target sources that belong to the target cluster.
+
+    Given a target cluster ID, find all keys from my target sources that belong to
+    it through ANY path in the hierarchy.
+
+    Uses `UNION ALL` to combine multiple ways a key can belong to the target cluster:
+
+        1. **Direct membership**: Keys that directly belong to the target cluster ID
+        2. **Hierarchy membership**: For each model resolution in the lineage, keys that
+            are connected to the target cluster through Contains→Probabilities chains
+
+    The target cluster ID comes from the target_cluster_cte, and we search for all
+    keys from the specified target sources that are related to it through any path
+    in the resolution hierarchy.
+
+    Returns a union of all matching keys with their cluster_id, key, and
+    source_config_id.
+    """
     # Get ordered lineage and extract model resolutions
     lineage = resolution.get_lineage(threshold=threshold)
     model_resolutions = [
