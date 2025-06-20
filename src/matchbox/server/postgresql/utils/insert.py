@@ -307,36 +307,25 @@ def _build_cluster_objects(
     """
     cluster_lookup: dict[int, Cluster] = {}
 
-    # First create all Cluster objects without leaves
     for cluster_id, data in nested_dict.items():
-        cluster = Cluster(
+        # Create leaf clusters on-demand
+        leaves = []
+        for leaf_data in data["leaves"]:
+            leaf_id = leaf_data["leaf_id"]
+            if leaf_id not in cluster_lookup:
+                cluster_lookup[leaf_id] = Cluster(
+                    id=leaf_id, hash=leaf_data["leaf_hash"], intmap=intmap
+                )
+            leaves.append(cluster_lookup[leaf_id])
+
+        # Create parent cluster
+        cluster_lookup[cluster_id] = Cluster(
             id=cluster_id,
             hash=data["root_hash"],
             probability=data["probability"],
+            leaves=leaves,
             intmap=intmap,
         )
-        cluster_lookup[cluster_id] = cluster
-
-    # Now create and attach all leaf objects
-    for cluster_id, data in nested_dict.items():
-        cluster: Cluster = cluster_lookup[cluster_id]
-        leaves: list[Cluster] = []
-
-        for leaf_data in data["leaves"]:
-            leaf_id = leaf_data["leaf_id"]
-
-            # Create leaf if it doesn't exist in lookup
-            if leaf_id not in cluster_lookup:
-                leaf = Cluster(id=leaf_id, hash=leaf_data["leaf_hash"], intmap=intmap)
-                cluster_lookup[leaf_id] = leaf
-            else:
-                leaf = cluster_lookup[leaf_id]
-
-            # Add leaf to cluster's leaves list
-            leaves.append(leaf)
-
-        cluster.leaves = tuple(leaves)
-        cluster_lookup[cluster_id] = cluster
 
     return cluster_lookup
 
@@ -421,15 +410,28 @@ def _create_clusters_dataframe(all_clusters: dict[bytes, Cluster]) -> pl.DataFra
         all_clusters: Dictionary mapping cluster hashes to Cluster objects
 
     Returns:
-        Polars DataFrame with columns: cluster_id, cluster_hash, cluster, new
+        Polars DataFrame with columns: cluster_id, cluster_hash, cluster_struct, new
     """
-    # Convert all clusters to a DataFrame
-    # This allows us to join in the appropriate cluster IDs and unnest when necessary
-    all_clusters_df = pl.DataFrame(
-        {
-            "cluster_hash": pl.Series(list(all_clusters.keys()), dtype=pl.Binary),
-            "cluster": pl.Series(list(all_clusters.values()), dtype=pl.Object),
+    # Convert all clusters to a DataFrame, converting Clusters to Polars structs
+    cluster_data = []
+    for cluster_hash, cluster in all_clusters.items():
+        cluster_struct = {
+            "id": cluster.id,
+            "probability": cluster.probability,
+            "leaves": [leaf.id for leaf in cluster.leaves] if cluster.leaves else [],
         }
+        cluster_data.append(
+            {"cluster_hash": cluster_hash, "cluster_struct": cluster_struct}
+        )
+
+    all_clusters_df = pl.DataFrame(
+        cluster_data,
+        schema={
+            "cluster_hash": pl.Binary,
+            "cluster_struct": pl.Struct(
+                {"id": pl.Int64, "probability": pl.Int8, "leaves": pl.List(pl.Int64)}
+            ),
+        },
     )
 
     # Look up existing clusters in the database
@@ -458,21 +460,18 @@ def _create_clusters_dataframe(all_clusters: dict[bytes, Cluster]) -> pl.DataFra
     )
 
     # Assign new cluster IDs if needed
-    if new_clusters_df.shape[0]:
+    next_cluster_id: int = 0
+    if not new_clusters_df.is_empty():
         next_cluster_id = PKSpace.reserve_block("clusters", new_clusters_df.shape[0])
-        new_clusters_df = new_clusters_df.with_columns(
-            [
-                (
-                    pl.arange(0, new_clusters_df.shape[0], dtype=pl.Int64)
-                    + next_cluster_id
-                ).alias("cluster_id"),
-                pl.lit(True).alias("new"),
-            ]
-        )
-    else:
-        new_clusters_df = new_clusters_df.with_columns(
-            [pl.lit(None).cast(pl.Int64).alias("cluster_id"), pl.lit(True).alias("new")]
-        )
+
+    new_clusters_df = new_clusters_df.with_columns(
+        [
+            (
+                pl.arange(0, new_clusters_df.shape[0], dtype=pl.Int64) + next_cluster_id
+            ).alias("cluster_id"),
+            pl.lit(True).alias("new"),
+        ]
+    )
 
     # Add cluster data to existing and add new flag
     existing_with_data = all_clusters_df.join(
@@ -481,7 +480,7 @@ def _create_clusters_dataframe(all_clusters: dict[bytes, Cluster]) -> pl.DataFra
 
     # Concatenate existing and new clusters
     return pl.concat([existing_with_data, new_clusters_df]).select(
-        "cluster_id", "cluster_hash", "cluster", "new"
+        "cluster_id", "cluster_hash", "cluster_struct", "new"
     )
 
 
@@ -548,32 +547,21 @@ def _results_to_insert_tables(
     # Filter to new clusters and explode leaves for Contains table
     new_contains_df = (
         all_clusters_df.filter(pl.col("new"))
-        .select("cluster_id", "cluster")
+        .select("cluster_id", "cluster_struct")
         .rename({"cluster_id": "root"})
-        .with_columns(
-            pl.col("cluster")
-            .map_elements(
-                lambda cluster: [leaf.id for leaf in cluster.leaves],
-                return_dtype=pl.List(pl.Int64),
-            )
-            .alias("leaf")
-        )
-        .drop("cluster")
+        .with_columns(pl.col("cluster_struct").struct.field("leaves").alias("leaf"))
+        .drop("cluster_struct")
         .explode("leaf")
         .select("root", "leaf")
     )
 
     # Use all clusters and unnest probabilities for Probabilities table
     new_probabilities_df = (
-        all_clusters_df.select("cluster_id", "cluster")
+        all_clusters_df.select("cluster_id", "cluster_struct")
         .with_columns(
-            [
-                pl.col("cluster")
-                .map_elements(lambda cluster: cluster.probability, return_dtype=pl.Int8)
-                .alias("probability"),
-            ]
+            pl.col("cluster_struct").struct.field("probability").alias("probability")
         )
-        .drop("cluster")
+        .drop("cluster_struct")
         .with_columns(
             pl.lit(resolution.resolution_id, dtype=pl.Int64).alias("resolution_id")
         )
