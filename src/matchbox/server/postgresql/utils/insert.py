@@ -392,7 +392,7 @@ def _build_cluster_hierarchy(
     ):
         if probability < threshold:
             # Process the components at the previous threshold
-            seen_components = _process_components(probability)
+            seen_components = _process_components(threshold)
             threshold = probability
 
         djs.union(left_cluster, right_cluster)
