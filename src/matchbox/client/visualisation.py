@@ -6,24 +6,52 @@ from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 
 from matchbox.client._handler import get_resolution_graph
+from matchbox.common.dtos import ResolutionName
 from matchbox.common.graph import ResolutionNodeType
 
 
-def draw_resolution_graph() -> Figure:
-    """Draws the resolution graph layer by layer, component by component."""
+def draw_resolution_graph(contains: ResolutionName | None = None) -> Figure:
+    """Draws the resolution graph layer by layer, component by component.
+
+    contains: An optional filter to only include components containing a
+        specific source or model.
+    """
     plt.ioff()  # Turn off interactive plotting to prevent auto-display
 
     G: rx.PyDiGraph = get_resolution_graph().to_rx()
 
-    components = rx.weakly_connected_components(G)
-    if len(components) <= 1:
-        components = [set(G.node_indices())]
+    # Filter components if contains is specified
+    components: list[set[int]] = []
+    if contains is not None:
+        target_nodes = G.filter_nodes(lambda node: node.get("name") == contains)
 
-    n_components = len(components)
-    if n_components == 1:
-        fig, axes = plt.subplots(1, 1, figsize=(12, 8))
-        axes = [axes]
+        if target_nodes:
+            # Get all components and find those containing any target node
+            all_components = rx.weakly_connected_components(G)
+            components = [
+                comp
+                for comp in all_components
+                if any(node in comp for node in target_nodes)
+            ]
     else:
+        components = rx.weakly_connected_components(G)
+        if len(components) <= 1:
+            components = [set(G.node_indices())]
+
+    # Handle empty graph or no matching components
+    if not components or not any(components):
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        message = (
+            f'No component found containing "{contains}"'
+            if contains
+            else "No nodes in resolution graph"
+        )
+        ax.text(0.5, 0.5, message, ha="center", va="center", transform=ax.transAxes)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        return fig
+    else:
+        n_components = len(components)
         n_cols = min(2, n_components)
         n_rows = (n_components + n_cols - 1) // n_cols
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(12 * n_cols, 8 * n_rows))
