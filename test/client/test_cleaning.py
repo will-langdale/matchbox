@@ -284,6 +284,10 @@ def test_select_cleaners():
             clean.company_name,
             {"column": "company_name"},
         ),
+        "company_number": cleaner(
+            clean.company_number,
+            {"column": "company_number"},
+        ),
     }
 
     bar_cleaners = {
@@ -310,6 +314,7 @@ def test_select_cleaners():
     )
 
     assert built_cleaners == regular_cleaners
+    assert len(built_cleaners) == 2
 
 
 def test_remove_prefix():
