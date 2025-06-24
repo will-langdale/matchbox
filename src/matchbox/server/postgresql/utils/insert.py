@@ -566,6 +566,7 @@ def _results_to_insert_tables(
             pl.lit(resolution.resolution_id, dtype=pl.Int64).alias("resolution_id")
         )
         .select("resolution_id", "cluster_id", "probability")
+        .sort(["cluster_id", "probability"])
     )
 
     logger.info("Wrangling complete!", prefix=log_prefix)
