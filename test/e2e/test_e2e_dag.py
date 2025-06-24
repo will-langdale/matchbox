@@ -5,10 +5,10 @@ from httpx import Client
 from sqlalchemy import Engine, text
 
 from matchbox import query
-from matchbox.client.clean import steps
-from matchbox.client.clean.utils import cleaning_function
+from matchbox.client.clean import remove_prefix, steps
+from matchbox.client.clean.utils import cleaning_function, select_cleaners
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
-from matchbox.client.helpers import cleaner, cleaners, select
+from matchbox.client.helpers import cleaner, select
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import (
@@ -166,19 +166,27 @@ class TestE2EPipelineBuilder:
             steps.trim,
         )
 
-        source_a_cleaners = cleaners(
-            cleaner(
+        source_a_cleaners = {
+            "company_name": cleaner(
                 clean_company_name,
-                {"column": "source_a_company_name"},
+                {"column": source_a_config.f("company_name")},
             ),
-        )
+            "make_conformant": cleaner(
+                remove_prefix,
+                {"column": "", "prefix": source_a_config.f("")},
+            ),
+        }
 
-        source_b_cleaners = cleaners(
-            cleaner(
+        source_b_cleaners = {
+            "company_name": cleaner(
                 clean_company_name,
-                {"column": "source_b_company_name"},
+                {"column": source_b_config.f("company_name")},
             ),
-        )
+            "make_conformant": cleaner(
+                remove_prefix,
+                {"column": "", "prefix": source_b_config.f("")},
+            ),
+        }
 
         # === DAG DEFINITION ===
         # Index steps
@@ -190,7 +198,9 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=i_source_a,
                 select={source_a_config: ["company_name", "registration_id"]},
-                cleaners=source_a_cleaners,
+                cleaners=select_cleaners(
+                    (source_a_cleaners, ["company_name"]),
+                ),
                 batch_size=batch_size,
             ),
             name="dedupe_source_a",
@@ -198,7 +208,7 @@ class TestE2EPipelineBuilder:
             model_class=NaiveDeduper,
             settings={
                 "id": "id",
-                "unique_fields": ["source_a_registration_id"],
+                "unique_fields": [source_a_config.f("registration_id")],
             },
             truth=1.0,
         )
@@ -207,7 +217,9 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=i_source_b,
                 select={source_b_config: ["company_name", "registration_id"]},
-                cleaners=source_b_cleaners,
+                cleaners=select_cleaners(
+                    (source_b_cleaners, ["company_name"]),
+                ),
                 batch_size=batch_size,
             ),
             name="dedupe_source_b",
@@ -215,7 +227,7 @@ class TestE2EPipelineBuilder:
             model_class=NaiveDeduper,
             settings={
                 "id": "id",
-                "unique_fields": ["source_b_registration_id"],
+                "unique_fields": [source_b_config.f("registration_id")],
             },
             truth=1.0,
         )
@@ -225,13 +237,17 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=dedupe_a,
                 select={source_a_config: ["company_name", "registration_id"]},
-                cleaners=source_a_cleaners,
+                cleaners=select_cleaners(
+                    (source_a_cleaners, ["company_name"]),
+                ),
                 batch_size=batch_size,
             ),
             right=StepInput(
                 prev_node=dedupe_b,
                 select={source_b_config: ["company_name", "registration_id"]},
-                cleaners=source_b_cleaners,
+                cleaners=select_cleaners(
+                    (source_b_cleaners, ["company_name"]),
+                ),
                 batch_size=batch_size,
             ),
             name="__DEFAULT__",
@@ -241,7 +257,8 @@ class TestE2EPipelineBuilder:
                 "left_id": "id",
                 "right_id": "id",
                 "comparisons": (
-                    "l.source_a_registration_id = r.source_b_registration_id",
+                    f"l.{source_a_config.f('registration_id')}"
+                    f"= r.{source_b_config.f('registration_id')}",
                 ),
             },
             truth=1.0,
