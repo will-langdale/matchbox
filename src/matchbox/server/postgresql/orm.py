@@ -564,16 +564,17 @@ class Results(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "results"
 
     # Columns
+    result_id = Column(BIGINT, primary_key=True, autoincrement=True)
     resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
     )
     left_id = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
     right_id = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
     probability = Column(SMALLINT, nullable=False)
 
@@ -582,6 +583,7 @@ class Results(CountMixin, MBDB.MatchboxBase):
 
     # Constraints
     __table_args__ = (
-        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
         Index("ix_results_resolution", "resolution_id"),
+        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
+        UniqueConstraint("resolution_id", "left_id", "right_id"),
     )

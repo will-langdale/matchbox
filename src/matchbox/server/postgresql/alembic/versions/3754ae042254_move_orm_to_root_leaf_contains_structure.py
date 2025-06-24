@@ -134,9 +134,10 @@ def upgrade() -> None:
         schema="mb",
     )
 
-    # Create results table
+    # Create results table with surrogate primary key and unique constraint
     op.create_table(
         "results",
+        sa.Column("result_id", sa.BIGINT(), autoincrement=True, nullable=False),
         sa.Column("resolution_id", sa.BIGINT(), nullable=False),
         sa.Column("left_id", sa.BIGINT(), nullable=False),
         sa.Column("right_id", sa.BIGINT(), nullable=False),
@@ -151,7 +152,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["right_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
         ),
-        sa.PrimaryKeyConstraint("resolution_id", "left_id", "right_id"),
+        sa.PrimaryKeyConstraint("result_id"),
+        sa.UniqueConstraint("resolution_id", "left_id", "right_id"),
         schema="mb",
     )
     op.create_index(
