@@ -1,7 +1,7 @@
 """Functions to transform data between tabular and graph structures."""
 
 from collections import defaultdict
-from typing import Callable, Generic, Hashable, Iterable, Self, TypeVar
+from typing import Any, Callable, Generic, Hashable, Iterable, Self, TypeVar
 
 import numpy as np
 import pyarrow as pa
@@ -241,6 +241,16 @@ class Cluster:
             raise ValueError("Leaf nodes must have id specified")
         else:
             self.id = intmap.index(leaf.id for leaf in self.leaves)
+
+    def __hash__(self) -> int:
+        """Return a hash of the cluster based on its hash bytes."""
+        return hash(self.hash)
+
+    def __eq__(self, other: Any) -> bool:
+        """Check equality of two Cluster objects based on their hash."""
+        if not isinstance(other, Cluster):
+            return False
+        return self.hash == other.hash
 
     @classmethod
     def combine(

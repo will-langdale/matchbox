@@ -58,15 +58,36 @@ def get_source_config(name: SourceResolutionName, session: Session) -> SourceCon
 def _build_probability_subquery(
     res_id: int, threshold_val: float, subquery_name: str
 ) -> Select:
-    """Build a probability subquery for a given resolution."""
+    """Build a probability subquery for a given resolution.
+
+    When a leaf belongs to multiple clusters that meet the threshold,
+    this selects the cluster with probability CLOSEST to the threshold
+    (i.e., the most conservative/weakest clustering decision).
+
+    Uses ROW_NUMBER() window function to pick exactly one cluster per leaf.
+    """
+    from sqlalchemy import func
+
     # Create unique aliases for this subquery to avoid parameter conflicts
     contains_alias = aliased(Contains, name=f"contains_{subquery_name}")
     probabilities_alias = aliased(Probabilities, name=f"prob_{subquery_name}")
 
-    return (
+    # Use window function to rank clusters per leaf by probability (ascending)
+    # This ensures we get exactly one row per leaf - the one closest to threshold
+    ranked_query = (
         select(
             contains_alias.leaf,
-            probabilities_alias.cluster_id.label(f"cluster_{subquery_name}"),
+            contains_alias.root.label(f"cluster_{subquery_name}"),
+            probabilities_alias.probability,
+            func.row_number()
+            .over(
+                partition_by=contains_alias.leaf,
+                order_by=[
+                    probabilities_alias.probability.asc(),
+                    contains_alias.root.asc(),
+                ],
+            )
+            .label("rn"),
         )
         .select_from(
             join(
@@ -81,6 +102,18 @@ def _build_probability_subquery(
                 probabilities_alias.probability >= threshold_val,
             )
         )
+        .subquery(f"ranked_{subquery_name}")
+    )
+
+    # Select only the first-ranked row for each leaf
+    return (
+        select(
+            ranked_query.c.leaf.label("leaf"),
+            ranked_query.c[f"cluster_{subquery_name}"],
+            ranked_query.c.probability,
+        )
+        .select_from(ranked_query)
+        .where(ranked_query.c.rn == 1)
         .subquery(f"prob_{subquery_name}")
     )
 

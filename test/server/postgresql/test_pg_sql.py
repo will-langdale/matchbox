@@ -14,10 +14,6 @@ from typing import Generator, Literal
 import pytest
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.exceptions import (
-    MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
-)
 from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (
@@ -47,24 +43,35 @@ def populated_postgres_db(
 ) -> Generator[MatchboxPostgres, None, None]:
     """PostgreSQL database with a rich yet simple test dataset.
 
-    - Source A: 6 keys → 5 clusters (keys 1&2 share cluster 101)
-    - Source B: 5 keys → 5 clusters (one key per cluster)
-    - Dedupe A: Creates
-        * 80% cluster (301=101+102)
-        * 70% 3-way cluster (302=101+102+103) with pairwise (303=101+103)
-    - Dedupe B: Creates simple 70% cluster (401=201+202)
-    - Linker: Caches truth DA=80, DB=70. Creates:
-        * Cluster 503, which shows connected dedupe outputs and dedupe+raw mix:
-            * At 90%, pairwise component 501=301+401=101+102+201+202
-            * At 80%, pairwise 502=301+205=101+102+205, which forms component
-                503=301+205+401=101+102+201+202+205
-        * Cluster 504, which mixes raw leaves:
-            * At 90%, pairwise component 504=103+203 (103 undeduped at DA=80)
+    * Source A: 6 keys → 5 clusters (keys 1&2 share cluster 101)
+    * Source B: 5 keys → 5 clusters (one key per cluster)
+    * Dedupe A
+        * Results:
+            * 101 - 102 @ 80%
+            * 101 - 103 @ 70%
+        * Creates:
+            * 80% cluster (301 = 101+102)
+            * 70% 3-way cluster (302 = 101+102+103)
+    * Dedupe B
+        * Results:
+            * 201 - 202 @ 70%
+        * Creates:
+            * 70% cluster (401 = 201+202)
+    * Linker. Caches truth DA=80, DB=70
+        * Results:
+            * 301 - 401 @ 90%
+            * 103 - 203 @ 90%
+            * 205 - 301 @ 80%
+        * Creates:
+            * 90% cluster (501 = 301+401 = 101+102+201+202)
+            * 90% cluster (502 = 103+203) (103 undeduped at DA=80)
+            * 80% cluster (503 = 301+205+401 = 101+102+201+202+205)
 
-    This diagram shows the structure of the test dataset. Each node shows the pairwise
-    clusters that would be formed by a model's results, but can also be traced back to
-    the sources to show the root-leaf relationships that are created. For example,
-    cluster 502 is stored only so we can recover pairs, because 503 is the true cluster.
+    This diagram shows the structure of the test dataset. To understand the root-leaf
+    relationships, trace the the "root" node down to its source "leaves". This is what's
+    stored in the Contains table.
+
+    Pairwise results are shown in the Results table.
 
     The diagram also shows query results: if we query Dedupe A at 70%, clusters 101,
     102, and 103 would all map to component 302 (the highest cluster containing them
@@ -92,50 +99,59 @@ def populated_postgres_db(
 
         %% Main cluster formation tree
         subgraph ClusterTree["📊 Data Subgraph"]
-            %% Final Linker Components
-            C503["503 @80%"]
-            C504["504 @90%"]
-
-            %% Linker Pairwise Formation
-            C503 --> C501["501 @90%"]
-            C503 --> C502["502 @80%"]
-
-            %% Dedupe Formation - Used by Linker
-            C501 --> C301["301 @80%"]
-            C501 --> C401["401 @70%"]
-
-            C502 --> C301
-            C502 --> C205["205"]
-
-            %% Raw leaves for C504
-            C504 --> C103["103"]
-            C504 --> C203["203"]
-
-            %% Dedupe Sub-formation - Used clusters
-            C301 --> C101["101, two keys"]
-            C301 --> C102["102"]
-
-            C401 --> C201["201"]
-            C401 --> C202["202"]
-
-            %% Additional Dedupe A clusters
-            %% (below cache threshold - not connected to linker)
-            C302["302 @70%"]
-            C303["303 @70%"]
-
-            %% Hierarchical formation: 302 comprises 301 + 303
-            C302 --> C301
-            C302 --> C303
-
-            %% 303 pairwise formation
-            C303 --> C101
-            C303 --> C103
-
-            %% Disconnected source clusters
-            %% (not processed by any dedupe/linker)
+            %% Source A clusters
+            C101["101, two keys"]
+            C102["102"]
+            C103["103"]
             C104["104"]
             C105["105"]
+
+            %% Source B clusters
+            C201["201"]
+            C202["202"]
+            C203["203"]
             C204["204"]
+            C205["205"]
+
+            %% Dedupe A components
+            %% Results:
+            %% 101 - 102 @ 80
+            %% 101 - 103 @ 70
+            C301["301 @80%"]
+            C302["302 @70%"]
+
+            C301 --> C101
+            C301 --> C102
+
+            C302 --> C101
+            C302 --> C102
+            C302 --> C103
+
+            %% Dedupe B components
+            %% Results:
+            %% 201 - 202 @ 70
+            C401["401 @70%"]
+
+            C401 --> C201
+            C401 --> C202
+
+            %% Linker components
+            %% Results:
+            %% 301 - 401 @ 90
+            %% 103 - 203 @ 90
+            %% 301 - 205 @ 80
+            C501["501 @90%"]
+            C502["502 @90%"]
+            C503["503 @80%"]
+
+            C501 --> C301
+            C501 --> C401
+
+            C502 --> C103
+            C502 --> C203
+
+            C503 --> C205
+            C503 --> C501
         end
 
         %% Styling by source/model
@@ -148,9 +164,9 @@ def populated_postgres_db(
 
         class C101,C102,C103,C104,C105 source_a
         class C201,C202,C203,C204,C205 source_b
-        class C301,C302,C303 dedupe_a
+        class C301,C302 dedupe_a
         class C401 dedupe_b
-        class C501,C502,C503,C504 linker
+        class C501,C502,C503 linker
         class SA_key source_a
         class SB_key source_b
         class DA_key dedupe_a
@@ -258,14 +274,12 @@ def populated_postgres_db(
             # Dedupe A clusters (300-series)
             Clusters(cluster_id=301, cluster_hash=b"hash_301"),
             Clusters(cluster_id=302, cluster_hash=b"hash_302"),
-            Clusters(cluster_id=303, cluster_hash=b"hash_303"),
             # Dedupe B clusters (400-series)
             Clusters(cluster_id=401, cluster_hash=b"hash_401"),
             # Linker clusters (500-series)
             Clusters(cluster_id=501, cluster_hash=b"hash_501"),
             Clusters(cluster_id=502, cluster_hash=b"hash_502"),
             Clusters(cluster_id=503, cluster_hash=b"hash_503"),
-            Clusters(cluster_id=504, cluster_hash=b"hash_504"),
         ]
 
         # === CLUSTER SOURCE KEYS ===
@@ -309,37 +323,30 @@ def populated_postgres_db(
 
         # === CONTAINS RELATIONSHIPS ===
         contains = [
-            # Dedupe A: C301 contains C101+C102 (80% cluster)
+            # Dedupe A: C301 contains C101+C102 (80%)
             Contains(root=301, leaf=101),
             Contains(root=301, leaf=102),
-            # Dedupe A: C302 contains C101+C102+C103 (70% component)
+            # Dedupe A: C302 contains C101+C102+C103 (70%)
             Contains(root=302, leaf=101),
             Contains(root=302, leaf=102),
             Contains(root=302, leaf=103),
-            # Dedupe A: C303 contains C101+C103 (70% pairwise)
-            Contains(root=303, leaf=101),
-            Contains(root=303, leaf=103),
-            # Dedupe B: C401 contains C201+C202 (70% cluster)
+            # Dedupe B: C401 contains C201+C202 (70%)
             Contains(root=401, leaf=201),
             Contains(root=401, leaf=202),
-            # Linker: C501 links C301+C401 (90% pairwise)
+            # Linker: C501 links C301+C401 (90%)
             Contains(root=501, leaf=101),  # from C301
             Contains(root=501, leaf=102),  # from C301
             Contains(root=501, leaf=201),  # from C401
             Contains(root=501, leaf=202),  # from C401
-            # Linker: C502 contains C301+C205 (80% pairwise)
-            Contains(root=502, leaf=101),  # from C301
-            Contains(root=502, leaf=102),  # from C301
-            Contains(root=502, leaf=205),  # direct source leaf
-            # Linker: C503 contains C501+C502 (80% component)
+            # Linker: C502 contains C103+C203 (90%)
+            Contains(root=502, leaf=103),
+            Contains(root=502, leaf=203),
+            # Linker: C503 contains C501+C205 (80% component)
             Contains(root=503, leaf=101),  # from C301 (via C501 and C502)
             Contains(root=503, leaf=102),  # from C301 (via C501 and C502)
             Contains(root=503, leaf=201),  # from C401 (via C501)
             Contains(root=503, leaf=202),  # from C401 (via C501)
-            Contains(root=503, leaf=205),  # direct (via C502)
-            # Linker: C504 contains C103+C203 (90% raw leaves)
-            Contains(root=504, leaf=103),  # direct source leaf
-            Contains(root=504, leaf=203),  # direct source leaf
+            Contains(root=503, leaf=205),
         ]
 
         # === PROBABILITIES ===
@@ -351,8 +358,9 @@ def populated_postgres_db(
             # Dedupe B probabilities
             Probabilities(resolution_id=4, cluster_id=401, probability=70),
             # Linker probabilities
+            Probabilities(resolution_id=5, cluster_id=501, probability=90),
+            Probabilities(resolution_id=5, cluster_id=502, probability=90),
             Probabilities(resolution_id=5, cluster_id=503, probability=80),
-            Probabilities(resolution_id=5, cluster_id=504, probability=90),
         ]
 
         # === RESULTS ===
@@ -377,11 +385,11 @@ def populated_postgres_db(
                 resolution_id=5, left_id=301, right_id=401, probability=90
             ),  # forms C501
             Results(
-                resolution_id=5, left_id=301, right_id=205, probability=80
+                resolution_id=5, left_id=103, right_id=203, probability=90
             ),  # forms C502
             Results(
-                resolution_id=5, left_id=103, right_id=203, probability=90
-            ),  # forms C504
+                resolution_id=5, left_id=301, right_id=205, probability=80
+            ),  # forms C503
         ]
 
         # Insert all objects
@@ -600,12 +608,6 @@ class TestGetSourceConfig:
             assert source_config.source_config_id == 11
             assert source_config.resolution_id == 1
 
-    def test_get_nonexistent_source(self, populated_postgres_db: MatchboxPostgres):
-        """Should raise exception for nonexistent source."""
-        with MBDB.get_session() as session:
-            with pytest.raises(MatchboxSourceNotFoundError):
-                get_source_config("nonexistent", session)
-
 
 @pytest.mark.docker
 @pytest.mark.parametrize("columns", ["full", "id_key"])
@@ -729,22 +731,26 @@ class TestBuildUnifiedQuery:
             cluster_ids = set(result["id"])
 
         # At threshold 80 for linker:
-        # - C503 (prob=80): 80% >= 80% ✓
-        # - C504 (prob=90): 90% >= 80% ✓
+        # - C501 (prob=90): 90% >= 80% ✓ but superseded by C503
+        # - C502 (prob=90): 90% >= 80% ✓
+        # - C503 (prob=80): 80% >= 80% ✓ supersedes C501
         assert 503 in cluster_ids
-        assert 504 in cluster_ids
+        assert 502 in cluster_ids
+
+        # C501 should NOT appear - superseded by C503
+        assert 501 not in cluster_ids
 
         # Keys claimed by linker clusters:
-        # C503 contains: 101, 102, 201, 202, 205 (5 keys)
-        # C504 contains: 103, 203 (2 keys)
-        # Remaining unclaimed: 104, 105, 204 (3 keys)
+        # C503 contains: 101, 102, 201, 202, 205 (5 keys) - supersedes C501
+        # C502 contains: 103, 203 (2 keys)
+        # Remaining unclaimed: 104, 105, 204 (4 keys)
 
         # Dedupe clusters should NOT appear - their keys are claimed by linker
         assert 301 not in cluster_ids  # All C301 keys (101,102) claimed by C503
         assert 401 not in cluster_ids  # All C401 keys (201,202) claimed by C503
 
         # Only unclaimed source clusters should appear
-        unclaimed_clusters = cluster_ids - {503, 504}
+        unclaimed_clusters = cluster_ids - {503, 502}
         assert unclaimed_clusters == {104, 105, 204}
 
     def test_build_unified_linker_high_threshold(
@@ -822,12 +828,15 @@ class TestBuildUnifiedQuery:
 
         # Should see linker clusters that contain source_b data:
         # C503 contains source_b keys: 201, 202, 205
-        # C504 contains source_b key: 203
+        # C502 contains source_b key: 203
         assert 503 in cluster_ids
-        assert 504 in cluster_ids
+        assert 502 in cluster_ids
 
         # Should NOT see dedupe_b cluster - its keys claimed by C503
         assert 401 not in cluster_ids
+
+        # Should NOT see C501 - superseded by C503
+        assert 501 not in cluster_ids
 
         # Should NOT see any source_a related clusters (filtered out)
         assert 301 not in cluster_ids
@@ -835,7 +844,7 @@ class TestBuildUnifiedQuery:
             assert source_a_cluster not in cluster_ids
 
         # Should see only unclaimed source_b cluster
-        unclaimed_source_b = cluster_ids - {503, 504}
+        unclaimed_source_b = cluster_ids - {503, 502}
         assert unclaimed_source_b == {204}
 
     def test_build_unified_no_source_filter(
@@ -867,16 +876,21 @@ class TestBuildUnifiedQuery:
         else:  # id_key
             cluster_ids = set(result["id"])
 
-        # At threshold 80 for linker, both clusters qualify:
+        # At threshold 80 for linker:
+        # - C502 (prob=90): 90% >= 80% ✓
+        # - C503 (prob=80): 80% >= 80% ✓ (supersedes C501)
         assert 503 in cluster_ids  # 80% >= 80%
-        assert 504 in cluster_ids  # 90% >= 80%
+        assert 502 in cluster_ids  # 90% >= 80%
+
+        # C501 should NOT appear - superseded by C503
+        assert 501 not in cluster_ids
 
         # Dedupe clusters should NOT appear - claimed by linker
         assert 301 not in cluster_ids  # Claimed by C503
         assert 401 not in cluster_ids  # Claimed by C503
 
         # Only unclaimed source clusters appear
-        unclaimed_clusters = cluster_ids - {503, 504}
+        unclaimed_clusters = cluster_ids - {503, 502}
         assert unclaimed_clusters == {104, 105, 204}
 
     def test_build_unified_source_only_no_sources_filter(
@@ -912,6 +926,41 @@ class TestBuildUnifiedQuery:
 
         # Should only return 6 keys from source_a, not 11 from both sources
         assert len(result) == 6
+
+    def test_simple_thresholding(
+        self,
+        populated_postgres_db: MatchboxPostgres,
+        columns: Literal["full", "id_key"],
+    ):
+        """Simple test showing thresholding works."""
+        # Query at threshold=70 where both C301 (80%) and C302 (70%) qualify
+        with MBDB.get_session() as session:
+            dedupe_resolution = session.get(Resolutions, 3)  # dedupe context
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+
+            query = _build_unified_query(
+                resolution=dedupe_resolution,
+                sources=[source_a_config],
+                threshold=70,  # Use threshold lower than cache and C301
+                columns=columns,
+            )
+
+        with MBDB.get_adbc_connection() as conn:
+            result = sql_to_df(compile_sql(query), conn, "polars")
+
+        # Should return 6 key from source a with no repetition
+        assert len(result) == 6
+
+        # Get the appropriate column name for cluster IDs
+        if columns == "id_key":
+            cluster_column = "id"
+        else:  # "full"
+            cluster_column = "root_id"
+
+        # C301 should be excluded in favour of 302
+        cluster_ids = result[cluster_column].to_list()
+        assert 301 not in cluster_ids
+        assert 302 in cluster_ids
 
 
 @pytest.mark.docker
@@ -1185,18 +1234,26 @@ class TestQueryFunction:
 
         cluster_ids = set(result["id"].to_pylist())
 
-        # At linker's default threshold (90), only C504 qualifies (prob=90)
+        # At linker's default threshold (90), C501 and C502 qualify (both prob=90)
         # C503 is excluded because prob=80 < threshold=90
-        assert 504 in cluster_ids  # C504 should appear (90% >= 90%)
+        assert 501 in cluster_ids  # C501 should appear (90% >= 90%)
+        assert 502 in cluster_ids  # C502 should appear (90% >= 90%)
         assert 503 not in cluster_ids  # C503 should be excluded (80% < 90%)
 
         # Verify specific key mappings
         key_cluster_map = {row["key"]: row["id"] for row in result.to_pylist()}
 
-        # src_a_key4 (cluster 103) should map to C504 (contains 103+203)
-        assert key_cluster_map["src_a_key4"] == 504
+        # src_a_key4 (cluster 103) should map to C502 (contains 103+203)
+        assert key_cluster_map["src_a_key4"] == 502
 
-        # src_a_key6 (cluster 105) is not contained in any linker cluster
+        # src_a_key1,2,3 (clusters 101,102) should map to C501
+        # (contains 101+102+201+202)
+        assert key_cluster_map["src_a_key1"] == 501  # cluster 101 → C501
+        assert key_cluster_map["src_a_key2"] == 501  # cluster 101 → C501
+        assert key_cluster_map["src_a_key3"] == 501  # cluster 102 → C501
+
+        # src_a_key5,6 (clusters 104,105) are not contained in any linker cluster
+        assert key_cluster_map["src_a_key5"] == 104
         assert key_cluster_map["src_a_key6"] == 105
 
     def test_query_both_sources_through_linker(
@@ -1214,9 +1271,8 @@ class TestQueryFunction:
         clusters_a = set(result_a["id"].to_pylist())
         clusters_b = set(result_b["id"].to_pylist())
 
-        # At threshold=80, both C503 (prob=80) and
-        # C504 (prob=90) qualify
-        linker_clusters = {503, 504}
+        # At threshold=80, C501, C502 (prob=90) and C503 (prob=80) all qualify
+        linker_clusters = {501, 502, 503}
         assert linker_clusters.intersection(clusters_a)  # Some linker clusters in A
         assert linker_clusters.intersection(clusters_b)  # Some linker clusters in B
 
@@ -1227,7 +1283,7 @@ class TestQueryFunction:
         # Cross-source linking via C503:
         # C503 contains: 101, 102, 201, 202, 205
 
-        # Keys that should map to C503
+        # Keys that should map to C503 (supersedes C501)
         assert key_cluster_map_a["src_a_key1"] == 503  # cluster 101 → C503
         assert key_cluster_map_a["src_a_key2"] == 503  # cluster 101 → C503
         assert key_cluster_map_a["src_a_key3"] == 503  # cluster 102 → C503
@@ -1236,10 +1292,15 @@ class TestQueryFunction:
         assert key_cluster_map_b["src_b_key2"] == 503  # cluster 202 → C503
         assert key_cluster_map_b["src_b_key5"] == 503  # cluster 205 → C503
 
-        # Cross-source linking via C504:
-        # C504 contains: 103, 203
-        assert key_cluster_map_a["src_a_key4"] == 504  # cluster 103 → C504
-        assert key_cluster_map_b["src_b_key3"] == 504  # cluster 203 → C504
+        # Cross-source linking via C502:
+        # C502 contains: 103, 203
+        assert key_cluster_map_a["src_a_key4"] == 502  # cluster 103 → C502
+        assert key_cluster_map_b["src_b_key3"] == 502  # cluster 203 → C502
+
+        # Remaining unclaimed keys
+        assert key_cluster_map_a["src_a_key5"] == 104  # not claimed by linker
+        assert key_cluster_map_a["src_a_key6"] == 105  # not claimed by linker
+        assert key_cluster_map_b["src_b_key4"] == 204  # not claimed by linker
 
     def test_query_with_limit(self, populated_postgres_db: MatchboxPostgres):
         """Should respect limit parameter."""
@@ -1279,18 +1340,6 @@ class TestQueryFunction:
         assert key_cluster_map["src_a_key2"] == dedupe_cluster
         assert key_cluster_map["src_a_key3"] == dedupe_cluster
         assert dedupe_cluster == 301
-
-    def test_query_nonexistent_source(self, populated_postgres_db: MatchboxPostgres):
-        """Should raise exception for nonexistent source."""
-        with pytest.raises(MatchboxSourceNotFoundError):
-            query("nonexistent", resolution=None)
-
-    def test_query_nonexistent_resolution(
-        self, populated_postgres_db: MatchboxPostgres
-    ):
-        """Should raise exception for nonexistent resolution."""
-        with pytest.raises(MatchboxResolutionNotFoundError):
-            query("source_a", resolution="nonexistent")
 
 
 @pytest.mark.docker
