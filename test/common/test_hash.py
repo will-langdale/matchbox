@@ -367,14 +367,16 @@ class TestNormalisation:
 
     def test_normalisation_makes_id_order_irrelevant(self, method: HashMethod):
         """Test that normalisation makes ID column order irrelevant."""
-        normalise_cols = ["left_id", "right_id"]
+        sorted_list_cols = ["left_id", "right_id"]
 
         tables_to_test = ["original", "ids_swapped", "rows_reordered"]
         hashes = []
 
         for table_name in tables_to_test:
             table = self.tables[table_name]
-            hash_val = hash_arrow_table(table, method=method, normalise=normalise_cols)
+            hash_val = hash_arrow_table(
+                table, method=method, as_sorted_list=sorted_list_cols
+            )
             hashes.append(hash_val)
 
         # All should be equal despite different ID arrangements
@@ -384,7 +386,9 @@ class TestNormalisation:
 
         # But different data should still produce different hash
         hash_different = hash_arrow_table(
-            self.tables["data_changed"], method=method, normalise=normalise_cols
+            self.tables["data_changed"],
+            method=method,
+            as_sorted_list=sorted_list_cols,
         )
         assert hashes[0] != hash_different, (
             "Different data should still produce different hash even with normalisation"
@@ -411,9 +415,13 @@ class TestNormalisation:
             }
         )
 
-        normalise_cols = ["person_a", "person_b", "person_c"]
-        hash_abc = hash_arrow_table(table_abc, method=method, normalise=normalise_cols)
-        hash_cab = hash_arrow_table(table_cab, method=method, normalise=normalise_cols)
+        sorted_list_cols = ["person_a", "person_b", "person_c"]
+        hash_abc = hash_arrow_table(
+            table_abc, method=method, as_sorted_list=sorted_list_cols
+        )
+        hash_cab = hash_arrow_table(
+            table_cab, method=method, as_sorted_list=sorted_list_cols
+        )
 
         assert hash_abc == hash_cab, (
             "Multi-column normalisation should handle arbitrary column reordering"
@@ -421,34 +429,38 @@ class TestNormalisation:
 
     def test_normalisation_handles_nulls(self, method: HashMethod):
         """Test that normalisation works correctly with null values."""
-        normalise_cols = ["left_id", "right_id"]
+        sorted_list_cols = ["left_id", "right_id"]
 
         hash_a = hash_arrow_table(
-            self.tables["with_nulls_a"], method=method, normalise=normalise_cols
+            self.tables["with_nulls_a"],
+            method=method,
+            as_sorted_list=sorted_list_cols,
         )
         hash_b = hash_arrow_table(
-            self.tables["with_nulls_b"], method=method, normalise=normalise_cols
+            self.tables["with_nulls_b"],
+            method=method,
+            as_sorted_list=sorted_list_cols,
         )
 
         assert hash_a == hash_b, "Normalisation should handle null values correctly"
 
     def test_normalisation_edge_cases(self, method: HashMethod):
         """Test normalisation with edge cases like duplicates and empty tables."""
-        normalise_cols = ["left_id", "right_id"]
+        sorted_list_cols = ["left_id", "right_id"]
 
         # Test with duplicate values
         table_dupes = self.tables["with_duplicates"]
         hash_dupes = hash_arrow_table(
-            table_dupes, method=method, normalise=normalise_cols
+            table_dupes, method=method, as_sorted_list=sorted_list_cols
         )
         assert isinstance(hash_dupes, bytes), (
-            "Should handle duplicate values in normalised columns"
+            "Should handle duplicate values in sorted_listd columns"
         )
 
         # Test with empty table
         table_empty = self.tables["empty"]
         hash_empty = hash_arrow_table(
-            table_empty, method=method, normalise=normalise_cols
+            table_empty, method=method, as_sorted_list=sorted_list_cols
         )
         assert hash_empty == b"empty_table_hash", (
             "Empty tables should return consistent special hash value"
