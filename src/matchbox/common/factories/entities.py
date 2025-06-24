@@ -458,7 +458,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
 
 
 def query_to_cluster_entities(
-    query: pa.Table | pd.DataFrame, keys: dict[SourceResolutionName, str]
+    query: pa.Table | pd.DataFrame | pl.DataFrame, keys: dict[SourceResolutionName, str]
 ) -> set[ClusterEntity]:
     """Convert a query result to a set of ClusterEntities.
 
@@ -472,7 +472,10 @@ def query_to_cluster_entities(
     Returns:
         A set of ClusterEntity objects
     """
-    if isinstance(query, pa.Table):
+    # Convert polars to pandas for compatibility with existing logic
+    if isinstance(query, pl.DataFrame):
+        query = query.to_pandas()
+    elif isinstance(query, pa.Table):
         query = query.to_pandas()
 
     must_have_fields = set(["id"] + list(keys.values()))

@@ -18,4 +18,5 @@ def index(
     if not source_config.location.credentials:
         raise ValueError("Source credentials are not set")
 
-    _handler.index(source_config=source_config, batch_size=batch_size)
+    data_hashes = source_config.hash_data(batch_size=batch_size)
+    _handler.index(source_config=source_config, data_hashes=data_hashes)

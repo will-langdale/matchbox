@@ -155,9 +155,15 @@ class TestE2EPipelineBuilder:
         )
 
         # Create simple cleaners
+        from functools import partial
+
+        remove_company_stopwords = partial(
+            steps.remove_stopwords, stopwords=["Ltd", "Limited"]
+        )
+
         clean_company_name = cleaning_function(
             steps.tokenise,
-            lambda tokens: [t for t in tokens if t not in ["Ltd", "Limited"]],
+            remove_company_stopwords,
             steps.list_join_to_string,
             steps.trim,
         )
@@ -281,14 +287,14 @@ class TestE2EPipelineBuilder:
                 credentials=self.warehouse_engine,
             ),
             resolution="__DEFAULT__",
-            return_type="pandas",
+            return_type="polars",
         )
 
         # Should have linked results
         assert len(final_df) > 0, "Expected some results from first run"
-        assert final_df["id"].nunique() == len(self.linked_testkit.true_entities)
+        assert final_df["id"].n_unique() == len(self.linked_testkit.true_entities)
 
-        first_run_entities = final_df["id"].nunique()
+        first_run_entities = final_df["id"].n_unique()
         logging.info(f"First run produced {first_run_entities} unique entities")
 
         # === SECOND RUN (OVERWRITE) ===
@@ -305,10 +311,10 @@ class TestE2EPipelineBuilder:
                 credentials=self.warehouse_engine,
             ),
             resolution="__DEFAULT__",
-            return_type="pandas",
+            return_type="polars",
         )
 
-        second_run_entities = final_df_second["id"].nunique()
+        second_run_entities = final_df_second["id"].n_unique()
         logging.info(f"Second run produced {second_run_entities} unique entities")
 
         # Should have same number of entities after rerun
