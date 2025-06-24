@@ -169,22 +169,22 @@ class TestE2EPipelineBuilder:
         source_a_cleaners = {
             "company_name": cleaner(
                 clean_company_name,
-                {"column": source_a_config.qualify_field("company_name")},
+                {"column": source_a_config.f("company_name")},
             ),
             "make_conformant": cleaner(
                 remove_prefix,
-                {"column": "", "prefix": source_a_config.qualify_field("")},
+                {"column": "", "prefix": source_a_config.f("")},
             ),
         }
 
         source_b_cleaners = {
             "company_name": cleaner(
                 clean_company_name,
-                {"column": source_b_config.qualify_field("company_name")},
+                {"column": source_b_config.f("company_name")},
             ),
             "make_conformant": cleaner(
                 remove_prefix,
-                {"column": "", "prefix": source_b_config.qualify_field("")},
+                {"column": "", "prefix": source_b_config.f("")},
             ),
         }
 
@@ -208,7 +208,7 @@ class TestE2EPipelineBuilder:
             model_class=NaiveDeduper,
             settings={
                 "id": "id",
-                "unique_fields": [source_a_config.qualify_field("registration_id")],
+                "unique_fields": [source_a_config.f("registration_id")],
             },
             truth=1.0,
         )
@@ -227,7 +227,7 @@ class TestE2EPipelineBuilder:
             model_class=NaiveDeduper,
             settings={
                 "id": "id",
-                "unique_fields": [source_b_config.qualify_field("registration_id")],
+                "unique_fields": [source_b_config.f("registration_id")],
             },
             truth=1.0,
         )
@@ -257,8 +257,8 @@ class TestE2EPipelineBuilder:
                 "left_id": "id",
                 "right_id": "id",
                 "comparisons": (
-                    f"l.{source_a_config.qualify_field('registration_id')}"
-                    f"= r.{source_b_config.qualify_field('registration_id')}",
+                    f"l.{source_a_config.f('registration_id')}"
+                    f"= r.{source_b_config.f('registration_id')}",
                 ),
             },
             truth=1.0,
