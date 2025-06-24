@@ -30,7 +30,7 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.db import compile_sql
 from matchbox.server.postgresql.utils.query import (
     _build_unified_query,
-    get_clusters_with_leaves,
+    get_parent_clusters_and_leaves,
     get_source_config,
     match,
     query,
@@ -972,7 +972,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            result = get_clusters_with_leaves(linker_res)
+            result = get_parent_clusters_and_leaves(linker_res)
 
             # Linker has parents dedupe_a and dedupe_b,
             # should get their cluster assignments
@@ -994,7 +994,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             dedupe_res = session.get(Resolutions, 3)  # dedupe_a
 
-            result = get_clusters_with_leaves(dedupe_res)
+            result = get_parent_clusters_and_leaves(dedupe_res)
 
             # Dedupe_a has parent source_a, so should get source_a's cluster assignments
             # Source assignments are 1:1 (each key maps to its own cluster)
@@ -1019,7 +1019,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            result = get_clusters_with_leaves(linker_res)
+            result = get_parent_clusters_and_leaves(linker_res)
 
             # Should include clusters from both dedupe_a and dedupe_b parents
             # Based on their default thresholds (cached truth values)
@@ -1055,7 +1055,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            result = get_clusters_with_leaves(linker_res)
+            result = get_parent_clusters_and_leaves(linker_res)
 
             # Should NOT include C302 (prob=70, flag=2) or C303 (prob=70, flag=0)
             # from dedupe_a because they're below/equal to cached truth=80
@@ -1078,7 +1078,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             source_res = session.get(Resolutions, 1)  # source_a
 
-            result = get_clusters_with_leaves(source_res)
+            result = get_parent_clusters_and_leaves(source_res)
 
             # Sources have no parents, so should return empty
             assert result == {}, f"Source should have no parent clusters: {result}"
@@ -1090,7 +1090,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            result = get_clusters_with_leaves(linker_res)
+            result = get_parent_clusters_and_leaves(linker_res)
 
             # Should include source clusters from both source_a and source_b
             # (indirect parents through dedupe_a and dedupe_b)
@@ -1114,7 +1114,7 @@ class TestGetClustersWithLeaves:
         with MBDB.get_session() as session:
             linker_res = session.get(Resolutions, 5)  # linker_ab
 
-            result = get_clusters_with_leaves(linker_res)
+            result = get_parent_clusters_and_leaves(linker_res)
 
             for cluster_id, cluster_info in result.items():
                 leaves = cluster_info["leaves"]

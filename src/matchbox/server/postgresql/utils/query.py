@@ -434,19 +434,13 @@ def _build_match_query(
         target_cluster_cte=target_cluster_cte,
     ).cte("matching_leaves")
 
-    # LEFT JOIN to ensure we always get the cluster even if no target matches
     return (
         select(
-            target_cluster_cte.c.cluster_id.label("cluster"),
+            matching_leaves_cte.c.cluster_id.label("cluster"),
             matching_leaves_cte.c.source_config_id,
             matching_leaves_cte.c.key,
         )
-        .select_from(
-            target_cluster_cte.outerjoin(
-                matching_leaves_cte,
-                literal(True),  # Always join - we want all target_cluster rows
-            )
-        )
+        .select_from(matching_leaves_cte)
         .distinct()
     )
 
@@ -512,7 +506,7 @@ def query(
             return sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
 
 
-def get_clusters_with_leaves(
+def get_parent_clusters_and_leaves(
     resolution: Resolutions,
 ) -> dict[int, dict[str, list[dict]]]:
     """Query clusters and their leaves for all parent resolutions.

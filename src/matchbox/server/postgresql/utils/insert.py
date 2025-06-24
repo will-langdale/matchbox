@@ -33,7 +33,7 @@ from matchbox.server.postgresql.utils.db import (
     ingest_to_temporary_table,
     large_ingest,
 )
-from matchbox.server.postgresql.utils.query import get_clusters_with_leaves
+from matchbox.server.postgresql.utils.query import get_parent_clusters_and_leaves
 
 
 def insert_source(
@@ -299,7 +299,7 @@ def _build_cluster_objects(
     """Convert the nested dictionary to Cluster objects.
 
     Args:
-        nested_dict: Dictionary from get_clusters_with_leaves()
+        nested_dict: Dictionary from get_parent_clusters_and_leaves()
         intmap: IntMap object for creating new IDs safely
 
     Returns:
@@ -526,7 +526,7 @@ def _results_to_insert_tables(
     # Get a cluster lookup dictionary based on the resolution's parents
     im = IntMap()
 
-    nested_data = get_clusters_with_leaves(resolution=resolution)
+    nested_data = get_parent_clusters_and_leaves(resolution=resolution)
     cluster_lookup: dict[int, Cluster] = _build_cluster_objects(nested_data, im)
 
     logger.debug("Computing hierarchies", prefix=log_prefix)
