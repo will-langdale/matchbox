@@ -173,8 +173,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                     .all()
                 )
 
-                valid_parents = list(set(source_resolution_ids + descendant_ids))
-                query = query.where(ResolutionFrom.parent.in_(valid_parents))
+                query = query.where(
+                    ResolutionFrom.parent.in_(source_resolution_ids + descendant_ids)
+                )
 
             results = session.execute(
                 query.order_by(ResolutionFrom.level.asc(), ResolutionFrom.parent.asc())

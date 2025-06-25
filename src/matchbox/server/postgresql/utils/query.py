@@ -100,7 +100,7 @@ def _build_unified_query(
     resolution: Resolutions,
     sources: list[SourceConfigs] | None = None,
     threshold: int | None = None,
-    columns: Literal["root_leaf", "id_key"] = "root_leaf",
+    mode: Literal["root_leaf", "id_key"] = "root_leaf",
 ) -> Select:
     """Build a query to resolve cluster assignments across resolution hierarchies.
 
@@ -128,6 +128,13 @@ def _build_unified_query(
         via...
     5. **`COALESCE` assembly**: Joins all subqueries to source data and uses `COALESCE`
         to select the highest-priority cluster assignment for each record
+
+    The mode changes the data returned:
+
+    * `"id_key"`: Returns just the cluster ID and key
+    * `"root_leaf"`: Returns both root and leaf cluster IDs and hashes. This will return
+        less rows than `"id_key"` because it doesn't need a row for every key that
+        for a leaf hash
     """
     # Get ordered lineage (already sorted by priority)
     lineage = resolution.get_lineage(sources=sources, threshold=threshold)
@@ -165,7 +172,7 @@ def _build_unified_query(
 
     # Handle source-only case (no model resolutions in lineage)
     if not model_resolutions:
-        if columns == "id_key":
+        if mode == "id_key":
             return select(
                 ClusterSourceKey.cluster_id.label("id"),
                 ClusterSourceKey.key,
@@ -200,7 +207,7 @@ def _build_unified_query(
         cluster_columns.append(subquery.c[f"cluster_{i}"])
 
     # Build FROM clause - start with cluster_keys
-    if columns == "root_leaf":
+    if mode == "root_leaf":
         from_clause: FromClause = join(
             ClusterSourceKey,
             leaf_clusters,
@@ -222,7 +229,7 @@ def _build_unified_query(
     final_root_cluster_id = func.coalesce(*cluster_columns, ClusterSourceKey.cluster_id)
 
     # Build final query with appropriate columns
-    if columns == "id_key":
+    if mode == "id_key":
         return (
             select(
                 final_root_cluster_id.label("id"),
@@ -499,7 +506,7 @@ def query(
                 resolution=truth_resolution,
                 sources=[source_config],
                 threshold=threshold,
-                columns="id_key",
+                mode="id_key",
             )
 
         if limit:
@@ -553,7 +560,7 @@ def get_parent_clusters_and_leaves(
 
             parent_assignments: Select = _build_unified_query(
                 resolution=parent_resolution,
-                columns="root_leaf",
+                mode="root_leaf",
             )
 
             for row in session.execute(parent_assignments):
