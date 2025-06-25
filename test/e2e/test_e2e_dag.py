@@ -1,9 +1,11 @@
 import logging
 
+import polars as pl
 import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
 
+from matchbox import match as mb_match
 from matchbox import query
 from matchbox.client.clean import remove_prefix, steps
 from matchbox.client.clean.utils import cleaning_function, select_cleaners
@@ -274,13 +276,13 @@ class TestE2EPipelineBuilder:
         logging.info("Running DAG for the first time")
         dag.run()
 
-        # Basic verification - check that we have some linked results
+        # Basic verification - we have some linked results and can retrieve them
 
         final_df = query(
             select(
                 {
-                    source_a_config.name: ["company_name", "registration_id"],
-                    source_b_config.name: ["company_name", "registration_id"],
+                    source_a_config.name: ["id", "company_name", "registration_id"],
+                    source_b_config.name: ["id", "company_name", "registration_id"],
                 },
                 credentials=self.warehouse_engine,
             ),
@@ -294,6 +296,18 @@ class TestE2EPipelineBuilder:
 
         first_run_entities = final_df["id"].n_unique()
         logging.info(f"First run produced {first_run_entities} unique entities")
+
+        # mb.match works too
+        matches = mb_match(
+            source_a_config.name,
+            source=source_b_config.name,
+            resolution="__DEFAULT__",
+            key=final_df.filter(pl.col(source_b_config.qualified_key).is_not_null())[
+                source_b_config.qualified_key
+            ][0],
+        )
+        assert len(matches) >= 1
+        assert matches[0].cluster
 
         # === SECOND RUN (OVERWRITE) ===
         logging.info("Running DAG again to test overwriting")
