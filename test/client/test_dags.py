@@ -1,14 +1,23 @@
 import datetime
 from unittest.mock import Mock, call, patch
 
+import polars as pl
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
+from matchbox.client.dags import (
+    DAG,
+    DAGDebugOptions,
+    DedupeStep,
+    IndexStep,
+    LinkStep,
+    StepInput,
+)
 from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_factory
+from matchbox.common.sources import SourceConfig
 
 
 def test_step_input_validation(sqlite_warehouse: Engine):
@@ -110,7 +119,10 @@ def test_model_step_validation(sqlite_warehouse: Engine):
 
 
 @patch("matchbox.client.dags._handler.index")
-def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
+@patch.object(SourceConfig, "hash_data")
+def test_index_step_run(
+    hash_data: Mock, handler_index_mock: Mock, sqlite_warehouse: Engine
+):
     """Tests that an index step correctly calls the index handler."""
     foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
 
@@ -120,15 +132,11 @@ def test_index_step_run(handler_index_mock: Mock, sqlite_warehouse: Engine):
     i_foo = IndexStep(source_config=foo, batch_size=batch_size)
     i_foo.run()
 
-    handler_index_mock.assert_called_once_with(source_config=foo, batch_size=batch_size)
-
-    # Test without batch size
-    handler_index_mock.reset_mock()
-
-    i_foo_no_batch = IndexStep(source_config=foo, batch_size=None)
-    i_foo_no_batch.run()
-
-    handler_index_mock.assert_called_once_with(source_config=foo, batch_size=None)
+    hash_data.assert_called_once_with(batch_size=batch_size)
+    assert (
+        handler_index_mock.call_args_list[0].kwargs["source_config"].model_dump()
+        == foo.model_dump()
+    )
 
 
 @pytest.mark.parametrize(
@@ -183,7 +191,7 @@ def test_dedupe_step_run(
         # Right data is queried
         query_mock.assert_called_once_with(
             [Selector(source=foo, fields=[])],
-            return_type="pandas",
+            return_type="polars",
             threshold=d_foo.left.threshold,
             resolution=d_foo.left.name,
             batch_size=100 if batched else None,
@@ -273,14 +281,14 @@ def test_link_step_run(
         assert query_mock.call_count == 2
         assert query_mock.call_args_list[0] == call(
             [Selector(source=foo, fields=foo.index_fields)],
-            return_type="pandas",
+            return_type="polars",
             threshold=foo_bar.left.threshold,
             resolution=foo_bar.left.name,
             batch_size=100 if batched else None,
         )
         assert query_mock.call_args_list[1] == call(
             [Selector(source=bar, fields=[])],
-            return_type="pandas",
+            return_type="polars",
             threshold=foo_bar.right.threshold,
             resolution=foo_bar.right.name,
             batch_size=100 if batched else None,
@@ -314,17 +322,23 @@ def test_link_step_run(
 
 
 @patch("matchbox.client.dags._handler.index")
+@patch.object(SourceConfig, "hash_data")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
 def test_dag_runs(
-    link_run: Mock, dedupe_run: Mock, handler_index: Mock, sqlite_warehouse: Engine
+    link_run: Mock,
+    dedupe_run: Mock,
+    hash_data: Mock,
+    handler_index: Mock,
+    sqlite_warehouse: Engine,
 ):
     """A legal DAG can be built and run."""
     # Assemble DAG
     dag = DAG()
 
     # Set up constituents
-    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
+    foo = foo_testkit.source_config
     bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
     baz = source_factory(name="baz", engine=sqlite_warehouse).source_config
 
@@ -409,17 +423,24 @@ def test_dag_runs(
     # Run DAG
     dag.run()
 
+    # By default outputs are discarded
+    assert not dag.debug_outputs
+
     assert handler_index.call_count == 3
 
-    # Verify sources and batch sizes passed to handler.index
-    calls = {
-        call.kwargs["source_config"]: call.kwargs["batch_size"]
-        for call in handler_index.call_args_list
-    }
+    # Verify batch sizes passed to source_config.hash_data
+    assert {
+        hash_data.call_args_list[0].kwargs["batch_size"],
+        hash_data.call_args_list[1].kwargs["batch_size"],
+        hash_data.call_args_list[2].kwargs["batch_size"],
+    } == {100, 200}
 
-    assert calls[foo] == 100
-    assert calls[bar] == 200
-    assert calls[baz] == 200
+    # Verify the right sources were sent to index
+    assert {
+        handler_index.call_args_list[0].kwargs["source_config"],
+        handler_index.call_args_list[1].kwargs["source_config"],
+        handler_index.call_args_list[2].kwargs["source_config"],
+    } == {foo, bar, baz}
 
     # Verify the right sources were sent to index
     assert {
@@ -431,13 +452,31 @@ def test_dag_runs(
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 2
 
+    # Real sources can be overridden for debugging
+    handler_index.reset_mock()
+    dag.run(
+        DAGDebugOptions(
+            override_sources={foo.name: pl.from_arrow(foo_testkit.data)[:2]}
+        )
+    )
+    overridden = handler_index.call_args.kwargs["source_config"]
+    assert overridden != foo
+    assert len(next(overridden.query())) == 2
+
+    # Outputs can be kept for debugging
+    dag.run(DAGDebugOptions(keep_outputs=True))
+    assert len(dag.debug_outputs.keys()) == 6
+    dag.run()
+    # Re-running DAG drops debug outputs
+    assert not dag.debug_outputs
+
     # Reset mocks to test the start argument
     handler_index.reset_mock()
     dedupe_run.reset_mock()
     link_run.reset_mock()
 
-    # Run DAG again, starting from foo_bar step
-    dag.run(start="foo_bar")
+    # Can specify a start
+    dag.run(DAGDebugOptions(start="foo_bar"))
 
     # Verify only steps from foo_bar onward were executed
     assert handler_index.call_count == 0
@@ -450,7 +489,7 @@ def test_dag_runs(
     link_run.reset_mock()
 
     # Run DAG with finish at foo_bar step (should not execute foo_bar_baz)
-    dag.run(finish="foo_bar")
+    dag.run(DAGDebugOptions(finish="foo_bar"))
 
     # Verify steps up to foo_bar were executed but foo_bar_baz was not
     assert handler_index.call_count == 3
@@ -463,7 +502,7 @@ def test_dag_runs(
     link_run.reset_mock()
 
     # Run from d_foo to foo_bar (skipping sources at start and foo_bar_baz at end)
-    dag.run(start="d_foo", finish="foo_bar")
+    dag.run(DAGDebugOptions(start="d_foo", finish="foo_bar"))
 
     # Verify only the specified segment was executed
     assert handler_index.call_count == 0

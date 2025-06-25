@@ -3,7 +3,7 @@
 import warnings
 from abc import ABC, abstractmethod
 
-from pandas import DataFrame
+import polars as pl
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
@@ -45,11 +45,11 @@ class Linker(BaseModel, ABC):
         )
 
     @abstractmethod
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
         return
 
     @abstractmethod
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
         return

@@ -12,6 +12,7 @@ from pyarrow.parquet import read_table
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
+    BackendCountableType,
     BackendRetrievableType,
     ModelAncestor,
     ModelConfig,
@@ -191,15 +192,9 @@ def match(
 # Data management
 
 
-def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadStatus:
+def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
     """Index from a SourceConfig in Matchbox."""
     log_prefix = f"Index {source_config.name}"
-    log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
-    logger.debug(f"Started {log_batch}", prefix=log_prefix)
-
-    logger.debug("Retrieving and hashing", prefix=log_prefix)
-
-    data_hashes = source_config.hash_data(batch_size=batch_size)
 
     buffer = table_to_buffer(table=data_hashes)
 
@@ -394,3 +389,28 @@ def delete_resolution(
 
     res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
     return ResolutionOperationStatus.model_validate(res.json())
+
+
+# Admin
+
+
+def count_backend_items(
+    entity: BackendCountableType | None = None,
+) -> dict[str, int]:
+    """Count the number of various entities in the backend."""
+    if entity is not None and entity not in BackendCountableType:
+        raise ValueError(
+            f"Invalid entity type: {entity}. "
+            f"Must be one of {list(BackendCountableType)} "
+        )
+
+    log_prefix = "Backend count"
+    logger.debug("Counting", prefix=log_prefix)
+
+    params = {"entity": entity} if entity else {}
+    res = CLIENT.get("/database/count", params=url_params(params))
+
+    counts = res.json()
+    logger.debug(f"Counts: {counts}", prefix=log_prefix)
+
+    return counts

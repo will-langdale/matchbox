@@ -3,6 +3,7 @@
 from typing import Any, Callable
 
 import numpy as np
+import polars as pl
 import pytest
 from splink import SettingsCreator
 from splink import comparison_library as cl
@@ -238,9 +239,9 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         description="Testing probability generation",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(left_source.query).drop("key"),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("key", axis=1),
+        right_data=pl.from_arrow(right_source.query).drop("key"),
         right_resolution="source_right",
     )
 

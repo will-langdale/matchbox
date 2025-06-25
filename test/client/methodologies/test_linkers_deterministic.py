@@ -2,6 +2,7 @@
 
 from typing import Any, Callable
 
+import polars as pl
 import pytest
 from splink import SettingsCreator
 from splink import blocking_rule_library as brl
@@ -58,17 +59,19 @@ def configure_deterministic_linker(
         if c.name not in ("key", "id")
     ]
 
-    # Build comparison string
-    comparisons = []
+    # Build comparison strings
+    # Doing this redundantly to check OR logic works
+    comparisons: list[str] = []
+
     for l_field, r_field in zip(left_fields, right_fields, strict=True):
         comparisons.append(f"l.{l_field} = r.{r_field}")
+
+    comparisons.append(" and ".join(comparisons))
 
     settings_dict = {
         "left_id": "id",
         "right_id": "id",
-        "comparisons": " and ".join(
-            comparisons,
-        ),
+        "comparisons": comparisons,
     }
 
     # Validate the settings dictionary
@@ -255,9 +258,9 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
         description="Linking with exact matches",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(left_source.query).drop("key"),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("key", axis=1),
+        right_data=pl.from_arrow(right_source.query).drop("key"),
         right_resolution="source_right",
     )
     results: Results = linker.run()
@@ -316,9 +319,9 @@ def test_exact_match_with_duplicates_linking(
         description="Linking with exact matches",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(left_source.query).drop("key"),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("key", axis=1),
+        right_data=pl.from_arrow(right_source.query).drop("key"),
         right_resolution="source_right",
     )
     results: Results = linker.run()
@@ -380,9 +383,9 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
         description="Linking with partial entity coverage",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(left_source.query).drop("key"),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("key", axis=1),
+        right_data=pl.from_arrow(right_source.query).drop("key"),
         right_resolution="source_right",
     )
     results = linker.run()
@@ -438,9 +441,9 @@ def test_no_matching_entities_linking(
         description="Linking with no matching entities",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(left_source.query).drop("key"),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("key", axis=1),
+        right_data=pl.from_arrow(right_source.query).drop("key"),
         right_resolution="source_right",
     )
     results = linker.run()

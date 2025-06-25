@@ -9,6 +9,7 @@ scratch/
 notebooks/
 *.parquet
 data/
+*.db
 
 # DuckDB
 *.duckdb

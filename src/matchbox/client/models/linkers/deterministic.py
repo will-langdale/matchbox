@@ -1,9 +1,8 @@
 """A linking methodology based on a deterministic set of conditions."""
 
-from typing import Type
+from typing import Iterable
 
-import duckdb
-from pandas import ArrowDtype, DataFrame
+import polars as pl
 from pydantic import Field, field_validator
 
 from matchbox.client.helpers import comparison
@@ -13,35 +12,37 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 class DeterministicSettings(LinkerSettings):
     """A data class to enforce the Deterministic linker's settings dictionary shape."""
 
-    comparisons: str = Field(
+    comparisons: Iterable[str] = Field(
         description="""
-            A valid ON clause to compare fields between the left and 
+            An iterable of valid ON clause to compare fields between the left and 
             the right data.
 
-            Use left.field and right.field to refer to columns in the 
-            respective sources.
+            Use left.field and right.field to refer to columns in the respective 
+            sources.
+
+            Each comparison will be treated as OR logic, but more efficiently than using
+            an OR condition in the SQL WHERE clause.
 
             For example:
 
-            "left.name = right.name and left.company_id = right.id"
-        """
+            [   
+                "left.company_number = right.company_number",
+                "left.name = right.name and left.postcode = right.postcode",
+            ]
+        """,
     )
 
     @field_validator("comparisons")
     @classmethod
-    def validate_comparison(cls, v: str) -> str:
+    def validate_comparison(cls, v: Iterable[str]) -> Iterable[str]:
         """Validate the comparison string."""
-        comp_val = comparison(v)
-        return comp_val
+        return [comparison(comp_val) for comp_val in v]
 
 
 class DeterministicLinker(Linker):
     """A deterministic linker that links based on a set of boolean conditions."""
 
     settings: DeterministicSettings
-
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
 
     @classmethod
     def from_settings(
@@ -53,42 +54,44 @@ class DeterministicLinker(Linker):
         )
         return cls(settings=settings)
 
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
         pass
 
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
-        self._id_dtype_l = type(left[self.settings.left_id][0])
-        self._id_dtype_r = type(right[self.settings.right_id][0])
+        left_pl = left.lazy()  # noqa: F841
+        right_pl = right.lazy()  # noqa: F841
 
-        # Used below but ruff can't detect
-        left_df = left.copy()  # noqa: F841
-        right_df = right.copy()  # noqa: F841
+        subqueries = []
+        for i, condition in enumerate(self.settings.comparisons):
+            subquery = f"""
+                SELECT
+                    l_{i}.{self.settings.left_id} AS left_id,
+                    r_{i}.{self.settings.right_id} AS right_id,
+                    1.0 AS probability
+                FROM left_pl l_{i}
+                INNER JOIN right_pl r_{i}
+                    ON {condition}
+            """
+            subqueries.append(subquery)
 
-        sql = f"""
-            select distinct on (list_sort([raw.left_id, raw.right_id]))
-                raw.left_id,
-                raw.right_id,
-                1.0 as probability
-            from (
-                select
-                    l.{self.settings.left_id} as left_id,
-                    r.{self.settings.right_id} as right_id,
-                from
-                    left_df l
-                inner join right_df r on
-                    {self.settings.comparisons}
-            ) raw;
+        union_query = " UNION ALL ".join(subqueries)
+
+        final_query = f"""
+            SELECT DISTINCT 
+                final.left_id, 
+                final.right_id, 
+                final.probability
+            FROM ({union_query}) as final
         """
-        df_arrow = duckdb.sql(sql).arrow()
-        res = df_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
-        del df_arrow
 
-        # Convert bytearray back to bytes
-        return res.assign(
-            left_id=lambda df: df.left_id.apply(self._id_dtype_l),
-            right_id=lambda df: df.right_id.apply(self._id_dtype_r),
+        return (
+            pl.sql(final_query)
+            .with_columns(
+                [
+                    pl.col("probability").cast(pl.Float32),
+                ]
+            )
+            .collect()
         )

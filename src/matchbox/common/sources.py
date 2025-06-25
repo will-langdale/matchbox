@@ -9,6 +9,7 @@ from typing import (
     Any,
     Callable,
     Generator,
+    Iterable,
     Iterator,
     Literal,
     ParamSpec,
@@ -29,7 +30,6 @@ from pydantic import (
 )
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
-from sqlglot import parse_one
 
 from matchbox.common.db import (
     QueryReturnType,
@@ -39,13 +39,9 @@ from matchbox.common.db import (
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes, SourceResolutionName
-from matchbox.common.exceptions import (
-    MatchboxSourceCredentialsError,
-)
-from matchbox.common.hash import (
-    HashMethod,
-    hash_rows,
-)
+from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.hash import HashMethod, hash_rows
+from matchbox.common.logging import logger
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -132,6 +128,11 @@ class Location(ABC, BaseModel):
         Raises:
             MatchboxSourceExtractTransformError: If the ET logic is invalid.
         """
+        ...
+
+    @abstractmethod
+    def head(self, extract_transform: str) -> list:
+        """Extract lightweight data sample using ET logic."""
         ...
 
     @abstractmethod
@@ -223,6 +224,9 @@ class RelationalDBLocation(Location):
         # Users should only run indexing using SourceConfigs they trust and have read,
         # using least privilege credentials
         return validate_sql_for_data_extraction(extract_transform)
+
+    def head(self, extract_transform: str) -> pl.DataFrame:  # noqa: D102
+        return next(self.execute(extract_transform.rstrip(" \t\n;") + " limit 100;"))
 
     @requires_credentials
     def execute(  # noqa: D102
@@ -341,23 +345,26 @@ class SourceConfig(BaseModel):
     @property
     def qualified_key(self) -> str:
         """Get the qualified key for the source."""
-        return self.qualify_field(self.key_field.name)
+        return self.f(self.key_field.name)
 
     @property
     def qualified_fields(self) -> list[str]:
         """Get the qualified fields for the source."""
-        return [self.qualify_field(field.name) for field in self.index_fields]
+        return self.f([field.name for field in self.index_fields])
 
-    def qualify_field(self, field: str) -> str:
-        """Qualify a field name with the source name.
+    def f(self, fields: str | Iterable[str]) -> str | list[str]:
+        """Qualify one or more field names with the source name.
 
         Args:
-            field: The field name to qualify.
+            fields: The field name to qualify, or a list of field names.
 
         Returns:
-            The qualified field name.
+            A single qualified field, or a list of qualified field names.
+
         """
-        return self.prefix + field
+        if isinstance(fields, str):
+            return self.prefix + fields
+        return [self.prefix + field_name for field_name in fields]
 
     @field_validator("name", mode="after")
     @classmethod
@@ -367,7 +374,7 @@ class SourceConfig(BaseModel):
         Raises:
             ValueError: If the name is not a valid source resolution name.
         """
-        if not re.match(r"^[a-z0-9_]+$", value):
+        if not re.match(r"^[a-zA-Z0-9_]+$", value):
             raise ValueError(
                 "Source resolution names must be alphanumeric and underscore only. "
             )
@@ -395,9 +402,7 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes credentials have been set on location
-        sample: pl.DataFrame = next(
-            location.execute(parse_one(extract_transform).limit(1).sql(), batch_size=1)
-        )
+        sample: pl.DataFrame = location.head(extract_transform)
 
         remote_fields = {
             col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))
@@ -466,6 +471,12 @@ class SourceConfig(BaseModel):
         Returns:
             A PyArrow Table containing source keys and their hashes.
         """
+        log_prefix = f"Hash {self.name}"
+        batch_info = (
+            f"with batch size {batch_size:,}" if batch_size else "without batching"
+        )
+        logger.debug(f"Retrieving and hashing {batch_info}", prefix=log_prefix)
+
         key_field: str = self.key_field.name
         index_fields: list[str] = [field.name for field in self.index_fields]
 

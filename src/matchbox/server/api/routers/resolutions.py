@@ -43,7 +43,7 @@ async def delete_resolution(
 ) -> ResolutionOperationStatus:
     """Delete a model from the backend."""
     try:
-        backend.delete_resolution(resolution=name, certain=certain)
+        backend.delete_resolution(name=name, certain=certain)
         return ResolutionOperationStatus(
             success=True,
             name=name,

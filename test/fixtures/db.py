@@ -11,6 +11,7 @@ import pytest
 import respx
 from httpx import Client
 from moto import mock_aws
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
@@ -167,6 +168,51 @@ def create_dedupe_scenario(
     return dag
 
 
+@register_scenario("probabilistic_dedupe")
+def create_probabilistic_dedupe_scenario(
+    backend: MatchboxDBAdapter,
+    warehouse_engine: Engine,
+    n_entities: int = 10,
+    seed: int = 42,
+) -> TestkitDAG:
+    """Create a dedupe TestkitDAG scenario."""
+    # First create the index scenario
+    dag = create_index_scenario(backend, warehouse_engine, n_entities, seed)
+
+    # Get the linked sources
+    linked_key = next(iter(dag.linked.keys()))
+    linked = dag.linked[linked_key]
+
+    # Create and add deduplication models
+    for testkit in dag.sources.values():
+        source = testkit.source_config
+        name = f"probabilistic_test.{source.name}"
+
+        # Query the raw data
+        source_query = backend.query(source=source.name)
+
+        # Build model testkit using query data
+        model_testkit = query_to_model_factory(
+            left_resolution=source.name,
+            left_query=source_query,
+            left_keys={source.name: "key"},
+            true_entities=tuple(linked.true_entities),
+            name=name,
+            description=f"Probabilistic deduplication of {source.name}",
+            prob_range=(0.5, 0.99),
+            seed=seed,
+        )
+        model_testkit.threshold = 50
+
+        # Add to backend and DAG
+        backend.insert_model(model_config=model_testkit.model.model_config)
+        backend.set_model_results(name=name, results=model_testkit.probabilities)
+        backend.set_model_truth(name=name, truth=0.5)
+        dag.add_model(model_testkit)
+
+    return dag
+
+
 @register_scenario("link")
 def create_link_scenario(
     backend: MatchboxDBAdapter,
@@ -246,7 +292,7 @@ def create_link_scenario(
         promote_options="default",
     ).combine_chunks()
 
-    duns_query_linked = backend.query(source="duns", resolution=crn_duns_name)
+    duns_query_linked = backend.query(source="duns", resolution=duns_model.name)
 
     final_join_name = "final_join"
     final_join_model = query_to_model_factory(
@@ -394,14 +440,39 @@ def setup_scenario(
 # Warehouse database fixtures
 
 
+class DevelopmentSettings(BaseSettings):
+    api_port: int = 8000
+    datastore_console_port: int = 9003
+    datastore_port: int = 9002
+    warehouse_port: int = 7654
+    postgres_backend_port: int = 9876
+
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_prefix="MB__DEV__",
+        env_nested_delimiter="__",
+        env_file=Path("environments/development.env"),
+        env_file_encoding="utf-8",
+    )
+
+
+@pytest.fixture(scope="session")
+def development_settings() -> Generator[DevelopmentSettings, None, None]:
+    """Settings for the development environment."""
+    settings = DevelopmentSettings()
+    yield settings
+
+
 @pytest.fixture(scope="function")
-def postgres_warehouse() -> Generator[Engine, None, None]:
+def postgres_warehouse(
+    development_settings: DevelopmentSettings,
+) -> Generator[Engine, None, None]:
     """Creates an engine for the test warehouse database"""
     user = "warehouse_user"
     password = "warehouse_password"
     host = "localhost"
     database = "warehouse"
-    port = 7654
+    port = development_settings.warehouse_port
 
     engine = create_engine(
         f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
@@ -444,11 +515,13 @@ def sqlite_warehouse() -> Generator[Engine, None, None]:
 
 
 @pytest.fixture(scope="session")
-def matchbox_datastore() -> MatchboxDatastoreSettings:
+def matchbox_datastore(
+    development_settings: DevelopmentSettings,
+) -> MatchboxDatastoreSettings:
     """Settings for the Matchbox datastore."""
     return MatchboxDatastoreSettings(
         host="localhost",
-        port=9000,
+        port=development_settings.datastore_port,
         access_key_id="access_key_id",
         secret_access_key="secret_access_key",
         default_region="eu-west-2",
@@ -458,6 +531,7 @@ def matchbox_datastore() -> MatchboxDatastoreSettings:
 
 @pytest.fixture(scope="session")
 def matchbox_postgres_settings(
+    development_settings: DevelopmentSettings,
     matchbox_datastore: MatchboxDatastoreSettings,
 ) -> MatchboxPostgresSettings:
     """Settings for the Matchbox PostgreSQL database."""
@@ -465,7 +539,7 @@ def matchbox_postgres_settings(
         batch_size=250_000,
         postgres={
             "host": "localhost",
-            "port": 5432,
+            "port": development_settings.postgres_backend_port,
             "user": "matchbox_user",
             "password": "matchbox_password",
             "database": "matchbox",

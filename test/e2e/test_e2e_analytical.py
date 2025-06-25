@@ -7,9 +7,10 @@ from pandas import DataFrame
 from sqlalchemy import Engine, text
 
 from matchbox import index, make_model, process, query
+from matchbox.client import _handler
 from matchbox.client.clean import steps
 from matchbox.client.clean.utils import cleaning_function
-from matchbox.client.helpers import cleaner, cleaners, select
+from matchbox.client.helpers import cleaner, cleaners, delete_resolution, select
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.entities import query_to_cluster_entities
@@ -126,10 +127,13 @@ class TestE2EAnalyticalUser:
         yield
 
         # Teardown code
+
         # Clean up database tables
         with postgres_warehouse.connect() as conn:
+            # Drop all tables created by the test
             for source_name in self.linked_testkit.sources:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
+
             conn.commit()
 
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -199,12 +203,12 @@ class TestE2EAnalyticalUser:
                 },
                 credentials=self.warehouse_engine,
             )
-            raw_df = query(source_select, return_type="pandas")
+            raw_df = query(source_select, return_type="polars")
             clusters = query_to_cluster_entities(
                 query=raw_df,
                 keys={source_config.name: source_config.qualified_key},
             )
-            df = raw_df.drop(columns=[source_config.qualified_key])
+            df = raw_df.drop(source_config.qualified_key)
 
             # Apply cleaning based on features in the source
             cleaned = _clean_company_name(df, source_config.prefix)
@@ -281,13 +285,13 @@ class TestE2EAnalyticalUser:
                     credentials=self.warehouse_engine,
                 ),
                 resolution=deduper_names[left_source.name],
-                return_type="pandas",
+                return_type="polars",
             )
             left_clusters = query_to_cluster_entities(
                 query=left_raw_df,
                 keys={left_source.name: left_source.qualified_key},
             )
-            left_df = left_raw_df.drop(columns=[left_source.qualified_key])
+            left_df = left_raw_df.drop(left_source.qualified_key)
 
             right_raw_df = query(
                 select(
@@ -295,13 +299,13 @@ class TestE2EAnalyticalUser:
                     credentials=self.warehouse_engine,
                 ),
                 resolution=deduper_names[right_source.name],
-                return_type="pandas",
+                return_type="polars",
             )
             right_clusters = query_to_cluster_entities(
                 query=right_raw_df,
                 keys={right_source.name: right_source.qualified_key},
             )
-            right_df = right_raw_df.drop(columns=[right_source.qualified_key])
+            right_df = right_raw_df.drop(right_source.qualified_key)
 
             # Apply cleaning based on features in the sources
             left_cleaned = _clean_company_name(left_df, left_source.prefix)
@@ -310,7 +314,7 @@ class TestE2EAnalyticalUser:
             # Build comparison clause
             comparison_clause = (
                 f"l.{left_source.prefix}{common_field} "
-                f"= r.{right_source.prefix}{common_field}"
+                f"= r.{right_source.prefix}{common_field}",
             )
 
             # Create and run linker model
@@ -376,7 +380,7 @@ class TestE2EAnalyticalUser:
             ),
             select({duns_source.name: ["key"]}, credentials=self.warehouse_engine),
             resolution=linker_names[first_pair],
-            return_type="pandas",
+            return_type="polars",
         )
         left_clusters = query_to_cluster_entities(
             query=left_raw_df,
@@ -386,7 +390,7 @@ class TestE2EAnalyticalUser:
             },
         )
         left_df = left_raw_df.drop(
-            columns=[crn_source.qualified_key, duns_source.qualified_key]
+            [crn_source.qualified_key, duns_source.qualified_key]
         )
 
         right_raw_df = query(
@@ -394,12 +398,12 @@ class TestE2EAnalyticalUser:
                 {cdms_source.name: ["key", "crn"]}, credentials=self.warehouse_engine
             ),
             resolution=deduper_names[cdms_source.name],
-            return_type="pandas",
+            return_type="polars",
         )
         right_clusters = query_to_cluster_entities(
             query=right_raw_df, keys={cdms_source.name: cdms_source.qualified_key}
         )
-        right_df = right_raw_df.drop(columns=[cdms_source.qualified_key])
+        right_df = right_raw_df.drop(cdms_source.qualified_key)
 
         # Apply cleaning if needed
         left_cleaned = _clean_company_name(left_df, crn_source.prefix)
@@ -414,7 +418,9 @@ class TestE2EAnalyticalUser:
             model_settings={
                 "left_id": "id",
                 "right_id": "id",
-                "comparisons": f"l.{crn_source.prefix}crn = r.{cdms_source.prefix}crn",
+                "comparisons": [
+                    f"l.{crn_source.prefix}crn = r.{cdms_source.prefix}crn"
+                ],
             },
             left_data=left_cleaned,
             left_resolution=linker_names[first_pair],
@@ -462,7 +468,7 @@ class TestE2EAnalyticalUser:
                 credentials=self.warehouse_engine,
             ),
             resolution=final_linker_name,
-            return_type="pandas",
+            return_type="polars",
         )
 
         final_clusters = query_to_cluster_entities(
@@ -476,12 +482,12 @@ class TestE2EAnalyticalUser:
 
         # Verify the final data structure - number of unique entities
         assert (
-            final_df["id"].nunique()
+            final_df["id"].n_unique()
             == len(self.linked_testkit.true_entities)
             == self.n_true_entities
         ), (
             f"Expected {len(self.linked_testkit.true_entities)} unique entities, "
-            f"got {final_df['id'].nunique()}"
+            f"got {final_df['id'].n_unique()}"
         )
 
         # Verify the final cluster membership -- the golden check
@@ -498,5 +504,34 @@ class TestE2EAnalyticalUser:
         }
 
         assert true_entities == set(final_clusters), "Final clusters do not match"
+
+        # Delete some resolutions as if my experimental model wasn't good enough
+
+        final_linker_name = "__DEFAULT__"
+        crn_source_name = self.linked_testkit.sources["crn"].source_config.name
+
+        counts = _handler.count_backend_items()
+        source_config_count = counts["entities"]["sources"]
+        model_count = counts["entities"]["models"]
+
+        # Delete the final linker resolution
+        delete_resolution(name=final_linker_name, certain=True)
+
+        counts = _handler.count_backend_items()
+        assert counts["entities"]["sources"] == source_config_count
+        assert counts["entities"]["models"] == model_count - 1, (
+            "Expected one less model after deleting the final linker"
+        )
+
+        # Delete a source resolution
+        delete_resolution(name=crn_source_name, certain=True)
+
+        counts = _handler.count_backend_items()
+        assert counts["entities"]["sources"] == source_config_count - 1, (
+            "Expected one less source after deleting crn source"
+        )
+        assert counts["entities"]["models"] == model_count - 4, (
+            "Expected all CRN descendant models to be deleted"
+        )
 
         logging.debug("E2E test completed successfully!")

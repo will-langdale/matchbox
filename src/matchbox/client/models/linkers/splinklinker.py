@@ -1,11 +1,9 @@
 """A linking methodology leveraging Splink."""
 
-import ast
 import inspect
 from typing import Any, Type
 
-import pyarrow as pa
-from pandas import DataFrame
+import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
@@ -164,9 +162,9 @@ class SplinkLinker(Linker):
 
     settings: SplinkSettings
 
-    _linker: SplinkLibLinkerClass = None
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
+    _linker: SplinkLibLinkerClass
+    _id_dtype_l: pl.DataType
+    _id_dtype_r: pl.DataType
 
     @classmethod
     def from_settings(
@@ -189,31 +187,27 @@ class SplinkLinker(Linker):
         )
         return cls(settings=settings)
 
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
-        if (set(left.columns) != set(right.columns)) or not left.dtypes.equals(
-            right.dtypes
-        ):
+        if (set(left.columns) != set(right.columns)) or not left.dtypes == right.dtypes:
             raise ValueError(
                 "SplinkLinker requires input data to be conformant, meaning they "
                 "share the same column names and data formats."
             )
 
-        self._id_dtype_l = type(left[self.settings.left_id][0])
-        self._id_dtype_r = type(right[self.settings.right_id][0])
+        self._id_dtype_l = left[self.settings.left_id].dtype
+        self._id_dtype_r = right[self.settings.right_id].dtype
 
-        # Deal with converting back to bytes from string b-representation,
-        # the most common datatype we expect
-        if self._id_dtype_l.__name__ == "bytes":
-            self._id_dtype_l = ast.literal_eval
-        if self._id_dtype_r.__name__ == "bytes":
-            self._id_dtype_r = ast.literal_eval
-
-        left[self.settings.left_id] = left[self.settings.left_id].apply(str)
-        right[self.settings.right_id] = right[self.settings.right_id].apply(str)
+        # Convert to pandas for Splink compatibility
+        left_pd = left.with_columns(
+            pl.col(self.settings.left_id).cast(pl.String)
+        ).to_pandas()
+        right_pd = right.with_columns(
+            pl.col(self.settings.right_id).cast(pl.String)
+        ).to_pandas()
 
         self._linker = SplinkLibLinkerClass(
-            input_table_or_tables=[left, right],
+            input_table_or_tables=[left_pd, right_pd],
             input_table_aliases=["l", "r"],
             settings=self.settings.linker_settings,
             db_api=self.settings.database_api(),
@@ -223,7 +217,9 @@ class SplinkLinker(Linker):
             proc_func = getattr(self._linker.training, func.function)
             proc_func(**func.arguments)
 
-    def link(self, left: DataFrame = None, right: DataFrame = None) -> DataFrame:
+    def link(
+        self, left: pl.DataFrame = None, right: pl.DataFrame = None
+    ) -> pl.DataFrame:
         """Link the left and right dataframes."""
         if left is not None or right is not None:
             logger.warning(
@@ -235,19 +231,31 @@ class SplinkLinker(Linker):
             threshold_match_probability=self.settings.threshold
         )
 
-        df = res.as_pandas_dataframe().drop_duplicates()
-
-        return pa.table(
-            [
-                pa.array(
-                    df[f"{self.settings.left_id}_l"].apply(self._id_dtype_l),
-                    type=pa.uint64(),
-                ),
-                pa.array(
-                    df[f"{self.settings.right_id}_r"].apply(self._id_dtype_r),
-                    type=pa.uint64(),
-                ),
-                pa.array(df["match_probability"], type=pa.float32()),
-            ],
-            names=["left_id", "right_id", "probability"],
+        return (
+            res.as_duckdbpyrelation()
+            .pl()
+            .lazy()
+            .select(
+                [
+                    f"{self.settings.left_id}_l",
+                    f"{self.settings.right_id}_r",
+                    "match_probability",
+                ]
+            )
+            .with_columns(
+                [
+                    pl.col(f"{self.settings.left_id}_l")
+                    .cast(self._id_dtype_l)
+                    .alias("left_id"),
+                    pl.col(f"{self.settings.right_id}_r")
+                    .cast(self._id_dtype_r)
+                    .alias("right_id"),
+                    pl.col("match_probability").cast(pl.Float32).alias("probability"),
+                ]
+            )
+            .select(["left_id", "right_id", "probability"])
+            # Mutiple blocking rules can lead to multiple matches
+            .group_by(["left_id", "right_id"])
+            .agg(pl.col("probability").max())
+            .collect()
         )

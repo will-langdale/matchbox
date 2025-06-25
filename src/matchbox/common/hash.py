@@ -100,13 +100,6 @@ def process_column_for_hashing(column_name: str, schema_type: pl.DataType) -> pl
             .fill_null("\x00")
             .alias(column_name)
         )
-    elif isinstance(schema_type, pl.Object):
-        return (
-            pl.col(column_name)
-            .map_elements(lambda x: str(x), return_dtype=pl.Utf8)
-            .fill_null("\x00")
-            .alias(column_name)
-        )
     else:
         return pl.col(column_name).cast(pl.Utf8).fill_null("\x00").alias(column_name)
 
@@ -129,14 +122,28 @@ def hash_rows(
     ]
     df_processed = df.with_columns(expr_list)
 
+    record_separator = "␞"
+    unit_separator = "␟"
+
+    str_concatenation: list[pl.Expr] = []
+    for c in columns:
+        str_concatenation.extend(
+            [
+                pl.lit(c),  # column name
+                pl.lit(unit_separator),
+                pl.col(c),  # column value
+                pl.lit(record_separator),
+            ]
+        )
+
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+            plh.concat_str(str_concatenation).nchash.xxh3_128().alias("row_hash")
         )
         return row_hashes["row_hash"]
     elif method == HashMethod.SHA256:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞")
+            plh.concat_str(str_concatenation)
             .chash.sha2_256()
             .str.decode("hex")
             .alias("row_hash")
@@ -149,6 +156,7 @@ def hash_rows(
 def hash_arrow_table(
     table: pa.Table,
     method: HashMethod = HashMethod.XXH3_128,
+    as_sorted_list: list[str] | None = None,
 ) -> bytes:
     """Computes a content hash of an Arrow table invariant to row and field order.
 
@@ -157,6 +165,14 @@ def hash_arrow_table(
     Args:
         table: The pyarrow Table to hash
         method: The method to use for hashing rows (XXH3_128 or SHA256)
+        as_sorted_list: Optional list of column names to hash as a sorted list.
+            For example, ["left_id", "right_id"] will create a "sorted_list"
+            column and drop the original columns to ensure (1,2) and (2,1)
+            hash to the same value. Works with 2 or more columns.
+
+            Note: if list columns are combined with a column that's nullable,
+            list + null value returns null. See Polars' concat_list documentation
+            for more details.
 
     Returns:
         Bytes representing the content hash of the table
@@ -165,6 +181,23 @@ def hash_arrow_table(
 
     if df.height == 0:
         return b"empty_table_hash"
+
+    # Apply normalisation if specified
+    if as_sorted_list:
+        if len(as_sorted_list) < 2:
+            raise ValueError(
+                "Lists passed to as_sorted_list must contain at least 2 column names"
+            )
+
+        # Check that all columns exist
+        missing_cols = [col for col in as_sorted_list if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Columns not found in dataframe: {missing_cols}")
+
+        # Create normalised group and drop original columns
+        df = df.with_columns(
+            pl.concat_list(as_sorted_list).list.sort().alias("sorted_list")
+        ).drop(as_sorted_list)
 
     columns: list[str] = sorted(df.columns)
     df = df.select(columns)
@@ -175,9 +208,7 @@ def hash_arrow_table(
             df = df.explode(column)
 
     df = df.sort(by=columns)
-
     row_hashes = hash_rows(df=df, columns=columns, method=method)
-
     all_hashes: bytes = b"".join(row_hashes.sort().to_list())
 
     return HASH_FUNC(all_hashes).digest()
