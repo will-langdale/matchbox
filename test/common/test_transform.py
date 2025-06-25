@@ -202,17 +202,38 @@ class TestClusterHierarchy:
         assert level2_cluster.probability == 80
 
     def test_combine_with_single_cluster(self, leaf_nodes: list[Cluster]):
-        """Test that combine works correctly with a single cluster."""
-        # Create a single-element list
-        clusters = [leaf_nodes[0]]
+        """Test that combine works correctly with a single cluster.
 
-        # Combine
-        result = Cluster.combine(clusters, probability=None)
+        When Cluster.combine() receives only one cluster but with a new probability,
+        it should pass that probability on.
+        """
+        # Take a leaf node (which has probability=None)
+        original_cluster = leaf_nodes[0]
+        assert original_cluster.probability is None
 
-        # Should return the original cluster
-        assert result is leaf_nodes[0]
-        # Verify probability as expected
-        assert result.probability is None
+        # Combine it with itself but provide a new probability
+        result = Cluster.combine([original_cluster], probability=85)
+
+        # Should get a new cluster with the specified probability
+        assert result.probability == 85
+        assert result.id == original_cluster.id
+        assert result.hash == original_cluster.hash
+        assert result.leaves == original_cluster.leaves
+
+        # Should be a different object (not the original)
+        assert result is not original_cluster
+
+        # Test with probability=0 (edge case)
+        result_zero = Cluster.combine([original_cluster], probability=0)
+        assert result_zero.probability == 0
+
+        # Test preserving original probability when None provided
+        result_none = Cluster.combine([original_cluster], probability=None)
+        assert result_none.probability is None
+
+        assert result_none.id == original_cluster.id
+        assert result_none.hash == original_cluster.hash
+        assert result_none.leaves == original_cluster.leaves
 
     def test_combine_with_leaf_and_non_leaf(
         self, intmap: IntMap, leaf_nodes: list[Cluster]
@@ -302,3 +323,40 @@ class TestClusterHierarchy:
             ]
         )
         assert top_level.hash == alternate_grouping.hash
+
+    def test_combine_single_cluster_with_new_probability(
+        self, leaf_nodes: list[Cluster]
+    ):
+        """Test that combine respects new probability even with single cluster.
+
+        When Cluster.combine() receives only one cluster but with a new probability,
+        it should create a new cluster with that probability rather than returning
+        the original cluster unchanged.
+        """
+        # Take a leaf node (which has probability=None)
+        original_cluster = leaf_nodes[0]
+        assert original_cluster.probability is None
+
+        # Combine it with itself but provide a new probability
+        result = Cluster.combine([original_cluster], probability=85)
+
+        # Should get a new cluster with the specified probability
+        assert result.probability == 85
+        assert result.id == original_cluster.id
+        assert result.hash == original_cluster.hash
+        assert result.leaves == original_cluster.leaves
+
+        # Should be a different object (not the original)
+        assert result is not original_cluster
+
+        # Test with probability=0 (edge case)
+        result_zero = Cluster.combine([original_cluster], probability=0)
+        assert result_zero.probability == 0
+
+        # Test preserving original probability when None provided
+        result_none = Cluster.combine([original_cluster], probability=None)
+        assert result_none.probability is None
+
+        assert result_none.id == original_cluster.id
+        assert result_none.hash == original_cluster.hash
+        assert result_none.leaves == original_cluster.leaves

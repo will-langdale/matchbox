@@ -269,7 +269,16 @@ class Cluster:
         """
         clusters = list(clusters)
         if len(clusters) == 1:
-            return clusters[0]
+            new_probability = (
+                clusters[0].probability if probability is None else probability
+            )
+            return cls(
+                intmap=clusters[0]._intmap,
+                probability=new_probability,
+                leaves=clusters[0].leaves,
+                id=clusters[0].id,
+                hash=clusters[0].hash,
+            )
 
         intmap = clusters[0]._intmap
         unique_dict: dict[int, Cluster] = {}
