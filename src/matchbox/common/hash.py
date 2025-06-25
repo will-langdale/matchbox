@@ -170,6 +170,10 @@ def hash_arrow_table(
             column and drop the original columns to ensure (1,2) and (2,1)
             hash to the same value. Works with 2 or more columns.
 
+            Note: if list columns are combined with a column that's nullable,
+            list + null value returns null. See Polars' concat_list documentation
+            for more details.
+
     Returns:
         Bytes representing the content hash of the table
     """
