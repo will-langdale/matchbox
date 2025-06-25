@@ -427,7 +427,8 @@ class TestGetLineage:
             lineage = source_a.get_lineage()
 
             # Source has no parents, should only return itself
-            assert lineage == [(1, None)]
+            # (resolution_id, source_config_id, threshold)
+            assert lineage == [(1, 11, None)]  # source_a has source_config_id 11
 
     def test_get_lineage_dedupe_has_source_parent(
         self, populated_postgres_db: MatchboxPostgres
@@ -440,7 +441,7 @@ class TestGetLineage:
 
             # Should return: self (dedupe_a) + parent (source_a)
             # Ordered by priority: self first (level 0), then parent (level 1)
-            assert lineage == [(3, 80), (1, None)]
+            assert lineage == [(3, None, 80), (1, 11, None)]
 
     def test_get_lineage_linker_has_multiple_parents(
         self, populated_postgres_db: MatchboxPostgres
@@ -453,15 +454,15 @@ class TestGetLineage:
 
             # Should return: self + direct parents + indirect parents
             # Expected order by (level, resolution_id):
-            # - Level 0: linker (5, 90)
-            # - Level 1: dedupe_a (3, 80), dedupe_b (4, 70)
-            # - Level 2: source_a (1, None), source_b (2, None)
+            # - Level 0: linker (5, None, 90)
+            # - Level 1: dedupe_a (3, None, 80), dedupe_b (4, None, 70)
+            # - Level 2: source_a (1, 11, None), source_b (2, 22, None)
             expected = [
-                (5, 90),  # self (linker)
-                (3, 80),  # dedupe_a (level 1, cached truth)
-                (4, 70),  # dedupe_b (level 1, cached truth)
-                (1, None),  # source_a (level 2, source)
-                (2, None),  # source_b (level 2, source)
+                (5, None, 90),  # self (linker)
+                (3, None, 80),  # dedupe_a (level 1, cached truth)
+                (4, None, 70),  # dedupe_b (level 1, cached truth)
+                (1, 11, None),  # source_a (level 2, source)
+                (2, 22, None),  # source_b (level 2, source)
             ]
             assert lineage == expected
 
@@ -476,14 +477,14 @@ class TestGetLineage:
             lineage = linker.get_lineage(sources=[source_a_config])
 
             # Should only include lineage path to source_a:
-            # - Level 0: linker (5, 90)
-            # - Level 1: dedupe_a (3, 80) - leads to source_a
-            # - Level 2: source_a (1, None) - the target
+            # - Level 0: linker (5, None, 90)
+            # - Level 1: dedupe_a (3, None, 80) - leads to source_a
+            # - Level 2: source_a (1, 11, None) - the target
             # Should NOT include dedupe_b or source_b
             expected = [
-                (5, 90),  # self (linker)
-                (3, 80),  # dedupe_a (leads to source_a)
-                (1, None),  # source_a (target)
+                (5, None, 90),  # self (linker)
+                (3, None, 80),  # dedupe_a (leads to source_a)
+                (1, 11, None),  # source_a (target)
             ]
             assert lineage == expected
 
@@ -498,11 +499,11 @@ class TestGetLineage:
 
             # Should override linker's threshold (90 -> 75) but keep cached thresholds
             expected = [
-                (5, 75),  # self with overridden threshold
-                (3, 80),  # dedupe_a (cached truth unchanged)
-                (4, 70),  # dedupe_b (cached truth unchanged)
-                (1, None),  # source_a (unchanged)
-                (2, None),  # source_b (unchanged)
+                (5, None, 75),  # self with overridden threshold
+                (3, None, 80),  # dedupe_a (cached truth unchanged)
+                (4, None, 70),  # dedupe_b (cached truth unchanged)
+                (1, 11, None),  # source_a (unchanged)
+                (2, 22, None),  # source_b (unchanged)
             ]
             assert lineage == expected
 
@@ -519,11 +520,11 @@ class TestGetLineage:
 
             # Should include both lineage paths (same as no filter for linker):
             expected = [
-                (5, 90),  # self (linker)
-                (3, 80),  # dedupe_a (leads to source_a)
-                (4, 70),  # dedupe_b (leads to source_b)
-                (1, None),  # source_a
-                (2, None),  # source_b
+                (5, None, 90),  # self (linker)
+                (3, None, 80),  # dedupe_a (leads to source_a)
+                (4, None, 70),  # dedupe_b (leads to source_b)
+                (1, 11, None),  # source_a
+                (2, 22, None),  # source_b
             ]
             assert lineage == expected
 
@@ -538,7 +539,7 @@ class TestGetLineage:
 
             # Verify ordering: self first, then by level, then by resolution_id
             levels = []
-            for i, (res_id, _) in enumerate(lineage):
+            for i, (res_id, _, _) in enumerate(lineage):  # Updated to unpack 3-tuple
                 if i == 0:
                     levels.append(0)  # self is level 0
                 elif res_id in [3, 4]:  # dedupe_a, dedupe_b
@@ -566,7 +567,8 @@ class TestGetLineage:
             # Test with threshold override
             lineage_with_override = linker.get_lineage(threshold=80)
 
-            # Should be: [(5, 80), (3, 80), (4, 70), (1, None), (2, None)]
+            # Should be: [(5, None, 80), (3, None, 80), (4, None, 70),
+            # (1, 11, None), (2, 22, None)]
             # Where:
             # - Resolution 5 (linker): Uses override 80 instead of default 90
             # - Resolution 3 (dedupe_a): Uses cached 80 (unchanged)
@@ -574,11 +576,11 @@ class TestGetLineage:
             # - Resolutions 1,2 (sources): Use None (unchanged)
 
             expected = [
-                (5, 80),  # linker with override
-                (3, 80),  # dedupe_a with cached threshold
-                (4, 70),  # dedupe_b with cached threshold
-                (1, None),  # source_a unchanged
-                (2, None),  # source_b unchanged
+                (5, None, 80),  # linker with override
+                (3, None, 80),  # dedupe_a with cached threshold
+                (4, None, 70),  # dedupe_b with cached threshold
+                (1, 11, None),  # source_a unchanged
+                (2, 22, None),  # source_b unchanged
             ]
 
             assert lineage_with_override == expected
@@ -587,11 +589,11 @@ class TestGetLineage:
             lineage_no_override = linker.get_lineage()
 
             expected_no_override = [
-                (5, 90),  # linker with default threshold
-                (3, 80),  # dedupe_a with cached threshold (same)
-                (4, 70),  # dedupe_b with cached threshold (same)
-                (1, None),  # source_a unchanged (same)
-                (2, None),  # source_b unchanged (same)
+                (5, None, 90),  # linker with default threshold
+                (3, None, 80),  # dedupe_a with cached threshold (same)
+                (4, None, 70),  # dedupe_b with cached threshold (same)
+                (1, 11, None),  # source_a unchanged (same)
+                (2, 22, None),  # source_b unchanged (same)
             ]
 
             assert lineage_no_override == expected_no_override
@@ -610,14 +612,14 @@ class TestGetSourceConfig:
 
 
 @pytest.mark.docker
-@pytest.mark.parametrize("columns", ["full", "id_key"])
+@pytest.mark.parametrize("columns", ["root_leaf", "id_key"])
 class TestBuildUnifiedQuery:
     """Test unified query building with correct COALESCE expectations."""
 
     def test_build_unified_source_only(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Should build unified query for source-only scenario."""
         with MBDB.get_session() as session:
@@ -634,22 +636,27 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return all 6 keys from source_a
-        assert len(result) == 6
+        if columns == "root_leaf":
+            # 5 unique cluster rows (not 6) since two keys share cluster 101
+            assert len(result) == 5
 
-        if columns == "full":
             expected_columns = {
                 "root_id",
                 "root_hash",
                 "leaf_id",
                 "leaf_hash",
-                "leaf_key",
-                "source_config_id",
             }
             assert set(result.columns) == expected_columns
             assert all(result["root_id"] == result["leaf_id"])
-            assert all(result["source_config_id"] == 11)
+
+            # Should have clusters 101, 102, 103, 104, 105
+            cluster_ids = set(result["root_id"])
+            assert cluster_ids == {101, 102, 103, 104, 105}
+
         else:  # id_key
+            # Should return all 6 keys from source_a
+            assert len(result) == 6
+
             expected_columns = {"id", "key"}
             assert set(result.columns) == expected_columns
             assert set(result["id"]) == {101, 102, 103, 104, 105}
@@ -657,7 +664,7 @@ class TestBuildUnifiedQuery:
     def test_build_unified_mixed_scenario(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Should build unified query mixing sources and models."""
         with MBDB.get_session() as session:
@@ -674,35 +681,50 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return keys, with some mapped to dedupe clusters
-        assert len(result) == 6
+        if columns == "root_leaf":
+            # We should have 5 unique (root_id, leaf_id) combinations:
+            # - (301, 101), (301, 102) for the dedupe cluster
+            # - (103, 103), (104, 104), (105, 105) for unclaimed clusters
+            assert len(result) == 5
 
-        if columns == "full":
             cluster_ids = set(result["root_id"])
-            assert all(result["source_config_id"] == 11)
+
+            # At threshold 80, C301 qualifies (prob=80 >= 80)
+            assert 301 in cluster_ids
+
+            # C301 should contain leaf clusters 101 and 102
+            leaves_in_301 = [
+                row["leaf_id"] for row in result.to_dicts() if row["root_id"] == 301
+            ]
+            expected_301_leaves = {101, 102}
+            assert set(leaves_in_301) == expected_301_leaves
+
+            # Keys not processed by dedupe_a should keep original clusters
+            remaining_clusters = cluster_ids - {301}
+            assert remaining_clusters == {103, 104, 105}
+
         else:  # id_key
+            # For id_key, we still get all 6 rows since it includes the key column
+            assert len(result) == 6
+
             cluster_ids = set(result["id"])
 
-        # At threshold 80, C301 qualifies (prob=80 >= 80)
-        assert 301 in cluster_ids
+            # At threshold 80, C301 qualifies (prob=80 >= 80)
+            assert 301 in cluster_ids
 
-        # Keys that should map to C301 (contains clusters 101, 102)
-        keys_in_301 = [
-            row["key" if columns == "id_key" else "leaf_key"]
-            for row in result.to_dicts()
-            if row["id" if columns == "id_key" else "root_id"] == 301
-        ]
-        expected_301_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
-        assert set(keys_in_301) == expected_301_keys
+            # Keys that should map to C301 (contains clusters 101, 102)
+            keys_in_301 = [row["key"] for row in result.to_dicts() if row["id"] == 301]
+            expected_301_keys = {"src_a_key1", "src_a_key2", "src_a_key3"}
+            assert set(keys_in_301) == expected_301_keys
 
-        # Keys not processed by dedupe_a should keep original clusters
-        remaining_clusters = cluster_ids - {301}
-        assert remaining_clusters == {103, 104, 105}
+            # Keys not processed by dedupe_a should keep original clusters
+            remaining_clusters = cluster_ids - {301}
+            assert remaining_clusters == {103, 104, 105}
 
     def test_build_unified_linker_all_sources(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Should build unified query for linker with all sources."""
         with MBDB.get_session() as session:
@@ -720,14 +742,13 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return all 11 keys from both sources
-        assert len(result) == 11
-
-        if columns == "full":
+        if columns == "root_leaf":
+            # Return 10 unique hashes from the 11 keys
+            assert len(result) == 10
             cluster_ids = set(result["root_id"])
-            source_configs = set(result["source_config_id"])
-            assert source_configs == {11, 22}
         else:  # id_key
+            # Should return all 11 keys from both sources
+            assert len(result) == 11
             cluster_ids = set(result["id"])
 
         # At threshold 80 for linker:
@@ -740,11 +761,6 @@ class TestBuildUnifiedQuery:
         # C501 should NOT appear - superseded by C503
         assert 501 not in cluster_ids
 
-        # Keys claimed by linker clusters:
-        # C503 contains: 101, 102, 201, 202, 205 (5 keys) - supersedes C501
-        # C502 contains: 103, 203 (2 keys)
-        # Remaining unclaimed: 104, 105, 204 (4 keys)
-
         # Dedupe clusters should NOT appear - their keys are claimed by linker
         assert 301 not in cluster_ids  # All C301 keys (101,102) claimed by C503
         assert 401 not in cluster_ids  # All C401 keys (201,202) claimed by C503
@@ -756,7 +772,7 @@ class TestBuildUnifiedQuery:
     def test_build_unified_linker_high_threshold(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Should exclude linker clusters that don't meet high threshold."""
         with MBDB.get_session() as session:
@@ -774,17 +790,18 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return all 11 keys from both sources
-        assert len(result) == 11
-
-        if columns == "full":
+        if columns == "root_leaf":
+            # Return 10 unique hashes from the 11 keys
+            assert len(result) == 10
             cluster_ids = set(result["root_id"])
         else:  # id_key
+            # Should return all 11 keys from both sources
+            assert len(result) == 11
             cluster_ids = set(result["id"])
 
         # No linker clusters qualify at threshold=95
         assert 503 not in cluster_ids  # 80% < 95%
-        assert 504 not in cluster_ids  # 90% < 95%
+        assert 502 not in cluster_ids  # 90% < 95%
 
         # But dedupe clusters should appear (use cached thresholds):
         # - C301 from dedupe_a: cached=80, prob=80, so 80% >= 80% ✓
@@ -799,7 +816,7 @@ class TestBuildUnifiedQuery:
     def test_build_unified_single_source_filter(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Should filter to single source lineage."""
         with MBDB.get_session() as session:
@@ -816,14 +833,13 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return only 5 keys from source_b
-        assert len(result) == 5
-
-        if columns == "full":
+        if columns == "root_leaf":
+            # Return 5 unique hashes from the 5 keys
+            assert len(result) == 5
             cluster_ids = set(result["root_id"])
-            # All results should be from source_b only
-            assert all(result["source_config_id"] == 22)
         else:  # id_key
+            # Should return only 5 keys from source_b
+            assert len(result) == 5
             cluster_ids = set(result["id"])
 
         # Should see linker clusters that contain source_b data:
@@ -850,7 +866,7 @@ class TestBuildUnifiedQuery:
     def test_build_unified_no_source_filter(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Should include all sources when no filtering."""
         with MBDB.get_session() as session:
@@ -866,14 +882,13 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return all 11 keys from both sources
-        assert len(result) == 11
-
-        if columns == "full":
+        if columns == "root_leaf":
+            # Return 10 unique hashes from the 11 keys
+            assert len(result) == 10
             cluster_ids = set(result["root_id"])
-            source_configs = set(result["source_config_id"])
-            assert source_configs == {11, 22}
         else:  # id_key
+            # Should return all 11 keys from both sources
+            assert len(result) == 11
             cluster_ids = set(result["id"])
 
         # At threshold 80 for linker:
@@ -896,7 +911,7 @@ class TestBuildUnifiedQuery:
     def test_build_unified_source_only_no_sources_filter(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Source resolution with sources=None returns that source only."""
         with MBDB.get_session() as session:
@@ -912,25 +927,22 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        if columns == "full":
+        if columns == "root_leaf":
+            # Return 5 unique hashes from the 6 keys
+            assert len(result) == 5
             cluster_ids = set(result["root_id"])
-        else:  # id_key
-            cluster_ids = set(result["id"])
-
-        if columns == "full":
-            # Should only have source_a data
-            assert all(result["source_config_id"] == 11)
+            # Can't check source_config_id since it's no longer in "root_leaf" results
             assert cluster_ids == {101, 102, 103, 104, 105}
         else:
+            # Should return 6 keys from source_a
+            assert len(result) == 6
+            cluster_ids = set(result["id"])
             assert cluster_ids == {101, 102, 103, 104, 105}
-
-        # Should only return 6 keys from source_a, not 11 from both sources
-        assert len(result) == 6
 
     def test_simple_thresholding(
         self,
         populated_postgres_db: MatchboxPostgres,
-        columns: Literal["full", "id_key"],
+        columns: Literal["root_leaf", "id_key"],
     ):
         """Simple test showing thresholding works."""
         # Query at threshold=70 where both C301 (80%) and C302 (70%) qualify
@@ -948,13 +960,14 @@ class TestBuildUnifiedQuery:
         with MBDB.get_adbc_connection() as conn:
             result = sql_to_df(compile_sql(query), conn, "polars")
 
-        # Should return 6 key from source a with no repetition
-        assert len(result) == 6
-
         # Get the appropriate column name for cluster IDs
         if columns == "id_key":
+            # Should return 6 keys from source a with no repetition
+            assert len(result) == 6
             cluster_column = "id"
-        else:  # "full"
+        else:  # "root_leaf"
+            # Return 5 unique hashes from the 6 keys
+            assert len(result) == 5
             cluster_column = "root_id"
 
         # C301 should be excluded in favour of 302

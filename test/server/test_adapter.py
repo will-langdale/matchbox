@@ -351,7 +351,6 @@ class TestMatchboxBackend:
 
             identical, report = diff_results(
                 expected=dag.models["probabilistic_test.crn"].entities,
-                # expected=dag.linked["linked_cdms_crn_duns"].true_entity_subset("crn"),
                 actual=res_clusters,
             )
             assert identical, report

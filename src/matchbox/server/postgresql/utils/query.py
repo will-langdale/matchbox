@@ -10,7 +10,6 @@ from sqlalchemy import (
     and_,
     func,
     join,
-    literal,
     outerjoin,
     select,
     union_all,
@@ -101,7 +100,7 @@ def _build_unified_query(
     resolution: Resolutions,
     sources: list[SourceConfigs] | None = None,
     threshold: int | None = None,
-    columns: Literal["full", "id_key"] = "full",
+    columns: Literal["root_leaf", "id_key"] = "root_leaf",
 ) -> Select:
     """Build a query to resolve cluster assignments across resolution hierarchies.
 
@@ -133,14 +132,21 @@ def _build_unified_query(
     # Get ordered lineage (already sorted by priority)
     lineage = resolution.get_lineage(sources=sources, threshold=threshold)
 
-    # Filter to model resolutions only
-    model_resolutions = [
-        (res_id, truth) for res_id, truth in lineage if truth is not None
-    ]
+    # Separate to model and source resolutions
+    model_resolutions: list[tuple[int, float]] = []
+    source_config_ids: list[int] = []
+    for resolution_id, source_config_id, truth in lineage:
+        if truth is None:
+            source_config_ids.append(source_config_id)
+        else:
+            model_resolutions.append((resolution_id, truth))
 
     # Build source config filter
     if sources:
-        source_config_ids = [sc.source_config_id for sc in sources]
+        # If sources are provided, filter to those source configs
+        source_config_ids = set(sc.source_config_id for sc in sources) & set(
+            source_config_ids
+        )
         source_filter = ClusterSourceKey.source_config_id.in_(source_config_ids)
     elif resolution.type == "source":
         # If querying a source resolution with no sources filter,
@@ -150,7 +156,8 @@ def _build_unified_query(
             == resolution.source_config.source_config_id
         )
     else:
-        source_filter = literal(True)  # No filtering
+        # No sources provided, filter to lineage source configs
+        source_filter = ClusterSourceKey.source_config_id.in_(source_config_ids)
 
     # Create proper aliases for clusters tables
     leaf_clusters = aliased(Clusters, name="leaf_clusters")
@@ -163,15 +170,13 @@ def _build_unified_query(
                 ClusterSourceKey.cluster_id.label("id"),
                 ClusterSourceKey.key,
             ).where(source_filter)
-        else:  # "full"
+        else:  # "root_leaf"
             return (
                 select(
                     ClusterSourceKey.cluster_id.label("root_id"),
                     leaf_clusters.cluster_hash.label("root_hash"),
                     ClusterSourceKey.cluster_id.label("leaf_id"),
                     leaf_clusters.cluster_hash.label("leaf_hash"),
-                    ClusterSourceKey.key.label("leaf_key"),
-                    ClusterSourceKey.source_config_id,
                 )
                 .select_from(
                     join(
@@ -181,6 +186,7 @@ def _build_unified_query(
                     )
                 )
                 .where(source_filter)
+                .distinct()
             )
 
     # Build subqueries for each model resolution
@@ -194,7 +200,7 @@ def _build_unified_query(
         cluster_columns.append(subquery.c[f"cluster_{i}"])
 
     # Build FROM clause - start with cluster_keys
-    if columns == "full":
+    if columns == "root_leaf":
         from_clause: FromClause = join(
             ClusterSourceKey,
             leaf_clusters,
@@ -225,15 +231,13 @@ def _build_unified_query(
             .select_from(from_clause)
             .where(source_filter)
         )
-    else:  # "full"
+    else:  # "root_leaf"
         return (
             select(
                 final_root_cluster_id.label("root_id"),
                 root_clusters.cluster_hash.label("root_hash"),
                 ClusterSourceKey.cluster_id.label("leaf_id"),
                 leaf_clusters.cluster_hash.label("leaf_hash"),
-                ClusterSourceKey.key.label("leaf_key"),
-                ClusterSourceKey.source_config_id,
             )
             .select_from(
                 from_clause.outerjoin(
@@ -241,6 +245,7 @@ def _build_unified_query(
                 )
             )
             .where(source_filter)
+            .distinct()
         )
 
 
@@ -258,7 +263,7 @@ def _build_target_cluster_cte(
     # Get ordered lineage
     lineage = resolution.get_lineage(threshold=threshold)
     model_resolutions = [
-        (res_id, truth) for res_id, truth in lineage if truth is not None
+        (res_id, truth) for res_id, _, truth in lineage if truth is not None
     ]
 
     # Build subqueries for each model resolution
@@ -323,7 +328,7 @@ def _build_matching_leaves_cte(
     # Get ordered lineage and extract model resolutions
     lineage = resolution.get_lineage(threshold=threshold)
     model_resolutions = [
-        (res_id, truth) for res_id, truth in lineage if truth is not None
+        (res_id, truth) for res_id, _, truth in lineage if truth is not None
     ]
 
     # Start with direct members branch
@@ -540,7 +545,6 @@ def get_parent_clusters_and_leaves(
 
         # For each parent, get all cluster assignments
         all_clusters: dict[int, dict] = {}
-        cluster_leaves: dict[int, set[tuple[int, bytes]]] = {}
 
         for parent_id in parent_ids:
             parent_resolution: Resolutions = session.get(Resolutions, parent_id)
@@ -549,28 +553,20 @@ def get_parent_clusters_and_leaves(
 
             parent_assignments: Select = _build_unified_query(
                 resolution=parent_resolution,
-                sources=None,
-                columns="full",
+                columns="root_leaf",
             )
 
-            # Execute and collect results
             for row in session.execute(parent_assignments):
                 root_id = row.root_id
-                if root_id not in cluster_leaves:
-                    cluster_leaves[root_id] = set()
+                if root_id not in all_clusters:
                     all_clusters[root_id] = {
                         "root_hash": row.root_hash,
                         "leaves": [],
                         "probability": None,
                     }
-                cluster_leaves[root_id].add((row.leaf_id, row.leaf_hash))
-
-        # Convert tuple sets to dict lists
-        for cluster_id, leaf_tuples in cluster_leaves.items():
-            all_clusters[cluster_id]["leaves"] = [
-                {"leaf_id": leaf_id, "leaf_hash": leaf_hash}
-                for leaf_id, leaf_hash in leaf_tuples
-            ]
+                all_clusters[root_id]["leaves"].append(
+                    {"leaf_id": row.leaf_id, "leaf_hash": row.leaf_hash}
+                )
 
         return all_clusters
 

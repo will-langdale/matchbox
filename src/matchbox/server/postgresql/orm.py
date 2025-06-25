@@ -131,27 +131,40 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     def get_lineage(
         self, sources: list["SourceConfigs"] | None = None, threshold: int | None = None
-    ) -> list[tuple[int, float | None]]:
-        """Returns lineage ordered by priority: [(resolution_id, threshold), ...].
+    ) -> list[tuple[int, int, float | None]]:
+        """Returns lineage ordered by priority.
 
         Highest priority (lowest level) first, then by resolution_id for stability.
 
         Args:
             sources: If provided, only return lineage paths that lead to these sources
             threshold: If provided, override this resolution's threshold
+
+        Returns:
+            List of tuples (resolution_id, source_config_id, threshold) ordered by
+                priority.
         """
         with MBDB.get_session() as session:
-            query = select(ResolutionFrom.parent, ResolutionFrom.truth_cache).where(
-                ResolutionFrom.child == self.resolution_id
+            query = (
+                select(
+                    ResolutionFrom.parent,
+                    SourceConfigs.source_config_id,
+                    ResolutionFrom.truth_cache,
+                )
+                .join(
+                    SourceConfigs,
+                    ResolutionFrom.parent == SourceConfigs.resolution_id,
+                    isouter=True,
+                )
+                .where(ResolutionFrom.child == self.resolution_id)
             )
 
             if sources:
+                # Filter by source configs
                 source_resolution_ids = [sc.resolution_id for sc in sources]
 
-                # Include target sources + resolutions that have them as ancestors
-                valid_parents = (
-                    source_resolution_ids
-                    + session.execute(
+                descendant_ids = (
+                    session.execute(
                         select(ResolutionFrom.child).where(
                             ResolutionFrom.parent.in_(source_resolution_ids)
                         )
@@ -160,17 +173,25 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                     .all()
                 )
 
+                valid_parents = list(set(source_resolution_ids + descendant_ids))
                 query = query.where(ResolutionFrom.parent.in_(valid_parents))
 
             results = session.execute(
                 query.order_by(ResolutionFrom.level.asc(), ResolutionFrom.parent.asc())
             ).all()
 
-            # Use threshold override if provided, otherwise use self.truth
+            # Get self's source config ID
+            self_source_config_id = (
+                self.source_config.source_config_id if self.source_config else None
+            )
+
+            # Threshold handling
             self_threshold = threshold if threshold is not None else self.truth
 
             # Add self at beginning (highest priority - level 0)
-            return [(self.resolution_id, self_threshold)] + list(results)
+            return [(self.resolution_id, self_source_config_id, self_threshold)] + list(
+                results
+            )
 
     @classmethod
     def from_name(
