@@ -48,17 +48,35 @@ def test_large_ingest_simple(
     metadata.reflect(engine)
     original_tables = len(metadata.tables)
 
+    # No auto-commit
+    with MBDB.get_adbc_connection() as conn:
+        large_ingest(
+            data=pa.Table.from_pylist([{"foo": "val"}]),
+            table_class=DummyTable,
+            adbc_connection=conn,
+        )
+    assert DummyTable.count() == 0
+
     # Ingest data with manual keys and chunking
-    large_ingest(
-        data=pa.Table.from_pylist(
-            [{"key": 0, "foo": "val1"}],
-        ),
-        table_class=DummyTable,
-        max_chunksize=100,
-    )
+    with MBDB.get_adbc_connection() as conn:
+        large_ingest(
+            data=pa.Table.from_pylist(
+                [{"key": 0, "foo": "val1"}],
+            ),
+            table_class=DummyTable,
+            adbc_connection=conn,
+            max_chunksize=100,
+        )
+        conn.commit()
 
     # Ingest data without keys and no chunking
-    large_ingest(data=pa.Table.from_pylist([{"foo": "val2"}]), table_class=DummyTable)
+    with MBDB.get_adbc_connection() as conn:
+        large_ingest(
+            data=pa.Table.from_pylist([{"foo": "val2"}]),
+            table_class=DummyTable,
+            adbc_connection=conn,
+        )
+        conn.commit()
 
     # Both rows were fine
     assert DummyTable.count() == 2
@@ -69,9 +87,13 @@ def test_large_ingest_simple(
     assert 0 < second_id
 
     # By default, upserting not allowed
-    with pytest.raises(MatchboxDatabaseWriteError):
+    with (
+        pytest.raises(MatchboxDatabaseWriteError),
+        MBDB.get_adbc_connection() as conn,
+    ):
         large_ingest(
             data=pa.Table.from_pylist([{"key": 0, "foo": "val3"}]),
+            adbc_connection=conn,
             table_class=DummyTable,
         )
 
@@ -80,9 +102,13 @@ def test_large_ingest_simple(
     assert len(metadata.tables) == original_tables
 
     # Columns not available in the target table are rejected
-    with pytest.raises(ValueError, match="does not have columns"):
+    with (
+        pytest.raises(ValueError, match="does not have columns"),
+        MBDB.get_adbc_connection() as conn,
+    ):
         large_ingest(
             data=pa.Table.from_pylist([{"key": 10, "bar": "val3"}]),
+            adbc_connection=conn,
             table_class=DummyTable,
         )
 
@@ -115,27 +141,38 @@ def test_large_ingest_upsert_custom_update(
         session.commit()
 
     # Some choices of parameters are not allowed
-    with pytest.raises(ValueError, match="Cannot update a custom upsert key"):
+    with (
+        pytest.raises(ValueError, match="Cannot update a custom upsert key"),
+        MBDB.get_adbc_connection() as conn,
+    ):
         large_ingest(
             data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
             table_class=DummyTable,
+            adbc_connection=conn,
             update_columns=["foo"],
             upsert_keys=["foo"],
         )
 
-    with pytest.raises(ValueError, match="different custom upsert key"):
+    with (
+        pytest.raises(ValueError, match="different custom upsert key"),
+        MBDB.get_adbc_connection() as conn,
+    ):
         large_ingest(
             data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
+            adbc_connection=conn,
             table_class=DummyTable,
             update_columns=["key"],
         )
 
     # Ingest updated data
-    large_ingest(
-        data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
-        table_class=DummyTable,
-        update_columns=["foo"],
-    )
+    with MBDB.get_adbc_connection() as conn:
+        large_ingest(
+            data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
+            adbc_connection=conn,
+            table_class=DummyTable,
+            update_columns=["foo"],
+        )
+        conn.commit()
 
     # Number of rows unchanged
     assert DummyTable.count() == 1
@@ -153,12 +190,17 @@ def test_large_ingest_upsert_custom_update(
     assert len(metadata.tables) == original_tables
 
     # Cannot update column when constraints violated
-    with pytest.raises(MatchboxDatabaseWriteError):
+    with (
+        pytest.raises(MatchboxDatabaseWriteError),
+        MBDB.get_adbc_connection() as conn,
+    ):
         large_ingest(
             pa.Table.from_pylist([{"key": 2, "foo": "new foo", "bar": "new bar"}]),
             DummyTable,
+            adbc_connection=conn,
             update_columns=["foo"],
         )
+        conn.commit()
 
     # Failed ingestion has no effect
     assert DummyTable.count() == 1
@@ -167,11 +209,14 @@ def test_large_ingest_upsert_custom_update(
     assert len(metadata.tables) == original_tables
 
     # Constraints are not violated when upserting
-    large_ingest(
-        pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
-        DummyTable,
-        update_columns=["foo"],
-    )
+    with MBDB.get_adbc_connection() as conn:
+        large_ingest(
+            pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
+            DummyTable,
+            adbc_connection=conn,
+            update_columns=["foo"],
+        )
+        conn.commit()
 
     # Nothing changed still
     assert DummyTable.count() == 1
@@ -206,11 +251,14 @@ def test_large_ingest_upsert_custom_key(
         session.commit()
 
     # Ingest updated data
-    large_ingest(
-        data=pa.Table.from_pylist([{"key": 2, "other_key": "a", "foo": "new foo"}]),
-        table_class=DummyTable,
-        upsert_keys=["other_key"],
-    )
+    with MBDB.get_adbc_connection() as conn:
+        large_ingest(
+            data=pa.Table.from_pylist([{"key": 2, "other_key": "a", "foo": "new foo"}]),
+            table_class=DummyTable,
+            adbc_connection=conn,
+            upsert_keys=["other_key"],
+        )
+        conn.commit()
 
     # Number of rows unchanged
     assert DummyTable.count() == 1
