@@ -242,55 +242,55 @@ def insert_model(
 
         if exists_obj is not None:
             raise MatchboxResolutionAlreadyExists
-        else:
-            new_res = Resolutions(
-                type=ResolutionNodeType.MODEL.value,
-                name=name,
-                description=description,
-                truth=100,
+
+        new_res = Resolutions(
+            type=ResolutionNodeType.MODEL.value,
+            name=name,
+            description=description,
+            truth=100,
+        )
+        session.add(new_res)
+        session.flush()
+
+        def _create_closure_entries(parent_resolution: Resolutions) -> None:
+            """Create closure entries for the new model.
+
+            This is made up of mappings between nodes and any of their direct or
+            indirect parents.
+            """
+            session.add(
+                ResolutionFrom(
+                    parent=parent_resolution.resolution_id,
+                    child=new_res.resolution_id,
+                    level=1,
+                    truth_cache=parent_resolution.truth,
+                )
             )
-            session.add(new_res)
-            session.flush()
 
-            def _create_closure_entries(parent_resolution: Resolutions) -> None:
-                """Create closure entries for the new model.
+            ancestor_entries = (
+                session.query(ResolutionFrom)
+                .filter(ResolutionFrom.child == parent_resolution.resolution_id)
+                .all()
+            )
 
-                This is made up of mappings between nodes and any of their direct or
-                indirect parents.
-                """
+            for entry in ancestor_entries:
                 session.add(
                     ResolutionFrom(
-                        parent=parent_resolution.resolution_id,
+                        parent=entry.parent,
                         child=new_res.resolution_id,
-                        level=1,
-                        truth_cache=parent_resolution.truth,
+                        level=entry.level + 1,
+                        truth_cache=entry.truth_cache,
                     )
                 )
 
-                ancestor_entries = (
-                    session.query(ResolutionFrom)
-                    .filter(ResolutionFrom.child == parent_resolution.resolution_id)
-                    .all()
-                )
+        # Create resolution lineage entries
+        _create_closure_entries(parent_resolution=left)
 
-                for entry in ancestor_entries:
-                    session.add(
-                        ResolutionFrom(
-                            parent=entry.parent,
-                            child=new_res.resolution_id,
-                            level=entry.level + 1,
-                            truth_cache=entry.truth_cache,
-                        )
-                    )
+        if right != left:
+            _create_closure_entries(parent_resolution=right)
 
-            # Create resolution lineage entries
-            _create_closure_entries(parent_resolution=left)
-
-            if right != left:
-                _create_closure_entries(parent_resolution=right)
-
-            status = "Inserted new"
-            resolution_id = new_res.resolution_id
+        status = "Inserted new"
+        resolution_id = new_res.resolution_id
 
         session.commit()
 
