@@ -66,6 +66,7 @@ services:
       context: .
       args:
         ENV_FILE: server.env
+        MB_VERSION: ${MB_VERSION}
       dockerfile: src/matchbox/server/Dockerfile
       target: dev
     environment:

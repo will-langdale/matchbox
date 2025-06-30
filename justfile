@@ -1,6 +1,8 @@
 # Build and run all containers
 build:
-    docker compose --env-file=environments/server.env up --build -d --wait
+    # Running the Python command directly instead of invoking uv ensures the uv.lock isn't
+    # modified, which would affect version number
+    source .venv/bin/activate && MB_VERSION=$(python -m setuptools_scm) docker compose up --build
 
 # Delete all compiled Python files
 clean:
