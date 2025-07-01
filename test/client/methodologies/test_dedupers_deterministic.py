@@ -2,6 +2,7 @@
 
 from typing import Any, Callable
 
+import polars as pl
 import pytest
 
 from matchbox import make_model
@@ -30,9 +31,11 @@ def configure_naive_deduper(testkit: SourceTestkit) -> dict[str, Any]:
     Returns:
         A dictionary with validated settings for NaiveDeduper
     """
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     fields = [
-        c.name for c in testkit.source_config.columns if c.name not in ("key", "id")
+        c.name
+        for c in testkit.source_config.index_fields
+        if c.name not in ("key", "id")
     ]
 
     settings_dict = {
@@ -70,7 +73,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
     )
 
     source_parameters = SourceTestkitParameters(
-        full_name="source_exact",
+        name="source_exact",
         features=features,
         n_true_entities=10,
         repetition=0,  # Each entity appears once
@@ -85,7 +88,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_data=source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(source.query).drop("key"),
         left_resolution="source_exact",
     )
     results: Results = deduper.run()
@@ -120,7 +123,7 @@ def test_exact_duplicate_deduplication(
     )
 
     source_parameters = SourceTestkitParameters(
-        full_name="source_exact",
+        name="source_exact",
         features=features,
         n_true_entities=10,
         repetition=2,  # Each entity appears 3 times (base + 2 repetitions)
@@ -135,7 +138,7 @@ def test_exact_duplicate_deduplication(
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_data=source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(source.query).drop("key"),
         left_resolution="source_exact",
     )
     results: Results = deduper.run()

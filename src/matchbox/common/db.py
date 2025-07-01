@@ -1,12 +1,22 @@
 """Common database utilities for Matchbox."""
 
-from typing import TYPE_CHECKING, Any, Iterator, Literal, TypeVar, get_args, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    TypeVar,
+    get_args,
+    overload,
+)
 
 import polars as pl
 import sqlglot
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
+from pydantic import AnyUrl
 from sqlalchemy.engine import Engine
 
 from matchbox.common.exceptions import MatchboxSourceExtractTransformError
@@ -30,6 +40,7 @@ def sql_to_df(
     *,
     return_batches: Literal[False] = False,
     batch_size: int | None = None,
+    rename: dict[str, str] | Callable | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> QueryReturnType: ...
@@ -43,6 +54,7 @@ def sql_to_df(
     *,
     return_batches: Literal[True],
     batch_size: int | None = None,
+    rename: dict[str, str] | Callable | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> Iterator[QueryReturnType]: ...
@@ -55,6 +67,7 @@ def sql_to_df(
     *,
     return_batches: bool = False,
     batch_size: int | None = None,
+    rename: dict[str, str] | Callable | None = None,
     schema_overrides: dict[str, Any] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> QueryReturnType | Iterator[QueryReturnType]:
@@ -71,6 +84,9 @@ def sql_to_df(
             Default is False.
         batch_size (int | None): Indicate the size of each batch when processing
             data in batches. Default is None.
+        rename (dict[str, str] | Callable | None): A dictionary mapping old column
+            names to new column names, or a callable that takes a DataFrame and
+            returns a DataFrame with renamed columns. Default is None.
         schema_overrides (dict[str, Any] | None): A dictionary mapping column names
             to dtypes. Default is None.
         execute_options (dict[str, Any] | None): These options will be passed through
@@ -82,13 +98,27 @@ def sql_to_df(
         If return_batches is True: An iterator of dataframes in the specified format.
 
     Raises:
-        ValueError: If the connection is not properly configured or if an unsupported
-            return type is specified.
+        ValueError:
+
+            * If the connection is not properly configured or if an unsupported
+                return type is specified.
+            * If batch_size and return_batches are either both set or both unset.
+
     """
     if return_type not in get_args(ReturnTypeStr):
         raise ValueError(f"return_type of {return_type} not valid")
 
-    def to_format(results: PolarsDataFrame) -> QueryReturnType:
+    if not batch_size and return_batches:
+        raise ValueError("A batch size must be specified if return_batches is True")
+
+    if batch_size and not return_batches:
+        raise ValueError("Cannot set a batch size if return_batches if False")
+
+    def _to_format(results: PolarsDataFrame) -> QueryReturnType:
+        """Convert the results to the specified format."""
+        if rename:
+            results = results.rename(rename)
+
         if return_type == "polars":
             return results
         elif return_type == "arrow":
@@ -105,49 +135,10 @@ def sql_to_df(
         execute_options=execute_options,
     )
 
-    if not bool(batch_size):
-        return to_format(res)
+    if return_batches:
+        return (_to_format(batch) for batch in res)
 
-    if not return_batches:
-        return to_format(pl.concat(res))
-
-    return (to_format(batch) for batch in res)
-
-
-def get_schema_table_names(full_name: str) -> tuple[str, str]:
-    """Takes a string table name and returns the unquoted schema and table as a tuple.
-
-    Args:
-        full_name: A string indicating a table's full name
-
-    Returns:
-        (schema, table): A tuple of schema and table name. If schema
-            cannot be inferred, returns None.
-
-    Raises:
-        ValueError: When the function can't detect either a
-            schema.table or table format in the input
-    """
-    schema_name_list = full_name.replace('"', "").split(".")
-
-    if len(schema_name_list) == 1:
-        schema = None
-        table = schema_name_list[0]
-    elif len(schema_name_list) == 2:
-        schema = schema_name_list[0]
-        table = schema_name_list[1]
-    else:
-        raise ValueError(f"Could not identify schema and table in {full_name}.")
-
-    return schema, table
-
-
-def fullname_to_prefix(fullname: str) -> str:
-    """Converts a full name to a prefix for column names."""
-    db_schema, db_table = get_schema_table_names(fullname)
-    if db_schema:
-        return f"{db_schema}_{db_table}_"
-    return f"{db_table}_"
+    return _to_format(res)
 
 
 def validate_sql_for_data_extraction(sql: str) -> bool:
@@ -199,3 +190,59 @@ def validate_sql_for_data_extraction(sql: str) -> bool:
         )
 
     return True
+
+
+def clean_uri(
+    uri: str | AnyUrl,
+    strip_driver: bool = True,
+    strip_credentials: bool = True,
+    strip_query_fragment: bool = True,
+) -> AnyUrl:
+    """Clean a database URI.
+
+    Optionally removes driver, credentials, and/or query/fragment components.
+
+    Args:
+        uri: A database URI as a string or AnyUrl object
+        strip_driver: Whether to strip the driver component
+            (e.g., 'postgresql+psycopg2' -> 'postgresql')
+        strip_credentials: Whether to strip username and password components
+        strip_query_fragment: Whether to strip query and fragment components
+
+    Returns:
+        An AnyUrl object with the specified components removed
+    """
+    if isinstance(uri, str):
+        uri = AnyUrl(uri)
+
+    # Strip driver if requested
+    scheme = uri.scheme
+    if strip_driver and "+" in scheme:
+        scheme = scheme.split("+")[0]
+
+    # Build netloc (username:password@host:port)
+    netloc = ""
+    if not strip_credentials and (uri.username or uri.password):
+        auth = uri.username or ""
+        if uri.password:
+            auth += f":{uri.password}"
+        netloc += f"{auth}@"
+
+    if uri.host:
+        netloc += uri.host
+        if uri.port:
+            netloc += f":{uri.port}"
+
+    # Build path
+    path = uri.path or ""
+
+    # Build query and fragment
+    query = "" if strip_query_fragment else (f"?{uri.query}" if uri.query else "")
+    fragment = (
+        "" if strip_query_fragment else (f"#{uri.fragment}" if uri.fragment else "")
+    )
+
+    # Construct the URI
+    new_uri = f"{scheme}://{netloc}{path}{query}{fragment}"
+
+    return AnyUrl(new_uri)

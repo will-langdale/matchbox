@@ -1,9 +1,7 @@
 """A deduplication methodology based on a deterministic set of conditions."""
 
-from typing import Type
-
 import duckdb
-from pandas import ArrowDtype, DataFrame
+import polars as pl
 from pydantic import Field
 
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
@@ -13,7 +11,7 @@ class NaiveSettings(DeduperSettings):
     """A data class to enforce the Naive deduper's settings dictionary shape."""
 
     unique_fields: list[str] = Field(
-        description="A list of columns that will form a unique, deduplicated record"
+        description="A list of fields that will form a unique, deduplicated record"
     )
 
 
@@ -22,7 +20,7 @@ class NaiveDeduper(Deduper):
 
     settings: NaiveSettings
 
-    _id_dtype: Type = None
+    _id_dtype: pl.DataType
 
     @classmethod
     def from_settings(cls, id: str, unique_fields: list[str]) -> "NaiveDeduper":
@@ -30,15 +28,15 @@ class NaiveDeduper(Deduper):
         settings = NaiveSettings(id=id, unique_fields=unique_fields)
         return cls(settings=settings)
 
-    def prepare(self, data: DataFrame) -> None:
+    def prepare(self, data: pl.DataFrame) -> None:
         """Prepare the deduper for deduplication."""
         pass
 
-    def dedupe(self, data: DataFrame) -> DataFrame:
+    def dedupe(self, data: pl.DataFrame) -> pl.DataFrame:
         """Deduplicate the dataframe."""
-        self._id_dtype = type(data[self.settings.id][0])
+        self._id_dtype = data[self.settings.id].dtype
 
-        df = data.copy()
+        df = data.clone()
 
         join_clause = []
         for field in self.settings.unique_fields:
@@ -47,7 +45,7 @@ class NaiveDeduper(Deduper):
 
         # Generate a key to remove row self-match but ALLOW true duplicate
         # rows where all data items are identical in the source
-        df["_unique_e4003b"] = range(df.shape[0])
+        df = df.with_row_index("_unique_e4003b")
 
         # We also need to suppress raw.left_id = raw.right_id in cases where
         # we're deduplicating an unnested array of primary keys
@@ -70,14 +68,15 @@ class NaiveDeduper(Deduper):
             ) raw
                 where raw.left_id != raw.right_id;
         """
-        df_arrow = duckdb.sql(sql).arrow()
-        res = df_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
-        del df_arrow
 
-        # Convert bytearray back to bytes
-        return res.assign(
-            left_id=lambda df: df.left_id.apply(self._id_dtype),
-            right_id=lambda df: df.right_id.apply(self._id_dtype),
+        return (
+            duckdb.sql(sql)
+            .pl()
+            .with_columns(
+                [
+                    pl.col("left_id").cast(self._id_dtype),
+                    pl.col("right_id").cast(self._id_dtype),
+                    pl.col("probability").cast(pl.Float32),
+                ]
+            )
         )

@@ -1,7 +1,7 @@
 """Add migrations for first eval tables.
 
 Revision ID: dd0c3a9ecdf9
-Revises: 83b134a86713
+Revises: 3754ae042254
 Create Date: 2025-05-14 11:33:54.343350
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "dd0c3a9ecdf9"
-down_revision: str | None = "e4122bdf9b0d"
+down_revision: str | None = "3754ae042254"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

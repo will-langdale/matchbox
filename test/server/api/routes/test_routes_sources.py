@@ -16,8 +16,9 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.hash import hash_to_base64
-from matchbox.common.sources import SourceAddress, SourceConfig
+from matchbox.common.sources import (
+    SourceConfig,
+)
 from matchbox.server.api.dependencies import backend
 from matchbox.server.api.main import app
 
@@ -28,17 +29,14 @@ else:
 
 
 def test_get_source(test_client: TestClient):
-    address = SourceAddress(full_name="foo", warehouse_hash=b"bar")
-    source = SourceConfig(address=address, key_field="key")
+    source = source_factory(name="foo").source_config
     mock_backend = Mock()
     mock_backend.get_source_config = Mock(return_value=source)
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get(
-        f"/sources/{address.warehouse_hash_b64}/{address.full_name}"
-    )
+    response = test_client.get("/sources/foo")
     assert response.status_code == 200
     assert SourceConfig.model_validate(response.json())
 
@@ -50,7 +48,7 @@ def test_get_source_404(test_client: TestClient):
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
 
-    response = test_client.get(f"/sources/{hash_to_base64(b'bar')}/foo")
+    response = test_client.get("/sources/foo")
     assert response.status_code == 404
     assert response.json()["entity"] == BackendRetrievableType.SOURCE
 
@@ -97,7 +95,7 @@ def test_add_source(test_client: TestClient):
     # Make request
     response = test_client.post(
         "/sources",
-        json=source_testkit.source_config.model_dump(),
+        json=source_testkit.source_config.model_dump(mode="json"),
     )
 
     # Validate response
@@ -131,7 +129,7 @@ async def test_complete_source_upload_process(s3: S3Client, test_client: TestCli
 
     # Step 1: Add source
     response = test_client.post(
-        "/sources", json=source_testkit.source_config.model_dump()
+        "/sources", json=source_testkit.source_config.model_dump(mode="json")
     )
     assert response.status_code == 202
     upload_id = response.json()["id"]

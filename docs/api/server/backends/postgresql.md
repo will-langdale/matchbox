@@ -12,16 +12,17 @@ erDiagram
     SourceConfigs {
         bigint source_config_id PK
         bigint resolution_id FK
-        string full_name
-        bytes warehouse_hash
-        string key_field
+        string location_type
+        string location_uri
+        string extract_transform
     }
-    SourceColumns {
-        bigint column_id PK
+    SourceFields {
+        bigint field_id PK
         bigint source_config_id FK
-        int column_index
-        string column_name
-        string column_type
+        int index
+        string name
+        string type
+        bool is_key
     }
     Clusters {
         bigint cluster_id PK
@@ -40,7 +41,7 @@ erDiagram
     PKSpace {
         bigint id
         bigint next_cluster_id
-        bigint next_cluster_key_id
+        bigint next_cluster_keys_id
     }
     Probabilities {
         bigint resolution PK,FK
@@ -63,7 +64,7 @@ erDiagram
     }
 
     SourceConfigs |o--|| Resolutions : ""
-    SourceConfigs ||--o{ SourceColumns : ""
+    SourceConfigs ||--o{ SourceFields : ""
     SourceConfigs ||--o{ ClusterSourceKey : ""
     Clusters ||--o{ ClusterSourceKey : ""
     Clusters ||--o{ Probabilities : ""

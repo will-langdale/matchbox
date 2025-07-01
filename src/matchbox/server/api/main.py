@@ -24,6 +24,7 @@ from matchbox.common.dtos import (
     NotFoundError,
     OKMessage,
     ResolutionName,
+    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -33,7 +34,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
-from matchbox.common.sources import Match, SourceAddress
+from matchbox.common.sources import Match
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import process_upload
 from matchbox.server.api.dependencies import (
@@ -208,19 +209,15 @@ async def get_upload_status(
 )
 def query(
     backend: BackendDependency,
-    full_name: str,
-    warehouse_hash_b64: str,
+    source: SourceResolutionName,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
-    """Query Matchbox for matches based on a source address."""
-    source_address = SourceAddress(
-        full_name=full_name, warehouse_hash=warehouse_hash_b64
-    )
+    """Query Matchbox for matches based on a source resolution name."""
     try:
         res = backend.query(
-            source=source_address,
+            source=source,
             resolution=resolution,
             threshold=threshold,
             limit=limit,
@@ -250,22 +247,13 @@ def query(
 )
 def match(
     backend: BackendDependency,
-    target_full_names: Annotated[list[str], Query()],
-    target_warehouse_hashes_b64: Annotated[list[str], Query()],
-    source_full_name: str,
-    source_warehouse_hash_b64: str,
+    targets: Annotated[list[SourceResolutionName], Query()],
+    source: SourceResolutionName,
     key: str,
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
-    """Match a source key against a list of target addresses."""
-    targets = [
-        SourceAddress(full_name=n, warehouse_hash=w)
-        for n, w in zip(target_full_names, target_warehouse_hashes_b64, strict=True)
-    ]
-    source = SourceAddress(
-        full_name=source_full_name, warehouse_hash=source_warehouse_hash_b64
-    )
+    """Match a source key against a list of target source resolutions."""
     try:
         res = backend.match(
             key=key,

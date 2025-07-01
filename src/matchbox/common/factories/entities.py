@@ -4,21 +4,20 @@ These underpin the entity resolution process, which is the core of the
 source and model testkit factory system.
 """
 
-import datetime
 from abc import ABC, abstractmethod
 from collections import Counter
-from decimal import Decimal
 from functools import cache
 from random import getrandbits
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING, Any, Self
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 from faker import Faker
 from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from matchbox.common.dtos import SourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:
@@ -90,54 +89,22 @@ class ReplaceRule(VariationRule):
         return "replace"
 
 
-def infer_sql_type_from_type(type_: Type) -> str:
-    """Infer an appropriate SQL type from a single type."""
-    type_map = {
-        str: "TEXT",
-        int: "BIGINT",
-        float: "FLOAT",
-        bool: "BOOLEAN",
-        datetime.datetime: "TIMESTAMP",
-        datetime.date: "DATE",
-        datetime.time: "TIME",
-        Decimal: "DECIMAL(10,2)",
-    }
-
-    return type_map.get(type_, "TEXT")
-
-
-def infer_sql_type(base: str, parameters: tuple | None) -> str:
-    """Infer an appropriate SQL type from a Faker configuration.
+def infer_data_type(base: str, parameters: tuple | None) -> DataTypes:
+    """Infer an appropriate Matchbox type from a Faker configuration.
 
     Args:
         base: Faker generator type
         parameters: Parameters for the generator
 
     Returns:
-        A SQL type string
+        A Matchbox DataType
     """
     generator = Faker()
     value_generator = getattr(generator, base)
     parameters = {} if not parameters else dict(parameters)
     examples = [value_generator(**dict(parameters)) for _ in range(5)]
-
-    # Get the types of all non-None examples
-    types_found = {type(x) for x in examples}
-
-    # If multiple types, use the most general one
-    if len(types_found) > 1:
-        # Check for numeric types
-        if all(issubclass(t, (int, float, Decimal)) for t in types_found):
-            if any(issubclass(t, float) or issubclass(t, Decimal) for t in types_found):
-                return "FLOAT"
-            return "BIGINT"
-        # Default to TEXT for mixed types
-        return "TEXT"
-
-    # Single type case
-    python_type = next(iter(types_found))
-
-    return infer_sql_type_from_type(python_type)
+    series = pl.Series(examples)
+    return DataTypes.from_dtype(series.dtype)
 
 
 class FeatureConfig(BaseModel):
@@ -165,8 +132,8 @@ class FeatureConfig(BaseModel):
         default=False, description="Whether the base case is dropped."
     )
     variations: tuple[VariationRule, ...] = Field(default_factory=tuple)
-    sql_type: str = Field(
-        default_factory=lambda data: infer_sql_type(
+    datatype: DataTypes = Field(
+        default_factory=lambda data: infer_data_type(
             data["base_generator"], data["parameters"]
         )
     )
@@ -183,10 +150,19 @@ class FeatureConfig(BaseModel):
         )
 
     @field_validator("name", mode="after")
-    def protected_names(cls, value: str) -> str:
+    @classmethod
+    def protected_names(cls: type[Self], value: str) -> str:
         """Ensure name is not a reserved keyword."""
         if value in {"id", "key"}:
             raise ValueError("Feature name cannot be 'id' or 'key'.")
+        return value
+
+    @field_validator("datatype", mode="before")
+    @classmethod
+    def string_to_strenum(cls: type[Self], value: str) -> DataTypes:
+        """Convert string to DataTypes enum."""
+        if isinstance(value, str):
+            return DataTypes(value)
         return value
 
 
@@ -482,7 +458,7 @@ class SourceEntity(BaseModel, EntityIDMixin, SourceKeyMixin):
 
 
 def query_to_cluster_entities(
-    query: pa.Table | pd.DataFrame, keys: dict[SourceResolutionName, str]
+    query: pa.Table | pd.DataFrame | pl.DataFrame, keys: dict[SourceResolutionName, str]
 ) -> set[ClusterEntity]:
     """Convert a query result to a set of ClusterEntities.
 
@@ -491,26 +467,29 @@ def query_to_cluster_entities(
 
     Args:
         query: A PyArrow table or DataFrame representing a query result
-        keys: Mapping of source resolution names to key column names
+        keys: Mapping of source resolution names to key field names
 
     Returns:
         A set of ClusterEntity objects
     """
-    if isinstance(query, pa.Table):
+    # Convert polars to pandas for compatibility with existing logic
+    if isinstance(query, pl.DataFrame):
+        query = query.to_pandas()
+    elif isinstance(query, pa.Table):
         query = query.to_pandas()
 
-    must_have_columns = set(["id"] + list(keys.values()))
-    if not must_have_columns.issubset(query.columns):
+    must_have_fields = set(["id"] + list(keys.values()))
+    if not must_have_fields.issubset(query.columns):
         raise ValueError(
-            f"Columms {must_have_columns.difference(query.columns)} must be included "
+            f"Fields {must_have_fields.difference(query.columns)} must be included "
             "in the query and are missing."
         )
 
     def _create_cluster_entity(group: pd.DataFrame) -> ClusterEntity:
         entity_refs = {
-            source: frozenset(group[key_column].dropna().values)
-            for source, key_column in keys.items()
-            if not group[key_column].dropna().empty
+            source: frozenset(group[key_field].dropna().values)
+            for source, key_field in keys.items()
+            if not group[key_field].dropna().empty
         }
 
         return ClusterEntity(

@@ -2,18 +2,18 @@
 
 from functools import partial
 
-from pandas import DataFrame
+import polars as pl
 
 from matchbox.client.clean import steps
 from matchbox.client.clean import utils as cu
 
 
 def company_name(
-    df: DataFrame,
+    df: pl.DataFrame,
     column: str,
     column_secondary: str = None,
     stopwords: str = cu.STOPWORDS,
-) -> DataFrame:
+) -> pl.DataFrame:
     """Standard cleaning function for company names.
 
     * Lower case, remove punctuation & tokenise the company name into an array
@@ -50,7 +50,7 @@ def company_name(
     return df
 
 
-def company_number(df: DataFrame, column: str) -> DataFrame:
+def company_number(df: pl.DataFrame, column: str) -> pl.DataFrame:
     """Remove non-numbers, and then leading zeroes.
 
     Args:
@@ -67,7 +67,7 @@ def company_number(df: DataFrame, column: str) -> DataFrame:
     return df
 
 
-def postcode(df: DataFrame, column: str) -> DataFrame:
+def postcode(df: pl.DataFrame, column: str) -> pl.DataFrame:
     """Removes all punctuation, converts to upper, removes all spaces.
 
     Args:
@@ -87,7 +87,7 @@ def postcode(df: DataFrame, column: str) -> DataFrame:
     return df
 
 
-def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
+def postcode_to_area(df: pl.DataFrame, column: str) -> pl.DataFrame:
     """Extracts postcode area from a postcode.
 
     Args:
@@ -105,8 +105,8 @@ def postcode_to_area(df: DataFrame, column: str) -> DataFrame:
 
 
 def extract_company_number_to_new(
-    df: DataFrame, column: str, new_column: str
-) -> DataFrame:
+    df: pl.DataFrame, column: str, new_column: str
+) -> pl.DataFrame:
     """Detects the Companies House CRN in a column and moves it to a new column.
 
     Args:
@@ -131,8 +131,8 @@ def extract_company_number_to_new(
 
 
 def extract_duns_number_to_new(
-    df: DataFrame, column: str, new_column: str
-) -> DataFrame:
+    df: pl.DataFrame, column: str, new_column: str
+) -> pl.DataFrame:
     """Detects the Dun & Bradstreet DUNS nuber in a column and moves it to a new column.
 
     Args:
@@ -155,8 +155,8 @@ def extract_duns_number_to_new(
 
 
 def extract_cdms_number_to_new(
-    df: DataFrame, column: str, new_column: str
-) -> DataFrame:
+    df: pl.DataFrame, column: str, new_column: str
+) -> pl.DataFrame:
     """Detects the CDMS nuber in a column and moves it to a new column.
 
     Args:
@@ -178,7 +178,7 @@ def extract_cdms_number_to_new(
     return df
 
 
-def drop(df: DataFrame, column: str) -> DataFrame:
+def drop(df: pl.DataFrame, column: str) -> pl.DataFrame:
     """Drops the column from the dataframe.
 
     Args:
@@ -188,4 +188,29 @@ def drop(df: DataFrame, column: str) -> DataFrame:
     Returns:
         dataframe: the same as went in without the column
     """
-    return df.drop(columns=[column])
+    return df.drop(column)
+
+
+def remove_prefix(df: pl.DataFrame, column: str, prefix: str) -> pl.DataFrame:
+    """Remove a prefix from any column names that contain it.
+
+    Args:
+        df: a dataframe
+        column: a dead variable to appease Matchbox while a bug is fixed
+        prefix: the prefix string to remove from column names
+
+    Returns:
+        dataframe: the same as went in, but with column names cleaned
+    """
+    del column
+
+    # Create a mapping of old column names to new column names
+    column_mapping = {
+        col: col[len(prefix) :] for col in df.columns if col.startswith(prefix)
+    }
+
+    # Rename columns if any matches were found
+    if column_mapping:
+        df = df.rename(column_mapping)
+
+    return df

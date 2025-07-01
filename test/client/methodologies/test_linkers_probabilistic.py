@@ -3,6 +3,7 @@
 from typing import Any, Callable
 
 import numpy as np
+import polars as pl
 import pytest
 from splink import SettingsCreator
 from splink import comparison_library as cl
@@ -43,14 +44,15 @@ def configure_weighted_probabilistic(
         A dictionary with validated settings for WeightedDeterministicLinker
     """
 
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 
@@ -95,15 +97,15 @@ def configure_splink_probabilistic(
         A dictionary with validated settings for SplinkLinker
     """
 
-    # Extract column names excluding key and id
+    # Extract field names excluding key and id
     left_fields = [
         c.name
-        for c in left_testkit.source_config.columns
+        for c in left_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
     right_fields = [
         c.name
-        for c in right_testkit.source_config.columns
+        for c in right_testkit.source_config.index_fields
         if c.name not in ("key", "id")
     ]
 
@@ -118,7 +120,11 @@ def configure_splink_probabilistic(
 
         field = l_field  # Use common field name after checking they match
         field_type = next(
-            (c.type for c in left_testkit.source_config.columns if c.name == field),
+            (
+                c.type
+                for c in left_testkit.source_config.index_fields
+                if c.name == field
+            ),
             "TEXT",
         )
 
@@ -216,10 +222,10 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
 
     configs = (
         SourceTestkitParameters(
-            full_name="source_left", features=features, n_true_entities=10
+            name="source_left", features=features, n_true_entities=10
         ),
         SourceTestkitParameters(
-            full_name="source_right", features=features, n_true_entities=10
+            name="source_right", features=features, n_true_entities=10
         ),
     )
 
@@ -233,9 +239,9 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         description="Testing probability generation",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_data=left_source.query.to_pandas().drop("key", axis=1),
+        left_data=pl.from_arrow(left_source.query).drop("key"),
         left_resolution="source_left",
-        right_data=right_source.query.to_pandas().drop("key", axis=1),
+        right_data=pl.from_arrow(right_source.query).drop("key"),
         right_resolution="source_right",
     )
 

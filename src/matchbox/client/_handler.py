@@ -12,6 +12,7 @@ from pyarrow.parquet import read_table
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
+    BackendCountableType,
     BackendRetrievableType,
     ModelAncestor,
     ModelConfig,
@@ -19,6 +20,7 @@ from matchbox.common.dtos import (
     NotFoundError,
     ResolutionName,
     ResolutionOperationStatus,
+    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -34,7 +36,7 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
-from matchbox.common.sources import Match, SourceAddress, SourceConfig
+from matchbox.common.sources import Match, SourceConfig
 
 URLEncodeHandledType = str | int | float | bytes
 
@@ -120,21 +122,20 @@ CLIENT = create_client(settings=settings)
 
 
 def query(
-    source: SourceAddress,
+    source: SourceResolutionName,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
-    log_prefix = f"Query {source.pretty}"
+    """Query a source in Matchbox."""
+    log_prefix = f"Query {source}"
     logger.debug(f"Using {resolution}", prefix=log_prefix)
 
     res = CLIENT.get(
         "/query",
         params=url_params(
             {
-                "full_name": source.full_name,
-                # Converted to b64 by `url_params()`
-                "warehouse_hash_b64": source.warehouse_hash,
+                "source": source,
                 "resolution": resolution,
                 "threshold": threshold,
                 "limit": limit,
@@ -158,18 +159,16 @@ def query(
 
 
 def match(
-    targets: list[SourceAddress],
-    source: SourceAddress,
+    targets: list[SourceResolutionName],
+    source: SourceResolutionName,
     key: str,
     resolution: ResolutionName,
     threshold: int | None = None,
 ) -> Match:
-    target_full_names = [t.full_name for t in targets]
-    target_warehouse_hashes = [t.warehouse_hash for t in targets]
-
-    log_prefix = f"Query {source.pretty}"
+    """Match a source against a list of targets."""
+    log_prefix = f"Query {source}"
     logger.debug(
-        f"{key} to {', '.join(str(t) for t in targets)} using {resolution}",
+        f"{key} to {', '.join(targets)} using {resolution}",
         prefix=log_prefix,
     )
 
@@ -177,12 +176,8 @@ def match(
         "/match",
         params=url_params(
             {
-                "target_full_names": target_full_names,
-                # Converted to b64 by `url_params()`
-                "target_warehouse_hashes_b64": target_warehouse_hashes,
-                "source_full_name": source.full_name,
-                # Converted to b64 by `url_params()`
-                "source_warehouse_hash_b64": source.warehouse_hash,
+                "targets": targets,
+                "source": source,
                 "key": key,
                 "resolution": resolution,
                 "threshold": threshold,
@@ -198,22 +193,16 @@ def match(
 # Data management
 
 
-def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadStatus:
+def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
     """Index from a SourceConfig in Matchbox."""
-    log_prefix = f"Index {source_config.address.pretty}"
-    log_batch = f"with batch size {batch_size:,}" if batch_size else "without batching"
-    logger.debug(f"Started {log_batch}", prefix=log_prefix)
-
-    logger.debug("Retrieving and hashing", prefix=log_prefix)
-
-    data_hashes = source_config.hash_data(batch_size=batch_size)
+    log_prefix = f"Index {source_config.name}"
 
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
     logger.debug("Uploading metadata", prefix=log_prefix)
 
-    metadata_res = CLIENT.post("/sources", json=source_config.model_dump())
+    metadata_res = CLIENT.post("/sources", json=source_config.model_dump(mode="json"))
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -243,11 +232,11 @@ def index(source_config: SourceConfig, batch_size: int | None = None) -> UploadS
     return status
 
 
-def get_source_config(address: SourceAddress) -> SourceConfig:
-    log_prefix = f"SourceConfig {address.pretty}"
+def get_source_config(name: SourceResolutionName) -> SourceConfig:
+    log_prefix = f"SourceConfig {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get(f"/sources/{address.warehouse_hash_b64}/{address.full_name}")
+    res = CLIENT.get(f"/sources/{name}")
 
     return SourceConfig.model_validate(res.json())
 
@@ -282,13 +271,16 @@ def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
     return ResolutionOperationStatus.model_validate(res.json())
 
 
-def get_model(name: ModelResolutionName) -> ModelConfig:
+def get_model(name: ModelResolutionName) -> ModelConfig | None:
     """Get model metadata from Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
-    res = CLIENT.get(f"/models/{name}")
-    return ModelConfig.model_validate(res.json())
+    try:
+        res = CLIENT.get(f"/models/{name}")
+        return ModelConfig.model_validate(res.json())
+    except MatchboxResolutionNotFoundError:
+        return None
 
 
 def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus:
@@ -446,3 +438,28 @@ def download_eval_data() -> Table:
             {"parent": 4, "leaf": 7},
         ]
     )
+
+
+# Admin
+
+
+def count_backend_items(
+    entity: BackendCountableType | None = None,
+) -> dict[str, int]:
+    """Count the number of various entities in the backend."""
+    if entity is not None and entity not in BackendCountableType:
+        raise ValueError(
+            f"Invalid entity type: {entity}. "
+            f"Must be one of {list(BackendCountableType)} "
+        )
+
+    log_prefix = "Backend count"
+    logger.debug("Counting", prefix=log_prefix)
+
+    params = {"entity": entity} if entity else {}
+    res = CLIENT.get("/database/count", params=url_params(params))
+
+    counts = res.json()
+    logger.debug(f"Counts: {counts}", prefix=log_prefix)
+
+    return counts

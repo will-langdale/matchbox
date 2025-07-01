@@ -4,6 +4,7 @@ from typing import Literal
 
 from sqlalchemy import (
     BIGINT,
+    BOOLEAN,
     INTEGER,
     SMALLINT,
     CheckConstraint,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Index,
     UniqueConstraint,
     select,
+    text,
     update,
 )
 from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
@@ -22,10 +24,8 @@ from matchbox.common.dtos import ResolutionName
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.graph import ResolutionNodeType
-from matchbox.common.sources import SourceAddress
-from matchbox.common.sources import SourceColumn as CommonSourceColumn
 from matchbox.common.sources import SourceConfig as CommonSourceConfig
+from matchbox.common.sources import SourceField as CommonSourceField
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -81,6 +81,11 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         back_populates="proposed_by",
         passive_deletes=True,
     )
+    results = relationship(
+        "Results",
+        back_populates="proposed_by",
+        passive_deletes=True,
+    )
     children = relationship(
         "Resolutions",
         secondary=ResolutionFrom.__table__,
@@ -124,53 +129,70 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             )
             return set(session.execute(descendant_query).scalars().all())
 
-    def get_lineage(self) -> dict[int, float]:
-        """Returns all ancestors and their cached truth values from this model."""
+    def get_lineage(
+        self, sources: list["SourceConfigs"] | None = None, threshold: int | None = None
+    ) -> list[tuple[int, int, float | None]]:
+        """Returns lineage ordered by priority.
+
+        Highest priority (lowest level) first, then by resolution_id for stability.
+
+        Args:
+            sources: If provided, only return lineage paths that lead to these sources
+            threshold: If provided, override this resolution's threshold
+
+        Returns:
+            List of tuples (resolution_id, source_config_id, threshold) ordered by
+                priority.
+        """
         with MBDB.get_session() as session:
-            lineage_query = (
-                select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
+            query = (
+                select(
+                    ResolutionFrom.parent,
+                    SourceConfigs.source_config_id,
+                    ResolutionFrom.truth_cache,
+                )
+                .join(
+                    SourceConfigs,
+                    ResolutionFrom.parent == SourceConfigs.resolution_id,
+                    isouter=True,
+                )
                 .where(ResolutionFrom.child == self.resolution_id)
-                .order_by(ResolutionFrom.level.desc())
             )
 
-            results = session.execute(lineage_query).all()
+            if sources:
+                # Filter by source configs
+                source_resolution_ids = [sc.resolution_id for sc in sources]
 
-            lineage = {parent: truth for parent, truth in results}
-            lineage[self.resolution_id] = self.truth
-
-            return lineage
-
-    def get_lineage_to_source(
-        self, source: "Resolutions"
-    ) -> tuple[bytes, dict[int, float]]:
-        """Returns the resolution lineage and cached truth values to a source."""
-        if source.type != ResolutionNodeType.SOURCE.value:
-            raise ValueError(
-                f"Target resolution must be of type 'source', got {source.type}"
-            )
-
-        if self.resolution_id == source.resolution_id:
-            return {source.resolution_id: None}
-
-        with MBDB.get_session() as session:
-            path_query = (
-                select(ResolutionFrom.parent, ResolutionFrom.truth_cache)
-                .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
-                .where(ResolutionFrom.child == self.resolution_id)
-                .order_by(ResolutionFrom.level.desc())
-            )
-
-            results = session.execute(path_query).all()
-
-            if not any(parent == source.resolution_id for parent, _ in results):
-                raise ValueError(
-                    f"No path between resolution {self.name}, source {source.name}"
+                descendant_ids = (
+                    session.execute(
+                        select(ResolutionFrom.child).where(
+                            ResolutionFrom.parent.in_(source_resolution_ids)
+                        )
+                    )
+                    .scalars()
+                    .all()
                 )
 
-            lineage = {parent: truth for parent, truth in results}
-            lineage[self.resolution_id] = self.truth
+                query = query.where(
+                    ResolutionFrom.parent.in_(source_resolution_ids + descendant_ids)
+                )
 
-            return lineage
+            results = session.execute(
+                query.order_by(ResolutionFrom.level.asc(), ResolutionFrom.parent.asc())
+            ).all()
+
+            # Get self's source config ID
+            self_source_config_id = (
+                self.source_config.source_config_id if self.source_config else None
+            )
+
+            # Threshold handling
+            self_threshold = threshold if threshold is not None else self.truth
+
+            # Add self at beginning (highest priority - level 0)
+            return [(self.resolution_id, self_source_config_id, self_threshold)] + list(
+                results
+            )
 
     @classmethod
     def from_name(
@@ -259,31 +281,40 @@ class PKSpace(MBDB.MatchboxBase):
             return next_id
 
 
-class SourceColumns(CountMixin, MBDB.MatchboxBase):
+class SourceFields(CountMixin, MBDB.MatchboxBase):
     """Table for storing column details for SourceConfigs."""
 
-    __tablename__ = "source_columns"
+    __tablename__ = "source_fields"
 
     # Columns
-    column_id = Column(BIGINT, primary_key=True)
+    field_id = Column(BIGINT, primary_key=True)
     source_config_id = Column(
         BIGINT,
         ForeignKey("source_configs.source_config_id", ondelete="CASCADE"),
         nullable=False,
     )
-    column_index = Column(INTEGER, nullable=False)
-    column_name = Column(TEXT, nullable=False)
-    column_type = Column(TEXT, nullable=False)
+    index = Column(INTEGER, nullable=False)
+    name = Column(TEXT, nullable=False)
+    type = Column(TEXT, nullable=False)
+    is_key = Column(BOOLEAN, nullable=False)
 
     # Relationships
-    source_config = relationship("SourceConfigs", back_populates="columns")
+    source_config = relationship(
+        "SourceConfigs",
+        back_populates="fields",
+        foreign_keys=[source_config_id],
+    )
 
     # Constraints and indices
     __table_args__ = (
-        UniqueConstraint(
-            "source_config_id", "column_index", name="unique_column_index"
-        ),
+        UniqueConstraint("source_config_id", "index", name="unique_index"),
         Index("ix_source_columns_source_config_id", "source_config_id"),
+        Index(
+            "ix_unique_key_field",
+            "source_config_id",
+            unique=True,
+            postgresql_where=text("is_key = true"),
+        ),
     )
 
 
@@ -328,16 +359,41 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         nullable=False,
     )
-    full_name = Column(TEXT, nullable=False)
-    warehouse_hash = Column(BYTEA, nullable=False)
-    key_field = Column(TEXT, nullable=False)
+    location_type = Column(TEXT, nullable=False)
+    location_uri = Column(TEXT, nullable=False)
+    extract_transform = Column(TEXT, nullable=False)
+
+    @property
+    def name(self) -> str:
+        """Get the name of the related resolution."""
+        return self.source_resolution.name
 
     # Relationships
     source_resolution = relationship("Resolutions", back_populates="source_config")
-    columns = relationship(
-        "SourceColumns",
+    fields = relationship(
+        "SourceFields",
         back_populates="source_config",
         passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
+    key_field = relationship(
+        "SourceFields",
+        primaryjoin=(
+            "and_(SourceConfigs.source_config_id == SourceFields.source_config_id, "
+            "SourceFields.is_key == True)"
+        ),
+        viewonly=True,
+        uselist=False,
+    )
+    index_fields = relationship(
+        "SourceFields",
+        primaryjoin=(
+            "and_(SourceConfigs.source_config_id == SourceFields.source_config_id, "
+            "SourceFields.is_key == False)"
+        ),
+        viewonly=True,
+        order_by="SourceFields.index",
+        collection_class=list,
     )
     cluster_keys = relationship(
         "ClusterSourceKey",
@@ -354,10 +410,27 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         viewonly=True,
     )
 
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint("full_name", "warehouse_hash", name="unique_source_address"),
-    )
+    def __init__(
+        self,
+        key_field: SourceFields | None = None,
+        index_fields: list[SourceFields] | None = None,
+        **kwargs,
+    ):
+        """Initialise SourceConfigs with optional field objects."""
+        super().__init__(**kwargs)
+
+        # Add the key field and mark it as the key
+        if key_field is not None:
+            key_field.is_key = True
+            key_field.index = 0
+            self.fields.append(key_field)
+
+        # Add index fields with proper indices
+        if index_fields is not None:
+            for idx, field in enumerate(index_fields):
+                field.is_key = False
+                field.index = idx + 1
+                self.fields.append(field)
 
     @classmethod
     def list_all(cls) -> list["SourceConfigs"]:
@@ -365,28 +438,51 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         with MBDB.get_session() as session:
             return session.query(cls).all()
 
-    def to_dto(self) -> list[CommonSourceConfig]:
-        """Convert ORM source to a matchbox.common SourceConfig object."""
-        with MBDB.get_session() as session:
-            columns: list[SourceColumns] = (
-                session.query(SourceColumns)
-                .filter(SourceColumns.source_config_id == self.source_config_id)
-                .order_by(SourceColumns.column_index)
-                .all()
-            )
-
-        return CommonSourceConfig(
-            name=self.source_resolution.name,
-            address=SourceAddress(
-                full_name=self.full_name, warehouse_hash=self.warehouse_hash
+    @classmethod
+    def from_dto(
+        cls,
+        resolution: "Resolutions",
+        source_config: CommonSourceConfig,
+    ) -> "SourceConfigs":
+        """Create a SourceConfigs instance from a CommonSource object."""
+        return cls(
+            resolution_id=resolution.resolution_id,
+            location_type=source_config.location.type,
+            location_uri=str(source_config.location.uri),
+            extract_transform=source_config.extract_transform,
+            key_field=SourceFields(
+                index=0,
+                name=source_config.key_field.name,
+                type=source_config.key_field.type.value,
             ),
-            key_field=self.key_field,
-            columns=[
-                CommonSourceColumn(
-                    name=column.column_name,
-                    type=column.column_type,
+            index_fields=[
+                SourceFields(
+                    index=idx + 1,
+                    name=field.name,
+                    type=field.type.value,
                 )
-                for column in columns
+                for idx, field in enumerate(source_config.index_fields)
+            ],
+        )
+
+    def to_dto(self) -> CommonSourceConfig:
+        """Convert ORM source to a matchbox.common SourceConfig object."""
+        return CommonSourceConfig(
+            name=self.name,
+            location={
+                "type": self.location_type,
+                "uri": self.location_uri,
+            },
+            extract_transform=self.extract_transform,
+            key_field=CommonSourceField(
+                name=self.key_field.name, type=self.key_field.type
+            ),
+            index_fields=[
+                CommonSourceField(
+                    name=field.name,
+                    type=field.type,
+                )
+                for field in self.index_fields
             ],
         )
 
@@ -397,18 +493,18 @@ class Contains(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "contains"
 
     # Columns
-    parent = Column(
+    root = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
-    child = Column(
+    leaf = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
 
     # Constraints and indices
     __table_args__ = (
-        CheckConstraint("parent != child", name="no_self_containment"),
-        Index("ix_contains_parent_child", "parent", "child"),
-        Index("ix_contains_child_parent", "child", "parent"),
+        CheckConstraint("root != leaf", name="no_self_containment"),
+        Index("ix_contains_root_leaf", "root", "leaf"),
+        Index("ix_contains_leaf_root", "leaf", "root"),
     )
 
 
@@ -432,12 +528,12 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
         back_populates="proposes",
         passive_deletes=True,
     )
-    children = relationship(
+    leaves = relationship(
         "Clusters",
         secondary=Contains.__table__,
-        primaryjoin="Clusters.cluster_id == Contains.parent",
-        secondaryjoin="Clusters.cluster_id == Contains.child",
-        backref="parents",
+        primaryjoin="Clusters.cluster_id == Contains.root",
+        secondaryjoin="Clusters.cluster_id == Contains.leaf",
+        backref="roots",
     )
     # Add relationship to SourceConfigs through ClusterSourceKey
     source_configs = relationship(
@@ -488,12 +584,12 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "probabilities"
 
     # Columns
-    resolution = Column(
+    resolution_id = Column(
         BIGINT,
         ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    cluster = Column(
+    cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
     )
     probability = Column(SMALLINT, nullable=False)
@@ -505,5 +601,39 @@ class Probabilities(CountMixin, MBDB.MatchboxBase):
     # Constraints
     __table_args__ = (
         CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
-        Index("ix_probabilities_resolution", "resolution"),
+        Index("ix_probabilities_resolution", "resolution_id"),
+    )
+
+
+class Results(CountMixin, MBDB.MatchboxBase):
+    """Table of results for a resolution.
+
+    Stores the raw left/right probabilities created by a model.
+    """
+
+    __tablename__ = "results"
+
+    # Columns
+    result_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    resolution_id = Column(
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    left_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
+    )
+    right_id = Column(
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
+    )
+    probability = Column(SMALLINT, nullable=False)
+
+    # Relationships
+    proposed_by = relationship("Resolutions", back_populates="results")
+
+    # Constraints
+    __table_args__ = (
+        Index("ix_results_resolution", "resolution_id"),
+        CheckConstraint("probability BETWEEN 0 AND 100", name="valid_probability"),
+        UniqueConstraint("resolution_id", "left_id", "right_id"),
     )

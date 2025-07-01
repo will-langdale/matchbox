@@ -2,6 +2,10 @@
 
 Data matching and entity resolution are complex tasks that often require multiple processing steps. Matchbox provides a powerful Directed Acyclic Graph (DAG) framework that allows you to define and run sophisticated matching pipelines with clearly defined dependencies.
 
+!!! tip "DAG steps and resolutions"
+    Once it is run, a step in a DAG corresponds to a resolution in the Matchbox database. Learn more by reading about the tutorial on [exploring resolutions](../client/explore_resolutions.md) or dive deeper by consulting the extended guide to [Matchbox concepts](../server/concepts.md). 
+
+
 This guide walks through creating complete matching pipelines using the Matchbox DAG API, covering everything from [defining data sources](#1-defining-data-sources) to [executing complex multi-step matching processes](#advanced-use-cases). In our examples we'll be referencing publicly available datasets about UK companies, specifically [Companies House data](https://find-and-update.company-information.service.gov.uk), and [UK trade data](https://www.uktradeinfo.com).
 
 ## Understanding DAGs in Matchbox
@@ -23,7 +27,7 @@ from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
 from matchbox.client.helpers.cleaner import cleaner, cleaners
 from matchbox.client.models.dedupers.naive import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
-from matchbox.common.sources import SourceConfig, SourceAddress
+from matchbox.common.sources import SourceConfig, RelationalDBLocation
 
 # Configure logging
 logging.basicConfig(
@@ -47,42 +51,57 @@ engine = get_database_engine()
 
 The first step in creating a matching pipeline is to define your data sources. Each source represents data that will be used in the matching process.
 
-The `columns` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
+The `index_fields` are what Matchbox will use to store a reference to your data, and are the only fields it will permit you to match on.
+
+The `key_field` is the field in your source that contains some unique code that identifies each entitiy. For example, in a relational database, this would typically be your primary key.
 
 === "Example"
     ```python
-    from matchbox.common.sources import SourceConfig, SourceAddress
+    from matchbox.common.sources import SourceConfig, RelationalDBLocation
     
     # Companies House data
-    companies_house = SourceConfig(
-        address=SourceAddress.compose(full_name="companieshouse.companies", engine=engine),
-        columns=[
-            {"name": "company_name", "type": "VARCHAR"},
-            {"name": "company_number", "type": "VARCHAR"},
-            {"name": "postcode", "type": "VARCHAR"},
-        ],
+    companies_house = SourceConfig.new(
+        location=RelationalDBLocation.from_engine(engine),
+        extract_transform="""
+            select
+                pk as id,
+                company_name,
+                number::str as company_number,
+                upper(postcode) as postcode,
+            from
+                companieshouse.companies;
+        """,
+        index_fields=["company_name", "company_number", "postcode"],
         key_field="id",
-    ).set_engine(engine)
+    )
     
     # Exporters data
-    exporters = SourceConfig(
-        address=SourceAddress.compose(full_name="hmrc.trade__exporters", engine=engine),
-        columns=[
-            {"name": "company_name", "type": "VARCHAR(500)"},
-            {"name": "postcode", "type": "VARCHAR(8)"},
-        ],
+    exporters = SourceConfig.new(
+        location=RelationalDBLocation.from_engine(engine),
+        extract_transform="""
+            select
+                id,
+                company_name,
+                upper(postcode) as postcode,
+            from
+                hmrc.trade__exporters;
+        """,
+        index_fields=["company_name", "postcode"],
         key_field="id",
-    ).set_engine(engine)
+    )
     ```
 
 Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
 
-- An `address` created with [`SourceAddress.compose()`][matchbox.common.sources.SourceAddress], comprised of
-    - The schema-qualified `full_name` of the dataset
-    - The `engine` used to connect
-- A list of `columns` that will be used for matching
+- A `location`, such as [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation]. This will need a `type`, a `uri`, and `credentials`, the type of which changes depending on the type of location you're using
+    - For most users [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation] and its `.from_engine()` constructor is all you need
+    - For a relational database, a SQLAlchemy engine is your credentials
+- An `extract_transform` string, which will take data from the location and transform it into your key and index fields. Its syntax will depend on the type of location
+    - For most users, using a relational database location, this will be SQL
+- A list of `index_fields` that will be used for matching
+    - These must be found in the result of the `extract_transform` logic
 - A key field (`key_field`) that uniquely identifies each record
-- A database engine
+    - This must be found in the result of the `extract_transform` logic
 
 ## 2. Defining data cleaners
 
@@ -218,11 +237,11 @@ Link steps connect records between different sources.
             "left_id": "id",
             "right_id": "id",
             "comparisons": """
-                        l.hmrc_trade__exporters_company_name
-                            = r.hmrc_trade__importers_company_name
-                        and l.hmrc_trade__exporters_postcode
-                            = r.hmrc_trade__importers_postcode
-                    """,
+                l.hmrc_trade__exporters_company_name
+                    = r.hmrc_trade__importers_company_name
+                and l.hmrc_trade__exporters_postcode
+                    = r.hmrc_trade__importers_postcode
+            """,
         },
         truth=1.0,
     )
@@ -426,7 +445,7 @@ You can link across multiple sources in a single step:
                         r.hmrc_trade__exporters_postcode,
                         r.hmrc_trade__importers_postcode
                     )
-                """,
+            """,
         },
         truth=1.0,
     )

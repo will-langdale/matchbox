@@ -18,6 +18,10 @@
 
 ## ✅ Checklist:
 
-- [ ] My code follows the style guidelines of this project
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] I've changed or updated relevant documentation
+- [ ] This is the smallest, simplest solution to the problem
+- [ ] I've read [our code standards](https://uktrade.github.io/matchbox/contributing/) and this code follows them  
+- [ ] All new code is tested
+- I've updated all relevant documentation (select all that apply)
+    - [ ] API documentation (docstrings and indexes)
+    - [ ] Tutorials
+    - [ ] Developer docs

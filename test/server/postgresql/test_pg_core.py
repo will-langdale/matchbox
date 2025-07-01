@@ -8,8 +8,7 @@ from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 from matchbox.server.postgresql.orm import PKSpace
-from matchbox.server.postgresql.utils.db import large_ingest
-from matchbox.server.postgresql.utils.insert import HashIDMap
+from matchbox.server.postgresql.utils.db import ingest_to_temporary_table, large_ingest
 
 
 @pytest.mark.docker
@@ -29,43 +28,6 @@ def test_reserve_id_block(
 
     with pytest.raises(ValueError):
         PKSpace.reserve_block("clusters", 0)
-
-
-def test_hash_id_map():
-    """Test HashIDMap core functionality including basic operations."""
-    # Initialize with some existing mappings
-    lookup = pa.Table.from_arrays(
-        [
-            pa.array([1, 2], type=pa.uint64()),
-            pa.array([b"hash1", b"hash2"], type=pa.large_binary()),
-        ],
-        names=["id", "hash"],
-    )
-    hash_map = HashIDMap(start=100, lookup=lookup)
-
-    # Test getting existing hashes
-    ids = pa.array([2, 1], type=pa.uint64())
-    hashes = hash_map.get_hashes(ids)
-    assert hashes.to_pylist() == [b"hash2", b"hash1"]
-
-    # Test getting mix of existing and new hashes
-    input_hashes = pa.array([b"hash1", b"new_hash", b"hash2"], type=pa.large_binary())
-    returned_ids = hash_map.generate_ids(input_hashes)
-
-    # Verify results
-    id_list = returned_ids.to_pylist()
-    assert id_list[0] == 1  # Existing hash1
-    assert id_list[2] == 2  # Existing hash2
-    assert id_list[1] == 100  # New hash got next available ID
-
-    # Verify lookup table was updated correctly
-    assert hash_map.lookup.shape == (3, 3)
-    assert hash_map.next_int == 101
-
-    # Test error handling for missing IDs
-    with pytest.raises(ValueError) as exc_info:
-        hash_map.get_hashes(pa.array([999], type=pa.uint64()))
-    assert "not found in lookup table" in str(exc_info.value)
 
 
 @pytest.mark.docker
@@ -269,3 +231,56 @@ def test_large_ingest_upsert_custom_key(
     metadata.clear()  # clear all Table objects from this MetaData, doesn't touch DB
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
+
+
+@pytest.mark.docker
+def test_ingest_to_temporary_table(
+    matchbox_postgres: MatchboxPostgres,  # will drop dummy table
+):
+    """Test temporary table creation, data ingestion, and automatic cleanup."""
+    from sqlalchemy.dialects.postgresql import BIGINT, TEXT
+
+    # Create sample arrow data
+    data = pa.Table.from_pylist(
+        [
+            {"id": 1, "value": "test1"},
+            {"id": 2, "value": "test2"},
+        ]
+    )
+
+    schema_name = MBDB.MatchboxBase.metadata.schema
+    table_name = "test_temp_ingest"
+
+    # Define the column types for the temporary table
+    column_types = {
+        "id": BIGINT,
+        "value": TEXT,
+    }
+
+    # Use the context manager to create and populate a temporary table
+    with ingest_to_temporary_table(
+        table_name=table_name,
+        schema_name=schema_name,
+        data=data,
+        column_types=column_types,
+    ) as temp_table:
+        # Verify the table exists and has the expected data
+        with MBDB.get_session() as session:
+            # Check that the table exists using SQLAlchemy syntax
+            from sqlalchemy import func, select
+
+            result = session.execute(
+                select(func.count()).select_from(temp_table)
+            ).scalar()
+            assert result == 2
+
+            # Check a specific value using SQLAlchemy syntax
+            value = session.execute(
+                select(temp_table.c.value).where(temp_table.c.id == 1)
+            ).scalar()
+            assert value == "test1"
+
+    # After context exit, verify the table no longer exists
+    with MBDB.get_session() as session:
+        with pytest.raises(Exception):  # Should fail as table is dropped # noqa: B017
+            session.execute(select(func.count()).select_from(temp_table))

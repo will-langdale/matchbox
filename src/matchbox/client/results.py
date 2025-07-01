@@ -1,12 +1,14 @@
 """Objects representing the results of running a model client-side."""
 
-from typing import TYPE_CHECKING, Any, Hashable, ParamSpec, TypeVar
+from functools import wraps
+from typing import TYPE_CHECKING, Any, Callable, Hashable, ParamSpec, TypeVar
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-from pandas import ArrowDtype, DataFrame
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import ModelConfig
 from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
@@ -19,6 +21,21 @@ else:
 T = TypeVar("T", bound=Hashable)
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+def calculate_clusters(func: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to calculate clusters if it hasn't been already."""
+
+    @wraps(func)
+    def wrapper(self: "Results", *args: P.args, **kwargs: P.kwargs) -> R:
+        if not self.clusters:
+            im = IntMap()
+            self.clusters = to_clusters(
+                results=self.probabilities, dtype=pa.int64, hash_func=im.index
+            )
+        return func(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Results(BaseModel):
@@ -39,59 +56,37 @@ class Results(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     probabilities: pa.Table
-    _clusters: pa.Table | None = None
+    clusters: pa.Table | None = None
     model: Model | None = None
     metadata: ModelConfig
 
     @field_validator("probabilities", mode="before")
     @classmethod
-    def check_probabilities(cls, value: pa.Table | DataFrame) -> pa.Table:
+    def check_probabilities(cls, value: pa.Table | pl.DataFrame) -> pa.Table:
         """Verifies the probabilities table contains the expected fields."""
-        if isinstance(value, DataFrame):
-            value = pa.Table.from_pandas(value, preserve_index=False)
+        if isinstance(value, pl.DataFrame):
+            value = value.to_arrow()
 
         if not isinstance(value, pa.Table):
-            raise ValueError("Expected a pandas DataFrame or pyarrow Table.")
+            raise ValueError("Expected a polars DataFrame or pyarrow Table.")
 
-        table_fields = set(value.column_names)
-        expected_fields = {"left_id", "right_id", "probability"}
-        optional_fields = {"id"}
-
-        if table_fields - optional_fields != expected_fields:
-            raise ValueError(f"Expected {expected_fields}. \nFound {table_fields}.")
-
-        # Define the schema based on whether 'id' is present
-        has_id = "id" in table_fields
-        schema_fields = (
-            [
-                ("id", pa.uint64()),
-                ("left_id", pa.uint64()),
-                ("right_id", pa.uint64()),
-                ("probability", pa.uint8()),
-            ]
-            if has_id
-            else [
-                ("left_id", pa.uint64()),
-                ("right_id", pa.uint64()),
-                ("probability", pa.uint8()),
-            ]
-        )
-        target_schema = pa.schema(schema_fields)
+        expected_fields = set(SCHEMA_RESULTS.names)
+        if set(value.column_names) != expected_fields:
+            raise ValueError(
+                f"Expected {expected_fields}. \nFound {set(value.column_names)}."
+            )
 
         # Handle empty tables
         if value.num_rows == 0:
-            empty_arrays = [pa.array([], type=field.type) for field in target_schema]
+            empty_arrays = [pa.array([], type=field.type) for field in SCHEMA_RESULTS]
             return pa.Table.from_arrays(
-                empty_arrays, names=[field.name for field in target_schema]
+                empty_arrays, names=[field.name for field in SCHEMA_RESULTS]
             )
 
         # Process probability field if it contains floating-point or decimal values
         probability_type = value["probability"].type
-        if any(
-            [
-                pa.types.is_floating(probability_type),
-                pa.types.is_decimal(probability_type),
-            ]
+        if pa.types.is_floating(probability_type) or pa.types.is_decimal(
+            probability_type
         ):
             probability_uint8 = pc.cast(
                 pc.round(pc.multiply(value["probability"], 100)),
@@ -115,71 +110,64 @@ class Results(BaseModel):
                 column=probability_uint8,
             )
 
-        return value.cast(target_schema)
+        return value.cast(SCHEMA_RESULTS)
 
     def _merge_with_source_data(
         self,
-        base_df: DataFrame,
+        base_df: pl.DataFrame,
         base_df_cols: list[str],
-        left_data: DataFrame,
+        left_data: pl.DataFrame,
         left_key: str,
-        right_data: DataFrame,
+        right_data: pl.DataFrame,
         right_key: str,
         left_merge_col: str,
         right_merge_col: str,
-    ) -> DataFrame:
+    ) -> pl.DataFrame:
         """Helper method to merge results with source data frames."""
         return (
-            base_df.filter(base_df_cols)
-            .merge(
+            base_df.select(base_df_cols)
+            .join(
                 left_data,
                 how="left",
                 left_on=left_merge_col,
                 right_on=left_key,
             )
-            .drop(columns=[left_key])
-            .merge(
+            .drop(left_key)
+            .join(
                 right_data,
                 how="left",
                 left_on=right_merge_col,
                 right_on=right_key,
             )
-            .drop(columns=[right_key])
+            .drop(right_key)
         )
 
-    def probabilities_to_pandas(self) -> DataFrame:
-        """Returns the probability results as a DataFrame."""
+    def probabilities_to_polars(self) -> pl.DataFrame:
+        """Returns the probability results as a polars DataFrame."""
         df = (
-            self.probabilities.to_pandas(types_mapper=ArrowDtype)
-            .assign(
-                left=self.model.model_config.left_resolution,
-                right=self.model.model_config.right_resolution,
-                model=self.model_config.name,
+            pl.from_arrow(self.probabilities)
+            .with_columns(
+                [
+                    pl.lit(self.model.model_config.left_resolution).alias("left"),
+                    pl.lit(self.model.model_config.right_resolution).alias("right"),
+                    pl.lit(self.metadata.name).alias("model"),
+                ]
             )
-            .convert_dtypes(dtype_backend="pyarrow")[
-                ["model", "left", "left_id", "right", "right_id", "probability"]
-            ]
+            .select(["model", "left", "left_id", "right", "right_id", "probability"])
         )
 
         return df
 
-    @property
-    def clusters(self):
-        """Return clusters derived from result probabilities."""
-        if not self._clusters:
-            im = IntMap()
-            self._clusters = to_clusters(
-                results=self.probabilities, dtype=pa.int64, hash_func=im.index
-            )
-
-        return self._clusters
-
     def inspect_probabilities(
-        self, left_data: DataFrame, left_key: str, right_data: DataFrame, right_key: str
-    ) -> DataFrame:
+        self,
+        left_data: pl.DataFrame,
+        left_key: str,
+        right_data: pl.DataFrame,
+        right_key: str,
+    ) -> pl.DataFrame:
         """Enriches the probability results with the source data."""
         return self._merge_with_source_data(
-            base_df=self.probabilities_to_pandas(),
+            base_df=self.probabilities_to_polars(),
             base_df_cols=["left_id", "right_id", "probability"],
             left_data=left_data,
             left_key=left_key,
@@ -189,20 +177,22 @@ class Results(BaseModel):
             right_merge_col="right_id",
         )
 
-    def clusters_to_pandas(self) -> DataFrame:
-        """Returns the cluster results as a DataFrame."""
-        return self.clusters.to_pandas(types_mapper=ArrowDtype)
+    @calculate_clusters
+    def clusters_to_polars(self) -> pl.DataFrame:
+        """Returns the cluster results as a polars DataFrame."""
+        return pl.from_arrow(self.clusters)
 
+    @calculate_clusters
     def inspect_clusters(
         self,
-        left_data: DataFrame,
+        left_data: pl.DataFrame,
         left_key: str,
-        right_data: DataFrame,
+        right_data: pl.DataFrame,
         right_key: str,
-    ) -> DataFrame:
+    ) -> pl.DataFrame:
         """Enriches the cluster results with the source data."""
         return self._merge_with_source_data(
-            base_df=self.clusters_to_pandas(),
+            base_df=self.clusters_to_polars(),
             base_df_cols=["parent", "child", "probability"],
             left_data=left_data,
             left_key=left_key,

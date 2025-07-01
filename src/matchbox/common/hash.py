@@ -68,7 +68,7 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
     try:
         sorted_vals = sorted(values)
     except TypeError as e:
-        raise TypeError("Can only order lists or columns of the same datatype.") from e
+        raise TypeError("Can only order lists or fields of the same datatype.") from e
 
     hashed_vals_list = [HASH_FUNC(prep_for_hash(i)) for i in sorted_vals]
 
@@ -79,29 +79,29 @@ def hash_values(*values: tuple[T, ...]) -> bytes:
     return hashed_vals.digest()
 
 
-def process_column_for_hashing(col_name: str, schema_type: pl.DataType) -> plx.Expr:
+def process_column_for_hashing(column_name: str, schema_type: pl.DataType) -> plx.Expr:
     """Process a column for hashing based on its type.
 
     Args:
-        col_name: The column name
+        column_name: The column name
         schema_type: The polars schema type of the column
 
     Returns:
         A polars expression for processing the column
     """
     if isinstance(schema_type, pl.Binary):
-        return pl.col(col_name).fill_null("\x00").bin.encode("hex").alias(col_name)
-    elif isinstance(schema_type, pl.Struct):
-        return pl.col(col_name).struct.json_encode().fill_null("\x00").alias(col_name)
-    elif isinstance(schema_type, pl.Object):
         return (
-            pl.col(col_name)
-            .map_elements(lambda x: str(x), return_dtype=pl.Utf8)
+            pl.col(column_name).fill_null("\x00").bin.encode("hex").alias(column_name)
+        )
+    elif isinstance(schema_type, pl.Struct):
+        return (
+            pl.col(column_name)
+            .struct.json_encode()
             .fill_null("\x00")
-            .alias(col_name)
+            .alias(column_name)
         )
     else:
-        return pl.col(col_name).cast(pl.Utf8).fill_null("\x00").alias(col_name)
+        return pl.col(column_name).cast(pl.Utf8).fill_null("\x00").alias(column_name)
 
 
 def hash_rows(
@@ -117,17 +117,33 @@ def hash_rows(
     Returns:
         List of row hashes as bytes
     """
-    expr_list = [process_column_for_hashing(col, df.schema[col]) for col in columns]
+    expr_list = [
+        process_column_for_hashing(column, df.schema[column]) for column in columns
+    ]
     df_processed = df.with_columns(expr_list)
+
+    record_separator = "␞"
+    unit_separator = "␟"
+
+    str_concatenation: list[pl.Expr] = []
+    for c in columns:
+        str_concatenation.extend(
+            [
+                pl.lit(c),  # column name
+                pl.lit(unit_separator),
+                pl.col(c),  # column value
+                pl.lit(record_separator),
+            ]
+        )
 
     if method == HashMethod.XXH3_128:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞").nchash.xxh3_128().alias("row_hash")
+            plh.concat_str(str_concatenation).nchash.xxh3_128().alias("row_hash")
         )
         return row_hashes["row_hash"]
     elif method == HashMethod.SHA256:
         row_hashes = df_processed.select(
-            plh.concat_str(*columns, separator="␞")
+            plh.concat_str(str_concatenation)
             .chash.sha2_256()
             .str.decode("hex")
             .alias("row_hash")
@@ -140,14 +156,23 @@ def hash_rows(
 def hash_arrow_table(
     table: pa.Table,
     method: HashMethod = HashMethod.XXH3_128,
+    as_sorted_list: list[str] | None = None,
 ) -> bytes:
-    """Computes a content hash of an Arrow table invariant to row and column order.
+    """Computes a content hash of an Arrow table invariant to row and field order.
 
     This is used to content-address an Arrow table for caching.
 
     Args:
         table: The pyarrow Table to hash
         method: The method to use for hashing rows (XXH3_128 or SHA256)
+        as_sorted_list: Optional list of column names to hash as a sorted list.
+            For example, ["left_id", "right_id"] will create a "sorted_list"
+            column and drop the original columns to ensure (1,2) and (2,1)
+            hash to the same value. Works with 2 or more columns.
+
+            Note: if list columns are combined with a column that's nullable,
+            list + null value returns null. See Polars' concat_list documentation
+            for more details.
 
     Returns:
         Bytes representing the content hash of the table
@@ -157,34 +182,49 @@ def hash_arrow_table(
     if df.height == 0:
         return b"empty_table_hash"
 
+    # Apply normalisation if specified
+    if as_sorted_list:
+        if len(as_sorted_list) < 2:
+            raise ValueError(
+                "Lists passed to as_sorted_list must contain at least 2 column names"
+            )
+
+        # Check that all columns exist
+        missing_cols = [col for col in as_sorted_list if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Columns not found in dataframe: {missing_cols}")
+
+        # Create normalised group and drop original columns
+        df = df.with_columns(
+            pl.concat_list(as_sorted_list).list.sort().alias("sorted_list")
+        ).drop(as_sorted_list)
+
     columns: list[str] = sorted(df.columns)
     df = df.select(columns)
 
-    # Explode list columns
-    for col in columns:
-        if isinstance(df.schema[col], pl.List):
-            df = df.explode(col)
+    # Explode list fields
+    for column in columns:
+        if isinstance(df.schema[column], pl.List):
+            df = df.explode(column)
 
     df = df.sort(by=columns)
-
-    row_hashes = hash_rows(df, columns, method=method)
-
+    row_hashes = hash_rows(df=df, columns=columns, method=method)
     all_hashes: bytes = b"".join(row_hashes.sort().to_list())
 
     return HASH_FUNC(all_hashes).digest()
 
 
-def columns_to_value_ordered_hash(data: DataFrame, columns: list[str]) -> Series:
-    """Returns the rowwise hash ordered by the row's values, ignoring column order.
+def fields_to_value_ordered_hash(data: DataFrame, fields: list[str]) -> Series:
+    """Returns the rowwise hash ordered by the row's values, ignoring field order.
 
-    This function is used to add a column to a dataframe that represents the
+    This function is used to add a field to a dataframe that represents the
     hash of each its rows, but where the order of the row values doesn't change the
-    hash value. Column order is ignored in favour of value order.
+    hash value. field order is ignored in favour of value order.
 
     This is primarily used to give a consistent hash to a new cluster no matter whether
     its parent hashes were used in the left or right table.
     """
-    bytes_records = data.filter(columns).astype(bytes).to_dict("records")
+    bytes_records = data.filter(fields).astype(bytes).to_dict("records")
 
     hashed_records = []
 

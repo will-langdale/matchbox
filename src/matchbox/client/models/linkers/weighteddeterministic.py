@@ -1,9 +1,9 @@
 """A linking methodology that applies different weights to field comparisons."""
 
-from typing import Any, Type
+from typing import Any
 
 import duckdb
-from pandas import ArrowDtype, DataFrame
+import polars as pl
 from pydantic import BaseModel, Field, field_validator
 
 from matchbox.client.helpers import comparison
@@ -18,7 +18,7 @@ class WeightedComparison(BaseModel):
             A valid ON clause to compare fields between the left and 
             the right data.
 
-            Use left.field and right.field to refer to columns in the 
+            Use left.field and right.field to refer to fields in the 
             respective sources.
 
             For example:
@@ -77,8 +77,8 @@ class WeightedDeterministicLinker(Linker):
 
     settings: WeightedDeterministicSettings
 
-    _id_dtype_l: Type = None
-    _id_dtype_r: Type = None
+    _id_dtype_l: pl.DataType
+    _id_dtype_r: pl.DataType
 
     @classmethod
     def from_settings(
@@ -101,18 +101,18 @@ class WeightedDeterministicLinker(Linker):
         )
         return cls(settings=settings)
 
-    def prepare(self, left: DataFrame, right: DataFrame) -> None:
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
         """Prepare the linker for linking."""
         pass
 
-    def link(self, left: DataFrame, right: DataFrame) -> DataFrame:
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
         """Link the left and right dataframes."""
-        self._id_dtype_l = type(left[self.settings.left_id][0])
-        self._id_dtype_r = type(right[self.settings.right_id][0])
+        self._id_dtype_l = left[self.settings.left_id].dtype
+        self._id_dtype_r = right[self.settings.right_id].dtype
 
         # Used below but ruff can't detect
-        left_df = left.copy()  # noqa: F841
-        right_df = right.copy()  # noqa: F841
+        left_df = left.clone()  # noqa: F841
+        right_df = right.clone()  # noqa: F841
 
         match_subquery = []
         weights = []
@@ -154,14 +154,15 @@ class WeightedDeterministicLinker(Linker):
                 sum(matches.probability) / 
                     {total_weight} >= {self.settings.threshold};
         """
-        df_arrow = duckdb.sql(sql).arrow()
-        res = df_arrow.to_pandas(
-            split_blocks=True, self_destruct=True, types_mapper=ArrowDtype
-        )
-        del df_arrow
 
-        # Convert bytearray back to bytes
-        return res.assign(
-            left_id=lambda df: df.left_id.apply(self._id_dtype_l),
-            right_id=lambda df: df.right_id.apply(self._id_dtype_r),
+        return (
+            duckdb.sql(sql)
+            .pl()
+            .with_columns(
+                [
+                    pl.col("left_id").cast(self._id_dtype_l),
+                    pl.col("right_id").cast(self._id_dtype_r),
+                    pl.col("probability").cast(pl.Float32),
+                ]
+            )
         )

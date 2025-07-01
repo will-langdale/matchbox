@@ -2,7 +2,7 @@
 
 from typing import Any, ParamSpec, TypeVar
 
-from pandas import DataFrame
+import polars as pl
 
 from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
@@ -16,6 +16,7 @@ from matchbox.common.dtos import (
     ResolutionName,
 )
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.logging import logger
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -28,8 +29,8 @@ class Model:
         self,
         metadata: ModelConfig,
         model_instance: Linker | Deduper,
-        left_data: DataFrame,
-        right_data: DataFrame | None = None,
+        left_data: pl.DataFrame,
+        right_data: pl.DataFrame | None = None,
     ):
         """Create a new model instance."""
         self.model_config = metadata
@@ -39,7 +40,17 @@ class Model:
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        _handler.insert_model(model_config=self.model_config)
+        if model_config := _handler.get_model(name=self.model_config.name):
+            if model_config != self.model_config:
+                raise ValueError(
+                    f"Model {self.model_config.name} already exists with "
+                    "different configuration. Please delete the existing model "
+                    "or use a different name. "
+                )
+            log_prefix = f"Model {model_config.name}"
+            logger.warning("Already exists. Passing.", prefix=log_prefix)
+        else:
+            _handler.insert_model(model_config=self.model_config)
 
     @property
     def results(self) -> Results:
@@ -128,9 +139,9 @@ def make_model(
     description: str,
     model_class: type[Linker] | type[Deduper],
     model_settings: dict[str, Any],
-    left_data: DataFrame,
+    left_data: pl.DataFrame,
     left_resolution: ResolutionName,
-    right_data: DataFrame | None = None,
+    right_data: pl.DataFrame | None = None,
     right_resolution: ResolutionName | None = None,
 ) -> Model:
     """Create a unified model instance for either linking or deduping operations.
