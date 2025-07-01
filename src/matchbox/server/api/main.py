@@ -44,7 +44,7 @@ from matchbox.server.api.dependencies import (
     MetadataStoreDependency,
     ParquetResponse,
     lifespan,
-    validate_api_key,
+    validate_jwt,
 )
 from matchbox.server.api.routers import eval, models, resolutions, sources
 
@@ -104,7 +104,7 @@ async def login(
         400: {"model": UploadStatus, **UploadStatus.status_400_examples()},
     },
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(validate_api_key)],
+    dependencies=[Depends(validate_jwt)],
 )
 async def upload_file(
     background_tasks: BackgroundTasks,
@@ -337,7 +337,7 @@ async def count_backend_items(
 @app.delete(
     "/database",
     responses={409: {"model": str}},
-    dependencies=[Depends(validate_api_key)],
+    dependencies=[Depends(validate_jwt)],
 )
 async def clear_database(
     backend: BackendDependency,
