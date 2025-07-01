@@ -8,6 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /code
 
 ARG MB_VERSION
+RUN if [ -z "$MB_VERSION" ]; then echo 'Environment variable MB_VERSION must be specified. Exiting.'; exit 1; fi
 ENV MB_VERSION=${MB_VERSION}
 
 
