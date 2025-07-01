@@ -488,8 +488,8 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def eval_login(self, user_id: int) -> str:
-        """Receives an identity and returns user information."""
+    def eval_login(self, user_name: str) -> int:
+        """Receives a user name and returns user ID."""
 
     @abstractmethod
     def insert_judgement(self, user_id: int, judgement: Judgement) -> None:

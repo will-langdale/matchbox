@@ -1,5 +1,7 @@
 """PostgreSQL adapter for Matchbox server."""
 
+from datetime import datetime, timezone
+from itertools import chain
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from pyarrow import Table
@@ -15,7 +17,7 @@ from matchbox.common.dtos import (
     ResolutionName,
     SourceResolutionName,
 )
-from matchbox.common.eval import Judgement
+from matchbox.common.eval import Judgement as CommonJudgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
@@ -24,6 +26,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.common.sources import Match, SourceConfig
+from matchbox.common.transform import hash_cluster_leaves
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -34,6 +37,8 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourceKey,
     Contains,
+    EvalJudgements,
+    EvalUsers,
     PKSpace,
     Probabilities,
     ResolutionFrom,
@@ -83,9 +88,23 @@ class FilteredClusters(BaseModel):
                         ClusterSourceKey.cluster_id == Clusters.cluster_id,
                     )
                 else:
-                    query = query.join(
-                        Probabilities,
-                        Probabilities.cluster_id == Clusters.cluster_id,
+                    query = (
+                        query.join(
+                            Probabilities,
+                            Probabilities.cluster_id == Clusters.cluster_id,
+                            isouter=True,
+                        )
+                        .join(
+                            EvalJudgements,
+                            EvalJudgements.cluster_id == Clusters.cluster_id,
+                            isouter=True,
+                        )
+                        .filter(
+                            or_(
+                                EvalJudgements.cluster_id.is_not(None),
+                                Probabilities.cluster_id.is_not(None),
+                            )
+                        )
                     )
 
             return query.scalar()
@@ -513,11 +532,58 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(childen=children)
 
-    def eval_login(self, user_id: int) -> str:  # noqa: D102
-        pass
+    def eval_login(self, user_name: str) -> int:  # noqa: D102
+        with MBDB.get_session() as session:
+            if user_id := session.scalar(
+                select(EvalUsers.user_id).where(EvalUsers.name == user_name)
+            ):
+                return user_id
 
-    def insert_judgement(self, user_id: int, judgement: Judgement) -> None:  # noqa: D102
-        pass
+            user = EvalUsers(name=user_name)
+            session.add(user)
+            session.commit()
+
+            return user.user_id
+
+    def insert_judgement(self, user_id: int, judgement: CommonJudgement) -> None:  # noqa: D102
+        ids = list(chain(*judgement.clusters))
+        self.validate_ids(ids)
+
+        for cluster in judgement.clusters:
+            with MBDB.get_session() as session:
+                leaf_hashes = [
+                    session.scalar(
+                        select(Clusters.cluster_hash).where(
+                            Clusters.cluster_id == leaf_id
+                        )
+                    )
+                    for leaf_id in cluster
+                ]
+                cluster_hash = hash_cluster_leaves(leaf_hashes)
+
+                if not (
+                    cluster_id := session.scalar(
+                        select(Clusters.cluster_id).where(
+                            Clusters.cluster_hash == cluster_hash
+                        )
+                    )
+                ):
+                    cluster_id = PKSpace.reserve_block(table="clusters", block_size=1)
+                    session.add(
+                        Clusters(cluster_id=cluster_id, cluster_hash=cluster_hash)
+                    )
+                    for leaf_id in cluster:
+                        session.add(Contains(root=cluster_id, leaf=leaf_id))
+
+                session.add(
+                    EvalJudgements(
+                        user_id=user_id,
+                        cluster_id=cluster_id,
+                        timestamp=datetime.now(timezone.utc),
+                    )
+                )
+
+                session.commit()
 
     def get_judgements(self) -> Table:  # noqa: D102
         pass
