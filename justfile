@@ -16,7 +16,7 @@ format:
     uv run ruff format .
     uv run ruff check . --fix
 
-# Scan for secrets
+# Scan for secrets in git (ignores unstaged)
 scan:
     bash -c "docker run -v "$(pwd):/repo" -i --rm trufflesecurity/trufflehog:latest git file:///repo"
 
