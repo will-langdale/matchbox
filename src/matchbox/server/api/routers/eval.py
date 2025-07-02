@@ -54,6 +54,7 @@ async def insert_judgement(
 )
 async def get_judgements(backend: BackendDependency) -> ParquetResponse:
     """Retrieve all judgements from human evaluators."""
+    return backend.get_judgements()
 
 
 @router.get(
