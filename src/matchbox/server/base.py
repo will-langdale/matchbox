@@ -492,11 +492,10 @@ class MatchboxDBAdapter(ABC):
         """Receives a user name and returns user ID."""
 
     @abstractmethod
-    def insert_judgement(self, user_id: int, judgement: Judgement) -> None:
+    def insert_judgement(judgement: Judgement) -> None:
         """Adds an evaluation judgement to the database.
 
         Args:
-            user_id: ID of user submitting the judgement
             judgement: representation of the proposed clusters.
         """
         ...

@@ -16,6 +16,7 @@ ModelComparison: TypeAlias = dict[ModelResolutionName, PrecisionRecall]
 class Judgement(BaseModel):
     """Representation of how to split a set of entities into clusters."""
 
+    user_id: int
     clusters: list[list[int]]
 
 

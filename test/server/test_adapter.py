@@ -938,8 +938,10 @@ class TestMatchboxBackend:
 
             prev_cluster_num = self.backend.clusters.count()
             self.backend.insert_judgement(
-                user_id=self.backend.eval_login("alice"),
-                judgement=Judgement(clusters=judgement_clusters),
+                judgement=Judgement(
+                    user_id=self.backend.eval_login("login"),
+                    clusters=judgement_clusters,
+                ),
             )
             assert self.backend.clusters.count() == prev_cluster_num + 2
 
@@ -951,6 +953,8 @@ class TestMatchboxBackend:
 
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.insert_judgement(
-                    user_id=self.backend.eval_login("alice"),
-                    judgement=Judgement(clusters=[fake_leaves]),
+                    judgement=Judgement(
+                        user_id=self.backend.eval_login("login"),
+                        clusters=[fake_leaves],
+                    ),
                 )

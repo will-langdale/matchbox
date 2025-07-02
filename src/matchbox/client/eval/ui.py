@@ -53,8 +53,9 @@ if st.session_state.step == "eval":
         all_ids = st.session_state.df.select("id").to_series().to_list()
         st.session_state.judgement.append(all_ids)
         _handler.send_eval(
-            user_id=st.session_state.user_id,
-            judgement=Judgement(clusters=st.session_state.judgement),
+            judgement=Judgement(
+                clusters=st.session_state.judgement, user_id=st.session_state.user_id
+            ),
         )
 
     if (edited_df.select("select").to_series().any()) and (

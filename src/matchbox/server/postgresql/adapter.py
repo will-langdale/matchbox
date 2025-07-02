@@ -23,6 +23,7 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxModelConfigError,
     MatchboxResolutionNotFoundError,
+    MatchboxUserNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
 from matchbox.common.sources import Match, SourceConfig
@@ -545,9 +546,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
             return user.user_id
 
-    def insert_judgement(self, user_id: int, judgement: CommonJudgement) -> None:  # noqa: D102
+    def insert_judgement(self, judgement: CommonJudgement) -> None:  # noqa: D102
         ids = list(chain(*judgement.clusters))
         self.validate_ids(ids)
+
+        with MBDB.get_session() as session:
+            if not session.scalar(
+                select(EvalUsers.name).where(EvalUsers.user_id == judgement.user_id)
+            ):
+                raise MatchboxUserNotFoundError(user_id=judgement.user_id)
 
         for cluster in judgement.clusters:
             with MBDB.get_session() as session:
@@ -577,7 +584,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
                 session.add(
                     EvalJudgements(
-                        user_id=user_id,
+                        user_id=judgement.user_id,
                         cluster_id=cluster_id,
                         timestamp=datetime.now(timezone.utc),
                     )

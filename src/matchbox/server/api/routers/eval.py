@@ -2,13 +2,16 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from matchbox.common.dtos import (
+    BackendUnprocessableType,
     ModelResolutionName,
     ResolutionOperationStatus,
+    UnprocessableError,
 )
 from matchbox.common.eval import Judgement, ModelComparison
+from matchbox.common.exceptions import MatchboxDataNotFound, MatchboxUserNotFoundError
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -22,19 +25,39 @@ router = APIRouter(prefix="/eval", tags=["eval"])
 )
 async def login(
     backend: BackendDependency,
-    user_id: int,
+    user_name: str,
 ) -> str:
-    """Receives an identity and returns user information."""
+    """Receives a user name and returns a user ID."""
+    return backend.eval_login(user_name)
 
 
 @router.post(
     "/",
+    responses={422: {"model": UnprocessableError}},
+    status_code=status.HTTP_201_CREATED,
 )
 async def insert_judgement(
     backend: BackendDependency,
     judgement: Judgement,
 ):
     """Submit judgement from human evaluator."""
+    try:
+        backend.insert_judgement(judgement=judgement)
+        return Response(status_code=status.HTTP_201_CREATED)
+    except MatchboxDataNotFound as e:
+        raise HTTPException(
+            status_code=422,
+            detail=UnprocessableError(
+                details=str(e), entity=BackendUnprocessableType.CLUSTERS
+            ).model_dump(),
+        ) from e
+    except MatchboxUserNotFoundError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=UnprocessableError(
+                details=str(e), entity=BackendUnprocessableType.USERS
+            ).model_dump(),
+        ) from e
 
 
 @router.get(

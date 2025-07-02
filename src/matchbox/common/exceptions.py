@@ -114,6 +114,20 @@ class MatchboxModelConfigError(Exception):
 # -- Resource not found on server exceptions --
 
 
+class MatchboxUserNotFoundError(Exception):
+    """User not found."""
+
+    def __init__(self, message: str | None = None, user_id: str | None = None):
+        """Initialise the exception."""
+        if message is None:
+            message = "User not found."
+            if user_id is not None:
+                message = f"User {user_id} not found."
+
+        super().__init__(message)
+        self.user_id = user_id
+
+
 class MatchboxResolutionNotFoundError(Exception):
     """Resolution not found."""
 

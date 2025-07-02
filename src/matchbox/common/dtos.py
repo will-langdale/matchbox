@@ -52,6 +52,13 @@ class BackendRetrievableType(StrEnum):
     RESOLUTION = "resolution"
 
 
+class BackendUnprocessableType(StrEnum):
+    """Enumeration of entity types processed indirectly by the backend."""
+
+    CLUSTERS = "clusters"
+    USERS = "users"
+
+
 class BackendUploadType(StrEnum):
     """Enumeration of supported backend upload types."""
 
@@ -249,6 +256,13 @@ class NotFoundError(BaseModel):
 
     details: str
     entity: BackendRetrievableType
+
+
+class UnprocessableError(BaseModel):
+    """APIerror for a 422 status code."""
+
+    details: str
+    entity: BackendUnprocessableType
 
 
 class DataTypes(StrEnum):
