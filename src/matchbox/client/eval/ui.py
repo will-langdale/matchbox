@@ -11,8 +11,8 @@ st.title("Matchbox evaluation session")
 
 if "step" not in st.session_state:
     st.session_state.step = "eval"
-    st.session_state.user_id = 42
-    st.session_state.user_name = _handler.login(user_id=st.session_state.user_id)
+    st.session_state.user_name = "scott.mcgregor@example.com"
+    st.session_state.user_id = _handler.login(user_name=st.session_state.user_name)
     st.session_state.resolution = "__DEFAULT__"
 
 if st.session_state.step == "eval":
@@ -52,7 +52,7 @@ if st.session_state.step == "eval":
         st.session_state.step = "done"
         all_ids = st.session_state.df.select("id").to_series().to_list()
         st.session_state.judgement.append(all_ids)
-        _handler.send_eval(
+        _handler.send_eval_judgement(
             judgement=Judgement(
                 clusters=st.session_state.judgement, user_id=st.session_state.user_id
             ),

@@ -31,13 +31,11 @@ class MatchboxUnparsedClientRequest(Exception):
 class MatchboxUnhandledServerResponse(Exception):
     """The API sent an unexpected response."""
 
-    def __init__(
-        self,
-        message: str | None = None,
-    ):
+    def __init__(self, http_status: int, details: str | None = None):
         """Initialise the exception."""
-        if message is None:
-            message = "The API sent an unexpected response"
+        message = f"The API sent an unexpected response with status {http_status}"
+        if details:
+            message += f" and the following message: {details}"
 
         super().__init__(message)
 

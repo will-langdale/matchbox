@@ -14,6 +14,8 @@ from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
     BackendRetrievableType,
+    LoginAttempt,
+    LoginResult,
     ModelAncestor,
     ModelConfig,
     ModelResolutionName,
@@ -94,7 +96,9 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     if res.status_code == 422:
         raise MatchboxUnparsedClientRequest(res.content)
 
-    raise MatchboxUnhandledServerResponse(res.content)
+    raise MatchboxUnhandledServerResponse(
+        details=res.content, http_status=res.status_code
+    )
 
 
 def create_client(settings: ClientSettings) -> httpx.Client:
@@ -116,6 +120,14 @@ def create_headers(settings: ClientSettings) -> dict[str, str]:
 
 
 CLIENT = create_client(settings=settings)
+
+
+def login(user_name: str) -> int:
+    logger.debug(f"Log in attempt for {user_name}")
+    response = CLIENT.post(
+        "/login", json=LoginAttempt(user_name=user_name).model_dump()
+    )
+    return LoginResult.model_validate(response.json()).user_id
 
 
 # Retrieval
@@ -395,11 +407,6 @@ def delete_resolution(
 # Evaluation
 
 
-def login(user_id: int) -> str:
-    """Return name from user ID."""
-    return "Scott McGregor"
-
-
 def sample_one(user_id: int, resolution: ModelResolutionName) -> Table:
     return Table.from_pylist(
         [
@@ -419,12 +426,9 @@ def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
     return res.json()
 
 
-def send_eval(user_id: int, judgement: Judgement):
-    print(f"Posting {judgement} for {user_id}")
-    # CLIENT.post(
-    #     f"/eval/{judgement.user_id}",
-    #     json=judgement.model_dump(),
-    # )
+def send_eval_judgement(judgement: Judgement) -> None:
+    logger.debug(f"Posting {judgement.clusters} for {judgement.user_id}")
+    CLIENT.post("/eval/", json=judgement.model_dump())
 
 
 def download_eval_data() -> Table:
