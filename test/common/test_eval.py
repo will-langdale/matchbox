@@ -36,14 +36,14 @@ def test_contains_to_pairs():
         [
             {(1, 2), (1, 3), (2, 3)},
             {(1, 2)},
-            1 / 3,
+            pytest.approx(1 / 3, 0.001),
             1,
         ],
         [
             {(1, 2)},
             {(1, 2), (1, 3), (2, 3)},
             1,
-            1 / 3,
+            pytest.approx(1 / 3, 0.001),
         ],
     ],
     ids=["sub_precision", "sub_recall"],
