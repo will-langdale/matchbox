@@ -903,12 +903,12 @@ class TestMatchboxBackend:
             # Verify counts still match
             assert get_counts() == pre_dump_counts
 
-    def test_eval_login(self):
+    def test_login(self):
         """Can swap user name with user ID."""
         with self.scenario(self.backend, "bare"):
-            alice_id = self.backend.eval_login("alice")
-            assert alice_id == self.backend.eval_login("alice")
-            assert alice_id != self.backend.eval_login("bob")
+            alice_id = self.backend.login("alice")
+            assert alice_id == self.backend.login("alice")
+            assert alice_id != self.backend.login("bob")
 
     def test_insert_judgement(self):
         """Can insert judgements."""
@@ -939,7 +939,7 @@ class TestMatchboxBackend:
             prev_cluster_num = self.backend.clusters.count()
             self.backend.insert_judgement(
                 judgement=Judgement(
-                    user_id=self.backend.eval_login("login"),
+                    user_id=self.backend.login("alice"),
                     clusters=judgement_clusters,
                 ),
             )
@@ -954,7 +954,7 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.insert_judgement(
                     judgement=Judgement(
-                        user_id=self.backend.eval_login("login"),
+                        user_id=self.backend.login("alice"),
                         clusters=[fake_leaves],
                     ),
                 )

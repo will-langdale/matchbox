@@ -21,6 +21,8 @@ from matchbox.common.dtos import (
     BackendRetrievableType,
     BackendUploadType,
     CountResult,
+    LoginAttempt,
+    LoginResult,
     NotFoundError,
     OKMessage,
     ResolutionName,
@@ -70,6 +72,17 @@ async def http_exception_handler(request, exc):
 async def healthcheck() -> OKMessage:
     """Perform a health check and return the status."""
     return OKMessage()
+
+
+@app.post(
+    "/login",
+)
+async def login(
+    backend: BackendDependency,
+    credentials: LoginAttempt,
+) -> LoginResult:
+    """Receives a user name and returns a user ID."""
+    return LoginResult(user_id=backend.login(credentials.user_name))
 
 
 @app.post(

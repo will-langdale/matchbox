@@ -39,13 +39,13 @@ from matchbox.server.postgresql.orm import (
     ClusterSourceKey,
     Contains,
     EvalJudgements,
-    EvalUsers,
     PKSpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
     Results,
     SourceConfigs,
+    Users,
 )
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
@@ -533,14 +533,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(childen=children)
 
-    def eval_login(self, user_name: str) -> int:  # noqa: D102
+    def login(self, user_name: str) -> int:  # noqa: D102
         with MBDB.get_session() as session:
             if user_id := session.scalar(
-                select(EvalUsers.user_id).where(EvalUsers.name == user_name)
+                select(Users.user_id).where(Users.name == user_name)
             ):
                 return user_id
 
-            user = EvalUsers(name=user_name)
+            user = Users(name=user_name)
             session.add(user)
             session.commit()
 
@@ -552,7 +552,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         with MBDB.get_session() as session:
             if not session.scalar(
-                select(EvalUsers.name).where(EvalUsers.user_id == judgement.user_id)
+                select(Users.name).where(Users.user_id == judgement.user_id)
             ):
                 raise MatchboxUserNotFoundError(user_id=judgement.user_id)
 

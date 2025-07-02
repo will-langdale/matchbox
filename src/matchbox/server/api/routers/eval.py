@@ -21,17 +21,6 @@ router = APIRouter(prefix="/eval", tags=["eval"])
 
 
 @router.post(
-    "/login",
-)
-async def login(
-    backend: BackendDependency,
-    user_name: str,
-) -> str:
-    """Receives a user name and returns a user ID."""
-    return backend.eval_login(user_name)
-
-
-@router.post(
     "/",
     responses={422: {"model": UnprocessableError}},
     status_code=status.HTTP_201_CREATED,

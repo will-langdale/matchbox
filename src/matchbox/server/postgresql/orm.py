@@ -552,10 +552,10 @@ class Clusters(CountMixin, MBDB.MatchboxBase):
     __table_args__ = (UniqueConstraint("cluster_hash", name="clusters_hash_key"),)
 
 
-class EvalUsers(CountMixin, MBDB.MatchboxBase):
+class Users(CountMixin, MBDB.MatchboxBase):
     """Table of identities of human validators."""
 
-    __tablename__ = "eval_users"
+    __tablename__ = "users"
 
     # Columns
     user_id = Column(BIGINT, primary_key=True)
@@ -571,7 +571,7 @@ class EvalJudgements(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     user_id = Column(
-        BIGINT, ForeignKey("eval_users.user_id", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True
     )
     cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
@@ -579,7 +579,7 @@ class EvalJudgements(CountMixin, MBDB.MatchboxBase):
     timestamp = Column(DateTime(timezone=True), nullable=False)
 
     # Relationships
-    user = relationship("EvalUsers", back_populates="judgements")
+    user = relationship("Users", back_populates="judgements")
     proposes = relationship("Clusters", back_populates="judgements")
 
 

@@ -26,6 +26,18 @@ class OKMessage(BaseModel):
     version: str = Field(default_factory=lambda: version("matchbox-db"))
 
 
+class LoginAttempt(BaseModel):
+    """Request for log in process."""
+
+    user_name: str
+
+
+class LoginResult(BaseModel):
+    """Response from log in process."""
+
+    user_id: int
+
+
 class BackendCountableType(StrEnum):
     """Enumeration of supported backend countable types."""
 
