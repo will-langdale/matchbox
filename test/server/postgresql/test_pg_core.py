@@ -8,7 +8,10 @@ from matchbox.server.postgresql import MatchboxPostgres
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 from matchbox.server.postgresql.orm import PKSpace
-from matchbox.server.postgresql.utils.db import ingest_to_temporary_table, large_ingest
+from matchbox.server.postgresql.utils.db import (
+    BulkWriter,
+    ingest_to_temporary_table,
+)
 
 
 @pytest.mark.docker
@@ -31,10 +34,10 @@ def test_reserve_id_block(
 
 
 @pytest.mark.docker
-def test_large_ingest_simple(
+def test_bulk_writer_simple(
     matchbox_postgres: MatchboxPostgres,  # will drop dummy table
 ):
-    """Test append-only mode of large ingest."""
+    """Test append-only mode of bulk writer."""
     engine = MBDB.get_engine()
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
@@ -49,34 +52,31 @@ def test_large_ingest_simple(
     original_tables = len(metadata.tables)
 
     # No auto-commit
-    with MBDB.get_adbc_connection() as conn:
-        large_ingest(
+    with BulkWriter() as bulk_writer:
+        bulk_writer.write(
             data=pa.Table.from_pylist([{"foo": "val"}]),
             table_class=DummyTable,
-            adbc_connection=conn,
         )
     assert DummyTable.count() == 0
 
     # Ingest data with manual keys and chunking
-    with MBDB.get_adbc_connection() as conn:
-        large_ingest(
+    with BulkWriter() as bulk_writer:
+        bulk_writer.write(
             data=pa.Table.from_pylist(
                 [{"key": 0, "foo": "val1"}],
             ),
             table_class=DummyTable,
-            adbc_connection=conn,
             max_chunksize=100,
         )
-        conn.commit()
+        bulk_writer.commit()
 
     # Ingest data without keys and no chunking
-    with MBDB.get_adbc_connection() as conn:
-        large_ingest(
+    with BulkWriter() as bulk_writer:
+        bulk_writer.write(
             data=pa.Table.from_pylist([{"foo": "val2"}]),
             table_class=DummyTable,
-            adbc_connection=conn,
         )
-        conn.commit()
+        bulk_writer.commit()
 
     # Both rows were fine
     assert DummyTable.count() == 2
@@ -87,13 +87,9 @@ def test_large_ingest_simple(
     assert 0 < second_id
 
     # By default, upserting not allowed
-    with (
-        pytest.raises(MatchboxDatabaseWriteError),
-        MBDB.get_adbc_connection() as conn,
-    ):
-        large_ingest(
+    with pytest.raises(MatchboxDatabaseWriteError), BulkWriter() as bulk_writer:
+        bulk_writer.write(
             data=pa.Table.from_pylist([{"key": 0, "foo": "val3"}]),
-            adbc_connection=conn,
             table_class=DummyTable,
         )
 
@@ -104,20 +100,19 @@ def test_large_ingest_simple(
     # Columns not available in the target table are rejected
     with (
         pytest.raises(ValueError, match="does not have columns"),
-        MBDB.get_adbc_connection() as conn,
+        BulkWriter() as bulk_writer,
     ):
-        large_ingest(
+        bulk_writer.write(
             data=pa.Table.from_pylist([{"key": 10, "bar": "val3"}]),
-            adbc_connection=conn,
             table_class=DummyTable,
         )
 
 
 @pytest.mark.docker
-def test_large_ingest_upsert_custom_update(
+def test_bulk_writer_upsert_custom_update(
     matchbox_postgres_dropped: MatchboxPostgres,  # will drop dummy table
 ):
-    """Test large ingest with upsertion and custom columns to update."""
+    """Test bulk writer with upsertion and custom columns to update."""
     engine = MBDB.get_engine()
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
@@ -143,39 +138,43 @@ def test_large_ingest_upsert_custom_update(
     # Some choices of parameters are not allowed
     with (
         pytest.raises(ValueError, match="Cannot update a custom upsert key"),
-        MBDB.get_adbc_connection() as conn,
+        BulkWriter() as bw,
     ):
-        large_ingest(
+        bw.write(
             data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
             table_class=DummyTable,
-            adbc_connection=conn,
             update_columns=["foo"],
             upsert_keys=["foo"],
         )
 
     with (
         pytest.raises(ValueError, match="different custom upsert key"),
-        MBDB.get_adbc_connection() as conn,
+        BulkWriter() as bw,
     ):
-        large_ingest(
+        bw.write(
             data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
-            adbc_connection=conn,
             table_class=DummyTable,
             update_columns=["key"],
         )
 
     # Ingest updated data
-    with MBDB.get_adbc_connection() as conn:
-        large_ingest(
-            data=pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
-            adbc_connection=conn,
+    with BulkWriter() as bw:
+        bw.write(
+            data=pa.Table.from_pylist(
+                [
+                    {"key": 1, "foo": "new foo", "bar": "new bar"},
+                    {"key": 2, "foo": "other foo", "bar": "other bar"},
+                ]
+            ),
             table_class=DummyTable,
             update_columns=["foo"],
         )
-        conn.commit()
+        # No auto-commit
+        assert DummyTable.count() == 1
+        bw.commit()
 
-    # Number of rows unchanged
-    assert DummyTable.count() == 1
+    # Only one extra row
+    assert DummyTable.count() == 2
 
     # Only foo has changed
     with MBDB.get_session() as session:
@@ -190,43 +189,38 @@ def test_large_ingest_upsert_custom_update(
     assert len(metadata.tables) == original_tables
 
     # Cannot update column when constraints violated
-    with (
-        pytest.raises(MatchboxDatabaseWriteError),
-        MBDB.get_adbc_connection() as conn,
-    ):
-        large_ingest(
+    with pytest.raises(MatchboxDatabaseWriteError), BulkWriter() as bw:
+        bw.write(
             pa.Table.from_pylist([{"key": 2, "foo": "new foo", "bar": "new bar"}]),
             DummyTable,
-            adbc_connection=conn,
             update_columns=["foo"],
         )
-        conn.commit()
+        bw.commit()
 
     # Failed ingestion has no effect
-    assert DummyTable.count() == 1
+    assert DummyTable.count() == 2
     metadata.clear()
     metadata.reflect(engine)
     assert len(metadata.tables) == original_tables
 
     # Constraints are not violated when upserting
-    with MBDB.get_adbc_connection() as conn:
-        large_ingest(
+    with BulkWriter() as bw:
+        bw.write(
             pa.Table.from_pylist([{"key": 1, "foo": "new foo", "bar": "new bar"}]),
             DummyTable,
-            adbc_connection=conn,
             update_columns=["foo"],
         )
-        conn.commit()
+        bw.commit()
 
     # Nothing changed still
-    assert DummyTable.count() == 1
+    assert DummyTable.count() == 2
 
 
 @pytest.mark.docker
-def test_large_ingest_upsert_custom_key(
+def test_bulk_writer_upsert_custom_key(
     matchbox_postgres_dropped: MatchboxPostgres,  # will drop dummy table
 ):
-    """Test large ingest with upsertion on custom keys."""
+    """Test bulk writer with upsertion on custom keys."""
     engine = MBDB.get_engine()
     metadata = MetaData(schema=MBDB.MatchboxBase.metadata.schema)
 
@@ -251,14 +245,13 @@ def test_large_ingest_upsert_custom_key(
         session.commit()
 
     # Ingest updated data
-    with MBDB.get_adbc_connection() as conn:
-        large_ingest(
+    with BulkWriter() as bw:
+        bw.write(
             data=pa.Table.from_pylist([{"key": 2, "other_key": "a", "foo": "new foo"}]),
             table_class=DummyTable,
-            adbc_connection=conn,
             upsert_keys=["other_key"],
         )
-        conn.commit()
+        bw.commit()
 
     # Number of rows unchanged
     assert DummyTable.count() == 1

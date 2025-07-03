@@ -515,7 +515,9 @@ def query(
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(id_query)
             logger.debug(f"Query SQL: \n {stmt}")
-            return sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
+            return sql_to_df(
+                stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
+            )
 
 
 def get_parent_clusters_and_leaves(

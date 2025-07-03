@@ -29,9 +29,9 @@ from matchbox.server.postgresql.orm import (
     SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import (
+    BulkWriter,
     compile_sql,
     ingest_to_temporary_table,
-    large_ingest,
 )
 from matchbox.server.postgresql.utils.query import get_parent_clusters_and_leaves
 
@@ -98,7 +98,7 @@ def insert_source(
     with MBDB.get_adbc_connection() as conn:
         existing_hash_lookup: pl.DataFrame = sql_to_df(
             stmt=compile_sql(select(Clusters.cluster_id, Clusters.cluster_hash)),
-            connection=conn,
+            connection=conn.dbapi_connection,
             return_type="polars",
         )
 
@@ -163,13 +163,12 @@ def insert_source(
     )
 
     # Insert new clusters and all source primary keys
-    with MBDB.get_adbc_connection() as adbc_connection:
+    with BulkWriter() as bulk_writer:
         try:
             # Bulk insert into Clusters table (only new clusters)
             if not cluster_records.is_empty():
-                large_ingest(
+                bulk_writer.write(
                     data=cluster_records.to_arrow(),
-                    adbc_connection=adbc_connection,
                     table_class=Clusters,
                     max_chunksize=batch_size,
                 )
@@ -180,9 +179,8 @@ def insert_source(
 
             # Bulk insert into ClusterSourceKey table (all links)
             if not keys_records.is_empty():
-                large_ingest(
+                bulk_writer.write(
                     data=keys_records.to_arrow(),
-                    adbc_connection=adbc_connection,
                     table_class=ClusterSourceKey,
                     max_chunksize=batch_size,
                 )
@@ -191,11 +189,10 @@ def insert_source(
                     prefix=log_prefix,
                 )
 
-            adbc_connection.commit()
+            bulk_writer.commit()
         except Exception as e:
             # Log the error and rollback
             logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
-            adbc_connection.rollback()
             raise
 
     # Insert successful, safe to update the resolution's content hash
@@ -456,7 +453,7 @@ def _create_clusters_dataframe(all_clusters: dict[bytes, Cluster]) -> pl.DataFra
         with MBDB.get_adbc_connection() as conn:
             existing_cluster_df: pl.DataFrame = sql_to_df(
                 stmt=compile_sql(existing_cluster_stmt),
-                connection=conn,
+                connection=conn.dbapi_connection,
                 return_type="polars",
             )
 
@@ -647,16 +644,15 @@ def insert_results(
             )
             raise
 
-    with MBDB.get_adbc_connection() as adbc_connection:
+    with BulkWriter() as bulk_writer:
         try:
             logger.info(
                 f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
             )
 
-            large_ingest(
+            bulk_writer.write(
                 data=clusters,
                 table_class=Clusters,
-                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -665,10 +661,9 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            large_ingest(
+            bulk_writer.write(
                 data=contains,
                 table_class=Contains,
-                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -677,10 +672,9 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            large_ingest(
+            bulk_writer.write(
                 data=probabilities,
                 table_class=Probabilities,
-                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -690,7 +684,7 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            large_ingest(
+            bulk_writer.write(
                 data=pl.from_arrow(results)
                 .with_columns(
                     pl.lit(resolution.resolution_id)
@@ -700,7 +694,6 @@ def insert_results(
                 .select("resolution_id", "left_id", "right_id", "probability")
                 .to_arrow(),
                 table_class=Results,
-                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -709,12 +702,11 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            adbc_connection.commit()
+            bulk_writer.commit()
         except Exception as e:
             logger.error(
                 f"Failed to insert data, rolling back: {str(e)}", prefix=log_prefix
             )
-            adbc_connection.rollback()
             raise
 
     # Insert successful, safe to update the resolution's content hash
