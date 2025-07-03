@@ -6,7 +6,6 @@ import cProfile
 import io
 import pstats
 import uuid
-from types import TracebackType
 from typing import Generator
 
 import pyarrow as pa
@@ -16,8 +15,8 @@ from pyarrow import Table as ArrowTable
 from sqlalchemy import Column, MetaData, Table, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeMeta
+from sqlalchemy.pool import PoolProxiedConnection
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.type_api import TypeEngine
 
@@ -217,157 +216,41 @@ def _copy_to_table(
         )
 
 
-class BulkWriter:
-    """Context manager for the efficient ingestion of data in bulk atomically."""
+def large_append(
+    data: pa.Table,
+    table_class: DeclarativeMeta,
+    adbc_connection: PoolProxiedConnection,
+    max_chunksize: int | None = None,
+):
+    """Append a PyArrow table to a PostgreSQL table using ADBC.
 
-    def __init__(self) -> None:
-        """Initialise context manager."""
-        self._adbc_connection = None  # used in direct insert mode
-        self._sqlalchemy_session = None  # used in upsert mode
-        self.temp_tables = []
+    This function does not support upserting and will error if keys clash.
+    This method does not auto-commit, which is the responsibility of the caller.
 
-    def _connect_adbc(self) -> None:
-        self._adbc_connection = MBDB.get_adbc_connection_manual()
+    Args:
+        data: A PyArrow table to write.
+        table_class: The SQLAlchemy ORM class for the table to write to.
+        adbc_connection: An ADBC connection from the pool.
+            This is returned by MBDB.get_adbc_connection() and needs to be used via a
+            context manager.
+        max_chunksize: Size of data chunks to be read and copied.
+    """
+    table: Table = table_class.__table__
 
-    def _connect_sqlalchemy(self) -> None:
-        self._sqlalchemy_session = MBDB.get_session()
-
-    def __enter__(self) -> "BulkWriter":
-        """Enter context manager."""
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        exc_traceback: TracebackType,
-    ) -> None:
-        """Exit context manager."""
-        if self._adbc_connection:
-            self._adbc_connection.rollback()
-            self._adbc_connection.close()
-
-        if self._sqlalchemy_session:
-            self._sqlalchemy_session.rollback()
-            self._sqlalchemy_session.close()
-
-        with MBDB.get_session() as cleanup_session:
-            for temp_table in self.temp_tables:
-                temp_table.drop(cleanup_session.bind, checkfirst=True)
-
-    def commit(self) -> None:
-        """Commit result of previous ingestions."""
-        if self._adbc_connection:
-            self._adbc_connection.commit()
-        if self._sqlalchemy_session:
-            self._sqlalchemy_session.commit()
-
-    def write(
-        self,
-        data: pa.Table,
-        table_class: DeclarativeMeta,
-        max_chunksize: int | None = None,
-        upsert_keys: list[str] | None = None,
-        update_columns: list[str] | None = None,
-    ) -> None:
-        """Append a PyArrow table to a PostgreSQL table using ADBC.
-
-        It will either copy directly (and error if primary key constraints are
-        violated), or run in upsert mode by using a staging table, which is slower.
-
-        This method doesn not auto-commit, which is the responsibility of the caller.
-        On the other hand, temporary tables, if necessary, are auto-committed, and
-        cleaned up when the `BulkWriter` context manager is exited.
-
-        Args:
-            data: A PyArrow table to write.
-            table_class: The SQLAlchemy ORM class for the table to write to.
-            max_chunksize: Size of data chunks to be read and copied.
-            upsert_keys: Columns used as keys for "on conflict do update".
-                If passed, it will run ingest in slower upsert mode.
-                If not passed and `update_columns` is passed, defaults to primary keys.
-            update_columns: Columns to update when upserting.
-                If passed, it will run ingest in slower upsert mode.
-        """
-        table: Table = table_class.__table__
-        metadata = table.metadata
-
-        table_columns = [c.name for c in table.columns]
-        col_diff = set(data.column_names) - set(table_columns)
-        if len(col_diff) > 0:
-            raise ValueError(f"Table {table.name} does not have columns {col_diff}")
-
-        # -- DIRECT INSERT --
-        self._connect_adbc()
-        if not update_columns and not upsert_keys:
-            try:
-                _copy_to_table(
-                    table_name=table.name,
-                    schema_name=table.schema,
-                    connection=self._adbc_connection,
-                    data=data,
-                    max_chunksize=max_chunksize,
-                )
-                return
-            except ADBCProgrammingError as e:
-                raise MatchboxDatabaseWriteError from e
-
-        # -- UPSERT MODE (slower) --
-        self._connect_sqlalchemy()
-        keys_names = [c.name for c in table.primary_key.columns]
-
-        # Validate upsert arguments
-        if len(set(update_columns or []) & set(upsert_keys or [])) > 0:
-            raise ValueError("Cannot update a custom upsert key")
-
-        if len(set(update_columns or []) & set(keys_names)) > 0:
-            raise ValueError(
-                "To update a primary key, you must set a different custom upsert key"
-            )
-
-        # If necessary, set defaults for upsert variables
-        upsert_keys = upsert_keys or keys_names
-
-        if not update_columns:
-            update_columns = [c for c in table_columns if c not in upsert_keys]
-
-        # Create temp table
-        temp_table_name = f"{table.name}_tmp_{uuid.uuid4().hex}"
-        temp_cols = [
-            Column(c.name, c.type, primary_key=c.primary_key) for c in table.columns
-        ]
-        temp_table = Table(temp_table_name, metadata, *temp_cols)
-        self.temp_tables.append(temp_table)
-
-        # Commit to temp table straight away
-        with MBDB.get_session() as session:
-            temp_table.create(session.bind)
-            session.commit()
-
-        with MBDB.get_adbc_connection() as temp_table_write_conn:
-            _copy_to_table(
-                table_name=temp_table_name,
-                schema_name=table.schema,
-                connection=temp_table_write_conn,
-                data=data,
-                max_chunksize=max_chunksize,
-            )
-            temp_table_write_conn.commit()
-
-        # Copy new records to original table
-        insert_stmt = insert(table).from_select(
-            [c.name for c in temp_table.columns], temp_table.select()
+    table_columns = [c.name for c in table.columns]
+    col_diff = set(data.column_names) - set(table_columns)
+    if len(col_diff) > 0:
+        raise ValueError(f"Table {table.name} does not have columns {col_diff}")
+    try:
+        _copy_to_table(
+            table_name=table.name,
+            schema_name=table.schema,
+            connection=adbc_connection,
+            data=data,
+            max_chunksize=max_chunksize,
         )
-        upsert_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=upsert_keys,
-            set_={c: getattr(insert_stmt.excluded, c) for c in update_columns},
-        )
-
-        try:
-            # Cannot use ADBC, as adbc_conn.execute does not respect autocommit=False
-            self._sqlalchemy_session.execute(upsert_stmt)
-        except (ADBCProgrammingError, IntegrityError) as e:
-            raise MatchboxDatabaseWriteError from e
+    except ADBCProgrammingError as e:
+        raise MatchboxDatabaseWriteError from e
 
 
 @contextlib.contextmanager

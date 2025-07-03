@@ -29,9 +29,9 @@ from matchbox.server.postgresql.orm import (
     SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import (
-    BulkWriter,
     compile_sql,
     ingest_to_temporary_table,
+    large_append,
 )
 from matchbox.server.postgresql.utils.query import get_parent_clusters_and_leaves
 
@@ -163,13 +163,14 @@ def insert_source(
     )
 
     # Insert new clusters and all source primary keys
-    with BulkWriter() as bulk_writer:
+    with MBDB.get_adbc_connection() as adbc_connection:
         try:
             # Bulk insert into Clusters table (only new clusters)
             if not cluster_records.is_empty():
-                bulk_writer.write(
+                large_append(
                     data=cluster_records.to_arrow(),
                     table_class=Clusters,
+                    adbc_connection=adbc_connection,
                     max_chunksize=batch_size,
                 )
                 logger.info(
@@ -179,9 +180,10 @@ def insert_source(
 
             # Bulk insert into ClusterSourceKey table (all links)
             if not keys_records.is_empty():
-                bulk_writer.write(
+                large_append(
                     data=keys_records.to_arrow(),
                     table_class=ClusterSourceKey,
+                    adbc_connection=adbc_connection,
                     max_chunksize=batch_size,
                 )
                 logger.info(
@@ -189,10 +191,11 @@ def insert_source(
                     prefix=log_prefix,
                 )
 
-            bulk_writer.commit()
+            adbc_connection.commit()
         except Exception as e:
             # Log the error and rollback
             logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
+            adbc_connection.rollback()
             raise
 
     # Insert successful, safe to update the resolution's content hash
@@ -644,15 +647,16 @@ def insert_results(
             )
             raise
 
-    with BulkWriter() as bulk_writer:
+    with MBDB.get_adbc_connection() as adbc_connection:
         try:
             logger.info(
                 f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
             )
 
-            bulk_writer.write(
+            large_append(
                 data=clusters,
                 table_class=Clusters,
+                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -661,9 +665,10 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            bulk_writer.write(
+            large_append(
                 data=contains,
                 table_class=Contains,
+                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -672,9 +677,10 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            bulk_writer.write(
+            large_append(
                 data=probabilities,
                 table_class=Probabilities,
+                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -684,7 +690,7 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            bulk_writer.write(
+            large_append(
                 data=pl.from_arrow(results)
                 .with_columns(
                     pl.lit(resolution.resolution_id)
@@ -694,6 +700,7 @@ def insert_results(
                 .select("resolution_id", "left_id", "right_id", "probability")
                 .to_arrow(),
                 table_class=Results,
+                adbc_connection=adbc_connection,
                 max_chunksize=batch_size,
             )
 
@@ -702,11 +709,12 @@ def insert_results(
                 prefix=log_prefix,
             )
 
-            bulk_writer.commit()
+            adbc_connection.commit()
         except Exception as e:
             logger.error(
                 f"Failed to insert data, rolling back: {str(e)}", prefix=log_prefix
             )
+            adbc_connection.rollback()
             raise
 
     # Insert successful, safe to update the resolution's content hash

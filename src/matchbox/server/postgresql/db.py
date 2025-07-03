@@ -159,14 +159,6 @@ class MatchboxDatabase:
         finally:
             conn.close()
 
-    def get_adbc_connection_manual(self) -> PoolProxiedConnection:
-        """Get a new ADBC pool proxy, managed by the caller."""
-        if not self._adbc_pool:
-            self._connect_adbc()
-
-        conn = self._adbc_pool.connect()
-        return conn
-
     def run_migrations(self):
         """Create the database and all tables expected in the schema."""
         alembic_version = self._look_for_alembic_version()
