@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncGenerator, Generator
 
@@ -140,9 +141,9 @@ def validate_jwt(
         )
 
     try:
-        sub = jwt.decode(
+        payload = jwt.decode(
             client_token, settings.api_key.get_secret_value(), algorithms=ALGORITHM
-        )["sub"]
+        )
     except InvalidSignatureError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -150,8 +151,17 @@ def validate_jwt(
             headers={"WWW-Authenticate": "Authorization"},
         ) from e
 
+    if payload["exp"] < time.time():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="JWT expired.",
+            headers={"WWW-Authenticate": "Authorization"},
+        )
+
     if client_token != generate_json_web_token(
-        sub=sub, private_key=settings.api_key.get_secret_value()
+        sub=payload["sub"],
+        private_key=settings.api_key.get_secret_value(),
+        exp=payload["exp"],
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
