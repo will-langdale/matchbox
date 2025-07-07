@@ -634,7 +634,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # 5 unique cluster rows (not 6) since two keys share cluster 101
@@ -679,7 +679,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # We should have 5 unique (root_id, leaf_id) combinations:
@@ -740,7 +740,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # Return 10 unique hashes from the 11 keys
@@ -788,7 +788,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # Return 10 unique hashes from the 11 keys
@@ -831,7 +831,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # Return 5 unique hashes from the 5 keys
@@ -880,7 +880,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # Return 10 unique hashes from the 11 keys
@@ -925,7 +925,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         if mode == "root_leaf":
             # Return 5 unique hashes from the 6 keys
@@ -958,7 +958,7 @@ class TestBuildUnifiedQuery:
             )
 
         with MBDB.get_adbc_connection() as conn:
-            result = sql_to_df(compile_sql(query), conn, "polars")
+            result = sql_to_df(compile_sql(query), conn.dbapi_connection, "polars")
 
         # Get the appropriate column name for cluster IDs
         if mode == "id_key":
