@@ -599,10 +599,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
             EvalJudgements.user_id,
             Contains.root.label("parent"),
             Contains.leaf.label("child"),
-        )
+        ).join(Contains, EvalJudgements.cluster_id == Contains.root)
 
         with MBDB.get_adbc_connection() as conn:
-            return sql_to_df(stmt=stmt, connection=conn, return_type="arrow")
+            return sql_to_df(
+                stmt=compile_sql(stmt),
+                connection=conn.dbapi_connection,
+                return_type="arrow",
+            )
 
     def compare_models(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
         pass

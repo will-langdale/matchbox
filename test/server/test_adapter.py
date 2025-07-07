@@ -6,7 +6,7 @@ import pyarrow.compute as pc
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.common.arrow import SCHEMA_MB_IDS
+from matchbox.common.arrow import SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS
 from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
@@ -910,8 +910,8 @@ class TestMatchboxBackend:
             assert alice_id == self.backend.login("alice")
             assert alice_id != self.backend.login("bob")
 
-    def test_insert_judgement(self):
-        """Can insert judgements."""
+    def test_insert_and_get_judgement(self):
+        """Can insert and retrieve judgements."""
         with self.scenario(self.backend, "dedupe"):
             # Do some queries to find real source cluster IDs
             deduped_query = pl.from_arrow(
@@ -937,9 +937,10 @@ class TestMatchboxBackend:
             ]
 
             prev_cluster_num = self.backend.clusters.count()
+            alice_id = self.backend.login("alice")
             self.backend.insert_judgement(
                 judgement=Judgement(
-                    user_id=self.backend.login("alice"),
+                    user_id=alice_id,
                     clusters=judgement_clusters,
                 ),
             )
@@ -954,7 +955,29 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.insert_judgement(
                     judgement=Judgement(
-                        user_id=self.backend.login("alice"),
+                        user_id=alice_id,
                         clusters=[fake_leaves],
                     ),
                 )
+
+            retrieved_judgements = self.backend.get_judgements()
+            assert isinstance(retrieved_judgements, pa.Table)
+            assert retrieved_judgements.column_names == SCHEMA_JUDGEMENTS.names
+            assert len(retrieved_judgements) == len(cluster_one_leaf_ids) + len(
+                cluster_two_leaf_ids
+            )
+            assert retrieved_judgements["user_id"].unique().to_pylist() == [alice_id]
+            result_dict = retrieved_judgements.select(["parent", "child"]).to_pydict()
+            result_tuple = tuple(
+                zip(result_dict["parent"], result_dict["child"], strict=False)
+            )
+            implied_clusters: dict[int, int] = {}
+
+            for p, c in result_tuple:
+                implied_clusters.setdefault(p, [])
+                implied_clusters[p].append(c)
+
+            result_cluster_values = list(implied_clusters.values())
+            assert result_cluster_values[0] == cluster_one_leaf_ids
+            assert result_cluster_values[1] == cluster_two_leaf_ids[:1]
+            assert result_cluster_values[2] == cluster_two_leaf_ids[1:]

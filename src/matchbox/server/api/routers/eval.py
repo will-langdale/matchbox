@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
+from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendUnprocessableType,
     ModelResolutionName,
@@ -54,7 +55,8 @@ async def insert_judgement(
 )
 async def get_judgements(backend: BackendDependency) -> ParquetResponse:
     """Retrieve all judgements from human evaluators."""
-    return backend.get_judgements()
+    buffer = table_to_buffer(backend.get_judgements())
+    return ParquetResponse(buffer.getvalue())
 
 
 @router.get(
