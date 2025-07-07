@@ -6,7 +6,7 @@ import pyarrow.compute as pc
 import pytest
 from sqlalchemy import Engine
 
-from matchbox.common.arrow import SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS
+from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS
 from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
@@ -981,3 +981,24 @@ class TestMatchboxBackend:
             assert result_cluster_values[0] == cluster_one_leaf_ids
             assert result_cluster_values[1] == cluster_two_leaf_ids[:1]
             assert result_cluster_values[2] == cluster_two_leaf_ids[1:]
+
+    def test_sample_for_eval(self):
+        """Can derive samples for a user and a resolution"""
+        user_id = self.backend.login("alice")
+
+        # Missing resolution raises error
+        with (
+            self.scenario(self.backend, "bare"),
+            pytest.raises(MatchboxResolutionNotFoundError, match="naive_test.crn"),
+        ):
+            samples = self.backend.sample_for_eval(
+                n=10, resolution="naive_test.crn", user_id=user_id
+            )
+
+        with self.scenario(self.backend, "dedupe"):
+            samples = self.backend.sample_for_eval(
+                n=10, resolution="naive_test.crn", user_id=user_id
+            )
+            assert isinstance(samples, pa.Table)
+            assert samples.column_names == SCHEMA_EVAL_SAMPLES.names
+            assert len(samples) == 0

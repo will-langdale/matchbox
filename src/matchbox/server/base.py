@@ -522,12 +522,15 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def sample_for_eval(self, n: int, resolution: ModelResolutionName) -> Table:
+    def sample_for_eval(
+        self, n: int, resolution: ModelResolutionName, user_id: int
+    ) -> Table:
         """Sample a cluster to validate.
 
         Args:
             n: Number of clusters to sample
             resolution: Name of resolution from which to sample
+            user_id: ID of user requesting the sample
 
         Returns:
             An Arrow table with the same schema as returned by `query()`

@@ -21,6 +21,7 @@ if st.session_state.step == "eval":
             _handler.sample_for_eval(
                 n=10,
                 resolution=st.session_state.resolution,
+                user_id=st.session_state.user_id,
             )
         )
         st.session_state.judgement = []

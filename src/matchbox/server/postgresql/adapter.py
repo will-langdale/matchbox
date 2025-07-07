@@ -1,13 +1,16 @@
 """PostgreSQL adapter for Matchbox server."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
+import numpy as np
+import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
 
+from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     ModelAncestor,
@@ -611,5 +614,88 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def compare_models(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
         pass
 
-    def sample_for_eval(self, n: int, resolution: ModelResolutionName) -> ArrowTable:  # noqa: D102
-        pass
+    def sample_for_eval(  # noqa: D102
+        self, n: int, resolution: ModelResolutionName, user_id: int
+    ) -> ArrowTable:
+        if n > 100:
+            # This reasonable assumption means simple "IS IN" function later is fine
+            raise ValueError("Can only sample 100 entries at a time.")
+
+        with MBDB.get_session() as session:
+            # Retrieve metadata of target resolution
+            if resolution_info := session.execute(
+                select(Resolutions.resolution_id, Resolutions.truth).where(
+                    Resolutions.name == resolution
+                )
+            ).first():
+                resolution_id, truth = resolution_info
+            else:
+                raise MatchboxResolutionNotFoundError(name=resolution)
+
+        # Get a list of cluster IDs and features for this resolution and user
+        cluster_features_stmt = (
+            select(
+                Probabilities.cluster_id,
+                # We expect only one probability per cluster within one resolution
+                func.max(Probabilities.probability).label("probability"),
+                func.max(EvalJudgements.timestamp).label("latest_ts"),
+            )
+            .join(
+                EvalJudgements,
+                Probabilities.cluster_id == EvalJudgements.cluster_id,
+                isouter=True,
+            )
+            .where(
+                Probabilities.resolution_id == resolution_id,
+                EvalJudgements.user_id == user_id,
+            )
+            .group_by(Probabilities.cluster_id)
+        )
+
+        with MBDB.get_adbc_connection() as conn:
+            cluster_features = sql_to_df(
+                stmt=compile_sql(cluster_features_stmt),
+                connection=conn.dbapi_connection,
+                return_type="polars",
+            )
+
+        # Exclude clusters recently judged by this user
+        to_sample = cluster_features.filter(
+            (pl.col("latest_ts") < datetime.now(timezone.utc) - timedelta(days=365))
+            | (pl.col("latest_ts").is_null())
+        )
+
+        # Return early if nothing to sample from
+        if not len(to_sample):
+            return Table.from_pydict(
+                {"mb_id": [], "key": [], "source": []}, schema=SCHEMA_EVAL_SAMPLES
+            )
+
+        # Sample proportionally to distance from the truth
+        probs = np.abs(to_sample.select("probability").to_numpy() - truth)
+        probs = probs / probs.sum()
+
+        indices = np.random.choice(to_sample.shape[0], size=n, p=probs, replace=False)
+        sampled_cluster_ids = to_sample[indices].select("cluster_id")
+
+        # Now we have the clusters, get their keys and sources
+        with MBDB.get_adbc_connection() as conn:
+            enrich_stmt = (
+                select(Clusters.cluster_id, ClusterSourceKey.key, SourceConfig.name)
+                .join(
+                    ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id
+                )
+                .join(
+                    SourceConfigs,
+                    SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
+                )
+                .where(Clusters.cluster_id.in_(sampled_cluster_ids))
+            )
+
+            final_samples = sql_to_df(
+                stmt=compile_sql(enrich_stmt),
+                connection=conn.dbapi_connection,
+                return_type="arrow",
+            )
+
+        return final_samples

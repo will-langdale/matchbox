@@ -80,6 +80,6 @@ async def compare_models(
     "/samples",
 )
 async def sample(
-    backend: BackendDependency, n: int, resolution: ModelResolutionName
+    backend: BackendDependency, n: int, resolution: ModelResolutionName, user_id: int
 ) -> ResolutionOperationStatus:
     """Sample n cluster to validate."""

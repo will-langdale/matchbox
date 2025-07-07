@@ -407,7 +407,7 @@ def delete_resolution(
 # Evaluation
 
 
-def sample_for_eval(n: int, resolution: ModelResolutionName) -> Table:
+def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Table:
     return Table.from_pylist(
         [
             {"id": 1, "company_name": "Pippo pluto PLC", "region": "England"},

@@ -34,6 +34,10 @@ SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(
     ]
 )
 
+SCHEMA_EVAL_SAMPLES: Final[pa.Schema] = pa.schema(
+    [("mb_id", pa.uint64()), ("key", pa.large_string()), ("source", pa.large_string())]
+)
+
 
 def table_to_buffer(table: pa.Table) -> BytesIO:
     """Converts an Arrow table to a BytesIO buffer."""
