@@ -22,7 +22,7 @@ router = APIRouter(prefix="/eval", tags=["eval"])
 
 
 @router.post(
-    "/",
+    "/judgements",
     responses={422: {"model": UnprocessableError}},
     status_code=status.HTTP_201_CREATED,
 )
@@ -51,7 +51,7 @@ async def insert_judgement(
 
 
 @router.get(
-    "/",
+    "/judgements",
 )
 async def get_judgements(backend: BackendDependency) -> ParquetResponse:
     """Retrieve all judgements from human evaluators."""
@@ -77,9 +77,9 @@ async def compare_models(
 
 
 @router.get(
-    "/sample",
+    "/samples",
 )
-async def sample_one(
-    backend: BackendDependency, resolution: ModelResolutionName
+async def sample(
+    backend: BackendDependency, n: int, resolution: ModelResolutionName
 ) -> ResolutionOperationStatus:
-    """Sample a cluster to validate."""
+    """Sample n cluster to validate."""

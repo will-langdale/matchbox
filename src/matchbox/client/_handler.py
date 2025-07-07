@@ -407,7 +407,7 @@ def delete_resolution(
 # Evaluation
 
 
-def sample_one(user_id: int, resolution: ModelResolutionName) -> Table:
+def sample_for_eval(n: int, resolution: ModelResolutionName) -> Table:
     return Table.from_pylist(
         [
             {"id": 1, "company_name": "Pippo pluto PLC", "region": "England"},
@@ -428,12 +428,12 @@ def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
 
 def send_eval_judgement(judgement: Judgement) -> None:
     logger.debug(f"Posting {judgement.clusters} for {judgement.user_id}")
-    CLIENT.post("/eval/", json=judgement.model_dump())
+    CLIENT.post("/eval/judgements", json=judgement.model_dump())
 
 
 def download_eval_data() -> Table:
     logger.debug("Retrieving all judgements.")
-    res = CLIENT.get("/eval/")
+    res = CLIENT.get("/eval/judgements")
 
     buffer = BytesIO(res.content)
     table = read_table(buffer)

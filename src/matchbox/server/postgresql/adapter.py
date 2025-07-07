@@ -611,5 +611,5 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def compare_models(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
         pass
 
-    def sample_one(self) -> ArrowTable:  # noqa: D102
+    def sample_for_eval(self, n: int, resolution: ModelResolutionName) -> ArrowTable:  # noqa: D102
         pass

@@ -522,10 +522,11 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def sample_one(self, resolution: ModelResolutionName) -> Table:
+    def sample_for_eval(self, n: int, resolution: ModelResolutionName) -> Table:
         """Sample a cluster to validate.
 
         Args:
+            n: Number of clusters to sample
             resolution: Name of resolution from which to sample
 
         Returns:

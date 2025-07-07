@@ -18,8 +18,8 @@ if "step" not in st.session_state:
 if st.session_state.step == "eval":
     if "df" not in st.session_state:
         original_df = pl.from_arrow(
-            _handler.sample_one(
-                user_id=st.session_state.user_id,
+            _handler.sample_for_eval(
+                n=10,
                 resolution=st.session_state.resolution,
             )
         )
