@@ -225,6 +225,10 @@ class MatchboxResolutionAlreadyExists(Exception):
     """Resolution already exists."""
 
 
+class MatchboxTooManySamplesRequested(Exception):
+    """Too many samples have been requested from the server."""
+
+
 # -- Adapter DB exceptions --
 
 

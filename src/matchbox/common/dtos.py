@@ -67,8 +67,10 @@ class BackendRetrievableType(StrEnum):
 class BackendUnprocessableType(StrEnum):
     """Enumeration of entity types processed indirectly by the backend."""
 
-    CLUSTERS = "clusters"
-    USERS = "users"
+    CLUSTER = "cluster"
+    USER = "user"
+    SAMPLE_SIZE = "sample_size"
+    RESOLUTION = "resolution"
 
 
 class BackendUploadType(StrEnum):
