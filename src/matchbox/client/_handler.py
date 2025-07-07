@@ -10,6 +10,7 @@ import httpx
 from pyarrow import Table
 from pyarrow.parquet import read_table
 
+from matchbox.client._jwt import generate_json_web_token
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
@@ -51,7 +52,6 @@ from matchbox.common.graph import (
     SourceResolutionName,
 )
 from matchbox.common.hash import hash_to_base64
-from matchbox.common.jwt import generate_json_web_token
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceConfig
 
