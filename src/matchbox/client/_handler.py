@@ -10,7 +10,7 @@ from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.client._settings import ClientSettings, settings
-from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.arrow import SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
     BackendRetrievableType,
@@ -432,16 +432,22 @@ def send_eval_judgement(judgement: Judgement) -> None:
 
 
 def download_eval_data() -> Table:
-    return Table.from_pylist(
-        [
-            {"parent": 1, "leaf": None},
-            {"parent": 2, "leaf": None},
-            {"parent": 3, "leaf": None},
-            {"parent": 4, "leaf": 5},
-            {"parent": 4, "leaf": 6},
-            {"parent": 4, "leaf": 7},
-        ]
-    )
+    logger.debug("Retrieving all judgements.")
+    res = CLIENT.get("/eval/")
+
+    buffer = BytesIO(res.content)
+    table = read_table(buffer)
+
+    logger.debug("Finished retrieving judgements.")
+
+    if not table.schema.equals(SCHEMA_JUDGEMENTS):
+        raise MatchboxClientFileError(
+            message=(
+                f"Schema mismatch. Expected:\n{SCHEMA_JUDGEMENTS}\nGot:\n{table.schema}"
+            )
+        )
+
+    return table
 
 
 # Admin
