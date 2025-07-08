@@ -100,6 +100,8 @@ def process_column_for_hashing(column_name: str, schema_type: pl.DataType) -> pl
             .fill_null("\x00")
             .alias(column_name)
         )
+    elif isinstance(schema_type, pl.List):
+        return pl.col(column_name).list.join(",").fill_null("\x00").alias(column_name)
     else:
         return pl.col(column_name).cast(pl.Utf8).fill_null("\x00").alias(column_name)
 
