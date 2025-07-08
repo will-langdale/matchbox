@@ -3,7 +3,7 @@
 import datetime
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any
+from typing import Any, Literal
 
 import polars as pl
 from pyarrow import Table
@@ -60,6 +60,7 @@ class StepInput(BaseModel):
     cleaners: dict[str, dict[str, Any]] = {}
     batch_size: int | None = None
     threshold: float | None = None
+    combine_type: Literal["concat", "explode", "set_agg"] = "concat"
 
     @property
     def name(self) -> str:
@@ -164,6 +165,7 @@ class ModelStep(Step):
             threshold=step_input.threshold,
             resolution=step_input.name,
             batch_size=step_input.batch_size,
+            combine_type=step_input.combine_type,
         )
 
 
