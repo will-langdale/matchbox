@@ -4,6 +4,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS
@@ -996,9 +997,51 @@ class TestMatchboxBackend:
             )
 
         with self.scenario(self.backend, "dedupe"):
-            samples = self.backend.sample_for_eval(
-                n=10, resolution="naive_test.crn", user_id=user_id
+            all_clusters = pl.from_arrow(
+                self.backend.query(source="crn", resolution="naive_test.crn")
             )
+            # We can request more than available
+            assert len(all_clusters["id"].unique()) < 99
+
+            samples = self.backend.sample_for_eval(
+                n=99, resolution="naive_test.crn", user_id=user_id
+            )
+
+            # Basic checks on output shape
             assert isinstance(samples, pa.Table)
             assert samples.column_names == SCHEMA_EVAL_SAMPLES.names
-            assert len(samples) == 0
+
+            # Other than source, sampling is the same as querying in this case
+            assert set(samples["source"].to_pylist()) == {"crn"}
+            assert_frame_equal(
+                pl.from_arrow(samples).select(["id", "key"]),
+                all_clusters,
+                check_row_order=False,
+                check_column_order=False,
+            )
+
+            # We can request less than available
+            assert len(all_clusters["id"].unique()) > 5
+            samples = self.backend.sample_for_eval(
+                n=5, resolution="naive_test.crn", user_id=user_id
+            )
+            assert len(samples["id"].unique()) == 5
+
+            # If user has recent judgements, exclude clusters
+            first_cluster = all_clusters.filter(pl.col("id") == all_clusters["id"][0])
+            source_clusters = pl.from_arrow(self.backend.query(source="crn"))
+            source_cluster_ids = first_cluster.join(
+                source_clusters, on="key", suffix="_source"
+            )["id_source"].to_list()
+
+            self.backend.insert_judgement(
+                judgement=Judgement(
+                    user_id=user_id,
+                    clusters=[source_cluster_ids],
+                ),
+            )
+
+            # TODO: ensure that we don't sample when recent judgements are present
+            samples = self.backend.sample_for_eval(
+                n=99, resolution="naive_test.crn", user_id=user_id
+            )

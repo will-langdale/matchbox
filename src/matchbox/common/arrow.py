@@ -36,7 +36,7 @@ SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(
 
 SCHEMA_EVAL_SAMPLES: Final[pa.Schema] = pa.schema(
     [
-        ("mb_id", pa.uint64()),
+        ("id", pa.uint64()),
         ("key", pa.large_string()),
         ("source", pa.large_string()),
     ]

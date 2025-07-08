@@ -633,21 +633,23 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 raise MatchboxResolutionNotFoundError(name=resolution)
 
         # Get a list of cluster IDs and features for this resolution and user
+        user_judgements = (
+            select(EvalJudgements).where(EvalJudgements.user_id == user_id).subquery()
+        )
         cluster_features_stmt = (
             select(
                 Probabilities.cluster_id,
                 # We expect only one probability per cluster within one resolution
                 func.max(Probabilities.probability).label("probability"),
-                func.max(EvalJudgements.timestamp).label("latest_ts"),
+                func.max(user_judgements.c.timestamp).label("latest_ts"),
             )
             .join(
-                EvalJudgements,
-                Probabilities.cluster_id == EvalJudgements.cluster_id,
+                user_judgements,
+                Probabilities.cluster_id == user_judgements.c.cluster_id,
                 isouter=True,
             )
             .where(
                 Probabilities.resolution_id == resolution_id,
-                EvalJudgements.user_id == user_id,
             )
             .group_by(Probabilities.cluster_id)
         )
@@ -668,28 +670,51 @@ class MatchboxPostgres(MatchboxDBAdapter):
         # Return early if nothing to sample from
         if not len(to_sample):
             return Table.from_pydict(
-                {"mb_id": [], "key": [], "source": []}, schema=SCHEMA_EVAL_SAMPLES
+                {"id": [], "key": [], "source": []}, schema=SCHEMA_EVAL_SAMPLES
             )
 
-        # Sample proportionally to distance from the truth
-        probs = np.abs(to_sample.select("probability").to_numpy() - truth)
-        probs = probs / probs.sum()
+        # Sample proportionally to distance from the truth, and get 1D array
+        distances = np.abs(to_sample.select("probability").to_numpy() - truth)[:, 0]
+        # Add small noise to avoid division by 0 if all distances are 0
+        unnormalised_probs = distances + 0.001
+        probs = unnormalised_probs / unnormalised_probs.sum()
 
-        indices = np.random.choice(to_sample.shape[0], size=n, p=probs, replace=False)
-        sampled_cluster_ids = to_sample[indices].select("cluster_id")
+        # With fewer clusters than requested, return all
+        if to_sample.shape[0] <= n:
+            sampled_cluster_ids = to_sample.select("cluster_id").to_series().to_list()
+        else:
+            indices = np.random.choice(
+                to_sample.shape[0], size=n, p=probs, replace=False
+            )
+            sampled_cluster_ids = (
+                to_sample[indices].select("cluster_id").to_series().to_list()
+            )
 
-        # Now we have the clusters, get their keys and sources
         with MBDB.get_adbc_connection() as conn:
+            source_clusters = (
+                select(Contains.root, Contains.leaf)
+                .where(Contains.root.in_(sampled_cluster_ids))
+                .subquery()
+            )
             enrich_stmt = (
-                select(Clusters.cluster_id, ClusterSourceKey.key, SourceConfig.name)
+                select(
+                    source_clusters.c.root.label("id"),
+                    ClusterSourceKey.key,
+                    Resolutions.name.label("source"),
+                )
+                .select_from(source_clusters)
                 .join(
-                    ClusterSourceKey, ClusterSourceKey.cluster_id == Clusters.cluster_id
+                    ClusterSourceKey,
+                    ClusterSourceKey.cluster_id == source_clusters.c.leaf,
                 )
                 .join(
                     SourceConfigs,
                     SourceConfigs.source_config_id == ClusterSourceKey.source_config_id,
                 )
-                .where(Clusters.cluster_id.in_(sampled_cluster_ids))
+                .join(
+                    Resolutions,
+                    Resolutions.resolution_id == SourceConfigs.resolution_id,
+                )
             )
 
             final_samples = sql_to_df(
