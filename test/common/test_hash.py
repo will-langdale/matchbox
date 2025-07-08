@@ -72,6 +72,7 @@ def test_hash_rows(method: HashMethod):
             "float_col": [1.1, 2.2, 3.3],
             "struct_col": [{"a": 1, "b": "x"}, {"a": 2, "b": None}, {"a": 3, "b": "z"}],
             "binary_col": [b"data1", b"data2", b"data3"],
+            "list_col": [["tag1", "tag2"], ["tag3"], ["tag4", "tag5"]],
         }
     )
 
@@ -80,6 +81,7 @@ def test_hash_rows(method: HashMethod):
     assert isinstance(data["float_col"].dtype, pl.Float64)
     assert isinstance(data["struct_col"].dtype, pl.Struct)
     assert isinstance(data["binary_col"].dtype, pl.Binary)
+    assert isinstance(data["list_col"].dtype, pl.List)
 
     hash_rows(data, columns=data.columns, method=method)
 

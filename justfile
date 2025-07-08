@@ -33,10 +33,10 @@ test ENV="":
     if [[ "{{ENV}}" == "local" ]]; then
         uv run pytest -m "not docker"
     elif [[ "{{ENV}}" == "docker" ]]; then
-        just build
+        just build -d
         uv run pytest -m "docker"
     else
-        just build
+        just build -d
         uv run pytest
     fi
 
