@@ -985,18 +985,19 @@ class TestMatchboxBackend:
 
     def test_sample_for_eval(self):
         """Can derive samples for a user and a resolution"""
-        user_id = self.backend.login("alice")
 
         # Missing resolution raises error
         with (
             self.scenario(self.backend, "bare"),
             pytest.raises(MatchboxResolutionNotFoundError, match="naive_test.crn"),
         ):
+            user_id = self.backend.login("alice")
             samples = self.backend.sample_for_eval(
                 n=10, resolution="naive_test.crn", user_id=user_id
             )
 
         with self.scenario(self.backend, "dedupe"):
+            user_id = self.backend.login("alice")
             all_clusters = pl.from_arrow(
                 self.backend.query(source="crn", resolution="naive_test.crn")
             )
