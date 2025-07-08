@@ -39,12 +39,18 @@ def test_contains_to_pairs():
         [
             {(1, 2), (1, 3), (2, 3)},  # model
             {1: {(1, 2)}},  # user
-            pytest.approx(1 / 3, 0.001),  # precision
-            1,  # recall
+            1,  # precision
+            pytest.approx(1 / 3, 0.001),  # recall
         ],
         [
             {(1, 2)},  # model
             {1: {(1, 2), (1, 3), (2, 3)}},  # user
+            pytest.approx(1 / 3, 0.001),  # precision
+            1,  # recall
+        ],
+        [
+            {(1, 2), (1, 3), (2, 3)},  # model
+            {1: {(1, 2)}},  # user, who's never seen 3
             1,  # precision
             pytest.approx(1 / 3, 0.001),  # recall
         ],
@@ -58,7 +64,7 @@ def test_contains_to_pairs():
             0.5,  # recall: mean of 1 and 0
         ],
     ],
-    ids=["sub_precision", "sub_recall", "multi_user"],
+    ids=["sub_recall", "sub_precision", "unseen_clusters", "multi_user"],
 )
 def test_precision_recall(
     model_pairs: Pairs, eval_pairs_by_user: dict[int, Pairs], prec: float, recall: float

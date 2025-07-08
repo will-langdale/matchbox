@@ -65,8 +65,8 @@ def precision_recall(
         if not user_pairs:
             raise ValueError("Every user must have at least one pair")
         true_positives = len(user_pairs.intersection(model_pairs))
-        all_precision.append(true_positives / len(model_pairs))
-        all_recall.append(true_positives / len(user_pairs))
+        all_precision.append(true_positives / len(user_pairs))
+        all_recall.append(true_positives / len(model_pairs))
 
     def rounded_average(score: float) -> float:
         return round(sum(score) / len(score), 3)
