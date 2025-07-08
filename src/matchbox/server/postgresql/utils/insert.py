@@ -6,7 +6,7 @@ import polars as pl
 import pyarrow as pa
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import BYTEA
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import ModelResolutionName
@@ -31,7 +31,7 @@ from matchbox.server.postgresql.orm import (
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
     ingest_to_temporary_table,
-    large_ingest,
+    large_append,
 )
 from matchbox.server.postgresql.utils.query import get_parent_clusters_and_leaves
 
@@ -98,7 +98,7 @@ def insert_source(
     with MBDB.get_adbc_connection() as conn:
         existing_hash_lookup: pl.DataFrame = sql_to_df(
             stmt=compile_sql(select(Clusters.cluster_id, Clusters.cluster_hash)),
-            connection=conn,
+            connection=conn.dbapi_connection,
             return_type="polars",
         )
 
@@ -163,34 +163,40 @@ def insert_source(
     )
 
     # Insert new clusters and all source primary keys
-    try:
-        # Bulk insert into Clusters table (only new clusters)
-        if not cluster_records.is_empty():
-            large_ingest(
-                data=cluster_records.to_arrow(),
-                table_class=Clusters,
-                max_chunksize=batch_size,
-            )
-            logger.info(
-                f"Added {len(cluster_records):,} objects to Clusters table",
-                prefix=log_prefix,
-            )
+    with MBDB.get_adbc_connection() as adbc_connection:
+        try:
+            # Bulk insert into Clusters table (only new clusters)
+            if not cluster_records.is_empty():
+                large_append(
+                    data=cluster_records.to_arrow(),
+                    table_class=Clusters,
+                    adbc_connection=adbc_connection,
+                    max_chunksize=batch_size,
+                )
+                logger.info(
+                    f"Added {len(cluster_records):,} objects to Clusters table",
+                    prefix=log_prefix,
+                )
 
-        # Bulk insert into ClusterSourceKey table (all links)
-        if not keys_records.is_empty():
-            large_ingest(
-                data=keys_records.to_arrow(),
-                table_class=ClusterSourceKey,
-                max_chunksize=batch_size,
-            )
-            logger.info(
-                f"Added {len(keys_records):,} primary keys to ClusterSourceKey table",
-                prefix=log_prefix,
-            )
-    except IntegrityError as e:
-        # Log the error and rollback
-        logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
-        conn.rollback()
+            # Bulk insert into ClusterSourceKey table (all links)
+            if not keys_records.is_empty():
+                large_append(
+                    data=keys_records.to_arrow(),
+                    table_class=ClusterSourceKey,
+                    adbc_connection=adbc_connection,
+                    max_chunksize=batch_size,
+                )
+                logger.info(
+                    f"Added {len(keys_records):,} PKs to ClusterSourceKey table",
+                    prefix=log_prefix,
+                )
+
+            adbc_connection.commit()
+        except Exception as e:
+            # Log the error and rollback
+            logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
+            adbc_connection.rollback()
+            raise
 
     # Insert successful, safe to update the resolution's content hash
     with MBDB.get_session() as session:
@@ -236,55 +242,55 @@ def insert_model(
 
         if exists_obj is not None:
             raise MatchboxResolutionAlreadyExists
-        else:
-            new_res = Resolutions(
-                type=ResolutionNodeType.MODEL.value,
-                name=name,
-                description=description,
-                truth=100,
+
+        new_res = Resolutions(
+            type=ResolutionNodeType.MODEL.value,
+            name=name,
+            description=description,
+            truth=100,
+        )
+        session.add(new_res)
+        session.flush()
+
+        def _create_closure_entries(parent_resolution: Resolutions) -> None:
+            """Create closure entries for the new model.
+
+            This is made up of mappings between nodes and any of their direct or
+            indirect parents.
+            """
+            session.add(
+                ResolutionFrom(
+                    parent=parent_resolution.resolution_id,
+                    child=new_res.resolution_id,
+                    level=1,
+                    truth_cache=parent_resolution.truth,
+                )
             )
-            session.add(new_res)
-            session.flush()
 
-            def _create_closure_entries(parent_resolution: Resolutions) -> None:
-                """Create closure entries for the new model.
+            ancestor_entries = (
+                session.query(ResolutionFrom)
+                .filter(ResolutionFrom.child == parent_resolution.resolution_id)
+                .all()
+            )
 
-                This is made up of mappings between nodes and any of their direct or
-                indirect parents.
-                """
+            for entry in ancestor_entries:
                 session.add(
                     ResolutionFrom(
-                        parent=parent_resolution.resolution_id,
+                        parent=entry.parent,
                         child=new_res.resolution_id,
-                        level=1,
-                        truth_cache=parent_resolution.truth,
+                        level=entry.level + 1,
+                        truth_cache=entry.truth_cache,
                     )
                 )
 
-                ancestor_entries = (
-                    session.query(ResolutionFrom)
-                    .filter(ResolutionFrom.child == parent_resolution.resolution_id)
-                    .all()
-                )
+        # Create resolution lineage entries
+        _create_closure_entries(parent_resolution=left)
 
-                for entry in ancestor_entries:
-                    session.add(
-                        ResolutionFrom(
-                            parent=entry.parent,
-                            child=new_res.resolution_id,
-                            level=entry.level + 1,
-                            truth_cache=entry.truth_cache,
-                        )
-                    )
+        if right != left:
+            _create_closure_entries(parent_resolution=right)
 
-            # Create resolution lineage entries
-            _create_closure_entries(parent_resolution=left)
-
-            if right != left:
-                _create_closure_entries(parent_resolution=right)
-
-            status = "Inserted new"
-            resolution_id = new_res.resolution_id
+        status = "Inserted new"
+        resolution_id = new_res.resolution_id
 
         session.commit()
 
@@ -450,7 +456,7 @@ def _create_clusters_dataframe(all_clusters: dict[bytes, Cluster]) -> pl.DataFra
         with MBDB.get_adbc_connection() as conn:
             existing_cluster_df: pl.DataFrame = sql_to_df(
                 stmt=compile_sql(existing_cluster_stmt),
-                connection=conn,
+                connection=conn.dbapi_connection,
                 return_type="polars",
             )
 
@@ -641,64 +647,75 @@ def insert_results(
             )
             raise
 
-    try:
-        logger.info(
-            f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
-        )
-
-        large_ingest(
-            data=clusters,
-            table_class=Clusters,
-            max_chunksize=batch_size,
-        )
-
-        logger.info(
-            f"Successfully inserted {clusters.shape[0]:,} objects into Clusters table",
-            prefix=log_prefix,
-        )
-
-        large_ingest(
-            data=contains,
-            table_class=Contains,
-            max_chunksize=batch_size,
-        )
-
-        logger.info(
-            f"Successfully inserted {contains.shape[0]:,} objects into Contains table",
-            prefix=log_prefix,
-        )
-
-        large_ingest(
-            data=probabilities,
-            table_class=Probabilities,
-            max_chunksize=batch_size,
-        )
-
-        logger.info(
-            f"Successfully inserted "
-            f"{probabilities.shape[0]:,} objects into Probabilities table",
-            prefix=log_prefix,
-        )
-
-        large_ingest(
-            data=pl.from_arrow(results)
-            .with_columns(
-                pl.lit(resolution.resolution_id).cast(pl.UInt64).alias("resolution_id")
+    with MBDB.get_adbc_connection() as adbc_connection:
+        try:
+            logger.info(
+                f"Inserting {clusters.shape[0]:,} results objects", prefix=log_prefix
             )
-            .select("resolution_id", "left_id", "right_id", "probability")
-            .to_arrow(),
-            table_class=Results,
-            max_chunksize=batch_size,
-        )
 
-        logger.info(
-            f"Successfully inserted {results.shape[0]:,} objects into Results table",
-            prefix=log_prefix,
-        )
+            large_append(
+                data=clusters,
+                table_class=Clusters,
+                adbc_connection=adbc_connection,
+                max_chunksize=batch_size,
+            )
 
-    except SQLAlchemyError as e:
-        logger.error(f"Failed to insert data: {str(e)}", prefix=log_prefix)
-        raise
+            logger.info(
+                f"Successfully inserted {clusters.shape[0]:,} rows into Clusters table",
+                prefix=log_prefix,
+            )
+
+            large_append(
+                data=contains,
+                table_class=Contains,
+                adbc_connection=adbc_connection,
+                max_chunksize=batch_size,
+            )
+
+            logger.info(
+                f"Successfully inserted {contains.shape[0]:,} rows into Contains table",
+                prefix=log_prefix,
+            )
+
+            large_append(
+                data=probabilities,
+                table_class=Probabilities,
+                adbc_connection=adbc_connection,
+                max_chunksize=batch_size,
+            )
+
+            logger.info(
+                f"Successfully inserted "
+                f"{probabilities.shape[0]:,} objects into Probabilities table",
+                prefix=log_prefix,
+            )
+
+            large_append(
+                data=pl.from_arrow(results)
+                .with_columns(
+                    pl.lit(resolution.resolution_id)
+                    .cast(pl.UInt64)
+                    .alias("resolution_id")
+                )
+                .select("resolution_id", "left_id", "right_id", "probability")
+                .to_arrow(),
+                table_class=Results,
+                adbc_connection=adbc_connection,
+                max_chunksize=batch_size,
+            )
+
+            logger.info(
+                f"Successfully inserted {results.shape[0]:,} rows into Results table",
+                prefix=log_prefix,
+            )
+
+            adbc_connection.commit()
+        except Exception as e:
+            logger.error(
+                f"Failed to insert data, rolling back: {str(e)}", prefix=log_prefix
+            )
+            adbc_connection.rollback()
+            raise
 
     # Insert successful, safe to update the resolution's content hash
     with MBDB.get_session() as session:
