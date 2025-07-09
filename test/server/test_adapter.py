@@ -943,6 +943,14 @@ class TestMatchboxBackend:
                     endorsed=[clust1_leaves],
                 ),
             )
+            # Can send redundant data
+            self.backend.insert_judgement(
+                judgement=Judgement(
+                    user_id=alice_id,
+                    shown=unique_ids[0],
+                    endorsed=[clust1_leaves],
+                ),
+            )
             assert self.backend.clusters.count() == original_cluster_num
 
             # Now split a cluster
@@ -954,14 +962,15 @@ class TestMatchboxBackend:
                     endorsed=[clust2_leaves[:1], clust2_leaves[1:]],
                 ),
             )
+            # Now, two new clusters should have been created
             assert self.backend.clusters.count() == original_cluster_num + 2
 
-            # Now, let's check failures instead
-            # Confirm that the following leaves don't exist
+            # Let's check failures
+            # First, confirm that the following leaves don't exist
             fake_leaves = [10000, 10001]
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.validate_ids(fake_leaves)
-
+            # Now, let's test an exception is raised
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.insert_judgement(
                     judgement=Judgement(
@@ -969,6 +978,7 @@ class TestMatchboxBackend:
                     ),
                 )
 
+            # Now, let's try to get the judgements back
             # Data gets back in the right shape
             judgements, expansion = self.backend.get_judgements()
             judgements.schema.equals(SCHEMA_JUDGEMENTS)
@@ -976,11 +986,15 @@ class TestMatchboxBackend:
 
             # Only one user ID was used
             assert judgements["user_id"].unique().to_pylist() == [alice_id]
+            # The first shown cluster is repeated because we judged it twice
             # The second shown cluster is repeated because we split it (see above)
             assert sorted(judgements["shown"].to_pylist()) == sorted(
-                [unique_ids[0], unique_ids[1], unique_ids[1]]
+                [unique_ids[0], unique_ids[0], unique_ids[1], unique_ids[1]]
             )
+            # On the other hand, the root-leaf mapping table has no duplicates
+            assert len(expansion) == 4  # 2 shown clusters + 2 new endorsed clusters
 
+            # Let's massage tables into a root-leaf dict for all endorsed clusters
             endorsed_root, endorsed_leaves = (
                 pl.from_arrow(judgements)
                 .join(pl.from_arrow(expansion), left_on="endorsed", right_on="root")[
@@ -989,9 +1003,9 @@ class TestMatchboxBackend:
                 .to_dict(as_series=False)
                 .values()
             )
+            endorsed_dict = dict(zip(endorsed_root, endorsed_leaves, strict=True))
 
             # The root we know about has the leaves we expect
-            endorsed_dict = dict(zip(endorsed_root, endorsed_leaves, strict=True))
             assert endorsed_dict[unique_ids[0]] == clust1_leaves
             # Other than the root we know about, there are two new ones
             assert len(set(endorsed_dict.keys())) == 3

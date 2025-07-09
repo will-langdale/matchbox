@@ -581,7 +581,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 endorsed_cluster_hash = hash_cluster_leaves(leaf_hashes)
 
                 # If cluster with this hash does not exist, create it.
-                # Note that only endorsed clusters, might be new. The cluster shown to
+                # Note that only endorsed clusters might be new. The cluster shown to
                 # the user is guaranteed to exist in the backend; we have checked above.
                 if not (
                     endorsed_cluster_id := session.scalar(
