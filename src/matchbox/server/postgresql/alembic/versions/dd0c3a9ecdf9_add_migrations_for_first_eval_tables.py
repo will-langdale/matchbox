@@ -31,13 +31,17 @@ def upgrade() -> None:
     op.create_table(
         "eval_judgements",
         sa.Column("user_id", sa.BIGINT(), nullable=False),
-        sa.Column("cluster_id", sa.BIGINT(), nullable=False),
+        sa.Column("endorsed_cluster_id", sa.BIGINT(), nullable=False),
+        sa.Column("shown_cluster_id", sa.BIGINT(), nullable=False),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["cluster_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
+            ["endorsed_cluster_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["shown_cluster_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(["user_id"], ["mb.users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("user_id", "cluster_id"),
+        sa.PrimaryKeyConstraint("user_id", "endorsed_cluster_id"),
         schema="mb",
     )
     # ### end Alembic commands ###

@@ -4,7 +4,7 @@ from itertools import combinations
 from typing import TypeAlias
 
 import polars as pl
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from matchbox.common.dtos import ModelResolutionName
 
@@ -14,10 +14,13 @@ ModelComparison: TypeAlias = dict[ModelResolutionName, PrecisionRecall]
 
 
 class Judgement(BaseModel):
-    """Representation of how to split a set of entities into clusters."""
+    """User determination on how to group source clusters from a model cluster."""
 
     user_id: int
-    clusters: list[list[int]]
+    shown: int = Field(description="ID of the model cluster shown to the user")
+    endorsed: list[list[int]] = Field(
+        description="""Groups of source cluster IDs that user thinks belong together"""
+    )
 
 
 def contains_to_pairs(contains: pl.DataFrame) -> dict[int, Pairs]:
