@@ -562,6 +562,8 @@ class Users(CountMixin, MBDB.MatchboxBase):
 
     judgements = relationship("EvalJudgements", back_populates="user")
 
+    __table_args__ = (UniqueConstraint("name", name="user_name_unique"),)
+
 
 class EvalJudgements(CountMixin, MBDB.MatchboxBase):
     """Table of evaluation judgements produced by human validators."""
@@ -569,11 +571,12 @@ class EvalJudgements(CountMixin, MBDB.MatchboxBase):
     __tablename__ = "eval_judgements"
 
     # Columns
+    judgement_id = Column(BIGINT, primary_key=True)
     user_id = Column(
-        BIGINT, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False
     )
     endorsed_cluster_id = Column(
-        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), primary_key=True
+        BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False
     )
     shown_cluster_id = Column(
         BIGINT, ForeignKey("clusters.cluster_id", ondelete="CASCADE"), nullable=False

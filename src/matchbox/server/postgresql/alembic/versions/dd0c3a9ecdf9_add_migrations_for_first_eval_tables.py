@@ -26,10 +26,12 @@ def upgrade() -> None:
         sa.Column("user_id", sa.BIGINT(), nullable=False),
         sa.Column("name", sa.TEXT(), nullable=False),
         sa.PrimaryKeyConstraint("user_id"),
+        sa.UniqueConstraint("name", name="user_name_unique"),
         schema="mb",
     )
     op.create_table(
         "eval_judgements",
+        sa.Column("judgement_id", sa.BIGINT(), nullable=False),
         sa.Column("user_id", sa.BIGINT(), nullable=False),
         sa.Column("endorsed_cluster_id", sa.BIGINT(), nullable=False),
         sa.Column("shown_cluster_id", sa.BIGINT(), nullable=False),
@@ -41,7 +43,7 @@ def upgrade() -> None:
             ["shown_cluster_id"], ["mb.clusters.cluster_id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(["user_id"], ["mb.users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("user_id", "endorsed_cluster_id"),
+        sa.PrimaryKeyConstraint("judgement_id"),
         schema="mb",
     )
     # ### end Alembic commands ###
