@@ -1015,7 +1015,7 @@ class TestMatchboxBackend:
             )
 
     def test_sample_for_eval(self):
-        """Can derive samples for a user and a resolution"""
+        """Can extract samples for a user and a resolution"""
 
         # Missing resolution raises error
         with (
@@ -1023,57 +1023,69 @@ class TestMatchboxBackend:
             pytest.raises(MatchboxResolutionNotFoundError, match="naive_test.crn"),
         ):
             user_id = self.backend.login("alice")
-            samples = self.backend.sample_for_eval(
+            self.backend.sample_for_eval(
                 n=10, resolution="naive_test.crn", user_id=user_id
             )
 
         with self.scenario(self.backend, "dedupe"):
             user_id = self.backend.login("alice")
-            all_clusters = pl.from_arrow(
+            resolution_clusters = pl.from_arrow(
                 self.backend.query(source="crn", resolution="naive_test.crn")
             )
+            source_clusters = pl.from_arrow(self.backend.query(source="crn"))
             # We can request more than available
-            assert len(all_clusters["id"].unique()) < 99
+            assert len(resolution_clusters["id"].unique()) < 99
 
-            samples = self.backend.sample_for_eval(
+            samples_99 = self.backend.sample_for_eval(
                 n=99, resolution="naive_test.crn", user_id=user_id
             )
 
-            # Basic checks on output shape
-            assert isinstance(samples, pa.Table)
-            assert samples.column_names == SCHEMA_EVAL_SAMPLES.names
+            assert samples_99.schema.equals(SCHEMA_EVAL_SAMPLES)
 
-            # Other than source, sampling is the same as querying in this case
-            assert set(samples["source"].to_pylist()) == {"crn"}
+            # We can reconstruct the expected sample from resolution and source queries
+            expected_sample = (
+                resolution_clusters.join(source_clusters, on="key", suffix="_source")
+                .rename({"id": "root", "id_source": "leaf"})
+                .with_columns(pl.lit("crn").alias("source"))
+            )
+
             assert_frame_equal(
-                pl.from_arrow(samples).select(["id", "key"]),
-                all_clusters,
+                pl.from_arrow(samples_99),
+                expected_sample,
                 check_row_order=False,
                 check_column_order=False,
+                check_dtypes=False,
             )
 
             # We can request less than available
-            assert len(all_clusters["id"].unique()) > 5
-            samples = self.backend.sample_for_eval(
+            assert len(resolution_clusters["id"].unique()) > 5
+            samples_5 = self.backend.sample_for_eval(
                 n=5, resolution="naive_test.crn", user_id=user_id
             )
-            assert len(samples["id"].unique()) == 5
+            assert len(samples_5["root"].unique()) == 5
 
             # If user has recent judgements, exclude clusters
-            first_cluster = all_clusters.filter(pl.col("id") == all_clusters["id"][0])
-            source_clusters = pl.from_arrow(self.backend.query(source="crn"))
-            source_cluster_ids = first_cluster.join(
+            first_cluster_id = resolution_clusters["id"][0]
+            first_cluster = resolution_clusters.filter(pl.col("id") == first_cluster_id)
+            first_cluster_leaves = first_cluster.join(
                 source_clusters, on="key", suffix="_source"
             )["id_source"].to_list()
 
             self.backend.insert_judgement(
                 judgement=Judgement(
                     user_id=user_id,
-                    clusters=[source_cluster_ids],
+                    shown=first_cluster_id,
+                    endorsed=[first_cluster_leaves],
                 ),
             )
 
-            # TODO: ensure that we don't sample when recent judgements are present
-            samples = self.backend.sample_for_eval(
+            samples_without_cluster = self.backend.sample_for_eval(
                 n=99, resolution="naive_test.crn", user_id=user_id
             )
+            # Compared to the first query, we should have one fewer cluster
+            assert len(samples_99["root"].unique()) - 1 == len(
+                samples_without_cluster["root"].unique()
+            )
+            # And that cluster is the one on which the judgement is based
+            assert first_cluster_id in samples_99["root"].to_pylist()
+            assert first_cluster_id not in samples_without_cluster["root"].to_pylist()

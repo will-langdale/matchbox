@@ -703,7 +703,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
             .join(
                 user_judgements,
-                Probabilities.cluster_id == user_judgements.c.cluster_id,
+                Probabilities.cluster_id == user_judgements.c.shown_cluster_id,
                 isouter=True,
             )
             .where(
@@ -748,6 +748,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 to_sample[indices].select("cluster_id").to_series().to_list()
             )
 
+        # Get all info we need for the cluster IDs we've sampled, i.e.:
+        # source cluster IDs, keys and source resolutions
         with MBDB.get_adbc_connection() as conn:
             source_clusters = (
                 select(Contains.root, Contains.leaf)
@@ -756,7 +758,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
             enrich_stmt = (
                 select(
-                    source_clusters.c.root.label("id"),
+                    source_clusters.c.root,
+                    source_clusters.c.leaf,
                     ClusterSourceKey.key,
                     Resolutions.name.label("source"),
                 )
@@ -779,6 +782,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 stmt=compile_sql(enrich_stmt),
                 connection=conn.dbapi_connection,
                 return_type="arrow",
+            )
+
+            # Cast to align with data transfer schema
+            final_samples = final_samples.set_column(
+                0, "root", final_samples["root"].cast(pa.uint64())
+            )
+            final_samples = final_samples.set_column(
+                1, "leaf", final_samples["leaf"].cast(pa.uint64())
             )
 
         return final_samples

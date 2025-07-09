@@ -45,8 +45,8 @@ SCHEMA_CLUSTER_EXPANSION: Final[pa.Schema] = pa.schema(
 
 SCHEMA_EVAL_SAMPLES: Final[pa.Schema] = pa.schema(
     [
-        ("model_cluster_id", pa.uint64()),
-        ("source_cluster_id", pa.uint64()),
+        ("root", pa.uint64()),
+        ("leaf", pa.uint64()),
         ("key", pa.large_string()),
         ("source", pa.large_string()),
     ]
