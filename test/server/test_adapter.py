@@ -7,7 +7,12 @@ import pytest
 from polars.testing import assert_frame_equal
 from sqlalchemy import Engine
 
-from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS
+from matchbox.common.arrow import (
+    SCHEMA_CLUSTER_EXPANSION,
+    SCHEMA_EVAL_SAMPLES,
+    SCHEMA_JUDGEMENTS,
+    SCHEMA_MB_IDS,
+)
 from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
@@ -925,27 +930,31 @@ class TestMatchboxBackend:
                 keys = deduped_query.filter(pl.col("id") == cluster_id)["key"].to_list()
                 return all_leaves.filter(pl.col("key").is_in(keys))["id"].to_list()
 
-            cluster_one_leaf_ids, cluster_two_leaf_ids = (
-                get_leaf_ids(unique_ids[0]),
-                get_leaf_ids(unique_ids[1]),
-            )
-
-            # The first cluster exists, the second and third are new
-            judgement_clusters = [
-                cluster_one_leaf_ids,
-                cluster_two_leaf_ids[:1],
-                cluster_two_leaf_ids[1:],
-            ]
-
-            prev_cluster_num = self.backend.clusters.count()
             alice_id = self.backend.login("alice")
+
+            original_cluster_num = self.backend.clusters.count()
+
+            # Can endorse the same cluster that is shown
+            clust1_leaves = get_leaf_ids(unique_ids[0])
             self.backend.insert_judgement(
                 judgement=Judgement(
                     user_id=alice_id,
-                    clusters=judgement_clusters,
+                    shown=unique_ids[0],
+                    endorsed=[clust1_leaves],
                 ),
             )
-            assert self.backend.clusters.count() == prev_cluster_num + 2
+            assert self.backend.clusters.count() == original_cluster_num
+
+            # Now split a cluster
+            clust2_leaves = get_leaf_ids(unique_ids[1])
+            self.backend.insert_judgement(
+                judgement=Judgement(
+                    user_id=alice_id,
+                    shown=unique_ids[1],
+                    endorsed=[clust2_leaves[:1], clust2_leaves[1:]],
+                ),
+            )
+            assert self.backend.clusters.count() == original_cluster_num + 2
 
             # Now, let's check failures instead
             # Confirm that the following leaves don't exist
@@ -956,32 +965,40 @@ class TestMatchboxBackend:
             with pytest.raises(MatchboxDataNotFound):
                 self.backend.insert_judgement(
                     judgement=Judgement(
-                        user_id=alice_id,
-                        clusters=[fake_leaves],
+                        user_id=alice_id, shown=unique_ids[0], endorsed=[fake_leaves]
                     ),
                 )
 
-            retrieved_judgements = self.backend.get_judgements()
-            assert isinstance(retrieved_judgements, pa.Table)
-            assert retrieved_judgements.column_names == SCHEMA_JUDGEMENTS.names
-            assert len(retrieved_judgements) == len(cluster_one_leaf_ids) + len(
-                cluster_two_leaf_ids
-            )
-            assert retrieved_judgements["user_id"].unique().to_pylist() == [alice_id]
-            result_dict = retrieved_judgements.select(["parent", "child"]).to_pydict()
-            result_tuple = tuple(
-                zip(result_dict["parent"], result_dict["child"], strict=False)
-            )
-            implied_clusters: dict[int, int] = {}
+            # Data gets back in the right shape
+            judgements, expansion = self.backend.get_judgements()
+            judgements.schema.equals(SCHEMA_JUDGEMENTS)
+            expansion.schema.equals(SCHEMA_CLUSTER_EXPANSION)
 
-            for p, c in result_tuple:
-                implied_clusters.setdefault(p, [])
-                implied_clusters[p].append(c)
+            # Only one user ID was used
+            assert judgements["user_id"].unique().to_pylist() == [alice_id]
+            # The second shown cluster is repeated because we split it (see above)
+            assert sorted(judgements["shown"].to_pylist()) == sorted(
+                [unique_ids[0], unique_ids[1], unique_ids[1]]
+            )
 
-            result_cluster_values = list(implied_clusters.values())
-            assert result_cluster_values[0] == cluster_one_leaf_ids
-            assert result_cluster_values[1] == cluster_two_leaf_ids[:1]
-            assert result_cluster_values[2] == cluster_two_leaf_ids[1:]
+            endorsed_root, endorsed_leaves = (
+                pl.from_arrow(judgements)
+                .join(pl.from_arrow(expansion), left_on="endorsed", right_on="root")[
+                    ["endorsed", "leaves"]
+                ]
+                .to_dict(as_series=False)
+                .values()
+            )
+
+            # The root we know about has the leaves we expect
+            endorsed_dict = dict(zip(endorsed_root, endorsed_leaves, strict=True))
+            assert endorsed_dict[unique_ids[0]] == clust1_leaves
+            # Other than the root we know about, there are two new ones
+            assert len(set(endorsed_dict.keys())) == 3
+            # The other two sets of leaves are there too
+            assert sorted(endorsed_dict.values()) == sorted(
+                [clust1_leaves, clust2_leaves[:1], clust2_leaves[1:]]
+            )
 
     def test_sample_for_eval(self):
         """Can derive samples for a user and a resolution"""

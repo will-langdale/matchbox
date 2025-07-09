@@ -501,11 +501,12 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_judgements(self) -> Table:
+    def get_judgements(self) -> tuple[Table, Table]:
         """Retrieves all evaluation judgements.
 
         Returns:
-            A PyArrow table with the clusters implied by the judgements.
+            Two PyArrow tables with the judgments and their expansion.
+            See `matchbox.common.arrow` for information on the schema.
         """
         ...
 

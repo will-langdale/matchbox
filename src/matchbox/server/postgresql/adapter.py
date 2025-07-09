@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 import numpy as np
 import polars as pl
+import pyarrow as pa
 from pyarrow import Table
 from pydantic import BaseModel
-from sqlalchemy import and_, bindparam, delete, func, or_, select
+from sqlalchemy import BIGINT, and_, bindparam, delete, func, or_, select
 
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES
 from matchbox.common.db import sql_to_df
@@ -54,6 +55,7 @@ from matchbox.server.postgresql.utils.db import (
     compile_sql,
     dump,
     get_resolution_graph,
+    ingest_to_temporary_table,
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
@@ -100,12 +102,12 @@ class FilteredClusters(BaseModel):
                         )
                         .join(
                             EvalJudgements,
-                            EvalJudgements.cluster_id == Clusters.cluster_id,
+                            EvalJudgements.endorsed_cluster_id == Clusters.cluster_id,
                             isouter=True,
                         )
                         .filter(
                             or_(
-                                EvalJudgements.cluster_id.is_not(None),
+                                EvalJudgements.endorsed_cluster_id.is_not(None),
                                 Probabilities.cluster_id.is_not(None),
                             )
                         )
@@ -552,45 +554,59 @@ class MatchboxPostgres(MatchboxDBAdapter):
             return user.user_id
 
     def insert_judgement(self, judgement: CommonJudgement) -> None:  # noqa: D102
-        ids = list(chain(*judgement.clusters))
+        # Check that all referenced cluster IDs exist
+        ids = list(chain(*judgement.endorsed)) + [judgement.shown]
         self.validate_ids(ids)
+        # Note: we don't currently check that the shown cluster ID points to
+        # the source cluster IDs. We must assume this is well-formed.
 
+        # Check that the user exists
         with MBDB.get_session() as session:
             if not session.scalar(
                 select(Users.name).where(Users.user_id == judgement.user_id)
             ):
                 raise MatchboxUserNotFoundError(user_id=judgement.user_id)
 
-        for cluster in judgement.clusters:
+        for leaves in judgement.endorsed:
             with MBDB.get_session() as session:
+                # Compute hash corresponding to set of source clusters (leaves)
                 leaf_hashes = [
                     session.scalar(
                         select(Clusters.cluster_hash).where(
                             Clusters.cluster_id == leaf_id
                         )
                     )
-                    for leaf_id in cluster
+                    for leaf_id in leaves
                 ]
-                cluster_hash = hash_cluster_leaves(leaf_hashes)
+                endorsed_cluster_hash = hash_cluster_leaves(leaf_hashes)
 
+                # If cluster with this hash does not exist, create it.
+                # Note that only endorsed clusters, might be new. The cluster shown to
+                # the user is guaranteed to exist in the backend; we have checked above.
                 if not (
-                    cluster_id := session.scalar(
+                    endorsed_cluster_id := session.scalar(
                         select(Clusters.cluster_id).where(
-                            Clusters.cluster_hash == cluster_hash
+                            Clusters.cluster_hash == endorsed_cluster_hash
                         )
                     )
                 ):
-                    cluster_id = PKSpace.reserve_block(table="clusters", block_size=1)
-                    session.add(
-                        Clusters(cluster_id=cluster_id, cluster_hash=cluster_hash)
+                    endorsed_cluster_id = PKSpace.reserve_block(
+                        table="clusters", block_size=1
                     )
-                    for leaf_id in cluster:
-                        session.add(Contains(root=cluster_id, leaf=leaf_id))
+                    session.add(
+                        Clusters(
+                            cluster_id=endorsed_cluster_id,
+                            cluster_hash=endorsed_cluster_hash,
+                        )
+                    )
+                    for leaf_id in leaves:
+                        session.add(Contains(root=endorsed_cluster_id, leaf=leaf_id))
 
                 session.add(
                     EvalJudgements(
                         user_id=judgement.user_id,
-                        cluster_id=cluster_id,
+                        shown_cluster_id=judgement.shown,
+                        endorsed_cluster_id=endorsed_cluster_id,
                         timestamp=datetime.now(timezone.utc),
                     )
                 )
@@ -598,18 +614,60 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 session.commit()
 
     def get_judgements(self) -> Table:  # noqa: D102
-        stmt = select(
+        judgements_stmt = select(
             EvalJudgements.user_id,
-            Contains.root.label("parent"),
-            Contains.leaf.label("child"),
-        ).join(Contains, EvalJudgements.cluster_id == Contains.root)
+            EvalJudgements.endorsed_cluster_id.label("endorsed"),
+            EvalJudgements.shown_cluster_id.label("shown"),
+        )
 
         with MBDB.get_adbc_connection() as conn:
-            return sql_to_df(
-                stmt=compile_sql(stmt),
+            judgements = sql_to_df(
+                stmt=compile_sql(judgements_stmt),
                 connection=conn.dbapi_connection,
                 return_type="arrow",
             )
+            shown_clusters = set(judgements["shown"].to_pylist())
+            endorsed_clusters = set(judgements["endorsed"].to_pylist())
+            referenced_clusters = Table.from_pydict(
+                {"root": list(shown_clusters | endorsed_clusters)}
+            )
+
+        with ingest_to_temporary_table(
+            table_name="judgements",
+            schema_name="mb",
+            column_types={
+                "root": BIGINT,
+            },
+            data=referenced_clusters,
+        ) as temp_table:
+            cluster_expansion_stmt = (
+                select(temp_table.c.root, func.array_agg(Contains.leaf).label("leaves"))
+                .select_from(temp_table)
+                .join(Contains, Contains.root == temp_table.c.root)
+                .group_by(temp_table.c.root)
+            )
+
+            with MBDB.get_adbc_connection() as conn:
+                cluster_expansion = sql_to_df(
+                    stmt=compile_sql(cluster_expansion_stmt),
+                    connection=conn.dbapi_connection,
+                    return_type="arrow",
+                )
+
+        # Do a bit of casting to conform to data transfer schema
+        for i, col in enumerate(["user_id", "endorsed", "shown"]):
+            judgements = judgements.set_column(
+                i, col, judgements[col].cast(pa.uint64())
+            )
+
+        cluster_expansion = cluster_expansion.set_column(
+            0, "root", cluster_expansion["root"].cast(pa.uint64())
+        )
+        cluster_expansion = cluster_expansion.set_column(
+            1, "leaves", cluster_expansion["leaves"].cast(pa.list_(pa.uint64()))
+        )
+
+        return judgements, cluster_expansion
 
     def compare_models(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
         pass

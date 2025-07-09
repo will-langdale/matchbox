@@ -29,14 +29,24 @@ SCHEMA_RESULTS: Final[pa.Schema] = pa.schema(
 SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(
     [
         ("user_id", pa.uint64()),
-        ("parent", pa.uint64()),
-        ("child", pa.uint64()),
+        ("endorsed", pa.uint64()),
+        ("shown", pa.uint64()),
     ]
 )
+"""Data transfer schema for evaluation judgements from users."""
+
+SCHEMA_CLUSTER_EXPANSION: Final[pa.Schema] = pa.schema(
+    [
+        ("root", pa.uint64()),
+        ("leaves", pa.list_(pa.uint64())),
+    ]
+)
+"""Data transfer schema for mapping from a cluster ID to all its source cluster IDs."""
 
 SCHEMA_EVAL_SAMPLES: Final[pa.Schema] = pa.schema(
     [
-        ("id", pa.uint64()),
+        ("model_cluster_id", pa.uint64()),
+        ("source_cluster_id", pa.uint64()),
         ("key", pa.large_string()),
         ("source", pa.large_string()),
     ]
