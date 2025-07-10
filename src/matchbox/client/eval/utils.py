@@ -19,8 +19,10 @@ class EvalData:
 
     def __init__(self):
         """Initialise evaluation data from resolution name."""
-        self.eval_data = _handler.download_eval_data()
-        self.eval_pairs = contains_to_pairs(pl.from_arrow(self.eval_data))
+        self.judgements, self.expansion = _handler.download_eval_data()
+        self.pairs = contains_to_pairs(
+            pl.from_arrow(self.judgements), pl.from_arrow(self.expansion)
+        )
 
     def precision_recall(self, results: Results, threshold: float) -> PrecisionRecall:
         """Computes precision and recall at one threshold."""
@@ -32,7 +34,7 @@ class EvalData:
             .select(["parent", "leaf"])
         )
         model_pairs = contains_to_pairs(clusters)
-        return precision_recall(model_pairs, self.eval_pairs)
+        return precision_recall(model_pairs, self.pairs)
 
     def pr_curve(self, results: Results) -> dict[str, PrecisionRecall]:
         """For each threshold in retults computes precision and recall."""

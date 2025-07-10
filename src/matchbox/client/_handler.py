@@ -1,16 +1,23 @@
 """Functions abstracting the interaction with the server API."""
 
 import time
+import zipfile
 from collections.abc import Iterable
 from importlib.metadata import version
 from io import BytesIO
 
 import httpx
-from pyarrow import Table
+from pyarrow import Schema, Table
 from pyarrow.parquet import read_table
 
 from matchbox.client._settings import ClientSettings, settings
-from matchbox.common.arrow import SCHEMA_JUDGEMENTS, SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.arrow import (
+    SCHEMA_CLUSTER_EXPANSION,
+    SCHEMA_JUDGEMENTS,
+    SCHEMA_MB_IDS,
+    JudgementsZipFilenames,
+    table_to_buffer,
+)
 from matchbox.common.dtos import (
     BackendCountableType,
     BackendRetrievableType,
@@ -431,23 +438,29 @@ def send_eval_judgement(judgement: Judgement) -> None:
     CLIENT.post("/eval/judgements", json=judgement.model_dump())
 
 
-def download_eval_data() -> Table:
+def download_eval_data() -> tuple[Table, Table]:
     logger.debug("Retrieving all judgements.")
     res = CLIENT.get("/eval/judgements")
 
-    buffer = BytesIO(res.content)
-    table = read_table(buffer)
+    zip_bytes = BytesIO(res.content)
+    with zipfile.ZipFile(zip_bytes, "r") as zip_file:
+        with zip_file.open(JudgementsZipFilenames.JUDGEMENTS) as f1:
+            judgements = read_table(f1)
+
+        with zip_file.open(JudgementsZipFilenames.EXPANSION) as f2:
+            expansion = read_table(f2)
 
     logger.debug("Finished retrieving judgements.")
 
-    if not table.schema.equals(SCHEMA_JUDGEMENTS):
+    def check_schema(expected: Schema, actual: Schema):
         raise MatchboxClientFileError(
-            message=(
-                f"Schema mismatch. Expected:\n{SCHEMA_JUDGEMENTS}\nGot:\n{table.schema}"
-            )
+            message=(f"Schema mismatch. Expected:\n{expected}\nGot:\n{actual}")
         )
 
-    return table
+    check_schema(judgements.schema, SCHEMA_JUDGEMENTS)
+    check_schema(expansion.schema, SCHEMA_CLUSTER_EXPANSION)
+
+    return judgements, expansion
 
 
 # Admin
