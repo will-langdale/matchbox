@@ -444,7 +444,10 @@ def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
 
 
 def send_eval_judgement(judgement: Judgement) -> None:
-    logger.debug(f"Posting {judgement.clusters} for {judgement.user_id}")
+    logger.debug(
+        f"Submitting judgement {judgement.shown}:{judgement.endorsed} "
+        f"for {judgement.user_id}"
+    )
     CLIENT.post("/eval/judgements", json=judgement.model_dump())
 
 
@@ -462,10 +465,11 @@ def download_eval_data() -> tuple[Table, Table]:
 
     logger.debug("Finished retrieving judgements.")
 
-    def check_schema(expected: Schema, actual: Schema):
-        raise MatchboxClientFileError(
-            message=(f"Schema mismatch. Expected:\n{expected}\nGot:\n{actual}")
-        )
+    def check_schema(expected: Schema, actual: Schema) -> None:
+        if expected != actual:
+            raise MatchboxClientFileError(
+                message=(f"Schema mismatch. Expected:\n{expected}\nGot:\n{actual}")
+            )
 
     check_schema(judgements.schema, SCHEMA_JUDGEMENTS)
     check_schema(expansion.schema, SCHEMA_CLUSTER_EXPANSION)
