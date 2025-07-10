@@ -1,10 +1,12 @@
 """Resolutions API routes for the Matchbox server."""
 
+import zipfile
+from io import BytesIO
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from matchbox.common.arrow import table_to_buffer
+from matchbox.common.arrow import JudgementsZipFilenames, table_to_buffer
 from matchbox.common.dtos import (
     BackendUnprocessableType,
     ModelResolutionName,
@@ -20,6 +22,7 @@ from matchbox.common.exceptions import (
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
+    ZipResponse,
 )
 
 router = APIRouter(prefix="/eval", tags=["eval"])
@@ -59,8 +62,20 @@ async def insert_judgement(
 )
 async def get_judgements(backend: BackendDependency) -> ParquetResponse:
     """Retrieve all judgements from human evaluators."""
-    buffer = table_to_buffer(backend.get_judgements())
-    return ParquetResponse(buffer.getvalue())
+    judgements, expansion = backend.get_judgements()
+    judgements_buffer, expansion_buffer = (
+        table_to_buffer(judgements),
+        table_to_buffer(expansion),
+    )
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr(JudgementsZipFilenames.JUDGEMENTS, judgements_buffer.read())
+        zip_file.writestr(JudgementsZipFilenames.EXPANSION, expansion_buffer.read())
+
+    zip_buffer.seek(0)
+
+    return ZipResponse(zip_buffer.getvalue())
 
 
 @router.get(

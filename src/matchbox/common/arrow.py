@@ -1,5 +1,6 @@
 """Common Arrow utilities."""
 
+from enum import StrEnum
 from io import BytesIO
 from typing import Final
 
@@ -33,7 +34,7 @@ SCHEMA_JUDGEMENTS: Final[pa.Schema] = pa.schema(
         ("shown", pa.uint64()),
     ]
 )
-"""Data transfer schema for evaluation judgements from users."""
+"""Data transfer schema for retrieved evaluation judgements from users."""
 
 SCHEMA_CLUSTER_EXPANSION: Final[pa.Schema] = pa.schema(
     [
@@ -51,6 +52,13 @@ SCHEMA_EVAL_SAMPLES: Final[pa.Schema] = pa.schema(
         ("source", pa.large_string()),
     ]
 )
+
+
+class JudgementsZipFilenames(StrEnum):
+    """Enumeration of file names in ZIP file with downloaded judgements."""
+
+    JUDGEMENTS = "judgements.parquet"
+    EXPANSION = "expansion.parquet"
 
 
 def table_to_buffer(table: pa.Table) -> BytesIO:
