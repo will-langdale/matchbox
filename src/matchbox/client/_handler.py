@@ -20,7 +20,8 @@ from matchbox.common.arrow import (
 )
 from matchbox.common.dtos import (
     BackendCountableType,
-    BackendRetrievableType,
+    BackendParameterType,
+    BackendResourceType,
     LoginAttempt,
     LoginResult,
     ModelAncestor,
@@ -35,12 +36,15 @@ from matchbox.common.dtos import (
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
     MatchboxClientFileError,
+    MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
+    MatchboxTooManySamplesRequested,
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
+    MatchboxUserNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import hash_to_base64
@@ -89,18 +93,29 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
     if res.status_code == 404:
         error = NotFoundError.model_validate(res.json())
-        if error.entity == BackendRetrievableType.SOURCE:
-            raise MatchboxSourceNotFoundError(error.details)
-        if error.entity == BackendRetrievableType.RESOLUTION:
-            raise MatchboxResolutionNotFoundError(error.details)
-        else:
-            raise RuntimeError(f"Unexpected 404 error: {error.details}")
+        match error.entity:
+            case BackendResourceType.SOURCE:
+                raise MatchboxSourceNotFoundError(error.details)
+            case BackendResourceType.RESOLUTION:
+                raise MatchboxResolutionNotFoundError(error.details)
+            case BackendResourceType.CLUSTER:
+                raise MatchboxDataNotFound(error.details)
+            case BackendResourceType.USER:
+                raise MatchboxUserNotFoundError(error.details)
+            case _:
+                raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     if res.status_code == 409:
         error = ResolutionOperationStatus.model_validate(res.json())
         raise MatchboxDeletionNotConfirmed(message=error.details)
 
     if res.status_code == 422:
+        if (
+            "parameter" in res.content
+            and res.content["parameter"] == BackendParameterType.SAMPLE_SIZE
+        ):
+            raise MatchboxTooManySamplesRequested(res.content)
+        # Not a custom Matchbox exception, most likely a Pydantic error
         raise MatchboxUnparsedClientRequest(res.content)
 
     raise MatchboxUnhandledServerResponse(
@@ -415,17 +430,12 @@ def delete_resolution(
 
 
 def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Table:
-    return Table.from_pylist(
-        [
-            {"id": 1, "company_name": "Pippo pluto PLC", "region": "England"},
-            {
-                "id": 2,
-                "company_name": "Pippo pluto e paperino UK LTD",
-                "region": "England",
-            },
-            {"id": 3, "company_name": "Pippo pluto e paperino", "region": "Devon"},
-        ]
+    res = CLIENT.get(
+        "/eval/samples",
+        params=url_params({"n": n, "resolution": resolution, "user_id": user_id}),
     )
+
+    return read_table(BytesIO(res.content))
 
 
 def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:

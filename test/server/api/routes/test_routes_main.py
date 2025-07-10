@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
 from matchbox.common.dtos import (
-    BackendRetrievableType,
+    BackendResourceType,
     LoginAttempt,
     LoginResult,
     OKMessage,
@@ -424,7 +424,7 @@ def test_match_404_resolution(test_client: TestClient):
 
     # Check response
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendRetrievableType.RESOLUTION
+    assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
 
 def test_match_404_source(test_client: TestClient):
@@ -447,7 +447,7 @@ def test_match_404_source(test_client: TestClient):
 
     # Check response
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendRetrievableType.SOURCE
+    assert response.json()["entity"] == BackendResourceType.SOURCE
 
 
 # Admin

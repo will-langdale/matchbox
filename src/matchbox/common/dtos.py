@@ -57,20 +57,19 @@ class ModelResultsType(StrEnum):
     CLUSTERS = "clusters"
 
 
-class BackendRetrievableType(StrEnum):
-    """Enumeration of supported backend retrievable types."""
+class BackendResourceType(StrEnum):
+    """Enumeration of resources types referenced by client or API."""
 
     SOURCE = "source"
     RESOLUTION = "resolution"
-
-
-class BackendUnprocessableType(StrEnum):
-    """Enumeration of entity types processed indirectly by the backend."""
-
     CLUSTER = "cluster"
     USER = "user"
+
+
+class BackendParameterType(StrEnum):
+    """Enumeration of parameters passable to the API."""
+
     SAMPLE_SIZE = "sample_size"
-    RESOLUTION = "resolution"
 
 
 class BackendUploadType(StrEnum):
@@ -269,14 +268,14 @@ class NotFoundError(BaseModel):
     """API error for a 404 status code."""
 
     details: str
-    entity: BackendRetrievableType
+    entity: BackendResourceType
 
 
-class UnprocessableError(BaseModel):
-    """APIerror for a 422 status code."""
+class InvalidParameterError(BaseModel):
+    """API error for a custom 422 status code."""
 
     details: str
-    entity: BackendUnprocessableType
+    parameter: BackendParameterType
 
 
 class DataTypes(StrEnum):

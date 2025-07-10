@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
-    BackendRetrievableType,
+    BackendResourceType,
     BackendUploadType,
     CountResult,
     LoginAttempt,
@@ -239,14 +239,14 @@ def query(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendResourceType.SOURCE
             ).model_dump(),
         ) from e
 
@@ -279,14 +279,14 @@ def match(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendResourceType.SOURCE
             ).model_dump(),
         ) from e
 

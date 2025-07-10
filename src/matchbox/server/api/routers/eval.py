@@ -8,9 +8,11 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from matchbox.common.arrow import JudgementsZipFilenames, table_to_buffer
 from matchbox.common.dtos import (
-    BackendUnprocessableType,
+    BackendParameterType,
+    BackendResourceType,
+    InvalidParameterError,
     ModelResolutionName,
-    UnprocessableError,
+    NotFoundError,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
@@ -30,7 +32,7 @@ router = APIRouter(prefix="/eval", tags=["eval"])
 
 @router.post(
     "/judgements",
-    responses={422: {"model": UnprocessableError}},
+    responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_201_CREATED,
 )
 async def insert_judgement(
@@ -43,16 +45,16 @@ async def insert_judgement(
         return Response(status_code=status.HTTP_201_CREATED)
     except MatchboxDataNotFound as e:
         raise HTTPException(
-            status_code=422,
-            detail=UnprocessableError(
-                details=str(e), entity=BackendUnprocessableType.CLUSTER
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.CLUSTER
             ).model_dump(),
         ) from e
     except MatchboxUserNotFoundError as e:
         raise HTTPException(
-            status_code=422,
-            detail=UnprocessableError(
-                details=str(e), entity=BackendUnprocessableType.USER
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.USER
             ).model_dump(),
         ) from e
 
@@ -97,7 +99,7 @@ async def compare_models(
 
 @router.get(
     "/samples",
-    responses={422: {"model": UnprocessableError}},
+    responses={404: {"model": NotFoundError}, 422: {"model": InvalidParameterError}},
 )
 async def sample(
     backend: BackendDependency, n: int, resolution: ModelResolutionName, user_id: int
@@ -109,22 +111,22 @@ async def sample(
         return ParquetResponse(buffer.getvalue())
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
-            status_code=422,
-            detail=UnprocessableError(
-                details=str(e), entity=BackendUnprocessableType.RESOLUTION
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxUserNotFoundError as e:
         raise HTTPException(
-            status_code=422,
-            detail=UnprocessableError(
-                details=str(e), entity=BackendUnprocessableType.USER
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.USER
             ).model_dump(),
         ) from e
     except MatchboxTooManySamplesRequested as e:
         raise HTTPException(
             status_code=422,
-            detail=UnprocessableError(
-                details=str(e), entity=BackendUnprocessableType.SAMPLE_SIZE
+            detail=InvalidParameterError(
+                details=str(e), parameter=BackendParameterType.SAMPLE_SIZE
             ).model_dump(),
         ) from e

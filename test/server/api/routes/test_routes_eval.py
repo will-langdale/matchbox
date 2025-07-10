@@ -13,7 +13,7 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
     JudgementsZipFilenames,
 )
-from matchbox.common.dtos import BackendUnprocessableType
+from matchbox.common.dtos import BackendParameterType, BackendResourceType
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
@@ -49,13 +49,13 @@ def test_insert_judgement_error(test_client: TestClient):
     app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.post("/eval/judgements", json=fake_judgement)
-    assert response.status_code == 422
-    assert response.json()["entity"] == BackendUnprocessableType.CLUSTER
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendResourceType.CLUSTER
 
     mock_backend.insert_judgement = Mock(side_effect=MatchboxUserNotFoundError)
     response = test_client.post("/eval/judgements", json=fake_judgement)
-    assert response.status_code == 422
-    assert response.json()["entity"] == BackendUnprocessableType.USER
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendResourceType.USER
 
 
 def test_get_judgements(test_client: TestClient):
@@ -140,22 +140,19 @@ def test_get_samples(test_client: TestClient):
     [
         pytest.param(
             MatchboxUserNotFoundError,
-            BackendUnprocessableType.USER,
+            BackendResourceType.USER,
             id="user_not_found",
         ),
         pytest.param(
             MatchboxResolutionNotFoundError,
-            BackendUnprocessableType.RESOLUTION,
+            BackendResourceType.RESOLUTION,
             id="resolution_not_found",
-        ),
-        pytest.param(
-            MatchboxTooManySamplesRequested,
-            BackendUnprocessableType.SAMPLE_SIZE,
-            id="too_many_samples_requested",
         ),
     ],
 )
-def test_get_samples_error(exception, entity, test_client: TestClient):
+def test_get_samples_404(
+    exception: BaseException, entity: BackendResourceType, test_client: TestClient
+):
     """Test errors in requesting samples."""
     mock_backend = Mock()
 
@@ -168,5 +165,22 @@ def test_get_samples_error(exception, entity, test_client: TestClient):
         params={"n": 10, "resolution": "resolution", "user_id": 12},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 404
     assert response.json()["entity"] == entity
+
+
+def test_get_samples_422(test_client: TestClient):
+    """Test errors in requesting samples."""
+    mock_backend = Mock()
+
+    mock_backend.sample_for_eval = Mock(side_effect=MatchboxTooManySamplesRequested)
+
+    app.dependency_overrides[backend] = lambda: mock_backend
+
+    response = test_client.get(
+        "/eval/samples",
+        params={"n": 10, "resolution": "resolution", "user_id": 12},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["parameter"] == BackendParameterType.SAMPLE_SIZE
