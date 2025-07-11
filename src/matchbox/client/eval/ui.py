@@ -4,10 +4,11 @@ import polars as pl
 import streamlit as st
 
 from matchbox.client import _handler
+from matchbox.client.eval import get_samples
 from matchbox.common.eval import Judgement
 
 st.title("Matchbox evaluation session")
-
+# TODO: use new sampling functio
 
 if "step" not in st.session_state:
     st.session_state.step = "eval"
@@ -17,13 +18,13 @@ if "step" not in st.session_state:
 
 if st.session_state.step == "eval":
     if "df" not in st.session_state:
-        original_df = pl.from_arrow(
-            _handler.sample_for_eval(
-                n=10,
-                resolution=st.session_state.resolution,
-                user_id=st.session_state.user_id,
-            )
+        # TODO: implement iteration over multiple samples
+        original_df = get_samples(
+            n=100,
+            resolution=st.session_state.resolution,
+            user_id=st.session_state.user_id,
         )
+
         st.session_state.judgement = []
         st.session_state.orig_columns = list(set(original_df.columns) - {"id"})
         st.session_state.df = original_df.with_columns(select=False)

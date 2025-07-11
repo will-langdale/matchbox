@@ -1,5 +1,8 @@
 """Collection of client-side functions in aid of model evaluation."""
 
+import warnings
+from typing import Any
+
 import polars as pl
 from matplotlib import pyplot as plt
 
@@ -10,8 +13,68 @@ from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
     contains_to_pairs,
+    eval_data_to_pairs,
     precision_recall,
 )
+
+
+def get_samples(
+    n: int,
+    resolution: ModelResolutionName,
+    user_id: int,
+    credentials: Any,
+) -> dict[int, pl.DataFrame]:
+    """Retrieve samples enriched with source data, grouped by resolution cluster.
+
+    Args:
+        n: Number of clusters to sample
+        resolution: Model resolution proposing the clusters
+        user_id: ID of the user requesting the samples
+        credentials: Valid credentials for the source configs.
+            Sources that can't be queried with these credentials will be skipped.
+
+    Returns:
+        Dictionary of cluster ID to dataframe describing the cluster
+    """
+    samples: pl.DataFrame = pl.from_arrow(
+        _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+    )
+
+    results_by_source = []
+    for source_resolution in samples["source"].unique():
+        source_config = _handler.get_source_config(source_resolution)
+        try:
+            source_config.location.add_credentials(credentials=credentials)
+        except ValueError:
+            warnings.warn(
+                f"Skipping {source_resolution}, incompatible with given credentials.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+
+        samples_by_source = samples.filter(pl.col("source") == source_resolution)
+        keys_by_source = samples_by_source["key"].to_list()
+
+        source_data = pl.concat(
+            source_config.query(
+                batch_size=10_000, qualify_names=True, keys=keys_by_source
+            )
+        )
+        samples_and_source = samples_by_source.join(
+            source_data, left_on="key", right_on=source_config.qualified_key
+        )
+        desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
+        results_by_source.append(samples_and_source[desired_columns])
+
+    all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
+
+    results_by_root = {
+        root: all_results.filter(pl.col("root") == root).drop("root")
+        for root in all_results["root"].unique()
+    }
+
+    return results_by_root
 
 
 class EvalData:
@@ -20,9 +83,7 @@ class EvalData:
     def __init__(self):
         """Initialise evaluation data from resolution name."""
         self.judgements, self.expansion = _handler.download_eval_data()
-        self.pairs = contains_to_pairs(
-            pl.from_arrow(self.judgements), pl.from_arrow(self.expansion)
-        )
+        self.pairs = eval_data_to_pairs(self.judgements, self.expansion)
 
     def precision_recall(self, results: Results, threshold: float) -> PrecisionRecall:
         """Computes precision and recall at one threshold."""

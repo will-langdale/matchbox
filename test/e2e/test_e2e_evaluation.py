@@ -1,11 +1,10 @@
-import polars as pl
 import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
 
 from matchbox.client import _handler
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
-from matchbox.client.eval import EvalData
+from matchbox.client.eval import EvalData, get_samples
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.common.eval import Judgement
 from matchbox.common.factories.sources import (
@@ -34,6 +33,8 @@ class TestE2EPipelineBuilder:
         postgres_warehouse: Engine,
     ):
         """Set up warehouse and database using fixtures."""
+        # Will ne beeded later
+        self.__class__.engine = postgres_warehouse
         # Set up testkits
         n_true_entities = 10  # Keep it small for simplicity
 
@@ -138,16 +139,15 @@ class TestE2EPipelineBuilder:
 
         user_id = _handler.login(user_name="alice")
 
-        sample = pl.from_arrow(
-            _handler.sample_for_eval(
-                n=5, resolution=self.final_resolution, user_id=user_id
-            )
+        samples = get_samples(
+            n=5,
+            resolution=self.final_resolution,
+            user_id=user_id,
+            credentials=self.engine,
         )
+        judged_cluster = next(iter(samples.keys()))
+        judged_leaves = samples[judged_cluster]["leaf"].unique().to_list()
 
-        judged_cluster = sample["root"][0]
-        judged_leaves = (
-            sample.filter(pl.col("root") == judged_cluster)["leaf"].unique().to_list()
-        )
         judgement = Judgement(
             user_id=user_id,
             shown=judged_cluster,
