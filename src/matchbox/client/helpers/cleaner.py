@@ -1,5 +1,7 @@
 """Functions to pre-process data sources."""
 
+import hashlib
+import json
 from typing import Any, Callable
 
 import polars as pl
@@ -15,9 +17,9 @@ def cleaner(function: Callable, arguments: dict) -> dict[str, dict[str, Any]]:
     Returns:
         A representation of the cleaner ready to be passed to the `cleaners()` function
     """
-    if "column" not in arguments:
-        raise ValueError("`column` is a required argument")
-    cleaner_name = f"{function.__name__}_{arguments['column']}"
+    args_str = json.dumps(arguments, sort_keys=True, default=str)
+    args_hash = hashlib.md5(args_str.encode()).hexdigest()[:6]
+    cleaner_name = f"{function.__name__}_{args_hash}"
     return {cleaner_name: {"function": function, "arguments": arguments}}
 
 
