@@ -8,7 +8,6 @@ from matchbox.client.eval import get_samples
 from matchbox.common.eval import Judgement
 
 st.title("Matchbox evaluation session")
-# TODO: use new sampling functio
 
 if "step" not in st.session_state:
     st.session_state.step = "eval"

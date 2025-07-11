@@ -1029,6 +1029,17 @@ class TestMatchboxBackend:
 
         with self.scenario(self.backend, "dedupe"):
             user_id = self.backend.login("alice")
+
+            # Source clusters should not be returned
+            # So if we sample from a source resolution, we get nothing
+            user_id = self.backend.login("alice")
+            samples_source = self.backend.sample_for_eval(
+                n=10, resolution="crn", user_id=user_id
+            )
+            assert len(samples_source) == 0
+
+            # We now look at more interesting cases
+            # Query backend to form expectations
             resolution_clusters = pl.from_arrow(
                 self.backend.query(source="crn", resolution="naive_test.crn")
             )
@@ -1089,3 +1100,23 @@ class TestMatchboxBackend:
             # And that cluster is the one on which the judgement is based
             assert first_cluster_id in samples_99["root"].to_pylist()
             assert first_cluster_id not in samples_without_cluster["root"].to_pylist()
+
+            # If a user has judged all available clusters, nothing is returned
+            for cluster_id in resolution_clusters["id"].unique():
+                cluster = resolution_clusters.filter(pl.col("id") == cluster_id)
+                cluster_leaves = cluster.join(
+                    source_clusters, on="key", suffix="_source"
+                )["id_source"].to_list()
+
+                self.backend.insert_judgement(
+                    judgement=Judgement(
+                        user_id=user_id,
+                        shown=cluster_id,
+                        endorsed=[cluster_leaves],
+                    ),
+                )
+
+            samples_all_done = self.backend.sample_for_eval(
+                n=99, resolution="naive_test.crn", user_id=user_id
+            )
+            assert len(samples_all_done) == 0

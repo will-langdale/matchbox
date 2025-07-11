@@ -675,6 +675,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def sample_for_eval(  # noqa: D102
         self, n: int, resolution: ModelResolutionName, user_id: int
     ) -> ArrowTable:
+        # Not currently checking validity of the user_id
+        # If the user ID does not exist, the exclusion by previous judgements breaks
         if n > 100:
             # This reasonable assumption means simple "IS IN" function later is fine
             raise ValueError("Can only sample 100 entries at a time.")
@@ -728,7 +730,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         # Return early if nothing to sample from
         if not len(to_sample):
             return Table.from_pydict(
-                {"id": [], "key": [], "source": []}, schema=SCHEMA_EVAL_SAMPLES
+                {"root": [], "leaf": [], "key": [], "source": []},
+                schema=SCHEMA_EVAL_SAMPLES,
             )
 
         # Sample proportionally to distance from the truth, and get 1D array

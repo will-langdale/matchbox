@@ -40,6 +40,9 @@ def get_samples(
         _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
     )
 
+    if not len(samples):
+        return {}
+
     results_by_source = []
     for source_resolution in samples["source"].unique():
         source_config = _handler.get_source_config(source_resolution)
@@ -66,6 +69,9 @@ def get_samples(
         )
         desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
         results_by_source.append(samples_and_source[desired_columns])
+
+    if not len(results_by_source):
+        return {}
 
     all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
 

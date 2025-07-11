@@ -7,7 +7,7 @@ from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
 from matchbox.client.eval import get_samples
-from matchbox.common.arrow import table_to_buffer
+from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.factories.sources import source_from_tuple
 
 
@@ -56,7 +56,6 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
 
     # Mock samples
-    # TODO: can samples ever return a cluster of one?? They shouldn't
     samples = Table.from_pylist(
         [
             # Source foo - with two keys for one leaf
@@ -72,8 +71,12 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             {"root": 11, "leaf": 8, "key": "d", "source": "bar"},
             # Source baz
             {"root": 10, "leaf": 1, "key": "x", "source": "baz"},
-        ]
+        ],
+        schema=SCHEMA_EVAL_SAMPLES,
     )
+    # There will be nulls in case of a schema mismatch
+    assert len(samples.drop_null()) == len(samples)
+
     matchbox_api.get("/eval/samples").mock(
         return_value=Response(200, content=table_to_buffer(samples).read())
     )
@@ -105,8 +108,47 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
 
     assert_frame_equal(
-        samples[10], expected_sample_10, check_column_order=False, check_row_order=False
+        samples[10],
+        expected_sample_10,
+        check_column_order=False,
+        check_row_order=False,
+        check_dtypes=False,
     )
     assert_frame_equal(
-        samples[11], expected_sample_11, check_column_order=False, check_row_order=False
+        samples[11],
+        expected_sample_11,
+        check_column_order=False,
+        check_row_order=False,
+        check_dtypes=False,
     )
+
+    # What happens if no samples are available?
+    matchbox_api.get("/eval/samples").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                Table.from_pylist([], schema=SCHEMA_EVAL_SAMPLES)
+            ).read(),
+        )
+    )
+
+    no_samples = get_samples(
+        n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
+    )
+    assert no_samples == {}
+
+    # And if no data matches credentials?
+    just_baz_samples = Table.from_pylist(
+        [{"root": 10, "leaf": 1, "key": "x", "source": "baz"}],
+        schema=SCHEMA_EVAL_SAMPLES,
+    )
+    matchbox_api.get("/eval/samples").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(just_baz_samples).read(),
+        )
+    )
+    no_accessible_samples = get_samples(
+        n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
+    )
+    assert no_accessible_samples == {}
