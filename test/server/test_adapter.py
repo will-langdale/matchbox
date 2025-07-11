@@ -1014,8 +1014,13 @@ class TestMatchboxBackend:
                 [clust1_leaves, clust2_leaves[:1], clust2_leaves[1:]]
             )
 
+    def test_compare_models(self):
+        """Can compute precision and recall for list of models."""
+        ...
+        # TODO: build scenario with two alternative models deduping the same resolution
+
     def test_sample_for_eval(self):
-        """Can extract samples for a user and a resolution"""
+        """Can extract samples for a user and a resolution."""
 
         # Missing resolution raises error
         with (

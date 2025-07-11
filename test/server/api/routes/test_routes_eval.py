@@ -104,6 +104,43 @@ def test_get_judgements(test_client: TestClient):
     assert downloaded_expansion.equals(expansion)
 
 
+def test_compare_models_ok(test_client: TestClient):
+    """Test errors in requesting samples."""
+    mock_backend = Mock()
+    mock_pr = {"a": (1, 0.5), "b": (0.5, 1)}
+    mock_backend.compare_models = Mock(return_value=mock_pr)
+
+    app.dependency_overrides[backend] = lambda: mock_backend
+
+    response = test_client.get(
+        "/eval/compare",
+        params={"resolutions": ["a", "b"]},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert sorted(result.keys()) == ["a", "b"]
+    assert tuple(result["a"]) == mock_pr["a"]
+    assert tuple(result["b"]) == mock_pr["b"]
+
+
+def test_compare_models_404(test_client: TestClient):
+    """Test errors in requesting samples."""
+    mock_backend = Mock()
+
+    mock_backend.compare_models = Mock(side_effect=MatchboxResolutionNotFoundError)
+
+    app.dependency_overrides[backend] = lambda: mock_backend
+
+    response = test_client.get(
+        "/eval/compare",
+        params={"resolutions": ["a", "b", "c"]},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendResourceType.RESOLUTION
+
+
 def test_get_samples(test_client: TestClient):
     """Test that samples can be requested."""
     sample = pa.Table.from_pylist(

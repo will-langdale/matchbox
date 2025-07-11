@@ -440,7 +440,8 @@ def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Ta
 
 def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
     res = CLIENT.get("/eval/compare", params=url_params({"resolutions": resolutions}))
-    return res.json()
+    scores = {resolution: tuple(pr) for resolution, pr in res.json().items()}
+    return scores
 
 
 def send_eval_judgement(judgement: Judgement) -> None:

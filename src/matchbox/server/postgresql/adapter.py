@@ -22,6 +22,7 @@ from matchbox.common.dtos import (
     SourceResolutionName,
 )
 from matchbox.common.eval import Judgement as CommonJudgement
+from matchbox.common.eval import ModelComparison, precision_recall
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
@@ -613,7 +614,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
                 session.commit()
 
-    def get_judgements(self) -> Table:  # noqa: D102
+    def get_judgements(self) -> tuple[Table, Table]:  # noqa: D102
         judgements_stmt = select(
             EvalJudgements.user_id,
             EvalJudgements.endorsed_cluster_id.label("endorsed"),
@@ -669,8 +670,28 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
         return judgements, cluster_expansion
 
-    def compare_models(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
-        pass
+    def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:  # noqa: D102
+        def get_contains(resolution: ModelResolutionName) -> Table:
+            resolution_id = Resolutions.from_name(resolution).resolution_id
+            contains_stmt = (
+                select(Contains.root, Contains.leaf)
+                .join(Probabilities, Probabilities.cluster_id == Contains.root)
+                .where(Probabilities.resolution_id == resolution_id)
+            )
+            with MBDB.get_adbc_connection() as conn:
+                return sql_to_df(
+                    stmt=compile_sql(contains_stmt),
+                    connection=conn.dbapi_connection,
+                    return_type="arrow",
+                )
+
+        model_contains = [get_contains(res) for res in resolutions]
+        judgements, expansion = self.get_judgements()
+        pr_values = precision_recall(
+            model_contains=model_contains, judgements=judgements, expansion=expansion
+        )
+
+        return dict(zip(resolutions, pr_values, strict=True))
 
     def sample_for_eval(  # noqa: D102
         self, n: int, resolution: ModelResolutionName, user_id: int

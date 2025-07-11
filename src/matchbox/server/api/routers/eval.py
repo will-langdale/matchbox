@@ -82,6 +82,7 @@ async def get_judgements(backend: BackendDependency) -> ParquetResponse:
 
 @router.get(
     "/compare",
+    responses={404: {"model": NotFoundError}},
 )
 async def compare_models(
     backend: BackendDependency,
@@ -91,10 +92,15 @@ async def compare_models(
     ],
 ) -> ModelComparison:
     """Return comparison of selected models."""
-    return {
-        "companieshouse_datahub_deterministic": (1, 0.8),
-        "companieshouse_datahub_probabilistic": (0.8, 0.9),
-    }
+    try:
+        return backend.compare_models(resolutions)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
 @router.get(
