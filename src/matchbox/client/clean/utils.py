@@ -189,8 +189,28 @@ def select_cleaners(*sources: tuple[dict, list[str]]) -> dict[str, dict[str, Any
 
     Returns:
         Dictionary matching the return type of `cleaners()`
+
+    Raises:
+        ValueError: If a key already exists in the selected cleaners (duplicate key)
+        KeyError: If a requested key doesn't exist in the cleaner dictionary
     """
     selected = {}
     for cleaner_dict, keys in sources:
-        selected.update({k: v for k, v in cleaner_dict.items() if k in keys})
+        # Check if any requested keys don't exist in the cleaner dictionary
+        missing_keys = [k for k in keys if k not in cleaner_dict]
+        if missing_keys:
+            raise KeyError(
+                f"The following keys were not found in the cleaner dictionary: "
+                f"{missing_keys}. Available keys: {list(cleaner_dict.keys())}"
+            )
+
+        # Check for duplicate keys before adding to selected
+        for k in keys:
+            if k in selected:
+                raise ValueError(
+                    f"Key '{k}' already exists in the selected cleaners. "
+                    f"Each cleaner key can only be selected once."
+                )
+            selected[k] = cleaner_dict[k]
+
     return cleaners(*selected.values())

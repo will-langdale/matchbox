@@ -12,7 +12,7 @@ This document describes how you can get started with developing Matchbox.
 
 ## Setup
 
-Set up environment variables by creating a `.env` file under project directory. See [`/environments/dev_local.env`](https://github.com/uktrade/matchbox/blob/main/environments/dev_local.env) for sensible defaults.
+Set up environment variables by creating a `.env` file under project directory. See [`/environments/development.env`](https://github.com/uktrade/matchbox/blob/main/environments/development.env) for sensible defaults.
 
 This project is managed by [uv](https://docs.astral.sh/uv/), linted and formated with [ruff](https://docs.astral.sh/ruff/), and tested with [pytest](https://docs.pytest.org/en/stable/). [Docker](https://www.docker.com) is used for local development. Documentation is build using [mkdocs](https://www.mkdocs.org).
 
@@ -77,7 +77,7 @@ just migration-generate "< enter descriptive message >"
 
 These commands will auto-detect the difference between the ORM and the database container.
 
-Check `src/matchbox/server/postgresql/alembic/versions/` for the new migration script and verify that the autogenerate matches your expectation. See the [documentation for known failure modes](https://alembic.sqlalchemy.org/en/latest/autogenerate.html#what-does-autogenerate-detect-and-what-does-it-not-detect). 
+Check `src/matchbox/server/postgresql/alembic/versions/` for the new migration script and verify that the autogenerate matches your expectation. See the [documentation for known failure modes](https://alembic.sqlalchemy.org/en/latest/autogenerate.html#what-does-autogenerate-detect-and-what-does-it-not-detect).
 
 !!! note
 

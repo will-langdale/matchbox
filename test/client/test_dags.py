@@ -70,6 +70,43 @@ def test_step_input_select_fields(sqlite_warehouse: Engine):
     assert len(step_input_all.select) == 1
 
 
+@pytest.mark.parametrize(
+    "combine_type",
+    ["concat", "explode", "set_agg"],
+)
+def test_step_input_combine_type_in_query(combine_type: str, sqlite_warehouse: Engine):
+    """Test that StepInput's combine_type parameter is passed to query function."""
+    with patch("matchbox.client.dags.query") as query_mock:
+        query_mock.return_value = pl.DataFrame({"id": [1, 2, 3]})
+
+        foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
+        foo_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        foo = foo_testkit.source_config
+        i_foo = IndexStep(source_config=foo)
+
+        step_input = StepInput(
+            prev_node=i_foo, select={foo: []}, combine_type=combine_type
+        )
+
+        # Create a mock model step to test the query method
+        model_step = DedupeStep(
+            name="test_step",
+            description="Test step",
+            left=step_input,
+            model_class=NaiveDeduper,
+            settings={},
+            truth=1.0,
+        )
+
+        # Call the query method
+        model_step.query(step_input)
+
+        # Verify query was called with the correct combine_type
+        query_mock.assert_called_once()
+        call_args = query_mock.call_args
+        assert call_args.kwargs["combine_type"] == combine_type
+
+
 def test_model_step_validation(sqlite_warehouse: Engine):
     foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
     bar = source_factory(name="bar", engine=sqlite_warehouse).source_config
@@ -195,6 +232,7 @@ def test_dedupe_step_run(
             threshold=d_foo.left.threshold,
             resolution=d_foo.left.name,
             batch_size=100 if batched else None,
+            combine_type="concat",
         )
         # Data is pre-processed
         process_mock.assert_called_once_with(
@@ -285,6 +323,7 @@ def test_link_step_run(
             threshold=foo_bar.left.threshold,
             resolution=foo_bar.left.name,
             batch_size=100 if batched else None,
+            combine_type="concat",
         )
         assert query_mock.call_args_list[1] == call(
             [Selector(source=bar, fields=[])],
@@ -292,6 +331,7 @@ def test_link_step_run(
             threshold=foo_bar.right.threshold,
             resolution=foo_bar.right.name,
             batch_size=100 if batched else None,
+            combine_type="concat",
         )
 
         # Data is pre-processed
