@@ -64,7 +64,12 @@ from matchbox.server.postgresql.utils.insert import (
     insert_results,
     insert_source,
 )
-from matchbox.server.postgresql.utils.query import get_source_config, match, query
+from matchbox.server.postgresql.utils.query import (
+    build_unified_query,
+    get_source_config,
+    match,
+    query,
+)
 from matchbox.server.postgresql.utils.results import get_model_config
 
 T = TypeVar("T")
@@ -671,24 +676,28 @@ class MatchboxPostgres(MatchboxDBAdapter):
         return judgements, cluster_expansion
 
     def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:  # noqa: D102
-        def get_contains(resolution: ModelResolutionName) -> Table:
-            resolution_id = Resolutions.from_name(resolution).resolution_id
-            contains_stmt = (
-                select(Contains.root, Contains.leaf)
-                .join(Probabilities, Probabilities.cluster_id == Contains.root)
-                .where(Probabilities.resolution_id == resolution_id)
+        def get_root_leaf(resolution_name: ModelResolutionName) -> Table:
+            resolution = Resolutions.from_name(resolution_name)
+            root_leaf_query = build_unified_query(
+                resolution, threshold=resolution.truth, mode="root_leaf"
             )
+
             with MBDB.get_adbc_connection() as conn:
-                return sql_to_df(
-                    stmt=compile_sql(contains_stmt),
+                root_leaf_results = sql_to_df(
+                    stmt=compile_sql(root_leaf_query),
                     connection=conn.dbapi_connection,
                     return_type="arrow",
                 )
+                return root_leaf_results.rename({"root_id": "root", "leaf_id": "leaf"})[
+                    ["root", "leaf"]
+                ]
 
-        model_contains = [get_contains(res) for res in resolutions]
+        models_root_leaf = [get_root_leaf(res) for res in resolutions]
         judgements, expansion = self.get_judgements()
         pr_values = precision_recall(
-            model_contains=model_contains, judgements=judgements, expansion=expansion
+            models_root_leaf=models_root_leaf,
+            judgements=judgements,
+            expansion=expansion,
         )
 
         return dict(zip(resolutions, pr_values, strict=True))
