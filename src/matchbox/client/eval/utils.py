@@ -12,8 +12,6 @@ from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
-    contains_to_pairs,
-    eval_data_to_pairs,
     precision_recall,
 )
 
@@ -86,22 +84,23 @@ def get_samples(
 class EvalData:
     """Object to cache evaluation data to measure performance of models."""
 
+    # TODO: test this object
     def __init__(self):
         """Initialise evaluation data from resolution name."""
         self.judgements, self.expansion = _handler.download_eval_data()
-        self.pairs = eval_data_to_pairs(self.judgements, self.expansion)
 
     def precision_recall(self, results: Results, threshold: float) -> PrecisionRecall:
         """Computes precision and recall at one threshold."""
         threshold = int(threshold * 100)
-        clusters = (
+        # TODO: verify this includes singletons
+        root_leaf = (
             pl.from_arrow(results.clusters)
+            .rename({"parent": "root"})
             .rename({"child": "leaf"})
             .filter(pl.col("threshold") >= threshold)
-            .select(["parent", "leaf"])
+            .select(["root", "leaf"])
         )
-        model_pairs = contains_to_pairs(clusters)
-        return precision_recall(model_pairs, self.pairs)
+        return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
     def pr_curve(self, results: Results) -> dict[str, PrecisionRecall]:
         """For each threshold in retults computes precision and recall."""
