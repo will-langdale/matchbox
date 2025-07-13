@@ -28,6 +28,58 @@ class Judgement(BaseModel):
     )
 
 
+def precision_recall(
+    models_root_leaf: list[Table], judgements: Table, expansion: Table
+) -> list[PrecisionRecall]:
+    """From models and eval data, compute scores inspired by precision-recall.
+
+    This function does the following:
+
+    - Call `model_root_leaf_to_pairs()` and `eval_data_to_pairs()` to convert clusters
+        to implied pair-wise connections for the models and judgements.
+        This includes the pairs that a user was shown, but did not endorse.
+        For judgements, this also finds the proportion of times a pair shown to users
+        was actually endorsed.
+    - Call `filter_eval_pairs` to find the pairs present in all models and in the
+        judgements, so the comparison is fair.
+    - Call `pairs_to_scores()` to computes scores similar to precision recall, but
+        considering proportion of positive endorsement for all judgements.
+
+    For more information on the implementation of each step, you can review the
+    docstrings of the relevant functions.
+
+    Args:
+        models_root_leaf: list of tables with root and leaf columns, one per model.
+            They must include all the clusters that resolve from a model, all the way
+            to the original source clusters if no model in the lineage merged them.
+        judgements: Dataframe following `matchbox.common.arrow.SCHEMA_JUDGEMENTS`.
+        expansion: Dataframe following `matchbox.common.arrow.SCHEMA_CLUSTER_EXPANSION`.
+
+    Returns:
+        List of precision-recall inspired scores, one per model.
+    """
+    pairs_per_model: list[Pairs] = [
+        model_root_leaf_to_pairs(pl.from_arrow(mrl)) for mrl in models_root_leaf
+    ]
+
+    validation_pairs, validation_weights = eval_data_to_pairs(
+        pl.from_arrow(judgements), pl.from_arrow(expansion)
+    )
+
+    filtered_pairs = filter_eval_pairs(*pairs_per_model, validation_pairs)
+    pairs_per_model = filtered_pairs[:-1]
+    validation_pairs = filtered_pairs[-1]
+
+    pr_scores: list[PrecisionRecall] = []
+
+    for model_pairs in pairs_per_model:
+        pr_scores.append(
+            pairs_to_scores(model_pairs, validation_pairs, validation_weights)
+        )
+
+    return pr_scores
+
+
 def filter_eval_pairs(*pairs: Pairs) -> list[Pairs]:
     """Filter sequence of pair sets so that each set contains leaves shared by all."""
     leaves_per_set = [set(list(chain.from_iterable(p))) for p in pairs]
@@ -41,22 +93,49 @@ def filter_eval_pairs(*pairs: Pairs) -> list[Pairs]:
     return filtered_sets
 
 
-def precision_recall(
-    models_root_leaf: list[Table], judgements: Table, expansion: Table
-) -> list[PrecisionRecall]:
-    """Compute precision and recall scores from models and eval data."""
-    all_model_pairs: list[Pairs] = [
-        model_root_leaf_to_pairs(pl.from_arrow(mrl)) for mrl in models_root_leaf
-    ]
+def pairs_to_scores(
+    model_pairs: Pairs, validation_pairs: Pairs, validation_weights: PairWeights
+) -> PrecisionRecall:
+    """From model and validation pairs, compute scores inspired by precision-recall.
 
-    validation_pairs, validation_weights = eval_data_to_pairs(
-        pl.from_arrow(judgements), pl.from_arrow(expansion)
+    Traditional precision-recall would use these formulae:
+
+    P = relevant_model_pairs / all_model_pairs
+    R = relevant_model_pairs / relevant_pairs
+
+    We do that, except that instead of counting 1 for each validation pair,
+    we weigh it by the proportion of positive endorsements. For example, let' say
+    the model has (12), (13), (23), and the user judgements have (12), (13), ~(13),
+    (23), ~(23). This means that user judgements are (12), (13), (23), but (13) and (23)
+    both have a weight of 0.5. Hence:
+
+    relevant_model_pairs = 1 + 0.5 + 0.5 = 2
+
+    For the denumerator of P, we don't use weights, as we assume the model, once
+    a threshold is set, makes certain judgements (we can of course variate the)
+    threshold to compute a curve. Hence:
+
+    all_model_pairs = 1 + 1 + 1 = 3
+
+    Thus P equals 2/3, even though there are some judgements that would validate
+    every one of the pairs proposed by the model, because the judgements have
+    some uncertainty around them.
+
+    For the denumerator of P, we do use weights, hence:
+
+    relevant_pairs = 1 + 0.5 + 0.5 = 2
+
+    So R equals 1. If we didn't use weights for the denumerator, the recall would equal
+    2/3, which is not right: the model is doing as much retrieving as is possible to do!
+    """
+    true_positive_pairs = model_pairs & validation_pairs
+    true_positive_weight = sum([validation_weights[p] for p in true_positive_pairs])
+    precision_denumerator = len(model_pairs)
+    recall_denumerator = sum([validation_weights[p] for p in validation_pairs])
+    return (
+        true_positive_weight / precision_denumerator,
+        true_positive_weight / recall_denumerator,
     )
-
-    filtered_pairs = filter_eval_pairs(*all_model_pairs, validation_pairs)
-    all_model_pairs = filtered_pairs[:-1]
-    validation_pairs = filtered_pairs[-1]
-    # TODO: complete this function
 
 
 def model_root_leaf_to_pairs(root_leaf: pl.DataFrame) -> Pairs:
@@ -80,7 +159,7 @@ def model_root_leaf_to_pairs(root_leaf: pl.DataFrame) -> Pairs:
 
 def eval_data_to_pairs(
     judgements: pl.DataFrame, expansion: pl.DataFrame
-) -> tuple[PairWeights, Pairs]:
+) -> tuple[Pairs, PairWeights]:
     """Convert user judgements to pairs and weights.
 
     In general, pairs include all (sorted) pair-wise combinations of elements in a list
@@ -104,8 +183,8 @@ def eval_data_to_pairs(
     Returns:
         Tuple of:
 
-        - Weights representing percentage of positive pairs.
         - Set of pairs, both positive and negative.
+        - Weights representing percentage of positive pairs.
     """
     expanded_judgements = (
         judgements.join(expansion, left_on="shown", right_on="root")
