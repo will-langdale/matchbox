@@ -1,44 +1,93 @@
 import polars as pl
+import pyarrow as pa
 
 from matchbox.common.eval import (
-    eval_data_to_pairs,
-    filter_eval_pairs,
-    model_root_leaf_to_pairs,
+    precision_recall,
+    process_judgements,
 )
 
 
-def test_filter_eval_pairs():
-    # Only leaves shared by all are 1,2,3,4
-    validation_pairs = {(1, 3), (2, 4), (5, 6)}
-    model1_pairs = {(1, 2), (3, 4), (5, 6)}
-    model2_pairs = {(1, 10), (2, 11), (3, 12), (4, 14)}
-
-    filtered_validation, filtered_model1, filtered_model2 = filter_eval_pairs(
-        validation_pairs, model1_pairs, model2_pairs
-    )
-    assert filtered_validation == {(1, 3), (2, 4)}
-    assert filtered_model1 == {(1, 2), (3, 4)}
-    assert filtered_model2 == set()
-
-
-def test_model_root_leaf_to_pairs():
-    root_leaf = pl.DataFrame(
+def test_precision_recall():
+    """Test calculation of precision and recall from root-leaf tables."""
+    model1 = pa.Table.from_pylist(
         [
-            # TODO: check this is the right representation for singleton
-            {"root": 0, "leaf": 0},
-            # Descending order to check sorting
-            {"root": 10, "leaf": 3},
-            {"root": 10, "leaf": 2},
-            {"root": 10, "leaf": 1},
+            # (1,2,3)
+            {"root": 123, "leaf": 1},
+            {"root": 123, "leaf": 2},
+            {"root": 123, "leaf": 3},
+            # (4,5)
+            {"root": 45, "leaf": 4},
+            {"root": 45, "leaf": 5},
+            # (6,7)
+            {"root": 67, "leaf": 6},
+            {"root": 67, "leaf": 7},
+            # (8,9)
+            {"root": 89, "leaf": 8},
+            {"root": 89, "leaf": 9},
         ]
     )
 
-    pairs = model_root_leaf_to_pairs(root_leaf)
+    model2 = pa.Table.from_pylist(
+        [
+            # (1,3)
+            {"root": 13, "leaf": 1},
+            {"root": 13, "leaf": 3},
+            # (2)
+            {"root": 2, "leaf": 2},
+            # (4)
+            {"root": 4, "leaf": 4},
+            # (5)
+            {"root": 5, "leaf": 5},
+            # (6,7)
+            {"root": 67, "leaf": 6},
+            {"root": 67, "leaf": 7},
+        ]
+    )
 
-    assert pairs == {(1, 2), (1, 3), (2, 3)}
+    judgements = pa.Table.from_pylist(
+        [
+            # Ambiguoud but more positive than negative
+            {"shown": 123, "endorsed": 12},  # shown (1,2,3); endorsed (1,2)
+            {"shown": 123, "endorsed": 3},  # shown (1,2,3); endorsed (3)
+            {"shown": 123, "endorsed": 12},  # shown (1,2,3); endorsed (1,2)
+            {"shown": 123, "endorsed": 3},  # shown (1,2,3); endorsed (3)
+            {"shown": 123, "endorsed": 1},  # shown (1,2,3); endorsed (3)
+            {"shown": 123, "endorsed": 2},  # shown (1,2,3); endorsed (3)
+            {"shown": 123, "endorsed": 3},  # shown (1,2,3); endorsed (3)
+            # Ambiguous but more negative than positive
+            {"shown": 45, "endorsed": 45},  # shown (4,5); endorsed (4,5)
+            {"shown": 45, "endorsed": 4},  # shown (4,5); endorsed (4)
+            {"shown": 45, "endorsed": 4},  # shown (4,5); endorsed (4)
+            {"shown": 45, "endorsed": 5},  # shown (4,5); endorsed (5)
+            {"shown": 45, "endorsed": 5},  # shown (4,5); endorsed (5)
+            # The following neutralise each other
+            {"shown": 67, "endorsed": 67},  # shown (6,7); endorsed (6,7)
+            {"shown": 67, "endorsed": 6},  # shown (6,7); endorsed (6)
+            {"shown": 67, "endorsed": 7},  # shown (6,7); endorsed (7)
+        ]
+    )
+
+    expansion = pa.Table.from_pylist(
+        [
+            {"root": 123, "leaves": [1, 2, 3]},
+            {"root": 67, "leaves": [6, 7]},
+            {"root": 45, "leaves": [4, 5]},
+            {"root": 12, "leaves": [1, 2]},
+        ]
+    )
+    pr_scores = precision_recall(
+        models_root_leaf=[model1, model2], judgements=judgements, expansion=expansion
+    )
+
+    # Validation pairs: (12) (as (45) is more negative; (67) is neutralised)
+    # Model 1 pairs: (12), (13), (23) (as (67) is neutralised; (89) has extra leaves)
+    assert pr_scores[0] == (1 / 4, 1)
+    # Model 2 pairs: (13) (as (67) is neutralised)
+    assert pr_scores[1] == (0, 0)
 
 
-def test_eval_data_to_pairs():
+def test_process_judgements():
+    """Can convert judgements and expansion to pairs, pair counts and set of leaves."""
     # In this test:
     # cluster IDs < 100 are source clusters
     # 1xx clusters IDs are model clusters
@@ -47,18 +96,28 @@ def test_eval_data_to_pairs():
     judgements = pl.DataFrame(
         [
             # A) cluster confirmed as is
-            {"shown": 100, "endorsed": 100},  # (12)->(12)
+            {"shown": 100, "endorsed": 100},  # (1,2)->(1,2)
             # B) cluster splintered
-            {"shown": 101, "endorsed": 200},  # (345)->(34)
-            {"shown": 101, "endorsed": 201},  # (345)->(5)
-            # C) mixed and repeated opinions
-            {"shown": 102, "endorsed": 102},  # (67)->(67)
+            {"shown": 101, "endorsed": 200},  # (3,4,5)->(3,4)
+            {"shown": 101, "endorsed": 5},  # (3,4,5)->(5)
+            # C) net positive opinion
+            {"shown": 102, "endorsed": 102},  # (6,7)->(6,7)
             {"shown": 102, "endorsed": 102},  # repeated...
-            {"shown": 102, "endorsed": 202},  # ...and negated: (67)->(6)
-            {"shown": 102, "endorsed": 203},  # (67)->(7)
-            # D) judgement has seen less than a previous one
-            {"shown": 103, "endorsed": 103},  # (89) -> (89)
-            {"shown": 104, "endorsed": 104},  # (8,9,10) -> (8,9,10)
+            {"shown": 102, "endorsed": 6},  # ...and negated: (6,7)->(6)
+            {"shown": 102, "endorsed": 7},  # (6,7)->(7)
+            # D) net negative opinion
+            {"shown": 103, "endorsed": 103},  # (8,9)->(8,9)
+            {"shown": 103, "endorsed": 8},  # negated: (8,9)->(8)
+            {"shown": 103, "endorsed": 9},  # (8,9)->(9)
+            {"shown": 103, "endorsed": 8},  # negated again: (8,9)->(8)
+            {"shown": 103, "endorsed": 9},  # (8,9)->(9)
+            # E) neutral opinion
+            {"shown": 104, "endorsed": 104},  # (10,11)->(10,11)
+            {"shown": 104, "endorsed": 10},  # negated: (10,11)->(10)
+            {"shown": 104, "endorsed": 11},  # (10,11)->(11)
+            # F) judgement has seen less than a previous one
+            {"shown": 105, "endorsed": 105},  # (12,13) -> (12,13)
+            {"shown": 106, "endorsed": 106},  # (12,13,14) -> (12,13,14)
         ]
     )
     # TODO: what about singletons?
@@ -70,23 +129,38 @@ def test_eval_data_to_pairs():
             {"root": 101, "leaves": [3, 4, 5]},
             {"root": 102, "leaves": [6, 7]},
             {"root": 103, "leaves": [8, 9]},
-            {"root": 104, "leaves": [8, 9, 10]},
+            {"root": 104, "leaves": [10, 11]},
+            {"root": 105, "leaves": [12, 13]},
+            {"root": 106, "leaves": [12, 13, 14]},
             # New "splintered" clusters
             {"root": 200, "leaves": [3, 4]},
-            {"root": 201, "leaves": [5]},
-            {"root": 202, "leaves": [6]},
-            {"root": 203, "leaves": [7]},
         ]
     )
 
-    pairs, weights = eval_data_to_pairs(judgements, expansion)
-    assert pairs == {(1, 2), (3, 4), (3, 5), (4, 5), (6, 7), (8, 9), (8, 10), (9, 10)}
+    pairs, net_counts, leaves = process_judgements(judgements, expansion)
+    assert pairs == {
+        (1, 2),
+        (3, 4),
+        (3, 5),
+        (4, 5),
+        (6, 7),
+        (8, 9),
+        (10, 11),
+        (12, 13),
+        (12, 14),
+        (13, 14),
+    }
 
-    for positive_pair in [(1, 2), (3, 4), (8, 9), (8, 10), (9, 10)]:
-        assert weights[positive_pair] == 1
+    for pair in [(1, 2), (3, 4), (6, 7), (12, 14), (13, 14)]:
+        assert net_counts[pair] == 1
 
-    for negative_pair in [(3, 5), (4, 5)]:
-        assert weights[negative_pair] == 0
+    for pair in [(3, 5), (4, 5), (8, 9)]:
+        assert net_counts[pair] == -1
 
-    # And one of them has mixed opinions
-    assert weights[(6, 7)] == 2 / 3
+    for pair in [(10, 11)]:
+        assert net_counts[pair] == 0
+
+    for pair in [(12, 13)]:
+        assert net_counts[pair] == 2
+
+    assert leaves == set(range(1, 15))
