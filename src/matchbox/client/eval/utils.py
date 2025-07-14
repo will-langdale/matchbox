@@ -92,7 +92,9 @@ class EvalData:
     def precision_recall(self, results: Results, threshold: float) -> PrecisionRecall:
         """Computes precision and recall at one threshold."""
         threshold = int(threshold * 100)
-        # TODO: verify this includes singletons
+        # TODO: this does not have what we need:
+        # - the child is probably not a leaf
+        # - it will exclude unmerged source clusters
         root_leaf = (
             pl.from_arrow(results.clusters)
             .rename({"parent": "root"})

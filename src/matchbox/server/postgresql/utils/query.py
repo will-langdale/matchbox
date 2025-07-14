@@ -134,7 +134,8 @@ def build_unified_query(
     * `"id_key"`: Returns just the cluster ID and key
     * `"root_leaf"`: Returns both root and leaf cluster IDs and hashes. This will return
         less rows than `"id_key"` because it doesn't need a row for every key that
-        a leaf hash has, just the leaf hash itself
+        a leaf hash has, just the leaf hash itself. For unmerged source clusters, the
+        root and leaf properties will be the same.
     """
     # Get ordered lineage (already sorted by priority)
     lineage = resolution.get_lineage(sources=sources, threshold=threshold)

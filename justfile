@@ -65,3 +65,7 @@ migration-reset:
 # Run evaluation app
 eval:
     streamlit run src/matchbox/client/eval/ui.py
+
+# Run evaluation app with some mock data
+eval-mock:
+    uv run python src/matchbox/client/eval/sample_ui.py

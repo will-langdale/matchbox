@@ -9,6 +9,9 @@ from matchbox.common.eval import (
 
 def test_precision_recall():
     """Test calculation of precision and recall from root-leaf tables."""
+    # In this test, one-digit cluster IDs are for source clusters.
+    # Multiple-digit cluster IDs decompose to source cluster IDs.
+    # For example, 123 maps to 1,2,3
     model1 = pa.Table.from_pylist(
         [
             # (1,2,3)
@@ -47,23 +50,23 @@ def test_precision_recall():
     judgements = pa.Table.from_pylist(
         [
             # Ambiguoud but more positive than negative
-            {"shown": 123, "endorsed": 12},  # shown (1,2,3); endorsed (1,2)
-            {"shown": 123, "endorsed": 3},  # shown (1,2,3); endorsed (3)
-            {"shown": 123, "endorsed": 12},  # shown (1,2,3); endorsed (1,2)
-            {"shown": 123, "endorsed": 3},  # shown (1,2,3); endorsed (3)
-            {"shown": 123, "endorsed": 1},  # shown (1,2,3); endorsed (3)
-            {"shown": 123, "endorsed": 2},  # shown (1,2,3); endorsed (3)
-            {"shown": 123, "endorsed": 3},  # shown (1,2,3); endorsed (3)
+            {"shown": 123, "endorsed": 12},
+            {"shown": 123, "endorsed": 3},
+            {"shown": 123, "endorsed": 12},
+            {"shown": 123, "endorsed": 3},
+            {"shown": 123, "endorsed": 1},
+            {"shown": 123, "endorsed": 2},
+            {"shown": 123, "endorsed": 3},
             # Ambiguous but more negative than positive
-            {"shown": 45, "endorsed": 45},  # shown (4,5); endorsed (4,5)
-            {"shown": 45, "endorsed": 4},  # shown (4,5); endorsed (4)
-            {"shown": 45, "endorsed": 4},  # shown (4,5); endorsed (4)
-            {"shown": 45, "endorsed": 5},  # shown (4,5); endorsed (5)
-            {"shown": 45, "endorsed": 5},  # shown (4,5); endorsed (5)
+            {"shown": 45, "endorsed": 45},
+            {"shown": 45, "endorsed": 4},
+            {"shown": 45, "endorsed": 4},
+            {"shown": 45, "endorsed": 5},
+            {"shown": 45, "endorsed": 5},
             # The following neutralise each other
-            {"shown": 67, "endorsed": 67},  # shown (6,7); endorsed (6,7)
-            {"shown": 67, "endorsed": 6},  # shown (6,7); endorsed (6)
-            {"shown": 67, "endorsed": 7},  # shown (6,7); endorsed (7)
+            {"shown": 67, "endorsed": 67},
+            {"shown": 67, "endorsed": 6},
+            {"shown": 67, "endorsed": 7},
         ]
     )
 
@@ -120,8 +123,7 @@ def test_process_judgements():
             {"shown": 106, "endorsed": 106},  # (12,13,14) -> (12,13,14)
         ]
     )
-    # TODO: what about singletons?
-    # TODO: what about multiple keys per cluster?
+
     expansion = pl.DataFrame(
         [
             # Shown clusters
