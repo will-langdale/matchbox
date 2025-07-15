@@ -68,4 +68,4 @@ eval:
 
 # Run evaluation app with some mock data
 eval-mock:
-    uv run python src/matchbox/client/eval/sample_ui.py
+    uv run python src/matchbox/client/eval/mock_ui.py
