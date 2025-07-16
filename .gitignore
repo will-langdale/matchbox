@@ -10,6 +10,7 @@ notebooks/
 *.parquet
 data/
 *.db
+*.sql
 
 # DuckDB
 *.duckdb

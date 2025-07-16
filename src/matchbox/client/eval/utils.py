@@ -5,8 +5,10 @@ from typing import Any
 
 import polars as pl
 from matplotlib import pyplot as plt
+from sqlalchemy import create_engine
 
 from matchbox.client import _handler
+from matchbox.client._settings import settings
 from matchbox.client.results import Results
 from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.eval import (
@@ -14,26 +16,44 @@ from matchbox.common.eval import (
     PrecisionRecall,
     precision_recall,
 )
+from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.common.logging import logger
 
 
 def get_samples(
     n: int,
-    resolution: ModelResolutionName,
     user_id: int,
-    credentials: Any,
+    resolution: ModelResolutionName | None = None,
+    credentials: Any | None = None,
 ) -> dict[int, pl.DataFrame]:
     """Retrieve samples enriched with source data, grouped by resolution cluster.
 
     Args:
         n: Number of clusters to sample
-        resolution: Model resolution proposing the clusters
         user_id: ID of the user requesting the samples
+        resolution: Model resolution proposing the clusters. If not set, will
+            use a default resolution.
         credentials: Valid credentials for the source configs.
             Sources that can't be queried with these credentials will be skipped.
+            If not provided, will populate with a SQLAlchemy engine
+            from the default warehouse set in the environment variable
+            `MB__CLIENT__DEFAULT_WAREHOUSE`
 
     Returns:
         Dictionary of cluster ID to dataframe describing the cluster
     """
+    if not resolution:
+        resolution = DEFAULT_RESOLUTION
+    if not credentials:
+        if default_credentials := settings.default_warehouse:
+            credentials = create_engine(default_credentials)
+            logger.warning("Using default engine")
+        else:
+            raise ValueError(
+                "Credentials need to be provided if "
+                "`MB__CLIENT__DEFAULT_WAREHOUSE` is unset"
+            )
+
     samples: pl.DataFrame = pl.from_arrow(
         _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
     )
@@ -82,7 +102,7 @@ def get_samples(
 
 
 class EvalData:
-    """Object to cache evaluation data to measure performance of models."""
+    """Object which caches evaluation data to measure performance of models."""
 
     # TODO: test this object
     def __init__(self):

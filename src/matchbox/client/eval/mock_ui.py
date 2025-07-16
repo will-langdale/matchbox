@@ -14,6 +14,7 @@ from matchbox.client._handler import create_client
 from matchbox.client._settings import settings as client_settings
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_from_tuple
+from matchbox.common.graph import DEFAULT_RESOLUTION
 
 
 def setup_mock_database():
@@ -71,7 +72,7 @@ def setup_mock_database():
     )
 
     linker = make_model(
-        name="linker",
+        name=DEFAULT_RESOLUTION,
         description="Linking model",
         model_class=DeterministicLinker,
         model_settings={
@@ -88,6 +89,8 @@ def setup_mock_database():
     results = linker.run()
     results.to_matchbox()
 
+    return warehouse.url
+
 
 def cleanup_database():
     """Clean up mock data for the evaluation UI."""
@@ -100,9 +103,11 @@ def cleanup_database():
 
 if __name__ == "__main__":
     atexit.register(cleanup_database)
-    setup_mock_database()
+    warehouse_url = setup_mock_database()
 
-    # TODO: pass warehouse credentials to UI
+    from os import environ
+
+    environ["MB__CLIENT__DEFAULT_WAREHOUSE"] = str(warehouse_url)
     subprocess.run(
         [sys.executable, "-m", "streamlit", "run", "src/matchbox/client/eval/ui.py"]
     )
