@@ -4,6 +4,7 @@ import atexit
 import pathlib
 import subprocess
 import sys
+from os import environ
 
 import polars as pl
 from polars.datatypes import String
@@ -104,8 +105,6 @@ def cleanup_database():
 if __name__ == "__main__":
     atexit.register(cleanup_database)
     warehouse_url = setup_mock_database()
-
-    from os import environ
 
     environ["MB__CLIENT__DEFAULT_WAREHOUSE"] = str(warehouse_url)
     subprocess.run(
