@@ -17,12 +17,14 @@ from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.sources import source_from_tuple
 from matchbox.common.graph import DEFAULT_RESOLUTION
 
+MOCK_WH_FILE = "sqlite:///eval_mock.db"
+
 
 def setup_mock_database():
     """Add some mock data to test the evaluation UI."""
     print("Mocking DB")
 
-    warehouse = create_engine("sqlite:///eval_mock.sql")
+    warehouse = create_engine(MOCK_WH_FILE)
 
     testkit_foo = source_from_tuple(
         data_tuple=(
@@ -96,7 +98,7 @@ def setup_mock_database():
 def cleanup_database():
     """Clean up mock data for the evaluation UI."""
     print("Cleaning up DB")
-    pathlib.Path("eval_mock.sql").unlink(missing_ok=True)
+    pathlib.Path(MOCK_WH_FILE).unlink(missing_ok=True)
 
     matchbox_client = create_client(settings=client_settings)
     matchbox_client.delete("/database", params={"certain": "true"})
