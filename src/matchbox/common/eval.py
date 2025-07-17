@@ -5,7 +5,7 @@ from typing import TypeAlias
 
 import polars as pl
 from pyarrow import Table
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from matchbox.common.dtos import ModelResolutionName
 
@@ -24,6 +24,18 @@ class Judgement(BaseModel):
     endorsed: list[list[int]] = Field(
         description="""Groups of source cluster IDs that user thinks belong together"""
     )
+
+    @field_validator("endorsed", mode="before")
+    @classmethod
+    def check_endorsed(cls, value: list[list[int]]):
+        """Ensure no cluster IDs are repeated in the endorsement."""
+        concat_ids = list(chain(*value))
+        if len(concat_ids) != len(set(concat_ids)):
+            raise ValueError(
+                "One or more cluster IDs were repeated in the endorsement data."
+            )
+
+        return value
 
 
 def precision_recall(
