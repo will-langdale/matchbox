@@ -11,7 +11,11 @@ from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import BIGINT, and_, bindparam, delete, func, or_, select
 
-from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES
+from matchbox.common.arrow import (
+    SCHEMA_CLUSTER_EXPANSION,
+    SCHEMA_EVAL_SAMPLES,
+    SCHEMA_JUDGEMENTS,
+)
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     ModelAncestor,
@@ -27,6 +31,7 @@ from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxModelConfigError,
+    MatchboxNoJudgements,
     MatchboxResolutionNotFoundError,
     MatchboxUserNotFoundError,
 )
@@ -632,6 +637,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 connection=conn.dbapi_connection,
                 return_type="arrow",
             )
+
+            if not len(judgements):
+                return (
+                    pa.Table.from_pylist([], schema=SCHEMA_JUDGEMENTS),
+                    pa.Table.from_pylist([], schema=SCHEMA_CLUSTER_EXPANSION),
+                )
+
             shown_clusters = set(judgements["shown"].to_pylist())
             endorsed_clusters = set(judgements["endorsed"].to_pylist())
             referenced_clusters = Table.from_pydict(
@@ -677,10 +689,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:  # noqa: D102
         def get_root_leaf(resolution_name: ModelResolutionName) -> Table:
-            resolution = Resolutions.from_name(resolution_name)
-            root_leaf_query = build_unified_query(
-                resolution, threshold=resolution.truth, mode="root_leaf"
-            )
+            with MBDB.get_session() as session:
+                resolution = Resolutions.from_name(resolution_name, session=session)
+                # The session which fetched the resolution needs to be alive while
+                # the root-leaf query is built
+                root_leaf_query = build_unified_query(
+                    resolution, threshold=resolution.truth, mode="root_leaf"
+                )
 
             with MBDB.get_adbc_connection() as conn:
                 root_leaf_results = sql_to_df(
@@ -688,12 +703,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
                     connection=conn.dbapi_connection,
                     return_type="arrow",
                 )
-                return root_leaf_results.rename({"root_id": "root", "leaf_id": "leaf"})[
-                    ["root", "leaf"]
-                ]
+                return root_leaf_results.rename_columns(
+                    {"root_id": "root", "leaf_id": "leaf"}
+                ).select(["root", "leaf"])
 
         models_root_leaf = [get_root_leaf(res) for res in resolutions]
         judgements, expansion = self.get_judgements()
+        if not len(judgements):
+            raise MatchboxNoJudgements()
         pr_values = precision_recall(
             models_root_leaf=models_root_leaf,
             judgements=judgements,

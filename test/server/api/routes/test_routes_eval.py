@@ -17,6 +17,7 @@ from matchbox.common.dtos import BackendParameterType, BackendResourceType
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
+    MatchboxNoJudgements,
     MatchboxResolutionNotFoundError,
     MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
@@ -128,6 +129,7 @@ def test_compare_models_404(test_client: TestClient):
     """Test errors in requesting samples."""
     mock_backend = Mock()
 
+    # Resolution not found
     mock_backend.compare_models = Mock(side_effect=MatchboxResolutionNotFoundError)
 
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -139,6 +141,19 @@ def test_compare_models_404(test_client: TestClient):
 
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
+
+    # No judgements available
+    mock_backend.compare_models = Mock(side_effect=MatchboxNoJudgements)
+
+    app.dependency_overrides[backend] = lambda: mock_backend
+
+    response = test_client.get(
+        "/eval/compare",
+        params={"resolutions": ["a", "b", "c"]},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["entity"] == BackendResourceType.JUDGEMENT
 
 
 def test_get_samples(test_client: TestClient):

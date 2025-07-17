@@ -17,6 +17,7 @@ from matchbox.common.dtos import (
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
+    MatchboxNoJudgements,
     MatchboxResolutionNotFoundError,
     MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
@@ -99,6 +100,13 @@ async def compare_models(
             status_code=404,
             detail=NotFoundError(
                 details=str(e), entity=BackendResourceType.RESOLUTION
+            ).model_dump(),
+        ) from e
+    except MatchboxNoJudgements as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.JUDGEMENT
             ).model_dump(),
         ) from e
 

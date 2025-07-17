@@ -17,6 +17,7 @@ from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
+    MatchboxNoJudgements,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
@@ -919,6 +920,10 @@ class TestMatchboxBackend:
     def test_insert_and_get_judgement(self):
         """Can insert and retrieve judgements."""
         with self.scenario(self.backend, "dedupe"):
+            # To begin with, no judgements to retrieve
+            judgements, expansion = self.backend.get_judgements()
+            assert len(judgements) == len(expansion) == 0
+
             # Do some queries to find real source cluster IDs
             deduped_query = pl.from_arrow(
                 self.backend.query(source="crn", resolution="naive_test.crn")
@@ -1014,10 +1019,11 @@ class TestMatchboxBackend:
                 [clust1_leaves, clust2_leaves[:1], clust2_leaves[1:]]
             )
 
-    def test_compare_models(self):
+    def test_compare_models_fails(self):
         """Can compute precision and recall for list of models."""
-        ...
-        # TODO: build scenario with two alternative models deduping the same resolution
+        with self.scenario(self.backend, "bare"):
+            with pytest.raises(MatchboxNoJudgements):
+                self.backend.compare_models([])
 
     def test_sample_for_eval(self):
         """Can extract samples for a user and a resolution."""

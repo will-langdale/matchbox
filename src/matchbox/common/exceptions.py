@@ -232,5 +232,9 @@ class MatchboxTooManySamplesRequested(Exception):
 # -- Adapter DB exceptions --
 
 
+class MatchboxNoJudgements(Exception):
+    """No judgements found in the database when required for operation."""
+
+
 class MatchboxDatabaseWriteError(Exception):
     """Could not be written to the backend DB, likely due to a constraint violation."""

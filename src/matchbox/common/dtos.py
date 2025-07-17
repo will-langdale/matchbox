@@ -64,6 +64,7 @@ class BackendResourceType(StrEnum):
     RESOLUTION = "resolution"
     CLUSTER = "cluster"
     USER = "user"
+    JUDGEMENT = "judgement"
 
 
 class BackendParameterType(StrEnum):

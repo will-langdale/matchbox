@@ -1,10 +1,37 @@
 import polars as pl
 import pyarrow as pa
+import pytest
 
+from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.eval import (
     precision_recall,
     process_judgements,
 )
+
+
+def test_precision_recall_fails():
+    """Test instances where PR computation raises."""
+    # No judgements
+    model = pa.Table.from_pylist([{"root": 12, "leaf": 1}, {"root": 12, "leaf": 2}])
+    empty_judgements = pa.Table.from_pylist([], schema=SCHEMA_JUDGEMENTS)
+    empty_expansion = pa.Table.from_pylist([], schema=SCHEMA_CLUSTER_EXPANSION)
+
+    with pytest.raises(ValueError, match="Judgements data"):
+        precision_recall(
+            models_root_leaf=[model],
+            judgements=empty_judgements,
+            expansion=empty_expansion,
+        )
+
+    # No model root-leaf
+    empty_model = pa.Table.from_pylist([])
+    judgements = pa.Table.from_pylist([{"shown": 12, "endorsed": 12}])
+    expansion = pa.Table.from_pylist([{"root": 12, "leaves": [1, 2]}])
+
+    with pytest.raises(ValueError, match="Model data"):
+        precision_recall(
+            models_root_leaf=[empty_model], judgements=judgements, expansion=expansion
+        )
 
 
 def test_precision_recall():

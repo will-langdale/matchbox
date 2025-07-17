@@ -59,8 +59,13 @@ def precision_recall(
     leaves_per_set: list[set[int]] = []  # one entry for each model, one for judgements
     pairs_per_model: list[Pairs] = []
 
+    if not len(judgements):
+        raise ValueError("Judgements data cannot be empty.")
+
     # Process models and judgements
     for root_leaf in models_root_leaf:
+        if not len(root_leaf):
+            raise ValueError("Model data cannot be empty.")
         leaves_per_set.append(set(root_leaf["leaf"].to_pylist()))
         clusters = (
             pl.from_arrow(root_leaf)
