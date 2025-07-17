@@ -1020,10 +1020,47 @@ class TestMatchboxBackend:
             )
 
     def test_compare_models_fails(self):
-        """Can compute precision and recall for list of models."""
+        """Model comparison errors with no judgement data."""
         with self.scenario(self.backend, "bare"):
             with pytest.raises(MatchboxNoJudgements):
                 self.backend.compare_models([])
+
+    def test_compare_models(self):
+        """Can compute precision and recall for list of models."""
+        with self.scenario(self.backend, "alt_dedupe") as dag:
+            user_id = self.backend.login("alice")
+
+            model_names = list(dag.models.keys())
+
+            root_leaves = (
+                pl.from_arrow(
+                    self.backend.sample_for_eval(
+                        n=10, resolution=model_names[0], user_id=user_id
+                    )
+                )
+                .select(["root", "leaf"])
+                .unique()
+                .group_by("root")
+                .agg("leaf")
+            )
+            for shown, endorsed in zip(
+                root_leaves["root"].to_list(),
+                root_leaves["leaf"].to_list(),
+                strict=True,
+            ):
+                self.backend.insert_judgement(
+                    judgement=Judgement(
+                        user_id=user_id, shown=shown, endorsed=[endorsed]
+                    )
+                )
+
+            pr = self.backend.compare_models(list(dag.models.keys()))
+            # Precision must be 1 for both as the second model is like the first
+            # but more conservative
+            assert pr[model_names[0]][0] == pr[model_names[1]][0] == 1
+            # Recall must be 1 for the first model and lower for the second
+            assert pr[model_names[0]][1] == 1
+            assert pr[model_names[1]][1] < 1
 
     def test_sample_for_eval(self):
         """Can extract samples for a user and a resolution."""

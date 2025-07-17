@@ -207,7 +207,7 @@ def create_probabilistic_dedupe_scenario(
         # Add to backend and DAG
         backend.insert_model(model_config=model_testkit.model.model_config)
         backend.set_model_results(name=name, results=model_testkit.probabilities)
-        backend.set_model_truth(name=name, truth=0.5)
+        backend.set_model_truth(name=name, truth=50)
         dag.add_model(model_testkit)
 
     return dag
@@ -387,12 +387,12 @@ def create_alt_dedupe_scenario(
         )
 
         assert model_testkit1.probabilities.num_rows > 0
-        assert model_testkit2.probabilities.num_rows > 0
+        assert model_testkit1.probabilities == model_testkit2.probabilities
 
         for model, threshold in zip(
-            [model_testkit1, model_testkit2], [0.5, 0.75], strict=True
+            [model_testkit1, model_testkit2], [50, 75], strict=True
         ):
-            model.threshold = threshold * 100
+            model.threshold = threshold
 
             # Add both models to backend and DAG
             backend.insert_model(model_config=model.model.model_config)
