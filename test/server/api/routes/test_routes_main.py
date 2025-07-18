@@ -9,7 +9,7 @@ import pytest
 from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
-from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
     LoginAttempt,
@@ -315,7 +315,7 @@ def test_query(test_client: TestClient):
                 {"keys": "a", "id": 1},
                 {"keys": "b", "id": 2},
             ],
-            schema=SCHEMA_MB_IDS,
+            schema=SCHEMA_QUERY,
         )
     )
 
@@ -334,7 +334,7 @@ def test_query(test_client: TestClient):
 
     # Check response
     assert response.status_code == 200
-    assert table.schema.equals(SCHEMA_MB_IDS)
+    assert table.schema.equals(SCHEMA_QUERY)
 
 
 def test_query_404_resolution(test_client: TestClient):

@@ -7,10 +7,14 @@ from typing import Final
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-SCHEMA_MB_IDS: Final[pa.Schema] = pa.schema(
+SCHEMA_QUERY: Final[pa.Schema] = pa.schema(
     [("id", pa.int64()), ("key", pa.large_string())]
 )
-"""Data transfer schema for Matchbox IDs keyed to primary keys."""
+"""Data transfer schema for root cluster IDs keyed to primary keys."""
+
+SCHEMA_QUERY_WITH_LEAVES = SCHEMA_QUERY.append(pa.field("leaf", pa.int64()))
+"""Data transfer schema for root cluster IDs keyed to primary keys and leaf IDs."""
+
 
 SCHEMA_INDEX: Final[pa.Schema] = pa.schema(
     [("hash", pa.large_binary()), ("keys", pa.large_list(pa.large_string()))]

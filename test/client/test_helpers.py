@@ -17,7 +17,7 @@ from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
 from matchbox.client.helpers.index import index
 from matchbox.client.helpers.selector import Match
-from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
+from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
     BackendUploadType,
@@ -204,7 +204,7 @@ def test_query_no_resolution_ok_various_params(
                         {"key": "0", "id": 1},
                         {"key": "1", "id": 2},
                     ],
-                    schema=SCHEMA_MB_IDS,
+                    schema=SCHEMA_QUERY,
                 )
             ).read(),
         )
@@ -270,7 +270,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
                             {"key": "0", "id": 1},
                             {"key": "1", "id": 2},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -282,7 +282,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
                             {"key": "2", "id": 1},
                             {"key": "3", "id": 2},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -363,7 +363,7 @@ def test_query_combine_type(
                             {"key": "1", "id": 1},
                             {"key": "2", "id": 2},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -377,7 +377,7 @@ def test_query_combine_type(
                             {"key": "3", "id": 2},
                             {"key": "4", "id": 3},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),

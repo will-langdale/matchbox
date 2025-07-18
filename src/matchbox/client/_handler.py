@@ -14,7 +14,7 @@ from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_JUDGEMENTS,
-    SCHEMA_MB_IDS,
+    SCHEMA_QUERY,
     JudgementsZipFilenames,
     table_to_buffer,
 )
@@ -182,10 +182,10 @@ def query(
 
     logger.debug("Finished", prefix=log_prefix)
 
-    if not table.schema.equals(SCHEMA_MB_IDS):
+    if not table.schema.equals(SCHEMA_QUERY):
         raise MatchboxClientFileError(
             message=(
-                f"Schema mismatch. Expected:\n{SCHEMA_MB_IDS}\nGot:\n{table.schema}"
+                f"Schema mismatch. Expected:\n{SCHEMA_QUERY}\nGot:\n{table.schema}"
             )
         )
 
