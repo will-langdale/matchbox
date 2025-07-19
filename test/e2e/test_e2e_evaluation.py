@@ -1,11 +1,14 @@
 import pytest
 from httpx import Client
+from matplotlib.figure import Figure
 from sqlalchemy import Engine, text
 
+from matchbox import make_model, query, select
 from matchbox.client import _handler
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
-from matchbox.client.eval import EvalData, get_samples
+from matchbox.client.eval import EvalData, compare_models, get_samples
 from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.eval import Judgement
 from matchbox.common.factories.sources import (
     FeatureConfig,
@@ -99,6 +102,7 @@ class TestE2EPipelineBuilder:
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )
+        self.__class__.source_a_config = source_a_config
 
         i_source_a = IndexStep(source_config=source_a_config, batch_size=batch_size)
 
@@ -137,14 +141,18 @@ class TestE2EPipelineBuilder:
     def test_evaluation_workflow(self):
         """Test sampling, judging and model scoring."""
 
+        # "Login"
         user_id = _handler.login(user_name="alice")
 
+        # Get some samples
         samples = get_samples(
             n=5,
             resolution=self.final_resolution,
             user_id=user_id,
             credentials=self.engine,
         )
+
+        # Make some judgements
         judged_cluster = next(iter(samples.keys()))
         judged_leaves = samples[judged_cluster]["leaf"].unique().to_list()
 
@@ -156,7 +164,38 @@ class TestE2EPipelineBuilder:
 
         _handler.send_eval_judgement(judgement=judgement)
 
-        eval_data = EvalData()
+        # Compare models based on judgements
+        comparison = compare_models([self.final_resolution])
+        assert "final" in comparison
+        assert len(comparison["final"]) == 2
+        assert isinstance(comparison["final"], tuple)
 
-        eval_data.pr_curve()
-        eval_data.precision_recall()
+        # Create and run a deduper model locally
+        queried_source = query(
+            select(self.source_a_config.name, credentials=self.engine),
+            return_type="polars",
+        )
+        deduper = make_model(
+            name="deduper_alt",
+            description="Deduplication",
+            model_class=NaiveDeduper,
+            model_settings={
+                "id": "id",
+                "unique_fields": [self.source_a_config.f("registration_id")],
+            },
+            left_data=queried_source,
+            left_resolution=self.source_a_config.name,
+        )
+
+        results = deduper.run()
+
+        # We can download judgements locally
+        eval_data = EvalData()
+        assert SCHEMA_JUDGEMENTS.equals(eval_data.judgements.schema)
+        assert SCHEMA_CLUSTER_EXPANSION.equals(eval_data.expansion.schema)
+
+        # We can evaluate local model with cached judgements
+        assert isinstance(eval_data.pr_curve(results), Figure)
+        pr = eval_data.precision_recall(results, threshold=0.5)
+        assert isinstance(pr, tuple)
+        assert len(pr) == 2

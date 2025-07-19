@@ -233,6 +233,7 @@ class Results(BaseModel):
             pl.DataFrame({"root_id": unmerged_ids})
             .join(parents_root_leaf, left_on="root_id", right_on="id")
             .select(["root_id", "leaf_id"])
+            .unique()
         )
 
         return pl.concat([root_leaf_res, unmerged_ids_rows])

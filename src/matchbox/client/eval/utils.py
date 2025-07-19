@@ -5,6 +5,7 @@ from typing import Any
 
 import polars as pl
 from matplotlib import pyplot as plt
+from matplotlib.pyplot import Figure
 from sqlalchemy import create_engine
 
 from matchbox.client import _handler
@@ -104,13 +105,15 @@ def get_samples(
 class EvalData:
     """Object which caches evaluation data to measure performance of models."""
 
-    # TODO: test this object
     def __init__(self):
         """Initialise evaluation data from resolution name."""
         self.judgements, self.expansion = _handler.download_eval_data()
 
     def precision_recall(self, results: Results, threshold: float) -> PrecisionRecall:
         """Computes precision and recall at one threshold."""
+        if not len(results.clusters):
+            raise ValueError("No clusters suggested by these results.")
+
         threshold = int(threshold * 100)
 
         root_leaf = (
@@ -120,7 +123,7 @@ class EvalData:
         )
         return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
-    def pr_curve(self, results: Results) -> dict[str, PrecisionRecall]:
+    def pr_curve(self, results: Results) -> Figure:
         """For each threshold in retults computes precision and recall."""
         all_p = []
         all_r = []
@@ -134,15 +137,16 @@ class EvalData:
             all_r.append(r)
             plt.annotate(float_thresh, (all_r[i], all_p[i]))
 
-        plt.plot(all_r, all_p, marker="o")
-        plt.xlim(0, 1)
-        plt.ylim(0, 1)
-        plt.ylabel("Precision")
-        plt.xlabel("Recall")
-        plt.title("Precision-Recall Curve")
-        plt.grid()
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        ax.plot(all_r, all_p, marker="o")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_ylabel("Precision")
+        ax.set_xlabel("Recall")
+        ax.set_title("Precision-Recall Curve")
+        ax.grid()
 
-        return plt
+        return fig
 
 
 def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:

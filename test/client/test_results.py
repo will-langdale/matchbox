@@ -1,5 +1,6 @@
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 from pyarrow import Table
 
 from matchbox.client.models.linkers.base import Linker
@@ -19,8 +20,9 @@ def test_clusters_and_root_leaf():
             # Two leaves per root
             {"foo": "b", "id": 20, "leaf_id": 2, "key": "2"},
             {"foo": "c", "id": 20, "leaf_id": 3, "key": "3"},
-            # Singleton cluster
+            # Singleton cluster with two keys
             {"foo": "d", "id": 4, "leaf_id": 4, "key": "4"},
+            {"foo": "d", "id": 4, "leaf_id": 4, "key": "4bis"},
         ]
     )
 
@@ -76,9 +78,31 @@ def test_clusters_and_root_leaf():
     # Only single-digits are present, and all of them, in the right groups
     assert grouped_leaves == {(1, 6, 7), (2, 3), (4, 5), (8,)}
 
-    left_data.drop_in_place("leaf_id")
-    right_data.drop_in_place("leaf_id")
+    # To check edge cases, look at no probabilities returned
+    empty_results = Results(
+        probabilities=Table.from_pydict(
+            {"left_id": [], "right_id": [], "probability": []}
+        ),
+        metadata=model_config,
+        model=model,
+    )
+
+    assert len(empty_results.clusters_to_polars()) == 0
+    expected_empty_root_leaf = pl.concat(
+        [
+            left_data.select(["id", "leaf_id"]).rename({"id": "root_id"}),
+            right_data.select(["id", "leaf_id"]).rename({"id": "root_id"}),
+        ]
+    ).unique()
+    assert_frame_equal(
+        empty_results.root_leaf(),
+        expected_empty_root_leaf,
+        check_column_order=False,
+        check_row_order=False,
+    )
 
     # The above was only possible because leaf IDs were present in the inputs
+    left_data.drop_in_place("leaf_id")
+    right_data.drop_in_place("leaf_id")
     with pytest.raises(RuntimeError, match="must contain leaf IDs"):
         results.root_leaf()
