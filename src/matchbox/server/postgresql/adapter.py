@@ -694,7 +694,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 # The session which fetched the resolution needs to be alive while
                 # the root-leaf query is built
                 root_leaf_query = build_unified_query(
-                    resolution, threshold=resolution.truth, mode="root_leaf"
+                    resolution, threshold=resolution.truth
                 )
 
             with MBDB.get_adbc_connection() as conn:
