@@ -213,22 +213,26 @@ def test_query_no_resolution_ok_various_params(
     selectors = select({"foo": ["a", "b"]}, credentials=sqlite_warehouse)
 
     # Tests with no optional params
-    results = query(selectors)
+    results = query(selectors, return_leaf_id=False)
     assert len(results) == 2
     assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
-        "source": testkit.source_config.name
+        "source": testkit.source_config.name,
+        "return_leaf_id": "False",
     }
 
     # Tests with optional params
-    results = query(selectors, return_type="arrow", threshold=50).to_pandas()
+    results = query(
+        selectors, return_type="arrow", threshold=50, return_leaf_id=False
+    ).to_pandas()
     assert len(results) == 2
     assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "source": testkit.source_config.name,
         "threshold": "50",
+        "return_leaf_id": "False",
     }
 
 
@@ -293,7 +297,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     sels = select("foo", {"foo2": ["c"]}, credentials=sqlite_warehouse)
 
     # Validate results
-    results = query(sels)
+    results = query(sels, return_leaf_id=False)
     assert len(results) == 4
     assert {
         # All fields except key automatically selected for `foo`
@@ -308,14 +312,16 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     assert dict(query_route.calls[-2].request.url.params) == {
         "source": testkit1.source_config.name,
         "resolution": DEFAULT_RESOLUTION,
+        "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "source": testkit2.source_config.name,
         "resolution": DEFAULT_RESOLUTION,
+        "return_leaf_id": "False",
     }
 
     # It also works with the selectors specified separately
-    query([sels[0]], [sels[1]])
+    query([sels[0]], [sels[1]], return_leaf_id=False)
 
 
 @pytest.mark.parametrize(
@@ -387,7 +393,7 @@ def test_query_combine_type(
     sels = select("foo", "bar", credentials=sqlite_warehouse)
 
     # Validate results
-    results = query(sels, combine_type=combine_type)
+    results = query(sels, combine_type=combine_type, return_leaf_id=False)
 
     if combine_type == "set_agg":
         expected_len = 3

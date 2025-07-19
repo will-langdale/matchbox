@@ -325,7 +325,7 @@ def test_query(test_client: TestClient):
     # Hit endpoint
     response = test_client.get(
         "/query",
-        params={"source": "foo"},
+        params={"source": "foo", "return_leaf_id": False},
     )
 
     # Process response
@@ -347,7 +347,7 @@ def test_query_404_resolution(test_client: TestClient):
     # Hit endpoint
     response = test_client.get(
         "/query",
-        params={"source": "foo", "resolution": "bar"},
+        params={"source": "foo", "resolution": "bar", "return_leaf_id": True},
     )
 
     # Check response
@@ -364,7 +364,7 @@ def test_query_404_source(test_client: TestClient):
     # Hit endpoint
     response = test_client.get(
         "/query",
-        params={"source": "foo"},
+        params={"source": "foo", "return_leaf_id": True},
     )
 
     # Check response

@@ -223,6 +223,7 @@ async def get_upload_status(
 def query(
     backend: BackendDependency,
     source: SourceResolutionName,
+    return_leaf_id: bool,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
@@ -233,6 +234,7 @@ def query(
             source=source,
             resolution=resolution,
             threshold=threshold,
+            return_leaf_id=return_leaf_id,
             limit=limit,
         )
     except MatchboxResolutionNotFoundError as e:

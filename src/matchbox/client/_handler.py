@@ -15,6 +15,7 @@ from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_JUDGEMENTS,
     SCHEMA_QUERY,
+    SCHEMA_QUERY_WITH_LEAVES,
     JudgementsZipFilenames,
     table_to_buffer,
 )
@@ -73,7 +74,7 @@ def url_params(
     params: dict[str, URLEncodeHandledType | Iterable[URLEncodeHandledType]],
 ) -> dict[str, str | list[str]]:
     """Prepares a dictionary of parameters to be encoded in a URL."""
-    non_null = {k: v for k, v in params.items() if v}
+    non_null = {k: v for k, v in params.items() if v is not None}
     return {k: encode_param_value(v) for k, v in non_null.items()}
 
 
@@ -111,8 +112,8 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
 
     if res.status_code == 422:
         if (
-            "parameter" in res.content
-            and res.content["parameter"] == BackendParameterType.SAMPLE_SIZE
+            "parameter" in res.json()
+            and res.json()["parameter"] == BackendParameterType.SAMPLE_SIZE
         ):
             raise MatchboxTooManySamplesRequested(res.content)
         # Not a custom Matchbox exception, most likely a Pydantic error
@@ -157,6 +158,7 @@ def login(user_name: str) -> int:
 
 def query(
     source: SourceResolutionName,
+    return_leaf_id: bool,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
@@ -171,6 +173,7 @@ def query(
             {
                 "source": source,
                 "resolution": resolution,
+                "return_leaf_id": return_leaf_id,
                 "threshold": threshold,
                 "limit": limit,
             }
@@ -182,10 +185,14 @@ def query(
 
     logger.debug("Finished", prefix=log_prefix)
 
-    if not table.schema.equals(SCHEMA_QUERY):
+    expected_schema = SCHEMA_QUERY
+    if return_leaf_id:
+        expected_schema = SCHEMA_QUERY_WITH_LEAVES
+
+    if not table.schema.equals(expected_schema):
         raise MatchboxClientFileError(
             message=(
-                f"Schema mismatch. Expected:\n{SCHEMA_QUERY}\nGot:\n{table.schema}"
+                f"Schema mismatch. Expected:\n{expected_schema}\nGot:\n{table.schema}"
             )
         )
 
