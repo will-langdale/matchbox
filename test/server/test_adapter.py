@@ -12,6 +12,7 @@ from matchbox.common.arrow import (
     SCHEMA_EVAL_SAMPLES,
     SCHEMA_JUDGEMENTS,
     SCHEMA_QUERY,
+    SCHEMA_QUERY_WITH_LEAVES,
 )
 from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.eval import Judgement
@@ -562,7 +563,19 @@ class TestMatchboxBackend:
             df_crn_full = self.backend.query(source=crn_testkit.source_config.name)
 
             assert df_crn_full.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn_full.column_names) == set(SCHEMA_QUERY.names)
+            assert df_crn_full.schema.equals(SCHEMA_QUERY)
+
+    def test_query_return_leaf_ids(self):
+        """Test querying data and additionally requesting leaf IDs."""
+        with self.scenario(self.backend, "index") as dag:
+            crn_testkit = dag.sources.get("crn")
+
+            df_crn_full = self.backend.query(
+                source=crn_testkit.source_config.name, return_leaf_id=True
+            )
+
+            assert df_crn_full.num_rows == crn_testkit.query.num_rows
+            assert df_crn_full.schema.equals(SCHEMA_QUERY_WITH_LEAVES)
 
     def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""
@@ -576,7 +589,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn.column_names) == set(SCHEMA_QUERY.names)
+            assert df_crn.schema.equals(SCHEMA_QUERY)
 
             sources_dict = dag.get_sources_for_model("naive_test.crn")
             assert len(sources_dict) == 1
@@ -600,7 +613,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn.column_names) == set(SCHEMA_QUERY.names)
+            assert df_crn.schema.equals(SCHEMA_QUERY)
 
             df_duns = self.backend.query(
                 source=duns_testkit.source_config.name,
@@ -609,7 +622,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_duns, pa.Table)
             assert df_duns.num_rows == duns_testkit.query.num_rows
-            assert set(df_duns.column_names) == set(SCHEMA_QUERY.names)
+            assert df_duns.schema.equals(SCHEMA_QUERY)
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1
@@ -637,7 +650,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_crn, pa.Table)
             assert df_crn.num_rows == crn_testkit.query.num_rows
-            assert set(df_crn.column_names) == set(SCHEMA_QUERY.names)
+            assert df_crn.schema.equals(SCHEMA_QUERY)
 
             df_cdms = self.backend.query(
                 source=cdms_testkit.source_config.name,
@@ -646,7 +659,7 @@ class TestMatchboxBackend:
 
             assert isinstance(df_cdms, pa.Table)
             assert df_cdms.num_rows == cdms_testkit.query.num_rows
-            assert set(df_cdms.column_names) == set(SCHEMA_QUERY.names)
+            assert df_cdms.schema.equals(SCHEMA_QUERY)
 
             sources_dict = dag.get_sources_for_model(linker_name)
             assert len(sources_dict) == 1

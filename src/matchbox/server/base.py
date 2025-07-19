@@ -232,6 +232,7 @@ class MatchboxDBAdapter(ABC):
         source: SourceResolutionName,
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
+        return_leaf_id: bool = False,
         limit: int = None,
     ) -> Table:
         """Queries the database from an optional point of truth.
@@ -244,6 +245,7 @@ class MatchboxDBAdapter(ABC):
                 If None, uses the models' default threshold
                 If an integer, uses that threshold for the specified model, and the
                 model's cached thresholds for its ancestors
+            return_leaf_id (optional): whether to return cluster ID of leaves
             limit (optional): the number to use in a limit clause. Useful for testing
 
         Returns:

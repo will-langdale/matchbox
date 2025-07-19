@@ -470,6 +470,7 @@ def query(
     source: SourceResolutionName,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
+    return_leaf_id: bool = False,
     limit: int = None,
 ) -> pa.Table:
     """Queries Matchbox to retrieve linked data for a source.
@@ -503,20 +504,12 @@ def query(
         else:
             truth_resolution: Resolutions = source_resolution
 
-        # Simple case - same resolution, no hierarchy needed
-        if truth_resolution.resolution_id == source_config.resolution_id:
-            id_query: Select = select(
-                ClusterSourceKey.cluster_id.label("root_id"),
-                ClusterSourceKey.key,
-            ).where(ClusterSourceKey.source_config_id == source_config.source_config_id)
-        else:
-            # Use hierarchy resolution
-            id_query: Select = build_unified_query(
-                resolution=truth_resolution,
-                sources=[source_config],
-                threshold=threshold,
-                level="key",
-            )
+        id_query: Select = build_unified_query(
+            resolution=truth_resolution,
+            sources=[source_config],
+            threshold=threshold,
+            level="key",
+        )
 
         if limit:
             id_query = id_query.limit(limit)
@@ -524,13 +517,15 @@ def query(
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(id_query)
             logger.debug(f"Query SQL: \n {stmt}")
-            return (
-                sql_to_df(
-                    stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
-                )
-                .rename_columns({"root_id": "id"})
-                .select(["id", "key"])
-            )
+            id_results = sql_to_df(
+                stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
+            ).rename_columns({"root_id": "id"})
+
+        selection = ["id", "key"]
+        if return_leaf_id:
+            selection.append("leaf_id")
+
+        return id_results.select(selection)
 
 
 def get_parent_clusters_and_leaves(

@@ -12,7 +12,7 @@ SCHEMA_QUERY: Final[pa.Schema] = pa.schema(
 )
 """Data transfer schema for root cluster IDs keyed to primary keys."""
 
-SCHEMA_QUERY_WITH_LEAVES = SCHEMA_QUERY.append(pa.field("leaf", pa.int64()))
+SCHEMA_QUERY_WITH_LEAVES = SCHEMA_QUERY.append(pa.field("leaf_id", pa.int64()))
 """Data transfer schema for root cluster IDs keyed to primary keys and leaf IDs."""
 
 

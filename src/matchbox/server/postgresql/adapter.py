@@ -205,12 +205,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
         source: SourceResolutionName,
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
+        return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
             source=source,
             resolution=resolution,
             threshold=threshold,
+            return_leaf_id=return_leaf_id,
             limit=limit,
         )
 
