@@ -9,6 +9,8 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Request,
+    Response,
     UploadFile,
     status,
 )
@@ -62,7 +64,20 @@ async def http_exception_handler(request, exc):
     return JSONResponse(content=exc.detail, status_code=exc.status_code)
 
 
-# General
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Improve security by adding headers to all responses."""
+    response: Response = await call_next(request)
+    response.headers["Cache-control"] = "no-store, no-cache"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'; form-action 'none'; sandbox"
+    )
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains"
+    )
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.get("/health")
