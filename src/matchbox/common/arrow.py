@@ -6,6 +6,9 @@ from typing import Final
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyarrow import Schema
+
+from matchbox.common.exceptions import MatchboxArrowSchemaMismatch
 
 SCHEMA_QUERY: Final[pa.Schema] = pa.schema(
     [("id", pa.int64()), ("key", pa.large_string())]
@@ -71,3 +74,9 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
     pq.write_table(table, sink)
     sink.seek(0)
     return sink
+
+
+def check_schema(expected: Schema, actual: Schema) -> None:
+    """Validate equality of Arrow schemas."""
+    if expected != actual:
+        raise MatchboxArrowSchemaMismatch(expected=expected, actual=actual)

@@ -1056,14 +1056,10 @@ class TestMatchboxBackend:
                 .group_by("root")
                 .agg("leaf")
             )
-            for shown, endorsed in zip(
-                root_leaves["root"].to_list(),
-                root_leaves["leaf"].to_list(),
-                strict=True,
-            ):
+            for row in root_leaves.rows(named=True):
                 self.backend.insert_judgement(
                     judgement=Judgement(
-                        user_id=user_id, shown=shown, endorsed=[endorsed]
+                        user_id=user_id, shown=row["root"], endorsed=[row["leaf"]]
                     )
                 )
 

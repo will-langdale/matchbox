@@ -2,9 +2,22 @@
 
 from typing import Any
 
-from matchbox.common.dtos import ResolutionName, SourceResolutionName
+from pyarrow import Schema
 
-# -- Configuration exceptions
+# -- Common data objects exceptions --
+
+
+class MatchboxArrowSchemaMismatch(Exception):
+    """Arrow schema mismatch."""
+
+    def __init__(self, expected: Schema, actual: Schema):
+        """Initialise the exception."""
+        message = f"Schema mismatch. Expected:\n{expected}\nGot:\n{actual}"
+
+        super().__init__(message)
+
+
+# -- Configuration exceptions --
 
 
 class MatchboxClientSettingsException(Exception):
@@ -129,7 +142,7 @@ class MatchboxUserNotFoundError(Exception):
 class MatchboxResolutionNotFoundError(Exception):
     """Resolution not found."""
 
-    def __init__(self, message: str | None = None, name: ResolutionName | None = None):
+    def __init__(self, message: str | None = None, name: str | None = None):
         """Initialise the exception."""
         if message is None:
             message = "Resolution not found."
@@ -146,7 +159,7 @@ class MatchboxSourceNotFoundError(Exception):
     def __init__(
         self,
         message: str = None,
-        name: SourceResolutionName | None = None,
+        name: str | None = None,
     ):
         """Initialise the exception."""
         if message is None:
@@ -183,17 +196,6 @@ class MatchboxDataNotFound(Exception):
 # -- Server-side API exceptions --
 
 
-class MatchboxClientFileError(Exception):
-    """There was a problem with file download."""
-
-    def __init__(self, message: str | None = None):
-        """Initialise the exception."""
-        if message is None:
-            message = "There was a problem with file download."
-
-        super().__init__(message)
-
-
 class MatchboxConnectionError(Exception):
     """Connection to Matchbox's backend database failed."""
 
@@ -201,9 +203,7 @@ class MatchboxConnectionError(Exception):
 class MatchboxDeletionNotConfirmed(Exception):
     """Deletion must be confirmed: if certain, rerun with certain=True."""
 
-    def __init__(
-        self, message: str | None = None, children: list[ResolutionName] | None = None
-    ):
+    def __init__(self, message: str | None = None, children: list[str] | None = None):
         """Initialise the exception."""
         if message is None:
             message = "Deletion must be confirmed: if certain, rerun with certain=True."

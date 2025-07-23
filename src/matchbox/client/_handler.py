@@ -7,7 +7,7 @@ from importlib.metadata import version
 from io import BytesIO
 
 import httpx
-from pyarrow import Schema, Table
+from pyarrow import Table
 from pyarrow.parquet import read_table
 
 from matchbox.client._settings import ClientSettings, settings
@@ -17,6 +17,7 @@ from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
     JudgementsZipFilenames,
+    check_schema,
     table_to_buffer,
 )
 from matchbox.common.dtos import (
@@ -36,7 +37,6 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
-    MatchboxClientFileError,
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
@@ -111,13 +111,12 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
         raise MatchboxDeletionNotConfirmed(message=error.details)
 
     if res.status_code == 422:
-        if (
-            "parameter" in res.json()
-            and res.json()["parameter"] == BackendParameterType.SAMPLE_SIZE
-        ):
-            raise MatchboxTooManySamplesRequested(res.content)
-        # Not a custom Matchbox exception, most likely a Pydantic error
-        raise MatchboxUnparsedClientRequest(res.content)
+        match res.json().get("parameter"):
+            case BackendParameterType.SAMPLE_SIZE:
+                raise MatchboxTooManySamplesRequested(res.content)
+            case _:
+                # Not a custom Matchbox exception, most likely a Pydantic error
+                raise MatchboxUnparsedClientRequest(res.content)
 
     raise MatchboxUnhandledServerResponse(
         details=res.content, http_status=res.status_code
@@ -189,12 +188,7 @@ def query(
     if return_leaf_id:
         expected_schema = SCHEMA_QUERY_WITH_LEAVES
 
-    if not table.schema.equals(expected_schema):
-        raise MatchboxClientFileError(
-            message=(
-                f"Schema mismatch. Expected:\n{expected_schema}\nGot:\n{table.schema}"
-            )
-        )
+    check_schema(expected_schema, table.schema)
 
     return table
 
@@ -473,14 +467,8 @@ def download_eval_data() -> tuple[Table, Table]:
 
     logger.debug("Finished retrieving judgements.")
 
-    def check_schema(expected: Schema, actual: Schema) -> None:
-        if expected != actual:
-            raise MatchboxClientFileError(
-                message=(f"Schema mismatch. Expected:\n{expected}\nGot:\n{actual}")
-            )
-
-    check_schema(judgements.schema, SCHEMA_JUDGEMENTS)
-    check_schema(expansion.schema, SCHEMA_CLUSTER_EXPANSION)
+    check_schema(SCHEMA_JUDGEMENTS, judgements.schema)
+    check_schema(SCHEMA_CLUSTER_EXPANSION, expansion.schema)
 
     return judgements, expansion
 

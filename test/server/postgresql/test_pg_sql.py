@@ -613,13 +613,11 @@ class TestGetSourceConfig:
 
 @pytest.mark.docker
 @pytest.mark.parametrize(
-    ("level", "get_hashes"),
-    [
-        pytest.param("leaf", True),
-        pytest.param("leaf", False),
-        pytest.param("key", True),
-        pytest.param("key", False),
-    ],
+    "level", [pytest.param("leaf", id="leaf"), pytest.param("key", id="key")]
+)
+@pytest.mark.parametrize(
+    "get_hashes",
+    [pytest.param(True, id="with_hashes"), pytest.param(False, id="without_hashes")],
 )
 class TestBuildUnifiedQuery:
     """Test unified query building with correct COALESCE expectations."""

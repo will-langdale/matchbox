@@ -389,9 +389,7 @@ def create_alt_dedupe_scenario(
         assert model_testkit1.probabilities.num_rows > 0
         assert model_testkit1.probabilities == model_testkit2.probabilities
 
-        for model, threshold in zip(
-            [model_testkit1, model_testkit2], [50, 75], strict=True
-        ):
+        for model, threshold in ((model_testkit1, 50), (model_testkit2, 75)):
             model.threshold = threshold
 
             # Add both models to backend and DAG

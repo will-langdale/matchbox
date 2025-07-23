@@ -142,7 +142,7 @@ class Location(ABC, BaseModel):
         batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
-        keys: dict[str, list[str]] | None = None,
+        keys: tuple[str, list[str]] | None = None,
     ) -> Iterator[QueryReturnType]:
         """Execute ET logic against location and return batches.
 
@@ -155,7 +155,7 @@ class Location(ABC, BaseModel):
                 * If a callable is provided, it will take the old name as input and
                     return the new name.
             return_type: The type of data to return. Defaults to "polars".
-            keys: Dictionary with a single key.
+            keys: Rule to only retrieve rows by specific keys.
                 The key of the dictionary is a field name on which to filter.
                 Filters source entries where the key field is in the dict values.
 
@@ -239,17 +239,13 @@ class RelationalDBLocation(Location):
         batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
-        keys: dict[str, list[str]] | None = None,
+        keys: tuple[str, list[str]] | None = None,
     ) -> Generator[QueryReturnType, None, None]:
         batch_size = batch_size or 10_000
         with self.credentials.connect() as conn:
             if keys:
-                if len(keys) != 1:
-                    raise ValueError(
-                        f"The keys filter must have length of 1; found {len(keys)}"
-                    )
-                key_field = list(keys.keys())[0]
-                quoted_key_values = [f"'{key}'" for key in list(keys.values())[0]]
+                key_field, filter_values = keys
+                quoted_key_values = [f"'{key_val}'" for key_val in filter_values]
                 # Only filter original SQL if keys are provided
                 if quoted_key_values:
                     comma_separated_values = ", ".join(quoted_key_values)
@@ -480,7 +476,7 @@ class SourceConfig(BaseModel):
                 rename=_rename,
                 batch_size=batch_size,
                 return_type=return_type,
-                keys={self.key_field.name: keys},
+                keys=(self.key_field.name, keys),
             )
         else:
             yield from self.location.execute(

@@ -21,8 +21,8 @@ from matchbox.common.sources import RelationalDBLocation, SourceConfig
 
 
 @pytest.mark.docker
-class TestE2EPipelineBuilder:
-    """End to end tests for DAG pipeline functionality."""
+class TestE2EModelEvaluation:
+    """End to end tests for model evaluation functionality."""
 
     client: Client | None = None
     warehouse_engine: Engine | None = None

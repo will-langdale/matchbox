@@ -35,9 +35,9 @@ if st.session_state.step == "eval":
         st.session_state.orig_columns = list(set(original_df.columns) - {"leaf"})
         st.session_state.df = original_df.with_columns(select=False)
 
-    st.html(
-        f"Welcome <b>{st.session_state.user_name}</b>. "
-        f"Sampling from resolution: <b>{st.session_state.resolution}.</b>"
+    st.markdown(
+        f"Welcome **{st.session_state.user_name}**. "
+        f"Sampling from resolution: **{st.session_state.resolution}.**"
     )
     edited_df = st.data_editor(
         st.session_state.df,

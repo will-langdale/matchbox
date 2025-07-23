@@ -85,7 +85,7 @@ def test_precision_recall():
 
     judgements = pa.Table.from_pylist(
         [
-            # Ambiguoud but more positive than negative
+            # Ambiguous but more positive than negative
             {"shown": 123, "endorsed": 12},
             {"shown": 123, "endorsed": 3},
             {"shown": 123, "endorsed": 12},

@@ -252,12 +252,12 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     # Try query with filter
     keys_to_filter = source_testkit.query["key"][:2].to_pylist()
     filtered_results = pl.concat(
-        location.execute(sql, batch_size, keys={"key": keys_to_filter})
+        location.execute(sql, batch_size, keys=("key", keys_to_filter))
     )
     assert len(filtered_results) == 2
 
     # Filtering by no keys has no effect
-    unfiltered_results = pl.concat(location.execute(sql, batch_size, keys={"key": []}))
+    unfiltered_results = pl.concat(location.execute(sql, batch_size, keys=("key", [])))
     assert_frame_equal(unfiltered_results, combined_df)
 
 

@@ -124,7 +124,7 @@ class EvalData:
         return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
     def pr_curve(self, results: Results) -> Figure:
-        """For each threshold in retults computes precision and recall."""
+        """Computes precision and recall for each threshold in results."""
         all_p = []
         all_r = []
 

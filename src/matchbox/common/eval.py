@@ -187,7 +187,7 @@ def process_judgements(
     if len(expanded_judgements) != len(judgements):
         raise ValueError("Malformed judgements / expansion data received.")
 
-    validation_net_count: dict[Pair, int] = {}
+    validation_net_count: dict[Pair, float] = {}
     for shown, endorsed in zip(
         expanded_judgements["shown_leaves"].to_list(),
         expanded_judgements["endorsed_leaves"].to_list(),
@@ -195,12 +195,12 @@ def process_judgements(
     ):
         positive_pairs = set(combinations(sorted(endorsed), r=2))
         potential_pairs = set(combinations(sorted(shown), r=2))
+        negative_pairs = potential_pairs - positive_pairs
 
         # For every pair implicitly rejected, we subtract from its count the proportion
         # of the shown cluster endorsed in this row. This is to avoid double counting.
         # For example, if user shown (123) and endorses (12) and (3), the pairs (13) and
         # (23), which are rejected on two rows, will subtract -2/3 and -1/3 respectively
-        negative_pairs = potential_pairs - positive_pairs
         validation_net_count.update(
             {
                 p: validation_net_count.get(p, 0) - (len(endorsed) / len(shown))

@@ -41,6 +41,7 @@ def test_insert_judgement_ok(test_client: TestClient):
 
 
 def test_insert_judgement_error(test_client: TestClient):
+    """Test that judgement insertion bubbles up errors."""
     mock_backend = Mock()
     mock_backend.insert_judgement = Mock(side_effect=MatchboxDataNotFound)
 

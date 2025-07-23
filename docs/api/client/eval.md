@@ -1,4 +1,4 @@
-# Eval
+# Evaluation
 
 ::: matchbox.client.eval
     options:
