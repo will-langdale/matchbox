@@ -3,6 +3,7 @@
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
 from typing import (
@@ -176,11 +177,31 @@ class RelationalDBLocation(Location):
         ),
     )
 
+    def __del__(self):
+        """Ensure connections are cleaned up when object is garbage collected."""
+        try:
+            if self.credentials:
+                self.credentials.dispose()
+        except Exception:
+            pass
+
     @field_validator("uri", mode="after")
     @classmethod
     def validate_uri(cls, value: AnyUrl) -> AnyUrl:
         """Ensure no credentials, query params, or fragments are in the URI."""
         return clean_uri(value)
+
+    @contextmanager
+    def _get_connection(self):
+        """Context manager for getting database connections with proper cleanup."""
+        if not self.credentials:
+            raise ValueError("No credentials available. Call add_credentials() first.")
+
+        connection = self.credentials.connect()
+        try:
+            yield connection
+        finally:
+            connection.close()
 
     def _validate_engine(self, credentials: Engine) -> None:
         """Validate an engine matches the URI.
@@ -213,8 +234,9 @@ class RelationalDBLocation(Location):
     @requires_credentials
     def connect(self) -> bool:  # noqa: D102
         try:
-            _ = sql_to_df(stmt="select 1", connection=self.credentials)
-            return True
+            with self._get_connection() as conn:
+                _ = sql_to_df(stmt="select 1", connection=conn)
+                return True
         except OperationalError:
             return False
 
@@ -237,7 +259,7 @@ class RelationalDBLocation(Location):
         return_type: ReturnTypeStr = "polars",
     ) -> Generator[QueryReturnType, None, None]:
         batch_size = batch_size or 10_000
-        with self.credentials.connect() as conn:
+        with self._get_connection() as conn:
             yield from sql_to_df(
                 stmt=extract_transform,
                 connection=conn,
