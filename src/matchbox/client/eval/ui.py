@@ -4,16 +4,20 @@ import polars as pl
 import streamlit as st
 
 from matchbox.client import _handler
+from matchbox.client._settings import settings
 from matchbox.client.eval import get_samples
 from matchbox.common.eval import Judgement
+from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.graph import DEFAULT_RESOLUTION
 
 st.title("Matchbox evaluation session")
 
 if "step" not in st.session_state:
-    st.session_state.user_name = "scott.mcgregor"
+    if not settings.user:
+        raise MatchboxClientSettingsException("User name is unset.")
+    st.session_state.user_name = settings.user
     st.session_state.user_id = _handler.login(user_name=st.session_state.user_name)
-    st.session_state.resolution = DEFAULT_RESOLUTION
+    st.session_state.resolution = settings.eval_resolution or DEFAULT_RESOLUTION
     with st.spinner("Loading samples..."):
         st.session_state.samples = get_samples(
             n=100,

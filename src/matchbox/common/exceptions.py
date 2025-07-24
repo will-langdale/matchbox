@@ -23,6 +23,16 @@ class MatchboxArrowSchemaMismatch(Exception):
 class MatchboxClientSettingsException(Exception):
     """Incorrect configuration provided to client."""
 
+    def __init__(
+        self,
+        message: str | None = None,
+    ):
+        """Initialise the exception."""
+        if message is None:
+            message = "Incorrect configuration provided to client."
+
+        super().__init__(message)
+
 
 # -- Client-side API exceptions --
 

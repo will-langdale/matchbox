@@ -59,6 +59,7 @@ SCHEMA_EVAL_SAMPLES: Final[pa.Schema] = pa.schema(
         ("source", pa.large_string()),
     ]
 )
+"""Data transfer schema for evaluation samples."""
 
 
 class JudgementsZipFilenames(StrEnum):

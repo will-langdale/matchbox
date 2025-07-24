@@ -945,8 +945,11 @@ class TestMatchboxBackend:
             all_leaves = pl.from_arrow(self.backend.query(source="crn"))
 
             def get_leaf_ids(cluster_id: int) -> list[int]:
-                keys = deduped_query.filter(pl.col("id") == cluster_id)["key"].to_list()
-                return all_leaves.filter(pl.col("key").is_in(keys))["id"].to_list()
+                return (
+                    deduped_query.filter(pl.col("id") == cluster_id)
+                    .join(all_leaves, on="key", suffix="_leaf")["id_leaf"]
+                    .to_list()
+                )
 
             alice_id = self.backend.login("alice")
 
@@ -1013,15 +1016,12 @@ class TestMatchboxBackend:
             assert len(expansion) == 4  # 2 shown clusters + 2 new endorsed clusters
 
             # Let's massage tables into a root-leaf dict for all endorsed clusters
-            endorsed_root, endorsed_leaves = (
+            endorsed_dict = dict(
                 pl.from_arrow(judgements)
-                .join(pl.from_arrow(expansion), left_on="endorsed", right_on="root")[
-                    ["endorsed", "leaves"]
-                ]
-                .to_dict(as_series=False)
-                .values()
+                .join(pl.from_arrow(expansion), left_on="endorsed", right_on="root")
+                .select(["endorsed", "leaves"])
+                .rows()
             )
-            endorsed_dict = dict(zip(endorsed_root, endorsed_leaves, strict=True))
 
             # The root we know about has the leaves we expect
             assert endorsed_dict[unique_ids[0]] == clust1_leaves

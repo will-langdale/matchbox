@@ -220,18 +220,16 @@ class Results(BaseModel):
             .unique()
         )
 
-        # Generate root-leaf entries for those input rows that weren't merged
-        # by this model
-        all_ids = set(parents_root_leaf["id"].to_list())
-        merged_ids = set(self.clusters_to_polars()["child"].to_list())
-        unmerged_ids = list(all_ids - merged_ids)
-
-        if not len(unmerged_ids):
-            return root_leaf_res
-
+        # Generate root-leaf for those input rows that weren't merged by this model
         unmerged_ids_rows = (
-            pl.DataFrame({"root_id": unmerged_ids})
-            .join(parents_root_leaf, left_on="root_id", right_on="id")
+            parents_root_leaf.select("id", "leaf_id")
+            .join(
+                self.clusters_to_polars().select("child"),
+                left_on="id",
+                right_on="child",
+                how="anti",
+            )
+            .rename({"id": "root_id"})
             .select(["root_id", "leaf_id"])
             .unique()
         )

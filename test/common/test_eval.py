@@ -83,6 +83,15 @@ def test_precision_recall():
         ]
     )
 
+    judgement_cluster_expansion = pa.Table.from_pylist(
+        [
+            {"root": 123, "leaves": [1, 2, 3]},
+            {"root": 67, "leaves": [6, 7]},
+            {"root": 45, "leaves": [4, 5]},
+            {"root": 12, "leaves": [1, 2]},
+        ]
+    )
+
     judgements = pa.Table.from_pylist(
         [
             # Ambiguous but more positive than negative
@@ -106,16 +115,10 @@ def test_precision_recall():
         ]
     )
 
-    expansion = pa.Table.from_pylist(
-        [
-            {"root": 123, "leaves": [1, 2, 3]},
-            {"root": 67, "leaves": [6, 7]},
-            {"root": 45, "leaves": [4, 5]},
-            {"root": 12, "leaves": [1, 2]},
-        ]
-    )
     pr_scores = precision_recall(
-        models_root_leaf=[model1, model2], judgements=judgements, expansion=expansion
+        models_root_leaf=[model1, model2],
+        judgements=judgements,
+        expansion=judgement_cluster_expansion,
     )
 
     # Validation pairs: (12) (as (45) is more negative; (67) is neutralised)
@@ -131,6 +134,21 @@ def test_process_judgements():
     # cluster IDs < 100 are source clusters
     # 1xx clusters IDs are model clusters
     # 2xx clusters IDs are new judgement clusters (splintered model clusters)
+
+    judgement_cluster_expansion = pl.DataFrame(
+        [
+            # Shown clusters
+            {"root": 100, "leaves": [1, 2]},
+            {"root": 101, "leaves": [3, 4, 5]},
+            {"root": 102, "leaves": [6, 7]},
+            {"root": 103, "leaves": [8, 9]},
+            {"root": 104, "leaves": [10, 11]},
+            {"root": 105, "leaves": [12, 13]},
+            {"root": 106, "leaves": [12, 13, 14]},
+            # New "splintered" clusters
+            {"root": 200, "leaves": [3, 4]},
+        ]
+    )
 
     judgements = pl.DataFrame(
         [
@@ -160,22 +178,9 @@ def test_process_judgements():
         ]
     )
 
-    expansion = pl.DataFrame(
-        [
-            # Shown clusters
-            {"root": 100, "leaves": [1, 2]},
-            {"root": 101, "leaves": [3, 4, 5]},
-            {"root": 102, "leaves": [6, 7]},
-            {"root": 103, "leaves": [8, 9]},
-            {"root": 104, "leaves": [10, 11]},
-            {"root": 105, "leaves": [12, 13]},
-            {"root": 106, "leaves": [12, 13, 14]},
-            # New "splintered" clusters
-            {"root": 200, "leaves": [3, 4]},
-        ]
+    pairs, net_counts, leaves = process_judgements(
+        judgements, judgement_cluster_expansion
     )
-
-    pairs, net_counts, leaves = process_judgements(judgements, expansion)
     assert pairs == {
         (1, 2),
         (3, 4),

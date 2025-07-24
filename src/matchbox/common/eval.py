@@ -113,12 +113,15 @@ def precision_recall(
                 and validation_net_count[(a, b)] != 0
             )
         }
-    validation_pairs = {
-        (a, b) for a, b in validation_pairs if a in shared_leaves and b in shared_leaves
-    }
 
-    # Discard all neutrally or negatively judged pairs
-    validation_pairs = {p for p in validation_pairs if validation_net_count[p] > 0}
+    validation_pairs = {
+        (a, b)
+        for a, b in validation_pairs
+        if a in shared_leaves
+        and b in shared_leaves
+        # remove all neutrally or negatively judged pairs
+        and validation_net_count[(a, b)] > 0
+    }
 
     # Compute PR scores for each model
     pr_scores: list[PrecisionRecall] = []
@@ -201,9 +204,10 @@ def process_judgements(
         # of the shown cluster endorsed in this row. This is to avoid double counting.
         # For example, if user shown (123) and endorses (12) and (3), the pairs (13) and
         # (23), which are rejected on two rows, will subtract -2/3 and -1/3 respectively
+        negative_adjustment = len(endorsed) / len(shown)
         validation_net_count.update(
             {
-                p: validation_net_count.get(p, 0) - (len(endorsed) / len(shown))
+                p: validation_net_count.get(p, 0) - negative_adjustment
                 for p in negative_pairs
             }
         )
@@ -213,11 +217,10 @@ def process_judgements(
         # For example, if user shown (1234) and endorses (1) and (234), the pairs
         # (23), (24) and (34) will all be initially subtacted 1/4, and thus need to be
         # then added 1 + 1/4 = 1 + (proportion of cluster endorsed in other rows)
+        positive_adjustment = 1 + ((len(shown) - len(endorsed)) / len(shown))
         validation_net_count.update(
             {
-                p: validation_net_count.get(p, 0)
-                + 1
-                + ((len(shown) - len(endorsed)) / len(shown))
+                p: validation_net_count.get(p, 0) + positive_adjustment
                 for p in positive_pairs
             }
         )

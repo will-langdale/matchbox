@@ -1,6 +1,7 @@
 """Launcher for evaluation UI which writes some mock data."""
 
 import atexit
+import logging
 import pathlib
 import subprocess
 import sys
@@ -19,10 +20,14 @@ from matchbox.common.graph import DEFAULT_RESOLUTION
 
 MOCK_WH_FILE = "sqlite:///eval_mock.db"
 
+logger = logging.getLogger("mock_ui_logger")
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
+
 
 def setup_mock_database():
     """Add some mock data to test the evaluation UI."""
-    print("Mocking DB")
+    logger.info("Mocking DB")
 
     warehouse = create_engine(MOCK_WH_FILE)
 
@@ -97,7 +102,7 @@ def setup_mock_database():
 
 def cleanup_database():
     """Clean up mock data for the evaluation UI."""
-    print("Cleaning up DB")
+    logger.info("Cleaning up DB")
     pathlib.Path(MOCK_WH_FILE).unlink(missing_ok=True)
 
     matchbox_client = create_client(settings=client_settings)
@@ -109,6 +114,7 @@ if __name__ == "__main__":
     warehouse_url = setup_mock_database()
 
     environ["MB__CLIENT__DEFAULT_WAREHOUSE"] = str(warehouse_url)
+    environ["MB__CLIENT__USER"] = "scott.mcgregor"
     subprocess.run(
         [sys.executable, "-m", "streamlit", "run", "src/matchbox/client/eval/ui.py"]
     )
