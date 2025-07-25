@@ -1,5 +1,7 @@
 """Matchbox."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.logging import logger
 
@@ -12,10 +14,8 @@ except MatchboxClientSettingsException:
         "Please ignore if running in server mode. Otherwise, check your .env file.",
     )
 
-
 try:
-    from ._version import version as __version__
-except ImportError:
-    from importlib.metadata import version
-
     __version__ = version("matchbox-db")
+except PackageNotFoundError:
+    # package is not installed
+    pass
