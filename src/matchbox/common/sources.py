@@ -177,14 +177,6 @@ class RelationalDBLocation(Location):
         ),
     )
 
-    def __del__(self):
-        """Ensure connections are cleaned up when object is garbage collected."""
-        try:
-            if self.credentials:
-                self.credentials.dispose()
-        except Exception:
-            pass
-
     @field_validator("uri", mode="after")
     @classmethod
     def validate_uri(cls, value: AnyUrl) -> AnyUrl:
