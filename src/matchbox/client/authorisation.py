@@ -1,4 +1,13 @@
-"""Utilities for JWT API authorisation."""
+"""Utilities for JWT API authorisation.
+
+NOTE: A secure set-up requires the JWT generation logic to not live on the client.
+Instead, client JWT should be generated within a secure environment with access to
+the private key.
+
+This file supports the edge case of a trusted client bypassing the JWT mechanism
+altogether, which is not recommended in general.
+
+"""
 
 import json
 import time
