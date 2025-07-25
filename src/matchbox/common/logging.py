@@ -8,7 +8,6 @@ from functools import cached_property
 from importlib.metadata import version
 from typing import Any, Final, Literal
 
-from ddtrace.trace import tracer
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -92,6 +91,9 @@ def build_progress_bar(console_: Console | None = None) -> Progress:
 class ASIMFormatter(logging.Formatter):
     """Format logging with ASIM standard fields."""
 
+    _tracer = None
+    """Datadog tracer instance."""
+
     def _get_first_64_bits_of(self, trace_id):
         return str((1 << 64) - 1 & trace_id)
 
@@ -141,7 +143,15 @@ class ASIMFormatter(logging.Formatter):
 
         These two variables are discovered by the Datadog Python tracing library.
         """
-        span = tracer.current_span()
+        # ddtrace is a server-side dependency
+        # imported here as logging.py is in common, and is imported
+        # client side as well
+        if self._tracer is None:
+            from ddtrace.trace import tracer
+
+            self._tracer = tracer
+
+        span = self._tracer.current_span()
         trace_id, span_id = (
             (self._get_first_64_bits_of(span.trace_id), span.span_id)
             if span
