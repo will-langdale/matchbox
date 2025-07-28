@@ -1,9 +1,9 @@
 """Logging utilities."""
 
-import datetime
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from functools import cached_property
 from importlib.metadata import version
 from typing import Any, Final, Literal
@@ -91,6 +91,12 @@ def build_progress_bar(console_: Console | None = None) -> Progress:
 class ASIMFormatter(logging.Formatter):
     """Format logging with ASIM standard fields."""
 
+    _tracer = None
+    """Datadog tracer instance."""
+
+    def _get_first_64_bits_of(self, trace_id):
+        return str((1 << 64) - 1 & trace_id)
+
     @cached_property
     def matchbox_version(self) -> str:
         """Cached matchbox version."""
@@ -107,29 +113,74 @@ class ASIMFormatter(logging.Formatter):
             "CRITICAL": "High",
         }
 
+    @cached_property
+    def container_id(self) -> str:
+        """AWS ECS container ID.
+
+        This environment variable is injected by AWS to all ECS tasks.
+        """
+        uri = os.environ.get("ECS_CONTAINER_METADATA_URI", "")
+        return uri.split("/")[-1] if uri else ""
+
+    @cached_property
+    def env(self) -> str:
+        """Datadog's environment value.
+
+        This environment variable is set by the ECS task definition.
+        """
+        return os.getenv("DD_ENV", default="")
+
+    @cached_property
+    def service(self) -> str:
+        """Datadog's service value.
+
+        This environment variable is set by the ECS task definition.
+        """
+        return os.getenv("DD_SERVICE", default="")
+
+    def get_trace_id_span_id(self) -> tuple[str | None, str | None]:
+        """Retrieve's Datadog's trace ID and span ID variables.
+
+        These two variables are discovered by the Datadog Python tracing library.
+        """
+        # ddtrace is a server-side dependency
+        # imported here as logging.py is in common, and is imported
+        # client side as well
+        if self._tracer is None:
+            from ddtrace.trace import tracer
+
+            self._tracer = tracer
+
+        span = self._tracer.current_span()
+        trace_id, span_id = (
+            (self._get_first_64_bits_of(span.trace_id), span.span_id)
+            if span
+            else (None, None)
+        )
+        return trace_id, span_id
+
     def format(self, record) -> str:
         """Convert logs to JSON."""
-        log_time = datetime.datetime.utcfromtimestamp(record.created).isoformat()
+        log_time = datetime.fromtimestamp(record.created, timezone.utc).isoformat()
+        trace_id, span_id = self.get_trace_id_span_id()
         return json.dumps(
             {
-                "EventMessage": record.getMessage(),
                 "EventCount": 1,
                 "EventStartTime": log_time,
                 "EventEndTime": log_time,
                 "EventType": record.name,
-                "EventResult": "NA",
                 "EventSeverity": self.event_severity[record.levelname],
                 "EventOriginalSeverity": record.levelname,
-                "EventSchema": "ProcessEvent",
-                "EventSchemaVersion": "0.1.4",
-                "EventVendor": "AWS",
-                "EventProduct": "VPC",
-                "AdditionalFields": {
-                    "dd.version": self.matchbox_version,
-                    "dd.env": os.getenv("DD_ENV"),
-                    "dd.service": os.getenv("DD_SERVICE"),
-                    "dd.team": "matchbox",
-                    "dd.application": "matchbox",
-                },
+                "dd.application": "matchbox",
+                "dd.container_id": self.container_id,
+                "dd.env": self.env,
+                "dd.service": self.service,
+                "dd.source": "python",
+                "dd.sourcecategory": "sourcecode",
+                "dd.span_id": span_id,
+                "dd.team": "matchbox",
+                "dd.trace_id": trace_id,
+                "dd.version": self.matchbox_version,
+                "message": record.getMessage(),
             },
         )

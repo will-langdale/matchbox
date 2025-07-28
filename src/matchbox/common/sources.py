@@ -3,6 +3,7 @@
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
 from typing import (
@@ -186,6 +187,18 @@ class RelationalDBLocation(Location):
         """Ensure no credentials, query params, or fragments are in the URI."""
         return clean_uri(value)
 
+    @contextmanager
+    def _get_connection(self):
+        """Context manager for getting database connections with proper cleanup."""
+        if not self.credentials:
+            raise ValueError("No credentials available. Call add_credentials() first.")
+
+        connection = self.credentials.connect()
+        try:
+            yield connection
+        finally:
+            connection.close()
+
     def _validate_engine(self, credentials: Engine) -> None:
         """Validate an engine matches the URI.
 
@@ -217,8 +230,9 @@ class RelationalDBLocation(Location):
     @requires_credentials
     def connect(self) -> bool:  # noqa: D102
         try:
-            _ = sql_to_df(stmt="select 1", connection=self.credentials)
-            return True
+            with self._get_connection() as conn:
+                _ = sql_to_df(stmt="select 1", connection=conn)
+                return True
         except OperationalError:
             return False
 
@@ -242,7 +256,7 @@ class RelationalDBLocation(Location):
         keys: tuple[str, list[str]] | None = None,
     ) -> Generator[QueryReturnType, None, None]:
         batch_size = batch_size or 10_000
-        with self.credentials.connect() as conn:
+        with self._get_connection() as conn:
             if keys:
                 key_field, filter_values = keys
                 quoted_key_values = [f"'{key_val}'" for key_val in filter_values]

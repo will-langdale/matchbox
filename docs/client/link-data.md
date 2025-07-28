@@ -61,6 +61,7 @@ The `key_field` is the field in your source that contains some unique code that 
     
     # Companies House data
     companies_house = SourceConfig.new(
+        name="companies_house",
         location=RelationalDBLocation.from_engine(engine),
         extract_transform="""
             select
@@ -77,6 +78,7 @@ The `key_field` is the field in your source that contains some unique code that 
     
     # Exporters data
     exporters = SourceConfig.new(
+        name="hmrc_exporters",
         location=RelationalDBLocation.from_engine(engine),
         extract_transform="""
             select
@@ -102,6 +104,33 @@ Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
     - These must be found in the result of the `extract_transform` logic
 - A key field (`key_field`) that uniquely identifies each record
     - This must be found in the result of the `extract_transform` logic
+
+If a `SourceConfig` has already been created you can fetch it, with optional validation, from the server.
+
+=== "Example"
+    ```python
+    from matchbox import get_source
+    
+    # Companies House data
+    companies_house = get_source(
+        name="companies_house",
+        location=RelationalDBLocation.from_engine(engine),
+        extract_transform="""
+            select
+                pk as id,
+                company_name,
+                number::str as company_number,
+                upper(postcode) as postcode,
+            from
+                companieshouse.companies;
+        """,
+        index_fields=["company_name", "company_number", "postcode"],
+        key_field="id",
+    )
+    
+    # Exporters data
+    exporters = get_source(name="hmrc_exporters")
+    ```
 
 ## 2. Defining data cleaners
 
