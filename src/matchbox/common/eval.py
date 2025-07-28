@@ -200,10 +200,47 @@ def process_judgements(
         potential_pairs = set(combinations(sorted(shown), r=2))
         negative_pairs = potential_pairs - positive_pairs
 
-        # For every pair implicitly rejected, we subtract from its count the proportion
-        # of the shown cluster endorsed in this row. This is to avoid double counting.
-        # For example, if user shown (123) and endorses (12) and (3), the pairs (13) and
-        # (23), which are rejected on two rows, will subtract -2/3 and -1/3 respectively
+        # -- EXAMPLE --
+        # A user is shown (1234) and they endorse (1), (23) and (4).
+        # We need to keep track for this judgement of the +1 endorsement for (23),
+        # and the -1 rejections for (12), (13), (14), (24), (34).
+
+        # Unfortunately, our validation data is not grouped at the level of judgement
+        # submitted (meaning, at the level of "cluster shown to user at one point"),
+        # like it is in matchbox.common.Judgement objects. Instead, we get a table with
+        # one row for each endorsed cluster, and all other rows from other judgements
+        # mixed together. This function needs to process each row one by one, without
+        # full knowledge of what's coming next.
+
+        # In the example above, we will get 2 separate rows, potentially
+        # mixed with other rows from other judgements:
+        # [shown: (1234); endorsed: (1)]
+        # ----> at this point, all we know is the potential rejection of
+        #       (12), (13), (14), (23), (24), (34). Because this row is just part of a
+        #       wider judgement, and the same pair rejections will be inferred from
+        #       multiple rows for the same judgement, instead of (double) counting -1
+        #       for all these pairs, we weigh the negative count by the ratio
+        #       (endorsed leaves) / (shown leaves), i.e.: -1/4
+        # [shown: (1234); endorsed: (23)]
+        # ----> we have now learnt that (23) is endorsed after all. We want to add +1
+        #       to the final count, but we need to add a little bit more to counteract
+        #       the effect of negative values added tentatively for all other rows in
+        #       in this judgement. For example, the previous row subtracted -1/4. The
+        #       weight subtracted for (23) in other rows for this judgement will be the
+        #       ratio ((shown leaves) - (endorsed_leaves)) / (shown leaves). Hence,
+        #       the new value for (23) is -1/4 + 1 + 2/4 = 1 + 1/4.
+        #       This row also confirms a negative judgement over (12), (13), (14), (24)
+        #       (34). For all of these the new value is -1/4 - 2/4 = -3/4
+        # [shown: (1234); endorsed: (4)]
+        # ----> we subtract -1/4 again from all pairs, like for the first row of this
+        #       judgement. Hence, (23) gets a value of 1, and all other pairs a value
+        #       of -4/4=-1
+        # And we're done. It doesn't matter what order these rows are in, or if they are
+        # interleaved with rows from other judgements, because of the commutative and
+        # associative properties of addition, e.g. a + b + c = c + b + a = (c + b) + a
+
+        # As in the example above:
+        # Subtract negative weight for all shown pairs not endorsed on this row
         negative_adjustment = len(endorsed) / len(shown)
         validation_net_count.update(
             {
@@ -212,11 +249,7 @@ def process_judgements(
             }
         )
 
-        # For every pair explicitly endorsed, we add 1 to its count, plus the proportion
-        # of the shown cluster endorsed in this row. This is to avoid under-counting.
-        # For example, if user shown (1234) and endorses (1) and (234), the pairs
-        # (23), (24) and (34) will all be initially subtacted 1/4, and thus need to be
-        # then added 1 + 1/4 = 1 + (proportion of cluster endorsed in other rows)
+        # Add 1 plus positive weight for all pairs endorsed on this row
         positive_adjustment = 1 + ((len(shown) - len(endorsed)) / len(shown))
         validation_net_count.update(
             {
