@@ -207,12 +207,12 @@ def process_judgements(
 
         # Unfortunately, our validation data is not grouped at the level of judgement
         # submitted (meaning, at the level of "cluster shown to user at one point"),
-        # like it is in matchbox.common.Judgement objects. Instead, we get a table with
+        # like with `matchbox.common.Judgement` objects. Instead, we get a table with
         # one row for each endorsed cluster, and all other rows from other judgements
         # mixed together. This function needs to process each row one by one, without
         # full knowledge of what's coming next.
 
-        # In the example above, we will get 2 separate rows, potentially
+        # In the example above, we will get 3 separate rows, potentially
         # mixed with other rows from other judgements:
         # [shown: (1234); endorsed: (1)]
         # ----> at this point, all we know is the potential rejection of
