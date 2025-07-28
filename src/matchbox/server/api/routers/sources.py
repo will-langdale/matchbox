@@ -10,14 +10,13 @@ from fastapi import (
 from matchbox.common.dtos import (
     BackendResourceType,
     NotFoundError,
-    ResolutionName,
-    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.sources import SourceConfig
 from matchbox.server.api.dependencies import (
     BackendDependency,

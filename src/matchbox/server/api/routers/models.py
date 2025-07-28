@@ -16,7 +16,6 @@ from matchbox.common.dtos import (
     CRUDOperation,
     ModelAncestor,
     ModelConfig,
-    ModelResolutionName,
     NotFoundError,
     ResolutionOperationStatus,
     UploadStatus,
@@ -24,6 +23,7 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
+from matchbox.common.graph import ModelResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
     MetadataStoreDependency,

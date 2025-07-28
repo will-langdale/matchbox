@@ -18,11 +18,11 @@ from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match
 from matchbox.server.postgresql.db import MBDB

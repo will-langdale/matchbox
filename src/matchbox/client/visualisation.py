@@ -6,8 +6,7 @@ from matplotlib.figure import Figure
 from rustworkx.visualization import mpl_draw
 
 from matchbox.client._handler import get_resolution_graph
-from matchbox.common.dtos import ResolutionName
-from matchbox.common.graph import ResolutionNodeType
+from matchbox.common.graph import ResolutionName, ResolutionNodeType
 
 
 def draw_resolution_graph(contains: ResolutionName | None = None) -> Figure:

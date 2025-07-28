@@ -11,7 +11,6 @@ from matchbox.common.dtos import (
     BackendParameterType,
     BackendResourceType,
     InvalidParameterError,
-    ModelResolutionName,
     NotFoundError,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -22,6 +21,7 @@ from matchbox.common.exceptions import (
     MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
 )
+from matchbox.common.graph import ModelResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,

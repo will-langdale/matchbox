@@ -27,8 +27,6 @@ from matchbox.common.dtos import (
     LoginResult,
     NotFoundError,
     OKMessage,
-    ResolutionName,
-    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -37,7 +35,7 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.graph import ResolutionGraph
+from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.common.sources import Match
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import process_upload

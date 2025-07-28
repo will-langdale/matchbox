@@ -11,15 +11,14 @@ from pyarrow import Table
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from matchbox.common.dtos import (
-    ModelAncestor,
-    ModelConfig,
+from matchbox.common.dtos import ModelAncestor, ModelConfig
+from matchbox.common.eval import Judgement, ModelComparison
+from matchbox.common.graph import (
     ModelResolutionName,
+    ResolutionGraph,
     ResolutionName,
     SourceResolutionName,
 )
-from matchbox.common.eval import Judgement, ModelComparison
-from matchbox.common.graph import ResolutionGraph
 from matchbox.common.logging import LogLevelType
 from matchbox.common.sources import Match, SourceConfig
 

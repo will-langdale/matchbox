@@ -21,10 +21,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import Session, relationship
 
-from matchbox.common.dtos import ResolutionName
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
+from matchbox.common.graph import ResolutionName
 from matchbox.common.sources import SourceConfig as CommonSourceConfig
 from matchbox.common.sources import SourceField as CommonSourceField
 from matchbox.server.postgresql.db import MBDB

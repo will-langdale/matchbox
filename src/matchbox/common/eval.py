@@ -7,7 +7,7 @@ import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel, Field, field_validator
 
-from matchbox.common.dtos import ModelResolutionName
+from matchbox.common.graph import ModelResolutionName
 
 Pair: TypeAlias = tuple[int, int]
 Pairs: TypeAlias = set[Pair]
@@ -191,11 +191,11 @@ def process_judgements(
         raise ValueError("Malformed judgements / expansion data received.")
 
     validation_net_count: dict[Pair, float] = {}
-    for shown, endorsed in zip(
-        expanded_judgements["shown_leaves"].to_list(),
-        expanded_judgements["endorsed_leaves"].to_list(),
-        strict=True,
-    ):
+
+    for row in expanded_judgements.rows(named=True):
+        shown = row["shown_leaves"]
+        endorsed = row["endorsed_leaves"]
+
         positive_pairs = set(combinations(sorted(endorsed), r=2))
         potential_pairs = set(combinations(sorted(shown), r=2))
         negative_pairs = potential_pairs - positive_pairs

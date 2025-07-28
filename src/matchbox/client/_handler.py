@@ -28,11 +28,8 @@ from matchbox.common.dtos import (
     LoginResult,
     ModelAncestor,
     ModelConfig,
-    ModelResolutionName,
     NotFoundError,
-    ResolutionName,
     ResolutionOperationStatus,
-    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -47,7 +44,12 @@ from matchbox.common.exceptions import (
     MatchboxUnparsedClientRequest,
     MatchboxUserNotFoundError,
 )
-from matchbox.common.graph import ResolutionGraph
+from matchbox.common.graph import (
+    ModelResolutionName,
+    ResolutionGraph,
+    ResolutionName,
+    SourceResolutionName,
+)
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceConfig

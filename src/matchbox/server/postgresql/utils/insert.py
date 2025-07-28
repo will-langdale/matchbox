@@ -9,9 +9,8 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.exc import SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.exceptions import MatchboxResolutionAlreadyExists
-from matchbox.common.graph import ResolutionNodeType
+from matchbox.common.graph import ModelResolutionName, ResolutionNodeType
 from matchbox.common.hash import IntMap, hash_arrow_table
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig

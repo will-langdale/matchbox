@@ -8,13 +8,13 @@ from matchbox.common.dtos import (
     BackendResourceType,
     CRUDOperation,
     NotFoundError,
-    ResolutionName,
     ResolutionOperationStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
 )
+from matchbox.common.graph import ResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
     validate_api_key,

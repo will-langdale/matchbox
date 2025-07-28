@@ -2,13 +2,13 @@
 
 from pydantic import BaseModel
 
-from matchbox.common.dtos import (
+from matchbox.common.factories.models import ModelTestkit
+from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
+from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionName,
     SourceResolutionName,
 )
-from matchbox.common.factories.models import ModelTestkit
-from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
 
 
 class TestkitDAG(BaseModel):

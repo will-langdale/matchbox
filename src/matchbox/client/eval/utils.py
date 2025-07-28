@@ -11,13 +11,12 @@ from sqlalchemy import create_engine
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
     precision_recall,
 )
-from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 from matchbox.common.logging import logger
 
 

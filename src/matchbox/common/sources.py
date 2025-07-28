@@ -39,8 +39,9 @@ from matchbox.common.db import (
     sql_to_df,
     validate_sql_for_data_extraction,
 )
-from matchbox.common.dtos import DataTypes, SourceResolutionName
+from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
 

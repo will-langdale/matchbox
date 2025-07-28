@@ -1,11 +1,19 @@
 """Common data structures for resolution graphs."""
 
 from enum import StrEnum
+from typing import TypeAlias
 
 import rustworkx as rx
 from pydantic import BaseModel, ConfigDict
 
-from matchbox.common.dtos import ResolutionName
+SourceResolutionName: TypeAlias = str
+"""Type alias for source resolution names."""
+
+ModelResolutionName: TypeAlias = str
+"""Type alias for model resolution names."""
+
+ResolutionName = SourceResolutionName | ModelResolutionName
+"""Type alias for resolution names."""
 
 DEFAULT_RESOLUTION: ResolutionName = "__DEFAULT__"
 

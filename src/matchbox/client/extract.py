@@ -3,8 +3,8 @@
 from pyarrow import Table as ArrowTable
 
 from matchbox.client import _handler
-from matchbox.common.dtos import ModelResolutionName, SourceResolutionName
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
+from matchbox.common.graph import ModelResolutionName, SourceResolutionName
 
 
 def key_field_map(

@@ -2,21 +2,16 @@
 
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Literal, TypeAlias
+from typing import Literal
 
 import polars as pl
 from pydantic import BaseModel, Field
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
-
-SourceResolutionName: TypeAlias = str
-"""Type alias for source resolution names."""
-
-ModelResolutionName: TypeAlias = str
-"""Type alias for model resolution names."""
-
-ResolutionName = SourceResolutionName | ModelResolutionName
-"""Type alias for resolution names."""
+from matchbox.common.graph import (
+    ModelResolutionName,
+    ResolutionName,
+)
 
 
 class OKMessage(BaseModel):

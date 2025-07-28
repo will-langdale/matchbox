@@ -11,8 +11,11 @@ from sqlalchemy import create_engine
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
-from matchbox.common.dtos import ResolutionName, SourceResolutionName
-from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.common.graph import (
+    DEFAULT_RESOLUTION,
+    ResolutionName,
+    SourceResolutionName,
+)
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceConfig, SourceField
 
