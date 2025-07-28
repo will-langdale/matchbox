@@ -12,7 +12,7 @@ from matchbox.client._handler import create_client
 from matchbox.client._settings import ClientSettings
 from matchbox.client.clean import company_name, company_number
 from matchbox.client.helpers import cleaner, cleaners, comparison, select
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError
+from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import MatchboxSourceNotFoundError
 from matchbox.common.factories.sources import (
     linked_sources_factory,
@@ -151,7 +151,7 @@ def test_select_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engin
             404,
             json=NotFoundError(
                 details="SourceConfig 42 not found",
-                entity=BackendRetrievableType.SOURCE,
+                entity=BackendResourceType.SOURCE,
             ).model_dump(),
         )
     )

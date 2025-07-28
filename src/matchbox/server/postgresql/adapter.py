@@ -1,5 +1,6 @@
 """PostgreSQL adapter for Matchbox server."""
 
+from itertools import chain
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from pyarrow import Table
@@ -10,18 +11,24 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
     ModelAncestor,
     ModelConfig,
-    ModelResolutionName,
     ModelType,
-    ResolutionName,
-    SourceResolutionName,
 )
+from matchbox.common.eval import Judgement as CommonJudgement
+from matchbox.common.eval import ModelComparison
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxModelConfigError,
+    MatchboxNoJudgements,
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.graph import ResolutionGraph, ResolutionNodeType
+from matchbox.common.graph import (
+    ModelResolutionName,
+    ResolutionGraph,
+    ResolutionName,
+    ResolutionNodeType,
+    SourceResolutionName,
+)
 from matchbox.common.sources import Match, SourceConfig
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
@@ -33,13 +40,16 @@ from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourceKey,
     Contains,
+    EvalJudgements,
     PKSpace,
     Probabilities,
     ResolutionFrom,
     Resolutions,
     Results,
     SourceConfigs,
+    Users,
 )
+from matchbox.server.postgresql.utils import evaluation
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
     dump,
@@ -51,7 +61,11 @@ from matchbox.server.postgresql.utils.insert import (
     insert_results,
     insert_source,
 )
-from matchbox.server.postgresql.utils.query import get_source_config, match, query
+from matchbox.server.postgresql.utils.query import (
+    get_source_config,
+    match,
+    query,
+)
 from matchbox.server.postgresql.utils.results import get_model_config
 
 T = TypeVar("T")
@@ -82,9 +96,23 @@ class FilteredClusters(BaseModel):
                         ClusterSourceKey.cluster_id == Clusters.cluster_id,
                     )
                 else:
-                    query = query.join(
-                        Probabilities,
-                        Probabilities.cluster_id == Clusters.cluster_id,
+                    query = (
+                        query.join(
+                            Probabilities,
+                            Probabilities.cluster_id == Clusters.cluster_id,
+                            isouter=True,
+                        )
+                        .join(
+                            EvalJudgements,
+                            EvalJudgements.endorsed_cluster_id == Clusters.cluster_id,
+                            isouter=True,
+                        )
+                        .filter(
+                            or_(
+                                EvalJudgements.endorsed_cluster_id.is_not(None),
+                                Probabilities.cluster_id.is_not(None),
+                            )
+                        )
                     )
 
             return query.scalar()
@@ -168,12 +196,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
         source: SourceResolutionName,
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
+        return_leaf_id: bool = False,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
             source=source,
             resolution=resolution,
             threshold=threshold,
+            return_leaf_id=return_leaf_id,
             limit=limit,
         )
 
@@ -513,3 +543,36 @@ class MatchboxPostgres(MatchboxDBAdapter):
             else:
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(childen=children)
+
+    def login(self, user_name: str) -> int:  # noqa: D102
+        with MBDB.get_session() as session:
+            if user_id := session.scalar(
+                select(Users.user_id).where(Users.name == user_name)
+            ):
+                return user_id
+
+            user = Users(name=user_name)
+            session.add(user)
+            session.commit()
+
+            return user.user_id
+
+    def insert_judgement(self, judgement: CommonJudgement) -> None:  # noqa: D102
+        # Check that all referenced cluster IDs exist
+        ids = list(chain(*judgement.endorsed)) + [judgement.shown]
+        self.validate_ids(ids)
+        evaluation.insert_judgement(judgement)
+
+    def get_judgements(self) -> tuple[Table, Table]:  # noqa: D102
+        return evaluation.get_judgements()
+
+    def compare_models(self, resolutions: list[ModelResolutionName]) -> ModelComparison:  # noqa: D102
+        judgements, expansion = self.get_judgements()
+        if not len(judgements):
+            raise MatchboxNoJudgements()
+        return evaluation.compare_models(resolutions, judgements, expansion)
+
+    def sample_for_eval(  # noqa: D102
+        self, n: int, resolution: ModelResolutionName, user_id: int
+    ) -> ArrowTable:
+        return evaluation.sample(n, resolution, user_id)

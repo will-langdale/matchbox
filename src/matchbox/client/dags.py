@@ -17,7 +17,7 @@ from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
 from matchbox.client.results import Results
-from matchbox.common.dtos import ResolutionName, SourceResolutionName
+from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
 from matchbox.common.sources import RelationalDBLocation, SourceConfig, SourceField
 
@@ -161,6 +161,7 @@ class ModelStep(Step):
 
         return query(
             selectors,
+            return_leaf_id=False,
             return_type="polars",
             threshold=step_input.threshold,
             resolution=step_input.name,

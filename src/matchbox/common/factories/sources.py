@@ -16,7 +16,7 @@ from sqlglot import cast, select
 from sqlglot.expressions import column
 
 from matchbox.common.arrow import SCHEMA_INDEX
-from matchbox.common.dtos import DataTypes, SourceResolutionName
+from matchbox.common.dtos import DataTypes
 from matchbox.common.factories.entities import (
     ClusterEntity,
     EntityReference,
@@ -27,6 +27,7 @@ from matchbox.common.factories.entities import (
     generate_entities,
     probabilities_to_results_entities,
 )
+from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import hash_values
 from matchbox.common.sources import (
     RelationalDBLocation,
@@ -126,7 +127,7 @@ class SourceTestkit(BaseModel):
 
     @property
     def query_backend(self) -> pa.Table:
-        """Return a PyArrow table in the same format as the SCHEMA_MB_IDS DTO."""
+        """Return a PyArrow table in the same format as the SCHEMA_QUERY DTO."""
         return pa.Table.from_arrays(
             [self.data["id"], self.data["key"]], names=["id", "key"]
         )

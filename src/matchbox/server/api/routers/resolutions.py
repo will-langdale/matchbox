@@ -5,16 +5,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from matchbox.common.dtos import (
-    BackendRetrievableType,
+    BackendResourceType,
     CRUDOperation,
     NotFoundError,
-    ResolutionName,
     ResolutionOperationStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
 )
+from matchbox.common.graph import ResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
     validate_api_key,
@@ -53,7 +53,7 @@ async def delete_resolution(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxDeletionNotConfirmed as e:

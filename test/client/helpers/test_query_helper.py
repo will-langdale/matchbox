@@ -7,8 +7,8 @@ from sqlalchemy import Engine
 
 from matchbox import query
 from matchbox.client.helpers import select
-from matchbox.common.arrow import SCHEMA_MB_IDS, table_to_buffer
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError
+from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
+from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.graph import DEFAULT_RESOLUTION
@@ -41,7 +41,7 @@ def test_query_no_resolution_ok_various_params(
                         {"key": "0", "id": 1},
                         {"key": "1", "id": 2},
                     ],
-                    schema=SCHEMA_MB_IDS,
+                    schema=SCHEMA_QUERY,
                 )
             ).read(),
         )
@@ -50,22 +50,26 @@ def test_query_no_resolution_ok_various_params(
     selectors = select({"foo": ["a", "b"]}, credentials=sqlite_warehouse)
 
     # Tests with no optional params
-    results = query(selectors)
+    results = query(selectors, return_leaf_id=False)
     assert len(results) == 2
     assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
-        "source": testkit.source_config.name
+        "source": testkit.source_config.name,
+        "return_leaf_id": "False",
     }
 
     # Tests with optional params
-    results = query(selectors, return_type="arrow", threshold=50).to_pandas()
+    results = query(
+        selectors, return_type="arrow", threshold=50, return_leaf_id=False
+    ).to_pandas()
     assert len(results) == 2
     assert {"foo_a", "foo_b", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "source": testkit.source_config.name,
         "threshold": "50",
+        "return_leaf_id": "False",
     }
 
 
@@ -107,7 +111,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
                             {"key": "0", "id": 1},
                             {"key": "1", "id": 2},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -119,7 +123,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
                             {"key": "2", "id": 1},
                             {"key": "3", "id": 2},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -130,7 +134,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     sels = select("foo", {"foo2": ["c"]}, credentials=sqlite_warehouse)
 
     # Validate results
-    results = query(sels)
+    results = query(sels, return_leaf_id=False)
     assert len(results) == 4
     assert {
         # All fields except key automatically selected for `foo`
@@ -145,14 +149,16 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     assert dict(query_route.calls[-2].request.url.params) == {
         "source": testkit1.source_config.name,
         "resolution": DEFAULT_RESOLUTION,
+        "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "source": testkit2.source_config.name,
         "resolution": DEFAULT_RESOLUTION,
+        "return_leaf_id": "False",
     }
 
     # It also works with the selectors specified separately
-    query([sels[0]], [sels[1]])
+    query([sels[0]], [sels[1]], return_leaf_id=False)
 
 
 @pytest.mark.parametrize(
@@ -200,7 +206,7 @@ def test_query_combine_type(
                             {"key": "1", "id": 1},
                             {"key": "2", "id": 2},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -214,7 +220,7 @@ def test_query_combine_type(
                             {"key": "3", "id": 2},
                             {"key": "4", "id": 3},
                         ],
-                        schema=SCHEMA_MB_IDS,
+                        schema=SCHEMA_QUERY,
                     )
                 ).read(),
             ),
@@ -224,7 +230,7 @@ def test_query_combine_type(
     sels = select("foo", "bar", credentials=sqlite_warehouse)
 
     # Validate results
-    results = query(sels, combine_type=combine_type)
+    results = query(sels, combine_type=combine_type, return_leaf_id=False)
 
     if combine_type == "set_agg":
         expected_len = 3
@@ -258,7 +264,7 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
             404,
             json=NotFoundError(
                 details="Resolution 42 not found",
-                entity=BackendRetrievableType.RESOLUTION,
+                entity=BackendResourceType.RESOLUTION,
             ).model_dump(),
         )
     )

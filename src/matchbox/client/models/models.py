@@ -8,14 +8,9 @@ from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import (
-    ModelAncestor,
-    ModelConfig,
-    ModelResolutionName,
-    ModelType,
-    ResolutionName,
-)
+from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.graph import ModelResolutionName, ResolutionName
 from matchbox.common.logging import logger
 
 P = ParamSpec("P")

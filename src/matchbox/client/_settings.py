@@ -12,6 +12,7 @@ class ClientSettings(BaseSettings):
     api_key: SecretStr | None = None
     retry_delay: int = 15
     default_warehouse: str | None = None
+    user: str | None = None
 
     model_config = SettingsConfigDict(
         extra="ignore",

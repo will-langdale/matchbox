@@ -8,16 +8,15 @@ from fastapi import (
 )
 
 from matchbox.common.dtos import (
-    BackendRetrievableType,
+    BackendResourceType,
     NotFoundError,
-    ResolutionName,
-    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
+from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.sources import SourceConfig
 from matchbox.server.api.dependencies import (
     BackendDependency,
@@ -56,7 +55,7 @@ async def get_source_config(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendResourceType.SOURCE
             ).model_dump(),
         ) from e
 
@@ -76,6 +75,6 @@ async def get_resolution_source_configs(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e

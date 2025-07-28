@@ -23,10 +23,7 @@ from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import (
     ModelConfig,
-    ModelResolutionName,
     ModelType,
-    ResolutionName,
-    SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -40,6 +37,11 @@ from matchbox.common.factories.sources import (
     SourceTestkit,
     SourceTestkitParameters,
     linked_sources_factory,
+)
+from matchbox.common.graph import (
+    ModelResolutionName,
+    ResolutionName,
+    SourceResolutionName,
 )
 from matchbox.common.transform import DisjointSet, graph_results
 
@@ -343,7 +345,7 @@ def generate_dummy_probabilities(
 
         if n_extra_edges > 0:
             # Generate remaining random edges strictly within this component
-            # TODO: this can certainly be optimised
+            # Note: this can certainly be optimised, but doesn't matter much for now
             if deduplicate:
                 all_possible_edges = list(
                     {

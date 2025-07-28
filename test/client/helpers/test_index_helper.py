@@ -7,7 +7,7 @@ from sqlalchemy import Engine
 
 from matchbox.client.helpers.index import get_source, index
 from matchbox.common.dtos import (
-    BackendRetrievableType,
+    BackendResourceType,
     BackendUploadType,
     NotFoundError,
     UploadStatus,
@@ -254,7 +254,7 @@ def test_get_source_404_error(matchbox_api: MockRouter, sqlite_warehouse: Engine
             404,
             json=NotFoundError(
                 details="SourceConfig nonexistent not found",
-                entity=BackendRetrievableType.SOURCE,
+                entity=BackendResourceType.SOURCE,
             ).model_dump(),
         )
     )

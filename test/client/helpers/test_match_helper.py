@@ -5,7 +5,7 @@ from sqlalchemy import Engine
 
 from matchbox import match
 from matchbox.client.helpers.selector import Match
-from matchbox.common.dtos import BackendRetrievableType, NotFoundError
+from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
@@ -96,7 +96,7 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
             404,
             json=NotFoundError(
                 details="Resolution 42 not found",
-                entity=BackendRetrievableType.RESOLUTION,
+                entity=BackendResourceType.RESOLUTION,
             ).model_dump(),
         )
     )
@@ -130,7 +130,7 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             404,
             json=NotFoundError(
                 details="SourceConfig 42 not found",
-                entity=BackendRetrievableType.SOURCE,
+                entity=BackendResourceType.SOURCE,
             ).model_dump(),
         )
     )

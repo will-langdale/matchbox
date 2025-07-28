@@ -11,8 +11,11 @@ from sqlalchemy import create_engine
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
-from matchbox.common.dtos import ResolutionName, SourceResolutionName
-from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.common.graph import (
+    DEFAULT_RESOLUTION,
+    ResolutionName,
+    SourceResolutionName,
+)
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceConfig, SourceField
 
@@ -146,13 +149,15 @@ def _process_query_result(
     data: PolarsDataFrame,
     selector: Selector,
     mb_ids: PolarsDataFrame,
+    return_leaf_id: bool,
 ) -> PolarsDataFrame:
     """Process query results by joining with matchbox IDs and filtering fields.
 
     Args:
         data: The raw data from the source
         selector: The selector with source and fields information
-        mb_ids: The matchbox IDs
+        mb_ids: The top-level matchbox IDs for the resolution
+        return_leaf_id: Whether to return MB IDs of source clusters
 
     Returns:
         The processed table with joined matchbox IDs and filtered fields
@@ -167,7 +172,10 @@ def _process_query_result(
 
     # Apply field filtering if needed
     if selector.fields:
-        keep_cols = ["id"] + selector.qualified_fields
+        base_fields = ["id"]
+        if return_leaf_id:
+            base_fields.append("leaf_id")
+        keep_cols = base_fields + selector.qualified_fields
         match_cols = [col for col in joined_table.columns if col in keep_cols]
         return joined_table.select(match_cols)
     else:
@@ -177,6 +185,7 @@ def _process_query_result(
 def _process_selectors(
     selectors: list[Selector],
     resolution: ResolutionName | None,
+    return_leaf_id: bool,
     threshold: int | None,
     batch_size: int | None,
 ) -> Iterator[PolarsDataFrame]:
@@ -193,6 +202,7 @@ def _process_selectors(
                 source=selector.source.name,
                 resolution=resolution,
                 threshold=threshold,
+                return_leaf_id=return_leaf_id,
             )
         )
 
@@ -203,7 +213,12 @@ def _process_selectors(
         )
 
         processed_batches = [
-            _process_query_result(data=b, selector=selector, mb_ids=mb_ids)
+            _process_query_result(
+                data=b,
+                selector=selector,
+                mb_ids=mb_ids,
+                return_leaf_id=return_leaf_id,
+            )
             for b in raw_batches
         ]
         selector_results.append(pl.concat(processed_batches, how="vertical"))
@@ -215,6 +230,7 @@ def query(
     *selectors: list[Selector],
     resolution: ResolutionName | None = None,
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
+    return_leaf_id: bool = True,
     return_type: ReturnTypeStr = "pandas",
     threshold: int | None = None,
     batch_size: int | None = None,
@@ -239,6 +255,7 @@ def query(
             * If `set_agg`, join on Matchbox ID, group on Matchbox ID, then
                 aggregate to nested lists of unique values. One row per ID,
                 but all requested data is in nested arrays
+        return_leaf_id: Whether matchbox IDs for source clusters should also be returned
         return_type: The form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): The threshold to use for creating clusters
@@ -286,6 +303,7 @@ def query(
     res = _process_selectors(
         selectors=selectors,
         resolution=resolution,
+        return_leaf_id=return_leaf_id,
         threshold=threshold,
         batch_size=batch_size,
     )

@@ -39,8 +39,9 @@ from matchbox.common.db import (
     sql_to_df,
     validate_sql_for_data_extraction,
 )
-from matchbox.common.dtos import DataTypes, SourceResolutionName
+from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
 
@@ -143,6 +144,7 @@ class Location(ABC, BaseModel):
         batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
+        keys: tuple[str, list[str]] | None = None,
     ) -> Iterator[QueryReturnType]:
         """Execute ET logic against location and return batches.
 
@@ -155,6 +157,9 @@ class Location(ABC, BaseModel):
                 * If a callable is provided, it will take the old name as input and
                     return the new name.
             return_type: The type of data to return. Defaults to "polars".
+            keys: Rule to only retrieve rows by specific keys.
+                The key of the dictionary is a field name on which to filter.
+                Filters source entries where the key field is in the dict values.
 
         Raises:
             AttributeError: If the credentials are not set.
@@ -249,9 +254,24 @@ class RelationalDBLocation(Location):
         batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
+        keys: tuple[str, list[str]] | None = None,
     ) -> Generator[QueryReturnType, None, None]:
         batch_size = batch_size or 10_000
         with self._get_connection() as conn:
+            if keys:
+                key_field, filter_values = keys
+                quoted_key_values = [f"'{key_val}'" for key_val in filter_values]
+                # Only filter original SQL if keys are provided
+                if quoted_key_values:
+                    comma_separated_values = ", ".join(quoted_key_values)
+                    # Deal with end-of-statement semi-colons that could be supplied
+                    extract_transform = extract_transform.replace(";", "")
+                    # This "IN" expression is a SQL standard;
+                    # though this is hard to prove as the standard is behind a paywall
+                    extract_transform = (
+                        f"select * from ({extract_transform}) as sub "
+                        f"where {key_field} in ({comma_separated_values})"
+                    )
             yield from sql_to_df(
                 stmt=extract_transform,
                 connection=conn,
@@ -445,6 +465,7 @@ class SourceConfig(BaseModel):
         qualify_names: bool = False,
         batch_size: int | None = None,
         return_type: ReturnTypeStr = "polars",
+        keys: list[str] | None = None,
     ) -> Generator[QueryReturnType, None, None]:
         """Applies the extract/transform logic to the source and returns the results.
 
@@ -453,6 +474,7 @@ class SourceConfig(BaseModel):
                 source name.
             batch_size: Indicate the size of each batch when processing data in batches.
             return_type: The type of data to return. Defaults to "polars".
+            keys: List of keys to select a subset of all source entries.
 
         Returns:
             The requested data in the specified format, as an iterator of tables.
@@ -463,12 +485,21 @@ class SourceConfig(BaseModel):
             def _rename(c: str) -> str:
                 return self.name + "_" + c
 
-        yield from self.location.execute(
-            extract_transform=self.extract_transform,
-            rename=_rename,
-            batch_size=batch_size,
-            return_type=return_type,
-        )
+        if keys:
+            yield from self.location.execute(
+                extract_transform=self.extract_transform,
+                rename=_rename,
+                batch_size=batch_size,
+                return_type=return_type,
+                keys=(self.key_field.name, keys),
+            )
+        else:
+            yield from self.location.execute(
+                extract_transform=self.extract_transform,
+                rename=_rename,
+                batch_size=batch_size,
+                return_type=return_type,
+            )
 
     def hash_data(self, batch_size: int | None = None) -> ArrowTable:
         """Retrieve and hash a dataset from its warehouse, ready to be inserted.

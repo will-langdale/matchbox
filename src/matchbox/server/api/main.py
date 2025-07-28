@@ -20,13 +20,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
-    BackendRetrievableType,
+    BackendResourceType,
     BackendUploadType,
     CountResult,
+    LoginAttempt,
+    LoginResult,
     NotFoundError,
     OKMessage,
-    ResolutionName,
-    SourceResolutionName,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -35,7 +35,7 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.graph import ResolutionGraph
+from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.common.sources import Match
 from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.cache import process_upload
@@ -46,7 +46,7 @@ from matchbox.server.api.dependencies import (
     lifespan,
     validate_api_key,
 )
-from matchbox.server.api.routers import models, resolutions, sources
+from matchbox.server.api.routers import eval, models, resolutions, sources
 
 app = FastAPI(
     title="matchbox API",
@@ -56,6 +56,7 @@ app = FastAPI(
 app.include_router(models.router)
 app.include_router(sources.router)
 app.include_router(resolutions.router)
+app.include_router(eval.router)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -84,6 +85,17 @@ async def add_security_headers(request: Request, call_next):
 async def healthcheck() -> OKMessage:
     """Perform a health check and return the status."""
     return OKMessage()
+
+
+@app.post(
+    "/login",
+)
+async def login(
+    backend: BackendDependency,
+    credentials: LoginAttempt,
+) -> LoginResult:
+    """Receives a user name and returns a user ID."""
+    return LoginResult(user_id=backend.login(credentials.user_name))
 
 
 @app.post(
@@ -224,6 +236,7 @@ async def get_upload_status(
 def query(
     backend: BackendDependency,
     source: SourceResolutionName,
+    return_leaf_id: bool,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
@@ -234,20 +247,21 @@ def query(
             source=source,
             resolution=resolution,
             threshold=threshold,
+            return_leaf_id=return_leaf_id,
             limit=limit,
         )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendResourceType.SOURCE
             ).model_dump(),
         ) from e
 
@@ -280,14 +294,14 @@ def match(
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.RESOLUTION
+                details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
     except MatchboxSourceNotFoundError as e:
         raise HTTPException(
             status_code=404,
             detail=NotFoundError(
-                details=str(e), entity=BackendRetrievableType.SOURCE
+                details=str(e), entity=BackendResourceType.SOURCE
             ).model_dump(),
         ) from e
 
