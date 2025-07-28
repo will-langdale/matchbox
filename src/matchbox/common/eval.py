@@ -201,43 +201,43 @@ def process_judgements(
         negative_pairs = potential_pairs - positive_pairs
 
         # -- EXAMPLE --
-        # A user is shown (1234) and they endorse (1), (23) and (4).
-        # We need to keep track for this judgement of the +1 endorsement for (23),
-        # and the -1 rejections for (12), (13), (14), (24), (34).
+        # User is shown cluster (1234) and endorses three groups: (1), (23), and (4).
+        # This means: pair (2,3) is GOOD, but (1,2), (1,3), (1,4), (2,4), (3,4) are BAD.
+        # We want to return: +1 for (2,3), -1 for each rejected pair.
 
-        # Unfortunately, our validation data is not grouped at the level of judgement
-        # submitted (meaning, at the level of "cluster shown to user at one point"),
-        # like with `Judgement` objects defined on this file.
-        # Instead, we get a table with one row for each endorsed cluster, and all other
-        # rows from other judgements mixed together. This function needs to process each
-        # row one by one, without full knowledge of what's coming next.
+        # THE CHALLENGE: Data arrives as separate rows, not as a complete judgement
+        # Instead of one row with the full judgement, we get 3 separate rows:
+        # Row A: [shown: (1234), endorsed: (1)]
+        # Row B: [shown: (1234), endorsed: (23)]
+        # Row C: [shown: (1234), endorsed: (4)]
+        # These rows might be mixed with other users' judgements!
 
-        # In the example above, we will get 3 separate rows, potentially
-        # mixed with other rows from other judgements:
-        # [shown: (1234); endorsed: (1)]
-        # ----> at this point, all we know is the potential rejection of
-        #       (12), (13), (14), (23), (24), (34). Because this row is just part of a
-        #       wider judgement, and the same pair rejections will be inferred from
-        #       multiple rows for the same judgement, instead of (double) counting -1
-        #       for all these pairs, we weigh the negative count by the ratio
-        #       (endorsed leaves) / (shown leaves), i.e.: -1/4
-        # [shown: (1234); endorsed: (23)]
-        # ----> we have now learnt that (23) is endorsed after all. We want to add +1
-        #       to the final count, but we need to add a little bit more to counteract
-        #       the effect of negative values added tentatively for all other rows in
-        #       in this judgement. For example, the previous row subtracted -1/4. The
-        #       weight subtracted for (23) in other rows for this judgement will be the
-        #       ratio ((shown leaves) - (endorsed_leaves)) / (shown leaves). Hence,
-        #       the new value for (23) is -1/4 + 1 + 2/4 = 1 + 1/4.
-        #       This row also confirms a negative judgement over (12), (13), (14), (24)
-        #       (34). For all of these the new value is -1/4 - 2/4 = -3/4
-        # [shown: (1234); endorsed: (4)]
-        # ----> we subtract -1/4 again from all pairs, like for the first row of this
-        #       judgement. Hence, (23) gets a value of 1, and all other pairs a value
-        #       of -4/4=-1
-        # And we're done. It doesn't matter what order these rows are in, or if they are
-        # interleaved with rows from other judgements, because of the commutative and
-        # associative properties of addition, e.g. a + b + c = c + b + a = (c + b) + a
+        # THE SOLUTION: Process each row individually using weighted scoring
+
+        # Processing Row A: [shown: (1234), endorsed: (1)]
+        # - We see potential pairs: (1,2), (1,3), (1,4), (2,3), (2,4), (3,4)
+        # - We see endorsed pairs: none (single item can't form pairs)
+        # - We tentatively reject ALL potential pairs with weight -1/4
+        #   (Why 1/4? Because this endorsed group has 1 item out of 4 total items)
+        # - Current scores: all pairs = -0.25
+
+        # Processing Row B: [shown: (1234), endorsed: (23)]
+        # - Potential pairs: same as before
+        # - Endorsed pairs: (2,3)
+        # - For endorsed pair (2,3): Add +1, PLUS compensation for negative scoring from
+        #   other rows for this judgement (i.e. Row A and Row C)
+        #   Compensation = +2/4 (non-endorsed group size / total size)
+        #   Final addition: +1 + 0.5 = +1.5
+        # - For rejected pairs: Add more negative weight = -2/4 = -0.5
+        # - Current scores: (2,3) = -0.25 + 1.5 = +1.25, others = -0.25 - 0.5 = -0.75
+
+        # Processing Row C: [shown: (1234), endorsed: (4)]
+        # - Add final negative weight of -1/4 to all potential pairs
+        # - Final scores: (2,3) = +1.25 - 0.25 = +1.0, others = -0.75 - 0.25 = -1.0
+
+        # RESULT: Perfect! (2,3) gets +1 (endorsed), rejected pairs get -1 each.
+        # The maths works regardless of row order or interleaving with other judgements
+        # as long as no partial or splintered clusters are present.
 
         # As in the example above:
         # Subtract negative weight for all shown pairs not endorsed on this row
