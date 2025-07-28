@@ -10,6 +10,21 @@ from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.graph import DEFAULT_RESOLUTION
 
+
+def fetch_samples():
+    """Download same samples to evaluate and add to session."""
+    st.session_state.resolution = st.session_state.get(
+        "resolution_input", DEFAULT_RESOLUTION
+    )
+    with st.spinner("Loading samples..."):
+        st.session_state.samples = get_samples(
+            n=100,
+            resolution=st.session_state.resolution,
+            user_id=st.session_state.user_id,
+        )
+    st.session_state.step = "eval" if st.session_state.samples else "done"
+
+
 st.title("Matchbox evaluation session")
 
 if "step" not in st.session_state:
@@ -17,17 +32,15 @@ if "step" not in st.session_state:
         raise MatchboxClientSettingsException("User name is unset.")
     st.session_state.user_name = settings.user
     st.session_state.user_id = _handler.login(user_name=st.session_state.user_name)
-    st.session_state.resolution = settings.eval_resolution or DEFAULT_RESOLUTION
-    with st.spinner("Loading samples..."):
-        st.session_state.samples = get_samples(
-            n=100,
-            resolution=st.session_state.resolution,
-            user_id=st.session_state.user_id,
-        )
-    if len(st.session_state.samples):
-        st.session_state.step = "eval"
-    else:
-        st.session_state.step = "done"
+    st.session_state.step = "ready"
+
+
+if st.session_state.step == "ready":
+    st.text_input(
+        "Resolution to sample from", DEFAULT_RESOLUTION, key="resolution_input"
+    )
+    st.button("Fetch samples", type="primary", on_click=fetch_samples)
+
 
 if st.session_state.step == "eval":
     if "df" not in st.session_state:
@@ -41,7 +54,7 @@ if st.session_state.step == "eval":
 
     st.markdown(
         f"Welcome **{st.session_state.user_name}**. "
-        f"Sampling from resolution: **{st.session_state.resolution}.**"
+        f"Sampling from resolution: `{st.session_state.resolution}`"
     )
     edited_df = st.data_editor(
         st.session_state.df,
@@ -83,5 +96,5 @@ if st.session_state.step == "eval":
     else:
         st.button("Looks good to me.", icon="✅", on_click=looks_good)
 
-else:
+if st.session_state.step == "done":
     st.header("You're all done 🔥")
