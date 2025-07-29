@@ -22,7 +22,6 @@ from typing import (
 import polars as pl
 from pyarrow import Table as ArrowTable
 from pydantic import (
-    AnyUrl,
     BaseModel,
     ConfigDict,
     Field,
@@ -35,7 +34,6 @@ from sqlalchemy.exc import OperationalError
 from matchbox.common.db import (
     QueryReturnType,
     ReturnTypeStr,
-    clean_uri,
     sql_to_df,
     validate_sql_for_data_extraction,
 )
@@ -79,19 +77,19 @@ class Location(ABC, BaseModel):
     """A location for a data source."""
 
     type: LocationTypeStr
-    uri: AnyUrl
+    name: str
     credentials: Any | None = Field(exclude=True, default=None)
 
     def __eq__(self, other: Any) -> bool:
         """Custom equality which ignores credentials."""
-        return (self.type, self.uri) == (
+        return (self.type, self.name) == (
             other.type,
-            other.uri,
+            other.name,
         )
 
     def __hash__(self) -> int:
         """Custom hash which ignores credentials."""
-        return hash((self.type, self.uri))
+        return hash((self.type, self.name))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the Location object."""
@@ -100,7 +98,7 @@ class Location(ABC, BaseModel):
 
         obj_copy = type(self)(
             type=deepcopy(self.type, memo),
-            uri=deepcopy(self.uri, memo),
+            name=deepcopy(self.name, memo),
         )
 
         # Both objects should share the same credentials
@@ -110,7 +108,7 @@ class Location(ABC, BaseModel):
         return obj_copy
 
     @abstractmethod
-    def add_credentials(self, credentials: Any) -> None:
+    def add_credentials(self, credentials: Any) -> Self:
         """Adds credentials to the location."""
         ...
 
@@ -173,7 +171,7 @@ class RelationalDBLocation(Location):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: Literal["rdbms"] = "rdbms"
-    uri: AnyUrl
+    name: str
     credentials: Engine | None = Field(
         exclude=True,
         default=None,
@@ -181,12 +179,6 @@ class RelationalDBLocation(Location):
             "The credentials for a relational database are a SQLAlchemy Engine."
         ),
     )
-
-    @field_validator("uri", mode="after")
-    @classmethod
-    def validate_uri(cls, value: AnyUrl) -> AnyUrl:
-        """Ensure no credentials, query params, or fragments are in the URI."""
-        return clean_uri(value)
 
     @contextmanager
     def _get_connection(self):
@@ -200,33 +192,9 @@ class RelationalDBLocation(Location):
         finally:
             connection.close()
 
-    def _validate_engine(self, credentials: Engine) -> None:
-        """Validate an engine matches the URI.
-
-        Raises:
-            ValueError: If the Engine and URI do not match.
-        """
-        uri = clean_uri(str(credentials.url))
-
-        if any(
-            [
-                uri.scheme != self.uri.scheme,
-                uri.host != self.uri.host,
-                uri.port != self.uri.port,
-                uri.path != self.uri.path,
-            ]
-        ):
-            raise ValueError(
-                "The Engine location URI does not match the location model URI. \n"
-                f"Scheme: {uri.scheme}, {self.uri.scheme} \n"
-                f"Host: {uri.host}, {self.uri.host} \n"
-                f"Port: {uri.port}, {self.uri.port} \n"
-                f"Path: {uri.path}, {self.uri.path} \n"
-            )
-
     def add_credentials(self, credentials: Engine) -> None:  # noqa: D102
-        self._validate_engine(credentials)
         self.credentials = credentials
+        return self
 
     @requires_credentials
     def connect(self) -> bool:  # noqa: D102
@@ -280,18 +248,6 @@ class RelationalDBLocation(Location):
                 return_batches=True,
                 return_type=return_type,
             )
-
-    @classmethod
-    def from_engine(cls, engine: Engine) -> "RelationalDBLocation":
-        """Create a RelationalDBLocation from a SQLAlchemy Engine."""
-        cleaned_url = engine.url.set(
-            username=None,
-            password=None,
-            query={},
-        )
-        location = cls(uri=str(cleaned_url))
-        location.add_credentials(engine)
-        return location
 
 
 class SourceField(BaseModel):
