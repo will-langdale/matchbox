@@ -5,7 +5,6 @@ import logging
 import os
 from datetime import datetime, timezone
 from functools import cached_property
-from importlib.metadata import version
 from typing import Any, Final, Literal
 
 from rich.console import Console
@@ -98,11 +97,6 @@ class ASIMFormatter(logging.Formatter):
         return str((1 << 64) - 1 & trace_id)
 
     @cached_property
-    def matchbox_version(self) -> str:
-        """Cached matchbox version."""
-        return version("matchbox_db")
-
-    @cached_property
     def event_severity(self) -> dict[str, str]:
         """Event severity level lookup."""
         return {
@@ -137,6 +131,14 @@ class ASIMFormatter(logging.Formatter):
         This environment variable is set by the ECS task definition.
         """
         return os.getenv("DD_SERVICE", default="")
+
+    @cached_property
+    def version(self) -> str:
+        """Datadog's version value.
+
+        This environment variable is set in the Dockerfile for the task.
+        """
+        return os.getenv("DD_VERSION", default="")
 
     def get_trace_id_span_id(self) -> tuple[str | None, str | None]:
         """Retrieve's Datadog's trace ID and span ID variables.
@@ -180,7 +182,7 @@ class ASIMFormatter(logging.Formatter):
                 "dd.span_id": span_id,
                 "dd.team": "matchbox",
                 "dd.trace_id": trace_id,
-                "dd.version": self.matchbox_version,
+                "dd.version": self.version,
                 "message": record.getMessage(),
             },
         )

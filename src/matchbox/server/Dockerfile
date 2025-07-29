@@ -10,7 +10,7 @@ WORKDIR /code
 ARG MB_VERSION
 RUN if [ -z "$MB_VERSION" ]; then echo 'Environment variable MB_VERSION must be specified. Exiting.'; exit 1; fi
 ENV MB_VERSION=${MB_VERSION}
-
+ENV DD_VERSION=${MB_VERSION}
 
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
