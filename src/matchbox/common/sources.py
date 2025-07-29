@@ -245,7 +245,9 @@ class RelationalDBLocation(Location):
         return validate_sql_for_data_extraction(extract_transform)
 
     def head(self, extract_transform: str) -> pl.DataFrame:  # noqa: D102
-        return next(self.execute(extract_transform.rstrip(" \t\n;") + " limit 100;"))
+        query = extract_transform.rstrip(" \t\n;") + " limit 100;"
+        batches = list(self.execute(query))
+        return batches[0]
 
     @requires_credentials
     def execute(  # noqa: D102
