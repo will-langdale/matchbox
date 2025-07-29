@@ -1,3 +1,5 @@
+from typing import Callable
+
 import polars as pl
 import pytest
 from httpx import Response
@@ -8,10 +10,15 @@ from sqlalchemy import Engine
 
 from matchbox.client.eval import get_samples
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
+from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.sources import source_from_tuple
 
 
-def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+def test_get_samples(
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
+    env_setter: Callable[[str, str], None],
+):
     user_id = 12
 
     # Mock sources
@@ -40,7 +47,7 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     testkit_baz = source_from_tuple(
         data_tuple=({"col": 1},),
         data_keys=["x"],
-        name="bar",
+        name="baz",
         location_name="db_other",
         engine=sqlite_warehouse,
     )
@@ -86,7 +93,10 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Check results
     with pytest.warns(UserWarning, match="Skipping"):
         samples = get_samples(
-            n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
+            n=10,
+            resolution="resolution",
+            user_id=user_id,
+            credentials={"db": sqlite_warehouse},
         )
 
     assert sorted(samples.keys()) == [10, 11]
@@ -139,7 +149,7 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
     assert no_samples == {}
 
-    # And if no data matches credentials?
+    # And if no credentials available?
     just_baz_samples = Table.from_pylist(
         [{"root": 10, "leaf": 1, "key": "x", "source": "baz"}],
         schema=SCHEMA_EVAL_SAMPLES,
@@ -150,7 +160,20 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             content=table_to_buffer(just_baz_samples).read(),
         )
     )
-    no_accessible_samples = get_samples(
-        n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
-    )
+    no_accessible_samples = get_samples(n=10, resolution="resolution", user_id=user_id)
     assert no_accessible_samples == {}
+
+    # Using default credentials as fallback
+    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", str(sqlite_warehouse.url))
+
+    samples_default_creds = get_samples(
+        n=10, resolution="resolution", user_id=user_id, use_default_credentials=True
+    )
+    assert len(samples_default_creds) == 1
+
+    # What happens if source cannot be queried using credentials?
+    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", "sqlite:///:memory:")
+    with pytest.raises(MatchboxSourceTableError):
+        get_samples(
+            n=10, resolution="resolution", user_id=user_id, use_default_credentials=True
+        )

@@ -7,6 +7,7 @@ import polars as pl
 from matplotlib import pyplot as plt
 from matplotlib.pyplot import Figure
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
@@ -16,6 +17,7 @@ from matchbox.common.eval import (
     PrecisionRecall,
     precision_recall,
 )
+from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 from matchbox.common.logging import logger
 
@@ -24,8 +26,8 @@ def get_samples(
     n: int,
     user_id: int,
     resolution: ModelResolutionName | None = None,
-    credentials: Any | None = None,
-    # TODO: allow different credentials per location name
+    credentials: dict[str, Any] | None = None,
+    use_default_credentials: bool = False,
 ) -> dict[int, pl.DataFrame]:
     """Retrieve samples enriched with source data, grouped by resolution cluster.
 
@@ -34,26 +36,32 @@ def get_samples(
         user_id: ID of the user requesting the samples
         resolution: Model resolution proposing the clusters. If not set, will
             use a default resolution.
-        credentials: Valid credentials for the source configs.
-            Sources that can't be queried with these credentials will be skipped.
-            If not provided, will populate with a SQLAlchemy engine
-            from the default warehouse set in the environment variable
-            `MB__CLIENT__DEFAULT_WAREHOUSE`
+        credentials: Dictionary from location names to valid credentials for each.
+            Locations whose name is missing from the dictionary will be skipped.
+        use_default_credentials: Whether to use for all unset location credentials
+            a SQLAlchemy engine for the default warehouse set in the environment
+            variable `MB__CLIENT__DEFAULT_WAREHOUSE`.
 
     Returns:
         Dictionary of cluster ID to dataframe describing the cluster
+
+    Raises:
+        MatchboxSourceTableError: If a source cannot be queried from a location using
+            provided or default credentials.
     """
     if not resolution:
         resolution = DEFAULT_RESOLUTION
+
     if not credentials:
-        if default_credentials := settings.default_warehouse:
-            credentials = create_engine(default_credentials)
+        credentials = {}
+
+    default_credentials = None
+    if use_default_credentials:
+        if default_credentials_uri := settings.default_warehouse:
+            default_credentials = create_engine(default_credentials_uri)
             logger.warning("Using default engine")
         else:
-            raise ValueError(
-                "Credentials need to be provided if "
-                "`MB__CLIENT__DEFAULT_WAREHOUSE` is unset"
-            )
+            raise ValueError("`MB__CLIENT__DEFAULT_WAREHOUSE` is unset")
 
     samples: pl.DataFrame = pl.from_arrow(
         _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
@@ -65,9 +73,14 @@ def get_samples(
     results_by_source = []
     for source_resolution in samples["source"].unique():
         source_config = _handler.get_source_config(source_resolution)
-        try:
-            source_config.location.add_credentials(credentials=credentials)
-        except ValueError:
+        location_name = source_config.location.name
+        if location_name in credentials:
+            source_config.location.add_credentials(
+                credentials=credentials[location_name]
+            )
+        elif default_credentials:
+            source_config.location.add_credentials(credentials=default_credentials)
+        else:
             warnings.warn(
                 f"Skipping {source_resolution}, incompatible with given credentials.",
                 UserWarning,
@@ -78,11 +91,17 @@ def get_samples(
         samples_by_source = samples.filter(pl.col("source") == source_resolution)
         keys_by_source = samples_by_source["key"].to_list()
 
-        source_data = pl.concat(
-            source_config.query(
-                batch_size=10_000, qualify_names=True, keys=keys_by_source
+        try:
+            source_data = pl.concat(
+                source_config.query(
+                    batch_size=10_000, qualify_names=True, keys=keys_by_source
+                )
             )
-        )
+        except OperationalError as e:
+            raise MatchboxSourceTableError(
+                "Could not find source using given credentials"
+            ) from e
+
         samples_and_source = samples_by_source.join(
             source_data, left_on="key", right_on=source_config.qualified_key
         )
