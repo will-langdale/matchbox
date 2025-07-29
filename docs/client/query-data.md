@@ -53,7 +53,7 @@ Retrieves entire data sources along with a unique entity identifier according to
                 "dbt.companieshouse": ["company_name"],
                 "hmrc.exporters": ["year", "commodity_codes"],
             },
-            credentials=engine,
+            client=engine,
         )
         combine_type="set_agg",
         resolution="companies",

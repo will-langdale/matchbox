@@ -361,7 +361,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         nullable=False,
     )
     location_type = Column(TEXT, nullable=False)
-    location_uri = Column(TEXT, nullable=False)
+    location_name = Column(TEXT, nullable=False)
     extract_transform = Column(TEXT, nullable=False)
 
     @property
@@ -449,7 +449,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         return cls(
             resolution_id=resolution.resolution_id,
             location_type=source_config.location.type,
-            location_uri=str(source_config.location.uri),
+            location_name=str(source_config.location.name),
             extract_transform=source_config.extract_transform,
             key_field=SourceFields(
                 index=0,
@@ -472,7 +472,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             name=self.name,
             location={
                 "type": self.location_type,
-                "uri": self.location_uri,
+                "name": self.location_name,
             },
             extract_transform=self.extract_transform,
             key_field=CommonSourceField(

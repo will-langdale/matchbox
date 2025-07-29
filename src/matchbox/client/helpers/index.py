@@ -11,12 +11,12 @@ def index(
     """Indexes data in Matchbox.
 
     Args:
-        source_config: A SourceConfig with credentials set
+        source_config: A SourceConfig with client set
         batch_size: the size of each batch when fetching data from the warehouse,
             which helps reduce the load on the database. Default is None.
     """
-    if not source_config.location.credentials:
-        raise ValueError("Source credentials are not set")
+    if not source_config.location.client:
+        raise ValueError("Source client not set")
 
     data_hashes = source_config.hash_data(batch_size=batch_size)
     _handler.index(source_config=source_config, data_hashes=data_hashes)

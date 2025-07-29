@@ -21,19 +21,21 @@ def test_key_field_map(
 
     foo = source_from_tuple(
         name="foo",
+        location_name="sqlite",
         engine=sqlite_warehouse,
         data_keys=[1, 2, 3],
         data_tuple=({"col": 0}, {"col": 1}, {"col": 2}),
     )
     bar = source_from_tuple(
         name="bar",
+        location_name="sqlite_memory",
         engine=sqlite_memory_warehouse,
         data_keys=["a", "b", "c"],
         data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
     )
 
-    foo.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-    bar.write_to_location(credentials=sqlite_memory_warehouse, set_credentials=True)
+    foo.write_to_location(client=sqlite_warehouse, set_client=True)
+    bar.write_to_location(client=sqlite_memory_warehouse, set_client=True)
 
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
     expected_foo_bar_mapping = pl.DataFrame(
@@ -96,16 +98,11 @@ def test_key_field_map(
         key_field_map(resolution="companies", source_filter=["nonexistent"])
 
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_field_map(resolution="companies", uri_filter="postgresql://")
-
-    with pytest.raises(MatchboxSourceNotFoundError):
-        key_field_map(resolution="companies", uri_filter=["nonexistent"])
+        key_field_map(resolution="companies", location_names=["nonexistent"])
 
     # Case 1: Retrieve single table
     # With URI filter
-    foo_mapping = key_field_map(
-        resolution="companies", uri_filter=str(sqlite_warehouse.url)
-    )
+    foo_mapping = key_field_map(resolution="companies", location_names=["sqlite"])
 
     assert_frame_equal(
         pl.from_arrow(foo_mapping),
@@ -128,7 +125,7 @@ def test_key_field_map(
     foo_mapping = key_field_map(
         resolution="companies",
         source_filter="foo",
-        uri_filter=str(sqlite_warehouse.url),
+        location_names="sqlite",
     )
 
     assert_frame_equal(

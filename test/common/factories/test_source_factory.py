@@ -183,16 +183,18 @@ def test_source_factory_mock_properties():
     ]
 
     name = "companies"
+    location_name = "custom_name"
     engine = create_engine("sqlite:///:memory:")
 
     source_config = source_factory(
         features=features,
         name=name,
+        location_name=location_name,
         engine=engine,
     ).source_config
 
     # Location should be consistent
-    expected_location = RelationalDBLocation(uri=str(engine.url))
+    expected_location = RelationalDBLocation(name=location_name)
     assert source_config.location == expected_location
 
     # Check indexed fields configuration
@@ -208,7 +210,7 @@ def test_source_factory_mock_properties():
     # Verify source properties are preserved through model_dump
     dump = source_config.model_dump()
     assert dump["name"] == name
-    assert str(dump["location"]["uri"]) == str(engine.url)
+    assert str(dump["location"]["name"]) == location_name
     assert dump["key_field"] == {"name": "key", "type": DataTypes.STRING}
     assert dump["index_fields"] == tuple(
         {"name": f.name, "type": f.datatype} for f in features

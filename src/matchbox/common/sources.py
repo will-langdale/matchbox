@@ -22,7 +22,6 @@ from typing import (
 import polars as pl
 from pyarrow import Table as ArrowTable
 from pydantic import (
-    AnyUrl,
     BaseModel,
     ConfigDict,
     Field,
@@ -35,12 +34,11 @@ from sqlalchemy.exc import OperationalError
 from matchbox.common.db import (
     QueryReturnType,
     ReturnTypeStr,
-    clean_uri,
     sql_to_df,
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes
-from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.exceptions import MatchboxSourceClientError
 from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
@@ -57,19 +55,19 @@ LocationTypeStr = Union[Literal["rdbms"]]
 """String literal type for Location class. Currently only supports "rdbms"."""
 
 
-def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator that checks if credentials are set before executing a method.
+def requires_client(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator that checks if client is set before executing a method.
 
     A helper method for Location subclasses.
 
     Raises:
-        MatchboxSourceCredentialsError: If the credentials are not set.
+        MatchboxSourceClientError: If the client is not set.
     """
 
     @wraps(method)
     def wrapper(self: "Location", *args, **kwargs) -> T:
-        if self.credentials is None:
-            raise MatchboxSourceCredentialsError
+        if self.client is None:
+            raise MatchboxSourceClientError
         return method(self, *args, **kwargs)
 
     return wrapper
@@ -79,19 +77,19 @@ class Location(ABC, BaseModel):
     """A location for a data source."""
 
     type: LocationTypeStr
-    uri: AnyUrl
-    credentials: Any | None = Field(exclude=True, default=None)
+    name: str
+    client: Any | None = Field(exclude=True, default=None)
 
     def __eq__(self, other: Any) -> bool:
-        """Custom equality which ignores credentials."""
-        return (self.type, self.uri) == (
+        """Custom equality which ignores client."""
+        return (self.type, self.name) == (
             other.type,
-            other.uri,
+            other.name,
         )
 
     def __hash__(self) -> int:
-        """Custom hash which ignores credentials."""
-        return hash((self.type, self.uri))
+        """Custom hash which ignores client."""
+        return hash((self.type, self.name))
 
     def __deepcopy__(self, memo=None):
         """Create a deep copy of the Location object."""
@@ -100,18 +98,18 @@ class Location(ABC, BaseModel):
 
         obj_copy = type(self)(
             type=deepcopy(self.type, memo),
-            uri=deepcopy(self.uri, memo),
+            name=deepcopy(self.name, memo),
         )
 
-        # Both objects should share the same credentials
-        if self.credentials is not None:
-            obj_copy.credentials = self.credentials
+        # Both objects should share the same client
+        if self.client is not None:
+            obj_copy.client = self.client
 
         return obj_copy
 
     @abstractmethod
-    def add_credentials(self, credentials: Any) -> None:
-        """Adds credentials to the location."""
+    def add_client(self, client: Any) -> Self:
+        """Adds client to the location."""
         ...
 
     @abstractmethod
@@ -119,7 +117,7 @@ class Location(ABC, BaseModel):
         """Establish connection to the data location.
 
         Raises:
-            AttributeError: If the credentials are not set.
+            AttributeError: If the client is not set.
         """
         ...
 
@@ -162,7 +160,7 @@ class Location(ABC, BaseModel):
                 Filters source entries where the key field is in the dict values.
 
         Raises:
-            AttributeError: If the credentials are not set.
+            AttributeError: If the cliet is not set.
         """
         ...
 
@@ -173,62 +171,27 @@ class RelationalDBLocation(Location):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     type: Literal["rdbms"] = "rdbms"
-    uri: AnyUrl
-    credentials: Engine | None = Field(
+    name: str
+    client: Engine | None = Field(
         exclude=True,
         default=None,
-        description=(
-            "The credentials for a relational database are a SQLAlchemy Engine."
-        ),
+        description=("The client for a relational database is a SQLAlchemy Engine."),
     )
-
-    @field_validator("uri", mode="after")
-    @classmethod
-    def validate_uri(cls, value: AnyUrl) -> AnyUrl:
-        """Ensure no credentials, query params, or fragments are in the URI."""
-        return clean_uri(value)
 
     @contextmanager
     def _get_connection(self):
         """Context manager for getting database connections with proper cleanup."""
-        if not self.credentials:
-            raise ValueError("No credentials available. Call add_credentials() first.")
-
-        connection = self.credentials.connect()
+        connection = self.client.connect()
         try:
             yield connection
         finally:
             connection.close()
 
-    def _validate_engine(self, credentials: Engine) -> None:
-        """Validate an engine matches the URI.
+    def add_client(self, client: Engine) -> None:  # noqa: D102
+        self.client = client
+        return self
 
-        Raises:
-            ValueError: If the Engine and URI do not match.
-        """
-        uri = clean_uri(str(credentials.url))
-
-        if any(
-            [
-                uri.scheme != self.uri.scheme,
-                uri.host != self.uri.host,
-                uri.port != self.uri.port,
-                uri.path != self.uri.path,
-            ]
-        ):
-            raise ValueError(
-                "The Engine location URI does not match the location model URI. \n"
-                f"Scheme: {uri.scheme}, {self.uri.scheme} \n"
-                f"Host: {uri.host}, {self.uri.host} \n"
-                f"Port: {uri.port}, {self.uri.port} \n"
-                f"Path: {uri.path}, {self.uri.path} \n"
-            )
-
-    def add_credentials(self, credentials: Engine) -> None:  # noqa: D102
-        self._validate_engine(credentials)
-        self.credentials = credentials
-
-    @requires_credentials
+    @requires_client
     def connect(self) -> bool:  # noqa: D102
         try:
             with self._get_connection() as conn:
@@ -249,7 +212,7 @@ class RelationalDBLocation(Location):
         batches = list(self.execute(query))
         return batches[0]
 
-    @requires_credentials
+    @requires_client
     def execute(  # noqa: D102
         self,
         extract_transform: str,
@@ -282,18 +245,6 @@ class RelationalDBLocation(Location):
                 return_batches=True,
                 return_type=return_type,
             )
-
-    @classmethod
-    def from_engine(cls, engine: Engine) -> "RelationalDBLocation":
-        """Create a RelationalDBLocation from a SQLAlchemy Engine."""
-        cleaned_url = engine.url.set(
-            username=None,
-            password=None,
-            query={},
-        )
-        location = cls(uri=str(cleaned_url))
-        location.add_credentials(engine)
-        return location
 
 
 class SourceField(BaseModel):
@@ -437,7 +388,7 @@ class SourceConfig(BaseModel):
         index_fields: list[str],
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
-        # Assumes credentials have been set on location
+        # Assumes client has been set on location
         sample: pl.DataFrame = location.head(extract_transform)
 
         remote_fields = {

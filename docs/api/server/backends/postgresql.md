@@ -13,7 +13,7 @@ erDiagram
         bigint source_config_id PK
         bigint resolution_id FK
         string location_type
-        string location_uri
+        string location_name
         string extract_transform
     }
     SourceFields {

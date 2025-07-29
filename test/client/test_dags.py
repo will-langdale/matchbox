@@ -80,7 +80,7 @@ def test_step_input_combine_type_in_query(combine_type: str, sqlite_warehouse: E
         query_mock.return_value = pl.DataFrame({"id": [1, 2, 3]})
 
         foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        foo_testkit.write_to_location(sqlite_warehouse, set_client=True)
         foo = foo_testkit.source_config
         i_foo = IndexStep(source_config=foo)
 
@@ -204,7 +204,7 @@ def test_dedupe_step_run(
 
         # Set up and run deduper
         foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        foo_testkit.write_to_location(sqlite_warehouse, set_client=True)
         foo = foo_testkit.source_config
 
         i_foo = IndexStep(source_config=foo)
@@ -284,11 +284,11 @@ def test_link_step_run(
 
         # Set up and run linker
         foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        foo_testkit.write_to_location(sqlite_warehouse, set_client=True)
         foo = foo_testkit.source_config
 
         bar_testkit = source_factory(name="bar", engine=sqlite_warehouse)
-        bar_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+        bar_testkit.write_to_location(sqlite_warehouse, set_client=True)
         bar = bar_testkit.source_config
 
         i_foo = IndexStep(source_config=foo)

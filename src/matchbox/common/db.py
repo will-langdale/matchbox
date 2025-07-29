@@ -16,7 +16,6 @@ import sqlglot
 from pandas import DataFrame as PandasDataFrame
 from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
-from pydantic import AnyUrl
 from sqlalchemy.engine import Engine
 
 from matchbox.common.exceptions import MatchboxSourceExtractTransformError
@@ -190,59 +189,3 @@ def validate_sql_for_data_extraction(sql: str) -> bool:
         )
 
     return True
-
-
-def clean_uri(
-    uri: str | AnyUrl,
-    strip_driver: bool = True,
-    strip_credentials: bool = True,
-    strip_query_fragment: bool = True,
-) -> AnyUrl:
-    """Clean a database URI.
-
-    Optionally removes driver, credentials, and/or query/fragment components.
-
-    Args:
-        uri: A database URI as a string or AnyUrl object
-        strip_driver: Whether to strip the driver component
-            (e.g., 'postgresql+psycopg2' -> 'postgresql')
-        strip_credentials: Whether to strip username and password components
-        strip_query_fragment: Whether to strip query and fragment components
-
-    Returns:
-        An AnyUrl object with the specified components removed
-    """
-    if isinstance(uri, str):
-        uri = AnyUrl(uri)
-
-    # Strip driver if requested
-    scheme = uri.scheme
-    if strip_driver and "+" in scheme:
-        scheme = scheme.split("+")[0]
-
-    # Build netloc (username:password@host:port)
-    netloc = ""
-    if not strip_credentials and (uri.username or uri.password):
-        auth = uri.username or ""
-        if uri.password:
-            auth += f":{uri.password}"
-        netloc += f"{auth}@"
-
-    if uri.host:
-        netloc += uri.host
-        if uri.port:
-            netloc += f":{uri.port}"
-
-    # Build path
-    path = uri.path or ""
-
-    # Build query and fragment
-    query = "" if strip_query_fragment else (f"?{uri.query}" if uri.query else "")
-    fragment = (
-        "" if strip_query_fragment else (f"#{uri.fragment}" if uri.fragment else "")
-    )
-
-    # Construct the URI
-    new_uri = f"{scheme}://{netloc}{path}{query}{fragment}"
-
-    return AnyUrl(new_uri)

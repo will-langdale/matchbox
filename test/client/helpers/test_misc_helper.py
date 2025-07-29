@@ -84,7 +84,7 @@ def test_select_default_engine(
     env_setter: Callable[[str, str], None],
     sqlite_warehouse: Engine,
 ):
-    """We can select without explicit credentials if default is set."""
+    """We can select without explicit client if default is set."""
     default_engine = sqlite_warehouse.url.render_as_string(hide_password=False)
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", default_engine)
 
@@ -95,7 +95,7 @@ def test_select_default_engine(
         name="bar",
         engine=sqlite_warehouse,
     )
-    testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit.write_to_location(sqlite_warehouse, set_client=True)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
@@ -103,24 +103,24 @@ def test_select_default_engine(
     )
 
     # Select sources
-    selection = select("bar")
+    selection = select("bar")[0]
 
     # Check selector contains what we expect
-    assert set(f.name for f in selection[0].fields) == {"a", "b"}
-    assert selection[0].source.name == "bar"
-    assert str(selection[0].source.location.uri) == str(sqlite_warehouse.url)
+    assert set(f.name for f in selection.fields) == {"a", "b"}
+    assert selection.source.name == "bar"
+    assert str(selection.source.location.client.url) == str(sqlite_warehouse.url)
 
 
-def test_select_missing_credentials():
-    """We must pass credentials if a default is not set"""
-    with pytest.raises(ValueError, match="Credentials"):
+def test_select_missing_client():
+    """We must pass client if a default is not set"""
+    with pytest.raises(ValueError, match="Client"):
         select("test.bar")
 
 
 def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """We can select specific columns from some of the sources"""
     linked = linked_sources_factory(engine=sqlite_warehouse)
-    linked.write_to_location(sqlite_warehouse, set_credentials=True)
+    linked.write_to_location(sqlite_warehouse, set_client=True)
 
     source1 = linked.sources["crn"].source_config
     source2 = linked.sources["cdms"].source_config
@@ -133,14 +133,14 @@ def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         return_value=Response(200, json=source2.model_dump(mode="json"))
     )
 
-    selection = select({"crn": ["company_name"]}, "cdms", credentials=sqlite_warehouse)
+    selection = select({"crn": ["company_name"]}, "cdms", client=sqlite_warehouse)
 
     assert set(f.name for f in selection[0].fields) == {"company_name"}
     assert set(f.name for f in selection[1].fields) == {"cdms", "crn"}
     assert selection[0].source.name == source1.name
     assert selection[1].source.name == source2.name
-    assert selection[0].source.location.credentials == sqlite_warehouse
-    assert selection[1].source.location.credentials == sqlite_warehouse
+    assert selection[0].source.location.client == sqlite_warehouse
+    assert selection[1].source.location.client == sqlite_warehouse
 
 
 def test_select_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine):
@@ -157,4 +157,4 @@ def test_select_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engin
     )
 
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
-        select({"foo": ["a", "b"]}, credentials=sqlite_warehouse)
+        select({"foo": ["a", "b"]}, client=sqlite_warehouse)

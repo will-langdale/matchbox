@@ -1,17 +1,24 @@
+from typing import Callable
+
 import polars as pl
 import pytest
 from httpx import Response
 from polars.testing import assert_frame_equal
 from pyarrow import Table
 from respx import MockRouter
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 
 from matchbox.client.eval import get_samples
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
+from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.sources import source_from_tuple
 
 
-def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+def test_get_samples(
+    matchbox_api: MockRouter,
+    sqlite_warehouse: Engine,
+    env_setter: Callable[[str, str], None],
+):
     user_id = 12
 
     # Mock sources
@@ -20,6 +27,7 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         data_tuple=({"col": 1}, {"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
         data_keys=["1", "1bis", "2", "3", "4"],
         name="foo",
+        location_name="db",
         engine=sqlite_warehouse,
     )
     testkit_foo.write_to_location(sqlite_warehouse)
@@ -29,20 +37,21 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         data_tuple=({"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
         data_keys=["a", "b", "c", "d"],
         name="bar",
+        location_name="db",
         engine=sqlite_warehouse,
     )
     testkit_bar.write_to_location(sqlite_warehouse)
     source_bar = testkit_bar.source_config
 
-    # This will be excluded as the engine differs
-    alt_engine = create_engine("sqlite:///:memory:")
+    # This will be excluded as the location name differs
     testkit_baz = source_from_tuple(
         data_tuple=({"col": 1},),
         data_keys=["x"],
-        name="bar",
-        engine=alt_engine,
+        name="baz",
+        location_name="db_other",
+        engine=sqlite_warehouse,
     )
-    testkit_baz.write_to_location(alt_engine)
+    testkit_baz.write_to_location(sqlite_warehouse)
     source_baz = testkit_baz.source_config
 
     matchbox_api.get("/sources/foo").mock(
@@ -84,7 +93,10 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     # Check results
     with pytest.warns(UserWarning, match="Skipping"):
         samples = get_samples(
-            n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
+            n=10,
+            resolution="resolution",
+            user_id=user_id,
+            clients={"db": sqlite_warehouse},
         )
 
     assert sorted(samples.keys()) == [10, 11]
@@ -133,11 +145,14 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
 
     no_samples = get_samples(
-        n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
+        n=10,
+        resolution="resolution",
+        user_id=user_id,
+        clients={"db": sqlite_warehouse},
     )
     assert no_samples == {}
 
-    # And if no data matches credentials?
+    # And if no client available?
     just_baz_samples = Table.from_pylist(
         [{"root": 10, "leaf": 1, "key": "x", "source": "baz"}],
         schema=SCHEMA_EVAL_SAMPLES,
@@ -148,7 +163,20 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             content=table_to_buffer(just_baz_samples).read(),
         )
     )
-    no_accessible_samples = get_samples(
-        n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
-    )
+    no_accessible_samples = get_samples(n=10, resolution="resolution", user_id=user_id)
     assert no_accessible_samples == {}
+
+    # Using default client as fallback
+    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", str(sqlite_warehouse.url))
+
+    samples_default_creds = get_samples(
+        n=10, resolution="resolution", user_id=user_id, use_default_client=True
+    )
+    assert len(samples_default_creds) == 1
+
+    # What happens if source cannot be queried using client?
+    env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", "sqlite:///:memory:")
+    with pytest.raises(MatchboxSourceTableError):
+        get_samples(
+            n=10, resolution="resolution", user_id=user_id, use_default_client=True
+        )

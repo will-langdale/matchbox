@@ -40,10 +40,10 @@ class Selector(BaseModel):
 
     @field_validator("source", mode="after")
     @classmethod
-    def ensure_credentials(cls: type[Self], source: SourceConfig) -> SourceConfig:
-        """Ensure that the source has credentials set."""
-        if not source.location.credentials:
-            raise ValueError("Source credentials are not set")
+    def ensure_client(cls: type[Self], source: SourceConfig) -> SourceConfig:
+        """Ensure that the source has client set."""
+        if not source.location.client:
+            raise ValueError("Source client not set")
         return source
 
     @model_validator(mode="after")
@@ -58,17 +58,17 @@ class Selector(BaseModel):
         return self
 
     @classmethod
-    def from_name_and_credentials(
+    def from_name_and_client(
         cls: type[Self],
         name: SourceResolutionName,
-        credentials: Any,
+        client: Any,
         fields: list[str] | None = None,
     ) -> "Selector":
-        """Create a Selector from a source name and location credentials.
+        """Create a Selector from a source name and location client.
 
         Args:
             name: The name of the source to select from
-            credentials: The credentials to use for the source
+            client: The client to use for the source
             fields: A list of fields to select from the source
         """
         source = _handler.get_source_config(name=name)
@@ -80,21 +80,21 @@ class Selector(BaseModel):
         else:
             selected_fields = list(source.index_fields)  # Must actively select key
 
-        source.location.add_credentials(credentials=credentials)
+        source.location.add_client(client=client)
         return cls(source=source, fields=selected_fields)
 
 
 def select(
     *selection: SourceResolutionName | dict[SourceResolutionName, list[str]],
-    credentials: Any | None = None,
+    client: Any | None = None,
 ) -> list[Selector]:
-    """From one set of credentials, builds and verifies a list of selectors.
+    """From one location client, builds and verifies a list of selectors.
 
-    Can be used on any number of sources as long as they share the same credentials.
+    Can be used on any number of sources as long as they share the same client.
 
     Args:
         selection: The source resolutions to retrieve data from
-        credentials: The credentials to use for the source. Datatype will depend on
+        client: The client to use for the source. Datatype will depend on
             the source's location type. For example, a RelationalDBLocation will require
             a SQLAlchemy engine. If not provided, will populate with a SQLAlchemy engine
             from the default warehouse set in the environment variable
@@ -105,37 +105,33 @@ def select(
 
     Examples:
         ```python
-        select("companies_house", credentials=engine)
+        select("companies_house", client=engine)
         ```
 
         ```python
-        select(
-            {"companies_house": ["crn"], "hmrc_exporters": ["name"]}, credentials=engine
-        )
+        select({"companies_house": ["crn"], "hmrc_exporters": ["name"]}, client=engine)
         ```
     """
-    if not credentials:
-        if default_credentials := settings.default_warehouse:
-            credentials = create_engine(default_credentials)
+    if not client:
+        if default_warehouse := settings.default_warehouse:
+            client = create_engine(default_warehouse)
             logger.warning("Using default engine")
         else:
             raise ValueError(
-                "Credentials need to be provided if "
+                "Client needs to be provided if "
                 "`MB__CLIENT__DEFAULT_WAREHOUSE` is unset"
             )
 
     selectors = []
     for s in selection:
         if isinstance(s, str):
-            selectors.append(
-                Selector.from_name_and_credentials(name=s, credentials=credentials)
-            )
+            selectors.append(Selector.from_name_and_client(name=s, client=client))
         elif isinstance(s, dict):
             for name, fields in s.items():
                 selectors.append(
-                    Selector.from_name_and_credentials(
+                    Selector.from_name_and_client(
                         name=name,
-                        credentials=credentials,
+                        client=client,
                         fields=fields,
                     )
                 )

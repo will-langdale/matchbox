@@ -72,8 +72,8 @@ class MatchboxSourceFieldError(Exception):
     """Specified fields diverge with the warehouse."""
 
 
-class MatchboxSourceCredentialsError(Exception):
-    """Location credentials must be set."""
+class MatchboxSourceClientError(Exception):
+    """Location client must be set."""
 
 
 class MatchboxSourceExtractTransformError(Exception):

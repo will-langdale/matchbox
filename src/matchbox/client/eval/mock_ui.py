@@ -44,7 +44,7 @@ def setup_mock_database():
     )
     testkit_foo.write_to_location(warehouse)
     foo = testkit_foo.source_config
-    foo.location.add_credentials(warehouse)
+    foo.location.add_client(warehouse)
 
     index(source_config=foo)
 
@@ -61,11 +61,11 @@ def setup_mock_database():
     testkit_bar.write_to_location(warehouse)
 
     bar = testkit_bar.source_config
-    bar.location.add_credentials(warehouse)
+    bar.location.add_client(warehouse)
     index(source_config=bar)
 
-    foo_df = query(select("foo", credentials=warehouse), return_type="polars")
-    bar_df = query(select("bar", credentials=warehouse), return_type="polars")
+    foo_df = query(select("foo", client=warehouse), return_type="polars")
+    bar_df = query(select("bar", client=warehouse), return_type="polars")
 
     foo_df = foo_df.with_columns(
         pl.col("foo_name")
