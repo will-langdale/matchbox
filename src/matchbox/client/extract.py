@@ -9,34 +9,24 @@ from matchbox.common.graph import ModelResolutionName, SourceResolutionName
 
 def key_field_map(
     resolution: ModelResolutionName,
-    source_filter: list[SourceResolutionName] | SourceResolutionName | None = None,
-    uri_filter: list[str] | str | None = None,
+    source_filter: list[SourceResolutionName] | None = None,
+    location_names: list[str] | None = None,
 ) -> ArrowTable:
     """Return matchbox IDs to source key mapping, optionally filtering.
 
     Args:
         resolution: The resolution name to use for the query.
-        source_filter: A substring or list of substrings to filter source names.
-        uri_filter: A substring or list of substrings to filter location URIs.
+        source_filter: An optional list of source resolution names to filter by.
+        location_names: An optional list of location names to filter by.
     """
     # Get all sources in scope of the resolution
     sources = _handler.get_resolution_source_configs(name=resolution)
 
     if source_filter:
-        if isinstance(source_filter, str):
-            source_filter = [source_filter]
-
-        # Filter sources by name
         sources = [s for s in sources if s.name in source_filter]
 
-    if uri_filter:
-        if isinstance(uri_filter, str):
-            uri_filter = [uri_filter]
-
-        # Filter sources by location URI
-        sources = [
-            s for s in sources if any(sub in str(s.location.uri) for sub in uri_filter)
-        ]
+    if location_names:
+        sources = [s for s in sources if s.location.name in location_names]
 
     if not sources:
         raise MatchboxSourceNotFoundError("No compatible source was found")

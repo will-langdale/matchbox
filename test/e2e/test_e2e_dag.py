@@ -120,7 +120,7 @@ class TestE2EPipelineBuilder:
         """
 
         # === SETUP PHASE ===
-        dw_loc = RelationalDBLocation.from_engine(self.warehouse_engine)
+        dw_loc = RelationalDBLocation(name="dbname", credentials=self.warehouse_engine)
         batch_size = 1000
 
         # Create source configs

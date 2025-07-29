@@ -4,7 +4,7 @@ from httpx import Response
 from polars.testing import assert_frame_equal
 from pyarrow import Table
 from respx import MockRouter
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 
 from matchbox.client.eval import get_samples
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
@@ -20,6 +20,7 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         data_tuple=({"col": 1}, {"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
         data_keys=["1", "1bis", "2", "3", "4"],
         name="foo",
+        location_name="db",
         engine=sqlite_warehouse,
     )
     testkit_foo.write_to_location(sqlite_warehouse)
@@ -29,20 +30,21 @@ def test_get_samples(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         data_tuple=({"col": 1}, {"col": 2}, {"col": 3}, {"col": 4}),
         data_keys=["a", "b", "c", "d"],
         name="bar",
+        location_name="db",
         engine=sqlite_warehouse,
     )
     testkit_bar.write_to_location(sqlite_warehouse)
     source_bar = testkit_bar.source_config
 
-    # This will be excluded as the engine differs
-    alt_engine = create_engine("sqlite:///:memory:")
+    # This will be excluded as the location name differs
     testkit_baz = source_from_tuple(
         data_tuple=({"col": 1},),
         data_keys=["x"],
         name="bar",
-        engine=alt_engine,
+        location_name="db_other",
+        engine=sqlite_warehouse,
     )
-    testkit_baz.write_to_location(alt_engine)
+    testkit_baz.write_to_location(sqlite_warehouse)
     source_baz = testkit_baz.source_config
 
     matchbox_api.get("/sources/foo").mock(

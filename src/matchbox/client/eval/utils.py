@@ -25,6 +25,7 @@ def get_samples(
     user_id: int,
     resolution: ModelResolutionName | None = None,
     credentials: Any | None = None,
+    # TODO: allow different credentials per location name
 ) -> dict[int, pl.DataFrame]:
     """Retrieve samples enriched with source data, grouped by resolution cluster.
 

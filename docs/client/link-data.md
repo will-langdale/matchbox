@@ -62,7 +62,7 @@ The `key_field` is the field in your source that contains some unique code that 
     # Companies House data
     companies_house = SourceConfig.new(
         name="companies_house",
-        location=RelationalDBLocation.from_engine(engine),
+        location=RelationalDBLocation(name="dbname", credentials=engine),
         extract_transform="""
             select
                 pk as id,
@@ -79,7 +79,7 @@ The `key_field` is the field in your source that contains some unique code that 
     # Exporters data
     exporters = SourceConfig.new(
         name="hmrc_exporters",
-        location=RelationalDBLocation.from_engine(engine),
+        location=RelationalDBLocation(name="dbname", credentials=engine),
         extract_transform="""
             select
                 id,
@@ -95,8 +95,8 @@ The `key_field` is the field in your source that contains some unique code that 
 
 Each [`SourceConfig`][matchbox.common.sources.SourceConfig] object requires:
 
-- A `location`, such as [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation]. This will need a `type`, a `uri`, and `credentials`, the type of which changes depending on the type of location you're using
-    - For most users [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation] and its `.from_engine()` constructor is all you need
+- A `location`, such as [`RelationalDBLocation`][matchbox.common.sources.RelationalDBLocation]. This will need a `type`, a `name`, and `credentials`, the type of which changes depending on the type of location you're using
+    - The name of a location is a way of tagging it, such that later on you can filter source configs you want to retrieve from the server
     - For a relational database, a SQLAlchemy engine is your credentials
 - An `extract_transform` string, which will take data from the location and transform it into your key and index fields. Its syntax will depend on the type of location
     - For most users, using a relational database location, this will be SQL
@@ -114,7 +114,7 @@ If a `SourceConfig` has already been created you can fetch it, with optional val
     # Companies House data
     companies_house = get_source(
         name="companies_house",
-        location=RelationalDBLocation.from_engine(engine),
+        location=RelationalDBLocation(name="dbname", credentials=engine),
         extract_transform="""
             select
                 pk as id,

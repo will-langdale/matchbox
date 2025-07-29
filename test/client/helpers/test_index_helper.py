@@ -203,7 +203,7 @@ def test_get_source_with_valid_location(
     [
         pytest.param(
             "location",
-            RelationalDBLocation(uri="different://location"),
+            RelationalDBLocation(name="other_location"),
             "does not match the provided location",
             id="location-mismatch",
         ),
@@ -247,7 +247,7 @@ def test_get_source_validation_mismatch(
         get_source("test_source", **kwargs)
 
 
-def test_get_source_404_error(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+def test_get_source_404_error(matchbox_api: MockRouter):
     """Test get_source handles 404 source not found error."""
     matchbox_api.get("/sources/nonexistent").mock(
         return_value=Response(

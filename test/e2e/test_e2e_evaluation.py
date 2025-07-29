@@ -85,7 +85,7 @@ class TestE2EModelEvaluation:
         assert response.status_code == 200, "Failed to clear matchbox database"
 
         # Create DAG
-        dw_loc = RelationalDBLocation.from_engine(postgres_warehouse)
+        dw_loc = RelationalDBLocation(name="dbname", credentials=postgres_warehouse)
         batch_size = 1000
 
         source_a_config = SourceConfig.new(

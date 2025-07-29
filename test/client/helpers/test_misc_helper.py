@@ -103,12 +103,12 @@ def test_select_default_engine(
     )
 
     # Select sources
-    selection = select("bar")
+    selection = select("bar")[0]
 
     # Check selector contains what we expect
-    assert set(f.name for f in selection[0].fields) == {"a", "b"}
-    assert selection[0].source.name == "bar"
-    assert str(selection[0].source.location.uri) == str(sqlite_warehouse.url)
+    assert set(f.name for f in selection.fields) == {"a", "b"}
+    assert selection.source.name == "bar"
+    assert str(selection.source.location.credentials.url) == str(sqlite_warehouse.url)
 
 
 def test_select_missing_credentials():
