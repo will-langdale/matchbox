@@ -26,8 +26,8 @@ def get_samples(
     n: int,
     user_id: int,
     resolution: ModelResolutionName | None = None,
-    credentials: dict[str, Any] | None = None,
-    use_default_credentials: bool = False,
+    clients: dict[str, Any] | None = None,
+    use_default_client: bool = False,
 ) -> dict[int, pl.DataFrame]:
     """Retrieve samples enriched with source data, grouped by resolution cluster.
 
@@ -36,9 +36,9 @@ def get_samples(
         user_id: ID of the user requesting the samples
         resolution: Model resolution proposing the clusters. If not set, will
             use a default resolution.
-        credentials: Dictionary from location names to valid credentials for each.
+        clients: Dictionary from location names to valid client for each.
             Locations whose name is missing from the dictionary will be skipped.
-        use_default_credentials: Whether to use for all unset location credentials
+        use_default_client: Whether to use for all unset location clients
             a SQLAlchemy engine for the default warehouse set in the environment
             variable `MB__CLIENT__DEFAULT_WAREHOUSE`.
 
@@ -47,18 +47,18 @@ def get_samples(
 
     Raises:
         MatchboxSourceTableError: If a source cannot be queried from a location using
-            provided or default credentials.
+            provided or default clients.
     """
     if not resolution:
         resolution = DEFAULT_RESOLUTION
 
-    if not credentials:
-        credentials = {}
+    if not clients:
+        clients = {}
 
-    default_credentials = None
-    if use_default_credentials:
-        if default_credentials_uri := settings.default_warehouse:
-            default_credentials = create_engine(default_credentials_uri)
+    default_client = None
+    if use_default_client:
+        if default_clients_uri := settings.default_warehouse:
+            default_client = create_engine(default_clients_uri)
             logger.warning("Using default engine")
         else:
             raise ValueError("`MB__CLIENT__DEFAULT_WAREHOUSE` is unset")
@@ -74,15 +74,13 @@ def get_samples(
     for source_resolution in samples["source"].unique():
         source_config = _handler.get_source_config(source_resolution)
         location_name = source_config.location.name
-        if location_name in credentials:
-            source_config.location.add_credentials(
-                credentials=credentials[location_name]
-            )
-        elif default_credentials:
-            source_config.location.add_credentials(credentials=default_credentials)
+        if location_name in clients:
+            source_config.location.add_client(client=clients[location_name])
+        elif default_client:
+            source_config.location.add_client(client=default_client)
         else:
             warnings.warn(
-                f"Skipping {source_resolution}, incompatible with given credentials.",
+                f"Skipping {source_resolution}, incompatible with given client.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -99,7 +97,7 @@ def get_samples(
             )
         except OperationalError as e:
             raise MatchboxSourceTableError(
-                "Could not find source using given credentials"
+                "Could not find source using given client."
             ) from e
 
         samples_and_source = samples_by_source.join(

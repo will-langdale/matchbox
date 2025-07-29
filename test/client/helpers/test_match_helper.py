@@ -17,11 +17,11 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can perform the right call for matching."""
     # Set up mocks
     source_testkit = source_factory(engine=sqlite_warehouse, name="source")
-    source_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    source_testkit.write_to_location(sqlite_warehouse, set_client=True)
     target1_testkit = source_factory(engine=sqlite_warehouse, name="target1")
-    target1_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    target1_testkit.write_to_location(sqlite_warehouse, set_client=True)
     target2_testkit = source_factory(engine=sqlite_warehouse, name="target2")
-    target2_testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    target2_testkit.write_to_location(sqlite_warehouse, set_client=True)
 
     mock_match1 = Match(
         cluster=1,

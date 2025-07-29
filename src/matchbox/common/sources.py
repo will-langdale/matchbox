@@ -38,7 +38,7 @@ from matchbox.common.db import (
     validate_sql_for_data_extraction,
 )
 from matchbox.common.dtos import DataTypes
-from matchbox.common.exceptions import MatchboxSourceCredentialsError
+from matchbox.common.exceptions import MatchboxSourceClientError
 from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
@@ -55,19 +55,19 @@ LocationTypeStr = Union[Literal["rdbms"]]
 """String literal type for Location class. Currently only supports "rdbms"."""
 
 
-def requires_credentials(method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator that checks if credentials are set before executing a method.
+def requires_client(method: Callable[..., T]) -> Callable[..., T]:
+    """Decorator that checks if client is set before executing a method.
 
     A helper method for Location subclasses.
 
     Raises:
-        MatchboxSourceCredentialsError: If the credentials are not set.
+        MatchboxSourceClientError: If the client is not set.
     """
 
     @wraps(method)
     def wrapper(self: "Location", *args, **kwargs) -> T:
-        if self.credentials is None:
-            raise MatchboxSourceCredentialsError
+        if self.client is None:
+            raise MatchboxSourceClientError
         return method(self, *args, **kwargs)
 
     return wrapper
@@ -78,17 +78,17 @@ class Location(ABC, BaseModel):
 
     type: LocationTypeStr
     name: str
-    credentials: Any | None = Field(exclude=True, default=None)
+    client: Any | None = Field(exclude=True, default=None)
 
     def __eq__(self, other: Any) -> bool:
-        """Custom equality which ignores credentials."""
+        """Custom equality which ignores client."""
         return (self.type, self.name) == (
             other.type,
             other.name,
         )
 
     def __hash__(self) -> int:
-        """Custom hash which ignores credentials."""
+        """Custom hash which ignores client."""
         return hash((self.type, self.name))
 
     def __deepcopy__(self, memo=None):
@@ -101,15 +101,15 @@ class Location(ABC, BaseModel):
             name=deepcopy(self.name, memo),
         )
 
-        # Both objects should share the same credentials
-        if self.credentials is not None:
-            obj_copy.credentials = self.credentials
+        # Both objects should share the same client
+        if self.client is not None:
+            obj_copy.client = self.client
 
         return obj_copy
 
     @abstractmethod
-    def add_credentials(self, credentials: Any) -> Self:
-        """Adds credentials to the location."""
+    def add_client(self, client: Any) -> Self:
+        """Adds client to the location."""
         ...
 
     @abstractmethod
@@ -117,7 +117,7 @@ class Location(ABC, BaseModel):
         """Establish connection to the data location.
 
         Raises:
-            AttributeError: If the credentials are not set.
+            AttributeError: If the client is not set.
         """
         ...
 
@@ -160,7 +160,7 @@ class Location(ABC, BaseModel):
                 Filters source entries where the key field is in the dict values.
 
         Raises:
-            AttributeError: If the credentials are not set.
+            AttributeError: If the cliet is not set.
         """
         ...
 
@@ -172,31 +172,26 @@ class RelationalDBLocation(Location):
 
     type: Literal["rdbms"] = "rdbms"
     name: str
-    credentials: Engine | None = Field(
+    client: Engine | None = Field(
         exclude=True,
         default=None,
-        description=(
-            "The credentials for a relational database are a SQLAlchemy Engine."
-        ),
+        description=("The client for a relational database is a SQLAlchemy Engine."),
     )
 
     @contextmanager
     def _get_connection(self):
         """Context manager for getting database connections with proper cleanup."""
-        if not self.credentials:
-            raise ValueError("No credentials available. Call add_credentials() first.")
-
-        connection = self.credentials.connect()
+        connection = self.client.connect()
         try:
             yield connection
         finally:
             connection.close()
 
-    def add_credentials(self, credentials: Engine) -> None:  # noqa: D102
-        self.credentials = credentials
+    def add_client(self, client: Engine) -> None:  # noqa: D102
+        self.client = client
         return self
 
-    @requires_credentials
+    @requires_client
     def connect(self) -> bool:  # noqa: D102
         try:
             with self._get_connection() as conn:
@@ -215,7 +210,7 @@ class RelationalDBLocation(Location):
     def head(self, extract_transform: str) -> pl.DataFrame:  # noqa: D102
         return next(self.execute(extract_transform.rstrip(" \t\n;") + " limit 100;"))
 
-    @requires_credentials
+    @requires_client
     def execute(  # noqa: D102
         self,
         extract_transform: str,
@@ -391,7 +386,7 @@ class SourceConfig(BaseModel):
         index_fields: list[str],
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
-        # Assumes credentials have been set on location
+        # Assumes client has been set on location
         sample: pl.DataFrame = location.head(extract_transform)
 
         remote_fields = {

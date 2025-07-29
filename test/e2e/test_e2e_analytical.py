@@ -115,9 +115,7 @@ class TestE2EAnalyticalUser:
 
         # Setup code - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.write_to_location(
-                credentials=postgres_warehouse, set_credentials=True
-            )
+            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -201,7 +199,7 @@ class TestE2EAnalyticalUser:
                     source_config.name: ["key"]
                     + [field.name for field in source_config.index_fields]
                 },
-                credentials=self.warehouse_engine,
+                client=self.warehouse_engine,
             )
             raw_df = query(source_select, return_type="polars")
             clusters = query_to_cluster_entities(
@@ -282,7 +280,7 @@ class TestE2EAnalyticalUser:
             left_raw_df = query(
                 select(
                     {left_source.name: ["key", common_field]},
-                    credentials=self.warehouse_engine,
+                    client=self.warehouse_engine,
                 ),
                 resolution=deduper_names[left_source.name],
                 return_type="polars",
@@ -296,7 +294,7 @@ class TestE2EAnalyticalUser:
             right_raw_df = query(
                 select(
                     {right_source.name: ["key", common_field]},
-                    credentials=self.warehouse_engine,
+                    client=self.warehouse_engine,
                 ),
                 resolution=deduper_names[right_source.name],
                 return_type="polars",
@@ -375,10 +373,8 @@ class TestE2EAnalyticalUser:
         # Query data from the first linked pair and the third source
         # keys included then dropped to create ClusterEntity objects for later diff
         left_raw_df = query(
-            select(
-                {crn_source.name: ["key", "crn"]}, credentials=self.warehouse_engine
-            ),
-            select({duns_source.name: ["key"]}, credentials=self.warehouse_engine),
+            select({crn_source.name: ["key", "crn"]}, client=self.warehouse_engine),
+            select({duns_source.name: ["key"]}, client=self.warehouse_engine),
             resolution=linker_names[first_pair],
             return_type="polars",
         )
@@ -394,9 +390,7 @@ class TestE2EAnalyticalUser:
         )
 
         right_raw_df = query(
-            select(
-                {cdms_source.name: ["key", "crn"]}, credentials=self.warehouse_engine
-            ),
+            select({cdms_source.name: ["key", "crn"]}, client=self.warehouse_engine),
             resolution=deduper_names[cdms_source.name],
             return_type="polars",
         )
@@ -465,7 +459,7 @@ class TestE2EAnalyticalUser:
                     duns_source.name: ["key", "company_name", "duns"],
                     cdms_source.name: ["key", "crn", "cdms"],
                 },
-                credentials=self.warehouse_engine,
+                client=self.warehouse_engine,
             ),
             resolution=final_linker_name,
             return_type="polars",

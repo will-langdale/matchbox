@@ -21,7 +21,7 @@ def fetch_samples():
             n=100,
             resolution=st.session_state.resolution,
             user_id=st.session_state.user_id,
-            use_default_credentials=True,
+            use_default_client=True,
         )
     st.session_state.step = "eval" if st.session_state.samples else "done"
 

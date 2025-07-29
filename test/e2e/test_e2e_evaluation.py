@@ -76,16 +76,14 @@ class TestE2EModelEvaluation:
 
         # Create tables in warehouse
         for source_testkit in linked_testkit.sources.values():
-            source_testkit.write_to_location(
-                credentials=postgres_warehouse, set_credentials=True
-            )
+            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 
         # Create DAG
-        dw_loc = RelationalDBLocation(name="postgres", credentials=postgres_warehouse)
+        dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
         batch_size = 1000
 
         source_a_config = SourceConfig.new(
@@ -149,7 +147,7 @@ class TestE2EModelEvaluation:
             n=5,
             resolution=self.final_resolution,
             user_id=user_id,
-            credentials={"postgres": self.engine},
+            clients={"postgres": self.engine},
         )
 
         # Make some judgements
@@ -172,7 +170,7 @@ class TestE2EModelEvaluation:
 
         # Create and run a deduper model locally
         queried_source = query(
-            select(self.source_a_config.name, credentials=self.engine),
+            select(self.source_a_config.name, client=self.engine),
             return_type="polars",
         )
         deduper = make_model(

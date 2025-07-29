@@ -25,7 +25,7 @@ def test_query_no_resolution_ok_various_params(
         name="foo",
         engine=sqlite_warehouse,
     )
-    testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit.write_to_location(sqlite_warehouse, set_client=True)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
@@ -47,7 +47,7 @@ def test_query_no_resolution_ok_various_params(
         )
     )
 
-    selectors = select({"foo": ["a", "b"]}, credentials=sqlite_warehouse)
+    selectors = select({"foo": ["a", "b"]}, client=sqlite_warehouse)
 
     # Tests with no optional params
     results = query(selectors, return_leaf_id=False)
@@ -82,7 +82,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         name="foo",
         engine=sqlite_warehouse,
     )
-    testkit1.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit1.write_to_location(sqlite_warehouse, set_client=True)
 
     testkit2 = source_from_tuple(
         data_tuple=({"c": "val"}, {"c": "val"}),
@@ -90,7 +90,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         name="foo2",
         engine=sqlite_warehouse,
     )
-    testkit2.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit2.write_to_location(sqlite_warehouse, set_client=True)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit1.source_config.name}").mock(
@@ -131,7 +131,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         * 2  # 2 calls to `query()` in this test, each querying server twice
     )
 
-    sels = select("foo", {"foo2": ["c"]}, credentials=sqlite_warehouse)
+    sels = select("foo", {"foo2": ["c"]}, client=sqlite_warehouse)
 
     # Validate results
     results = query(sels, return_leaf_id=False)
@@ -176,7 +176,7 @@ def test_query_combine_type(
         name="foo",
         engine=sqlite_warehouse,
     )
-    testkit1.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit1.write_to_location(sqlite_warehouse, set_client=True)
 
     testkit2 = source_from_tuple(
         data_tuple=({"col": "val1"}, {"col": "val2"}, {"col": "val3"}),
@@ -184,7 +184,7 @@ def test_query_combine_type(
         name="bar",
         engine=sqlite_warehouse,
     )
-    testkit2.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit2.write_to_location(sqlite_warehouse, set_client=True)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit1.source_config.name}").mock(
@@ -227,7 +227,7 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    sels = select("foo", "bar", credentials=sqlite_warehouse)
+    sels = select("foo", "bar", client=sqlite_warehouse)
 
     # Validate results
     results = query(sels, combine_type=combine_type, return_leaf_id=False)
@@ -252,7 +252,7 @@ def test_query_combine_type(
 
 def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     testkit = source_factory(engine=sqlite_warehouse, name="foo")
-    testkit.write_to_location(sqlite_warehouse, set_credentials=True)
+    testkit.write_to_location(sqlite_warehouse, set_client=True)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
@@ -269,7 +269,7 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         )
     )
 
-    selectors = select({"foo": ["crn", "company_name"]}, credentials=sqlite_warehouse)
+    selectors = select({"foo": ["crn", "company_name"]}, client=sqlite_warehouse)
 
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):

@@ -96,7 +96,7 @@ def test_get_samples(
             n=10,
             resolution="resolution",
             user_id=user_id,
-            credentials={"db": sqlite_warehouse},
+            clients={"db": sqlite_warehouse},
         )
 
     assert sorted(samples.keys()) == [10, 11]
@@ -145,11 +145,14 @@ def test_get_samples(
     )
 
     no_samples = get_samples(
-        n=10, resolution="resolution", user_id=user_id, credentials=sqlite_warehouse
+        n=10,
+        resolution="resolution",
+        user_id=user_id,
+        clients={"db": sqlite_warehouse},
     )
     assert no_samples == {}
 
-    # And if no credentials available?
+    # And if no client available?
     just_baz_samples = Table.from_pylist(
         [{"root": 10, "leaf": 1, "key": "x", "source": "baz"}],
         schema=SCHEMA_EVAL_SAMPLES,
@@ -163,17 +166,17 @@ def test_get_samples(
     no_accessible_samples = get_samples(n=10, resolution="resolution", user_id=user_id)
     assert no_accessible_samples == {}
 
-    # Using default credentials as fallback
+    # Using default client as fallback
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", str(sqlite_warehouse.url))
 
     samples_default_creds = get_samples(
-        n=10, resolution="resolution", user_id=user_id, use_default_credentials=True
+        n=10, resolution="resolution", user_id=user_id, use_default_client=True
     )
     assert len(samples_default_creds) == 1
 
-    # What happens if source cannot be queried using credentials?
+    # What happens if source cannot be queried using client?
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", "sqlite:///:memory:")
     with pytest.raises(MatchboxSourceTableError):
         get_samples(
-            n=10, resolution="resolution", user_id=user_id, use_default_credentials=True
+            n=10, resolution="resolution", user_id=user_id, use_default_client=True
         )

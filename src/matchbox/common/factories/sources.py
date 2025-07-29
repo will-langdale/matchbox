@@ -132,25 +132,23 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["key"]], names=["id", "key"]
         )
 
-    def write_to_location(
-        self, credentials: Any, set_credentials: bool = False
-    ) -> None:
+    def write_to_location(self, client: Any, set_client: bool = False) -> None:
         """Write the data to the SourceConfig's location.
 
-        Credentials aren't set in testkits, so they must be provided here.
+        The client isn't set in testkits, so it must be provided here.
 
         Args:
-            credentials: Credentials to use for the location.
-            set_credentials: Whether to set the credentials on the SourceConfig.
+            client: Client to use for the location.
+            set_client: Whether to set the client on the SourceConfig.
                 Offered here for convenience as it's often the next step.
         """
         pl.from_arrow(self.data).write_database(
             table_name=self.source_config.name,
-            connection=credentials,
+            connection=client,
             if_table_exists="replace",
         )
-        if set_credentials:
-            self.source_config.location.add_credentials(credentials)
+        if set_client:
+            self.source_config.location.add_client(client)
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -237,20 +235,18 @@ class LinkedSourcesTestkit(BaseModel):
             ),
         )
 
-    def write_to_location(
-        self, credentials: Any, set_credentials: bool = False
-    ) -> None:
+    def write_to_location(self, client: Any, set_client: bool = False) -> None:
         """Write the data to the SourceConfig's location.
 
-        Credentials aren't set in testkits, so they must be provided here.
+        The client isn't set in testkits, so it must be provided here.
 
         Args:
-            credentials: Credentials to use for the location.
-            set_credentials: Whether to set the credentials on the SourceConfig.
+            client: Client to use for the location.
+            set_client: Whether to set the client on the SourceConfig.
                 Offered here for convenience as it's often the next step.
         """
         for source_testkit in self.sources.values():
-            source_testkit.write_to_location(credentials, set_credentials)
+            source_testkit.write_to_location(client, set_client)
 
 
 def generate_rows(

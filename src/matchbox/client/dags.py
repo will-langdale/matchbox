@@ -446,9 +446,7 @@ class DAG:
         if len(debug_options.override_sources):
             debug_sqlite_uri = "sqlite:///:memory:"
             debug_engine = create_engine(debug_sqlite_uri)
-            debug_location = RelationalDBLocation(
-                name="__DEBUG__", credentials=debug_engine
-            )
+            debug_location = RelationalDBLocation(name="__DEBUG__", client=debug_engine)
 
         for step_name in self.sequence[start_index:end_index]:
             node = self.nodes[step_name]

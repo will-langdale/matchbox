@@ -94,9 +94,7 @@ class TestE2EPipelineBuilder:
 
         # Setup - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.write_to_location(
-                credentials=postgres_warehouse, set_credentials=True
-            )
+            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -120,7 +118,7 @@ class TestE2EPipelineBuilder:
         """
 
         # === SETUP PHASE ===
-        dw_loc = RelationalDBLocation(name="dbname", credentials=self.warehouse_engine)
+        dw_loc = RelationalDBLocation(name="dbname", client=self.warehouse_engine)
         batch_size = 1000
 
         # Create source configs
@@ -284,7 +282,7 @@ class TestE2EPipelineBuilder:
                     source_a_config.name: ["id", "company_name", "registration_id"],
                     source_b_config.name: ["id", "company_name", "registration_id"],
                 },
-                credentials=self.warehouse_engine,
+                client=self.warehouse_engine,
             ),
             resolution="__DEFAULT__",
             return_type="polars",
@@ -320,7 +318,7 @@ class TestE2EPipelineBuilder:
                     source_a_config.name: ["company_name", "registration_id"],
                     source_b_config.name: ["company_name", "registration_id"],
                 },
-                credentials=self.warehouse_engine,
+                client=self.warehouse_engine,
             ),
             resolution="__DEFAULT__",
             return_type="polars",

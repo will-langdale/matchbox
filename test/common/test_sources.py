@@ -13,7 +13,7 @@ from sqlglot.errors import ParseError
 from matchbox.client.helpers.selector import Match
 from matchbox.common.dtos import DataTypes
 from matchbox.common.exceptions import (
-    MatchboxSourceCredentialsError,
+    MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
 from matchbox.common.factories.sources import source_factory
@@ -26,34 +26,34 @@ from matchbox.common.sources import (
 # Locations
 
 
-def test_location_empty_credentials_error():
-    """Test that operations requiring credentials fail when credentials are not set."""
+def test_location_empty_client_error():
+    """Test that operations requiring client fail when client is not set."""
     location = RelationalDBLocation(name="dbname")
 
-    # Attempting to connect without credentials should raise an error
-    with pytest.raises(MatchboxSourceCredentialsError):
+    # Attempting to connect without client should raise an error
+    with pytest.raises(MatchboxSourceClientError):
         location.connect()
 
 
 def test_location_serialisation(sqlite_warehouse: Engine):
     """Test serialisation and deserialisation of Location objects."""
-    original = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    original = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
-    # Convert to dict and back - credentials should be excluded
+    # Convert to dict and back - client should be excluded
     location_dict = original.model_dump()
-    assert "credentials" not in location_dict
+    assert "client" not in location_dict
 
     # Deserialize back to a Location
     reconstructed = RelationalDBLocation.model_validate(location_dict)
     assert reconstructed.type == original.type
-    assert reconstructed.credentials is None
+    assert reconstructed.client is None
 
 
 def test_relational_db_location_instantiation():
     """Test that RelationalDBLocation can be instantiated with valid parameters."""
     location = RelationalDBLocation(name="dbname")
     assert location.type == "rdbms"
-    assert location.credentials is None
+    assert location.client is None
 
 
 @pytest.mark.parametrize(
@@ -119,8 +119,8 @@ def test_relational_db_extract_transform(sql: str, is_valid: bool):
 def test_relational_db_execute(sqlite_warehouse: Engine):
     """Test executing a query and returning results using a real SQLite database."""
     source_testkit = source_factory(engine=sqlite_warehouse)
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     sql = select("*").from_(source_testkit.name).sql()
     batch_size = 2
@@ -149,7 +149,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
 
 def test_relational_db_execute_invalid(sqlite_warehouse: Engine):
     """Test that invalid queries are handled correctly when executing."""
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     # Invalid SQL query
     sql = "SELECT * FROM nonexistent_table"
@@ -162,8 +162,8 @@ def test_relational_db_execute_invalid(sqlite_warehouse: Engine):
 def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
     """Test a more complete workflow with data retrieval and transformation."""
     source_testkit = source_factory(engine=sqlite_warehouse)
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     # Execute a query with transformation
     sql = (
@@ -279,9 +279,9 @@ def test_source_from_new(sqlite_warehouse: Engine):
         ],
         engine=sqlite_warehouse,
     )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
 
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = SourceConfig.new(
         location=location,
         name="test_source",
@@ -311,9 +311,9 @@ def test_source_from_new_errors(sqlite_warehouse: Engine):
         ],
         engine=sqlite_warehouse,
     )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
 
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     with pytest.raises(ValueError):
         SourceConfig.new(
@@ -342,9 +342,9 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
         ],
         engine=sqlite_warehouse,
     )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
 
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     # Use SQLite's INSTR function (returns position of substring)
     # Other databases use CHARINDEX, POSITION, etc.
@@ -386,10 +386,10 @@ def test_source_query(sqlite_warehouse: Engine):
         ],
         engine=sqlite_warehouse,
     )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
 
     # Create location and source
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = SourceConfig(
         location=location,
         name="test_source",
@@ -524,10 +524,10 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
         ],
         engine=sqlite_warehouse,
     )
-    source_testkit.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
 
     # Create location and source
-    location = RelationalDBLocation(name="dbname", credentials=sqlite_warehouse)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = SourceConfig(
         location=location,
         name="test_source",

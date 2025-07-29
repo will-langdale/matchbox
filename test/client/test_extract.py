@@ -34,8 +34,8 @@ def test_key_field_map(
         data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
     )
 
-    foo.write_to_location(credentials=sqlite_warehouse, set_credentials=True)
-    bar.write_to_location(credentials=sqlite_memory_warehouse, set_credentials=True)
+    foo.write_to_location(client=sqlite_warehouse, set_client=True)
+    bar.write_to_location(client=sqlite_memory_warehouse, set_client=True)
 
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
     expected_foo_bar_mapping = pl.DataFrame(

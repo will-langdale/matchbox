@@ -72,14 +72,14 @@ def _generate_cache_key(
     )
 
 
-def _testkitdag_to_location(credentials: Engine, dag: TestkitDAG) -> None:
+def _testkitdag_to_location(client: Engine, dag: TestkitDAG) -> None:
     """Upload a TestkitDAG to a location warehouse.
 
     * Writes all data to the location warehouse, replacing existing data
-    * Updates the credentials of all sources in the DAG
+    * Updates the client of all sources in the DAG
     """
     for source_testkit in dag.sources.values():
-        source_testkit.write_to_location(credentials=credentials, set_credentials=True)
+        source_testkit.write_to_location(client=client, set_client=True)
 
 
 @register_scenario("bare")
