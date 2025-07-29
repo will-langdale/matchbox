@@ -518,15 +518,15 @@ class TestMatchboxBackend:
             assert self.backend.source_resolutions.count() == 1
 
     def test_index_same_resolution(self):
-        """Test that indexing same-name sources in different warehouses works."""
+        """Test that indexing same-name sources in different locations works."""
         with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             crn_source_1 = crn_testkit.source_config.model_copy(
-                update={"location": RelationalDBLocation(uri="postgres://")}
+                update={"location": RelationalDBLocation(name="postgres")}
             )
             crn_source_2 = crn_testkit.source_config.model_copy(
-                deep=True, update={"location": RelationalDBLocation(uri="mongodb://")}
+                deep=True, update={"location": RelationalDBLocation(name="mongodb")}
             )
 
             self.backend.index(crn_source_1, crn_testkit.data_hashes)

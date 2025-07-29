@@ -207,14 +207,14 @@ def populated_postgres_db(
                 source_config_id=11,
                 resolution_id=1,
                 location_type="test",
-                location_uri="test://source_a",
+                location_name="db1",
                 extract_transform="identity",
             ),
             SourceConfigs(
                 source_config_id=22,
                 resolution_id=2,
                 location_type="test",
-                location_uri="test://source_b",
+                location_name="db2",
                 extract_transform="identity",
             ),
         ]
