@@ -53,10 +53,29 @@ Choosing the right threshold for your model involves balancing precision and rec
 * **Higher precision** (fewer false matches)
 * **Lower recall** (more missed matches)
 
-Here’s how to evaluate this in code:
-
+To evaluate this in code, first you need to build and run a model outside of a DAG:
 
 ```python
+from matchbox import make_model, query, select
+from matchbox.client.models.dedupers import NaiveDeduper
+from sqlalchemy import create_engine
+
+engine = create_engine('postgresql://')
+
+df = query(select("source", client=engine))
+
+model = make_model(
+    name="model_name",
+    description=f"description",
+    model_class=NaiveDeduper,
+    model_settings={
+        "id": "id",
+        "unique_fields": ["field1", "field2"],
+    },
+    left_data=df,
+    left_resolution="source",
+)
+
 results = model.run()
 ```
 
@@ -78,6 +97,14 @@ Or get precision and recall at a specific threshold:
 ```python
 p, r = eval_data.precision_recall(results, threshold=0.5)
 ```
+
+!!! tip "Deterministic models"
+    Some types of model (like the `NaiveDeduper` used in the example) only output 1s for the matches they make, hence **threshold truth tuning doesn't apply**:
+
+    * You won't get a precision-recall curve, but a single point at threshold 1.
+    * The precision and recall scores will be the same at all thresholds.
+
+    On the other hand, probabilistic models (like `SplinkLinker`), can output **any integer between 0 and 1**.
 
 
 ## Comparing Models on the Server
