@@ -126,14 +126,12 @@ class Results(BaseModel):
                 left_on=left_merge_col,
                 right_on=left_key,
             )
-            .drop(left_key)
             .join(
                 right_data,
                 how="left",
                 left_on=right_merge_col,
                 right_on=right_key,
             )
-            .drop(right_key)
         )
 
     def probabilities_to_polars(self) -> pl.DataFrame:
