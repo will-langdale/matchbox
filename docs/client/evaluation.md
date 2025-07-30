@@ -1,3 +1,5 @@
+# Evaluate model performance
+
 After running models to deduplicate and link your data, you’ll likely want to check how well they’re performing. Matchbox helps with this by using **precision** and **recall**:
 
 * **Precision**: How many of the matches your model made are actually correct?
@@ -5,8 +7,8 @@ After running models to deduplicate and link your data, you’ll likely want to 
 
 To calculate these, we need a **ground truth** - a set of correct matches created by people. This is called **validation data**.
 
+## Creating validation data
 
-## Creating Validation Data
 Matchbox provides a simple UI to help you create this validation data. Here’s how it works:
 
 1. **Launch the UI** and choose a model resolution to sample clusters from.
@@ -18,8 +20,7 @@ Matchbox provides a simple UI to help you create this validation data. Here’s 
 
 Once enough users have reviewed clusters, this data can be used to evaluate model performance.
 
-
-## How Precision and Recall Are Calculated
+## How precision and recall are calculated
 
 Validation data is created at the **cluster level**, but precision and recall are calculated using **pairs of records**.
 
@@ -44,9 +45,7 @@ Only pairs that appear in both the model and the validation data are used in the
 !!! tip "Relative vs. absolute scores"
     If your model builds on others, it may inherit some incorrect pairs it can’t control. So, precision and recall scores aren’t absolute - they’re best used to **compare models or thresholds**.
 
-
-
-## Tuning Your Model’s Threshold
+## Tuning your model’s threshold
 
 Choosing the right threshold for your model involves balancing precision and recall. A higher threshold usually means:
 
@@ -101,13 +100,12 @@ p, r = eval_data.precision_recall(results, threshold=0.5)
 !!! tip "Deterministic models"
     Some types of model (like the `NaiveDeduper` used in the example) only output 1s for the matches they make, hence **threshold truth tuning doesn't apply**:
 
-    * You won't get a precision-recall curve, but a single point at threshold 1.
+    * You won't get a precision-recall curve, but a single point at threshold 1.0.
     * The precision and recall scores will be the same at all thresholds.
 
-    On the other hand, probabilistic models (like `SplinkLinker`), can output **any integer between 0 and 1**.
+    On the other hand, probabilistic models (like `SplinkLinker`), can output **any value between 0.0 and 1.0**.
 
-
-## Comparing Models on the Server
+## Comparing models on the server
 
 To compare multiple models stored on the Matchbox server:
 
@@ -125,5 +123,6 @@ for model in models_to_compare:
     p, r = comparison[model]
     print(f"Model {model} has precision: {p} and recall: {r}")
 ```
+
 !!! tip "Model records overlap"
     Only pairs covering records which exist in **all models and the validation data** are used in comparisons. So, a model’s precision and recall might differ when evaluated alone vs. in a group.
