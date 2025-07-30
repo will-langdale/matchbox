@@ -6,11 +6,11 @@ from httpx import Client
 from pandas import DataFrame
 from sqlalchemy import Engine, text
 
-from matchbox import index, make_model, process, query
+from matchbox import index, make_model, process, query, select
 from matchbox.client import _handler
 from matchbox.client.clean import steps
 from matchbox.client.clean.utils import cleaning_function
-from matchbox.client.helpers import cleaner, cleaners, delete_resolution, select
+from matchbox.client.helpers import cleaner, cleaners, delete_resolution
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.entities import query_to_cluster_entities
