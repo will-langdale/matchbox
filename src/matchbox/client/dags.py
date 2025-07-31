@@ -80,30 +80,28 @@ class StepInput(BaseModel):
             return v
 
         try:
-            # Parse the SQL using SQLglot for DuckDB dialect
             parsed = sqlglot.parse_one(v, dialect="duckdb")
-
-            # Find all table references in FROM clauses
-            from_tables = set()
-            for node in parsed.walk():
-                if isinstance(node, sqlglot.expressions.Table):
-                    from_tables.add(node.name.lower())
-
-            # Check that only "data" is referenced in FROM clauses
-            if from_tables and from_tables != {"data"}:
-                invalid_tables = from_tables - {"data"}
-                raise ValueError(
-                    f"Invalid table references in cleaning_sql: {invalid_tables}. "
-                    "Please refer to the data as `data`"
-                )
-            elif not from_tables:
-                raise ValueError(
-                    "No table references found in cleaning_sql. "
-                    "Please refer to the data as `data`"
-                )
-
         except sqlglot.errors.ParseError as e:
             raise ValueError("Invalid SQL in cleaning_sql") from e
+
+        # Find all table references in FROM clauses
+        from_tables = set()
+        for node in parsed.walk():
+            if isinstance(node, sqlglot.expressions.Table):
+                from_tables.add(node.name.lower())
+
+        # Check that only "data" is referenced in FROM clauses
+        if from_tables and from_tables != {"data"}:
+            invalid_tables = from_tables - {"data"}
+            raise ValueError(
+                f"Invalid table references in cleaning_sql: {invalid_tables}. "
+                "Please refer to the data as `data`"
+            )
+        elif not from_tables:
+            raise ValueError(
+                "No table references found in cleaning_sql. "
+                "Please refer to the data as `data`"
+            )
 
         return v
 

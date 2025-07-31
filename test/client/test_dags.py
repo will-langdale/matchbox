@@ -501,12 +501,12 @@ def test_dag_runs(
         left=StepInput(
             prev_node=foo_bar,
             select={foo: [], bar: []},
-            cleaning_sql="select * from data;",
+            cleaning_sql=None,
         ),
         right=StepInput(
             prev_node=i_baz,
             select={baz: []},
-            cleaning_sql="select * from data;",
+            cleaning_sql=None,
         ),
         name="foo_bar_baz",
         description="",

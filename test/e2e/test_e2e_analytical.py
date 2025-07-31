@@ -215,7 +215,7 @@ class TestE2EAnalyticalUser:
             )
             df = raw_df.drop(source_config.qualified_key)
 
-            # Clean data
+            # Apply cleaning
             cleaned = self._clean_data(df, source_config.prefix)
 
             # Get feature names with prefix for deduplication
@@ -312,7 +312,7 @@ class TestE2EAnalyticalUser:
             )
             right_df = right_raw_df.drop(right_source.qualified_key)
 
-            # Clean
+            # Apply cleaning
             left_cleaned = self._clean_data(left_df, left_source.prefix)
             right_cleaned = self._clean_data(right_df, right_source.prefix)
 
@@ -404,7 +404,7 @@ class TestE2EAnalyticalUser:
         )
         right_df = right_raw_df.drop(cdms_source.qualified_key)
 
-        # Clean
+        # Apply cleaning
         left_cleaned = self._clean_data(left_df, crn_source.prefix)
         right_cleaned = self._clean_data(right_df, cdms_source.prefix)
 

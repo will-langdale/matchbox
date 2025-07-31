@@ -30,6 +30,40 @@ class TestE2EPipelineBuilder:
     linked_testkit: LinkedSourcesTestkit | None = None
     n_true_entities: int | None = None
 
+    def _clean_data(self, source_config: SourceConfig) -> str:
+        """Generate cleaning SQL for a source configuration.
+
+        Removes company suffixes (Ltd, Limited) and normalises whitespace
+        from the company_name field.
+
+        Args:
+            source_config: Source configuration containing field information
+
+        Returns:
+            SQL string for cleaning the data
+        """
+        company_name_field = source_config.f("company_name")
+
+        return f"""
+            select
+                *,
+                trim(
+                    regexp_replace(
+                        regexp_replace(
+                            {company_name_field}, 
+                            ' (Ltd|Limited)$', 
+                            '', 
+                            'g'
+                        ), 
+                        '\\s+', 
+                        ' ', 
+                        'g'
+                    )
+                ) as {company_name_field}
+            from
+                data;
+        """
+
     @pytest.fixture(autouse=True, scope="function")
     def setup_environment(
         self,
@@ -160,25 +194,7 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=i_source_a,
                 select={source_a_config: ["company_name", "registration_id"]},
-                cleaning_sql=f"""
-                    select
-                        *,
-                        trim(
-                            regexp_replace(
-                                regexp_replace(
-                                    {source_a_config.f("company_name")}, 
-                                    ' (Ltd|Limited)$', 
-                                    '', 
-                                    'g'
-                                ), 
-                                '\\s+', 
-                                ' ', 
-                                'g'
-                            )
-                        ) as {source_a_config.f("company_name")}
-                    from
-                        data;
-                """,
+                cleaning_sql=self._clean_data(source_a_config),
                 batch_size=batch_size,
             ),
             name="dedupe_source_a",
@@ -195,25 +211,7 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=i_source_b,
                 select={source_b_config: ["company_name", "registration_id"]},
-                cleaning_sql=f"""
-                    select
-                        *,
-                        trim(
-                            regexp_replace(
-                                regexp_replace(
-                                    {source_b_config.f("company_name")}, 
-                                    ' (Ltd|Limited)$', 
-                                    '', 
-                                    'g'
-                                ), 
-                                '\\s+', 
-                                ' ', 
-                                'g'
-                            )
-                        ) as {source_b_config.f("company_name")}
-                    from
-                        data;
-                """,
+                cleaning_sql=self._clean_data(source_b_config),
                 batch_size=batch_size,
             ),
             name="dedupe_source_b",
@@ -231,49 +229,13 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=dedupe_a,
                 select={source_a_config: ["company_name", "registration_id"]},
-                cleaning_sql=f"""
-                    select
-                        *,
-                        trim(
-                            regexp_replace(
-                                regexp_replace(
-                                    {source_a_config.f("company_name")}, 
-                                    ' (Ltd|Limited)$', 
-                                    '', 
-                                    'g'
-                                ), 
-                                '\\s+', 
-                                ' ', 
-                                'g'
-                            )
-                        ) as {source_a_config.f("company_name")}
-                    from
-                        data;
-                """,
+                cleaning_sql=self._clean_data(source_a_config),
                 batch_size=batch_size,
             ),
             right=StepInput(
                 prev_node=dedupe_b,
                 select={source_b_config: ["company_name", "registration_id"]},
-                cleaning_sql=f"""
-                    select
-                        *,
-                        trim(
-                            regexp_replace(
-                                regexp_replace(
-                                    {source_b_config.f("company_name")}, 
-                                    ' (Ltd|Limited)$', 
-                                    '', 
-                                    'g'
-                                ), 
-                                '\\s+', 
-                                ' ', 
-                                'g'
-                            )
-                        ) as {source_b_config.f("company_name")}
-                    from
-                        data;
-                """,
+                cleaning_sql=self._clean_data(source_b_config),
                 batch_size=batch_size,
             ),
             name="__DEFAULT__",

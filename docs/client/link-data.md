@@ -434,7 +434,7 @@ You can link across multiple sources in a single step:
             cleaning_sql=f"""
                 select
                     lower({companies_house.f("company_name")}) as company_name,
-                    {companies_house.f("postcode")}
+                    {companies_house.f("postcode")} as postcode
                 from
                     data;
             """,
@@ -468,7 +468,7 @@ You can link across multiple sources in a single step:
             "comparisons": [
                 """
                     l.company_name = r.company_name
-                    and l.postcode = r.postcode
+                        and l.postcode = r.postcode
                 """
             ],
         },
@@ -482,41 +482,6 @@ This example demonstrates how you can:
 2. Select fields from multiple sources in a single step
 3. Use SQL functions like `coalesce()` in your cleaning logic to handle data from multiple sources
 4. Create unified field names for comparison across sources
-
-This example demonstrates how you can:
-
-1. Use the results of a previous linking step as input
-2. Select fields from multiple sources in a single step
-3. Use SQL functions like `coalesce()` in your comparison logic
-
-### Conditional matching
-
-You can implement complex matching logic using SQL expressions:
-
-=== "Example"
-    ```python
-    link_companies = LinkStep(
-        # ... other parameters ...
-        settings={
-            "left_id": "id",
-            "right_id": "id",
-            "comparisons": """
-                (
-                    l.company_number = r.company_number
-                ) OR (
-                    l.company_name = r.company_name
-                    AND l.postcode = r.postcode
-                )
-                """,
-        },
-        truth=1.0,
-    )
-    ```
-
-This example matches records that either:
-
-1. Have the same company number, OR
-2. Have the same company name AND postcode
 
 ## Best practices
 
