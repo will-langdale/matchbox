@@ -10,7 +10,7 @@ This page contains a list of known data and security caveats determined by the c
 Matchbox only stores:
 
 * Cryptographically secure hashes of the original data
-* Key fields, which is usually a standard identifier (often not sensitive)
+* Key fields, which is usually a standard identifier for your organisation (often not sensitive)
 
 For example, a dataset of tax records may contain sensitive information, but since all businesses have tax records, the presence of a business in the dataset isn’t necessarily sensitive.
 
@@ -21,8 +21,7 @@ Problems arise when:
 * A user accesses a source that maps identifiable data (like names and addresses) to secret identifiers from another source that shouldn't be revealed.
 * Which identities appear in an indexed source is sensitive information in itself.
 
-**Example:** Imagine a table of high-profile individuals under investigation. Matchbox doesn’t store investigation details, but it does expose identifiers (like passport numbers). If another source links those identifiers to names, Matchbox could be used to reveal identities.
-
+**Example:** Imagine a table of high-profile individuals under investigation. Matchbox doesn’t store investigation details, but it does expose the identifiers you use as key fields (e.g.: passport numbers). If another source links those keys to names, Matchbox could be used to reveal identities.
 
 !!! tip
     Do not use Matchbox to index sources where the key fields are sensitive data.
@@ -49,8 +48,6 @@ Future versions of Matchbox will address this limitation by introducing an autho
 
 Matchbox performs **basic validation**, but **cannot guarantee query safety**.
 
-
-
 !!! tip
-    Ensure that clients running extract-transform logic stored on the server have **limited permissions**.
+    Ensure that clients running extract-transform logic stored on the server have the least priviliges required to run legitimate queries.
 
