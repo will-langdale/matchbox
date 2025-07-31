@@ -43,8 +43,8 @@ Future versions of Matchbox will address this limitation by introducing an autho
 
 **Example**:
 
-* A source from RelationalDBLocation stores SQL queries used during indexing.
-* If an automated pipeline reuses these queries, a malicious user could inject harmful SQL (e.g., DROP DATABASE).
+* A source from `RelationalDBLocation` stores SQL queries used during indexing.
+* If an automated pipeline reuses these queries, a malicious user could inject harmful SQL (e.g., `DROP DATABASE`).
 
 Matchbox performs **basic validation**, but **cannot guarantee query safety**.
 
