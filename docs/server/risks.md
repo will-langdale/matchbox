@@ -5,14 +5,12 @@ This page contains a list of known data and security caveats determined by the c
 !!! danger
     Matchbox allows **any user** to view all identifier values in an indexed dataset. There is no authorisation model for reading data. Anyone can query any source.
 
-This is fine for many sources, because the only data stored by Matchbox are
-
 ### What's usually safe
 
 Matchbox only stores:
 
 * Cryptographically secure hashes of the original data
-* Key fields (often not sensitive)
+* Key fields, which is usually a standard identifier (often not sensitive)
 
 For example, a dataset of tax records may contain sensitive information, but since all businesses have tax records, the presence of a business in the dataset isn’t necessarily sensitive.
 
