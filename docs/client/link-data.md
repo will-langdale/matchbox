@@ -203,6 +203,8 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 
 The `cleaning_dict` maps field aliases to DuckDB SQL expressions. Each expression can reference columns from the input data directly. More complex `select` objects will often select the same column names from multiple sources, so column names must be qualified with their source. `SourceConfig.f()` is provided as a convenience function for building f-strings.
 
+We offer [`matchbox.clean.compose()`][matchbox.client.helpers.clean.compose] to assist you in composing complex libraries of cleaning functions from simpler ones, and [`matchbox.clean.vectorise()`][matchbox.client.helpers.clean.vectorise] to extend them easily to arrays.
+
 ## 4. Creating link steps
 
 Link steps connect records between different sources.
