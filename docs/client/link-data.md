@@ -170,7 +170,6 @@ Dedupe steps identify and resolve duplicates within a single source.
             select={companies_house: ["company_name", "company_number"]},
             cleaning_dict={
                 "company_name": f"lower({companies_house.f('company_name')})",
-                "company_number": f"trim({companies_house.f('company_number')})",
             },
             batch_size=batch_size,
         ),
@@ -181,7 +180,7 @@ Dedupe steps identify and resolve duplicates within a single source.
             "id": "id",
             "unique_fields": [
                 "company_name",
-                "company_number",
+                companies_house.f("company_number"),
             ],
         },
         truth=1.0,
@@ -201,9 +200,103 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
 
-The `cleaning_dict` maps field aliases to DuckDB SQL expressions. Each expression can reference columns from the input data directly. More complex `select` objects will often select the same column names from multiple sources, so column names must be qualified with their source. `SourceConfig.f()` is provided as a convenience function for building f-strings.
+### On cleaning
 
-We offer [`matchbox.clean.compose()`][matchbox.client.helpers.clean.compose] to assist you in composing complex libraries of cleaning functions from simpler ones, and [`matchbox.clean.vectorise()`][matchbox.client.helpers.clean.vectorise] to extend them easily to arrays.
+!!! tip "Simplify field references by cleaning everything"
+    
+    To avoid confusion with qualified vs unqualified field names, consider "cleaning" every field you select - even if you're just aliasing it without transformation. This way, all your field references use simple, unqualified names throughout your configuration.
+    
+    ```python
+    # Instead of mixing qualified and unqualified names
+    cleaning_dict={
+        "company_name": f"lower({companies_house.f('company_name')})",
+        # company_number not cleaned, so needs qualification later
+    }
+    settings={
+        "unique_fields": [
+            "company_name",
+            companies_house.f("company_number"),  # Qualified!
+        ],
+    }
+    
+    # Clean everything for consistency
+    cleaning_dict={
+        "company_name": f"lower({companies_house.f('company_name')})",
+        "company_number": companies_house.f("company_number"),  # Just aliasing
+    }
+    settings={
+        "unique_fields": [
+            "company_name",
+            "company_number",  # Both unqualified!
+        ],
+    }
+    ```
+    
+    This approach makes your configuration much more readable and reduces errors from forgetting to qualify field names.
+
+It's worth understanding how data moves through `Step` objects, as it helps knowing when or if to qualify column names. When would I use `"company_number"` vs `companies_house.f("company_number")`, for example?
+
+`StepInput.select` will be used to extract data to a columnar format. More complex `select` objects will often select the same column names from multiple sources, so column names must be qualified with their source. 
+
+Here's the select statement from the above example:
+
+```python
+select={companies_house: ["company_name", "company_number"]}
+```
+
+And the raw data it outputs might look like this:
+
+| id | companieshouse_companies_company_name | companieshouse_companies_company_number |
+|----|---------------------------------------|----------------------------------------|
+| 1  | Acme Corporation Ltd                 | 12345678                               |
+| 2  | ACME CORPORATION LTD                 | 12345678                               |
+| 3  | Beta Solutions Inc                   | 87654321                               |
+| 4  | Gamma Technologies PLC               | 11223344                               |
+| 5  | GAMMA TECHNOLOGIES plc               | 11223344                               |
+
+Note how the fields specified in select are "qualified" with the source they came from.
+
+Next, `StepInput.cleaning_dict` will be applied. Each of its keys will be an output column defined by the SQL in its value. `SourceConfig.f()` is provided as a convenient way to select fields qualified by a source.
+
+The rules for the cleaning dictionary are:
+
+* The ID column is automatically passed through
+* If a column _is_ mentioned in any cleaning SQL, its uncleaned version is automatically dropped from the output
+* If a column _isn't_ mentioned in any cleaning SQL, it's automatically passed through with its qualified name
+
+Here's the cleaning dictionary from the above example:
+
+```python
+cleaning_dict={
+    "company_name": f"lower({companies_house.f('company_name')})",
+}
+```
+
+Note how we qualify the field we clean and alias it to `company_name`, and that `company_number` _isn't_ mentioned.
+
+The cleaned data it outputs might look like this:
+
+| id | company_name               | companieshouse_companies_company_number |
+|----|----------------------------|----------------------------------------|
+| 1  | acme corporation ltd       | 12345678                               |
+| 2  | acme corporation ltd       | 12345678                               |
+| 3  | beta solutions inc         | 87654321                               |
+| 4  | gamma technologies plc     | 11223344                               |
+| 5  | gamma technologies plc     | 11223344                               |
+
+Finally, cleaned fields typically need specifying in a model. Here's our example:
+
+```python
+settings={
+    "id": "id",
+    "unique_fields": [
+        "company_name",
+        companies_house.f("company_number"),
+    ],
+}
+```
+
+Note that because we didn't clean `company_number` it needs to be qualified here, rather than in the cleaning dictionary.
 
 ## 4. Creating link steps
 
@@ -264,7 +357,7 @@ A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
 
-As with deduplication, the `cleaning_dict` maps field aliases to DuckDB SQL expressions that can reference input columns. Use `SourceConfig.f()` to help build f-strings.
+As with deduplication, the `cleaning_dict` maps field aliases to DuckDB SQL expressions that can reference input columns. See [On cleaning](#on-cleaning) for how to specify this functionality.
 
 ### Available linker types
 
