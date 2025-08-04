@@ -287,6 +287,7 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
             bucket=bucket,
             key=test_key,
             tracker=tracker,
+            heartbeat_seconds=10,
         )
 
     assert "Simulated processing failure" in str(excinfo.value)

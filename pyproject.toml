@@ -54,7 +54,6 @@ dev = [
     "moto[s3]>=5.0.26",
     "pre-commit>=3.8.0",
     "pytest>=8.3.3",
-    "pytest-asyncio>=0.25.2",
     "pytest-cov>=5.0.0",
     "pytest-env>=1.1.5",
     "respx>=0.22.0",
@@ -132,8 +131,6 @@ log_cli = false  # Set to true to enable logs and individual tests
 log_cli_level = "DEBUG"  # Set to "INFO" to see less detailed logging
 log_cli_format = "%(asctime)s [%(levelname)s] %(message)s (%(filename)s:%(lineno)s)"
 log_cli_date_format = "%X"
-asyncio_mode = "strict"
-asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore:.*TestkitDAG.*:pytest.PytestCollectionWarning",
     "ignore:.*__fields__.*:pydantic.PydanticDeprecatedSince20:unittest.mock",
