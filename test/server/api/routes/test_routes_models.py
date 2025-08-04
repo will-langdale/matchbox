@@ -19,9 +19,9 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.factories.models import model_factory
-from matchbox.server.api.cache import MetadataStore
-from matchbox.server.api.dependencies import backend, metadata_store
+from matchbox.server.api.dependencies import backend, upload_tracker
 from matchbox.server.api.main import app
+from matchbox.server.api.uploads import UploadTracker
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -117,16 +117,16 @@ def test_model_upload(
     testkit = model_factory(model_type=model_type)
 
     # Setup metadata store
-    mock_metadata_store = Mock()
-    store = MetadataStore()
-    upload_id = store.cache_model(testkit.model.model_config)
+    mock_upload_tracker = Mock()
+    tracker = UploadTracker()
+    upload_id = tracker.add_model(testkit.model.model_config)
 
-    mock_metadata_store.get.side_effect = store.get
-    mock_metadata_store.update_status.side_effect = store.update_status
+    mock_upload_tracker.get.side_effect = tracker.get
+    mock_upload_tracker.update_status.side_effect = tracker.update_status
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     # Make request
     response = test_client.post(

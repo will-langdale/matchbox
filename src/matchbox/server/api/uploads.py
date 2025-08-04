@@ -1,4 +1,4 @@
-"""A simple in-memory cache of uploaded metadata and processing status."""
+"""A metadata registry of uploads and their status."""
 
 import asyncio
 import uuid
@@ -16,8 +16,8 @@ from matchbox.server.api.arrow import s3_to_recordbatch
 from matchbox.server.base import MatchboxDBAdapter
 
 
-class MetadataCacheEntry(BaseModel):
-    """Cache entry for uploaded metadata."""
+class UploadEntry(BaseModel):
+    """Metadata entry for upload."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -27,8 +27,8 @@ class MetadataCacheEntry(BaseModel):
     status: UploadStatus
 
 
-class MetadataStore:
-    """A simple in-memory cache of uploaded metadata and processing status.
+class UploadTracker:
+    """A simple in-memory registry of uploaded metadata and processing status.
 
     Uses a janitor pattern for lazy cleanup. Entries expire after a period of
     inactivity, where activity is defined as any update to the entry's status
@@ -36,105 +36,107 @@ class MetadataStore:
     """
 
     def __init__(self, expiry_minutes: int = 30):
-        """Initialise the cache with an expiry time in minutes."""
-        self._store: dict[str, MetadataCacheEntry] = {}
+        """Initialise the tracker with an expiry time in minutes."""
+        self._tracker: dict[str, UploadEntry] = {}
         self.expiry_minutes = expiry_minutes
 
-    def _is_expired(self, entry: MetadataCacheEntry) -> bool:
-        """Check if a cache entry has expired due to inactivity."""
+    def _is_expired(self, entry: UploadEntry) -> bool:
+        """Check if an entry has expired due to inactivity."""
         return datetime.now() - entry.update_timestamp > timedelta(
             minutes=self.expiry_minutes
         )
 
     def _cleanup_if_needed(self) -> None:
         """Lazy cleanup - remove all expired entries."""
-        expired = [id for id, entry in self._store.items() if self._is_expired(entry)]
+        expired = [id for id, entry in self._tracker.items() if self._is_expired(entry)]
         for id in expired:
-            del self._store[id]
+            del self._tracker[id]
 
-    def _update_timestamp(self, cache_id: str) -> None:
+    def _update_timestamp(self, upload_id: str) -> None:
         """Update the timestamp on an entry to prevent expiry."""
-        if entry := self._store.get(cache_id):
+        if entry := self._tracker.get(upload_id):
             entry.update_timestamp = datetime.now()
 
-    def cache_source(self, metadata: SourceConfig) -> str:
-        """Cache source metadata and return ID."""
+    def add_source(self, metadata: SourceConfig) -> str:
+        """Register source metadata and return ID."""
         self._cleanup_if_needed()
-        cache_id = str(uuid.uuid4())
+        upload_id = str(uuid.uuid4())
 
-        self._store[cache_id] = MetadataCacheEntry(
+        self._tracker[upload_id] = UploadEntry(
             metadata=metadata,
             upload_type=BackendUploadType.INDEX,
             update_timestamp=datetime.now(),
             status=UploadStatus(
-                id=cache_id, status="awaiting_upload", entity=BackendUploadType.INDEX
+                id=upload_id, status="awaiting_upload", entity=BackendUploadType.INDEX
             ),
         )
-        return cache_id
+        return upload_id
 
-    def cache_model(self, metadata: ModelConfig) -> str:
-        """Cache model results metadata and return ID."""
+    def add_model(self, metadata: ModelConfig) -> str:
+        """Register model results metadata and return ID."""
         self._cleanup_if_needed()
-        cache_id = str(uuid.uuid4())
+        upload_id = str(uuid.uuid4())
 
-        self._store[cache_id] = MetadataCacheEntry(
+        self._tracker[upload_id] = UploadEntry(
             metadata=metadata,
             upload_type=BackendUploadType.RESULTS,
             update_timestamp=datetime.now(),
             status=UploadStatus(
-                id=cache_id, status="awaiting_upload", entity=BackendUploadType.RESULTS
+                id=upload_id,
+                status="awaiting_upload",
+                entity=BackendUploadType.RESULTS,
             ),
         )
-        return cache_id
+        return upload_id
 
-    def get(self, cache_id: str) -> MetadataCacheEntry | None:
+    def get(self, upload_id: str) -> UploadEntry | None:
         """Retrieve metadata by ID if not expired. Updates timestamp on access."""
         self._cleanup_if_needed()
 
-        entry = self._store.get(cache_id)
+        entry = self._tracker.get(upload_id)
         if not entry:
             return None
 
         if self._is_expired(entry):
-            del self._store[cache_id]
+            del self._tracker[upload_id]
             return None
 
-        self._update_timestamp(cache_id)
+        self._update_timestamp(upload_id)
         return entry
 
     def update_status(
-        self, cache_id: str, status: str, details: str | None = None
+        self, upload_id: str, status: str, details: str | None = None
     ) -> bool:
         """Update the status of an entry.
 
         Raises:
             KeyError: If entry not found.
         """
-        if entry := self._store.get(cache_id):
+        if entry := self._tracker.get(upload_id):
             entry.status.status = status
             if details is not None:
                 entry.status.details = details
             entry.update_timestamp = datetime.now()
             return True
-        raise KeyError(f"Cache entry {cache_id} not found.")
+        raise KeyError(f"Entry {upload_id} not found.")
 
-    def remove(self, cache_id: str) -> bool:
-        """Remove an entry from the store."""
+    def remove(self, upload_id: str) -> bool:
+        """Remove an entry from the tracker."""
         self._cleanup_if_needed()
-        if cache_id in self._store:
-            del self._store[cache_id]
+        if upload_id in self._tracker:
+            del self._tracker[upload_id]
             return True
         return False
 
 
 @asynccontextmanager
 async def heartbeat(
-    metadata_store: MetadataStore, upload_id: str, interval_seconds: int = 300
+    upload_tracker: UploadTracker, upload_id: str, interval_seconds: int = 300
 ):
     """Context manager that updates status with a heartbeat.
 
     Args:
-        metadata_store: Store for updating status
+        upload_tracker: Tracker for updating status
         upload_id: ID of the upload being processed
         interval_seconds: How often to send heartbeat (default 5 minutes)
     """
@@ -144,8 +146,8 @@ async def heartbeat(
         while True:
             await asyncio.sleep(interval_seconds)
             timestamp = datetime.now().isoformat()
-            metadata_store.update_status(
-                cache_id=upload_id,
+            upload_tracker.update_status(
+                upload_id=upload_id,
                 status="processing",
                 details=f"Still processing... Last heartbeat: {timestamp}",
             )
@@ -167,12 +169,12 @@ def process_upload(
     upload_id: str,
     bucket: str,
     key: str,
-    metadata_store: MetadataStore,
+    tracker: UploadTracker,
 ) -> None:
     """Background task to process uploaded file."""
-    metadata_store.update_status(upload_id, "processing")
+    tracker.update_status(upload_id, "processing")
     client = backend.settings.datastore.get_client()
-    upload = metadata_store.get(upload_id)
+    upload = tracker.get(upload_id)
 
     try:
         data = pa.Table.from_batches(
@@ -189,7 +191,7 @@ def process_upload(
         else:
             raise ValueError(f"Unknown upload type: {upload.upload_type}")
 
-        metadata_store.update_status(upload_id, "complete")
+        tracker.update_status(upload_id, "complete")
 
     except Exception as e:
         error_context = {
@@ -207,7 +209,7 @@ def process_upload(
             f"Upload type: {getattr(upload, 'upload_type', 'unknown')}, "
             f"SourceConfig: {getattr(upload, 'metadata', 'unknown')}"
         )
-        metadata_store.update_status(
+        tracker.update_status(
             upload_id,
             "failed",
             details=details,

@@ -26,8 +26,8 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ModelResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
-    MetadataStoreDependency,
     ParquetResponse,
+    UploadTrackerDependency,
     validate_api_key,
 )
 
@@ -93,7 +93,7 @@ def get_model(backend: BackendDependency, name: ModelResolutionName) -> ModelCon
 )
 def set_results(
     backend: BackendDependency,
-    metadata_store: MetadataStoreDependency,
+    upload_tracker: UploadTrackerDependency,
     name: ModelResolutionName,
 ) -> UploadStatus:
     """Create an upload task for model results."""
@@ -107,8 +107,8 @@ def set_results(
             ).model_dump(),
         ) from e
 
-    upload_id = metadata_store.cache_model(metadata=metadata)
-    return metadata_store.get(cache_id=upload_id).status
+    upload_id = upload_tracker.add_model(metadata=metadata)
+    return upload_tracker.get(upload_id=upload_id).status
 
 
 @router.get(

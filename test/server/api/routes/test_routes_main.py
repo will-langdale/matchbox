@@ -26,9 +26,9 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match
-from matchbox.server.api.cache import MetadataStore, process_upload
-from matchbox.server.api.dependencies import backend, metadata_store
+from matchbox.server.api.dependencies import backend, upload_tracker
 from matchbox.server.api.main import app
+from matchbox.server.api.uploads import UploadTracker, process_upload
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -82,15 +82,15 @@ def test_upload(
     source_testkit = source_factory()
 
     # Mock the metadata store
-    mock_metadata_store = Mock()
-    store = MetadataStore()
-    update_id = store.cache_source(source_testkit.source_config)
-    mock_metadata_store.get.side_effect = store.get
-    mock_metadata_store.update_status.side_effect = store.update_status
+    mock_upload_tracker = Mock()
+    tracker = UploadTracker()
+    update_id = tracker.add_source(source_testkit.source_config)
+    mock_upload_tracker.get.side_effect = tracker.get
+    mock_upload_tracker.update_status.side_effect = tracker.update_status
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     # Make request with mocked background task
     response = test_client.post(
@@ -109,7 +109,7 @@ def test_upload(
     assert response.status_code == 202, response.json()
     assert response.json()["status"] == "queued"  # Updated to check for queued status
     # Check both status updates were called in correct order
-    assert mock_metadata_store.update_status.call_args_list == [
+    assert mock_upload_tracker.update_status.call_args_list == [
         call(update_id, "queued"),
     ]
     mock_backend.index.assert_not_called()  # Index happens in background
@@ -132,15 +132,15 @@ def test_upload_wrong_schema(
     source_testkit = source_factory()
 
     # Setup store
-    mock_metadata_store = Mock()
-    store = MetadataStore()
-    update_id = store.cache_source(source_testkit.source_config)
-    mock_metadata_store.get.side_effect = store.get
-    mock_metadata_store.update_status.side_effect = store.update_status
+    mock_upload_tracker = Mock()
+    tracker = UploadTracker()
+    update_id = tracker.add_source(source_testkit.source_config)
+    mock_upload_tracker.get.side_effect = tracker.get
+    mock_upload_tracker.update_status.side_effect = tracker.update_status
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     # Make request with actual data instead of the hashes -- wrong schema
     response = test_client.post(
@@ -158,7 +158,7 @@ def test_upload_wrong_schema(
     assert response.status_code == 400
     assert response.json()["status"] == "failed"
     assert "schema mismatch" in response.json()["details"].lower()
-    mock_metadata_store.update_status.assert_called_with(
+    mock_upload_tracker.update_status.assert_called_with(
         update_id, "failed", details=ANY
     )
     mock_add_task.assert_not_called()  # Background task should not be queued
@@ -167,17 +167,17 @@ def test_upload_wrong_schema(
 def test_upload_status_check(test_client: TestClient):
     """Test checking status of an upload using the status endpoint."""
     # Setup store with a processing entry
-    mock_metadata_store = Mock()
-    store = MetadataStore()
+    mock_upload_tracker = Mock()
+    tracker = UploadTracker()
     source_testkit = source_factory()
-    update_id = store.cache_source(source_testkit.source_config)
-    store.update_status(update_id, "processing")
+    update_id = tracker.add_source(source_testkit.source_config)
+    tracker.update_status(update_id, "processing")
 
-    mock_metadata_store.get.side_effect = store.get
-    mock_metadata_store.update_status.side_effect = store.update_status
+    mock_upload_tracker.get.side_effect = tracker.get
+    mock_upload_tracker.update_status.side_effect = tracker.update_status
 
     # Override app dependencies with mocks
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     # Check status using GET endpoint
     response = test_client.get(f"/upload/{update_id}/status")
@@ -185,22 +185,22 @@ def test_upload_status_check(test_client: TestClient):
     # Should return current status
     assert response.status_code == 200
     assert response.json()["status"] == "processing"
-    mock_metadata_store.update_status.assert_not_called()
+    mock_upload_tracker.update_status.assert_not_called()
 
 
 def test_upload_already_processing(test_client: TestClient):
     """Test attempting to upload when status is already processing."""
     # Setup store with a processing entry
-    mock_metadata_store = Mock()
-    store = MetadataStore()
+    mock_upload_tracker = Mock()
+    tracker = UploadTracker()
     source_testkit = source_factory()
-    update_id = store.cache_source(source_testkit.source_config)
-    store.update_status(update_id, "processing")
+    update_id = tracker.add_source(source_testkit.source_config)
+    tracker.update_status(update_id, "processing")
 
-    mock_metadata_store.get.side_effect = store.get
+    mock_upload_tracker.get.side_effect = tracker.get
 
     # Override app dependencies with mocks
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     # Attempt upload
     response = test_client.post(
@@ -216,16 +216,16 @@ def test_upload_already_processing(test_client: TestClient):
 def test_upload_already_queued(test_client: TestClient):
     """Test attempting to upload when status is already queued."""
     # Setup store with a queued entry
-    mock_metadata_store = Mock()
-    store = MetadataStore()
+    mock_upload_tracker = Mock()
+    tracker = UploadTracker()
     source_testkit = source_factory()
-    update_id = store.cache_source(source_testkit.source_config)
-    store.update_status(update_id, "queued")
+    update_id = tracker.add_source(source_testkit.source_config)
+    tracker.update_status(update_id, "queued")
 
-    mock_metadata_store.get.side_effect = store.get
+    mock_upload_tracker.get.side_effect = tracker.get
 
     # Override app dependencies with mocks
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     # Attempt upload
     response = test_client.post(
@@ -240,11 +240,11 @@ def test_upload_already_queued(test_client: TestClient):
 
 def test_status_check_not_found(test_client: TestClient):
     """Test checking status for non-existent upload ID."""
-    mock_metadata_store = Mock()
-    mock_metadata_store.get.return_value = None
+    mock_upload_tracker = Mock()
+    mock_upload_tracker.get.return_value = None
 
     # Override app dependencies with mocks
-    app.dependency_overrides[metadata_store] = lambda: mock_metadata_store
+    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
 
     response = test_client.get("/upload/nonexistent-id/status")
 
@@ -275,9 +275,9 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
     assert s3.head_object(Bucket=bucket, Key=test_key)
 
     # Setup metadata store with test data
-    store = MetadataStore()
-    upload_id = store.cache_source(source_testkit.source_config)
-    store.update_status(upload_id, "awaiting_upload")
+    tracker = UploadTracker()
+    upload_id = tracker.add_source(source_testkit.source_config)
+    tracker.update_status(upload_id, "awaiting_upload")
 
     # Run the process, expecting it to fail
     with pytest.raises(MatchboxServerFileError) as excinfo:
@@ -286,13 +286,13 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
             upload_id=upload_id,
             bucket=bucket,
             key=test_key,
-            metadata_store=store,
+            tracker=tracker,
         )
 
     assert "Simulated processing failure" in str(excinfo.value)
 
     # Check that the status was updated to failed
-    status = store.get(upload_id).status
+    status = tracker.get(upload_id).status
     assert status.status == "failed", f"Expected status 'failed', got '{status.status}'"
 
     # Verify file was deleted despite the failure
