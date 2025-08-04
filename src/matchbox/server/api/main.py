@@ -90,7 +90,7 @@ async def healthcheck() -> OKMessage:
 @app.post(
     "/login",
 )
-async def login(
+def login(
     backend: BackendDependency,
     credentials: LoginAttempt,
 ) -> LoginResult:
@@ -106,7 +106,7 @@ async def login(
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(validate_api_key)],
 )
-async def upload_file(
+def upload_file(
     background_tasks: BackgroundTasks,
     backend: BackendDependency,
     metadata_store: MetadataStoreDependency,
@@ -152,7 +152,7 @@ async def upload_file(
     key = f"{upload_id}.parquet"
 
     try:
-        await table_to_s3(
+        table_to_s3(
             client=client,
             bucket=bucket,
             key=key,
@@ -197,7 +197,7 @@ async def upload_file(
     },
     status_code=status.HTTP_200_OK,
 )
-async def get_upload_status(
+def get_upload_status(
     metadata_store: MetadataStoreDependency,
     upload_id: str,
 ) -> UploadStatus:
@@ -312,13 +312,13 @@ def match(
 
 
 @app.get("/report/resolutions")
-async def get_resolutions(backend: BackendDependency) -> ResolutionGraph:
+def get_resolutions(backend: BackendDependency) -> ResolutionGraph:
     """Get the resolution graph."""
     return backend.get_resolution_graph()
 
 
 @app.get("/database/count")
-async def count_backend_items(
+def count_backend_items(
     backend: BackendDependency,
     entity: BackendCountableType | None = None,
 ) -> CountResult:
@@ -339,7 +339,7 @@ async def count_backend_items(
     responses={409: {"model": str}},
     dependencies=[Depends(validate_api_key)],
 )
-async def clear_database(
+def clear_database(
     backend: BackendDependency,
     certain: Annotated[
         bool,

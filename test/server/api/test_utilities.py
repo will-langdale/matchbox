@@ -21,8 +21,7 @@ else:
     S3Client = Any
 
 
-@pytest.mark.asyncio
-async def test_file_to_s3(s3: S3Client):
+def test_file_to_s3(s3: S3Client):
     """Test that a file can be uploaded to S3."""
     # Create a mock bucket
     s3.create_bucket(
@@ -59,7 +58,7 @@ async def test_file_to_s3(s3: S3Client):
 
     # Call the function
     key = "foo.parquet"
-    upload_id = await table_to_s3(
+    upload_id = table_to_s3(
         client=s3,
         bucket="test-bucket",
         key=key,
@@ -84,7 +83,7 @@ async def test_file_to_s3(s3: S3Client):
     text_file = UploadFile(filename="test.txt", file=BytesIO(b"test"))
 
     with pytest.raises(MatchboxServerFileError):
-        await table_to_s3(
+        table_to_s3(
             client=s3,
             bucket="test-bucket",
             key=key,
@@ -95,7 +94,7 @@ async def test_file_to_s3(s3: S3Client):
     # Test 3: Upload a parquet file with a different schema
     corrupted_schema = table.schema.remove(0)
     with pytest.raises(MatchboxServerFileError):
-        await table_to_s3(
+        table_to_s3(
             client=s3,
             bucket="test-bucket",
             key=key,

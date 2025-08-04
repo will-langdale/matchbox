@@ -1,4 +1,4 @@
-import asyncio
+from time import sleep
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock, patch
 
@@ -146,9 +146,8 @@ def test_model_upload(
     mock_add_task.assert_called_once()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("model_type", ["deduper", "linker"])
-async def test_complete_model_upload_process(
+def test_complete_model_upload_process(
     s3: S3Client, model_type: str, test_client: TestClient
 ):
     """Test the complete upload process for models from creation through processing."""
@@ -215,7 +214,7 @@ async def test_complete_model_upload_process(
         elif status == "failed":
             pytest.fail(f"Upload failed: {response.json().get('details')}")
         elif status in ["processing", "queued"]:
-            await asyncio.sleep(0.1)  # Small delay between polls
+            sleep(0.1)  # Small delay between polls
         else:
             pytest.fail(f"Unexpected status: {status}")
 

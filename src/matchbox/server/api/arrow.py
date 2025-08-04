@@ -16,7 +16,7 @@ else:
     S3Client = Any
 
 
-async def table_to_s3(
+def table_to_s3(
     client: S3Client,
     bucket: str,
     key: str,
@@ -50,7 +50,7 @@ async def table_to_s3(
                 )
             )
 
-        await file.seek(0)
+        file.file.seek(0)
 
         client.put_object(Bucket=bucket, Key=key, Body=file.file)
 

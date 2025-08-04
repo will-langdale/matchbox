@@ -32,7 +32,7 @@ router = APIRouter(prefix="/sources", tags=["sources"])
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(validate_api_key)],
 )
-async def add_source(
+def add_source(
     metadata_store: MetadataStoreDependency, source: SourceConfig
 ) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
@@ -44,7 +44,7 @@ async def add_source(
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-async def get_source_config(
+def get_source_config(
     backend: BackendDependency,
     name: SourceResolutionName,
 ) -> SourceConfig:
@@ -64,7 +64,7 @@ async def get_source_config(
     "",
     responses={404: {"model": NotFoundError}},
 )
-async def get_resolution_source_configs(
+def get_resolution_source_configs(
     backend: BackendDependency,
     name: ResolutionName,
 ) -> list[SourceConfig]:
