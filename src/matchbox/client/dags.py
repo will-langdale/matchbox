@@ -7,10 +7,10 @@ from typing import Any, Literal
 
 import duckdb
 import polars as pl
-import sqlglot
 from pyarrow import Table
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import create_engine
+from sqlglot import errors, expressions, parse_one, select
 
 from matchbox.client import _handler
 from matchbox.client.helpers.selector import Selector, query
@@ -58,7 +58,7 @@ class StepInput(BaseModel):
 
     prev_node: Step
     select: dict[SourceConfig, list[str]]
-    cleaning_sql: str | None = None
+    cleaning_dict: dict[str, str] | None = None
     batch_size: int | None = None
     threshold: float | None = None
     combine_type: Literal["concat", "explode", "set_agg"] = "concat"
@@ -68,40 +68,26 @@ class StepInput(BaseModel):
         """Resolution name for node generating this input for the next step."""
         return self.prev_node.name
 
-    @field_validator("cleaning_sql")
+    @field_validator("cleaning_dict")
     @classmethod
-    def validate_cleaning_sql(cls, v: str | None) -> str | None:
-        """Validate cleaning SQL.
-
-        * Valid DuckDB SQL
-        * Only references the `data` table
-        """
+    def validate_cleaning_dict(cls, v: dict[str, str] | None) -> str | None:
+        """Validate cleaning as valid SQL."""
         if v is None:
             return v
 
-        try:
-            parsed = sqlglot.parse_one(v, dialect="duckdb")
-        except sqlglot.errors.ParseError as e:
-            raise ValueError("Invalid SQL in cleaning_sql") from e
+        for alias, sql in v.items():
+            if sql is not None:
+                try:
+                    stmt = parse_one(sql, dialect="duckdb")
+                except errors.ParseError as e:
+                    raise ValueError(f"Invalid SQL in cleaning_dict: {alias}") from e
 
-        # Find all table references in FROM clauses
-        from_tables = set()
-        for node in parsed.walk():
-            if isinstance(node, sqlglot.expressions.Table):
-                from_tables.add(node.name.lower())
-
-        # Check that only "data" is referenced in FROM clauses
-        if from_tables and from_tables != {"data"}:
-            invalid_tables = from_tables - {"data"}
-            raise ValueError(
-                f"Invalid table references in cleaning_sql: {invalid_tables}. "
-                "Please refer to the data as `data`"
-            )
-        elif not from_tables:
-            raise ValueError(
-                "No table references found in cleaning_sql. "
-                "Please refer to the data as `data`"
-            )
+                for node in stmt.walk():
+                    if isinstance(node, expressions.Column) and node.name == "id":
+                        raise ValueError(
+                            "Cannot transform 'id' column in cleaning_dict. "
+                            "It is always selected by default."
+                        )
 
         return v
 
@@ -210,19 +196,66 @@ class ModelStep(Step):
     def clean(self, data: pl.DataFrame, step_input: StepInput) -> pl.DataFrame:
         """Clean data using DuckDB with the provided cleaning SQL.
 
+        * ID is passed through automatically
+        * Columns not mentioned in cleaning_dict are passed through unchanged
+        * Each key in cleaning_dict is an alias for a SQL expression
+
         Args:
             data: Raw polars dataframe to clean
-            step_input: Step input containing cleaning_sql
+            step_input: Step input containing cleaning_dict
 
         Returns:
             Cleaned polars dataframe
         """
-        if step_input.cleaning_sql is None:
+        if step_input.cleaning_dict is None:
             return data
+
+        # Get all possible field names from the step input
+        input_column_names: set[str] = {
+            config.f(column)
+            for config, selected in step_input.select.items()
+            for column in selected
+        }
+
+        # Ensure 'id' is always selected
+        to_select: list[expressions.Expression] = [
+            expressions.Alias(
+                this=expressions.Column(
+                    this=expressions.Identifier(this="id", quoted=False)
+                ),
+                alias=expressions.Identifier(this="id", quoted=False),
+            ),
+        ]
+
+        # Parse and add each SQL expression from cleaning_dict
+        query_column_names: set[str] = set()
+        for alias, sql in step_input.cleaning_dict.items():
+            stmt = parse_one(sql, dialect="duckdb")
+
+            # Get column name used in the expression
+            for node in stmt.walk():
+                if isinstance(node, expressions.Column):
+                    query_column_names.add(node.name)
+
+            # Add to the list of expressions to select
+            to_select.append(expressions.alias_(stmt, alias))
+
+        # Add all column names not used in the query
+        for column in input_column_names - query_column_names:
+            to_select.append(
+                expressions.Alias(
+                    this=expressions.Column(
+                        this=expressions.Identifier(this=column, quoted=False)
+                    ),
+                    alias=expressions.Identifier(this=column, quoted=False),
+                )
+            )
+
+        query = select(*to_select, dialect="duckdb").from_("data")
 
         with duckdb.connect(":memory:") as conn:
             conn.register("data", data)
-            return conn.execute(step_input.cleaning_sql).pl()
+            return conn.execute(query.sql(dialect="duckdb")).pl()
 
 
 class DedupeStep(ModelStep):

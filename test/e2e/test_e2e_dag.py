@@ -30,8 +30,8 @@ class TestE2EPipelineBuilder:
     linked_testkit: LinkedSourcesTestkit | None = None
     n_true_entities: int | None = None
 
-    def _clean_data(self, source_config: SourceConfig) -> str:
-        """Generate cleaning SQL for a source configuration.
+    def _clean_company_name(self, column: str) -> str:
+        """Generate cleaning SQL for a company name column.
 
         Removes company suffixes (Ltd, Limited) and normalises whitespace
         from the company_name field.
@@ -40,28 +40,23 @@ class TestE2EPipelineBuilder:
             source_config: Source configuration containing field information
 
         Returns:
-            SQL string for cleaning the data
+            Dict mapping field aliases to cleaning SQL expressions
         """
-        company_name_field = source_config.f("company_name")
 
         return f"""
-            select
-                *,
-                trim(
+            trim(
+                regexp_replace(
                     regexp_replace(
-                        regexp_replace(
-                            {company_name_field}, 
-                            ' (Ltd|Limited)$', 
-                            '', 
-                            'g'
-                        ), 
-                        '\\s+', 
-                        ' ', 
+                        {column}, 
+                        ' (Ltd|Limited)$', 
+                        '', 
                         'g'
-                    )
-                ) as {company_name_field}
-            from
-                data;
+                    ), 
+                    '\\s+', 
+                    ' ', 
+                    'g'
+                )
+            )
         """
 
     @pytest.fixture(autouse=True, scope="function")
@@ -194,7 +189,11 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=i_source_a,
                 select={source_a_config: ["company_name", "registration_id"]},
-                cleaning_sql=self._clean_data(source_a_config),
+                cleaning_dict={
+                    "company_name": self._clean_company_name(
+                        source_a_config.f("company_name")
+                    ),
+                },
                 batch_size=batch_size,
             ),
             name="dedupe_source_a",
@@ -211,7 +210,11 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=i_source_b,
                 select={source_b_config: ["company_name", "registration_id"]},
-                cleaning_sql=self._clean_data(source_b_config),
+                cleaning_dict={
+                    "company_name": self._clean_company_name(
+                        source_b_config.f("company_name")
+                    ),
+                },
                 batch_size=batch_size,
             ),
             name="dedupe_source_b",
@@ -229,13 +232,23 @@ class TestE2EPipelineBuilder:
             left=StepInput(
                 prev_node=dedupe_a,
                 select={source_a_config: ["company_name", "registration_id"]},
-                cleaning_sql=self._clean_data(source_a_config),
+                cleaning_dict={
+                    "company_name": self._clean_company_name(
+                        source_a_config.f("company_name")
+                    ),
+                    "registration_id": source_a_config.f("registration_id"),
+                },
                 batch_size=batch_size,
             ),
             right=StepInput(
                 prev_node=dedupe_b,
                 select={source_b_config: ["company_name", "registration_id"]},
-                cleaning_sql=self._clean_data(source_b_config),
+                cleaning_dict={
+                    "company_name": self._clean_company_name(
+                        source_b_config.f("company_name")
+                    ),
+                    "registration_id": source_b_config.f("registration_id"),
+                },
                 batch_size=batch_size,
             ),
             name="__DEFAULT__",
@@ -244,10 +257,7 @@ class TestE2EPipelineBuilder:
             settings={
                 "left_id": "id",
                 "right_id": "id",
-                "comparisons": (
-                    f"l.{source_a_config.f('registration_id')}"
-                    f"= r.{source_b_config.f('registration_id')}",
-                ),
+                "comparisons": ["l.registration_id = r.registration_id"],
             },
             truth=1.0,
         )

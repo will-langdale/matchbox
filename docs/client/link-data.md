@@ -162,20 +162,16 @@ Dedupe steps identify and resolve duplicates within a single source.
     ```python
     from matchbox.client.dags import DedupeStep, StepInput
     from matchbox.client.models.dedupers.naive import NaiveDeduper
-    
+
     # Deduplicate Companies House data based on company number
     dedupe_companies = DedupeStep(
         left=StepInput(
             prev_node=i_companies,
-            select={companies_house: ["company_name", "company_number", "postcode"]},
-            cleaning_sql=f"""
-                select
-                    lower({companies_house.f("company_name")}) as company_name,
-                    trim({companies_house.f("company_number")}) as company_number,
-                    {companies_house.f("postcode")} as postcode
-                from
-                    data;
-            """,
+            select={companies_house: ["company_name", "company_number"]},
+            cleaning_dict={
+                "company_name": f"lower({companies_house.f('company_name')})",
+                "company_number": f"trim({companies_house.f('company_number')})",
+            },
             batch_size=batch_size,
         ),
         name="naive_companieshouse_companies",
@@ -184,6 +180,7 @@ Dedupe steps identify and resolve duplicates within a single source.
         settings={
             "id": "id",
             "unique_fields": [
+                "company_name",
                 "company_number",
             ],
         },
@@ -196,7 +193,7 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 - A `left` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply (`cleaning_sql`)
+    - Cleaning operations to apply (`cleaning_dict`)
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step
@@ -204,9 +201,9 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
 
-Cleaning SQL accepts any valid DuckDB query, and must include `from data`. More complex `select` objects will often select the same column names from multiple sources, so column names must be qualified with their source. `SourceConfig.f()` is provided as a conveniece function for building f-strings.
+The `cleaning_dict` maps field aliases to DuckDB SQL expressions. Each expression can reference columns from the input data directly. More complex `select` objects will often select the same column names from multiple sources, so column names must be qualified with their source. `SourceConfig.f()` is provided as a convenience function for building f-strings.
 
-## 5. Creating link steps
+## 4. Creating link steps
 
 Link steps connect records between different sources.
 
@@ -220,25 +217,19 @@ Link steps connect records between different sources.
         left=StepInput(
             prev_node=dedupe_exporters,
             select={exporters: ["company_name", "postcode"]},
-            cleaning_sql=f"""
-                select
-                    lower({exporters.f("company_name")}) as company_name,
-                    {exporters.f("postcode")} as postcode
-                from
-                    data;
-            """,
+            cleaning_dict={
+                "company_name": f"lower({exporters.f('company_name')})",
+                "postcode": exporters.f("postcode"),
+            },
             batch_size=batch_size,
         ),
         right=StepInput(
             prev_node=dedupe_importers,
             select={importers: ["company_name", "postcode"]},
-            cleaning_sql=f"""
-                select
-                    lower({importers.f("company_name")}) as company_name,
-                    {importers.f("postcode")} as postcode
-                from
-                    data;
-            """,
+            cleaning_dict={
+                "company_name": f"lower({importers.f('company_name')})",
+                "postcode": importers.f("postcode"),
+            },
             batch_size=batch_size,
         ),
         name="deterministic_exp_imp",
@@ -263,7 +254,7 @@ A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
 - A `left` and `right` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply (`cleaning_sql`)
+    - Cleaning operations to apply (`cleaning_dict`)
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step
@@ -271,7 +262,7 @@ A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
 
-As with deduplication, cleaning SQL accepts any valid DuckDB query, and must include `from data`. 
+As with deduplication, the `cleaning_dict` maps field aliases to DuckDB SQL expressions that can reference input columns. Use `SourceConfig.f()` to help build f-strings.
 
 ### Available linker types
 
@@ -337,7 +328,7 @@ Matchbox provides several linking methodologies:
     }
     ```
 
-## 6. Building and running the DAG
+## 5. Building and running the DAG
 
 Once you've defined all your steps, you can build and run the complete [`DAG`][matchbox.client.dags.DAG].
 
@@ -431,33 +422,31 @@ You can link across multiple sources in a single step:
         left=StepInput(
             prev_node=dedupe_companies,
             select={companies_house: ["company_name", "postcode"]},
-            cleaning_sql=f"""
-                select
-                    lower({companies_house.f("company_name")}) as company_name,
-                    {companies_house.f("postcode")} as postcode
-                from
-                    data;
-            """,
+            cleaning_dict={
+                "company_name": f"lower({companies_house.f('company_name')})",
+                "postcode": companies_house.f("postcode"),
+            },
         ),
         right=StepInput(
-            prev_node=link_exp_imp,  # Using a previous link step as input
+            prev_node=link_exp_imp,
             select={
                 importers: ["company_name", "postcode"],
                 exporters: ["company_name", "postcode"],
             },
-            cleaning_sql=f"""
-                select
+            cleaning_dict={
+                "company_name": f"""
                     coalesce(
-                        lower({exporters.f("company_name")}),
-                        lower({importers.f("company_name")})
-                    ) as company_name,
+                        lower({exporters.f('company_name')}), 
+                        lower({importers.f('company_name')})
+                    )
+                """,
+                "postcode": f"""
                     coalesce(
-                        {exporters.f("postcode")},
-                        {importers.f("postcode")}
-                    ) as postcode
-                from
-                    data;
-            """,
+                        {exporters.f('postcode')}, 
+                        {importers.f('postcode')}
+                    )
+                """,
+            },
         ),
         name="deterministic_ch_hmrc",
         description="Link Companies House to HMRC traders",
@@ -480,7 +469,7 @@ This example demonstrates how you can:
 
 1. Use the results of a previous linking step as input
 2. Select fields from multiple sources in a single step
-3. Use SQL functions like `coalesce()` in your cleaning logic to handle data from multiple sources
+3. Use SQL functions like `coalesce()` in your cleaning expressions to handle data from multiple sources
 4. Create unified field names for comparison across sources
 
 ## Best practices

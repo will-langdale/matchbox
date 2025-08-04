@@ -70,7 +70,7 @@ def test_step_input_select_fields(sqlite_warehouse: Engine):
     assert len(step_input_all.select) == 1
 
 
-def test_cleaning_sql_basic_functionality(sqlite_warehouse):
+def test_cleaning_dict_basic_functionality(sqlite_warehouse):
     """Test that cleaning SQL basic functionality works."""
     foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
     i_foo = IndexStep(source_config=foo)
@@ -78,16 +78,18 @@ def test_cleaning_sql_basic_functionality(sqlite_warehouse):
     test_data = pl.DataFrame(
         {
             "id": [1, 2, 3],
-            "name": ["A", "B", "C"],
-            "status": ["active", "inactive", "active"],
+            "foo_name": ["A", "B", "C"],
+            "foo_status": ["active", "inactive", "active"],
         }
     )
 
-    # Basic cleaning works
+    # Basic cleaning works, ID and unspecified columns always selected
     step_input = StepInput(
         prev_node=i_foo,
-        select={foo: []},
-        cleaning_sql="SELECT * FROM data WHERE id > 1",
+        select={foo: ["name", "status"]},
+        cleaning_dict={
+            "name": "lower(foo_name)",
+        },
     )
 
     d_foo = DedupeStep(
@@ -100,15 +102,18 @@ def test_cleaning_sql_basic_functionality(sqlite_warehouse):
     )
 
     result = d_foo.clean(test_data, step_input)
-    assert len(result) == 2
-    assert result["id"].to_list() == [2, 3]
-    assert result.columns == ["id", "name", "status"]
+    assert len(result) == 3
+    assert result["name"].to_list() == ["a", "b", "c"]
+    assert result.columns == ["id", "name", "foo_status"]
 
     # Column dropping and renaming works
     step_input2 = StepInput(
         prev_node=i_foo,
-        select={foo: []},
-        cleaning_sql="SELECT id AS new_id, UPPER(name) AS upper_name FROM data",
+        select={foo: ["name", "status"]},
+        cleaning_dict={
+            "new_status": "foo_status",
+            "lower_name": "lower(foo_name)",
+        },
     )
 
     d_foo2 = DedupeStep(
@@ -121,38 +126,55 @@ def test_cleaning_sql_basic_functionality(sqlite_warehouse):
     )
 
     result2 = d_foo2.clean(test_data, step_input2)
-    assert result2.columns == ["new_id", "upper_name"]
-    assert result2["new_id"].to_list() == [1, 2, 3]
-    assert result2["upper_name"].to_list() == ["A", "B", "C"]
+    assert result2.columns == ["id", "new_status", "lower_name"]
+    assert result2["new_status"].to_list() == ["active", "inactive", "active"]
+    assert result2["lower_name"].to_list() == ["a", "b", "c"]
+
+    # None works
+    step_input3 = StepInput(
+        prev_node=i_foo,
+        select={foo: ["name", "status"]},
+        cleaning_dict=None,
+    )
+
+    d_foo3 = DedupeStep(
+        name="d_foo3",
+        description="",
+        left=step_input3,
+        model_class=NaiveDeduper,
+        settings={},
+        truth=1,
+    )
+
+    result3 = d_foo3.clean(test_data, step_input3)
+    assert result3.columns == ["id", "foo_name", "foo_status"]
 
 
-def test_cleaning_sql_validation_errors(sqlite_warehouse):
-    """Test that cleaning SQL validation catches expected errors."""
+def test_cleaning_dict_validation_errors(sqlite_warehouse):
+    """Test that cleaning dict validation catches expected errors."""
     foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
     i_foo = IndexStep(source_config=foo)
 
-    # Invalid SQL syntax should raise ValueError with sqlglot parse error
-    with pytest.raises(ValueError, match="Invalid SQL in cleaning_sql"):
+    # Invalid SQL raises ValueError
+    with pytest.raises(ValueError, match="Invalid SQL in cleaning_dict: company_name"):
         StepInput(
             prev_node=i_foo,
             select={foo: []},
-            cleaning_sql="SELECT * FROM WHERE",  # Invalid syntax
+            cleaning_dict={
+                "company_name": "foo bar baz",
+            },
         )
 
-    # Selecting from table other than 'data' should raise ValueError
+    # Selecting ID in cleaning_dict raises ValueError
     with pytest.raises(
-        ValueError, match="Invalid table references in cleaning_sql: {'other_table'}"
+        ValueError, match="Cannot transform 'id' column in cleaning_dict"
     ):
         StepInput(
-            prev_node=i_foo, select={foo: []}, cleaning_sql="SELECT * FROM other_table"
-        )
-
-    # No table reference should raise ValueError
-    with pytest.raises(ValueError, match="No table references found in cleaning_sql"):
-        StepInput(
             prev_node=i_foo,
             select={foo: []},
-            cleaning_sql="SELECT 1 AS test_col",  # No FROM clause
+            cleaning_dict={
+                "id": "id + 1",
+            },
         )
 
 
@@ -300,7 +322,7 @@ def test_dedupe_step_run(
             left=StepInput(
                 prev_node=i_foo,
                 select={foo: []},
-                cleaning_sql=None,
+                cleaning_dict=None,
                 threshold=0.5,
                 batch_size=100 if batched else None,
             ),
@@ -381,14 +403,14 @@ def test_link_step_run(
             left=StepInput(
                 prev_node=i_foo,
                 select={foo: ["company_name", "crn"]},
-                cleaning_sql=None,
+                cleaning_dict=None,
                 threshold=0.5,
                 batch_size=100 if batched else None,
             ),
             right=StepInput(
                 prev_node=i_bar,
                 select={bar: []},
-                cleaning_sql=None,
+                cleaning_dict=None,
                 threshold=0.7,
                 batch_size=100 if batched else None,
             ),
@@ -501,12 +523,12 @@ def test_dag_runs(
         left=StepInput(
             prev_node=foo_bar,
             select={foo: [], bar: []},
-            cleaning_sql=None,
+            cleaning_dict=None,
         ),
         right=StepInput(
             prev_node=i_baz,
             select={baz: []},
-            cleaning_sql=None,
+            cleaning_dict=None,
         ),
         name="foo_bar_baz",
         description="",
