@@ -1,4 +1,5 @@
-import asyncio
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
@@ -103,12 +104,12 @@ def test_file_to_s3(s3: S3Client):
         )
 
 
-def test_basic_cache_and_retrieve():
-    """Test basic caching and retrieval functionality."""
+def test_basic_upload_tracking():
+    """Test adding upload to tracker and retrieving."""
     tracker = UploadTracker()
     source = source_factory().source_config
 
-    # Cache the source
+    # Add the source
     upload_id = tracker.add_source(source)
     assert isinstance(upload_id, str)
 
@@ -131,7 +132,7 @@ def test_expiration(mock_datetime: Mock):
     tracker = UploadTracker(expiry_minutes=30)
     source = source_factory().source_config
 
-    # Cache the source
+    # Add the source
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
     upload_id = tracker.add_source(source)
 
@@ -152,9 +153,8 @@ def test_expiration(mock_datetime: Mock):
     assert tracker.get(upload_id) is None
 
 
-@pytest.mark.asyncio
 @patch("matchbox.server.api.uploads.datetime")
-async def test_cleanup(mock_datetime: Mock):
+def test_cleanup(mock_datetime: Mock):
     """Test that cleanup removes expired entries."""
     tracker = UploadTracker(expiry_minutes=30)
     source = source_factory().source_config
@@ -194,8 +194,7 @@ def test_remove():
     assert tracker.remove("nonexistent") is False
 
 
-@pytest.mark.asyncio
-async def test_status_management():
+def test_status_management():
     """Test status update functionality."""
     tracker = UploadTracker()
     source = source_factory().source_config
@@ -221,9 +220,8 @@ async def test_status_management():
         tracker.update_status("nonexistent", "processing")
 
 
-@pytest.mark.asyncio
 @patch("matchbox.server.api.uploads.datetime")
-async def test_timestamp_updates(mock_datetime: Mock):
+def test_timestamp_updates(mock_datetime: Mock):
     """Test that timestamps update correctly on different operations."""
     tracker = UploadTracker()
     source = source_factory().source_config
@@ -246,8 +244,28 @@ async def test_timestamp_updates(mock_datetime: Mock):
     assert entry.update_timestamp == datetime(2024, 1, 1, 12, 30)
 
 
-@pytest.mark.asyncio
-async def test_heartbeat_updates_status():
+def wait_for_heartbeat(
+    tracker: UploadTracker,
+    upload_id: str,
+    timeout: float = 1.0,
+    poll_interval: float = 0.05,
+):
+    """Wait until heartbeat updates status or timeout is reached."""
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        entry = tracker.get(upload_id)
+        if (
+            entry
+            and entry.status.details
+            and "Still processing... Last heartbeat:" in entry.status.details
+        ):
+            return entry
+        time.sleep(poll_interval)
+    # Return latest entry even if heartbeat not found
+    return tracker.get(upload_id)
+
+
+def test_heartbeat_updates_status():
     """Test that heartbeat updates status periodically."""
     tracker = UploadTracker()
     source = source_factory().source_config
@@ -255,9 +273,8 @@ async def test_heartbeat_updates_status():
     # Create initial entry
     upload_id = tracker.add_source(source)
 
-    async with heartbeat(tracker, upload_id, interval_seconds=0.1):
-        # Wait long enough for at least one heartbeat
-        await asyncio.sleep(0.15)
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
 
     # Verify the status was updated with heartbeat details
     entry = tracker.get(upload_id)
@@ -265,9 +282,8 @@ async def test_heartbeat_updates_status():
     assert "Still processing... Last heartbeat:" in entry.status.details
 
 
-@pytest.mark.asyncio
 @patch("matchbox.server.api.uploads.datetime")
-async def test_heartbeat_timestamp_updates(mock_datetime: Mock):
+def test_heartbeat_timestamp_updates(mock_datetime: Mock):
     """Test that heartbeat updates timestamps correctly."""
     tracker = UploadTracker()
     source = source_factory().source_config
@@ -278,17 +294,16 @@ async def test_heartbeat_timestamp_updates(mock_datetime: Mock):
 
     # Start heartbeat and advance time
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 5)
-    async with heartbeat(tracker, upload_id, interval_seconds=0.1):
-        await asyncio.sleep(0.15)
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
 
         entry = tracker.get(upload_id)
         assert entry.update_timestamp == datetime(2024, 1, 1, 12, 5)
         assert "Last heartbeat:" in entry.status.details
 
 
-@pytest.mark.asyncio
 @patch("matchbox.server.api.uploads.datetime")
-async def test_heartbeat_with_expiry(mock_datetime: Mock):
+def test_heartbeat_with_expiry(mock_datetime: Mock):
     """Test heartbeat behavior with cache expiry."""
     tracker = UploadTracker(expiry_minutes=30)
     source = source_factory().source_config
@@ -299,8 +314,8 @@ async def test_heartbeat_with_expiry(mock_datetime: Mock):
 
     # Start heartbeat and let it update
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 25)
-    async with heartbeat(tracker, upload_id, interval_seconds=0.1):
-        await asyncio.sleep(0.15)
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
 
         # Entry should still exist and have updated timestamp
         entry = tracker.get(upload_id)
@@ -312,24 +327,7 @@ async def test_heartbeat_with_expiry(mock_datetime: Mock):
     assert tracker.get(upload_id) is None
 
 
-@pytest.mark.asyncio
-async def test_heartbeat_errors_on_removed_entry():
-    """Test heartbeat behavior when entry is removed during processing."""
-    tracker = UploadTracker()
-    source = source_factory().source_config
-
-    # Create entry
-    upload_id = tracker.add_source(source)
-
-    with pytest.raises(KeyError):
-        # Remove entry while heartbeat is running
-        async with heartbeat(tracker, upload_id, interval_seconds=0.1):
-            tracker.remove(upload_id)
-            await asyncio.sleep(0.15)  # Wait for next heartbeat attempt
-
-
-@pytest.mark.asyncio
-async def test_multiple_heartbeats():
+def test_multiple_heartbeats():
     """Test multiple concurrent heartbeats on different entries."""
     tracker = UploadTracker()
     source = source_factory().source_config
@@ -338,12 +336,14 @@ async def test_multiple_heartbeats():
     id1 = tracker.add_source(source)
     id2 = tracker.add_source(source)
 
-    async def run_heartbeat(upload_id):
-        async with heartbeat(tracker, upload_id, interval_seconds=0.1):
-            await asyncio.sleep(0.15)
+    def run_heartbeat(upload_id):
+        with heartbeat(tracker, upload_id, interval_seconds=0.1):
+            wait_for_heartbeat(tracker, upload_id)
 
     # Run heartbeats concurrently
-    await asyncio.gather(run_heartbeat(id1), run_heartbeat(id2))
+    with ThreadPoolExecutor() as executor:
+        executor.submit(run_heartbeat, id1)
+        executor.submit(run_heartbeat, id2)
 
     # Verify both entries were updated
     entry1 = tracker.get(id1)

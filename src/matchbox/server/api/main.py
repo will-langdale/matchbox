@@ -176,6 +176,7 @@ def upload_file(
         bucket=bucket,
         key=key,
         tracker=upload_tracker,
+        heartbeat_seconds=60,
     )
 
     source_upload = upload_tracker.get(upload_id)

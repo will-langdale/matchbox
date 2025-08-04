@@ -1,9 +1,9 @@
 """A metadata registry of uploads and their status."""
 
-import asyncio
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+from threading import Event, Thread
 
 import pyarrow as pa
 from pydantic import BaseModel, ConfigDict
@@ -129,9 +129,9 @@ class UploadTracker:
         return False
 
 
-@asynccontextmanager
-async def heartbeat(
-    upload_tracker: UploadTracker, upload_id: str, interval_seconds: int = 300
+@contextmanager
+def heartbeat(
+    upload_tracker: UploadTracker, upload_id: str, interval_seconds: float = 300
 ):
     """Context manager that updates status with a heartbeat.
 
@@ -140,28 +140,33 @@ async def heartbeat(
         upload_id: ID of the upload being processed
         interval_seconds: How often to send heartbeat (default 5 minutes)
     """
-    heartbeat_task = None
+    stop_event = Event()
 
-    async def _heartbeat():
-        while True:
-            await asyncio.sleep(interval_seconds)
-            timestamp = datetime.now().isoformat()
-            upload_tracker.update_status(
-                upload_id=upload_id,
-                status="processing",
-                details=f"Still processing... Last heartbeat: {timestamp}",
-            )
+    def _heartbeat():
+        while not stop_event.wait(interval_seconds):
+            try:
+                # Block the thread for interval_seconds or until the event is set,
+                # whichever comes first
+                stop_event.wait(timeout=interval_seconds)
+                timestamp = datetime.now().isoformat()
+                upload_tracker.update_status(
+                    upload_id=upload_id,
+                    status="processing",
+                    details=f"Still processing... Last heartbeat: {timestamp}",
+                )
+            except Exception as e:
+                logger.error(
+                    f"Heartbeat for upload_id={upload_id} failed with error: {str(e)}"
+                )
+
+    # Daemon threads don't need to be joined. They are stopped when main thread exits
+    thread = Thread(target=_heartbeat, daemon=True)
+    thread.start()
 
     try:
-        heartbeat_task = asyncio.create_task(_heartbeat())
         yield
     finally:
-        if heartbeat_task:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
+        stop_event.set()
 
 
 def process_upload(
@@ -170,6 +175,7 @@ def process_upload(
     bucket: str,
     key: str,
     tracker: UploadTracker,
+    heartbeat_seconds: int,
 ) -> None:
     """Background task to process uploaded file."""
     tracker.update_status(upload_id, "processing")
@@ -177,19 +183,22 @@ def process_upload(
     upload = tracker.get(upload_id)
 
     try:
-        data = pa.Table.from_batches(
-            [
-                batch
-                for batch in s3_to_recordbatch(client=client, bucket=bucket, key=key)
-            ]
-        )
+        with heartbeat(tracker, upload_id, interval_seconds=heartbeat_seconds):
+            data = pa.Table.from_batches(
+                [
+                    batch
+                    for batch in s3_to_recordbatch(
+                        client=client, bucket=bucket, key=key
+                    )
+                ]
+            )
 
-        if upload.upload_type == BackendUploadType.INDEX:
-            backend.index(source_config=upload.metadata, data_hashes=data)
-        elif upload.upload_type == BackendUploadType.RESULTS:
-            backend.set_model_results(name=upload.metadata.name, results=data)
-        else:
-            raise ValueError(f"Unknown upload type: {upload.upload_type}")
+            if upload.upload_type == BackendUploadType.INDEX:
+                backend.index(source_config=upload.metadata, data_hashes=data)
+            elif upload.upload_type == BackendUploadType.RESULTS:
+                backend.set_model_results(name=upload.metadata.name, results=data)
+            else:
+                raise ValueError(f"Unknown upload type: {upload.upload_type}")
 
         tracker.update_status(upload_id, "complete")
 
