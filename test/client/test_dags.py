@@ -70,6 +70,42 @@ def test_step_input_select_fields(sqlite_warehouse: Engine):
     assert len(step_input_all.select) == 1
 
 
+def test_cleaning_dict(sqlite_warehouse: Engine):
+    """Test that cleaning works in a StepInput."""
+    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
+    i_foo = IndexStep(source_config=foo)
+
+    test_data = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "foo_name": ["A", "B", "C"],
+            "foo_status": ["active", "inactive", "active"],
+        }
+    )
+
+    step_input = StepInput(
+        prev_node=i_foo,
+        select={foo: ["name", "status"]},
+        cleaning_dict={
+            "name": "lower(foo_name)",
+        },
+    )
+
+    d_foo = DedupeStep(
+        name="d_foo",
+        description="",
+        left=step_input,
+        model_class=NaiveDeduper,
+        settings={},
+        truth=1,
+    )
+
+    result = d_foo.clean(test_data, step_input)
+    assert len(result) == 3
+    assert result["name"].to_list() == ["a", "b", "c"]
+    assert set(result.columns) == {"id", "name", "foo_status"}
+
+
 @pytest.mark.parametrize(
     "combine_type",
     ["concat", "explode", "set_agg"],
@@ -190,7 +226,6 @@ def test_dedupe_step_run(
     """Tests that a dedupe step orchestrates lower-level API correctly."""
     with (
         patch("matchbox.client.dags.make_model") as make_model_mock,
-        patch("matchbox.client.dags.process") as process_mock,
         patch("matchbox.client.dags.query") as query_mock,
     ):
         # Complete mock set up
@@ -215,6 +250,7 @@ def test_dedupe_step_run(
             left=StepInput(
                 prev_node=i_foo,
                 select={foo: []},
+                cleaning_dict=None,
                 threshold=0.5,
                 batch_size=100 if batched else None,
             ),
@@ -235,10 +271,6 @@ def test_dedupe_step_run(
             batch_size=100 if batched else None,
             combine_type="concat",
         )
-        # Data is pre-processed
-        process_mock.assert_called_once_with(
-            query_mock.return_value, d_foo.left.cleaners
-        )
 
         # Model is created and run
         make_model_mock.assert_called_once_with(
@@ -246,7 +278,7 @@ def test_dedupe_step_run(
             description=d_foo.description,
             model_class=d_foo.model_class,
             model_settings=d_foo.settings,
-            left_data=process_mock.return_value,
+            left_data=query_mock.return_value,
             left_resolution=d_foo.left.name,
         )
         model_mock.run.assert_called_once()
@@ -270,7 +302,6 @@ def test_link_step_run(
     """Tests that a link step orchestrates lower-level API correctly."""
     with (
         patch("matchbox.client.dags.make_model") as make_model_mock,
-        patch("matchbox.client.dags.process") as process_mock,
         patch("matchbox.client.dags.query") as query_mock,
     ):
         # Complete mock set up
@@ -300,12 +331,14 @@ def test_link_step_run(
             left=StepInput(
                 prev_node=i_foo,
                 select={foo: ["company_name", "crn"]},
+                cleaning_dict=None,
                 threshold=0.5,
                 batch_size=100 if batched else None,
             ),
             right=StepInput(
                 prev_node=i_bar,
                 select={bar: []},
+                cleaning_dict=None,
                 threshold=0.7,
                 batch_size=100 if batched else None,
             ),
@@ -337,24 +370,15 @@ def test_link_step_run(
             combine_type="concat",
         )
 
-        # Data is pre-processed
-        assert process_mock.call_count == 2
-        assert process_mock.call_args_list[0] == call(
-            query_mock.return_value, foo_bar.left.cleaners
-        )
-        assert process_mock.call_args_list[1] == call(
-            query_mock.return_value, foo_bar.right.cleaners
-        )
-
         # Model is created and run
         make_model_mock.assert_called_once_with(
             name=foo_bar.name,
             description=foo_bar.description,
             model_class=foo_bar.model_class,
             model_settings=foo_bar.settings,
-            left_data=process_mock.return_value,
+            left_data=query_mock.return_value,
             left_resolution=foo_bar.left.name,
-            right_data=process_mock.return_value,
+            right_data=query_mock.return_value,
             right_resolution=foo_bar.right.name,
         )
         model_mock.run.assert_called_once()
@@ -427,12 +451,12 @@ def test_dag_runs(
         left=StepInput(
             prev_node=foo_bar,
             select={foo: [], bar: []},
-            cleaners={},
+            cleaning_dict=None,
         ),
         right=StepInput(
             prev_node=i_baz,
             select={baz: []},
-            cleaners={},
+            cleaning_dict=None,
         ),
         name="foo_bar_baz",
         description="",

@@ -24,7 +24,6 @@ Before building a pipeline, ensure you have Matchbox properly installed and conf
 import logging
 from matchbox.client import clean
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
-from matchbox.client.helpers.cleaner import cleaner, cleaners
 from matchbox.client.models.dedupers.naive import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.sources import SourceConfig, RelationalDBLocation
@@ -132,45 +131,7 @@ If a `SourceConfig` has already been created you can fetch it, with optional val
     exporters = get_source(name="hmrc_exporters")
     ```
 
-## 2. Defining data cleaners
-
-Data cleaning is essential for effective matching. Matchbox provides a flexible, reusable way to define cleaning operations for your data.
-
-=== "Example"
-    ```python
-    from matchbox.client import clean
-    from matchbox.client.helpers.cleaner import cleaner, cleaners
-    
-    # Cleaner for Companies House data
-    ch_clean = cleaners(
-        cleaner(
-            clean.company_name,
-            {"column": "companieshouse_companies_company_name"},
-        ),
-        cleaner(
-            clean.company_number,
-            {"column": "companieshouse_companies_company_number"},
-        ),
-        cleaner(clean.postcode, {"column": "companieshouse_companies_postcode"}),
-    )
-    
-    # Cleaner for Exporters data
-    ex_clean = cleaners(
-        cleaner(clean.company_name, {"column": "hmrc_trade__exporters_company_name"}),
-        cleaner(clean.postcode, {"column": "hmrc_trade__exporters_postcode"}),
-    )
-    ```
-
-The [`cleaners()`][matchbox.client.helpers.cleaner.cleaners] function combines multiple [`cleaner()`][matchbox.client.helpers.cleaner.cleaner] operations. Each `cleaner()` specifies:
-
-- A cleaning function (e.g., `clean.company_name`)
-- Configuration options (including which column to clean)
-
-Matchbox includes standard cleaning functions for common fields like company names, addresses, and identifiers. You can also create custom cleaning functions.
-
-See the [full cleaning API](../api/client/clean.md) for more information, including using [`matchbox.client.clean.steps`][matchbox.client.clean.steps] to compose your own cleaning function from atomic cleaning steps.
-
-## 3. Creating index steps
+## 2. Creating index steps
 
 Index steps load data from your sources into Matchbox. Matchbox never sees your data, storing only a reference to it.
 
@@ -193,7 +154,7 @@ Each [`IndexStep`][matchbox.client.dags.IndexStep] requires:
 - A `source` object
 - An optional `batch_size` for processing large data in chunks
 
-## 4. Creating dedupe steps
+## 3. Creating dedupe steps
 
 Dedupe steps identify and resolve duplicates within a single source.
 
@@ -201,13 +162,15 @@ Dedupe steps identify and resolve duplicates within a single source.
     ```python
     from matchbox.client.dags import DedupeStep, StepInput
     from matchbox.client.models.dedupers.naive import NaiveDeduper
-    
+
     # Deduplicate Companies House data based on company number
     dedupe_companies = DedupeStep(
         left=StepInput(
             prev_node=i_companies,
-            select={companies_house: ["company_name", "company_number", "postcode"]},
-            cleaners=ch_clean,
+            select={companies_house: ["company_name", "company_number"]},
+            cleaning_dict={
+                "company_name": f"lower({companies_house.f('company_name')})",
+            },
             batch_size=batch_size,
         ),
         name="naive_companieshouse_companies",
@@ -216,7 +179,8 @@ Dedupe steps identify and resolve duplicates within a single source.
         settings={
             "id": "id",
             "unique_fields": [
-                "companieshouse_companies_company_number",
+                "company_name",
+                companies_house.f("company_number"),
             ],
         },
         truth=1.0,
@@ -228,7 +192,7 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 - A `left` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply (`cleaners`)
+    - Cleaning operations to apply ([`cleaning_dict`][matchbox.client.helpers.selector.clean])
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step
@@ -236,7 +200,105 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
 
-## 5. Creating link steps
+### On cleaning
+
+!!! tip "Simplify field references by cleaning everything"
+    
+    To avoid confusion with qualified vs unqualified field names, consider "cleaning" every field you select - even if you're just aliasing it without transformation. This way, all your field references use simple, unqualified names throughout your configuration.
+    
+    ```python
+    # Instead of mixing qualified and unqualified names
+    cleaning_dict={
+        "company_name": f"lower({companies_house.f('company_name')})",
+        # company_number not cleaned, so needs qualification later
+    }
+    settings={
+        "unique_fields": [
+            "company_name",
+            companies_house.f("company_number"),  # Qualified!
+        ],
+    }
+    
+    # Clean everything for consistency
+    cleaning_dict={
+        "company_name": f"lower({companies_house.f('company_name')})",
+        "company_number": companies_house.f("company_number"),  # Just aliasing
+    }
+    settings={
+        "unique_fields": [
+            "company_name",
+            "company_number",  # Both unqualified!
+        ],
+    }
+    ```
+    
+    This approach makes your configuration much more readable and reduces errors from forgetting to qualify field names.
+
+It's worth understanding how data moves through `Step` objects, as it helps knowing when or if to qualify column names. When would I use `"company_number"` vs `companies_house.f("company_number")`, for example?
+
+`StepInput.select` will be used to extract data to a columnar format. More complex `select` objects will often select the same column names from multiple sources, so column names must be qualified with their source. 
+
+Here's the select statement from the above example:
+
+```python
+select={companies_house: ["company_name", "company_number"]}
+```
+
+And the raw data it outputs might look like this:
+
+| id | companieshouse_companies_company_name | companieshouse_companies_company_number |
+|----|---------------------------------------|----------------------------------------|
+| 1  | Acme Corporation Ltd                 | 12345678                               |
+| 2  | ACME CORPORATION LTD                 | 12345678                               |
+| 3  | Beta Solutions Inc                   | 87654321                               |
+| 4  | Gamma Technologies PLC               | 11223344                               |
+| 5  | GAMMA TECHNOLOGIES plc               | 11223344                               |
+
+Note how the fields specified in select are "qualified" with the source they came from.
+
+Next, `StepInput.cleaning_dict` will be applied. Each of its keys will be an output column defined by the SQL in its value. `SourceConfig.f()` is provided as a convenient way to select fields qualified by a source.
+
+The rules for the cleaning dictionary are:
+
+* The ID column is automatically passed through
+* If a column _is_ mentioned in any cleaning SQL, its uncleaned version is automatically dropped from the output
+* If a column _isn't_ mentioned in any cleaning SQL, it's automatically passed through with its qualified name
+
+Here's the cleaning dictionary from the above example:
+
+```python
+cleaning_dict={
+    "company_name": f"lower({companies_house.f('company_name')})",
+}
+```
+
+Note how we qualify the field we clean and alias it to `company_name`, and that `company_number` _isn't_ mentioned.
+
+The cleaned data it outputs might look like this:
+
+| id | company_name               | companieshouse_companies_company_number |
+|----|----------------------------|----------------------------------------|
+| 1  | acme corporation ltd       | 12345678                               |
+| 2  | acme corporation ltd       | 12345678                               |
+| 3  | beta solutions inc         | 87654321                               |
+| 4  | gamma technologies plc     | 11223344                               |
+| 5  | gamma technologies plc     | 11223344                               |
+
+Finally, cleaned fields typically need specifying in a model. Here's our example:
+
+```python
+settings={
+    "id": "id",
+    "unique_fields": [
+        "company_name",
+        companies_house.f("company_number"),
+    ],
+}
+```
+
+Note that because we didn't clean `company_number` it needs to be qualified here, rather than in the cleaning dictionary.
+
+## 4. Creating link steps
 
 Link steps connect records between different sources.
 
@@ -250,13 +312,19 @@ Link steps connect records between different sources.
         left=StepInput(
             prev_node=dedupe_exporters,
             select={exporters: ["company_name", "postcode"]},
-            cleaners=ex_clean,
+            cleaning_dict={
+                "company_name": f"lower({exporters.f('company_name')})",
+                "postcode": exporters.f("postcode"),
+            },
             batch_size=batch_size,
         ),
         right=StepInput(
             prev_node=dedupe_importers,
             select={importers: ["company_name", "postcode"]},
-            cleaners=im_clean,
+            cleaning_dict={
+                "company_name": f"lower({importers.f('company_name')})",
+                "postcode": importers.f("postcode"),
+            },
             batch_size=batch_size,
         ),
         name="deterministic_exp_imp",
@@ -265,12 +333,12 @@ Link steps connect records between different sources.
         settings={
             "left_id": "id",
             "right_id": "id",
-            "comparisons": """
-                l.hmrc_trade__exporters_company_name
-                    = r.hmrc_trade__importers_company_name
-                and l.hmrc_trade__exporters_postcode
-                    = r.hmrc_trade__importers_postcode
-            """,
+            "comparisons": [
+                """
+                    l.company_name = r.company_name
+                        and l.postcode= r.postcode
+                """
+            ],
         },
         truth=1.0,
     )
@@ -281,13 +349,15 @@ A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
 - A `left` and `right` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply (`cleaners`)
+    - Cleaning operations to apply ([`cleaning_dict`][matchbox.client.helpers.selector.clean])
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step
 - The linking algorithm to use (`model_class`)
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
+
+As with deduplication, the `cleaning_dict` maps field aliases to DuckDB SQL expressions that can reference input columns. See [On cleaning](#on-cleaning) for how to specify this functionality, or check the documentation for ([`clean()`][matchbox.client.helpers.selector.clean])
 
 ### Available linker types
 
@@ -353,7 +423,7 @@ Matchbox provides several linking methodologies:
     }
     ```
 
-## 6. Building and running the DAG
+## 5. Building and running the DAG
 
 Once you've defined all your steps, you can build and run the complete [`DAG`][matchbox.client.dags.DAG].
 
@@ -447,15 +517,31 @@ You can link across multiple sources in a single step:
         left=StepInput(
             prev_node=dedupe_companies,
             select={companies_house: ["company_name", "postcode"]},
-            cleaners=ch_clean_simple,
+            cleaning_dict={
+                "company_name": f"lower({companies_house.f('company_name')})",
+                "postcode": companies_house.f("postcode"),
+            },
         ),
         right=StepInput(
-            prev_node=link_exp_imp,  # Using a previous link step as input
+            prev_node=link_exp_imp,
             select={
                 importers: ["company_name", "postcode"],
                 exporters: ["company_name", "postcode"],
             },
-            cleaners={**ex_clean, **im_clean},
+            cleaning_dict={
+                "company_name": f"""
+                    coalesce(
+                        lower({exporters.f('company_name')}), 
+                        lower({importers.f('company_name')})
+                    )
+                """,
+                "postcode": f"""
+                    coalesce(
+                        {exporters.f('postcode')}, 
+                        {importers.f('postcode')}
+                    )
+                """,
+            },
         ),
         name="deterministic_ch_hmrc",
         description="Link Companies House to HMRC traders",
@@ -463,18 +549,12 @@ You can link across multiple sources in a single step:
         settings={
             "left_id": "id",
             "right_id": "id",
-            "comparisons": """
-                l.companieshouse_companies_company_name =
-                    coalesce(
-                        r.hmrc_trade__exporters_company_name,
-                        r.hmrc_trade__importers_company_name
-                    )
-                and l.companieshouse_companies_postcode =
-                    coalesce(
-                        r.hmrc_trade__exporters_postcode,
-                        r.hmrc_trade__importers_postcode
-                    )
-            """,
+            "comparisons": [
+                """
+                    l.company_name = r.company_name
+                        and l.postcode = r.postcode
+                """
+            ],
         },
         truth=1.0,
     )
@@ -484,36 +564,8 @@ This example demonstrates how you can:
 
 1. Use the results of a previous linking step as input
 2. Select fields from multiple sources in a single step
-3. Use SQL functions like `coalesce()` in your comparison logic
-
-### Conditional matching
-
-You can implement complex matching logic using SQL expressions:
-
-=== "Example"
-    ```python
-    link_companies = LinkStep(
-        # ... other parameters ...
-        settings={
-            "left_id": "id",
-            "right_id": "id",
-            "comparisons": """
-                (
-                    l.company_number = r.company_number
-                ) OR (
-                    l.company_name = r.company_name
-                    AND l.postcode = r.postcode
-                )
-                """,
-        },
-        truth=1.0,
-    )
-    ```
-
-This example matches records that either:
-
-1. Have the same company number, OR
-2. Have the same company name AND postcode
+3. Use SQL functions like `coalesce()` in your cleaning expressions to handle data from multiple sources
+4. Create unified field names for comparison across sources
 
 ## Best practices
 
@@ -545,5 +597,4 @@ For more information, explore the API reference for specific components:
 
 - [DAG API](../api/client/dags.md)
 - [Linkers](../api/client/models.md)
-- [Cleaners](../api/client/clean.md)
 - [Results](../api/client/results.md)
