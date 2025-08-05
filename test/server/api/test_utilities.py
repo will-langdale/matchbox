@@ -265,26 +265,9 @@ def wait_for_heartbeat(
     return tracker.get(upload_id)
 
 
-def test_heartbeat_updates_status():
-    """Test that heartbeat updates status periodically."""
-    tracker = UploadTracker()
-    source = source_factory().source_config
-
-    # Create initial entry
-    upload_id = tracker.add_source(source)
-
-    with heartbeat(tracker, upload_id, interval_seconds=0.1):
-        wait_for_heartbeat(tracker, upload_id)
-
-    # Verify the status was updated with heartbeat details
-    entry = tracker.get(upload_id)
-    assert entry.status.status == "processing"
-    assert "Still processing... Last heartbeat:" in entry.status.details
-
-
 @patch("matchbox.server.api.uploads.datetime")
-def test_heartbeat_timestamp_updates(mock_datetime: Mock):
-    """Test that heartbeat updates timestamps correctly."""
+def test_heartbeat_updates_status(mock_datetime: Mock):
+    """Test that heartbeat updates status periodically."""
     tracker = UploadTracker()
     source = source_factory().source_config
 
@@ -292,14 +275,30 @@ def test_heartbeat_timestamp_updates(mock_datetime: Mock):
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
     upload_id = tracker.add_source(source)
 
-    # Start heartbeat and advance time
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 5)
     with heartbeat(tracker, upload_id, interval_seconds=0.1):
         wait_for_heartbeat(tracker, upload_id)
 
-        entry = tracker.get(upload_id)
-        assert entry.update_timestamp == datetime(2024, 1, 1, 12, 5)
-        assert "Last heartbeat:" in entry.status.details
+    # Verify the status was updated with heartbeat details
+    entry = tracker.get(upload_id)
+    assert entry.status.status == "processing"
+    assert "Still processing... Last heartbeat:" in entry.status.details
+    assert entry.update_timestamp == datetime(2024, 1, 1, 12, 5)
+
+
+def test_heartbeat_no_overwrite():
+    """Heartbeat stops before we step outside context manager"""
+    tracker = UploadTracker()
+    source = source_factory().source_config
+
+    upload_id = tracker.add_source(source)
+
+    # Wait for one heartbeat to succeed
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
+
+    tracker.update_status(upload_id=upload_id, status="complete")
+    assert tracker.get(upload_id=upload_id).status.status == "complete"
 
 
 @patch("matchbox.server.api.uploads.datetime")
