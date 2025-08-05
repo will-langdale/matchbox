@@ -143,11 +143,11 @@ def heartbeat(
     stop_event = Event()
 
     def _heartbeat():
+        # Wait up to `interval_seconds`
+        # If event is set, exit thread
+        # If event is not set, update tracker
         while not stop_event.wait(interval_seconds):
             try:
-                # Block the thread for interval_seconds or until the event is set,
-                # whichever comes first
-                stop_event.wait(timeout=interval_seconds)
                 timestamp = datetime.now().isoformat()
                 upload_tracker.update_status(
                     upload_id=upload_id,
@@ -159,14 +159,16 @@ def heartbeat(
                     f"Heartbeat for upload_id={upload_id} failed with error: {str(e)}"
                 )
 
-    # Daemon threads don't need to be joined. They are stopped when main thread exits
-    thread = Thread(target=_heartbeat, daemon=True)
+    thread = Thread(target=_heartbeat)
     thread.start()
 
     try:
         yield
     finally:
         stop_event.set()
+        # Guarantees that heartbeat stops updating status before control is handed back
+        # to main thread
+        thread.join()
 
 
 def process_upload(
