@@ -70,8 +70,8 @@ def test_step_input_select_fields(sqlite_warehouse: Engine):
     assert len(step_input_all.select) == 1
 
 
-def test_cleaning_dict_basic_functionality(sqlite_warehouse):
-    """Test that cleaning SQL basic functionality works."""
+def test_cleaning_dict(sqlite_warehouse: Engine):
+    """Test that cleaning works in a StepInput."""
     foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
     i_foo = IndexStep(source_config=foo)
 
@@ -83,7 +83,6 @@ def test_cleaning_dict_basic_functionality(sqlite_warehouse):
         }
     )
 
-    # Basic cleaning works, ID and unspecified columns always selected
     step_input = StepInput(
         prev_node=i_foo,
         select={foo: ["name", "status"]},
@@ -105,77 +104,6 @@ def test_cleaning_dict_basic_functionality(sqlite_warehouse):
     assert len(result) == 3
     assert result["name"].to_list() == ["a", "b", "c"]
     assert result.columns == ["id", "name", "foo_status"]
-
-    # Column dropping and renaming works
-    step_input2 = StepInput(
-        prev_node=i_foo,
-        select={foo: ["name", "status"]},
-        cleaning_dict={
-            "new_status": "foo_status",
-            "lower_name": "lower(foo_name)",
-        },
-    )
-
-    d_foo2 = DedupeStep(
-        name="d_foo2",
-        description="",
-        left=step_input2,
-        model_class=NaiveDeduper,
-        settings={},
-        truth=1,
-    )
-
-    result2 = d_foo2.clean(test_data, step_input2)
-    assert result2.columns == ["id", "new_status", "lower_name"]
-    assert result2["new_status"].to_list() == ["active", "inactive", "active"]
-    assert result2["lower_name"].to_list() == ["a", "b", "c"]
-
-    # None works
-    step_input3 = StepInput(
-        prev_node=i_foo,
-        select={foo: ["name", "status"]},
-        cleaning_dict=None,
-    )
-
-    d_foo3 = DedupeStep(
-        name="d_foo3",
-        description="",
-        left=step_input3,
-        model_class=NaiveDeduper,
-        settings={},
-        truth=1,
-    )
-
-    result3 = d_foo3.clean(test_data, step_input3)
-    assert result3.columns == ["id", "foo_name", "foo_status"]
-
-
-def test_cleaning_dict_validation_errors(sqlite_warehouse):
-    """Test that cleaning dict validation catches expected errors."""
-    foo = source_factory(name="foo", engine=sqlite_warehouse).source_config
-    i_foo = IndexStep(source_config=foo)
-
-    # Invalid SQL raises ValueError
-    with pytest.raises(ValueError, match="Invalid SQL in cleaning_dict: company_name"):
-        StepInput(
-            prev_node=i_foo,
-            select={foo: []},
-            cleaning_dict={
-                "company_name": "foo bar baz",
-            },
-        )
-
-    # Selecting ID in cleaning_dict raises ValueError
-    with pytest.raises(
-        ValueError, match="Cannot transform 'id' column in cleaning_dict"
-    ):
-        StepInput(
-            prev_node=i_foo,
-            select={foo: []},
-            cleaning_dict={
-                "id": "id + 1",
-            },
-        )
 
 
 @pytest.mark.parametrize(

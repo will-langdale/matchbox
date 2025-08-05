@@ -192,7 +192,7 @@ A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
 - A `left` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply (`cleaning_dict`)
+    - Cleaning operations to apply ([`cleaning_dict`][matchbox.client.helpers.selector.clean])
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step
@@ -349,7 +349,7 @@ A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
 - A `left` and `right` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply (`cleaning_dict`)
+    - Cleaning operations to apply ([`cleaning_dict`][matchbox.client.helpers.selector.clean])
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step

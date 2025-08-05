@@ -5,15 +5,14 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any, Literal
 
-import duckdb
 import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import create_engine
-from sqlglot import errors, expressions, parse_one, select
+from sqlglot import errors, expressions, parse_one
 
 from matchbox.client import _handler
-from matchbox.client.helpers.selector import Selector, query
+from matchbox.client.helpers.selector import Selector, clean, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
@@ -194,68 +193,8 @@ class ModelStep(Step):
         )
 
     def clean(self, data: pl.DataFrame, step_input: StepInput) -> pl.DataFrame:
-        """Clean data using DuckDB with the provided cleaning SQL.
-
-        * ID is passed through automatically
-        * Columns not mentioned in cleaning_dict are passed through unchanged
-        * Each key in cleaning_dict is an alias for a SQL expression
-
-        Args:
-            data: Raw polars dataframe to clean
-            step_input: Step input containing cleaning_dict
-
-        Returns:
-            Cleaned polars dataframe
-        """
-        if step_input.cleaning_dict is None:
-            return data
-
-        # Get all possible field names from the step input
-        input_column_names: set[str] = {
-            config.f(column)
-            for config, selected in step_input.select.items()
-            for column in selected
-        }
-
-        # Ensure 'id' is always selected
-        to_select: list[expressions.Expression] = [
-            expressions.Alias(
-                this=expressions.Column(
-                    this=expressions.Identifier(this="id", quoted=False)
-                ),
-                alias=expressions.Identifier(this="id", quoted=False),
-            ),
-        ]
-
-        # Parse and add each SQL expression from cleaning_dict
-        query_column_names: set[str] = set()
-        for alias, sql in step_input.cleaning_dict.items():
-            stmt = parse_one(sql, dialect="duckdb")
-
-            # Get column name used in the expression
-            for node in stmt.walk():
-                if isinstance(node, expressions.Column):
-                    query_column_names.add(node.name)
-
-            # Add to the list of expressions to select
-            to_select.append(expressions.alias_(stmt, alias))
-
-        # Add all column names not used in the query
-        for column in input_column_names - query_column_names:
-            to_select.append(
-                expressions.Alias(
-                    this=expressions.Column(
-                        this=expressions.Identifier(this=column, quoted=False)
-                    ),
-                    alias=expressions.Identifier(this=column, quoted=False),
-                )
-            )
-
-        query = select(*to_select, dialect="duckdb").from_("data")
-
-        with duckdb.connect(":memory:") as conn:
-            conn.register("data", data)
-            return conn.execute(query.sql(dialect="duckdb")).pl()
+        """Clean data using DuckDB with the provided cleaning SQL."""
+        return clean(data, step_input.cleaning_dict)
 
 
 class DedupeStep(ModelStep):
