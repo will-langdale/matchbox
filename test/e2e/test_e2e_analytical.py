@@ -1,12 +1,10 @@
 import logging
 
-import duckdb
 import pytest
 from httpx import Client
-from polars import DataFrame
 from sqlalchemy import Engine, text
 
-from matchbox import index, make_model, query, select
+from matchbox import clean, index, make_model, query, select
 from matchbox.client import _handler
 from matchbox.client.helpers import delete_resolution
 from matchbox.client.models.dedupers import NaiveDeduper
@@ -135,38 +133,31 @@ class TestE2EAnalyticalUser:
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 
-    def _clean_data(self, df: DataFrame, source_prefix: str) -> DataFrame:
-        """Clean dataframe using DuckDB SQL.
+    def _get_cleaning_dict(
+        self, source_prefix: str, columns: list[str]
+    ) -> dict[str, str] | None:
+        """Get cleaning dictionary for a source based on its columns.
 
         Mirrors the perturbations made to the company_name field in the
         linked_sources_factory testkit.
         """
-        conn = duckdb.connect()
-        conn.register("data", df)
-
         company_name_col = f"{source_prefix}company_name"
 
-        if company_name_col in df.columns:
-            cleaned_sql = f"""
-                SELECT 
-                    * EXCLUDE ({company_name_col}),
+        if company_name_col in columns:
+            return {
+                company_name_col: rf"""
                     trim(
                         regexp_replace(
                             {company_name_col}, 
-                            '\\b(Limited|UK|Company)\\b', 
+                            '\b(Limited|UK|Company)\b', 
                             '', 
                             'gi'
                         )
-                    ) as {company_name_col}
-                FROM data
-            """
-        else:
-            cleaned_sql = "SELECT * FROM data"
+                    )
+                """
+            }
 
-        result = conn.execute(cleaned_sql).pl()
-        conn.close()
-
-        return result
+        return None
 
     def test_e2e_deduplication_and_linking_pipeline(self):
         """Runs an end to end test of the entire entity resolution pipeline.
@@ -216,7 +207,8 @@ class TestE2EAnalyticalUser:
             df = raw_df.drop(source_config.qualified_key)
 
             # Apply cleaning
-            cleaned = self._clean_data(df, source_config.prefix)
+            cleaning_dict = self._get_cleaning_dict(source_config.prefix, df.columns)
+            cleaned = clean(df, cleaning_dict)
 
             # Get feature names with prefix for deduplication
             feature_names = [
@@ -313,8 +305,15 @@ class TestE2EAnalyticalUser:
             right_df = right_raw_df.drop(right_source.qualified_key)
 
             # Apply cleaning
-            left_cleaned = self._clean_data(left_df, left_source.prefix)
-            right_cleaned = self._clean_data(right_df, right_source.prefix)
+            left_cleaning_dict = self._get_cleaning_dict(
+                left_source.prefix, left_df.columns
+            )
+            left_cleaned = clean(left_df, left_cleaning_dict)
+
+            right_cleaning_dict = self._get_cleaning_dict(
+                right_source.prefix, right_df.columns
+            )
+            right_cleaned = clean(right_df, right_cleaning_dict)
 
             # Build comparison clause
             comparison_clause = (
@@ -405,8 +404,13 @@ class TestE2EAnalyticalUser:
         right_df = right_raw_df.drop(cdms_source.qualified_key)
 
         # Apply cleaning
-        left_cleaned = self._clean_data(left_df, crn_source.prefix)
-        right_cleaned = self._clean_data(right_df, cdms_source.prefix)
+        left_cleaning_dict = self._get_cleaning_dict(crn_source.prefix, left_df.columns)
+        left_cleaned = clean(left_df, left_cleaning_dict)
+
+        right_cleaning_dict = self._get_cleaning_dict(
+            cdms_source.prefix, right_df.columns
+        )
+        right_cleaned = clean(right_df, right_cleaning_dict)
 
         # Create and run final linker with the common "crn" field
         final_linker_name = "__DEFAULT__"
