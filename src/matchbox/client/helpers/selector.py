@@ -407,7 +407,6 @@ def clean(data: pl.DataFrame, cleaning_dict: dict[str, str] | None) -> pl.DataFr
     Returns:
         Cleaned polars dataframe
 
-
     Examples:
         Column passthrough behavior:
 

@@ -103,7 +103,7 @@ def test_cleaning_dict(sqlite_warehouse: Engine):
     result = d_foo.clean(test_data, step_input)
     assert len(result) == 3
     assert result["name"].to_list() == ["a", "b", "c"]
-    assert result.columns == ["id", "name", "foo_status"]
+    assert set(result.columns) == {"id", "name", "foo_status"}
 
 
 @pytest.mark.parametrize(

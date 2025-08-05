@@ -357,7 +357,7 @@ A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
 - Configuration `settings` for the algorithm
 - A `truth` threshold (a float between `0.0` and `1.0`) above which a match is considered "true"
 
-As with deduplication, the `cleaning_dict` maps field aliases to DuckDB SQL expressions that can reference input columns. See [On cleaning](#on-cleaning) for how to specify this functionality.
+As with deduplication, the `cleaning_dict` maps field aliases to DuckDB SQL expressions that can reference input columns. See [On cleaning](#on-cleaning) for how to specify this functionality, or check the documentation for ([`clean()`][matchbox.client.helpers.selector.clean])
 
 ### Available linker types
 
