@@ -1400,10 +1400,11 @@ wheels = [
 
 [[package]]
 name = "matchbox-db"
-version = "0.4.8.dev12+g857c9f07.d20250730"
+version = "0.4.10.dev0+g1ae9704b.d20250806"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "cryptography" },
     { name = "duckdb" },
     { name = "faker" },
     { name = "frozendict" },
@@ -1431,7 +1432,6 @@ server = [
     { name = "adbc-driver-postgresql" },
     { name = "alembic" },
     { name = "boto3" },
-    { name = "cryptography" },
     { name = "ddtrace" },
     { name = "fastapi", extra = ["standard"] },
     { name = "python-multipart" },
@@ -1471,7 +1471,7 @@ requires-dist = [
     { name = "alembic", marker = "extra == 'server'", specifier = ">=1.15.2" },
     { name = "boto3", marker = "extra == 'server'", specifier = ">=1.35.99" },
     { name = "click", specifier = ">=8.1.7" },
-    { name = "cryptography", marker = "extra == 'server'", specifier = ">=44.0.2" },
+    { name = "cryptography", specifier = ">=44.0.2" },
     { name = "ddtrace", marker = "extra == 'server'", specifier = ">=3.2.1" },
     { name = "duckdb", specifier = ">=1.1.1" },
     { name = "faker", specifier = ">=36.1.1" },
