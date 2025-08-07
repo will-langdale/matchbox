@@ -7,12 +7,12 @@ from typing import Any, Literal
 
 import polars as pl
 from pyarrow import Table
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import create_engine
+from sqlglot import errors, expressions, parse_one
 
 from matchbox.client import _handler
-from matchbox.client.helpers.cleaner import process
-from matchbox.client.helpers.selector import Selector, query
+from matchbox.client.helpers.selector import Selector, clean, query
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
@@ -57,7 +57,7 @@ class StepInput(BaseModel):
 
     prev_node: Step
     select: dict[SourceConfig, list[str]]
-    cleaners: dict[str, dict[str, Any]] = {}
+    cleaning_dict: dict[str, str] | None = None
     batch_size: int | None = None
     threshold: float | None = None
     combine_type: Literal["concat", "explode", "set_agg"] = "concat"
@@ -66,6 +66,29 @@ class StepInput(BaseModel):
     def name(self) -> str:
         """Resolution name for node generating this input for the next step."""
         return self.prev_node.name
+
+    @field_validator("cleaning_dict")
+    @classmethod
+    def validate_cleaning_dict(cls, v: dict[str, str] | None) -> str | None:
+        """Validate cleaning as valid SQL."""
+        if v is None:
+            return v
+
+        for alias, sql in v.items():
+            if sql is not None:
+                try:
+                    stmt = parse_one(sql, dialect="duckdb")
+                except errors.ParseError as e:
+                    raise ValueError(f"Invalid SQL in cleaning_dict: {alias}") from e
+
+                for node in stmt.walk():
+                    if isinstance(node, expressions.Column) and node.name == "id":
+                        raise ValueError(
+                            "Cannot transform 'id' column in cleaning_dict. "
+                            "It is always selected by default."
+                        )
+
+        return v
 
     @model_validator(mode="after")
     def validate_all_input(self) -> "StepInput":
@@ -169,6 +192,10 @@ class ModelStep(Step):
             combine_type=step_input.combine_type,
         )
 
+    def clean(self, data: pl.DataFrame, step_input: StepInput) -> pl.DataFrame:
+        """Clean data using DuckDB with the provided cleaning SQL."""
+        return clean(data, step_input.cleaning_dict)
+
 
 class DedupeStep(ModelStep):
     """Deduplication step."""
@@ -183,7 +210,7 @@ class DedupeStep(ModelStep):
     def run(self) -> Results:
         """Run full deduping pipeline and store results."""
         left_raw = self.query(self.left)
-        left_clean = process(left_raw, self.left.cleaners)
+        left_clean = self.clean(left_raw, self.left)
 
         deduper = make_model(
             name=self.name,
@@ -214,10 +241,10 @@ class LinkStep(ModelStep):
     def run(self) -> Results:
         """Run whole linking step."""
         left_raw = self.query(self.left)
-        left_clean = process(left_raw, self.left.cleaners)
+        left_clean = self.clean(left_raw, self.left)
 
         right_raw = self.query(self.right)
-        right_clean = process(right_raw, self.right.cleaners)
+        right_clean = self.clean(right_raw, self.right)
 
         linker = make_model(
             name=self.name,

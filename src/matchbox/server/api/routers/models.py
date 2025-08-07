@@ -28,7 +28,7 @@ from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
     UploadTrackerDependency,
-    validate_api_key,
+    authorisation_dependencies,
 )
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -43,7 +43,7 @@ router = APIRouter(prefix="/models", tags=["models"])
         },
     },
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(validate_api_key)],
+    dependencies=[Depends(authorisation_dependencies)],
 )
 def insert_model(
     backend: BackendDependency, model: ModelConfig
@@ -89,7 +89,7 @@ def get_model(backend: BackendDependency, name: ModelResolutionName) -> ModelCon
     "/{name}/results",
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(validate_api_key)],
+    dependencies=[Depends(authorisation_dependencies)],
 )
 def set_results(
     backend: BackendDependency,
@@ -142,7 +142,7 @@ def get_results(
             **ResolutionOperationStatus.status_500_examples(),
         },
     },
-    dependencies=[Depends(validate_api_key)],
+    dependencies=[Depends(authorisation_dependencies)],
 )
 def set_truth(
     backend: BackendDependency,
@@ -221,7 +221,7 @@ def get_ancestors(
             **ResolutionOperationStatus.status_500_examples(),
         },
     },
-    dependencies=[Depends(validate_api_key)],
+    dependencies=[Depends(authorisation_dependencies)],
 )
 def set_ancestors_cache(
     backend: BackendDependency,

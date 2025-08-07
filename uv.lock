@@ -1404,6 +1404,7 @@ name = "matchbox-db"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "cryptography" },
     { name = "duckdb" },
     { name = "faker" },
     { name = "frozendict" },
@@ -1469,6 +1470,7 @@ requires-dist = [
     { name = "alembic", marker = "extra == 'server'", specifier = ">=1.15.2" },
     { name = "boto3", marker = "extra == 'server'", specifier = ">=1.35.99" },
     { name = "click", specifier = ">=8.1.7" },
+    { name = "cryptography", specifier = ">=44.0.2" },
     { name = "ddtrace", marker = "extra == 'server'", specifier = ">=3.2.1" },
     { name = "duckdb", specifier = ">=1.1.1" },
     { name = "faker", specifier = ">=36.1.1" },

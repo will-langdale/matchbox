@@ -1,16 +1,12 @@
 import logging
-from functools import partial
 
 import pytest
 from httpx import Client
-from pandas import DataFrame
 from sqlalchemy import Engine, text
 
-from matchbox import index, make_model, process, query, select
+from matchbox import clean, index, make_model, query, select
 from matchbox.client import _handler
-from matchbox.client.clean import steps
-from matchbox.client.clean.utils import cleaning_function
-from matchbox.client.helpers import cleaner, cleaners, delete_resolution
+from matchbox.client.helpers import delete_resolution
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.common.factories.entities import query_to_cluster_entities
@@ -137,6 +133,32 @@ class TestE2EAnalyticalUser:
         response = matchbox_client.delete("/database", params={"certain": "true"})
         assert response.status_code == 200, "Failed to clear matchbox database"
 
+    def _get_cleaning_dict(
+        self, source_prefix: str, columns: list[str]
+    ) -> dict[str, str] | None:
+        """Get cleaning dictionary for a source based on its columns.
+
+        Mirrors the perturbations made to the company_name field in the
+        linked_sources_factory testkit.
+        """
+        company_name_col = f"{source_prefix}company_name"
+
+        if company_name_col in columns:
+            return {
+                company_name_col: rf"""
+                    trim(
+                        regexp_replace(
+                            {company_name_col}, 
+                            '\b(Limited|UK|Company)\b', 
+                            '', 
+                            'gi'
+                        )
+                    )
+                """
+            }
+
+        return None
+
     def test_e2e_deduplication_and_linking_pipeline(self):
         """Runs an end to end test of the entire entity resolution pipeline.
 
@@ -161,30 +183,6 @@ class TestE2EAnalyticalUser:
             index(source_config=source)
             logging.debug(f"Indexed source: {source.name}")
 
-        # Helper functions
-        # Define custom company name cleaner, mirroring the FeatureConfig
-        remove_stopwords_redux = partial(
-            steps.remove_stopwords, stopwords=["Limited", "UK", "Company"]
-        )
-        clean_company_name = cleaning_function(
-            steps.tokenise,  # returns array
-            remove_stopwords_redux,
-            steps.list_join_to_string,  # returns column
-            steps.trim,
-        )
-
-        def _clean_company_name(df: DataFrame, prefix: str) -> DataFrame:
-            """Clean company_name feature in the source or model."""
-            if any("company_name" in col for col in df.columns):
-                company_cleaner = cleaner(
-                    function=clean_company_name,
-                    arguments={"column": f"{prefix}company_name"},
-                )
-                clean_pipeline = cleaners(company_cleaner)
-                return process(data=df, pipeline=clean_pipeline)
-
-            return df
-
         # === DEDUPLICATION PHASE ===
         deduper_names = {}
 
@@ -208,8 +206,9 @@ class TestE2EAnalyticalUser:
             )
             df = raw_df.drop(source_config.qualified_key)
 
-            # Apply cleaning based on features in the source
-            cleaned = _clean_company_name(df, source_config.prefix)
+            # Apply cleaning
+            cleaning_dict = self._get_cleaning_dict(source_config.prefix, df.columns)
+            cleaned = clean(df, cleaning_dict)
 
             # Get feature names with prefix for deduplication
             feature_names = [
@@ -305,9 +304,16 @@ class TestE2EAnalyticalUser:
             )
             right_df = right_raw_df.drop(right_source.qualified_key)
 
-            # Apply cleaning based on features in the sources
-            left_cleaned = _clean_company_name(left_df, left_source.prefix)
-            right_cleaned = _clean_company_name(right_df, right_source.prefix)
+            # Apply cleaning
+            left_cleaning_dict = self._get_cleaning_dict(
+                left_source.prefix, left_df.columns
+            )
+            left_cleaned = clean(left_df, left_cleaning_dict)
+
+            right_cleaning_dict = self._get_cleaning_dict(
+                right_source.prefix, right_df.columns
+            )
+            right_cleaned = clean(right_df, right_cleaning_dict)
 
             # Build comparison clause
             comparison_clause = (
@@ -385,9 +391,7 @@ class TestE2EAnalyticalUser:
                 duns_source.name: duns_source.qualified_key,
             },
         )
-        left_df = left_raw_df.drop(
-            [crn_source.qualified_key, duns_source.qualified_key]
-        )
+        left_df = left_raw_df.drop(crn_source.qualified_key, duns_source.qualified_key)
 
         right_raw_df = query(
             select({cdms_source.name: ["key", "crn"]}, client=self.warehouse_engine),
@@ -399,9 +403,14 @@ class TestE2EAnalyticalUser:
         )
         right_df = right_raw_df.drop(cdms_source.qualified_key)
 
-        # Apply cleaning if needed
-        left_cleaned = _clean_company_name(left_df, crn_source.prefix)
-        right_cleaned = _clean_company_name(right_df, cdms_source.prefix)
+        # Apply cleaning
+        left_cleaning_dict = self._get_cleaning_dict(crn_source.prefix, left_df.columns)
+        left_cleaned = clean(left_df, left_cleaning_dict)
+
+        right_cleaning_dict = self._get_cleaning_dict(
+            cdms_source.prefix, right_df.columns
+        )
+        right_cleaned = clean(right_df, right_cleaning_dict)
 
         # Create and run final linker with the common "crn" field
         final_linker_name = "__DEFAULT__"
