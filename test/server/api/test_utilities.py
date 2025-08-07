@@ -1,4 +1,5 @@
-import asyncio
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
@@ -13,7 +14,7 @@ from matchbox.common.dtos import BackendUploadType
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.factories.sources import source_factory
 from matchbox.server.api.arrow import s3_to_recordbatch, table_to_s3
-from matchbox.server.api.cache import MetadataStore, heartbeat
+from matchbox.server.api.uploads import UploadTracker, heartbeat
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -21,8 +22,7 @@ else:
     S3Client = Any
 
 
-@pytest.mark.asyncio
-async def test_file_to_s3(s3: S3Client):
+def test_file_to_s3(s3: S3Client):
     """Test that a file can be uploaded to S3."""
     # Create a mock bucket
     s3.create_bucket(
@@ -59,7 +59,7 @@ async def test_file_to_s3(s3: S3Client):
 
     # Call the function
     key = "foo.parquet"
-    upload_id = await table_to_s3(
+    upload_id = table_to_s3(
         client=s3,
         bucket="test-bucket",
         key=key,
@@ -84,7 +84,7 @@ async def test_file_to_s3(s3: S3Client):
     text_file = UploadFile(filename="test.txt", file=BytesIO(b"test"))
 
     with pytest.raises(MatchboxServerFileError):
-        await table_to_s3(
+        table_to_s3(
             client=s3,
             bucket="test-bucket",
             key=key,
@@ -95,7 +95,7 @@ async def test_file_to_s3(s3: S3Client):
     # Test 3: Upload a parquet file with a different schema
     corrupted_schema = table.schema.remove(0)
     with pytest.raises(MatchboxServerFileError):
-        await table_to_s3(
+        table_to_s3(
             client=s3,
             bucket="test-bucket",
             key=key,
@@ -104,17 +104,17 @@ async def test_file_to_s3(s3: S3Client):
         )
 
 
-def test_basic_cache_and_retrieve():
-    """Test basic caching and retrieval functionality."""
-    store = MetadataStore()
+def test_basic_upload_tracking():
+    """Test adding upload to tracker and retrieving."""
+    tracker = UploadTracker()
     source = source_factory().source_config
 
-    # Cache the source
-    cache_id = store.cache_source(source)
-    assert isinstance(cache_id, str)
+    # Add the source
+    upload_id = tracker.add_source(source)
+    assert isinstance(upload_id, str)
 
     # Retrieve and verify
-    entry = store.get(cache_id)
+    entry = tracker.get(upload_id)
     assert entry is not None
     assert entry.metadata == source
     assert entry.upload_type.schema == BackendUploadType.INDEX.schema
@@ -123,232 +123,230 @@ def test_basic_cache_and_retrieve():
     # Verify initial status
     assert entry.status.status == "awaiting_upload"
     assert entry.status.entity == BackendUploadType.INDEX
-    assert entry.status.id == cache_id
+    assert entry.status.id == upload_id
 
 
-@patch("matchbox.server.api.cache.datetime")
+@patch("matchbox.server.api.uploads.datetime")
 def test_expiration(mock_datetime: Mock):
     """Test that entries expire correctly after period of inactivity."""
-    store = MetadataStore(expiry_minutes=30)
+    tracker = UploadTracker(expiry_minutes=30)
     source = source_factory().source_config
 
-    # Cache the source
+    # Add the source
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-    cache_id = store.cache_source(source)
+    upload_id = tracker.add_source(source)
 
     # Should still be valid after 29 minutes
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 29)
-    assert store.get(cache_id) is not None
+    assert tracker.get(upload_id) is not None
 
     # Status update should refresh timestamp
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 30)
-    store.update_status(cache_id, "processing")
+    tracker.update_status(upload_id, "processing")
 
     # Should still be valid 29 minutes after status update
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 59)
-    assert store.get(cache_id) is not None
+    assert tracker.get(upload_id) is not None
 
     # Should expire 31 minutes after status update
     mock_datetime.now.return_value = datetime(2024, 1, 1, 13, 30)
-    assert store.get(cache_id) is None
+    assert tracker.get(upload_id) is None
 
 
-@pytest.mark.asyncio
-@patch("matchbox.server.api.cache.datetime")
-async def test_cleanup(mock_datetime: Mock):
+@patch("matchbox.server.api.uploads.datetime")
+def test_cleanup(mock_datetime: Mock):
     """Test that cleanup removes expired entries."""
-    store = MetadataStore(expiry_minutes=30)
+    tracker = UploadTracker(expiry_minutes=30)
     source = source_factory().source_config
 
     # Create two entries
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-    id1 = store.cache_source(source)
-    id2 = store.cache_source(source)
+    id1 = tracker.add_source(source)
+    id2 = tracker.add_source(source)
 
     # Update status of one entry
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 15)
-    store.update_status(id2, "processing")
+    tracker.update_status(id2, "processing")
 
     # Move time forward past expiration for first entry but not second
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 31)
 
     # Adding a new entry should trigger cleanup
-    id3 = store.cache_source(source)
+    id3 = tracker.add_source(source)
 
     # First should be gone, second should exist due to status update
-    assert store.get(id1) is None
-    assert store.get(id2) is not None
-    assert store.get(id3) is not None
+    assert tracker.get(id1) is None
+    assert tracker.get(id2) is not None
+    assert tracker.get(id3) is not None
 
 
 def test_remove():
     """Test manual removal of cache entries."""
-    store = MetadataStore()
+    tracker = UploadTracker()
     source = source_factory().source_config
 
     # Cache and remove
-    cache_id = store.cache_source(source)
-    assert store.remove(cache_id) is True
-    assert store.get(cache_id) is None
+    upload_id = tracker.add_source(source)
+    assert tracker.remove(upload_id) is True
+    assert tracker.get(upload_id) is None
 
     # Try removing non-existent entry
-    assert store.remove("nonexistent") is False
+    assert tracker.remove("nonexistent") is False
 
 
-@pytest.mark.asyncio
-async def test_status_management():
+def test_status_management():
     """Test status update functionality."""
-    store = MetadataStore()
+    tracker = UploadTracker()
     source = source_factory().source_config
 
     # Create entry and verify initial status
-    cache_id = store.cache_source(source)
-    entry = store.get(cache_id)
+    upload_id = tracker.add_source(source)
+    entry = tracker.get(upload_id)
     assert entry.status.status == "awaiting_upload"
 
     # Update status
-    assert store.update_status(cache_id, "processing") is True
-    entry = store.get(cache_id)
+    assert tracker.update_status(upload_id, "processing") is True
+    entry = tracker.get(upload_id)
     assert entry.status.status == "processing"
 
     # Update with details
-    assert store.update_status(cache_id, "failed", "Error details") is True
-    entry = store.get(cache_id)
+    assert tracker.update_status(upload_id, "failed", "Error details") is True
+    entry = tracker.get(upload_id)
     assert entry.status.status == "failed"
     assert entry.status.details == "Error details"
 
     # Try updating non-existent entry
     with pytest.raises(KeyError):
-        store.update_status("nonexistent", "processing")
+        tracker.update_status("nonexistent", "processing")
 
 
-@pytest.mark.asyncio
-@patch("matchbox.server.api.cache.datetime")
-async def test_timestamp_updates(mock_datetime: Mock):
+@patch("matchbox.server.api.uploads.datetime")
+def test_timestamp_updates(mock_datetime: Mock):
     """Test that timestamps update correctly on different operations."""
-    store = MetadataStore()
+    tracker = UploadTracker()
     source = source_factory().source_config
 
     # Initial creation
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-    cache_id = store.cache_source(source)
-    entry = store.get(cache_id)
+    upload_id = tracker.add_source(source)
+    entry = tracker.get(upload_id)
     assert entry.update_timestamp == datetime(2024, 1, 1, 12, 0)
 
     # Status update
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 15)
-    store.update_status(cache_id, "processing")
-    entry = store.get(cache_id)
+    tracker.update_status(upload_id, "processing")
+    entry = tracker.get(upload_id)
     assert entry.update_timestamp == datetime(2024, 1, 1, 12, 15)
 
     # Get operation
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 30)
-    entry = store.get(cache_id)
+    entry = tracker.get(upload_id)
     assert entry.update_timestamp == datetime(2024, 1, 1, 12, 30)
 
 
-@pytest.mark.asyncio
-async def test_heartbeat_updates_status():
+def wait_for_heartbeat(
+    tracker: UploadTracker,
+    upload_id: str,
+    timeout: float = 1.0,
+    poll_interval: float = 0.05,
+):
+    """Wait until heartbeat updates status or timeout is reached."""
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        entry = tracker.get(upload_id)
+        if (
+            entry
+            and entry.status.details
+            and "Still processing... Last heartbeat:" in entry.status.details
+        ):
+            return entry
+        time.sleep(poll_interval)
+    # Return latest entry even if heartbeat not found
+    return tracker.get(upload_id)
+
+
+@patch("matchbox.server.api.uploads.datetime")
+def test_heartbeat_updates_status(mock_datetime: Mock):
     """Test that heartbeat updates status periodically."""
-    store = MetadataStore()
-    source = source_factory().source_config
-
-    # Create initial entry
-    upload_id = store.cache_source(source)
-
-    async with heartbeat(store, upload_id, interval_seconds=0.1):
-        # Wait long enough for at least one heartbeat
-        await asyncio.sleep(0.15)
-
-    # Verify the status was updated with heartbeat details
-    entry = store.get(upload_id)
-    assert entry.status.status == "processing"
-    assert "Still processing... Last heartbeat:" in entry.status.details
-
-
-@pytest.mark.asyncio
-@patch("matchbox.server.api.cache.datetime")
-async def test_heartbeat_timestamp_updates(mock_datetime: Mock):
-    """Test that heartbeat updates timestamps correctly."""
-    store = MetadataStore()
+    tracker = UploadTracker()
     source = source_factory().source_config
 
     # Create initial entry
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-    upload_id = store.cache_source(source)
+    upload_id = tracker.add_source(source)
 
-    # Start heartbeat and advance time
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 5)
-    async with heartbeat(store, upload_id, interval_seconds=0.1):
-        await asyncio.sleep(0.15)
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
 
-        entry = store.get(upload_id)
-        assert entry.update_timestamp == datetime(2024, 1, 1, 12, 5)
-        assert "Last heartbeat:" in entry.status.details
+    # Verify the status was updated with heartbeat details
+    entry = tracker.get(upload_id)
+    assert entry.status.status == "processing"
+    assert "Still processing... Last heartbeat:" in entry.status.details
+    assert entry.update_timestamp == datetime(2024, 1, 1, 12, 5)
 
 
-@pytest.mark.asyncio
-@patch("matchbox.server.api.cache.datetime")
-async def test_heartbeat_with_expiry(mock_datetime: Mock):
+def test_heartbeat_no_overwrite():
+    """Heartbeat stops before we step outside context manager"""
+    tracker = UploadTracker()
+    source = source_factory().source_config
+
+    upload_id = tracker.add_source(source)
+
+    # Wait for one heartbeat to succeed
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
+
+    tracker.update_status(upload_id=upload_id, status="complete")
+    assert tracker.get(upload_id=upload_id).status.status == "complete"
+
+
+@patch("matchbox.server.api.uploads.datetime")
+def test_heartbeat_with_expiry(mock_datetime: Mock):
     """Test heartbeat behavior with cache expiry."""
-    store = MetadataStore(expiry_minutes=30)
+    tracker = UploadTracker(expiry_minutes=30)
     source = source_factory().source_config
 
     # Create entry
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-    upload_id = store.cache_source(source)
+    upload_id = tracker.add_source(source)
 
     # Start heartbeat and let it update
     mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 25)
-    async with heartbeat(store, upload_id, interval_seconds=0.1):
-        await asyncio.sleep(0.15)
+    with heartbeat(tracker, upload_id, interval_seconds=0.1):
+        wait_for_heartbeat(tracker, upload_id)
 
         # Entry should still exist and have updated timestamp
-        entry = store.get(upload_id)
+        entry = tracker.get(upload_id)
         assert entry is not None
         assert entry.update_timestamp == datetime(2024, 1, 1, 12, 25)
 
     # Move past expiry time
     mock_datetime.now.return_value = datetime(2024, 1, 1, 13, 0)
-    assert store.get(upload_id) is None
+    assert tracker.get(upload_id) is None
 
 
-@pytest.mark.asyncio
-async def test_heartbeat_errors_on_removed_entry():
-    """Test heartbeat behavior when entry is removed during processing."""
-    store = MetadataStore()
-    source = source_factory().source_config
-
-    # Create entry
-    upload_id = store.cache_source(source)
-
-    with pytest.raises(KeyError):
-        # Remove entry while heartbeat is running
-        async with heartbeat(store, upload_id, interval_seconds=0.1):
-            store.remove(upload_id)
-            await asyncio.sleep(0.15)  # Wait for next heartbeat attempt
-
-
-@pytest.mark.asyncio
-async def test_multiple_heartbeats():
+def test_multiple_heartbeats():
     """Test multiple concurrent heartbeats on different entries."""
-    store = MetadataStore()
+    tracker = UploadTracker()
     source = source_factory().source_config
 
     # Create two entries
-    id1 = store.cache_source(source)
-    id2 = store.cache_source(source)
+    id1 = tracker.add_source(source)
+    id2 = tracker.add_source(source)
 
-    async def run_heartbeat(upload_id):
-        async with heartbeat(store, upload_id, interval_seconds=0.1):
-            await asyncio.sleep(0.15)
+    def run_heartbeat(upload_id):
+        with heartbeat(tracker, upload_id, interval_seconds=0.1):
+            wait_for_heartbeat(tracker, upload_id)
 
     # Run heartbeats concurrently
-    await asyncio.gather(run_heartbeat(id1), run_heartbeat(id2))
+    with ThreadPoolExecutor() as executor:
+        executor.submit(run_heartbeat, id1)
+        executor.submit(run_heartbeat, id2)
 
     # Verify both entries were updated
-    entry1 = store.get(id1)
-    entry2 = store.get(id2)
+    entry1 = tracker.get(id1)
+    entry2 = tracker.get(id2)
     assert entry1.status.status == "processing"
     assert entry2.status.status == "processing"
     assert "Last heartbeat:" in entry1.status.details

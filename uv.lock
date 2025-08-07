@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -1400,7 +1401,6 @@ wheels = [
 
 [[package]]
 name = "matchbox-db"
-version = "0.4.10.dev0+g1ae9704b.d20250806"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -1420,7 +1420,7 @@ dependencies = [
     { name = "rich" },
     { name = "rustworkx" },
     { name = "splink" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlalchemy" },
     { name = "sqlglot", extra = ["rs"] },
 ]
 
@@ -1451,7 +1451,6 @@ dev = [
     { name = "moto", extra = ["s3"] },
     { name = "pre-commit" },
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-env" },
     { name = "respx" },
@@ -1490,11 +1489,12 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9.4" },
     { name = "rustworkx", specifier = ">=0.15.1" },
     { name = "splink", specifier = ">=4.0.5,<4.1.0" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.35" },
+    { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "sqlglot", extras = ["rs"], specifier = ">=26.12.1" },
     { name = "streamlit", marker = "extra == 'eval'", specifier = ">=1.45.0" },
     { name = "tomli", marker = "extra == 'server'", specifier = ">=2.0.1" },
 ]
+provides-extras = ["server", "eval"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1509,7 +1509,6 @@ dev = [
     { name = "moto", extras = ["s3"], specifier = ">=5.0.26" },
     { name = "pre-commit", specifier = ">=3.8.0" },
     { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.25.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "pytest-env", specifier = ">=1.1.5" },
     { name = "respx", specifier = ">=0.22.0" },
@@ -2407,18 +2406,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytest-asyncio"
-version = "0.26.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8e/c4/453c52c659521066969523e87d85d54139bbd17b78f09532fb8eb8cdb58e/pytest_asyncio-0.26.0.tar.gz", hash = "sha256:c4df2a697648241ff39e7f0e4a73050b03f123f760673956cf0d72a4990e312f", size = 54156 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/7f/338843f449ace853647ace35870874f69a764d251872ed1b4de9f234822c/pytest_asyncio-0.26.0-py3-none-any.whl", hash = "sha256:7b51ed894f4fbea1340262bdae5135797ebbe21d8638978e35d31c6d19f72fb0", size = 19694 },
-]
-
-[[package]]
 name = "pytest-cov"
 version = "6.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2937,11 +2924,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/33/ac/e5e0a807163652a35be878c0ad5cfd8b1d29605edcadfb5df3c512cdf9f3/sqlalchemy-2.0.40-cp313-cp313-win32.whl", hash = "sha256:a669cbe5be3c63f75bcbee0b266779706f1a54bcb1000f302685b87d1b8c1500", size = 2080704 },
     { url = "https://files.pythonhosted.org/packages/1c/cb/f38c61f7f2fd4d10494c1c135ff6a6ddb63508d0b47bccccd93670637309/sqlalchemy-2.0.40-cp313-cp313-win_amd64.whl", hash = "sha256:641ee2e0834812d657862f3a7de95e0048bdcb6c55496f39c6fa3d435f6ac6ad", size = 2104564 },
     { url = "https://files.pythonhosted.org/packages/d1/7c/5fc8e802e7506fe8b55a03a2e1dab156eae205c91bee46305755e086d2e2/sqlalchemy-2.0.40-py3-none-any.whl", hash = "sha256:32587e2e1e359276957e6fe5dad089758bc042a971a8a09ae8ecf7a8fe23d07a", size = 1903894 },
-]
-
-[package.optional-dependencies]
-asyncio = [
-    { name = "greenlet" },
 ]
 
 [[package]]

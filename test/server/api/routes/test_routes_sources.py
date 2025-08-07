@@ -1,4 +1,4 @@
-import asyncio
+from time import sleep
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -106,8 +106,7 @@ def test_add_source(test_client: TestClient):
     mock_backend.index.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_complete_source_upload_process(s3: S3Client, test_client: TestClient):
+def test_complete_source_upload_process(s3: S3Client, test_client: TestClient):
     """Test the complete upload process from source creation through processing."""
     # Setup the backend
     mock_backend = Mock()
@@ -162,7 +161,7 @@ async def test_complete_source_upload_process(s3: S3Client, test_client: TestCli
         elif status == "failed":
             pytest.fail(f"Upload failed: {response.json().get('details')}")
         elif status in ["processing", "queued"]:
-            await asyncio.sleep(0.1)  # Small delay between polls
+            sleep(0.1)  # Small delay between polls
         else:
             pytest.fail(f"Unexpected status: {status}")
 

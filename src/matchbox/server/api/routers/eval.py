@@ -36,7 +36,7 @@ router = APIRouter(prefix="/eval", tags=["eval"])
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_201_CREATED,
 )
-async def insert_judgement(
+def insert_judgement(
     backend: BackendDependency,
     judgement: Judgement,
 ):
@@ -63,7 +63,7 @@ async def insert_judgement(
 @router.get(
     "/judgements",
 )
-async def get_judgements(backend: BackendDependency) -> ParquetResponse:
+def get_judgements(backend: BackendDependency) -> ParquetResponse:
     """Retrieve all judgements from human evaluators."""
     judgements, expansion = backend.get_judgements()
     judgements_buffer, expansion_buffer = (
@@ -85,7 +85,7 @@ async def get_judgements(backend: BackendDependency) -> ParquetResponse:
     "/compare",
     responses={404: {"model": NotFoundError}},
 )
-async def compare_models(
+def compare_models(
     backend: BackendDependency,
     resolutions: Annotated[
         list[ModelResolutionName],
@@ -115,7 +115,7 @@ async def compare_models(
     "/samples",
     responses={404: {"model": NotFoundError}, 422: {"model": InvalidParameterError}},
 )
-async def sample(
+def sample(
     backend: BackendDependency, n: int, resolution: ModelResolutionName, user_id: int
 ) -> ParquetResponse:
     """Sample n cluster to validate."""

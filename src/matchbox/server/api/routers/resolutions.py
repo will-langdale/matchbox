@@ -34,7 +34,7 @@ router = APIRouter(prefix="/resolutions", tags=["resolutions"])
     },
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def delete_resolution(
+def delete_resolution(
     backend: BackendDependency,
     name: ResolutionName,
     certain: Annotated[

@@ -26,8 +26,8 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ModelResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
-    MetadataStoreDependency,
     ParquetResponse,
+    UploadTrackerDependency,
     authorisation_dependencies,
 )
 
@@ -45,7 +45,7 @@ router = APIRouter(prefix="/models", tags=["models"])
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def insert_model(
+def insert_model(
     backend: BackendDependency, model: ModelConfig
 ) -> ResolutionOperationStatus:
     """Insert a model into the backend."""
@@ -72,9 +72,7 @@ async def insert_model(
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-async def get_model(
-    backend: BackendDependency, name: ModelResolutionName
-) -> ModelConfig:
+def get_model(backend: BackendDependency, name: ModelResolutionName) -> ModelConfig:
     """Get a model from the backend."""
     try:
         return backend.get_model(name=name)
@@ -93,9 +91,9 @@ async def get_model(
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def set_results(
+def set_results(
     backend: BackendDependency,
-    metadata_store: MetadataStoreDependency,
+    upload_tracker: UploadTrackerDependency,
     name: ModelResolutionName,
 ) -> UploadStatus:
     """Create an upload task for model results."""
@@ -109,15 +107,15 @@ async def set_results(
             ).model_dump(),
         ) from e
 
-    upload_id = metadata_store.cache_model(metadata=metadata)
-    return metadata_store.get(cache_id=upload_id).status
+    upload_id = upload_tracker.add_model(metadata=metadata)
+    return upload_tracker.get(upload_id=upload_id).status
 
 
 @router.get(
     "/{name}/results",
     responses={404: {"model": NotFoundError}},
 )
-async def get_results(
+def get_results(
     backend: BackendDependency, name: ModelResolutionName
 ) -> ParquetResponse:
     """Download results for a model as a parquet file."""
@@ -146,7 +144,7 @@ async def get_results(
     },
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def set_truth(
+def set_truth(
     backend: BackendDependency,
     name: ModelResolutionName,
     truth: Annotated[int, Body(ge=0, le=100)],
@@ -182,7 +180,7 @@ async def set_truth(
     "/{name}/truth",
     responses={404: {"model": NotFoundError}},
 )
-async def get_truth(backend: BackendDependency, name: ModelResolutionName) -> float:
+def get_truth(backend: BackendDependency, name: ModelResolutionName) -> float:
     """Get truth data for a model."""
     try:
         return backend.get_model_truth(name=name)
@@ -199,7 +197,7 @@ async def get_truth(backend: BackendDependency, name: ModelResolutionName) -> fl
     "/{name}/ancestors",
     responses={404: {"model": NotFoundError}},
 )
-async def get_ancestors(
+def get_ancestors(
     backend: BackendDependency, name: ModelResolutionName
 ) -> list[ModelAncestor]:
     """Get the ancestors for a model."""
@@ -225,7 +223,7 @@ async def get_ancestors(
     },
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def set_ancestors_cache(
+def set_ancestors_cache(
     backend: BackendDependency,
     name: ModelResolutionName,
     ancestors: list[ModelAncestor],
@@ -261,7 +259,7 @@ async def set_ancestors_cache(
     "/{name}/ancestors_cache",
     responses={404: {"model": NotFoundError}},
 )
-async def get_ancestors_cache(
+def get_ancestors_cache(
     backend: BackendDependency, name: ModelResolutionName
 ) -> list[ModelAncestor]:
     """Get the cached ancestors for a model."""

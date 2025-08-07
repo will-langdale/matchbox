@@ -38,15 +38,15 @@ from matchbox.common.exceptions import (
 from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.common.sources import Match
 from matchbox.server.api.arrow import table_to_s3
-from matchbox.server.api.cache import process_upload
 from matchbox.server.api.dependencies import (
     BackendDependency,
-    MetadataStoreDependency,
     ParquetResponse,
+    UploadTrackerDependency,
     authorisation_dependencies,
     lifespan,
 )
 from matchbox.server.api.routers import eval, models, resolutions, sources
+from matchbox.server.api.uploads import process_upload
 
 app = FastAPI(
     title="matchbox API",
@@ -90,7 +90,7 @@ async def healthcheck() -> OKMessage:
 @app.post(
     "/login",
 )
-async def login(
+def login(
     backend: BackendDependency,
     credentials: LoginAttempt,
 ) -> LoginResult:
@@ -106,10 +106,10 @@ async def login(
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def upload_file(
+def upload_file(
     background_tasks: BackgroundTasks,
     backend: BackendDependency,
-    metadata_store: MetadataStoreDependency,
+    upload_tracker: UploadTrackerDependency,
     upload_id: str,
     file: UploadFile,
 ) -> UploadStatus:
@@ -125,8 +125,8 @@ async def upload_file(
     * Uploaded data doesn't match the metadata schema
     """
     # Get and validate cache entry
-    source_cache = metadata_store.get(cache_id=upload_id)
-    if not source_cache:
+    source_upload = upload_tracker.get(upload_id=upload_id)
+    if not source_upload:
         raise HTTPException(
             status_code=400,
             detail=UploadStatus(
@@ -140,10 +140,10 @@ async def upload_file(
         )
 
     # Check if already processing
-    if source_cache.status.status != "awaiting_upload":
+    if source_upload.status.status != "awaiting_upload":
         raise HTTPException(
             status_code=400,
-            detail=source_cache.status.model_dump(),
+            detail=source_upload.status.model_dump(),
         )
 
     # Upload to S3
@@ -152,21 +152,21 @@ async def upload_file(
     key = f"{upload_id}.parquet"
 
     try:
-        await table_to_s3(
+        table_to_s3(
             client=client,
             bucket=bucket,
             key=key,
             file=file,
-            expected_schema=source_cache.upload_type.schema,
+            expected_schema=source_upload.upload_type.schema,
         )
     except MatchboxServerFileError as e:
-        metadata_store.update_status(upload_id, "failed", details=str(e))
+        upload_tracker.update_status(upload_id, "failed", details=str(e))
         raise HTTPException(
             status_code=400,
-            detail=source_cache.status.model_dump(),
+            detail=source_upload.status.model_dump(),
         ) from e
 
-    metadata_store.update_status(upload_id, "queued")
+    upload_tracker.update_status(upload_id, "queued")
 
     # Start background processing
     background_tasks.add_task(
@@ -175,19 +175,20 @@ async def upload_file(
         upload_id=upload_id,
         bucket=bucket,
         key=key,
-        metadata_store=metadata_store,
+        tracker=upload_tracker,
+        heartbeat_seconds=60,
     )
 
-    source_cache = metadata_store.get(upload_id)
+    source_upload = upload_tracker.get(upload_id)
 
     # Check for error in async task
-    if source_cache.status.status == "failed":
+    if source_upload.status.status == "failed":
         raise HTTPException(
             status_code=400,
-            detail=source_cache.status.model_dump(),
+            detail=source_upload.status.model_dump(),
         )
     else:
-        return source_cache.status
+        return source_upload.status
 
 
 @app.get(
@@ -197,8 +198,8 @@ async def upload_file(
     },
     status_code=status.HTTP_200_OK,
 )
-async def get_upload_status(
-    metadata_store: MetadataStoreDependency,
+def get_upload_status(
+    upload_tracker: UploadTrackerDependency,
     upload_id: str,
 ) -> UploadStatus:
     """Get the status of an upload process.
@@ -208,8 +209,8 @@ async def get_upload_status(
     Raises HTTP 400 if:
     * Upload ID not found or expired (entries expire after 30 minutes of inactivity)
     """
-    source_cache = metadata_store.get(cache_id=upload_id)
-    if not source_cache:
+    source_upload = upload_tracker.get(upload_id=upload_id)
+    if not source_upload:
         raise HTTPException(
             status_code=400,
             detail=UploadStatus(
@@ -223,7 +224,7 @@ async def get_upload_status(
             ).model_dump(),
         )
 
-    return source_cache.status
+    return source_upload.status
 
 
 # Retrieval
@@ -312,13 +313,13 @@ def match(
 
 
 @app.get("/report/resolutions")
-async def get_resolutions(backend: BackendDependency) -> ResolutionGraph:
+def get_resolutions(backend: BackendDependency) -> ResolutionGraph:
     """Get the resolution graph."""
     return backend.get_resolution_graph()
 
 
 @app.get("/database/count")
-async def count_backend_items(
+def count_backend_items(
     backend: BackendDependency,
     entity: BackendCountableType | None = None,
 ) -> CountResult:
@@ -339,7 +340,7 @@ async def count_backend_items(
     responses={409: {"model": str}},
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def clear_database(
+def clear_database(
     backend: BackendDependency,
     certain: Annotated[
         bool,

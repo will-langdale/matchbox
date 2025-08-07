@@ -21,7 +21,7 @@ from fastapi.responses import Response
 from fastapi.security import APIKeyHeader
 
 from matchbox.common.logging import ASIMFormatter
-from matchbox.server.api.cache import MetadataStore
+from matchbox.server.api.uploads import UploadTracker
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxServerSettings,
@@ -44,7 +44,7 @@ class ParquetResponse(Response):
 
 SETTINGS: MatchboxServerSettings | None = None
 BACKEND: MatchboxDBAdapter | None = None
-METADATA_STORE = MetadataStore(expiry_minutes=30)
+UPLOAD_TRACKER = UploadTracker(expiry_minutes=30)
 JWT_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
 
 
@@ -62,11 +62,11 @@ def settings() -> Generator[MatchboxServerSettings, None, None]:
     yield SETTINGS
 
 
-def metadata_store() -> Generator[MetadataStore, None, None]:
-    """Get the metadata store instance."""
-    if METADATA_STORE is None:
-        raise ValueError("Metadata store not initialized.")
-    yield METADATA_STORE
+def upload_tracker() -> Generator[UploadTracker, None, None]:
+    """Get the upload tracker instance."""
+    if UPLOAD_TRACKER is None:
+        raise ValueError("Upload tracker not initialized.")
+    yield UPLOAD_TRACKER
 
 
 @asynccontextmanager
@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 BackendDependency = Annotated[MatchboxDBAdapter, Depends(backend)]
 SettingsDependency = Annotated[MatchboxServerSettings, Depends(settings)]
-MetadataStoreDependency = Annotated[MetadataStore, Depends(metadata_store)]
+UploadTrackerDependency = Annotated[UploadTracker, Depends(upload_tracker)]
 
 
 def b64_decode(b64_bytes):

@@ -20,7 +20,7 @@ from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.sources import SourceConfig
 from matchbox.server.api.dependencies import (
     BackendDependency,
-    MetadataStoreDependency,
+    UploadTrackerDependency,
     authorisation_dependencies,
 )
 
@@ -32,19 +32,19 @@ router = APIRouter(prefix="/sources", tags=["sources"])
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
 )
-async def add_source(
-    metadata_store: MetadataStoreDependency, source: SourceConfig
+def add_source(
+    upload_tracker: UploadTrackerDependency, source: SourceConfig
 ) -> UploadStatus:
     """Create an upload and insert task for indexed source data."""
-    upload_id = metadata_store.cache_source(metadata=source)
-    return metadata_store.get(cache_id=upload_id).status
+    upload_id = upload_tracker.add_source(metadata=source)
+    return upload_tracker.get(upload_id=upload_id).status
 
 
 @router.get(
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-async def get_source_config(
+def get_source_config(
     backend: BackendDependency,
     name: SourceResolutionName,
 ) -> SourceConfig:
@@ -64,7 +64,7 @@ async def get_source_config(
     "",
     responses={404: {"model": NotFoundError}},
 )
-async def get_resolution_source_configs(
+def get_resolution_source_configs(
     backend: BackendDependency,
     name: ResolutionName,
 ) -> list[SourceConfig]:

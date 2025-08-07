@@ -50,8 +50,8 @@ Perhaps you're testing the API and want to put a realistic `SourceConfig` in the
 source_testkit = source_factory()
 
 # Setup store
-store = MetadataStore()
-update_id = store.cache_source(source_testkit.source_config)
+tracker = UploadTracker()
+upload_id = tracker.add_source(source_testkit.source_config)
 ```
 
 Or you're testing the client handler and want to mock the API.
