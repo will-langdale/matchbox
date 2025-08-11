@@ -33,7 +33,7 @@ services:
       args:
         ENV_FILE: server.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
-      dockerfile: src/matchbox/server/Dockerfile
+      dockerfile: src/matchbox/server/api/Dockerfile
       target: dev
     ports:
       - "${MB__DEV__API_PORT-8000}:8000"
@@ -48,7 +48,7 @@ services:
         condition: service_started
         required: true
     develop:
-      # https://docs.docker.com/compose/file-watch/#compose-watch-versus-bind-mounts
+            # https://docs.docker.com/compose/file-watch/#compose-watch-versus-bind-mounts
       watch:
         # Sync the working directory with the `/app` directory in the container
         - action: sync
@@ -69,6 +69,24 @@ services:
       - POSTGRES_DB=matchbox
       - POSTGRES_PASSWORD=matchbox_password
       - POSTGRES_USER=matchbox_user
+  redis:
+    image: redis:8
+    restart: always
+    ports:
+      - "${MB__DEV__DATASTORE_PORT:-6379}:6379"
+  celery-worker:
+    build:
+      context: .
+      dockerfile: src/matchbox/server/celery/Dockerfile
+      args:
+        ENV_FILE: server.env
+    command: celery -A matchbox.server.celery.tasks.app worker --loglevel=info
+    depends_on:
+      - server-api
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:${MB__DEV__DATASTORE_PORT:-6379}/0
+
 volumes:
   warehouse_data:
   matchbox_data:
