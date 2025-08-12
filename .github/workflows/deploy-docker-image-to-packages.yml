@@ -1,6 +1,8 @@
-name: Create and Publish the Matchbox Open-Source Docker Image inc version tag and "latest" tag
+name: Create and Publish the Matchbox Open-Source Docker Image
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
 
@@ -42,7 +44,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ env.MB_VERSION }}
-            type=raw,value=latest
+            type=raw,value=development,enable=${{ github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image (including version tag)
         id: push
