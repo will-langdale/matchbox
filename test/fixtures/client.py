@@ -11,7 +11,7 @@ from matchbox.client.authorisation import (
     generate_EdDSA_key_pair,
     generate_json_web_token,
 )
-from matchbox.server import app
+from matchbox.server.api import app
 from matchbox.server.api.dependencies import (
     backend,
     settings,

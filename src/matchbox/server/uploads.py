@@ -1,6 +1,7 @@
-"""A metadata registry of uploads and their status."""
+"""Handling of uploads."""
 
 import uuid
+from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Generator
 
@@ -9,16 +10,13 @@ import redis
 from fastapi import (
     UploadFile,
 )
-from pyarrow import compute as pq
-from pydantic import BaseModel, ConfigDict
+from pyarrow import parquet as pq
+from pydantic import BaseModel
 
-from matchbox.common.dtos import (
-    BackendUploadType,
-    ModelConfig,
-    UploadStatus,
-)
+from matchbox.common.dtos import ModelConfig
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.sources import SourceConfig
+from matchbox.common.uploads import BackendUploadType, UploadStatus
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -27,68 +25,119 @@ else:
 
 
 class UploadEntry(BaseModel):
-    """Metadata entry for upload."""
+    """Entry in upload tracker, enriching upload status with metadata."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    metadata: SourceConfig | ModelConfig
-    upload_type: BackendUploadType
-    update_timestamp: datetime
     status: UploadStatus
+    metadata: SourceConfig | ModelConfig
 
 
-class UploadTracker:
-    """A simple registry of uploaded metadata and processing status, backed by Redis."""
+class UploadTracker(ABC):
+    """Abstract class for upload tracker."""
+
+    @staticmethod
+    def _create_entry(
+        metadata: SourceConfig | ModelConfig, upload_type: BackendUploadType
+    ) -> UploadEntry:
+        upload_id = str(uuid.uuid4())
+
+        return UploadEntry(
+            metadata=metadata,
+            status=UploadStatus(
+                id=upload_id,
+                stage="awaiting_upload",
+                update_timestamp=datetime.now(),
+                entity=upload_type,
+            ),
+        )
+
+    def _get_updated_entry(
+        self, upload_id: str, stage: str, details: str | None
+    ) -> UploadEntry:
+        entry = self.get(upload_id)
+        if not entry:
+            raise KeyError(f"Entry {upload_id} not found.")
+
+        status = entry.status.model_copy(
+            update={"stage": stage, "update_timestamp": datetime.now()}
+        )
+        if details:
+            status.details = details
+
+        return UploadEntry(status=status, metadata=entry.metadata)
+
+    def add_source(self, metadata: SourceConfig) -> str:
+        """Register source metadata and return ID."""
+        entry = self._create_entry(metadata, BackendUploadType.INDEX)
+        self._register_entry(entry)
+
+        return entry.status.id
+
+    def add_model(self, metadata: ModelConfig) -> str:
+        """Register model results metadata and return ID."""
+        entry = self._create_entry(metadata, BackendUploadType.RESULTS)
+        self._register_entry(entry)
+
+        return entry.status.id
+
+    @abstractmethod
+    def _register_entry(self, UploadEntry) -> str:
+        """Register `UploadEntry` to tracker and return its ID."""
+        ...
+
+    @abstractmethod
+    def get(self, upload_id: str) -> UploadEntry | None:
+        """Retrieve metadata by ID if not expired."""
+        ...
+
+    @abstractmethod
+    def update(self, upload_id: str, stage: str, details: str | None = None) -> None:
+        """Update the stage and details for an upload.
+
+        Raises:
+            KeyError: If entry not found.
+        """
+        ...
+
+
+class InMemoryUploadTracker(UploadTracker):
+    """In-memory upload tracker, only usable with single server instance."""
+
+    def __init__(self):
+        """Initialise tracker data structure."""
+        self.tracker = {}
+
+    def _register_entry(self, entry: UploadEntry) -> None:
+        self.tracker[entry.status.id] = entry
+
+    def get(self, upload_id: str) -> UploadEntry | None:  # noqa: D102
+        return self.tracker.get(upload_id)
+
+    def update(  # noqa: D102
+        self, upload_id: str, stage: str, details: str | None = None
+    ) -> None:
+        self.tracker[upload_id] = self._get_updated_entry(
+            upload_id=upload_id, stage=stage, details=details
+        )
+
+
+class RedisUploadTracker(UploadTracker):
+    """Upload tracker backed by Redis."""
 
     def __init__(self, redis_url: str, expiry_minutes: int):
         """Connect Redis and initialise tracker object."""
         self.expiry_minutes = expiry_minutes
         self.redis = redis.Redis.from_url(redis_url)
 
-    @staticmethod
-    def _generate_id():
-        return str(uuid.uuid4())
-
-    def _add_entry(self, key: str, value: str):
+    def _to_redis(self, key: str, value: str):
         expiry_seconds = self.expiry_minutes * 60
         self.redis.setex(f"upload:{key}", expiry_seconds, value)
 
-    def add_source(self, metadata: BaseModel) -> str:
-        """Register source metadata and return ID."""
-        upload_id = self._generate_id()
+    def _register_entry(self, entry: UploadEntry) -> str:  # noqa: D102
+        self._to_redis(entry.status.id, entry.model_dump_json())
 
-        entry = UploadEntry(
-            metadata=metadata,
-            upload_type=BackendUploadType.INDEX,
-            update_timestamp=datetime.now(),
-            status=UploadStatus(
-                id=upload_id, status="awaiting_upload", entity=BackendUploadType.INDEX
-            ),
-        )
+        return entry.status.id
 
-        self._add_entry(upload_id, entry.model_dump_json())
-
-        return upload_id
-
-    def add_model(self, metadata: BaseModel) -> str:
-        """Register model results metadata and return ID."""
-        upload_id = self._generate_id()
-
-        entry = UploadEntry(
-            metadata=metadata,
-            upload_type=BackendUploadType.RESULTS,
-            update_timestamp=datetime.now(),
-            status=UploadStatus(
-                id=upload_id, status="awaiting_upload", entity=BackendUploadType.RESULTS
-            ),
-        )
-
-        self._add_entry(upload_id, entry.model_dump_json())
-
-        return upload_id
-
-    def get(self, upload_id: str) -> UploadEntry | None:
-        """Retrieve metadata by ID if not expired."""
+    def get(self, upload_id: str) -> UploadEntry | None:  # noqa: D102
         data = self.redis.get(upload_id)
         if not data:
             return None
@@ -97,31 +146,14 @@ class UploadTracker:
 
         return entry
 
-    def update_status(
-        self, upload_id: str, status: str, details: str | None = None
-    ) -> bool:
-        """Update the status of an entry.
+    def update(  # noqa: D102
+        self, upload_id: str, stage: str, details: str | None = None
+    ) -> None:
+        entry = self._get_updated_entry(
+            upload_id=upload_id, stage=stage, details=details
+        )
 
-        Raises:
-            KeyError: If entry not found.
-        """
-        data = self.redis.get(upload_id)
-        if not data:
-            raise KeyError(f"Entry {upload_id} not found.")
-
-        entry = UploadEntry.model_validate_json(data)
-        entry.status.status = status
-        if details:
-            entry.status.details = details
-        entry.update_timestamp = datetime.now()
-
-        self._add_entry(upload_id, entry.model_dump_json())
-
-        return True
-
-    def remove(self, upload_id: str) -> bool:
-        """Remove an entry from the tracker."""
-        return self.redis.delete(upload_id) == 1
+        self._to_redis(upload_id, entry.model_dump_json())
 
 
 def table_to_s3(

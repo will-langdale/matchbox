@@ -6,18 +6,14 @@ from respx import MockRouter
 from sqlalchemy import Engine
 
 from matchbox.client.helpers.index import get_source, index
-from matchbox.common.dtos import (
-    BackendResourceType,
-    BackendUploadType,
-    NotFoundError,
-    UploadStatus,
-)
+from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.sources import RelationalDBLocation, SourceConfig
+from matchbox.common.uploads import BackendUploadType, UploadStatus
 
 
 def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):

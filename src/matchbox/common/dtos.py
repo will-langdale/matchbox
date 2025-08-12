@@ -2,12 +2,10 @@
 
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Literal
 
 import polars as pl
 from pydantic import BaseModel, Field
 
-from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionName,
@@ -66,21 +64,6 @@ class BackendParameterType(StrEnum):
     """Enumeration of parameters passable to the API."""
 
     SAMPLE_SIZE = "sample_size"
-
-
-class BackendUploadType(StrEnum):
-    """Enumeration of supported backend upload types."""
-
-    INDEX = "index"
-    RESULTS = "results"
-
-    @property
-    def schema(self):
-        """Get the schema for the upload type."""
-        return {
-            BackendUploadType.INDEX: SCHEMA_INDEX,
-            BackendUploadType.RESULTS: SCHEMA_RESULTS,
-        }[self]
 
 
 class ModelType(StrEnum):
@@ -198,66 +181,6 @@ class CountResult(BaseModel):
     """Response model for count results."""
 
     entities: dict[BackendCountableType, int]
-
-
-class UploadStatus(BaseModel):
-    """Response model for any file upload processes."""
-
-    id: str | None = None
-    status: Literal[
-        "ready", "awaiting_upload", "queued", "processing", "complete", "failed"
-    ]
-    details: str | None = None
-    entity: BackendUploadType | None = None
-
-    _status_code_mapping = {
-        "ready": 200,
-        "complete": 200,
-        "failed": 400,
-        "awaiting_upload": 202,
-        "queued": 200,
-        "processing": 200,
-    }
-
-    def get_http_code(self, status: bool) -> int:
-        """Get the HTTP status code for the upload status."""
-        if self.status == "failed":
-            return 400
-        return self._status_code_mapping[self.status]
-
-    @classmethod
-    def status_400_examples(cls) -> dict:
-        """Examples for 400 status code."""
-        return {
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "expired_id": {
-                            "summary": "Upload ID expired",
-                            "value": cls(
-                                id="example_id",
-                                status="failed",
-                                details=(
-                                    "Upload ID not found or expired. Entries expire "
-                                    "after 30 minutes of inactivity, including "
-                                    "failed processes."
-                                ),
-                                entity=BackendUploadType.INDEX,
-                            ).model_dump(),
-                        },
-                        "schema_mismatch": {
-                            "summary": "Schema validation error",
-                            "value": cls(
-                                id="example_id",
-                                status="failed",
-                                details="Schema mismatch. Expected: ... Got: ...",
-                                entity=BackendUploadType.INDEX,
-                            ).model_dump(),
-                        },
-                    },
-                }
-            }
-        }
 
 
 class NotFoundError(BaseModel):

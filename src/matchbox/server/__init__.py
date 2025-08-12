@@ -9,6 +9,6 @@ from matchbox.server.base import (
     initialise_matchbox,
 )
 
-__all__ = ["app", "MatchboxDBAdapter", "MatchboxServerSettings"]
+__all__ = ["MatchboxDBAdapter", "MatchboxServerSettings"]
 
 initialise_matchbox()

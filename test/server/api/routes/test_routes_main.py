@@ -5,8 +5,6 @@ from unittest.mock import ANY, Mock, call, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pytest
-from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
 from matchbox.client.authorisation import (
@@ -18,20 +16,19 @@ from matchbox.common.dtos import (
     LoginAttempt,
     LoginResult,
     OKMessage,
-    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxServerFileError,
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match
+from matchbox.common.uploads import UploadStatus
+from matchbox.server.api import app
 from matchbox.server.api.dependencies import backend, upload_tracker
-from matchbox.server.api.main import app
-from matchbox.server.api.uploads import UploadTracker, process_upload
+from matchbox.server.uploads import UploadTracker
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -89,7 +86,7 @@ def test_upload(
     tracker = UploadTracker()
     update_id = tracker.add_source(source_testkit.source_config)
     mock_upload_tracker.get.side_effect = tracker.get
-    mock_upload_tracker.update_status.side_effect = tracker.update_status
+    mock_upload_tracker.update.side_effect = tracker.update
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -112,7 +109,7 @@ def test_upload(
     assert response.status_code == 202, response.json()
     assert response.json()["status"] == "queued"  # Updated to check for queued status
     # Check both status updates were called in correct order
-    assert mock_upload_tracker.update_status.call_args_list == [
+    assert mock_upload_tracker.update.call_args_list == [
         call(update_id, "queued"),
     ]
     mock_backend.index.assert_not_called()  # Index happens in background
@@ -139,7 +136,7 @@ def test_upload_wrong_schema(
     tracker = UploadTracker()
     update_id = tracker.add_source(source_testkit.source_config)
     mock_upload_tracker.get.side_effect = tracker.get
-    mock_upload_tracker.update_status.side_effect = tracker.update_status
+    mock_upload_tracker.update.side_effect = tracker.update
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -161,9 +158,7 @@ def test_upload_wrong_schema(
     assert response.status_code == 400
     assert response.json()["status"] == "failed"
     assert "schema mismatch" in response.json()["details"].lower()
-    mock_upload_tracker.update_status.assert_called_with(
-        update_id, "failed", details=ANY
-    )
+    mock_upload_tracker.update.assert_called_with(update_id, "failed", details=ANY)
     mock_add_task.assert_not_called()  # Background task should not be queued
 
 
@@ -174,10 +169,10 @@ def test_upload_status_check(test_client: TestClient):
     tracker = UploadTracker()
     source_testkit = source_factory()
     update_id = tracker.add_source(source_testkit.source_config)
-    tracker.update_status(update_id, "processing")
+    tracker.update(update_id, "processing")
 
     mock_upload_tracker.get.side_effect = tracker.get
-    mock_upload_tracker.update_status.side_effect = tracker.update_status
+    mock_upload_tracker.update.side_effect = tracker.update
 
     # Override app dependencies with mocks
     app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
@@ -188,7 +183,7 @@ def test_upload_status_check(test_client: TestClient):
     # Should return current status
     assert response.status_code == 200
     assert response.json()["status"] == "processing"
-    mock_upload_tracker.update_status.assert_not_called()
+    mock_upload_tracker.update.assert_not_called()
 
 
 def test_upload_already_processing(test_client: TestClient):
@@ -198,7 +193,7 @@ def test_upload_already_processing(test_client: TestClient):
     tracker = UploadTracker()
     source_testkit = source_factory()
     update_id = tracker.add_source(source_testkit.source_config)
-    tracker.update_status(update_id, "processing")
+    tracker.update(update_id, "processing")
 
     mock_upload_tracker.get.side_effect = tracker.get
 
@@ -223,7 +218,7 @@ def test_upload_already_queued(test_client: TestClient):
     tracker = UploadTracker()
     source_testkit = source_factory()
     update_id = tracker.add_source(source_testkit.source_config)
-    tracker.update_status(update_id, "queued")
+    tracker.update(update_id, "queued")
 
     mock_upload_tracker.get.side_effect = tracker.get
 
@@ -254,57 +249,6 @@ def test_status_check_not_found(test_client: TestClient):
     assert response.status_code == 400
     assert response.json()["status"] == "failed"
     assert "not found or expired" in response.json()["details"].lower()
-
-
-def test_process_upload_deletes_file_on_failure(s3: S3Client):
-    """Test that files are deleted from S3 even when processing fails."""
-    # Setup
-    bucket = "test-bucket"
-    test_key = "test-upload-id.parquet"
-    mock_backend = Mock()
-    mock_backend.settings.datastore.get_client.return_value = s3
-    mock_backend.index = Mock(side_effect=ValueError("Simulated processing failure"))
-
-    s3.create_bucket(
-        Bucket=bucket,
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-    )
-
-    # Add parquet to S3 and verify
-    source_testkit = source_factory()
-    buffer = table_to_buffer(source_testkit.data_hashes)
-    s3.put_object(Bucket=bucket, Key=test_key, Body=buffer)
-
-    assert s3.head_object(Bucket=bucket, Key=test_key)
-
-    # Setup metadata store with test data
-    tracker = UploadTracker()
-    upload_id = tracker.add_source(source_testkit.source_config)
-    tracker.update_status(upload_id, "awaiting_upload")
-
-    # Run the process, expecting it to fail
-    with pytest.raises(MatchboxServerFileError) as excinfo:
-        process_upload(
-            backend=mock_backend,
-            upload_id=upload_id,
-            bucket=bucket,
-            key=test_key,
-            tracker=tracker,
-            heartbeat_seconds=10,
-        )
-
-    assert "Simulated processing failure" in str(excinfo.value)
-
-    # Check that the status was updated to failed
-    status = tracker.get(upload_id).status
-    assert status.status == "failed", f"Expected status 'failed', got '{status.status}'"
-
-    # Verify file was deleted despite the failure
-    with pytest.raises(ClientError) as excinfo:
-        s3.head_object(Bucket=bucket, Key=test_key)
-    assert "404" in str(excinfo.value) or "NoSuchKey" in str(excinfo.value), (
-        f"File was not deleted: {str(excinfo.value)}"
-    )
 
 
 # Retrieval

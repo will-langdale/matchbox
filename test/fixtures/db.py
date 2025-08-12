@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generator, Literal
 import boto3
 import pyarrow as pa
 import pytest
+import redis
 import respx
 from httpx import Client
 from moto import mock_aws
@@ -30,6 +31,7 @@ from matchbox.server.base import (
     MatchboxSnapshot,
 )
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
+from matchbox.server.uploads import InMemoryUploadTracker, RedisUploadTracker
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -531,15 +533,13 @@ def setup_scenario(
         backend.clear(certain=True)
 
 
-# Warehouse database fixtures
-
-
 class DevelopmentSettings(BaseSettings):
     api_port: int = 8000
     datastore_console_port: int = 9003
     datastore_port: int = 9002
     warehouse_port: int = 7654
     postgres_backend_port: int = 9876
+    redis_url: str = "redis://localhost:6379/0"
 
     model_config = SettingsConfigDict(
         extra="ignore",
@@ -555,6 +555,9 @@ def development_settings() -> Generator[DevelopmentSettings, None, None]:
     """Settings for the development environment."""
     settings = DevelopmentSettings()
     yield settings
+
+
+# Warehouse fixtures
 
 
 @pytest.fixture(scope="function")
@@ -696,6 +699,30 @@ def s3(aws_credentials: None) -> Generator[S3Client, None, None]:
     """Return a mocked S3 client."""
     with mock_aws():
         yield boto3.client("s3", region_name="eu-west-2")
+
+
+# Upload trackers
+
+
+@pytest.fixture(scope="function")
+def upload_tracker_in_memory() -> Generator[InMemoryUploadTracker, None, None]:
+    """In-memory upload tracker."""
+    tracker = InMemoryUploadTracker()
+    yield tracker
+
+
+@pytest.fixture(scope="function")
+def upload_tracker_redis(
+    development_settings: DevelopmentSettings,
+) -> Generator[RedisUploadTracker, None, None]:
+    """Redis-backed upload tracker."""
+    r = redis.Redis.from_url(development_settings.redis_url)
+    for key in r.scan_iter("upload:*"):
+        r.delete(key)
+    tracker = RedisUploadTracker(
+        redis_url=development_settings.redis_url, expiry_minutes=100
+    )
+    yield tracker
 
 
 # API, mocked and Docker

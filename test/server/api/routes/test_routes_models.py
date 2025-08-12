@@ -19,9 +19,9 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.factories.models import model_factory
+from matchbox.server.api import app
 from matchbox.server.api.dependencies import backend, upload_tracker
-from matchbox.server.api.main import app
-from matchbox.server.api.uploads import UploadTracker
+from matchbox.server.uploads import UploadTracker
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client

@@ -20,13 +20,11 @@ from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
     BackendResourceType,
-    BackendUploadType,
     CountResult,
     LoginAttempt,
     LoginResult,
     NotFoundError,
     OKMessage,
-    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -36,6 +34,7 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.common.sources import Match
+from matchbox.common.uploads import BackendUploadType, UploadStatus
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -158,13 +157,13 @@ def upload_file(
             expected_schema=upload_entry.upload_type.schema,
         )
     except MatchboxServerFileError as e:
-        upload_tracker.update_status(upload_id, "failed", details=str(e))
+        upload_tracker.update(upload_id, "failed", details=str(e))
         raise HTTPException(
             status_code=400,
             detail=upload_entry.status.model_dump(),
         ) from e
 
-    upload_tracker.update_status(upload_id, "queued")
+    upload_tracker.update(upload_id, "queued")
 
     # Start background processing
     process_upload.delay(

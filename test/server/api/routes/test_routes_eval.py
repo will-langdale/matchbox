@@ -22,8 +22,8 @@ from matchbox.common.exceptions import (
     MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
 )
+from matchbox.server.api import app
 from matchbox.server.api.dependencies import backend
-from matchbox.server.api.main import app
 
 
 def test_insert_judgement_ok(test_client: TestClient):
