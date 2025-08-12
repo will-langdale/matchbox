@@ -123,14 +123,15 @@ class InMemoryUploadTracker(UploadTracker):
 class RedisUploadTracker(UploadTracker):
     """Upload tracker backed by Redis."""
 
-    def __init__(self, redis_url: str, expiry_minutes: int):
+    def __init__(self, redis_url: str, expiry_minutes: int, key_space: str = "upload"):
         """Connect Redis and initialise tracker object."""
         self.expiry_minutes = expiry_minutes
         self.redis = redis.Redis.from_url(redis_url)
+        self.key_prefix = f"{key_space}:"
 
     def _to_redis(self, key: str, value: str):
         expiry_seconds = self.expiry_minutes * 60
-        self.redis.setex(f"upload:{key}", expiry_seconds, value)
+        self.redis.setex(f"{self.key_prefix}{key}", expiry_seconds, value)
 
     def _register_entry(self, entry: UploadEntry) -> str:  # noqa: D102
         self._to_redis(entry.status.id, entry.model_dump_json())
@@ -138,7 +139,7 @@ class RedisUploadTracker(UploadTracker):
         return entry.status.id
 
     def get(self, upload_id: str) -> UploadEntry | None:  # noqa: D102
-        data = self.redis.get(upload_id)
+        data = self.redis.get(f"{self.key_prefix}{upload_id}")
         if not data:
             return None
 

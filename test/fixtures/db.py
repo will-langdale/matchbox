@@ -717,11 +717,11 @@ def upload_tracker_redis(
 ) -> Generator[RedisUploadTracker, None, None]:
     """Redis-backed upload tracker."""
     r = redis.Redis.from_url(development_settings.redis_url)
-    for key in r.scan_iter("upload:*"):
-        r.delete(key)
     tracker = RedisUploadTracker(
         redis_url=development_settings.redis_url, expiry_minutes=100
     )
+    for key in r.scan_iter(f"{tracker.key_prefix}*"):
+        r.delete(key)
     yield tracker
 
 

@@ -37,3 +37,5 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Place executables in the environment at the front of the path
 ENV PATH="/code/.venv/bin:$PATH"
+
+COPY ./environments/$ENV_FILE /code/.env

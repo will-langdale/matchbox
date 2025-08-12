@@ -73,19 +73,20 @@ services:
     image: redis:8
     restart: always
     ports:
-      - "${MB__DEV__DATASTORE_PORT:-6379}:6379"
+      - "${MB__DEV__REDIS_PORT:-6379}:6379"
   celery-worker:
     build:
       context: .
       dockerfile: src/matchbox/server/celery/Dockerfile
       args:
         ENV_FILE: server.env
+        MB_VERSION: ${MB_VERSION-0.0.0dev0}
     command: celery -A matchbox.server.celery.tasks.app worker --loglevel=info
     depends_on:
       - server-api
       - redis
     environment:
-      - CELERY_BROKER_URL=redis://redis:${MB__DEV__DATASTORE_PORT:-6379}/0
+      - CELERY_BROKER_URL=redis://redis:${MB__DEV__REDIS_PORT:-6379}/0
 
 volumes:
   warehouse_data:
