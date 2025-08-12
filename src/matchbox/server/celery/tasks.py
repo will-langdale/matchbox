@@ -18,6 +18,7 @@ from matchbox.server.uploads import RedisUploadTracker, s3_to_recordbatch
 SettingsClass = get_backend_settings(MatchboxServerSettings().backend_type)
 SETTINGS: MatchboxServerSettings = SettingsClass()
 BACKEND = settings_to_backend(SETTINGS)
+TRACKER = RedisUploadTracker(SETTINGS.redis_uri, SETTINGS.uploads_expiry_minutes)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -25,7 +26,6 @@ else:
     S3Client = Any
 
 app = Celery("matchbox", broker=SETTINGS.redis_uri)
-tracker = RedisUploadTracker(SETTINGS.redis_uri, SETTINGS.uploads_expiry_minutes)
 
 
 @app.task(ignore_result=True)
@@ -35,9 +35,9 @@ def process_upload(
     key: str,
 ) -> None:
     """Worker task to process uploaded file."""
-    tracker.update(upload_id, "processing")
+    TRACKER.update(upload_id, "processing")
     client = BACKEND.settings.datastore.get_client()
-    upload = tracker.get(upload_id)
+    upload = TRACKER.get(upload_id)
 
     try:
         data = pa.Table.from_batches(
@@ -47,19 +47,19 @@ def process_upload(
             ]
         )
 
-        if upload.upload_type == BackendUploadType.INDEX:
+        if upload.status.entity == BackendUploadType.INDEX:
             BACKEND.index(source_config=upload.metadata, data_hashes=data)
-        elif upload.upload_type == BackendUploadType.RESULTS:
+        elif upload.status.entity == BackendUploadType.RESULTS:
             BACKEND.set_model_results(name=upload.metadata.name, results=data)
         else:
-            raise ValueError(f"Unknown upload type: {upload.upload_type}")
+            raise ValueError(f"Unknown upload type: {upload.status.entity}")
 
-        tracker.update(upload_id, "complete")
+        TRACKER.update(upload_id, "complete")
 
     except Exception as e:
         error_context = {
             "upload_id": upload_id,
-            "upload_type": getattr(upload, "upload_type", "unknown"),
+            "upload_type": getattr(upload.status, "entity", "unknown"),
             "metadata": getattr(upload, "metadata", "unknown"),
             "bucket": bucket,
             "key": key,
@@ -69,10 +69,10 @@ def process_upload(
         )
         details = (
             f"Error: {e}. Context: "
-            f"Upload type: {getattr(upload, 'upload_type', 'unknown')}, "
+            f"Upload type: {getattr(upload.status, 'entity', 'unknown')}, "
             f"SourceConfig: {getattr(upload, 'metadata', 'unknown')}"
         )
-        tracker.update(
+        TRACKER.update(
             upload_id,
             "failed",
             details=details,
