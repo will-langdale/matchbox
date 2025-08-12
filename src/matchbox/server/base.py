@@ -113,6 +113,8 @@ class MatchboxServerSettings(BaseSettings):
     batch_size: int = Field(default=250_000)
     backend_type: MatchboxBackends
     datastore: MatchboxDatastoreSettings
+    redis_uri: str
+    uploads_expiry_minutes: int
     authorisation: bool = False
     public_key: SecretStr | None = Field(default=None)
     log_level: LogLevelType = "INFO"
