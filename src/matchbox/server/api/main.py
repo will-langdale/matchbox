@@ -4,7 +4,6 @@ from importlib.metadata import version
 from typing import Annotated
 
 from fastapi import (
-    BackgroundTasks,
     Depends,
     FastAPI,
     HTTPException,
@@ -37,7 +36,6 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.common.sources import Match
-from matchbox.server.api.arrow import table_to_s3
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -46,7 +44,8 @@ from matchbox.server.api.dependencies import (
     lifespan,
 )
 from matchbox.server.api.routers import eval, models, resolutions, sources
-from matchbox.server.api.uploads import process_upload
+from matchbox.server.celery.tasks import process_upload
+from matchbox.server.uploads import table_to_s3
 
 app = FastAPI(
     title="matchbox API",
@@ -107,7 +106,6 @@ def login(
     dependencies=[Depends(authorisation_dependencies)],
 )
 def upload_file(
-    background_tasks: BackgroundTasks,
     backend: BackendDependency,
     upload_tracker: UploadTrackerDependency,
     upload_id: str,
@@ -125,8 +123,8 @@ def upload_file(
     * Uploaded data doesn't match the metadata schema
     """
     # Get and validate cache entry
-    source_upload = upload_tracker.get(upload_id=upload_id)
-    if not source_upload:
+    upload_entry = upload_tracker.get(upload_id=upload_id)
+    if not upload_entry:
         raise HTTPException(
             status_code=400,
             detail=UploadStatus(
@@ -140,10 +138,10 @@ def upload_file(
         )
 
     # Check if already processing
-    if source_upload.status.status != "awaiting_upload":
+    if upload_entry.status.status != "awaiting_upload":
         raise HTTPException(
             status_code=400,
-            detail=source_upload.status.model_dump(),
+            detail=upload_entry.status.model_dump(),
         )
 
     # Upload to S3
@@ -157,26 +155,22 @@ def upload_file(
             bucket=bucket,
             key=key,
             file=file,
-            expected_schema=source_upload.upload_type.schema,
+            expected_schema=upload_entry.upload_type.schema,
         )
     except MatchboxServerFileError as e:
         upload_tracker.update_status(upload_id, "failed", details=str(e))
         raise HTTPException(
             status_code=400,
-            detail=source_upload.status.model_dump(),
+            detail=upload_entry.status.model_dump(),
         ) from e
 
     upload_tracker.update_status(upload_id, "queued")
 
     # Start background processing
-    background_tasks.add_task(
-        process_upload,
-        backend=backend,
+    process_upload.delay(
         upload_id=upload_id,
         bucket=bucket,
         key=key,
-        tracker=upload_tracker,
-        heartbeat_seconds=60,
     )
 
     source_upload = upload_tracker.get(upload_id)
