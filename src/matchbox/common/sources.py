@@ -213,6 +213,8 @@ class RelationalDBLocation(Location):
         one_row: pl.DataFrame = list(self.execute(one_row_query))[0]
         column_names = one_row.columns
 
+        extract_transform = extract_transform.rstrip(" \t\n;")
+
         inferred_types = {}
         for c in column_names:
             # This expression uses cross-dialect SQL standards;
