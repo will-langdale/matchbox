@@ -132,7 +132,6 @@ def sql_to_df(
         batch_size=batch_size,
         schema_overrides=schema_overrides,
         execute_options=execute_options,
-        infer_schema_length=None,
     )
 
     if return_batches:
