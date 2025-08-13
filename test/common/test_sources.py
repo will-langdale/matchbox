@@ -136,7 +136,7 @@ def test_relational_db_infer_types(sqlite_warehouse: Engine):
 
     query = f"""
         select key as renamed_key, foo, bar from
-        (select key, foo, bar from {source_testkit.name})
+        (select key, foo, bar from {source_testkit.name});
     """
 
     inferred_types = location.infer_types(query)

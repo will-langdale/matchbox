@@ -209,11 +209,10 @@ class RelationalDBLocation(Location):
 
     @requires_client
     def infer_types(self, extract_transform: str) -> dict[str, DataTypes]:  # noqa: D102
+        extract_transform = extract_transform.rstrip(" \t\n;")
         one_row_query = f"select * from ({extract_transform}) as sub limit 1;"
         one_row: pl.DataFrame = list(self.execute(one_row_query))[0]
         column_names = one_row.columns
-
-        extract_transform = extract_transform.rstrip(" \t\n;")
 
         inferred_types = {}
         for c in column_names:
