@@ -175,7 +175,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     combined_df = pl.concat(results)
     assert len(combined_df) == 10
 
-    # Try overriding shema
+    # Try overriding schema
     overridden_results = list(
         location.execute(sql, batch_size, schema_overrides={"employees": pl.String})
     )

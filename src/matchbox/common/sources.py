@@ -215,20 +215,21 @@ class RelationalDBLocation(Location):
         column_names = one_row.columns
 
         inferred_types = {}
-        for c in column_names:
+        for col in column_names:
             # This expression uses cross-dialect SQL standards;
             # though this is hard to prove as the standard is behind a paywall
             sample_query = (
-                f"select {c} from ({extract_transform}) as sub where {c} is not null"
+                f"select {col} from ({extract_transform}) as sub "
+                f"where {col} is not null limit 1;"
             )
 
             sample_row: pl.DataFrame = list(self.execute(sample_query))[0]
 
             if len(sample_row):
-                sample_val = sample_row[c].to_list()[0]
-                inferred_types[c] = DataTypes.from_pytype(type(sample_val))
+                sample_val = sample_row[col].to_list()[0]
+                inferred_types[col] = DataTypes.from_pytype(type(sample_val))
             else:
-                inferred_types[c] = DataTypes.NULL
+                inferred_types[col] = DataTypes.NULL
 
         return inferred_types
 
