@@ -226,8 +226,8 @@ class RelationalDBLocation(Location):
             sample_row: pl.DataFrame = list(self.execute(sample_query))[0]
 
             if len(sample_row):
-                sample_val = sample_row[col].to_list()[0]
-                inferred_types[col] = DataTypes.from_pytype(type(sample_val))
+                sample_dtype = sample_row[col].dtype
+                inferred_types[col] = DataTypes.from_dtype(sample_dtype)
             else:
                 inferred_types[col] = DataTypes.NULL
 
