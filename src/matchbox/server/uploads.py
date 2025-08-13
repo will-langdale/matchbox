@@ -104,18 +104,18 @@ class InMemoryUploadTracker(UploadTracker):
 
     def __init__(self):
         """Initialise tracker data structure."""
-        self.tracker = {}
+        self._tracker = {}
 
     def _register_entry(self, entry: UploadEntry) -> None:
-        self.tracker[entry.status.id] = entry
+        self._tracker[entry.status.id] = entry
 
     def get(self, upload_id: str) -> UploadEntry | None:  # noqa: D102
-        return self.tracker.get(upload_id)
+        return self._tracker.get(upload_id)
 
     def update(  # noqa: D102
         self, upload_id: str, stage: str, details: str | None = None
     ) -> None:
-        self.tracker[upload_id] = self._get_updated_entry(
+        self._tracker[upload_id] = self._get_updated_entry(
             upload_id=upload_id, stage=stage, details=details
         )
 
