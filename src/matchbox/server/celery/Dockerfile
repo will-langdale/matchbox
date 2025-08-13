@@ -11,10 +11,8 @@ ARG MB_VERSION
 RUN if [ -z "$MB_VERSION" ]; then echo 'Environment variable MB_VERSION must be specified. Exiting.'; exit 1; fi
 ENV MB_VERSION=${MB_VERSION}
 
-
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
-
 # Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
 
@@ -38,4 +36,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/code/.venv/bin:$PATH"
 
-COPY ./environments/$ENV_FILE /code/.env
+CMD ["celery", "-A", "matchbox.server.celery.tasks.app", "worker", "--loglevel=info"]

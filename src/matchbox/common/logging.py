@@ -1,11 +1,11 @@
 """Logging utilities."""
 
+import importlib.metadata
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from functools import cached_property
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, Protocol
 
 from rich.console import Console
 from rich.progress import (
@@ -16,6 +16,35 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+
+
+class LoggingPlugin(Protocol):
+    """Protocol for logging plugins that can be registered with Matchbox."""
+
+    def get_trace_context(self) -> tuple[str | None, str | None]:
+        """Get trace context information for logging."""
+        ...
+
+    def get_metadata(self) -> dict[str, Any]:
+        """Get additional fields for logging."""
+        ...
+
+
+_PLUGINS = None
+
+
+def get_logging_plugins():
+    """Retrieve logging plugins registered in the 'matchbox.logging' entry point."""
+    global _PLUGINS
+    if _PLUGINS is None:
+        _PLUGINS = []
+        for ep in importlib.metadata.entry_points(group="matchbox.logging"):
+            try:
+                _PLUGINS.append(ep.load()())
+            except Exception:
+                pass
+    return _PLUGINS
+
 
 LogLevelType = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 """Type for all Python log levels."""
@@ -90,11 +119,10 @@ def build_progress_bar(console_: Console | None = None) -> Progress:
 class ASIMFormatter(logging.Formatter):
     """Format logging with ASIM standard fields."""
 
-    _tracer = None
-    """Datadog tracer instance."""
-
-    def _get_first_64_bits_of(self, trace_id):
-        return str((1 << 64) - 1 & trace_id)
+    def __init__(self, fmt=None, datefmt=None, style="%", validate=True):
+        """Initialize the ASIMFormatter including any logging plugins."""
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
+        self.plugins = get_logging_plugins()
 
     @cached_property
     def event_severity(self) -> dict[str, str]:
@@ -107,82 +135,26 @@ class ASIMFormatter(logging.Formatter):
             "CRITICAL": "High",
         }
 
-    @cached_property
-    def container_id(self) -> str:
-        """AWS ECS container ID.
-
-        This environment variable is injected by AWS to all ECS tasks.
-        """
-        uri = os.environ.get("ECS_CONTAINER_METADATA_URI", "")
-        return uri.split("/")[-1] if uri else ""
-
-    @cached_property
-    def env(self) -> str:
-        """Datadog's environment value.
-
-        This environment variable is set by the ECS task definition.
-        """
-        return os.getenv("DD_ENV", default="")
-
-    @cached_property
-    def service(self) -> str:
-        """Datadog's service value.
-
-        This environment variable is set by the ECS task definition.
-        """
-        return os.getenv("DD_SERVICE", default="")
-
-    @cached_property
-    def version(self) -> str:
-        """Datadog's version value.
-
-        This environment variable is set in the Dockerfile for the task.
-        """
-        return os.getenv("DD_VERSION", default="")
-
-    def get_trace_id_span_id(self) -> tuple[str | None, str | None]:
-        """Retrieve's Datadog's trace ID and span ID variables.
-
-        These two variables are discovered by the Datadog Python tracing library.
-        """
-        # ddtrace is a server-side dependency
-        # imported here as logging.py is in common, and is imported
-        # client side as well
-        if self._tracer is None:
-            from ddtrace.trace import tracer
-
-            self._tracer = tracer
-
-        span = self._tracer.current_span()
-        trace_id, span_id = (
-            (self._get_first_64_bits_of(span.trace_id), span.span_id)
-            if span
-            else (None, None)
-        )
-        return trace_id, span_id
-
-    def format(self, record) -> str:
-        """Convert logs to JSON."""
+    def format(self, record):
+        """Convert logs to JSON including basic ASIM fields."""
         log_time = datetime.fromtimestamp(record.created, timezone.utc).isoformat()
-        trace_id, span_id = self.get_trace_id_span_id()
-        return json.dumps(
-            {
-                "EventCount": 1,
-                "EventStartTime": log_time,
-                "EventEndTime": log_time,
-                "EventType": record.name,
-                "EventSeverity": self.event_severity[record.levelname],
-                "EventOriginalSeverity": record.levelname,
-                "dd.application": "matchbox",
-                "dd.container_id": self.container_id,
-                "dd.env": self.env,
-                "dd.service": self.service,
-                "dd.source": "python",
-                "dd.sourcecategory": "sourcecode",
-                "dd.span_id": span_id,
-                "dd.team": "matchbox",
-                "dd.trace_id": trace_id,
-                "dd.version": self.version,
-                "message": record.getMessage(),
-            },
-        )
+        log_entry = {
+            "EventCount": 1,
+            "EventStartTime": log_time,
+            "EventEndTime": log_time,
+            "EventType": record.name,
+            "EventSeverity": self.event_severity[record.levelname],
+            "EventOriginalSeverity": record.levelname,
+            "message": record.getMessage(),
+        }
+
+        for plugin in self.plugins:
+            try:
+                trace_id, span_id = plugin.get_trace_context()
+                if trace_id:
+                    log_entry.update({"trace_id": trace_id, "span_id": span_id})
+                log_entry.update(plugin.get_metadata())
+            except Exception:
+                pass
+
+        return json.dumps(log_entry)

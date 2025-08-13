@@ -11,13 +11,8 @@ ARG MB_VERSION
 RUN if [ -z "$MB_VERSION" ]; then echo 'Environment variable MB_VERSION must be specified. Exiting.'; exit 1; fi
 ENV MB_VERSION=${MB_VERSION}
 
-# Datadog
-ENV DD_VERSION=${MB_VERSION}
-LABEL com.datadoghq.tags.version=${MB_VERSION}
-
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
-
 # Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
 
@@ -41,20 +36,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/code/.venv/bin:$PATH"
 
-ENTRYPOINT ["ddtrace-run"]
-
-
 # Local development stage: with locally-specified environment variables and hot reloading
-
 FROM base AS dev
 
 COPY ./environments/$ENV_FILE /code/.env
 CMD ["fastapi", "dev", "--host", "0.0.0.0", "src/matchbox/server/api"]
 
-
 # Production stage: no environment variables (they come from the infrastructure) and no hot reloading
-
 FROM base AS prod
 
-# Uses `--host 0.0.0.0` to allow access from outside the container
 CMD ["fastapi", "run", "--host", "0.0.0.0", "src/matchbox/server/api"]
