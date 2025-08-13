@@ -40,7 +40,7 @@ def sql_to_df(
     return_batches: Literal[False] = False,
     batch_size: int | None = None,
     rename: dict[str, str] | Callable | None = None,
-    schema_overrides: dict[str, Any] | None = None,
+    schema_overrides: dict[str, pl.DataType] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> QueryReturnType: ...
 
@@ -54,7 +54,7 @@ def sql_to_df(
     return_batches: Literal[True],
     batch_size: int | None = None,
     rename: dict[str, str] | Callable | None = None,
-    schema_overrides: dict[str, Any] | None = None,
+    schema_overrides: dict[str, pl.DataType] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> Iterator[QueryReturnType]: ...
 
@@ -67,28 +67,28 @@ def sql_to_df(
     return_batches: bool = False,
     batch_size: int | None = None,
     rename: dict[str, str] | Callable | None = None,
-    schema_overrides: dict[str, Any] | None = None,
+    schema_overrides: dict[str, pl.DataType] | None = None,
     execute_options: dict[str, Any] | None = None,
 ) -> QueryReturnType | Iterator[QueryReturnType]:
     """Executes the given SQLAlchemy statement or SQL string using Polars.
 
     Args:
-        stmt (str): A SQL string to be executed.
-        connection (Engine | ADBCConnection): A SQLAlchemy Engine object or
+        stmt: A SQL string to be executed.
+        connection: A SQLAlchemy Engine object or
             ADBC connection.
-        return_type (str): The type of the return value. One of "arrow", "pandas",
+        return_type: The type of the return value. One of "arrow", "pandas",
             or "polars".
-        return_batches (bool): If True, return an iterator that yields each batch
+        return_batches: If True, return an iterator that yields each batch
             separately. If False, return a single DataFrame with all results.
             Default is False.
-        batch_size (int | None): Indicate the size of each batch when processing
+        batch_size: Indicate the size of each batch when processing
             data in batches. Default is None.
-        rename (dict[str, str] | Callable | None): A dictionary mapping old column
+        rename: A dictionary mapping old column
             names to new column names, or a callable that takes a DataFrame and
             returns a DataFrame with renamed columns. Default is None.
-        schema_overrides (dict[str, Any] | None): A dictionary mapping column names
+        schema_overrides: A dictionary mapping column names
             to dtypes. Default is None.
-        execute_options (dict[str, Any] | None): These options will be passed through
+        execute_options: These options will be passed through
             into the underlying query execution method as kwargs. Default is None.
 
     Returns:
@@ -132,7 +132,6 @@ def sql_to_df(
         batch_size=batch_size,
         schema_overrides=schema_overrides,
         execute_options=execute_options,
-        infer_schema_length=None,
     )
 
     if return_batches:
