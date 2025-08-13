@@ -124,10 +124,11 @@ def test_relational_db_infer_types(sqlite_warehouse: Engine):
     """Test that types are inferred correctly from the extract transform SQL."""
     source_testkit = source_from_tuple(
         data_tuple=(
+            {"foo": "10", "bar": None},
             {"foo": "foo_val", "bar": None},
             {"foo": None, "bar": 10},
         ),
-        data_keys=["a", "b"],
+        data_keys=["a", "b", "c"],
         name="source",
         engine=sqlite_warehouse,
     )
