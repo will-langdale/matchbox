@@ -2,9 +2,13 @@ name: Scan for Secrets with Trufflehog
 
 on:
   push:
+    branches-ignore:
+      - main
 
 jobs:
   scan:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
