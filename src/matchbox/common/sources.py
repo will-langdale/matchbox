@@ -123,7 +123,7 @@ class Location(ABC, BaseModel):
 
     @abstractmethod
     def validate_extract_transform(self, extract_transform: str) -> bool:
-        """Validate SQL ET logic against this location's query language.
+        """Validate ET logic against this location's query language.
 
         Raises:
             MatchboxSourceExtractTransformError: If the ET logic is invalid.
@@ -131,8 +131,8 @@ class Location(ABC, BaseModel):
         ...
 
     @abstractmethod
-    def head(self, extract_transform: str) -> list:
-        """Extract lightweight data sample using ET logic."""
+    def infer_types(self, extract_transform: str) -> dict[str, DataTypes]:
+        """Extract all data types from the ET logic."""
         ...
 
     @abstractmethod
@@ -207,10 +207,29 @@ class RelationalDBLocation(Location):
         # using least privilege credentials
         return validate_sql_for_data_extraction(extract_transform)
 
-    def head(self, extract_transform: str) -> pl.DataFrame:  # noqa: D102
-        query = extract_transform.rstrip(" \t\n;") + " limit 100;"
-        batches = list(self.execute(query))
-        return batches[0]
+    @requires_client
+    def infer_types(self, extract_transform: str) -> dict[str, DataTypes]:  # noqa: D102
+        one_row_query = f"select * from ({extract_transform}) as sub limit 1;"
+        one_row: pl.DataFrame = list(self.execute(one_row_query))[0]
+        column_names = one_row.columns
+
+        inferred_types = {}
+        for c in column_names:
+            # This expression uses cross-dialect SQL standards;
+            # though this is hard to prove as the standard is behind a paywall
+            sample_query = (
+                f"select {c} from ({extract_transform}) as sub where {c} is not null"
+            )
+
+            sample_row: pl.DataFrame = list(self.execute(sample_query))[0]
+
+            if len(sample_row):
+                sample_val = sample_row[c].to_list()[0]
+                inferred_types[c] = DataTypes.from_pytype(type(sample_val))
+            else:
+                inferred_types[c] = DataTypes.NULL
+
+        return inferred_types
 
     @requires_client
     def execute(  # noqa: D102
@@ -220,6 +239,7 @@ class RelationalDBLocation(Location):
         rename: dict[str, str] | Callable | None = None,
         return_type: ReturnTypeStr = "polars",
         keys: tuple[str, list[str]] | None = None,
+        schema_overrides: dict[str, pl.DataType] | None = None,
     ) -> Generator[QueryReturnType, None, None]:
         batch_size = batch_size or 10_000
         with self._get_connection() as conn:
@@ -239,6 +259,7 @@ class RelationalDBLocation(Location):
                     )
             yield from sql_to_df(
                 stmt=extract_transform,
+                schema_overrides=schema_overrides,
                 connection=conn,
                 rename=rename,
                 batch_size=batch_size,
@@ -389,11 +410,10 @@ class SourceConfig(BaseModel):
     ) -> "SourceConfig":
         """Create a new SourceConfig for an indexing operation."""
         # Assumes client has been set on location
-        sample: pl.DataFrame = location.head(extract_transform)
-
+        inferred_types = location.infer_types(extract_transform)
         remote_fields = {
-            col.name: SourceField(name=col.name, type=DataTypes.from_dtype(col.dtype))
-            for col in sample.iter_columns()
+            field_name: SourceField(name=field_name, type=dtype)
+            for field_name, dtype in inferred_types.items()
         }
 
         if remote_fields[key_field].type != DataTypes.STRING:
@@ -438,9 +458,13 @@ class SourceConfig(BaseModel):
             def _rename(c: str) -> str:
                 return self.name + "_" + c
 
+        all_fields = self.index_fields + tuple([self.key_field])
+        schema_overrides = {field.name: field.type.to_dtype() for field in all_fields}
+
         if keys:
             yield from self.location.execute(
                 extract_transform=self.extract_transform,
+                schema_overrides=schema_overrides,
                 rename=_rename,
                 batch_size=batch_size,
                 return_type=return_type,
@@ -449,6 +473,7 @@ class SourceConfig(BaseModel):
         else:
             yield from self.location.execute(
                 extract_transform=self.extract_transform,
+                schema_overrides=schema_overrides,
                 rename=_rename,
                 batch_size=batch_size,
                 return_type=return_type,
