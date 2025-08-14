@@ -26,6 +26,13 @@ else:
     S3Client = Any
 
 app = Celery("matchbox", broker=SETTINGS.redis_uri)
+app.conf.update(
+    # Only acknowledge task (remove it from queue) after task completion
+    task_acks_late=True,
+    # Reduce pre-fetching (workers reserve tasks while they're still busy)
+    # as it's not ideal for long-running tasks
+    prefetch_multiplier=1,
+)
 
 
 @app.task(ignore_result=True)
