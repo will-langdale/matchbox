@@ -16,7 +16,11 @@ from matchbox.common.exceptions import (
     MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
-from matchbox.common.factories.sources import source_factory
+from matchbox.common.factories.sources import (
+    FeatureConfig,
+    source_factory,
+    source_from_tuple,
+)
 from matchbox.common.sources import (
     RelationalDBLocation,
     SourceConfig,
@@ -116,9 +120,44 @@ def test_relational_db_extract_transform(sql: str, is_valid: bool):
             location.validate_extract_transform(sql)
 
 
+def test_relational_db_infer_types(sqlite_warehouse: Engine):
+    """Test that types are inferred correctly from the extract transform SQL."""
+    source_testkit = source_from_tuple(
+        data_tuple=(
+            {"foo": "10", "bar": None},
+            {"foo": "foo_val", "bar": None},
+            {"foo": None, "bar": 10},
+        ),
+        data_keys=["a", "b", "c"],
+        name="source",
+        engine=sqlite_warehouse,
+    )
+    source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
+    location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
+
+    query = f"""
+        select key as renamed_key, foo, bar from
+        (select key, foo, bar from {source_testkit.name});
+    """
+
+    inferred_types = location.infer_types(query)
+
+    assert len(inferred_types) == 3
+    assert inferred_types["renamed_key"] == DataTypes.STRING
+    assert inferred_types["foo"] == DataTypes.STRING
+    assert inferred_types["bar"] == DataTypes.INT64
+
+
 def test_relational_db_execute(sqlite_warehouse: Engine):
     """Test executing a query and returning results using a real SQLite database."""
-    source_testkit = source_factory(engine=sqlite_warehouse)
+    features = [
+        FeatureConfig(name="company", base_generator="company"),
+        FeatureConfig(name="employees", base_generator="random_int"),
+    ]
+
+    source_testkit = source_factory(
+        features=features, n_true_entities=10, engine=sqlite_warehouse
+    )
     source_testkit.write_to_location(client=sqlite_warehouse, set_client=True)
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
@@ -127,6 +166,8 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
 
     # Execute the query
     results = list(location.execute(sql, batch_size))
+    # Unlike later on, employee data type not overridden
+    assert results[0]["employees"].dtype == pl.Int64
 
     # Check that we got expected results
     assert len(results) > 0
@@ -134,6 +175,12 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     # Combine all batches to check total row count
     combined_df = pl.concat(results)
     assert len(combined_df) == 10
+
+    # Try overriding schema
+    overridden_results = list(
+        location.execute(sql, batch_size, schema_overrides={"employees": pl.String})
+    )
+    assert overridden_results[0]["employees"].dtype == pl.String
 
     # Try query with filter
     keys_to_filter = source_testkit.query["key"][:2].to_pylist()
