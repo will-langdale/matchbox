@@ -86,7 +86,19 @@ services:
       - server-api
       - redis
     environment:
-      - CELERY_BROKER_URL=redis://redis:${MB__DEV__REDIS_PORT:-6379}/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+  
+  flower:
+    image: mher/flower
+    container_name: flower
+    ports:
+      - "${MB__DEV__FLOWER_PORT:-5555}:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0 
+    command: celery flower --broker=${CELERY_BROKER_URL}
+    depends_on:
+      - redis
+
 
 volumes:
   warehouse_data:
