@@ -30,9 +30,11 @@ app = Celery("matchbox", broker=SETTINGS.redis_uri)
 
 @app.task(ignore_result=True)
 def process_upload(
+    upload_type: str,
+    resolution_name: str,
     upload_id: str,
     bucket: str,
-    key: str,
+    filename: str,
 ) -> None:
     """Worker task to process uploaded file."""
     TRACKER.update(upload_id, "processing")
@@ -43,7 +45,9 @@ def process_upload(
         data = pa.Table.from_batches(
             [
                 batch
-                for batch in s3_to_recordbatch(client=client, bucket=bucket, key=key)
+                for batch in s3_to_recordbatch(
+                    client=client, bucket=bucket, key=filename
+                )
             ]
         )
 
@@ -55,14 +59,15 @@ def process_upload(
             raise ValueError(f"Unknown upload type: {upload.status.entity}")
 
         TRACKER.update(upload_id, "complete")
+        logger.info("Completed ")
 
     except Exception as e:
         error_context = {
             "upload_id": upload_id,
-            "upload_type": getattr(upload.status, "entity", "unknown"),
-            "metadata": getattr(upload, "metadata", "unknown"),
+            "upload_type": upload_type,
+            "resolution_name": resolution_name,
             "bucket": bucket,
-            "key": key,
+            "key": filename,
         }
         logger.error(
             f"Upload processing failed with context: {error_context}", exc_info=True
@@ -80,6 +85,8 @@ def process_upload(
         raise MatchboxServerFileError(message=details) from e
     finally:
         try:
-            client.delete_object(Bucket=bucket, Key=key)
+            client.delete_object(Bucket=bucket, Key=filename)
         except Exception as delete_error:
-            logger.error(f"Failed to delete S3 file {bucket}/{key}: {delete_error}")
+            logger.error(
+                f"Failed to delete S3 file {bucket}/{filename}: {delete_error}"
+            )

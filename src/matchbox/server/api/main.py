@@ -137,7 +137,7 @@ def upload_file(
         )
 
     # Check if already processing
-    if upload_entry.status.status != "awaiting_upload":
+    if upload_entry.status.stage != "awaiting_upload":
         raise HTTPException(
             status_code=400,
             detail=upload_entry.status.model_dump(),
@@ -154,7 +154,7 @@ def upload_file(
             bucket=bucket,
             key=key,
             file=file,
-            expected_schema=upload_entry.upload_type.schema,
+            expected_schema=upload_entry.status.entity.schema,
         )
     except MatchboxServerFileError as e:
         upload_tracker.update(upload_id, "failed", details=str(e))
@@ -167,15 +167,17 @@ def upload_file(
 
     # Start background processing
     process_upload.delay(
+        upload_type=upload_entry.status.entity,
+        resolution_name=upload_entry.metadata.name,
         upload_id=upload_id,
         bucket=bucket,
-        key=key,
+        filename=key,
     )
 
     source_upload = upload_tracker.get(upload_id)
 
     # Check for error in async task
-    if source_upload.status.status == "failed":
+    if source_upload.status.stage == "failed":
         raise HTTPException(
             status_code=400,
             detail=source_upload.status.model_dump(),
