@@ -9,15 +9,10 @@ import boto3
 import pyarrow as pa
 import pytest
 import redis
-import respx
-from httpx import Client
 from moto import mock_aws
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
-from matchbox.client._handler import create_client
-from matchbox.client._settings import ClientSettings, settings
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
@@ -723,25 +718,3 @@ def upload_tracker_redis(
     for key in r.scan_iter(f"{tracker.key_prefix}*"):
         r.delete(key)
     yield tracker
-
-
-# API, mocked and Docker
-
-
-@pytest.fixture(scope="function")
-def matchbox_api() -> Generator[MockRouter, None, None]:
-    """Client for the mocked Matchbox API."""
-    with respx.mock(base_url=settings.api_root, assert_all_called=True) as respx_mock:
-        yield respx_mock
-
-
-@pytest.fixture(scope="session")
-def matchbox_client_settings() -> ClientSettings:
-    """Client settings for the Matchbox API running in Docker."""
-    return settings
-
-
-@pytest.fixture(scope="session")
-def matchbox_client(matchbox_client_settings: ClientSettings) -> Client:
-    """Client for the Matchbox API running in Docker."""
-    return create_client(settings=matchbox_client_settings)
