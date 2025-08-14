@@ -77,11 +77,10 @@ services:
   celery-worker:
     build:
       context: .
-      dockerfile: src/matchbox/server/celery/Dockerfile
+      dockerfile: src/matchbox/server/tasks/Dockerfile
       args:
         ENV_FILE: development_docker.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
-    command: celery -A matchbox.server.celery.tasks.app worker --loglevel=info
     depends_on:
       - server-api
       - redis

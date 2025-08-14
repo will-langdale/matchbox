@@ -17,6 +17,7 @@ from matchbox.common.dtos import ModelConfig
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.sources import SourceConfig
 from matchbox.common.uploads import BackendUploadType, UploadStatus
+from matchbox.server.base import MatchboxServerSettings
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -155,6 +156,19 @@ class RedisUploadTracker(UploadTracker):
         )
 
         self._to_redis(upload_id, entry.model_dump_json())
+
+
+_IN_MEMORY_TRACKER = InMemoryUploadTracker()
+
+
+def upload_tracker_from_settings(settings: MatchboxServerSettings) -> UploadTracker:
+    """Initialise an upload tracker from server settings."""
+    if settings.task_runner == "api":
+        return _IN_MEMORY_TRACKER
+    # Celery
+    return RedisUploadTracker(
+        redis_url=settings.redis_uri, expiry_minutes=settings.uploads_expiry_minutes
+    )
 
 
 def table_to_s3(

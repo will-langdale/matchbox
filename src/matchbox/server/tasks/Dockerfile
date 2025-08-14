@@ -37,4 +37,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ENV PATH="/code/.venv/bin:$PATH"
 COPY ./environments/$ENV_FILE /code/.env
 
-CMD ["celery", "-A", "matchbox.server.celery.tasks.app", "worker", "--loglevel=info"]
+CMD ["celery", "-A", "matchbox.server.tasks.uploads.celery", "worker", "--loglevel=info"]

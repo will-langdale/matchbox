@@ -9,7 +9,7 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
 from matchbox.common.factories.sources import source_factory
-from matchbox.server.celery.tasks import process_upload
+from matchbox.server.tasks.uploads import process_upload
 from matchbox.server.uploads import InMemoryUploadTracker
 
 if TYPE_CHECKING:
@@ -26,8 +26,8 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.index = Mock(side_effect=ValueError("Simulated processing failure"))
     with (
-        patch("matchbox.server.celery.tasks.TRACKER", new=tracker),
-        patch("matchbox.server.celery.tasks.BACKEND", new=mock_backend),
+        patch("matchbox.server.tasks.uploads.TRACKER", new=tracker),
+        patch("matchbox.server.tasks.uploads.BACKEND", new=mock_backend),
     ):
         bucket = "test-bucket"
         test_key = "test-upload-id.parquet"
@@ -53,7 +53,9 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
             process_upload(
                 upload_id=upload_id,
                 bucket=bucket,
-                key=test_key,
+                filename=test_key,
+                upload_type="type",
+                resolution_name="name",
             )
 
         assert "Simulated processing failure" in str(excinfo.value)

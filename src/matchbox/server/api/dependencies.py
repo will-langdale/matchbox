@@ -27,7 +27,7 @@ from matchbox.server.base import (
     get_backend_settings,
     settings_to_backend,
 )
-from matchbox.server.uploads import RedisUploadTracker
+from matchbox.server.uploads import UploadTracker, upload_tracker_from_settings
 
 
 class ZipResponse(Response):
@@ -44,7 +44,7 @@ class ParquetResponse(Response):
 
 SETTINGS: MatchboxServerSettings | None = None
 BACKEND: MatchboxDBAdapter | None = None
-UPLOAD_TRACKER: RedisUploadTracker | None = None
+UPLOAD_TRACKER: UploadTracker | None = None
 JWT_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
 
 
@@ -62,7 +62,7 @@ def settings() -> Generator[MatchboxServerSettings, None, None]:
     yield SETTINGS
 
 
-def upload_tracker() -> Generator[RedisUploadTracker, None, None]:
+def upload_tracker() -> Generator[UploadTracker, None, None]:
     """Get the upload tracker instance."""
     if UPLOAD_TRACKER is None:
         raise ValueError("Upload tracker not initialized.")
@@ -80,9 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     SettingsClass = get_backend_settings(MatchboxServerSettings().backend_type)
     SETTINGS = SettingsClass()
     BACKEND = settings_to_backend(SETTINGS)
-    UPLOAD_TRACKER = RedisUploadTracker(
-        SETTINGS.redis_uri, SETTINGS.uploads_expiry_minutes
-    )
+    UPLOAD_TRACKER = upload_tracker_from_settings(SETTINGS)
 
     # Define common formatter
     formatter = ASIMFormatter()
@@ -122,7 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 BackendDependency = Annotated[MatchboxDBAdapter, Depends(backend)]
 SettingsDependency = Annotated[MatchboxServerSettings, Depends(settings)]
-UploadTrackerDependency = Annotated[RedisUploadTracker, Depends(upload_tracker)]
+UploadTrackerDependency = Annotated[UploadTracker, Depends(upload_tracker)]
 
 
 def b64_decode(b64_bytes):

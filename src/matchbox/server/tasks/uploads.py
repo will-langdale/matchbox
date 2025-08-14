@@ -13,20 +13,24 @@ from matchbox.server.base import (
     get_backend_settings,
     settings_to_backend,
 )
-from matchbox.server.uploads import RedisUploadTracker, s3_to_recordbatch
+from matchbox.server.uploads import (
+    s3_to_recordbatch,
+    upload_tracker_from_settings,
+)
 
 SettingsClass = get_backend_settings(MatchboxServerSettings().backend_type)
 SETTINGS: MatchboxServerSettings = SettingsClass()
 BACKEND = settings_to_backend(SETTINGS)
-TRACKER = RedisUploadTracker(SETTINGS.redis_uri, SETTINGS.uploads_expiry_minutes)
+TRACKER = upload_tracker_from_settings(SETTINGS)
+
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 else:
     S3Client = Any
 
-app = Celery("matchbox", broker=SETTINGS.redis_uri)
-app.conf.update(
+celery = Celery("matchbox", broker=SETTINGS.redis_uri)
+celery.conf.update(
     # Only acknowledge task (remove it from queue) after task completion
     task_acks_late=True,
     # Reduce pre-fetching (workers reserve tasks while they're still busy)
@@ -35,7 +39,7 @@ app.conf.update(
 )
 
 
-@app.task(ignore_result=True)
+@celery.task(ignore_result=True)
 def process_upload(
     upload_type: str,
     resolution_name: str,

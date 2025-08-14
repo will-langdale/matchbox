@@ -5,6 +5,7 @@ from importlib.metadata import version
 from typing import Annotated
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     HTTPException,
@@ -40,12 +41,13 @@ from matchbox.common.uploads import BackendUploadType, UploadStatus
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
+    SettingsDependency,
     UploadTrackerDependency,
     authorisation_dependencies,
     lifespan,
 )
 from matchbox.server.api.routers import eval, models, resolutions, sources
-from matchbox.server.celery.tasks import process_upload
+from matchbox.server.tasks.uploads import process_upload
 from matchbox.server.uploads import table_to_s3
 
 app = FastAPI(
@@ -111,6 +113,8 @@ def login(
 def upload_file(
     backend: BackendDependency,
     upload_tracker: UploadTrackerDependency,
+    settings: SettingsDependency,
+    background_tasks: BackgroundTasks,
     upload_id: str,
     file: UploadFile,
 ) -> UploadStatus:
@@ -172,13 +176,24 @@ def upload_file(
     upload_tracker.update(upload_id, "queued")
 
     # Start background processing
-    process_upload.delay(
-        upload_type=upload_entry.status.entity,
-        resolution_name=upload_entry.metadata.name,
-        upload_id=upload_id,
-        bucket=bucket,
-        filename=key,
-    )
+    if settings.task_runner == "api":
+        background_tasks.add_task(
+            process_upload,
+            upload_type=upload_entry.status.entity,
+            resolution_name=upload_entry.metadata.name,
+            upload_id=upload_id,
+            bucket=bucket,
+            filename=key,
+        )
+    else:
+        # Celery
+        process_upload.delay(
+            upload_type=upload_entry.status.entity,
+            resolution_name=upload_entry.metadata.name,
+            upload_id=upload_id,
+            bucket=bucket,
+            filename=key,
+        )
 
     source_upload = upload_tracker.get(upload_id)
 
