@@ -99,7 +99,7 @@ def test_add_source(test_client: TestClient):
     # Validate response
     assert UploadStatus.model_validate(response.json())
     assert response.status_code == 202, response.json()
-    assert response.json()["status"] == "awaiting_upload"
+    assert response.json()["stage"] == "awaiting_upload"
     assert response.json().get("id") is not None
     mock_backend.index.assert_not_called()
 
@@ -130,7 +130,7 @@ def test_complete_source_upload_process(s3: S3Client, test_client: TestClient):
     )
     assert response.status_code == 202
     upload_id = response.json()["id"]
-    assert response.json()["status"] == "awaiting_upload"
+    assert response.json()["stage"] == "awaiting_upload"
 
     # Step 2: Upload file with real background tasks
     response = test_client.post(
@@ -144,7 +144,7 @@ def test_complete_source_upload_process(s3: S3Client, test_client: TestClient):
         },
     )
     assert response.status_code == 202
-    assert response.json()["status"] == "queued"
+    assert response.json()["stage"] == "queued"
 
     # Step 3: Poll status until complete or timeout
     max_attempts = 10
@@ -153,22 +153,22 @@ def test_complete_source_upload_process(s3: S3Client, test_client: TestClient):
         response = test_client.get(f"/upload/{upload_id}/status")
         assert response.status_code == 200
 
-        status = response.json()["status"]
-        if status == "complete":
+        stage = response.json()["stage"]
+        if stage == "complete":
             break
-        elif status == "failed":
+        elif stage == "failed":
             pytest.fail(f"Upload failed: {response.json().get('details')}")
-        elif status in ["processing", "queued"]:
+        elif stage in ["processing", "queued"]:
             sleep(0.1)  # Small delay between polls
         else:
-            pytest.fail(f"Unexpected status: {status}")
+            pytest.fail(f"Unexpected stage: {stage}")
 
         current_attempt += 1
 
     assert current_attempt < max_attempts, (
         "Timed out waiting for processing to complete"
     )
-    assert status == "complete"
+    assert stage == "complete"
     assert response.status_code == 200
 
     # Verify backend.index was called with correct arguments

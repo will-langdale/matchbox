@@ -29,7 +29,13 @@ class UploadStatus(BaseModel):
 
     id: str
     stage: Literal[
-        "ready", "awaiting_upload", "queued", "processing", "complete", "failed"
+        "ready",
+        "awaiting_upload",
+        "queued",
+        "processing",
+        "complete",
+        "failed",
+        "unknown",
     ]
     update_timestamp: datetime
     details: str | None = None

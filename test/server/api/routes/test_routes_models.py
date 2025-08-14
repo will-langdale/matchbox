@@ -142,13 +142,16 @@ def test_model_upload(
 
     # Validate response
     assert response.status_code == 202
-    assert response.json()["status"] == "queued"
+    assert response.json()["stage"] == "queued"
     mock_add_task.assert_called_once()
 
 
 @pytest.mark.parametrize("model_type", ["deduper", "linker"])
 def test_complete_model_upload_process(
-    s3: S3Client, model_type: str, test_client: TestClient
+    s3: S3Client,
+    model_type: str,
+    test_client: TestClient,
+    upload_tracker_in_memory: UploadTracker,
 ):
     """Test the complete upload process for models from creation through processing."""
     # Setup the backend
@@ -159,6 +162,7 @@ def test_complete_model_upload_process(
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
+    app.dependency_overrides[upload_tracker] = lambda: upload_tracker_in_memory
 
     # Create test bucket
     s3.create_bucket(
@@ -183,7 +187,7 @@ def test_complete_model_upload_process(
     response = test_client.post(f"/models/{testkit.model.model_config.name}/results")
     assert response.status_code == 202
     upload_id = response.json()["id"]
-    assert response.json()["status"] == "awaiting_upload"
+    assert response.json()["stage"] == "awaiting_upload"
 
     # Step 3: Upload results file with real background tasks
     response = test_client.post(
@@ -197,33 +201,33 @@ def test_complete_model_upload_process(
         },
     )
     assert response.status_code == 202
-    assert response.json()["status"] == "queued"
+    assert response.json()["stage"] == "queued"
 
     # Step 4: Poll status until complete or timeout
     max_attempts = 10
     current_attempt = 0
-    status = None
+    stage = None
 
     while current_attempt < max_attempts:
         response = test_client.get(f"/upload/{upload_id}/status")
         assert response.status_code == 200
 
-        status = response.json()["status"]
-        if status == "complete":
+        stage = response.json()["stage"]
+        if stage == "complete":
             break
-        elif status == "failed":
+        elif stage == "failed":
             pytest.fail(f"Upload failed: {response.json().get('details')}")
-        elif status in ["processing", "queued"]:
+        elif stage in ["processing", "queued"]:
             sleep(0.1)  # Small delay between polls
         else:
-            pytest.fail(f"Unexpected status: {status}")
+            pytest.fail(f"Unexpected stage: {stage}")
 
         current_attempt += 1
 
     assert current_attempt < max_attempts, (
         "Timed out waiting for processing to complete"
     )
-    assert status == "complete"
+    assert stage == "complete"
     assert response.status_code == 200
 
     # Step 5: Verify results were stored correctly
@@ -281,7 +285,7 @@ def test_set_results(test_client: TestClient):
     response = test_client.post(f"/models/{testkit.model.model_config.name}/results")
 
     assert response.status_code == 202
-    assert response.json()["status"] == "awaiting_upload"
+    assert response.json()["stage"] == "awaiting_upload"
 
 
 def test_set_results_model_not_found(test_client: TestClient):

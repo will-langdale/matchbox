@@ -1,5 +1,6 @@
 """API routes for the Matchbox server."""
 
+from datetime import datetime
 from importlib.metadata import version
 from typing import Annotated
 
@@ -13,6 +14,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -60,7 +62,9 @@ app.include_router(eval.router)
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request, exc):
     """Overwrite the default JSON schema for an `HTTPException`."""
-    return JSONResponse(content=exc.detail, status_code=exc.status_code)
+    return JSONResponse(
+        content=jsonable_encoder(exc.detail), status_code=exc.status_code
+    )
 
 
 @app.middleware("http")
@@ -128,7 +132,8 @@ def upload_file(
             status_code=400,
             detail=UploadStatus(
                 id=upload_id,
-                status="failed",
+                update_timestamp=datetime.now(),
+                stage="unknown",
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
                     "of inactivity, including failed processes."
@@ -136,7 +141,7 @@ def upload_file(
             ).model_dump(),
         )
 
-    # Check if already processing
+    # Ensure tracker is expecting file
     if upload_entry.status.stage != "awaiting_upload":
         raise HTTPException(
             status_code=400,
@@ -158,9 +163,10 @@ def upload_file(
         )
     except MatchboxServerFileError as e:
         upload_tracker.update(upload_id, "failed", details=str(e))
+        updated_entry = upload_tracker.get(upload_id)
         raise HTTPException(
             status_code=400,
-            detail=upload_entry.status.model_dump(),
+            detail=updated_entry.status.model_dump(),
         ) from e
 
     upload_tracker.update(upload_id, "queued")
@@ -210,7 +216,8 @@ def get_upload_status(
             status_code=400,
             detail=UploadStatus(
                 id=upload_id,
-                status="failed",
+                stage="unknown",
+                update_timestamp=datetime.now(),
                 details=(
                     "Upload ID not found or expired. Entries expire after 30 minutes "
                     "of inactivity, including failed processes."

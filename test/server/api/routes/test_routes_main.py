@@ -1,7 +1,7 @@
 from importlib.metadata import version
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
-from unittest.mock import ANY, Mock, call, patch
+from unittest.mock import Mock, call, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -62,11 +62,12 @@ def test_login(test_client: TestClient):
     assert response.user_id == 1
 
 
-@patch("matchbox.server.api.main.BackgroundTasks.add_task")
+@patch("matchbox.server.api.main.process_upload.delay")
 def test_upload(
-    mock_add_task: Mock,
+    mock_task_delay: Mock,
     s3: S3Client,
     test_client: TestClient,
+    upload_tracker_in_memory: UploadTracker,
 ):
     """Test uploading a file, happy path."""
     # Setup
@@ -83,10 +84,9 @@ def test_upload(
 
     # Mock the metadata store
     mock_upload_tracker = Mock()
-    tracker = UploadTracker()
-    update_id = tracker.add_source(source_testkit.source_config)
-    mock_upload_tracker.get.side_effect = tracker.get
-    mock_upload_tracker.update.side_effect = tracker.update
+    update_id = upload_tracker_in_memory.add_source(source_testkit.source_config)
+    mock_upload_tracker.get.side_effect = upload_tracker_in_memory.get
+    mock_upload_tracker.update.side_effect = upload_tracker_in_memory.update
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
@@ -107,20 +107,21 @@ def test_upload(
     # Validate response
     assert UploadStatus.model_validate(response.json())
     assert response.status_code == 202, response.json()
-    assert response.json()["status"] == "queued"  # Updated to check for queued status
+    assert response.json()["stage"] == "queued"  # Updated to check for queued status
     # Check both status updates were called in correct order
     assert mock_upload_tracker.update.call_args_list == [
         call(update_id, "queued"),
     ]
     mock_backend.index.assert_not_called()  # Index happens in background
-    mock_add_task.assert_called_once()  # Verify background task was queued
+    mock_task_delay.assert_called_once()  # Verify task was queued
 
 
-@patch("matchbox.server.api.main.BackgroundTasks.add_task")
+@patch("matchbox.server.api.main.process_upload.delay")
 def test_upload_wrong_schema(
-    mock_add_task: Mock,
+    mock_task_delay: Mock,
     s3: S3Client,
     test_client: TestClient,
+    upload_tracker_in_memory: UploadTracker,
 ):
     """Test uploading a file with wrong schema."""
     # Setup
@@ -132,15 +133,11 @@ def test_upload_wrong_schema(
     source_testkit = source_factory()
 
     # Setup store
-    mock_upload_tracker = Mock()
-    tracker = UploadTracker()
-    update_id = tracker.add_source(source_testkit.source_config)
-    mock_upload_tracker.get.side_effect = tracker.get
-    mock_upload_tracker.update.side_effect = tracker.update
+    update_id = upload_tracker_in_memory.add_source(source_testkit.source_config)
 
     # Override app dependencies with mocks
     app.dependency_overrides[backend] = lambda: mock_backend
-    app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
+    app.dependency_overrides[upload_tracker] = lambda: upload_tracker_in_memory
 
     # Make request with actual data instead of the hashes -- wrong schema
     response = test_client.post(
@@ -154,25 +151,25 @@ def test_upload_wrong_schema(
         },
     )
 
-    # Should fail before background task starts
+    # Should fail before task starts
     assert response.status_code == 400
-    assert response.json()["status"] == "failed"
+    assert response.json()["stage"] == "failed"
     assert "schema mismatch" in response.json()["details"].lower()
-    mock_upload_tracker.update.assert_called_with(update_id, "failed", details=ANY)
-    mock_add_task.assert_not_called()  # Background task should not be queued
+    mock_task_delay.assert_not_called()  # Task should not be queued
 
 
-def test_upload_status_check(test_client: TestClient):
+def test_upload_status_check(
+    test_client: TestClient, upload_tracker_in_memory: UploadTracker
+):
     """Test checking status of an upload using the status endpoint."""
     # Setup store with a processing entry
     mock_upload_tracker = Mock()
-    tracker = UploadTracker()
     source_testkit = source_factory()
-    update_id = tracker.add_source(source_testkit.source_config)
-    tracker.update(update_id, "processing")
+    update_id = upload_tracker_in_memory.add_source(source_testkit.source_config)
+    upload_tracker_in_memory.update(update_id, "processing")
 
-    mock_upload_tracker.get.side_effect = tracker.get
-    mock_upload_tracker.update.side_effect = tracker.update
+    mock_upload_tracker.get.side_effect = upload_tracker_in_memory.get
+    mock_upload_tracker.update.side_effect = upload_tracker_in_memory.update
 
     # Override app dependencies with mocks
     app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
@@ -182,20 +179,21 @@ def test_upload_status_check(test_client: TestClient):
 
     # Should return current status
     assert response.status_code == 200
-    assert response.json()["status"] == "processing"
+    assert response.json()["stage"] == "processing"
     mock_upload_tracker.update.assert_not_called()
 
 
-def test_upload_already_processing(test_client: TestClient):
+def test_upload_already_processing(
+    test_client: TestClient, upload_tracker_in_memory: UploadTracker
+):
     """Test attempting to upload when status is already processing."""
     # Setup store with a processing entry
     mock_upload_tracker = Mock()
-    tracker = UploadTracker()
     source_testkit = source_factory()
-    update_id = tracker.add_source(source_testkit.source_config)
-    tracker.update(update_id, "processing")
+    update_id = upload_tracker_in_memory.add_source(source_testkit.source_config)
+    upload_tracker_in_memory.update(update_id, "processing")
 
-    mock_upload_tracker.get.side_effect = tracker.get
+    mock_upload_tracker.get.side_effect = upload_tracker_in_memory.get
 
     # Override app dependencies with mocks
     app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
@@ -208,19 +206,20 @@ def test_upload_already_processing(test_client: TestClient):
 
     # Should return 400 with current status
     assert response.status_code == 400
-    assert response.json()["status"] == "processing"
+    assert response.json()["stage"] == "processing"
 
 
-def test_upload_already_queued(test_client: TestClient):
+def test_upload_already_queued(
+    test_client: TestClient, upload_tracker_in_memory: UploadTracker
+):
     """Test attempting to upload when status is already queued."""
     # Setup store with a queued entry
     mock_upload_tracker = Mock()
-    tracker = UploadTracker()
     source_testkit = source_factory()
-    update_id = tracker.add_source(source_testkit.source_config)
-    tracker.update(update_id, "queued")
+    update_id = upload_tracker_in_memory.add_source(source_testkit.source_config)
+    upload_tracker_in_memory.update(update_id, "queued")
 
-    mock_upload_tracker.get.side_effect = tracker.get
+    mock_upload_tracker.get.side_effect = upload_tracker_in_memory.get
 
     # Override app dependencies with mocks
     app.dependency_overrides[upload_tracker] = lambda: mock_upload_tracker
@@ -233,7 +232,7 @@ def test_upload_already_queued(test_client: TestClient):
 
     # Should return 400 with current status
     assert response.status_code == 400
-    assert response.json()["status"] == "queued"
+    assert response.json()["stage"] == "queued"
 
 
 def test_status_check_not_found(test_client: TestClient):
@@ -247,7 +246,7 @@ def test_status_check_not_found(test_client: TestClient):
     response = test_client.get("/upload/nonexistent-id/status")
 
     assert response.status_code == 400
-    assert response.json()["status"] == "failed"
+    assert response.json()["stage"] == "unknown"
     assert "not found or expired" in response.json()["details"].lower()
 
 
