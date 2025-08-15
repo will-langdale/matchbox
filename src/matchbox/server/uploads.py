@@ -1,4 +1,4 @@
-"""Handling of uploads."""
+"""Functions and classes to support file uploads."""
 
 import uuid
 from abc import ABC, abstractmethod
@@ -26,7 +26,7 @@ else:
 
 
 class UploadEntry(BaseModel):
-    """Entry in upload tracker, enriching upload status with metadata."""
+    """Entry in upload tracker, combining private metadata and public upload status."""
 
     status: UploadStatus
     metadata: SourceConfig | ModelConfig
