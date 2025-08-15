@@ -13,12 +13,8 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.sources import (
-    SourceConfig,
-)
+from matchbox.common.sources import SourceConfig
 from matchbox.common.uploads import UploadStatus
-from matchbox.server.api import app
-from matchbox.server.api.dependencies import backend
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -26,39 +22,35 @@ else:
     S3Client = Any
 
 
-def test_get_source(test_client: TestClient):
+def test_get_source(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
     source = source_factory(name="foo").source_config
-    mock_backend = Mock()
+    test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_source_config = Mock(return_value=source)
-
-    # Override app dependencies with mocks
-    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/sources/foo")
     assert response.status_code == 200
     assert SourceConfig.model_validate(response.json())
 
 
-def test_get_source_404(test_client: TestClient):
-    mock_backend = Mock()
+def test_get_source_404(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_source_config = Mock(side_effect=MatchboxSourceNotFoundError)
-
-    # Override app dependencies with mocks
-    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/sources/foo")
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.SOURCE
 
 
-def test_get_resolution_sources(test_client: TestClient):
+def test_get_resolution_sources(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
     source = source_factory().source_config
-
-    mock_backend = Mock()
+    test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution_source_configs = Mock(return_value=[source])
-
-    # Override app dependencies with mocks
-    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/sources", params={"name": "foo"})
     assert response.status_code == 200
@@ -66,27 +58,25 @@ def test_get_resolution_sources(test_client: TestClient):
         assert SourceConfig.model_validate(s)
 
 
-def test_get_resolution_sources_404(test_client: TestClient):
-    mock_backend = Mock()
+def test_get_resolution_sources_404(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
+    test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution_source_configs = Mock(
         side_effect=MatchboxResolutionNotFoundError
     )
-
-    # Override app dependencies with mocks
-    app.dependency_overrides[backend] = lambda: mock_backend
 
     response = test_client.get("/sources", params={"name": "foo"})
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
 
-def test_add_source(test_client: TestClient):
+def test_add_source(
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
     """Test the source addition endpoint."""
-    mock_backend = Mock()
+    test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.index = Mock(return_value=None)
-
-    # Override app dependencies with mocks
-    app.dependency_overrides[backend] = lambda: mock_backend
 
     source_testkit = source_factory()
 
@@ -104,16 +94,16 @@ def test_add_source(test_client: TestClient):
     mock_backend.index.assert_not_called()
 
 
-def test_complete_source_upload_process(s3: S3Client, test_client: TestClient):
+def test_complete_source_upload_process(
+    s3: S3Client,
+    api_client_and_mocks: tuple[TestClient, Mock, Mock],
+):
     """Test the complete upload process from source creation through processing."""
     # Setup the backend
-    mock_backend = Mock()
+    test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
     mock_backend.index = Mock(return_value=None)
-
-    # Override app dependencies with mocks
-    app.dependency_overrides[backend] = lambda: mock_backend
 
     # Create test bucket
     s3.create_bucket(

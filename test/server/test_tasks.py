@@ -19,7 +19,11 @@ else:
 
 
 def test_process_upload_deletes_file_on_failure(s3: S3Client):
-    """Test that files are deleted from S3 even when processing fails."""
+    """Test that files are deleted from S3 even when processing fails.
+
+    Other behaviours of this task are captured in the integration tests for adding a
+    source or a model.
+    """
     # Setup
     tracker = InMemoryUploadTracker()
     mock_backend = Mock()
