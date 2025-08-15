@@ -33,10 +33,11 @@ services:
       args:
         ENV_FILE: development_docker.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
-      dockerfile: src/matchbox/server/api/Dockerfile
+      dockerfile: src/matchbox/server/Dockerfile
       target: dev
     ports:
       - "${MB__DEV__API_PORT-8000}:8000"
+    command: fastapi dev --host 0.0.0.0 src/matchbox/server/api
     depends_on:
       server-postgres:
         condition: service_started
@@ -77,10 +78,12 @@ services:
   celery-worker:
     build:
       context: .
-      dockerfile: src/matchbox/server/tasks/Dockerfile
+      dockerfile: src/matchbox/server/Dockerfile
+      target: dev
       args:
         ENV_FILE: development_docker.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
+    command: celery -A matchbox.server.tasks.uploads.celery worker --loglevel=info
     depends_on:
       - server-api
       - redis
