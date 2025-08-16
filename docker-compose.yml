@@ -83,7 +83,7 @@ services:
       args:
         ENV_FILE: containers.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
-    command: celery -A matchbox.server.tasks.uploads.celery worker --loglevel=info
+    command: celery -A matchbox.server.uploads.celery worker --loglevel=info
     depends_on:
       - server-api
       - redis

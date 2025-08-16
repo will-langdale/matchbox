@@ -35,7 +35,6 @@ nav:
   - Server: 
     - Overview: api/server/index.md
     - API: api/server/api.md
-    - Tasks: api/server/tasks.md
     - Uploads: api/server/uploads.md
     - Backends:
       - PostgreSQL: api/server/backends/postgresql.md

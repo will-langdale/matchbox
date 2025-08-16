@@ -48,8 +48,7 @@ from matchbox.server.api.dependencies import (
     lifespan,
 )
 from matchbox.server.api.routers import eval, models, resolutions, sources
-from matchbox.server.tasks.uploads import process_upload, process_upload_celery
-from matchbox.server.uploads import table_to_s3
+from matchbox.server.uploads import process_upload, process_upload_celery, table_to_s3
 
 app = FastAPI(
     title="matchbox API",
@@ -190,7 +189,6 @@ def upload_file(
             filename=key,
         )
     else:
-        # Celery
         process_upload_celery.delay(
             upload_type=upload_entry.status.entity,
             resolution_name=upload_entry.metadata.name,
