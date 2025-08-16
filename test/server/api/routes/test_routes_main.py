@@ -113,7 +113,7 @@ def test_upload(
 @patch("matchbox.server.api.main.BackgroundTasks.add_task")
 def test_upload_wrong_schema(
     mock_add_task: Mock,
-    s3: "S3Client",
+    s3: S3Client,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     """Test uploading a file with wrong schema."""
