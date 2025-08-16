@@ -31,7 +31,7 @@ services:
     build:
       context: .
       args:
-        ENV_FILE: development_docker.env
+        ENV_FILE: containers.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
       dockerfile: src/matchbox/server/Dockerfile
       target: dev
@@ -81,7 +81,7 @@ services:
       dockerfile: src/matchbox/server/Dockerfile
       target: dev
       args:
-        ENV_FILE: development_docker.env
+        ENV_FILE: containers.env
         MB_VERSION: ${MB_VERSION-0.0.0dev0}
     command: celery -A matchbox.server.tasks.uploads.celery worker --loglevel=info
     depends_on:
