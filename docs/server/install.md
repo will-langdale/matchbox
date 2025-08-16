@@ -18,9 +18,11 @@ At a minimum, you will need to provision the following infrastructure:
 * The main Matchbox database (like Postgres)
 * A bucket in object storage (like S3)
 
-This requires that the processing of files uploadeed by clients happens on the same instance as the API, which is not generally a good idea, except for development or very small set-ups. The Matchbox server `MB__SERVER__TASK_RUNNER` needs to be set to "api" for this minimal set-up.
+This requires that the processing of files uploaded by clients happens on the same instance as the API. Thus, it is not advised to run the Matchbox server in this fashion, except for development or very small set-ups. The Matchbox server variable `MB__SERVER__TASK_RUNNER` needs to be set to "api" for this minimal set-up.
 
 For a more robust deployment, set `MB__SERVER__TASK_RUNNER` to "celery", and you will also need:
 
 * A Celery worker
 * Redis
+
+Using Redis allows to scale out (i.e. more instances) the API as well as the execution of long-running tasks.

@@ -235,7 +235,7 @@ class UploadStatus(BaseModel):
 
     @classmethod
     def status_400_examples(cls) -> dict:
-        """Examples for 400 stage code."""
+        """Examples for 400 status code."""
         return {
             "content": {
                 "application/json": {
