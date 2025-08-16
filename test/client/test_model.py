@@ -9,10 +9,12 @@ from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS, table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
+    BackendUploadType,
     CRUDOperation,
     ModelAncestor,
     NotFoundError,
     ResolutionOperationStatus,
+    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -21,7 +23,6 @@ from matchbox.common.exceptions import (
     MatchboxUnhandledServerResponse,
 )
 from matchbox.common.factories.models import model_factory
-from matchbox.common.uploads import BackendUploadType, UploadStatus
 
 
 def test_insert_model(matchbox_api: MockRouter):

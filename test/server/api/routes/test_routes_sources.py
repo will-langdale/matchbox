@@ -7,14 +7,13 @@ from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
 from matchbox.common.arrow import table_to_buffer
-from matchbox.common.dtos import BackendResourceType
+from matchbox.common.dtos import BackendResourceType, UploadStatus
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.sources import SourceConfig
-from matchbox.common.uploads import UploadStatus
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client

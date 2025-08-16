@@ -31,6 +31,7 @@ from matchbox.common.dtos import (
     ModelConfig,
     NotFoundError,
     ResolutionOperationStatus,
+    UploadStatus,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
@@ -53,7 +54,6 @@ from matchbox.common.graph import (
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceConfig
-from matchbox.common.uploads import UploadStatus
 
 URLEncodeHandledType = str | int | float | bytes
 

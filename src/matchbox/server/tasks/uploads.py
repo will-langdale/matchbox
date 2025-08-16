@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 from celery import Celery
 
+from matchbox.common.dtos import BackendUploadType
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.logging import logger
-from matchbox.common.uploads import BackendUploadType
 from matchbox.server.base import (
     MatchboxDBAdapter,
     MatchboxServerSettings,

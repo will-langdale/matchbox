@@ -16,6 +16,7 @@ from matchbox.common.dtos import (
     LoginAttempt,
     LoginResult,
     OKMessage,
+    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -25,7 +26,6 @@ from matchbox.common.exceptions import (
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.sources import Match
-from matchbox.common.uploads import UploadStatus
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client

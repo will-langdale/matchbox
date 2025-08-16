@@ -18,12 +18,12 @@ from matchbox.common.dtos import (
     ModelConfig,
     NotFoundError,
     ResolutionOperationStatus,
+    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import ModelResolutionName
-from matchbox.common.uploads import UploadStatus
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,

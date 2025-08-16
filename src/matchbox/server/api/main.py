@@ -23,11 +23,13 @@ from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendCountableType,
     BackendResourceType,
+    BackendUploadType,
     CountResult,
     LoginAttempt,
     LoginResult,
     NotFoundError,
     OKMessage,
+    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -37,7 +39,6 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.common.sources import Match
-from matchbox.common.uploads import BackendUploadType, UploadStatus
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,

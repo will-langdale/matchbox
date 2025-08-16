@@ -56,7 +56,6 @@ nav:
     - Sources: api/common/sources.md
     - DTOs: api/common/dtos.md
     - Arrow: api/common/arrow.md
-    - Uploads: api/common/uploads.md
 - Contributing:
   - Guidelines: contributing.md
 

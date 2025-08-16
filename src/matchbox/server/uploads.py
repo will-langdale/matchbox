@@ -13,10 +13,9 @@ from fastapi import (
 from pyarrow import parquet as pq
 from pydantic import BaseModel
 
-from matchbox.common.dtos import ModelConfig
+from matchbox.common.dtos import BackendUploadType, ModelConfig, UploadStatus
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.sources import SourceConfig
-from matchbox.common.uploads import BackendUploadType, UploadStatus
 from matchbox.server.base import MatchboxServerSettings
 
 if TYPE_CHECKING:

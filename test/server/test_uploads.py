@@ -8,10 +8,9 @@ import pyarrow.parquet as pq
 import pytest
 from fastapi import UploadFile
 
-from matchbox.common.dtos import ModelConfig, ModelType
+from matchbox.common.dtos import BackendUploadType, ModelConfig, ModelType
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.uploads import BackendUploadType
 from matchbox.server.uploads import (
     UploadTracker,
     s3_to_recordbatch,
