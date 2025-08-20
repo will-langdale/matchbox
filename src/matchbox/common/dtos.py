@@ -3,7 +3,6 @@
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Literal
 
 import polars as pl
 from pydantic import BaseModel, Field
@@ -201,35 +200,39 @@ class CountResult(BaseModel):
     entities: dict[BackendCountableType, int]
 
 
+class UploadStage(StrEnum):
+    """Enumeration of stages of a file upload and its processing."""
+
+    READY = "ready"
+    AWAITING_UPLOAD = "awaiting_upload"
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
 class UploadStatus(BaseModel):
     """Response model for any file upload processes."""
 
     id: str
-    stage: Literal[
-        "ready",
-        "awaiting_upload",
-        "queued",
-        "processing",
-        "complete",
-        "failed",
-        "unknown",
-    ]
+    stage: UploadStage
     update_timestamp: datetime
     details: str | None = None
     entity: BackendUploadType | None = None
 
     _status_code_mapping = {
-        "ready": 200,
-        "complete": 200,
-        "failed": 400,
-        "awaiting_upload": 202,
-        "queued": 200,
-        "processing": 200,
+        UploadStage.READY: 200,
+        UploadStage.COMPLETE: 200,
+        UploadStage.FAILED: 400,
+        UploadStage.AWAITING_UPLOAD: 202,
+        UploadStage.QUEUED: 200,
+        UploadStage.PROCESSING: 200,
     }
 
-    def get_http_code(self, stage: str) -> int:
+    def get_http_code(self) -> int:
         """Get the HTTP status code for the upload stage."""
-        if self.stage == "failed":
+        if self.stage == UploadStage.FAILED:
             return 400
         return self._status_code_mapping[self.stage]
 
@@ -244,7 +247,7 @@ class UploadStatus(BaseModel):
                             "summary": "Upload ID expired",
                             "value": cls(
                                 id="example_id",
-                                stage="failed",
+                                stage=UploadStage.FAILED,
                                 details=(
                                     "Upload ID not found or expired. Entries expire "
                                     "after 30 minutes of inactivity, including "
@@ -258,7 +261,7 @@ class UploadStatus(BaseModel):
                             "summary": "Schema validation error",
                             "value": cls(
                                 id="example_id",
-                                stage="failed",
+                                stage=UploadStage.FAILED,
                                 details="Schema mismatch. Expected: ... Got: ...",
                                 entity=BackendUploadType.INDEX,
                                 update_timestamp=datetime.now(),

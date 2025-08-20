@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 from fastapi import UploadFile
 
 from matchbox.common.arrow import table_to_buffer
-from matchbox.common.dtos import BackendUploadType, ModelConfig, ModelType
+from matchbox.common.dtos import BackendUploadType, ModelConfig, ModelType, UploadStage
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
@@ -152,7 +152,7 @@ class TestUploadTracker:
         source_entry = self.tracker.get(source_upload_id)
         assert source_entry is not None
         assert source_entry.metadata == source
-        assert source_entry.status.stage == "awaiting_upload"
+        assert source_entry.status.stage == UploadStage.AWAITING_UPLOAD
         assert source_entry.status.entity == BackendUploadType.INDEX
         assert source_entry.status.id == source_upload_id
         assert isinstance(source_entry.status.update_timestamp, datetime)
@@ -160,7 +160,7 @@ class TestUploadTracker:
         model_entry = self.tracker.get(model_upload_id)
         assert model_entry is not None
         assert model_entry.metadata == model
-        assert model_entry.status.stage == "awaiting_upload"
+        assert model_entry.status.stage == UploadStage.AWAITING_UPLOAD
         assert model_entry.status.entity == BackendUploadType.RESULTS
         assert model_entry.status.id == model_upload_id
         assert isinstance(model_entry.status.update_timestamp, datetime)
@@ -172,22 +172,22 @@ class TestUploadTracker:
         # Create entry and verify initial status
         upload_id = self.tracker.add_source(source)
         entry = self.tracker.get(upload_id)
-        assert entry.status.stage == "awaiting_upload"
+        assert entry.status.stage == UploadStage.AWAITING_UPLOAD
 
         # Update status
-        self.tracker.update(upload_id, "processing")
+        self.tracker.update(upload_id, UploadStage.PROCESSING)
         entry = self.tracker.get(upload_id)
-        assert entry.status.stage == "processing"
+        assert entry.status.stage == UploadStage.PROCESSING
 
         # Update with details
-        self.tracker.update(upload_id, "failed", "Error details")
+        self.tracker.update(upload_id, UploadStage.FAILED, "Error details")
         entry = self.tracker.get(upload_id)
-        assert entry.status.stage == "failed"
+        assert entry.status.stage == UploadStage.FAILED
         assert entry.status.details == "Error details"
 
         # Try updating non-existent entry
         with pytest.raises(KeyError):
-            self.tracker.update("nonexistent", "processing")
+            self.tracker.update("nonexistent", UploadStage.PROCESSING)
 
     @patch("matchbox.server.uploads.datetime")
     def test_timestamp_updates(self, mock_datetime: Mock):
@@ -211,7 +211,7 @@ class TestUploadTracker:
 
         # Status update updates timestamp
         mock_datetime.now.return_value = update_timestamp
-        self.tracker.update(upload_id, "processing")
+        self.tracker.update(upload_id, UploadStage.PROCESSING)
         entry = self.tracker.get(upload_id)
         assert entry.status.update_timestamp == update_timestamp
 
@@ -245,7 +245,7 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
 
     # Setup metadata store with test data
     upload_id = tracker.add_source(source_testkit.source_config)
-    tracker.update(upload_id, "awaiting_upload")
+    tracker.update(upload_id, UploadStage.AWAITING_UPLOAD)
 
     # Run the process, expecting it to fail
     with pytest.raises(MatchboxServerFileError) as excinfo:
@@ -264,7 +264,9 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
 
     # Check that the status was updated to failed
     status = tracker.get(upload_id).status
-    assert status.stage == "failed", f"Expected status 'failed', got '{status.stage}'"
+    assert status.stage == UploadStage.FAILED, (
+        f"Expected status 'failed', got '{status.stage}'"
+    )
 
     # Verify file was deleted despite the failure
     with pytest.raises(ClientError) as excinfo:

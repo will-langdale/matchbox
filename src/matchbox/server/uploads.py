@@ -15,7 +15,12 @@ from fastapi import (
 from pyarrow import parquet as pq
 from pydantic import BaseModel
 
-from matchbox.common.dtos import BackendUploadType, ModelConfig, UploadStatus
+from matchbox.common.dtos import (
+    BackendUploadType,
+    ModelConfig,
+    UploadStage,
+    UploadStatus,
+)
 from matchbox.common.exceptions import MatchboxServerFileError
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
@@ -48,13 +53,14 @@ class UploadTracker(ABC):
     def _create_entry(
         metadata: SourceConfig | ModelConfig, upload_type: BackendUploadType
     ) -> UploadEntry:
+        """Create initial UploadEntry object."""
         upload_id = str(uuid.uuid4())
 
         return UploadEntry(
             metadata=metadata,
             status=UploadStatus(
                 id=upload_id,
-                stage="awaiting_upload",
+                stage=UploadStage.AWAITING_UPLOAD,
                 update_timestamp=datetime.now(),
                 entity=upload_type,
             ),
@@ -63,6 +69,7 @@ class UploadTracker(ABC):
     def _get_updated_entry(
         self, upload_id: str, stage: str, details: str | None
     ) -> UploadEntry:
+        """Create new UploadEntry object as update on previous entry."""
         entry = self.get(upload_id)
         if not entry:
             raise KeyError(f"Entry {upload_id} not found.")
@@ -91,7 +98,7 @@ class UploadTracker(ABC):
 
     @abstractmethod
     def _register_entry(self, UploadEntry) -> str:
-        """Register `UploadEntry` to tracker and return its ID."""
+        """Register UploadEntry object to tracker and return its ID."""
         ...
 
     @abstractmethod
@@ -170,7 +177,7 @@ class RedisUploadTracker(UploadTracker):
 _IN_MEMORY_TRACKER = InMemoryUploadTracker()
 
 
-def upload_tracker_from_settings(settings: MatchboxServerSettings) -> UploadTracker:
+def settings_to_upload_tracker(settings: MatchboxServerSettings) -> UploadTracker:
     """Initialise an upload tracker from server settings."""
     if settings.task_runner == "api":
         return _IN_MEMORY_TRACKER
@@ -268,7 +275,7 @@ def initialise_celery_worker():
     if not CELERY_BACKEND:
         CELERY_BACKEND = settings_to_backend(CELERY_SETTINGS)
     if not CELERY_TRACKER:
-        CELERY_TRACKER = upload_tracker_from_settings(CELERY_SETTINGS)
+        CELERY_TRACKER = settings_to_upload_tracker(CELERY_SETTINGS)
 
 
 def process_upload(
@@ -282,7 +289,7 @@ def process_upload(
     filename: str,
 ) -> None:
     """Generic task to process uploaded file, usable by FastAPI BackgroundTasks."""
-    tracker.update(upload_id, "processing")
+    tracker.update(upload_id, UploadStage.PROCESSING)
     upload = tracker.get(upload_id)
 
     try:
@@ -302,7 +309,7 @@ def process_upload(
         else:
             raise ValueError(f"Unknown upload type: {upload.status.entity}")
 
-        tracker.update(upload_id, "complete")
+        tracker.update(upload_id, UploadStage.COMPLETE)
 
     except Exception as e:
         error_context = {
@@ -322,7 +329,7 @@ def process_upload(
         )
         tracker.update(
             upload_id,
-            "failed",
+            UploadStage.FAILED,
             details=details,
         )
         raise MatchboxServerFileError(message=details) from e

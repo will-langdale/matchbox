@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
 from matchbox.common.arrow import table_to_buffer
-from matchbox.common.dtos import BackendResourceType, UploadStatus
+from matchbox.common.dtos import BackendResourceType, UploadStage, UploadStatus
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
@@ -88,7 +88,7 @@ def test_add_source(
     # Validate response
     assert UploadStatus.model_validate(response.json())
     assert response.status_code == 202, response.json()
-    assert response.json()["stage"] == "awaiting_upload"
+    assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
     assert response.json().get("id") is not None
     mock_backend.index.assert_not_called()
 
@@ -119,7 +119,7 @@ def test_complete_source_upload_process(
     )
     assert response.status_code == 202
     upload_id = response.json()["id"]
-    assert response.json()["stage"] == "awaiting_upload"
+    assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
 
     # Step 2: Upload file with real background tasks
     response = test_client.post(
@@ -133,7 +133,7 @@ def test_complete_source_upload_process(
         },
     )
     assert response.status_code == 202
-    assert response.json()["stage"] == "queued"
+    assert response.json()["stage"] == UploadStage.QUEUED
 
     # Step 3: Poll status until complete or timeout
     max_attempts = 10
@@ -143,11 +143,11 @@ def test_complete_source_upload_process(
         assert response.status_code == 200
 
         stage = response.json()["stage"]
-        if stage == "complete":
+        if stage == UploadStage.COMPLETE:
             break
-        elif stage == "failed":
+        elif stage == UploadStage.FAILED:
             pytest.fail(f"Upload failed: {response.json().get('details')}")
-        elif stage in ["processing", "queued"]:
+        elif stage in [UploadStage.PROCESSING, UploadStage.QUEUED]:
             sleep(0.1)  # Small delay between polls
         else:
             pytest.fail(f"Unexpected stage: {stage}")
@@ -157,7 +157,7 @@ def test_complete_source_upload_process(
     assert current_attempt < max_attempts, (
         "Timed out waiting for processing to complete"
     )
-    assert stage == "complete"
+    assert stage == UploadStage.COMPLETE
     assert response.status_code == 200
 
     # Verify backend.index was called with correct arguments

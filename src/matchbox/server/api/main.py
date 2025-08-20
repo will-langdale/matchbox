@@ -29,6 +29,7 @@ from matchbox.common.dtos import (
     LoginResult,
     NotFoundError,
     OKMessage,
+    UploadStage,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -146,7 +147,7 @@ def upload_file(
         )
 
     # Ensure tracker is expecting file
-    if upload_entry.status.stage != "awaiting_upload":
+    if upload_entry.status.stage != UploadStage.AWAITING_UPLOAD:
         raise HTTPException(
             status_code=400,
             detail=upload_entry.status.model_dump(),
@@ -166,14 +167,14 @@ def upload_file(
             expected_schema=upload_entry.status.entity.schema,
         )
     except MatchboxServerFileError as e:
-        upload_tracker.update(upload_id, "failed", details=str(e))
+        upload_tracker.update(upload_id, UploadStage.FAILED, details=str(e))
         updated_entry = upload_tracker.get(upload_id)
         raise HTTPException(
             status_code=400,
             detail=updated_entry.status.model_dump(),
         ) from e
 
-    upload_tracker.update(upload_id, "queued")
+    upload_tracker.update(upload_id, UploadStage.QUEUED)
 
     # Start background processing
     if settings.task_runner == "api":
@@ -200,7 +201,7 @@ def upload_file(
     source_upload = upload_tracker.get(upload_id)
 
     # Check for error in async task
-    if source_upload.status.stage == "failed":
+    if source_upload.status.stage == UploadStage.FAILED:
         raise HTTPException(
             status_code=400,
             detail=source_upload.status.model_dump(),

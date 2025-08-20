@@ -34,6 +34,7 @@ just -l
 ```
 
 ## Run tests
+
 !!! note
 
     Your `.env` file needs to be correctly configured for tests to be loaded.

@@ -715,6 +715,11 @@ def upload_tracker_redis(
     tracker = RedisUploadTracker(
         redis_url=development_settings.redis_url, expiry_minutes=100
     )
-    for key in r.scan_iter(f"{tracker.key_prefix}*"):
-        r.delete(key)
+
+    def empty_tracker():
+        for key in r.scan_iter(f"{tracker.key_prefix}*"):
+            r.delete(key)
+
+    empty_tracker()
     yield tracker
+    empty_tracker()

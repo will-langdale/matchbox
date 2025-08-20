@@ -16,6 +16,7 @@ from matchbox.common.dtos import (
     LoginAttempt,
     LoginResult,
     OKMessage,
+    UploadStage,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -99,10 +100,12 @@ def test_upload(
     # Validate response
     assert UploadStatus.model_validate(response.json())
     assert response.status_code == 202, response.json()
-    assert response.json()["stage"] == "queued"  # Updated to check for queued status
+    assert (
+        response.json()["stage"] == UploadStage.QUEUED
+    )  # Updated to check for queued status
     # Check both status updates were called in correct order
     assert mock_tracker.update.call_args_list == [
-        call(update_id, "queued"),
+        call(update_id, UploadStage.QUEUED),
     ]
     mock_backend.index.assert_not_called()  # Index happens in background
     mock_add_task.assert_called_once()  # Verify task was queued
@@ -138,7 +141,7 @@ def test_upload_wrong_schema(
 
     # Should fail before task starts
     assert response.status_code == 400
-    assert response.json()["stage"] == "failed"
+    assert response.json()["stage"] == UploadStage.FAILED
     assert "schema mismatch" in response.json()["details"].lower()
     mock_add_task.assert_not_called()
 
@@ -148,14 +151,14 @@ def test_upload_status_check(api_client_and_mocks: tuple[TestClient, Mock, Mock]
     test_client, _, mock_tracker = api_client_and_mocks
     source_testkit = source_factory()
     update_id = mock_tracker.add_source(source_testkit.source_config)
-    mock_tracker.update(update_id, "processing")
+    mock_tracker.update(update_id, UploadStage.PROCESSING)
     mock_tracker.reset_mock()
 
     response = test_client.get(f"/upload/{update_id}/status")
 
     # Should return current status
     assert response.status_code == 200
-    assert response.json()["stage"] == "processing"
+    assert response.json()["stage"] == UploadStage.PROCESSING
     mock_tracker.update.assert_not_called()
 
 
@@ -164,7 +167,7 @@ def test_upload_already_processing(api_client_and_mocks: tuple[TestClient, Mock,
     test_client, _, mock_tracker = api_client_and_mocks
     source_testkit = source_factory()
     update_id = mock_tracker.add_source(source_testkit.source_config)
-    mock_tracker.update(update_id, "processing")
+    mock_tracker.update(update_id, UploadStage.PROCESSING)
 
     response = test_client.post(
         f"/upload/{update_id}",
@@ -173,7 +176,7 @@ def test_upload_already_processing(api_client_and_mocks: tuple[TestClient, Mock,
 
     # Should return 400 with current status
     assert response.status_code == 400
-    assert response.json()["stage"] == "processing"
+    assert response.json()["stage"] == UploadStage.PROCESSING
 
 
 def test_upload_already_queued(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
@@ -181,7 +184,7 @@ def test_upload_already_queued(api_client_and_mocks: tuple[TestClient, Mock, Moc
     test_client, _, mock_tracker = api_client_and_mocks
     source_testkit = source_factory()
     update_id = mock_tracker.add_source(source_testkit.source_config)
-    mock_tracker.update(update_id, "queued")
+    mock_tracker.update(update_id, UploadStage.QUEUED)
 
     response = test_client.post(
         f"/upload/{update_id}",
@@ -190,7 +193,7 @@ def test_upload_already_queued(api_client_and_mocks: tuple[TestClient, Mock, Moc
 
     # Should return 400 with current status
     assert response.status_code == 400
-    assert response.json()["stage"] == "queued"
+    assert response.json()["stage"] == UploadStage.QUEUED
 
 
 def test_status_check_not_found(api_client_and_mocks: tuple[TestClient, Mock, Mock]):

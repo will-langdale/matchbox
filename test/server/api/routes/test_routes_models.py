@@ -13,6 +13,7 @@ from matchbox.common.dtos import (
     ModelAncestor,
     NotFoundError,
     ResolutionOperationStatus,
+    UploadStage,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -123,7 +124,7 @@ def test_complete_model_upload_process(
     response = test_client.post(f"/models/{testkit.model.model_config.name}/results")
     assert response.status_code == 202
     upload_id = response.json()["id"]
-    assert response.json()["stage"] == "awaiting_upload"
+    assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
 
     # Step 3: Upload results file with real background tasks
     response = test_client.post(
@@ -137,7 +138,7 @@ def test_complete_model_upload_process(
         },
     )
     assert response.status_code == 202
-    assert response.json()["stage"] == "queued"
+    assert response.json()["stage"] == UploadStage.QUEUED
 
     # Step 4: Poll status until complete or timeout
     max_attempts = 10
@@ -149,11 +150,11 @@ def test_complete_model_upload_process(
         assert response.status_code == 200
 
         stage = response.json()["stage"]
-        if stage == "complete":
+        if stage == UploadStage.COMPLETE:
             break
-        elif stage == "failed":
+        elif stage == UploadStage.FAILED:
             pytest.fail(f"Upload failed: {response.json().get('details')}")
-        elif stage in ["processing", "queued"]:
+        elif stage in [UploadStage.PROCESSING, UploadStage.QUEUED]:
             sleep(0.1)  # Small delay between polls
         else:
             pytest.fail(f"Unexpected stage: {stage}")
@@ -163,7 +164,7 @@ def test_complete_model_upload_process(
     assert current_attempt < max_attempts, (
         "Timed out waiting for processing to complete"
     )
-    assert stage == "complete"
+    assert stage == UploadStage.COMPLETE
     assert response.status_code == 200
 
     # Step 5: Verify results were stored correctly
@@ -220,7 +221,7 @@ def test_set_results(
     response = test_client.post(f"/models/{testkit.model.model_config.name}/results")
 
     assert response.status_code == 202
-    assert response.json()["stage"] == "awaiting_upload"
+    assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
 
 
 def test_set_results_model_not_found(

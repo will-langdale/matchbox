@@ -14,6 +14,7 @@ from matchbox.common.dtos import (
     ModelAncestor,
     NotFoundError,
     ResolutionOperationStatus,
+    UploadStage,
     UploadStatus,
 )
 from matchbox.common.exceptions import (
@@ -148,7 +149,7 @@ def test_results_setter(matchbox_api: MockRouter):
             202,
             content=UploadStatus(
                 id="test-upload-id",
-                stage="awaiting_upload",
+                stage=UploadStage.AWAITING_UPLOAD,
                 update_timestamp=datetime.now(),
                 entity=BackendUploadType.RESULTS,
             ).model_dump_json(),
@@ -160,7 +161,7 @@ def test_results_setter(matchbox_api: MockRouter):
             202,
             content=UploadStatus(
                 id="test-upload-id",
-                stage="processing",
+                stage=UploadStage.PROCESSING,
                 update_timestamp=datetime.now(),
                 entity=BackendUploadType.RESULTS,
             ).model_dump_json(),
@@ -172,7 +173,7 @@ def test_results_setter(matchbox_api: MockRouter):
             200,
             content=UploadStatus(
                 id="test-upload-id",
-                stage="complete",
+                stage=UploadStage.COMPLETE,
                 update_timestamp=datetime.now(),
                 entity=BackendUploadType.RESULTS,
             ).model_dump_json(),
@@ -206,7 +207,7 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
             202,
             content=UploadStatus(
                 id="test-upload-id",
-                stage="awaiting_upload",
+                stage=UploadStage.AWAITING_UPLOAD,
                 update_timestamp=datetime.now(),
                 entity=BackendUploadType.RESULTS,
             ).model_dump_json(),
@@ -219,7 +220,7 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
             400,
             content=UploadStatus(
                 id="test-upload-id",
-                stage="failed",
+                stage=UploadStage.FAILED,
                 update_timestamp=datetime.now(),
                 entity=BackendUploadType.RESULTS,
                 details="Invalid data format",

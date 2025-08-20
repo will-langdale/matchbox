@@ -27,7 +27,7 @@ from matchbox.server.base import (
     get_backend_settings,
     settings_to_backend,
 )
-from matchbox.server.uploads import UploadTracker, upload_tracker_from_settings
+from matchbox.server.uploads import UploadTracker, settings_to_upload_tracker
 
 
 class ZipResponse(Response):
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     SettingsClass = get_backend_settings(MatchboxServerSettings().backend_type)
     SETTINGS = SettingsClass()
     BACKEND = settings_to_backend(SETTINGS)
-    UPLOAD_TRACKER = upload_tracker_from_settings(SETTINGS)
+    UPLOAD_TRACKER = settings_to_upload_tracker(SETTINGS)
 
     # Define common formatter
     formatter = ASIMFormatter()
