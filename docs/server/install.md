@@ -26,4 +26,4 @@ For a more robust deployment, set `MB__SERVER__TASK_RUNNER` to "celery", and you
 * A Celery worker
 * Redis
 
-Using Redis allows to scale out (i.e. more instances) the API as well as the execution of long-running tasks.
+Not only does using Redis enable you to offload to another instance the long jobs created by the API; it also lets you scale horizontally the API itself.
