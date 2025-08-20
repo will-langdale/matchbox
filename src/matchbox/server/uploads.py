@@ -179,12 +179,16 @@ _IN_MEMORY_TRACKER = InMemoryUploadTracker()
 
 def settings_to_upload_tracker(settings: MatchboxServerSettings) -> UploadTracker:
     """Initialise an upload tracker from server settings."""
-    if settings.task_runner == "api":
-        return _IN_MEMORY_TRACKER
-    # Celery
-    return RedisUploadTracker(
-        redis_url=settings.redis_uri, expiry_minutes=settings.uploads_expiry_minutes
-    )
+    match settings.task_runner:
+        case "api":
+            return _IN_MEMORY_TRACKER
+        case "celery":
+            return RedisUploadTracker(
+                redis_url=settings.redis_uri,
+                expiry_minutes=settings.uploads_expiry_minutes,
+            )
+        case _:
+            raise RuntimeError("Unsupported task runner.")
 
 
 # -- S3 functions --

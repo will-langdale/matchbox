@@ -177,26 +177,29 @@ def upload_file(
     upload_tracker.update(upload_id, UploadStage.QUEUED)
 
     # Start background processing
-    if settings.task_runner == "api":
-        background_tasks.add_task(
-            process_upload,
-            backend=backend,
-            tracker=upload_tracker,
-            s3_client=client,
-            upload_type=upload_entry.status.entity,
-            resolution_name=upload_entry.metadata.name,
-            upload_id=upload_id,
-            bucket=bucket,
-            filename=key,
-        )
-    else:
-        process_upload_celery.delay(
-            upload_type=upload_entry.status.entity,
-            resolution_name=upload_entry.metadata.name,
-            upload_id=upload_id,
-            bucket=bucket,
-            filename=key,
-        )
+    match settings.task_runner:
+        case "api":
+            background_tasks.add_task(
+                process_upload,
+                backend=backend,
+                tracker=upload_tracker,
+                s3_client=client,
+                upload_type=upload_entry.status.entity,
+                resolution_name=upload_entry.metadata.name,
+                upload_id=upload_id,
+                bucket=bucket,
+                filename=key,
+            )
+        case "celery":
+            process_upload_celery.delay(
+                upload_type=upload_entry.status.entity,
+                resolution_name=upload_entry.metadata.name,
+                upload_id=upload_id,
+                bucket=bucket,
+                filename=key,
+            )
+        case _:
+            raise RuntimeError("Unsupported task runner.")
 
     source_upload = upload_tracker.get(upload_id)
 
