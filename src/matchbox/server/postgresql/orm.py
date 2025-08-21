@@ -344,6 +344,7 @@ class ClusterSourceKey(CountMixin, MBDB.MatchboxBase):
     __table_args__ = (
         Index("ix_cluster_keys_cluster_id", "cluster_id"),
         Index("ix_cluster_keys_keys", "key"),
+        Index("ix_cluster_keys_source_config_id", "source_config_id"),
         UniqueConstraint("key_id", "source_config_id", name="unique_keys_source"),
     )
 
