@@ -35,8 +35,8 @@ class TestTextualUI:
         self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
 
     @pytest.mark.asyncio
-    async def test_app_initialization(self):
-        """Test that the app can be initialized."""
+    async def test_app_initialisation(self):
+        """Test that the app can be initialised."""
         app = EntityResolutionApp(resolution="test_resolution", num_samples=5)
         assert app.state.resolution == "test_resolution"
         assert app.state.sample_limit == 5

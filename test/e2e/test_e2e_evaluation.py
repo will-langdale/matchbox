@@ -142,7 +142,7 @@ class TestE2EModelEvaluation:
     def test_evaluation_workflow(self):
         """Test Textual UI sampling, judging and model scoring workflow."""
 
-        # Test that the Textual app can be initialized with scenario data
+        # Test that the Textual app can be initialised with scenario data
         # Get warehouse URL with real password (not masked)
         # The engine.url masks the password, so we need to reconstruct it
         url = self.warehouse_engine.url

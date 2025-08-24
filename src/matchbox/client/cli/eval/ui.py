@@ -31,7 +31,7 @@ class EvaluationQueue:
     """Deque-based queue that maintains position illusion."""
 
     def __init__(self):
-        """Initialize the queue."""
+        """Initialise the queue."""
         self.items: deque[EvaluationItem] = deque()
         self._position_offset: int = 0  # Tracks "virtual position"
 
