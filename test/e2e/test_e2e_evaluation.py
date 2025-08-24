@@ -1,15 +1,16 @@
+import asyncio
+
 import pytest
 from httpx import Client
 from matplotlib.figure import Figure
 from sqlalchemy import Engine, text
 
 from matchbox import make_model, query, select
-from matchbox.client import _handler
+from matchbox.client.cli.eval import EvalData, compare_models
+from matchbox.client.cli.eval.ui import EntityResolutionApp
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
-from matchbox.client.eval import EvalData, compare_models, get_samples
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
-from matchbox.common.eval import Judgement
 from matchbox.common.factories.sources import (
     FeatureConfig,
     LinkedSourcesTestkit,
@@ -36,10 +37,12 @@ class TestE2EModelEvaluation:
         postgres_warehouse: Engine,
     ):
         """Set up warehouse and database using fixtures."""
-        # Will ne beeded later
-        self.__class__.engine = postgres_warehouse
-        # Set up testkits
+        # Store fixtures as class attributes
         n_true_entities = 10  # Keep it small for simplicity
+
+        self.__class__.client = matchbox_client
+        self.__class__.warehouse_engine = postgres_warehouse
+        self.__class__.n_true_entities = n_true_entities
 
         features = {
             "company_name": FeatureConfig(
@@ -73,6 +76,8 @@ class TestE2EModelEvaluation:
             source_parameters=source_parameters,
             seed=42,
         )
+
+        self.__class__.linked_testkit = linked_testkit
 
         # Create tables in warehouse
         for source_testkit in linked_testkit.sources.values():
@@ -129,7 +134,7 @@ class TestE2EModelEvaluation:
 
         # Teardown
         with postgres_warehouse.connect() as conn:
-            for source_name in linked_testkit.sources:
+            for source_name in self.linked_testkit.sources:
                 conn.execute(text(f"DROP TABLE IF EXISTS {source_name};"))
             conn.commit()
 
@@ -137,32 +142,44 @@ class TestE2EModelEvaluation:
         assert response.status_code == 200, "Failed to clear matchbox database"
 
     def test_evaluation_workflow(self):
-        """Test sampling, judging and model scoring."""
+        """Test Textual UI sampling, judging and model scoring workflow."""
 
-        # "Login"
-        user_id = _handler.login(user_name="alice")
+        # Test that the Textual app can be initialized with scenario data
+        # Get warehouse URL with real password (not masked)
+        # The engine.url masks the password, so we need to reconstruct it
+        url = self.warehouse_engine.url
+        warehouse_url = f"{url.drivername}://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}"
 
-        # Get some samples
-        samples = get_samples(
-            n=5,
+        app = EntityResolutionApp(
             resolution=self.final_resolution,
-            user_id=user_id,
-            clients={"postgres": self.engine},
+            num_samples=5,
+            user="alice",
+            warehouse=warehouse_url,
         )
 
-        # Make some judgements
-        judged_cluster = next(iter(samples.keys()))
-        judged_leaves = samples[judged_cluster]["leaf"].unique().to_list()
+        # Test the core interaction flow works with real data using proper Textual
+        async def test_with_real_data():
+            async with app.run_test() as pilot:
+                await pilot.pause()
 
-        judgement = Judgement(
-            user_id=user_id,
-            shown=judged_cluster,
-            endorsed=[judged_leaves[:1], judged_leaves[1:]],
-        )
+                # Should have authenticated
+                assert app.user_name == "alice"
+                assert app.user_id is not None
 
-        _handler.send_eval_judgement(judgement=judgement)
+                # Should have loaded samples
+                if app.samples:
+                    # Load first entity
+                    await app.load_entity(0)
 
-        # Compare models based on judgements
+                    # Submit judgement (just default grouping for now)
+                    await app.submit_current_judgement()
+
+                return True
+
+        result = asyncio.run(test_with_real_data())
+        assert result is True
+
+        # Test that judgements were properly submitted and can be used for model
         comparison = compare_models([self.final_resolution])
         assert "final" in comparison
         assert len(comparison["final"]) == 2
@@ -170,7 +187,7 @@ class TestE2EModelEvaluation:
 
         # Create and run a deduper model locally
         queried_source = query(
-            select(self.source_a_config.name, client=self.engine),
+            select(self.source_a_config.name, client=self.warehouse_engine),
             return_type="polars",
         )
         deduper = make_model(

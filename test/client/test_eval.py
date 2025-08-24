@@ -8,7 +8,7 @@ from pyarrow import Table
 from respx import MockRouter
 from sqlalchemy import Engine
 
-from matchbox.client.eval import get_samples
+from matchbox.client.cli.eval import get_samples
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.sources import source_from_tuple

@@ -63,60 +63,65 @@ def get_samples(
         else:
             raise ValueError("`MB__CLIENT__DEFAULT_WAREHOUSE` is unset")
 
-    samples: pl.DataFrame = pl.from_arrow(
-        _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
-    )
-
-    if not len(samples):
-        return {}
-
-    results_by_source = []
-    for source_resolution in samples["source"].unique():
-        source_config = _handler.get_source_config(source_resolution)
-        location_name = source_config.location.name
-        if location_name in clients:
-            source_config.location.add_client(client=clients[location_name])
-        elif default_client:
-            source_config.location.add_client(client=default_client)
-        else:
-            warnings.warn(
-                f"Skipping {source_resolution}, incompatible with given client.",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        samples_by_source = samples.filter(pl.col("source") == source_resolution)
-        keys_by_source = samples_by_source["key"].to_list()
-
-        try:
-            source_data = pl.concat(
-                source_config.query(
-                    batch_size=10_000, qualify_names=True, keys=keys_by_source
-                )
-            )
-        except OperationalError as e:
-            raise MatchboxSourceTableError(
-                "Could not find source using given client."
-            ) from e
-
-        samples_and_source = samples_by_source.join(
-            source_data, left_on="key", right_on=source_config.qualified_key
+    try:
+        samples: pl.DataFrame = pl.from_arrow(
+            _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
         )
-        desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
-        results_by_source.append(samples_and_source[desired_columns])
 
-    if not len(results_by_source):
-        return {}
+        if not len(samples):
+            return {}
 
-    all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
+        results_by_source = []
+        for source_resolution in samples["source"].unique():
+            source_config = _handler.get_source_config(source_resolution)
+            location_name = source_config.location.name
+            if location_name in clients:
+                source_config.location.add_client(client=clients[location_name])
+            elif default_client:
+                source_config.location.add_client(client=default_client)
+            else:
+                warnings.warn(
+                    f"Skipping {source_resolution}, incompatible with given client.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                continue
 
-    results_by_root = {
-        root: all_results.filter(pl.col("root") == root).drop("root")
-        for root in all_results["root"].unique()
-    }
+            samples_by_source = samples.filter(pl.col("source") == source_resolution)
+            keys_by_source = samples_by_source["key"].to_list()
 
-    return results_by_root
+            try:
+                source_data = pl.concat(
+                    source_config.query(
+                        batch_size=10_000, qualify_names=True, keys=keys_by_source
+                    )
+                )
+            except OperationalError as e:
+                raise MatchboxSourceTableError(
+                    "Could not find source using given client."
+                ) from e
+
+            samples_and_source = samples_by_source.join(
+                source_data, left_on="key", right_on=source_config.qualified_key
+            )
+            desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
+            results_by_source.append(samples_and_source[desired_columns])
+
+        if not len(results_by_source):
+            return {}
+
+        all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
+
+        results_by_root = {
+            root: all_results.filter(pl.col("root") == root).drop("root")
+            for root in all_results["root"].unique()
+        }
+
+        return results_by_root
+    finally:
+        # Always dispose of the default client if we created one
+        if default_client:
+            default_client.dispose()
 
 
 class EvalData:
