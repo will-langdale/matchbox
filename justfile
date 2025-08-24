@@ -53,7 +53,6 @@ migration-generate descriptive-message:
 migration-reset:
     uv run alembic --config "src/matchbox/server/postgresql/alembic.ini" downgrade base
 
-# Run evaluation app with scenario data (usage: just eval <scenario>)
-# Available scenarios: bare, index, dedupe, link, probabilistic_dedupe, alt_dedupe, convergent
-eval SCENARIO:
-    uv run python test/scripts/eval_scenario.py {{SCENARIO}}
+# Run evaluation app with scenario data
+eval scenario="":
+    uv run python test/scripts/eval.py {{scenario}}

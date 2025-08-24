@@ -6,10 +6,9 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine
 
+from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.logging import logger
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
-
-from ...fixtures.db import setup_scenario
 
 
 @pytest.mark.docker

@@ -1,41 +1,48 @@
 #!/usr/bin/env python3
 """Script to run Textual eval app with scenario data."""
 
-import sys
+import logging
+import tempfile
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Annotated
 
-from test.fixtures.db import SCENARIO_REGISTRY, setup_scenario
+import typer
+from sqlalchemy import create_engine
 
+from matchbox.client._settings import settings
 from matchbox.client.cli.eval.ui import EntityResolutionApp
+from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
 from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.server.postgresql import MatchboxPostgres
 
 
 @contextmanager
 def scenario_app(scenario_name: str):
     """Context manager that sets up scenario, runs app, and cleans up."""
-    if scenario_name not in SCENARIO_REGISTRY:
-        available = ", ".join(SCENARIO_REGISTRY.keys())
-        print(f"Unknown scenario: {scenario_name}")
-        print(f"Available scenarios: {available}")
-        sys.exit(1)
 
-    # Import required fixtures
-    import tempfile
-    from pathlib import Path
+    # Suppress alembic and matchbox backend logs
+    import logging as std_logging
 
-    from sqlalchemy import create_engine
-
-    from matchbox.server.postgresql import MatchboxPostgres
+    std_logging.getLogger("alembic").setLevel(std_logging.ERROR)
+    std_logging.getLogger("alembic.runtime.migration").setLevel(std_logging.ERROR)
+    std_logging.getLogger("matchbox").setLevel(std_logging.ERROR)
 
     # Create temporary SQLite database
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
+    # Store original client settings
+    original_warehouse = getattr(settings, "default_warehouse", None)
+
     try:
         warehouse_engine = create_engine(f"sqlite:///{tmp_path}")
 
+        # Configure client to use our SQLite warehouse
+        settings.default_warehouse = str(warehouse_engine.url)
+
         # Set up postgres backend (requires Docker)
-        from test.fixtures.db import DevelopmentSettings
+        from matchbox.common.factories.scenarios import DevelopmentSettings
 
         dev_settings = DevelopmentSettings()
 
@@ -69,7 +76,7 @@ def scenario_app(scenario_name: str):
         backend = MatchboxPostgres(settings=postgres_settings)
         backend.clear(certain=True)
 
-        print(f"Setting up {scenario_name} scenario...")
+        logging.info(f"Setting up {scenario_name} scenario...")
 
         with setup_scenario(
             backend=backend,
@@ -78,7 +85,7 @@ def scenario_app(scenario_name: str):
             n_entities=10,
             seed=42,
         ) as dag:
-            print("Scenario ready! Starting Textual eval app...")
+            logging.info("Scenario ready! Starting Textual eval app...")
 
             # Create app with scenario resolution
             if scenario_name in ["bare", "index"]:
@@ -92,11 +99,21 @@ def scenario_app(scenario_name: str):
                     list(dag.models.keys())[0] if dag.models else DEFAULT_RESOLUTION
                 )
 
-            app = EntityResolutionApp(resolution=resolution, num_samples=20)
+            app = EntityResolutionApp(
+                resolution=resolution,
+                num_samples=20,
+                warehouse=str(warehouse_engine.url),
+            )
 
             yield app
 
     finally:
+        # Restore original client settings
+        if original_warehouse is not None:
+            settings.default_warehouse = original_warehouse
+        elif hasattr(settings, "default_warehouse"):
+            delattr(settings, "default_warehouse")
+
         # Clean up
         try:
             backend.clear(certain=True)
@@ -108,25 +125,42 @@ def scenario_app(scenario_name: str):
             pass
 
 
-def main():
+def main(
+    scenario: Annotated[
+        str,
+        typer.Argument(
+            help=f"Scenario type. Available: {', '.join(SCENARIO_REGISTRY.keys())}"
+        ),
+    ] = None,
+):
     """Run the scenario-based eval app."""
-    if len(sys.argv) != 2:
-        available = ", ".join(SCENARIO_REGISTRY.keys())
-        print(f"Usage: {sys.argv[0]} <scenario>")
-        print(f"Available scenarios: {available}")
-        sys.exit(1)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    scenario_name = sys.argv[1]
+    # If no scenario provided, list available scenarios
+    if scenario is None or scenario == "":
+        available_scenarios = list(SCENARIO_REGISTRY.keys())
+        logging.info("Available scenarios:")
+        for i, name in enumerate(available_scenarios, 1):
+            logging.info(f"  {i}. {name}")
+        logging.info("\nUsage: uv run python test/scripts/eval.py <scenario>")
+        raise typer.Exit(0)
+
+    if scenario not in SCENARIO_REGISTRY:
+        available = ", ".join(SCENARIO_REGISTRY.keys())
+        logging.error(f"Unknown scenario: {scenario}")
+        logging.info(f"Available scenarios: {available}")
+        raise typer.Exit(1)
 
     try:
-        with scenario_app(scenario_name) as app:
+        with scenario_app(scenario) as app:
             app.run()
-    except KeyboardInterrupt:
-        print("\nExiting...")
+    except KeyboardInterrupt as e:
+        logging.info("\nExiting...")
+        raise typer.Exit(0) from e
     except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+        logging.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)

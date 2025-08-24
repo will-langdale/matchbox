@@ -8,7 +8,7 @@ from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.ui import EntityResolutionApp
 from matchbox.common.exceptions import MatchboxClientSettingsException
-from test.fixtures.db import setup_scenario
+from matchbox.common.factories.scenarios import setup_scenario
 
 backends = [
     pytest.param("matchbox_postgres", id="postgres"),
