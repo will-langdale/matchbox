@@ -1,6 +1,15 @@
 """Tests for keyboard shortcut functionality."""
 
+import polars as pl
+
 from matchbox.client.cli.eval.ui import EvaluationState, GroupStyler
+from matchbox.client.cli.eval.utils import create_processed_comparison_data
+from matchbox.common.dtos import DataTypes
+from matchbox.common.sources import (
+    RelationalDBLocation,
+    SourceConfig,
+    SourceField,
+)
 
 
 class TestKeyboardShortcuts:
@@ -174,15 +183,6 @@ class TestFieldProcessing:
 
     def test_create_processed_comparison_data(self):
         """Test that field processing works with SourceConfig data."""
-        import polars as pl
-
-        from matchbox.client.cli.eval.utils import create_processed_comparison_data
-        from matchbox.common.dtos import DataTypes
-        from matchbox.common.sources import (
-            RelationalDBLocation,
-            SourceConfig,
-            SourceField,
-        )
 
         # Create mock SourceConfig objects
         location = RelationalDBLocation(name="test_db")

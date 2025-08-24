@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Container
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
@@ -207,6 +207,10 @@ class EvaluationState:
         for group in assignments.values():
             counts[group] = counts.get(group, 0) + 1
 
+        # Add selected group with (0) if not already present
+        if self.current_group_selection and self.current_group_selection not in counts:
+            counts[self.current_group_selection] = 0
+
         # Include unassigned count if there are unassigned columns
         assigned_count = sum(counts.values())
         remaining_count = len(self.leaf_ids) - assigned_count
@@ -284,7 +288,7 @@ class ComparisonDisplayTable(Widget):
         )
 
         # Add field name column
-        table.add_column("Field", style="bright_white", min_width=20, max_width=35)
+        table.add_column("Field", style="bright_white", min_width=20, max_width=50)
 
         # Add columns for each record with group styling
         current_assignments = self.state.current_assignments
@@ -296,9 +300,9 @@ class ComparisonDisplayTable(Widget):
                 colour, symbol = GroupStyler.get_style(group)
                 header = f"[{colour}]{symbol} {col_num}[/]"
                 # Use group colour for the entire column
-                table.add_column(header, style=colour, min_width=15, max_width=35)
+                table.add_column(header, style=colour, min_width=15, max_width=50)
             else:
-                table.add_column(str(col_num), style="dim", min_width=15, max_width=35)
+                table.add_column(str(col_num), style="dim", min_width=15, max_width=50)
 
         # Add data rows
         for row_idx, field_name in enumerate(self.state.field_names):
@@ -437,33 +441,35 @@ class GroupStyler:
         cls._symbol_index = 0
 
 
-class StatusBar(Widget):
-    """Widget to display group assignments with coloured indicators."""
+class StatusBarLeft(Widget):
+    """Left side of status bar with entity progress and groups."""
 
     def __init__(self, state: EvaluationState, **kwargs):
-        """Initialise the status bar."""
+        """Initialise the left status widget."""
         super().__init__(**kwargs)
         self.state = state
         self.state.add_listener(self._on_state_change)
 
     def render(self) -> Text:
-        """Render group status with coloured symbols and current selection."""
+        """Render entity progress and group assignments."""
         text = Text()
 
-        # Show status message if any
-        if self.state.status_message:
-            text.append(self.state.status_message, style="bright_yellow")
-            return text
+        # Show entity progress info
+        total = self.state.queue.total_count
+        current_pos = self.state.queue.current_position
+        painted_count = self.state.painted_count
 
-        # Show current selection prominently if any
-        current_group = self.state.current_group_selection
-        if current_group:
-            colour, symbol = GroupStyler.get_style(current_group)
-            text.append("Selected: ", style="bright_white")
-            text.append(
-                f"{symbol} {current_group.upper()}", style=f"bold {colour} on black"
-            )
-            text.append(" | ", style="dim")
+        # Entity progress
+        current_painted = "■ " if self.state.has_current_assignments() else ""
+        text.append(
+            f"{current_painted}Entity {current_pos}/{total}", style="bright_white"
+        )
+
+        # Painted count if any
+        if painted_count > 0:
+            text.append(f" | ■ {painted_count} painted", style="green")
+
+        text.append(" | ", style="dim")
 
         # Show group assignments
         groups = self.state.get_group_counts()
@@ -472,24 +478,88 @@ class StatusBar(Widget):
             text.append("No groups assigned", style="dim")
         else:
             text.append("Groups: ", style="bright_white")
+            current_group = self.state.current_group_selection
             for i, (group, count) in enumerate(groups.items()):
                 if i > 0:
                     text.append("  ")
 
                 # Use GroupStyler for consistent colour and symbol
                 display_text, colour = GroupStyler.get_display_text(group, count)
-                text.append(display_text, style=f"bold {colour}")
 
-        # Add helpful instruction if no group selected
-        if not current_group:
-            text.append(" | ", style="dim")
-            text.append("Press letter to select group", style="yellow")
+                # Add underline styling if this is the currently selected group
+                if group == current_group:
+                    text.append(display_text, style=f"bold {colour} underline")
+                else:
+                    text.append(display_text, style=f"bold {colour}")
+
+        # Add helpful instruction
+        text.append(" | ", style="dim")
+        text.append("Press letter to select group", style="yellow")
 
         return text
 
     def _on_state_change(self) -> None:
         """Handle state changes by refreshing the display."""
         self.refresh()
+
+
+class StatusBarRight(Widget):
+    """Right side of status bar with status indicator."""
+
+    def __init__(self, state: EvaluationState, **kwargs):
+        """Initialise the right status widget."""
+        super().__init__(**kwargs)
+        self.state = state
+        self.state.add_listener(self._on_state_change)
+
+    def render(self) -> Text:
+        """Render status indicator."""
+        text = Text()
+
+        if self.state.status_message:
+            # Convert verbose messages to symbolic indicators with labels
+            message = self.state.status_message.lower()
+            if "submitting" in message or "fetching" in message:
+                status_text = "⚡ Working"
+                status_style = "yellow"
+            elif "submitted" in message or "complete" in message or "ready" in message:
+                status_text = "✓ Done"
+                status_style = "green"
+            elif "error" in message or "failed" in message:
+                status_text = "⚠ Error"
+                status_style = "red"
+            elif "nothing to submit" in message:
+                status_text = "◯ Nothing"
+                status_style = "dim"
+            else:
+                status_text = "● Status"
+                status_style = "blue"
+
+            text.append(status_text, style=status_style)
+        else:
+            # Show placeholder when no status message
+            text.append("○ Ready", style="dim")
+
+        return text
+
+    def _on_state_change(self) -> None:
+        """Handle state changes by refreshing the display."""
+        self.refresh()
+
+
+class StatusBar(Widget):
+    """Container widget for status bar with left and right sections."""
+
+    def __init__(self, state: EvaluationState, **kwargs):
+        """Initialise the status bar container."""
+        super().__init__(**kwargs)
+        self.state = state
+
+    def compose(self) -> ComposeResult:
+        """Compose the status bar with left and right sections."""
+        with Horizontal():
+            yield StatusBarLeft(self.state, id="status-left")
+            yield StatusBarRight(self.state, id="status-right")
 
 
 class HelpModal(ModalScreen):
@@ -590,9 +660,6 @@ class EntityResolutionApp(App):
         self.state.user_name = user or ""
         self.state.warehouse = warehouse
 
-        # Add listener to update header when state changes
-        self.state.add_listener(self.update_navigation_header)
-
     async def on_mount(self) -> None:
         """Initialise the application."""
         await self.authenticate()
@@ -629,44 +696,15 @@ class EntityResolutionApp(App):
             # No current item, clear display
             self.state.clear_display_data()
 
-        self.update_navigation_header()
-
     def compose(self) -> ComposeResult:
         """Compose the main application UI."""
         yield Header()
-        yield Static("Loading...", classes="navigation-header", id="nav-header")
-        yield Container(
+        yield Vertical(
             StatusBar(self.state, classes="status-bar", id="status-bar"),
             ComparisonDisplayTable(self.state, id="record-table"),
-            Static(
-                "Press any letter (a-z) to select group, "
-                "then numbers to assign columns",
-                classes="command-area",
-                id="help-text",
-            ),
             id="main-container",
         )
         yield Footer()
-
-    def update_navigation_header(self) -> None:
-        """Update the navigation header with current progress."""
-        total = self.state.queue.total_count
-        current = self.state.queue.current_position
-        painted_count = self.state.painted_count
-
-        # Show painted entities count
-        painted_text = f" | ■ {painted_count} painted" if painted_count > 0 else ""
-
-        # Mark current entity as painted if it has assignments
-        current_painted = "■ " if self.state.has_current_assignments() else ""
-
-        nav_text = (
-            f"{current_painted}Entity {current}/{total}{painted_text} | → Next | "
-            f"← Previous | Space Submit | ? Help"
-        )
-
-        header = self.query_one("#nav-header", Static)
-        header.update(nav_text)
 
     def on_key(self, event) -> None:
         """Handle keyboard events for group assignment shortcuts."""
@@ -680,14 +718,12 @@ class EntityResolutionApp(App):
         if key == "escape":
             # Clear current group selection
             self.state.clear_group_selection()
-            self.update_help_text()
             event.prevent_default()
             return
 
         # Handle letter key presses (set current group)
         if key.isalpha() and len(key) == 1:
             self.state.set_group_selection(key)
-            self.update_help_text()
             event.prevent_default()
             return
 
@@ -700,23 +736,6 @@ class EntityResolutionApp(App):
                     self.state.assign_column_to_group(column_number, current_group)
             event.prevent_default()
             return
-
-    def update_help_text(self) -> None:
-        """Update the help text to show current group selection."""
-        current_group = self.state.current_group_selection
-        if current_group:
-            colour, symbol = GroupStyler.get_style(current_group)
-            help_text = (
-                f"Group [{colour}]{symbol} {current_group.upper()}[/] selected - "
-                "press numbers to assign columns"
-            )
-        else:
-            help_text = (
-                "Press any letter (a-z) to select group, then numbers to assign columns"
-            )
-
-        help_widget = self.query_one("#help-text", Static)
-        help_widget.update(help_text)
 
     async def action_next_entity(self) -> None:
         """Move to the next entity via queue rotation."""
@@ -738,7 +757,6 @@ class EntityResolutionApp(App):
         """Clear all group assignments and held letters for current entity."""
         self.state.clear_current_assignments()
         self.state.clear_group_selection()
-        self.update_help_text()
 
     async def action_show_help(self) -> None:
         """Show the help modal."""
@@ -821,8 +839,7 @@ class EntityResolutionApp(App):
                     new_items = list(new_samples_dict.values())
                     self.state.queue.add_items(new_items)
 
-                    # Update displays and status
-                    self.update_navigation_header()
+                    # Update status
                     self.state.update_status(
                         f"Queue updated: added {len(new_items)} new samples"
                     )
