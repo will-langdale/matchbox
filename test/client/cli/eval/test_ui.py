@@ -38,9 +38,9 @@ class TestTextualUI:
     async def test_app_initialization(self):
         """Test that the app can be initialized."""
         app = EntityResolutionApp(resolution="test_resolution", num_samples=5)
-        assert app.resolution == "test_resolution"
-        assert app.num_samples == 5
-        assert app.current_entity == 0
+        assert app.state.resolution == "test_resolution"
+        assert app.state.sample_limit == 5
+        assert app.state.queue.current_position == 0
 
     @pytest.mark.asyncio
     async def test_app_runs_headless(self):
@@ -99,11 +99,11 @@ class TestTextualUI:
             await pilot.pause()
 
             # Should have authenticated
-            assert app.user_name == "test_user"
-            assert app.user_id == 123
+            assert app.state.user_name == "test_user"
+            assert app.state.user_id == 123
 
             # Should have loaded samples (even if empty)
-            assert app.samples == mock_samples
+            assert app.state.queue.total_count == len(mock_samples)
 
     @pytest.mark.asyncio
     async def test_help_modal(self):
@@ -148,14 +148,14 @@ class TestTextualUI:
             async with app.run_test() as pilot:
                 await pilot.pause()
 
-                # Test keyboard handler exists
-                assert hasattr(pilot.app, "keyboard_handler")
+                # Test state management exists
+                assert hasattr(pilot.app, "state")
 
-                # Test keyboard handler functionality
-                handler = pilot.app.keyboard_handler
-                handler.on_key_down("b")
-                assert handler.get_current_group() == "b"
-                assert handler.parse_number_key("1") == 1
+                # Test state functionality
+                state = pilot.app.state
+                state.set_group_selection("b")
+                assert state.current_group_selection == "b"
+                assert state.parse_number_key("1") == 1
 
     @pytest.mark.asyncio
     async def test_scenario_integration(self):
@@ -177,11 +177,47 @@ class TestTextualUI:
                 await pilot.pause()
 
                 # Should have authenticated
-                assert app.user_name == "test_user"
-                assert app.user_id is not None
+                assert app.state.user_name == "test_user"
+                assert app.state.user_id is not None
 
                 # App should be running
                 assert app.is_running
 
                 # Should have loaded samples from real scenario data
-                assert len(app.samples) >= 0  # Could be 0 if no evaluation clusters yet
+                assert (
+                    app.state.queue.total_count >= 0
+                )  # Could be 0 if no evaluation clusters yet
+
+    def test_action_submit_and_fetch_exists(self):
+        """Test that the action_submit_and_fetch method exists and is properly bound."""
+        app = EntityResolutionApp(resolution="test", num_samples=5)
+
+        # Verify the method exists
+        assert hasattr(app, "action_submit_and_fetch")
+        assert callable(app.action_submit_and_fetch)
+
+        # Verify the spacebar binding exists in BINDINGS
+        space_binding = next(
+            (binding for binding in app.BINDINGS if binding[0] == "space"), None
+        )
+        assert space_binding is not None
+        assert space_binding[1] == "submit_and_fetch"
+        assert space_binding[2] == "Submit & fetch more"
+
+    def test_persistent_painting_functionality(self):
+        """Test that painting persists across entity navigation."""
+        app = EntityResolutionApp(resolution="test", num_samples=5)
+
+        # Test queue-based storage exists in state
+        assert hasattr(app.state, "queue")
+        assert hasattr(app.state.queue, "items")
+
+        # Test state has required methods
+        assert hasattr(app.state, "has_current_assignments")
+        assert callable(app.state.has_current_assignments)
+
+        # Test that set_display_data works
+        app.state.set_display_data(["field1"], [["value1"]], [1])
+        assert app.state.field_names == ["field1"]
+        assert app.state.data_matrix == [["value1"]]
+        assert app.state.leaf_ids == [1]

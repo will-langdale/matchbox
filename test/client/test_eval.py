@@ -9,6 +9,7 @@ from respx import MockRouter
 from sqlalchemy import Engine
 
 from matchbox.client.cli.eval import get_samples
+from matchbox.client.cli.eval.utils import EvaluationItem
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.sources import source_from_tuple
@@ -119,20 +120,28 @@ def test_get_samples(
         }
     )
 
+    # samples now contains EvaluationItem objects, not DataFrames
     assert_frame_equal(
-        samples[10],
+        samples[10].dataframe,
         expected_sample_10,
         check_column_order=False,
         check_row_order=False,
         check_dtypes=False,
     )
     assert_frame_equal(
-        samples[11],
+        samples[11].dataframe,
         expected_sample_11,
         check_column_order=False,
         check_row_order=False,
         check_dtypes=False,
     )
+
+    # Verify that EvaluationItem has processed field data
+    assert isinstance(samples[10], EvaluationItem)
+    assert samples[10].cluster_id == 10
+    assert isinstance(samples[10].field_names, list)
+    assert isinstance(samples[10].data_matrix, list)
+    assert isinstance(samples[10].leaf_ids, list)
 
     # What happens if no samples are available?
     matchbox_api.get("/eval/samples").mock(
