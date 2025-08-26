@@ -1,0 +1,26 @@
+name: Scan for Secrets with Trufflehog
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  scan:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog directly
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/repo \
+            trufflesecurity/trufflehog:latest \
+            git file:///repo \
+            --since-commit main \
+            --branch $(git branch --show-current) \
+            --github-actions \
+            --fail

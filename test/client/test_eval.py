@@ -163,7 +163,12 @@ def test_get_samples(
             content=table_to_buffer(just_baz_samples).read(),
         )
     )
-    no_accessible_samples = get_samples(n=10, resolution="resolution", user_id=user_id)
+    with pytest.warns(
+        UserWarning, match="Skipping baz, incompatible with given client"
+    ):
+        no_accessible_samples = get_samples(
+            n=10, resolution="resolution", user_id=user_id
+        )
     assert no_accessible_samples == {}
 
     # Using default client as fallback
