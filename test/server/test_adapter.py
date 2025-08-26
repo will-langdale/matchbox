@@ -28,13 +28,12 @@ from matchbox.common.factories.entities import (
     diff_results,
     query_to_cluster_entities,
 )
+from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.factories.sources import SourceTestkit
 from matchbox.common.graph import ResolutionGraph
 from matchbox.common.hash import HASH_FUNC
 from matchbox.common.sources import Match, RelationalDBLocation
 from matchbox.server.base import MatchboxDBAdapter
-
-from ..fixtures.db import setup_scenario
 
 backends = [
     pytest.param("matchbox_postgres", id="postgres"),
