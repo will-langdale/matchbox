@@ -1,11 +1,9 @@
 """Scenario factories for creating TestkitDAG scenarios."""
 
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Callable, Generator, Literal
 
 import pyarrow as pa
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
 from matchbox.common.factories.dags import TestkitDAG
@@ -518,21 +516,3 @@ def setup_scenario(
         yield dag
     finally:
         backend.clear(certain=True)
-
-
-class DevelopmentSettings(BaseSettings):
-    """Settings for the development environment."""
-
-    api_port: int = 8000
-    datastore_console_port: int = 9003
-    datastore_port: int = 9002
-    warehouse_port: int = 7654
-    postgres_backend_port: int = 9876
-
-    model_config = SettingsConfigDict(
-        extra="ignore",
-        env_prefix="MB__DEV__",
-        env_nested_delimiter="__",
-        env_file=Path("environments/development.env"),
-        env_file_encoding="utf-8",
-    )

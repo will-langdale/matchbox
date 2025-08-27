@@ -28,6 +28,9 @@ def test_scenario_registry():
     assert "index" in SCENARIO_REGISTRY
     assert "dedupe" in SCENARIO_REGISTRY
     assert "link" in SCENARIO_REGISTRY
+    assert "probabilistic_dedupe" in SCENARIO_REGISTRY
+    assert "alt_dedupe" in SCENARIO_REGISTRY
+    assert "convergent" in SCENARIO_REGISTRY
 
 
 def test_register_custom_scenario(

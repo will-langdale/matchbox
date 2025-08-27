@@ -8,13 +8,36 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine
 
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.ui import EntityResolutionApp
 from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
 from matchbox.common.graph import DEFAULT_RESOLUTION
+from matchbox.server.base import MatchboxDatastoreSettings
 from matchbox.server.postgresql import MatchboxPostgres
+
+
+class DevelopmentSettings(BaseSettings):
+    """Duplicate of the same settings in pytest fixtures.
+
+    Can't import from fixtures, and moving to core Matchbox makes no sense.
+    """
+
+    api_port: int = 8000
+    datastore_console_port: int = 9003
+    datastore_port: int = 9002
+    warehouse_port: int = 7654
+    postgres_backend_port: int = 9876
+
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_prefix="MB__DEV__",
+        env_nested_delimiter="__",
+        env_file=Path("environments/development.env"),
+        env_file_encoding="utf-8",
+    )
 
 
 @contextmanager
@@ -41,12 +64,7 @@ def scenario_app(scenario_name: str):
         # Configure client to use our SQLite warehouse
         settings.default_warehouse = str(warehouse_engine.url)
 
-        # Set up postgres backend (requires Docker)
-        from matchbox.common.factories.scenarios import DevelopmentSettings
-
         dev_settings = DevelopmentSettings()
-
-        from matchbox.server.base import MatchboxDatastoreSettings
 
         datastore_settings = MatchboxDatastoreSettings(
             host="localhost",

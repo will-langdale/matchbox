@@ -10,17 +10,13 @@ import pytest
 import respx
 from httpx import Client
 from moto import mock_aws
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
 from matchbox.client._handler import create_client
 from matchbox.client._settings import ClientSettings, settings
-from matchbox.common.factories.scenarios import (
-    DevelopmentSettings,
-)
-from matchbox.server.base import (
-    MatchboxDatastoreSettings,
-)
+from matchbox.server.base import MatchboxDatastoreSettings
 from matchbox.server.postgresql import MatchboxPostgres, MatchboxPostgresSettings
 
 if TYPE_CHECKING:
@@ -30,6 +26,22 @@ else:
 
 
 # Warehouse database fixtures
+
+
+class DevelopmentSettings(BaseSettings):
+    api_port: int = 8000
+    datastore_console_port: int = 9003
+    datastore_port: int = 9002
+    warehouse_port: int = 7654
+    postgres_backend_port: int = 9876
+
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_prefix="MB__DEV__",
+        env_nested_delimiter="__",
+        env_file=Path("environments/development.env"),
+        env_file_encoding="utf-8",
+    )
 
 
 @pytest.fixture(scope="session")
