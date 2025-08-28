@@ -139,9 +139,9 @@ def test_get_samples(
     # Verify that EvaluationItem has processed field data
     assert isinstance(samples[10], EvaluationItem)
     assert samples[10].cluster_id == 10
-    assert isinstance(samples[10].field_names, list)
-    assert isinstance(samples[10].data_matrix, list)
-    assert isinstance(samples[10].leaf_ids, list)
+    assert isinstance(samples[10].display_dataframe, pl.DataFrame)
+    assert isinstance(samples[10].display_columns, list)
+    assert isinstance(samples[10].duplicate_groups, list)
 
     # What happens if no samples are available?
     matchbox_api.get("/eval/samples").mock(

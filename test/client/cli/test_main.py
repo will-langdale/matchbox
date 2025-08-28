@@ -32,6 +32,12 @@ class TestMainCLI:
         """Test that eval start help works."""
         result = self.runner.invoke(app, ["eval", "start", "--help"])
         assert result.exit_code == 0
-        assert "interactive entity resolution" in result.output.lower()
-        assert "--resolution" in result.output
-        assert "--samples" in result.output
+
+        # Strip ANSI codes for reliable text matching
+        import re
+
+        clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+
+        assert "interactive entity resolution" in clean_output.lower()
+        assert "--resolution" in clean_output
+        assert "--samples" in clean_output
