@@ -8,10 +8,7 @@ import pytest
 from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.ui import EntityResolutionApp
-from matchbox.client.cli.eval.utils import (
-    EvaluationItem,
-    create_processed_comparison_data,
-)
+from matchbox.client.cli.eval.utils import create_evaluation_item
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.factories.scenarios import setup_scenario
 
@@ -230,37 +227,34 @@ class TestTextualUI:
                 ids = row["id"]
                 keys = row["key"]
 
-                leaf_data = pl.DataFrame(
-                    {
-                        "root": [cluster_id] * len(ids),
-                        "leaf": ids,
-                        "id": ids,
-                        "key": keys,
-                    }
-                )
+                # Create test data with proper field columns that match source config
+                sc = source_configs[0]
+                qualified_fields = {
+                    sc.f(field.name): f"Test_{field.name}_{i}"
+                    for i, field in enumerate(sc.index_fields)
+                }
 
-                (
-                    display_dataframe,
-                    field_names,
-                    data_matrix,
-                    processed_leaf_ids,
-                ) = create_processed_comparison_data(leaf_data, source_configs[:1])
+                leaf_data_dict = {
+                    "root": [cluster_id] * len(ids),
+                    "leaf": ids,
+                    "id": ids,
+                    "key": keys,
+                }
 
-                item = EvaluationItem(
-                    cluster_id=cluster_id,
-                    dataframe=leaf_data,
-                    display_dataframe=display_dataframe,
-                    field_names=field_names,
-                    data_matrix=data_matrix,
-                    leaf_ids=processed_leaf_ids,
-                    assignments={},
-                )
+                # Add qualified field data for each record
+                for qualified_field, base_value in qualified_fields.items():
+                    leaf_data_dict[qualified_field] = [
+                        f"{base_value}_{i}" for i in range(len(ids))
+                    ]
+
+                leaf_data = pl.DataFrame(leaf_data_dict)
+                item = create_evaluation_item(leaf_data, source_configs[:1], cluster_id)
                 items.append(item)
 
             # Paint items and add to queue
             for i, item in enumerate(items):
-                for col_idx in range(len(item.leaf_ids)):
-                    item.assignments[col_idx] = "a" if i == 0 else "b"
+                for display_col_idx in range(len(item.display_columns)):
+                    item.assignments[display_col_idx] = "a" if i == 0 else "b"
 
             app.state.queue.add_items(items)
 
@@ -302,7 +296,5 @@ class TestTextualUI:
         assert callable(app.state.has_current_assignments)
 
         # Test that set_display_data works
-        app.state.set_display_data(["field1"], [["value1"]], [1])
-        assert app.state.field_names == ["field1"]
-        assert app.state.data_matrix == [["value1"]]
-        assert app.state.leaf_ids == [1]
+        app.state.set_display_data([1])
+        assert app.state.display_leaf_ids == [1]

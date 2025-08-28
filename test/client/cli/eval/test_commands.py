@@ -3,7 +3,7 @@
 import polars as pl
 
 from matchbox.client.cli.eval.ui import EvaluationState, GroupStyler
-from matchbox.client.cli.eval.utils import create_processed_comparison_data
+from matchbox.client.cli.eval.utils import create_evaluation_item
 from matchbox.common.dtos import DataTypes
 from matchbox.common.sources import (
     RelationalDBLocation,
@@ -224,23 +224,27 @@ class TestFieldProcessing:
             }
         )
 
-        # Process the data
-        (
-            display_dataframe,
-            field_names,
-            data_matrix,
-            leaf_ids,
-        ) = create_processed_comparison_data(df, [source_a, source_b])
+        # Create evaluation item with new paradigm
+        evaluation_item = create_evaluation_item(df, [source_a, source_b], 123)
 
         # Verify structure
-        assert isinstance(display_dataframe, pl.DataFrame)
-        assert isinstance(field_names, list)
-        assert isinstance(data_matrix, list)
-        assert isinstance(leaf_ids, list)
-        assert leaf_ids == [1, 2, 3]
+        assert isinstance(evaluation_item.display_dataframe, pl.DataFrame)
+        assert isinstance(evaluation_item.duplicate_groups, list)
+        assert isinstance(evaluation_item.display_columns, list)
+        assert isinstance(evaluation_item.leaf_to_display_mapping, dict)
+        assert evaluation_item.cluster_id == 123
 
-        # Check that we have the expected field structure (order may vary)
-        assert len([name for name in field_names if "company_name" in name]) == 2
-        assert len([name for name in field_names if "registration_id" in name]) == 1
-        assert len([name for name in field_names if "address" in name]) == 1
-        assert "---" in field_names  # separators present
+        # Check expected number of display columns (should be 3 - no duplicates)
+        assert len(evaluation_item.display_columns) == 3
+        assert len(evaluation_item.duplicate_groups) == 3
+
+        # Check that all leaf IDs are accounted for in duplicate groups
+        all_leaf_ids = []
+        for group in evaluation_item.duplicate_groups:
+            all_leaf_ids.extend(group)
+        assert sorted(all_leaf_ids) == [1, 2, 3]
+
+        # Check display dataframe has expected fields
+        field_names = evaluation_item.display_dataframe["field_name"].unique().to_list()
+        assert "company_name" in field_names
+        assert "registration_id" in field_names or "address" in field_names

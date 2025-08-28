@@ -38,23 +38,23 @@ except ImportError:
 
 
 class EvaluationItem(BaseModel):
-    """A cluster awaiting evaluation, with processed field data."""
+    """A cluster awaiting evaluation, with deduplicated column data."""
 
     model_config = {"arbitrary_types_allowed": True}
 
     cluster_id: int
-    dataframe: pl.DataFrame
+    dataframe: pl.DataFrame  # Original raw data
     display_dataframe: pl.DataFrame  # Enhanced DataFrame for flexible rendering
-    field_names: list[str]  # Pre-processed field names for display
-    data_matrix: list[list[str]]  # Pre-processed data matrix
-    leaf_ids: list[int]  # Pre-processed leaf IDs
-    assignments: dict[int, str] = {}  # column_index -> group_letter
+    duplicate_groups: list[list[int]]  # Groups of leaf_ids with identical data
+    display_columns: list[int]  # Representative leaf_id for each displayed column
+    leaf_to_display_mapping: dict[int, int]  # actual leaf_id -> display_column_index
+    assignments: dict[int, str] = {}  # display_column_index -> group_letter
 
     @computed_field
     @property
     def total_columns(self) -> int:
-        """Total number of columns/leaves in this cluster."""
-        return len(self.leaf_ids)
+        """Total number of display columns in this cluster."""
+        return len(self.display_columns)
 
     @computed_field
     @property
@@ -63,24 +63,29 @@ class EvaluationItem(BaseModel):
         return len(self.assignments) == self.total_columns
 
     def to_judgement(self, user_id: int) -> Judgement:
-        """Convert assignments to Judgement format for submission."""
+        """Convert assignments to Judgement format, expanding duplicate groups."""
         groups = {}
-        # Group leaf IDs by assignment
-        for col_index, group in self.assignments.items():
+
+        # Expand display column assignments to all underlying leaf IDs
+        for display_col_index, group in self.assignments.items():
             if group not in groups:
                 groups[group] = []
-            if col_index < len(self.leaf_ids):
-                groups[group].append(self.leaf_ids[col_index])
 
-        # Unassigned columns default to group 'a'
-        assigned_cols = set(self.assignments.keys())
-        unassigned = [
-            self.leaf_ids[i]
-            for i in range(len(self.leaf_ids))
-            if i not in assigned_cols
-        ]
-        if unassigned:
-            groups.setdefault("a", []).extend(unassigned)
+            # Get all leaf IDs for this display column (including duplicates)
+            if display_col_index < len(self.duplicate_groups):
+                duplicate_group = self.duplicate_groups[display_col_index]
+                groups[group].extend(duplicate_group)
+
+        # Handle unassigned display columns - expand to all their leaf IDs
+        assigned_display_cols = set(self.assignments.keys())
+        unassigned_leaf_ids = []
+
+        for display_col_index in range(len(self.duplicate_groups)):
+            if display_col_index not in assigned_display_cols:
+                unassigned_leaf_ids.extend(self.duplicate_groups[display_col_index])
+
+        if unassigned_leaf_ids:
+            groups.setdefault("a", []).extend(unassigned_leaf_ids)
 
         # Convert to endorsed format, ensuring no duplicate groups
         endorsed = []
@@ -174,87 +179,125 @@ def create_display_dataframe(
         )
 
 
-def dataframe_to_legacy_format(
-    display_df: pl.DataFrame, num_records: int
-) -> tuple[list[str], list[list[str]]]:
-    """Convert display DataFrame to legacy field_names and data_matrix format.
+class DeduplicationResult:
+    """Result of column deduplication analysis."""
+
+    def __init__(
+        self,
+        duplicate_groups: list[list[int]],
+        display_columns: list[int],
+        leaf_to_display_mapping: dict[int, int],
+    ):
+        """Initialize deduplication result."""
+        self.duplicate_groups = duplicate_groups
+        self.display_columns = display_columns
+        self.leaf_to_display_mapping = leaf_to_display_mapping
+
+
+def deduplicate_columns(display_df: pl.DataFrame) -> DeduplicationResult:
+    """Analyze columns for duplicates and create deduplication mapping.
 
     Args:
         display_df: Enhanced display DataFrame
-        num_records: Total number of records (for padding empty values)
 
     Returns:
-        Tuple of (field_names, data_matrix) in legacy format
+        DeduplicationResult with duplicate groupings and mappings
     """
-    field_names = []
-    data_matrix = []
-
     if display_df.is_empty():
-        return field_names, data_matrix
+        return DeduplicationResult([], [], {})
 
-    # Group by field_name to recreate the current grouped structure
-    field_groups = display_df.group_by("field_name").agg(
-        [pl.col("source_name"), pl.col("record_index"), pl.col("value")]
+    # Get all unique leaf_ids (columns)
+    leaf_ids = sorted(display_df["leaf_id"].unique().to_list())
+
+    if not leaf_ids:
+        return DeduplicationResult([], [], {})
+
+    # Create column signatures by hashing all field values for each column
+    column_signatures = {}
+
+    for leaf_id in leaf_ids:
+        # Get all data for this column across all fields
+        column_data = (
+            display_df.filter(pl.col("leaf_id") == leaf_id)
+            .sort("field_name")  # Consistent ordering
+            .select(["field_name", "value"])
+        )
+
+        # Create a signature from all field-value pairs
+        if not column_data.is_empty():
+            # Convert to sorted list of (field, value) pairs for consistent hashing
+            field_value_pairs = [
+                (row["field_name"], row["value"])
+                for row in column_data.iter_rows(named=True)
+            ]
+            signature = tuple(sorted(field_value_pairs))
+        else:
+            signature = ()  # Empty column
+
+        column_signatures[leaf_id] = signature
+
+    # Group columns by identical signatures
+    signature_to_leaves = {}
+    for leaf_id, signature in column_signatures.items():
+        if signature not in signature_to_leaves:
+            signature_to_leaves[signature] = []
+        signature_to_leaves[signature].append(leaf_id)
+
+    # Build deduplication structures
+    duplicate_groups = []
+    display_columns = []
+    leaf_to_display_mapping = {}
+
+    display_col_index = 0
+    for leaf_group in signature_to_leaves.values():
+        # Sort leaf IDs for consistent ordering
+        leaf_group = sorted(leaf_group)
+
+        # First leaf ID in group becomes the display representative
+        representative_leaf = leaf_group[0]
+
+        duplicate_groups.append(leaf_group)
+        display_columns.append(representative_leaf)
+
+        # Map all leaves in this group to the same display column index
+        for leaf_id in leaf_group:
+            leaf_to_display_mapping[leaf_id] = display_col_index
+
+        display_col_index += 1
+
+    return DeduplicationResult(
+        duplicate_groups, display_columns, leaf_to_display_mapping
     )
 
-    for field_row in field_groups.iter_rows(named=True):
-        field_name = field_row["field_name"]
-        source_names = field_row["source_name"]
-        record_indices = field_row["record_index"]
-        values = field_row["value"]
 
-        # Add separator if not the first group
-        if field_names:
-            field_names.append("---")
-            data_matrix.append([""] * num_records)
-
-        # Group by source within this field
-        source_data = {}
-        for source, record_idx, value in zip(
-            source_names, record_indices, values, strict=True
-        ):
-            if source not in source_data:
-                source_data[source] = [""] * num_records
-            source_data[source][record_idx] = value
-
-        # Add a row for each source's version of this field
-        for source_name, row_values in source_data.items():
-            field_names.append(f"{field_name} ({source_name})")
-            data_matrix.append(row_values)
-
-    return field_names, data_matrix
-
-
-def create_processed_comparison_data(
-    df: pl.DataFrame, source_configs: list[SourceConfig]
-) -> tuple[pl.DataFrame, list[str], list[list[str]], list[int]]:
-    """Create comparison data with enhanced DataFrame and legacy formats.
+def create_evaluation_item(
+    df: pl.DataFrame, source_configs: list[SourceConfig], cluster_id: int
+) -> EvaluationItem:
+    """Create a complete EvaluationItem with deduplication.
 
     Args:
         df: DataFrame with records as rows and qualified fields as columns
-        source_configs: List of SourceConfig objects that generated the qualified fields
+        source_configs: List of SourceConfig objects
+        cluster_id: The cluster ID for this evaluation item
 
     Returns:
-        Tuple of:
-        - display_dataframe: Enhanced DataFrame for flexible rendering
-        - field_names: List of field names (row headers) - legacy format
-        - data_matrix: List of rows, each containing values for all records
-        - leaf_ids: List of leaf IDs for each record (column)
+        Complete EvaluationItem with deduplication applied
     """
-    # Get leaf IDs for records (these become our column identifiers)
-    leaf_ids = (
-        df.select("leaf").to_series().to_list()
-        if "leaf" in df.columns
-        else list(range(len(df)))
-    )
-
-    # Create the enhanced display DataFrame
+    # Create enhanced display DataFrame
     display_dataframe = create_display_dataframe(df, source_configs)
 
-    # Generate backward-compatible field_names and data_matrix
-    field_names, data_matrix = dataframe_to_legacy_format(display_dataframe, len(df))
+    # Perform deduplication analysis
+    dedup_result = deduplicate_columns(display_dataframe)
 
-    return display_dataframe, field_names, data_matrix, leaf_ids
+    return EvaluationItem(
+        cluster_id=cluster_id,
+        dataframe=df,
+        display_dataframe=display_dataframe,
+        duplicate_groups=dedup_result.duplicate_groups,
+        display_columns=dedup_result.display_columns,
+        leaf_to_display_mapping=dedup_result.leaf_to_display_mapping,
+        assignments={},
+    )
 
 
 def get_samples(
@@ -353,23 +396,9 @@ def get_samples(
         for root in all_results["root"].unique():
             cluster_df = all_results.filter(pl.col("root") == root).drop("root")
 
-            # Process field data using SourceConfig information
-            (
-                display_dataframe,
-                field_names,
-                data_matrix,
-                leaf_ids,
-            ) = create_processed_comparison_data(cluster_df, source_configs)
-
-            # Create EvaluationItem with processed data
-            evaluation_item = EvaluationItem(
-                cluster_id=int(root),
-                dataframe=cluster_df,
-                display_dataframe=display_dataframe,
-                field_names=field_names,
-                data_matrix=data_matrix,
-                leaf_ids=leaf_ids,
-                assignments={},
+            # Create EvaluationItem with deduplication
+            evaluation_item = create_evaluation_item(
+                cluster_df, source_configs, int(root)
             )
 
             results_by_root[int(root)] = evaluation_item

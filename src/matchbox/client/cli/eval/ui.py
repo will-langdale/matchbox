@@ -105,9 +105,7 @@ class EvaluationState:
         self.compact_view_mode: bool = True  # Default to compact view
 
         # Display State (derived from current queue item)
-        self.field_names: list[str] = []
-        self.data_matrix: list[list[str]] = []
-        self.leaf_ids: list[int] = []
+        self.display_leaf_ids: list[int] = []
 
         # User/Connection State
         self.user_name: str = ""
@@ -176,11 +174,11 @@ class EvaluationState:
         self._notify_listeners()
 
     def assign_column_to_group(self, column_number: int, group: str) -> None:
-        """Assign a column to a group."""
-        col_index = column_number - 1
+        """Assign a display column to a group."""
+        display_col_index = column_number - 1
         current = self.queue.current
-        if current and 0 <= col_index < len(self.leaf_ids):
-            current.assignments[col_index] = group
+        if current and 0 <= display_col_index < len(current.display_columns):
+            current.assignments[display_col_index] = group
             self._notify_listeners()
 
     def clear_current_assignments(self) -> None:
@@ -190,38 +188,45 @@ class EvaluationState:
             current.assignments.clear()
         self._notify_listeners()
 
-    def set_display_data(
-        self, field_names: list[str], data_matrix: list[list[str]], leaf_ids: list[int]
-    ) -> None:
+    def set_display_data(self, display_leaf_ids: list[int]) -> None:
         """Set the display data."""
-        self.field_names = field_names
-        self.data_matrix = data_matrix
-        self.leaf_ids = leaf_ids
+        self.display_leaf_ids = display_leaf_ids
         self._notify_listeners()
 
     def clear_display_data(self) -> None:
         """Clear all display data."""
-        self.field_names = []
-        self.data_matrix = []
-        self.leaf_ids = []
+        self.display_leaf_ids = []
         self._notify_listeners()
 
     def get_group_counts(self) -> dict[str, int]:
-        """Get count of columns in each group for current entity."""
+        """Get count of display columns in each group for current entity."""
+        current = self.queue.current
+        if not current:
+            return {}
+
         assignments = self.current_assignments
         counts = {}
-        for group in assignments.values():
-            counts[group] = counts.get(group, 0) + 1
+
+        # Count actual underlying leaf IDs, not just display columns
+        for display_col_index, group in assignments.items():
+            if display_col_index < len(current.duplicate_groups):
+                duplicate_group_size = len(current.duplicate_groups[display_col_index])
+                counts[group] = counts.get(group, 0) + duplicate_group_size
 
         # Add selected group with (0) if not already present
         if self.current_group_selection and self.current_group_selection not in counts:
             counts[self.current_group_selection] = 0
 
-        # Include unassigned count if there are unassigned columns
-        assigned_count = sum(counts.values())
-        remaining_count = len(self.leaf_ids) - assigned_count
-        if remaining_count > 0:
-            counts["unassigned"] = remaining_count
+        # Include unassigned count if there are unassigned display columns
+        assigned_display_cols = set(assignments.keys())
+        unassigned_leaf_count = 0
+        for display_col_index in range(len(current.duplicate_groups)):
+            if display_col_index not in assigned_display_cols:
+                duplicate_group = current.duplicate_groups[display_col_index]
+                unassigned_leaf_count += len(duplicate_group)
+
+        if unassigned_leaf_count > 0:
+            counts["unassigned"] = unassigned_leaf_count
 
         return counts
 
@@ -293,8 +298,9 @@ class ComparisonDisplayTable(Widget):
         return loading_table
 
     def _render_compact_view(self, display_df: pl.DataFrame) -> Table:
-        """Render compact view - one row per field, compressed columns."""
-        if display_df.is_empty():
+        """Render compact view - one row per field, deduplicated columns."""
+        current = self.state.queue.current
+        if not current or display_df.is_empty():
             return self._create_loading_table()
 
         # Create Rich Table
@@ -310,44 +316,50 @@ class ComparisonDisplayTable(Widget):
         # Add field name column
         table.add_column("Field", style="bright_white", min_width=20, max_width=50)
 
-        # Get unique records and sort them for consistent column ordering
-        record_indices = sorted(display_df["record_index"].unique().to_list())
-
-        # Add columns for each record with group styling
+        # Add columns for each display column (deduplicated)
         current_assignments = self.state.current_assignments
-        for record_idx in record_indices:
-            col_num = record_idx + 1
+        for display_col_index, _representative_leaf_id in enumerate(
+            current.display_columns
+        ):
+            col_num = display_col_index + 1
+            duplicate_count = len(current.duplicate_groups[display_col_index])
 
-            if record_idx in current_assignments:
-                group = current_assignments[record_idx]
+            # Create header with duplicate count indicator
+            if duplicate_count > 1:
+                header_text = f"{col_num} (×{duplicate_count})"
+            else:
+                header_text = str(col_num)
+
+            if display_col_index in current_assignments:
+                group = current_assignments[display_col_index]
                 colour, symbol = GroupStyler.get_style(group)
-                header = f"[{colour}]{symbol} {col_num}[/]"
+                header = f"[{colour}]{symbol} {header_text}[/]"
                 table.add_column(header, style=colour, min_width=15, max_width=50)
             else:
-                table.add_column(str(col_num), style="dim", min_width=15, max_width=50)
+                table.add_column(header_text, style="dim", min_width=15, max_width=50)
 
         # Group by field_name and create compact rows
-        field_groups = display_df.group_by("field_name").agg(
-            [pl.col("record_index"), pl.col("value")]
-        )
+        field_groups = (
+            display_df.group_by("field_name")
+            .agg([pl.col("leaf_id"), pl.col("value")])
+            .sort("field_name")
+        )  # Sort to maintain consistent field order
 
         # Filter out empty groups and create table rows
         for field_row in field_groups.iter_rows(named=True):
             field_name = field_row["field_name"]
-            record_indices_in_group = field_row["record_index"]
+            leaf_ids_in_group = field_row["leaf_id"]
             values_in_group = field_row["value"]
 
-            # Create a mapping from record_index to value for this field
-            record_to_value = {}
-            for record_idx, value in zip(
-                record_indices_in_group, values_in_group, strict=True
-            ):
-                record_to_value[record_idx] = value
+            # Create a mapping from leaf_id to value for this field
+            leaf_to_value = {}
+            for leaf_id, value in zip(leaf_ids_in_group, values_in_group, strict=True):
+                leaf_to_value[leaf_id] = value
 
-            # Build row data
+            # Build row data using representative leaf IDs
             row_data = [field_name]
-            for record_idx in record_indices:
-                cell_value = record_to_value.get(record_idx, "")
+            for representative_leaf_id in current.display_columns:
+                cell_value = leaf_to_value.get(representative_leaf_id, "")
                 row_data.append(cell_value)
 
             # Only add row if it has some data
@@ -357,8 +369,9 @@ class ComparisonDisplayTable(Widget):
         return table
 
     def _render_detailed_view(self) -> Table:
-        """Render detailed view - source attribution, diagonal matrix."""
-        if not self.state.field_names or not self.state.data_matrix:
+        """Render detailed view - source attribution with deduplication."""
+        current = self.state.queue.current
+        if not current or current.display_dataframe.is_empty():
             return self._create_loading_table()
 
         # Create Rich Table with minimal styling - focus on colour
@@ -374,42 +387,71 @@ class ComparisonDisplayTable(Widget):
         # Add field name column
         table.add_column("Field", style="bright_white", min_width=20, max_width=50)
 
-        # Add columns for each record with group styling
+        # Add columns for each display column with group styling
         current_assignments = self.state.current_assignments
-        for col_idx in range(len(self.state.leaf_ids)):
-            col_num = col_idx + 1
+        for display_col_index, _ in enumerate(current.display_columns):
+            col_num = display_col_index + 1
+            duplicate_count = len(current.duplicate_groups[display_col_index])
 
-            if col_idx in current_assignments:
-                group = current_assignments[col_idx]
+            # Create header with duplicate count indicator
+            if duplicate_count > 1:
+                header_text = f"{col_num} (×{duplicate_count})"
+            else:
+                header_text = str(col_num)
+
+            if display_col_index in current_assignments:
+                group = current_assignments[display_col_index]
                 colour, symbol = GroupStyler.get_style(group)
-                header = f"[{colour}]{symbol} {col_num}[/]"
-                # Use group colour for the entire column
+                header = f"[{colour}]{symbol} {header_text}[/]"
                 table.add_column(header, style=colour, min_width=15, max_width=50)
             else:
-                table.add_column(str(col_num), style="dim", min_width=15, max_width=50)
+                table.add_column(header_text, style="dim", min_width=15, max_width=50)
 
-        # Add data rows with empty row filtering
-        for row_idx, field_name in enumerate(self.state.field_names):
-            if field_name == "---":
-                # Add minimal separator row
-                separator_row = ["─" * 15] + ["─" * 8] * len(self.state.leaf_ids)
+        # Group by field and source for detailed view
+        field_source_groups = (
+            current.display_dataframe.group_by(["field_name", "source_name"])
+            .agg([pl.col("leaf_id"), pl.col("value")])
+            .sort(["field_name", "source_name"])  # Sort for consistency
+        )
+
+        # Organize data for detailed view with source attribution
+        field_source_data = {}
+        for row in field_source_groups.iter_rows(named=True):
+            field_name = row["field_name"]
+            source_name = row["source_name"]
+            leaf_ids = row["leaf_id"]
+            values = row["value"]
+
+            if field_name not in field_source_data:
+                field_source_data[field_name] = {}
+
+            # Map leaf_ids to values for this field+source combination
+            for leaf_id, value in zip(leaf_ids, values, strict=True):
+                field_source_data[field_name][f"{field_name} ({source_name})"] = {
+                    leaf_id: value
+                }
+
+        # Add data rows with source attribution
+        for field_name in sorted(field_source_data.keys()):
+            source_data = field_source_data[field_name]
+            # Add separator between field groups
+            if len([r for r in table.rows]) > 0:
+                separator_row = ["─" * 15] + ["─" * 8] * len(current.display_columns)
                 table.add_row(*separator_row, style="dim")
-                continue
 
-            # Prepare row data
-            row_data = [field_name]
+            # Add rows for each source's version of this field
+            for source_field_name in sorted(source_data.keys()):
+                leaf_value_map = source_data[source_field_name]
+                row_data = [source_field_name]
 
-            if row_idx < len(self.state.data_matrix):
-                for value in self.state.data_matrix[row_idx]:
-                    cell_value = str(value) if value else ""
+                # Build row using representative leaf IDs
+                for representative_leaf_id in current.display_columns:
+                    cell_value = leaf_value_map.get(representative_leaf_id, "")
                     row_data.append(cell_value)
-            else:
-                # Fill with empty values if data is missing
-                row_data.extend([""] * len(self.state.leaf_ids))
 
-            # Only add row if it has some data (empty row filtering)
-            if any(cell.strip() for cell in row_data[1:]):  # Skip field name in check
-                table.add_row(*row_data)
+                # Only add row if it has some data (empty row filtering)
+                if any(cell.strip() for cell in row_data[1:]):
+                    table.add_row(*row_data)
 
         return table
 
@@ -780,10 +822,8 @@ class EntityResolutionApp(App):
         """Refresh display with current queue item."""
         current = self.state.queue.current
         if current:
-            # Use the pre-processed field data from EvaluationItem
-            self.state.set_display_data(
-                current.field_names, current.data_matrix, current.leaf_ids
-            )
+            # Use the display columns from EvaluationItem
+            self.state.set_display_data(current.display_columns)
         else:
             # No current item, clear display
             self.state.clear_display_data()
@@ -824,7 +864,8 @@ class EntityResolutionApp(App):
         if column_number is not None:
             current_group = self.state.current_group_selection
             if current_group:  # Only assign if we have a group selected
-                if 1 <= column_number <= len(self.state.leaf_ids):
+                current = self.state.queue.current
+                if current and 1 <= column_number <= len(current.display_columns):
                     self.state.assign_column_to_group(column_number, current_group)
             event.prevent_default()
             return

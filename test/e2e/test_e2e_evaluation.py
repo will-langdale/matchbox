@@ -209,8 +209,8 @@ class TestE2EModelEvaluation:
             painted_count = 0
 
             for item in initial_items[:2]:  # Paint first 2 items like a user would
-                # Simulate user decisions - paint each leaf to different groups
-                for i, _ in enumerate(item.leaf_ids):
+                # Paint each display column to different groups
+                for i, _ in enumerate(item.display_columns):
                     group = "a" if i % 2 == 0 else "b"  # Alternate assignments
                     item.assignments[i] = group
                 painted_count += 1
