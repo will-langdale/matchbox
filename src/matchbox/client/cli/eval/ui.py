@@ -102,6 +102,7 @@ class EvaluationState:
 
         # UI State
         self.current_group_selection: str = ""  # Currently selected group letter
+        self.compact_view_mode: bool = True  # Default to compact view
 
         # Display State (derived from current queue item)
         self.field_names: list[str] = []
@@ -167,6 +168,11 @@ class EvaluationState:
     def clear_group_selection(self) -> None:
         """Clear the current group selection."""
         self.current_group_selection = ""
+        self._notify_listeners()
+
+    def toggle_view_mode(self) -> None:
+        """Toggle between compact and detailed view modes."""
+        self.compact_view_mode = not self.compact_view_mode
         self._notify_listeners()
 
     def assign_column_to_group(self, column_number: int, group: str) -> None:
@@ -270,12 +276,90 @@ class ComparisonDisplayTable(Widget):
 
     def render(self) -> Table:
         """Render the table with current state using Rich Table."""
+        current = self.state.queue.current
+        if not current or not hasattr(current, "display_dataframe"):
+            return self._create_loading_table()
+
+        if self.state.compact_view_mode:
+            return self._render_compact_view(current.display_dataframe)
+        else:
+            return self._render_detailed_view()
+
+    def _create_loading_table(self) -> Table:
+        """Create a simple loading table."""
+        loading_table = Table(show_header=False, show_lines=False)
+        loading_table.add_column("")
+        loading_table.add_row("Loading...")
+        return loading_table
+
+    def _render_compact_view(self, display_df: pl.DataFrame) -> Table:
+        """Render compact view - one row per field, compressed columns."""
+        if display_df.is_empty():
+            return self._create_loading_table()
+
+        # Create Rich Table
+        table = Table(
+            show_header=True,
+            header_style="bold",
+            show_lines=False,
+            row_styles=[],
+            box=None,
+            padding=(0, 1),
+        )
+
+        # Add field name column
+        table.add_column("Field", style="bright_white", min_width=20, max_width=50)
+
+        # Get unique records and sort them for consistent column ordering
+        record_indices = sorted(display_df["record_index"].unique().to_list())
+
+        # Add columns for each record with group styling
+        current_assignments = self.state.current_assignments
+        for record_idx in record_indices:
+            col_num = record_idx + 1
+
+            if record_idx in current_assignments:
+                group = current_assignments[record_idx]
+                colour, symbol = GroupStyler.get_style(group)
+                header = f"[{colour}]{symbol} {col_num}[/]"
+                table.add_column(header, style=colour, min_width=15, max_width=50)
+            else:
+                table.add_column(str(col_num), style="dim", min_width=15, max_width=50)
+
+        # Group by field_name and create compact rows
+        field_groups = display_df.group_by("field_name").agg(
+            [pl.col("record_index"), pl.col("value")]
+        )
+
+        # Filter out empty groups and create table rows
+        for field_row in field_groups.iter_rows(named=True):
+            field_name = field_row["field_name"]
+            record_indices_in_group = field_row["record_index"]
+            values_in_group = field_row["value"]
+
+            # Create a mapping from record_index to value for this field
+            record_to_value = {}
+            for record_idx, value in zip(
+                record_indices_in_group, values_in_group, strict=True
+            ):
+                record_to_value[record_idx] = value
+
+            # Build row data
+            row_data = [field_name]
+            for record_idx in record_indices:
+                cell_value = record_to_value.get(record_idx, "")
+                row_data.append(cell_value)
+
+            # Only add row if it has some data
+            if any(cell for cell in row_data[1:]):  # Skip field name in check
+                table.add_row(*row_data)
+
+        return table
+
+    def _render_detailed_view(self) -> Table:
+        """Render detailed view - source attribution, diagonal matrix."""
         if not self.state.field_names or not self.state.data_matrix:
-            # Create a simple loading table
-            loading_table = Table(show_header=False, show_lines=False)
-            loading_table.add_column("")
-            loading_table.add_row("Loading...")
-            return loading_table
+            return self._create_loading_table()
 
         # Create Rich Table with minimal styling - focus on colour
         table = Table(
@@ -304,7 +388,7 @@ class ComparisonDisplayTable(Widget):
             else:
                 table.add_column(str(col_num), style="dim", min_width=15, max_width=50)
 
-        # Add data rows
+        # Add data rows with empty row filtering
         for row_idx, field_name in enumerate(self.state.field_names):
             if field_name == "---":
                 # Add minimal separator row
@@ -318,13 +402,14 @@ class ComparisonDisplayTable(Widget):
             if row_idx < len(self.state.data_matrix):
                 for value in self.state.data_matrix[row_idx]:
                     cell_value = str(value) if value else ""
-                    # Show full data - no truncation
                     row_data.append(cell_value)
             else:
                 # Fill with empty values if data is missing
                 row_data.extend([""] * len(self.state.leaf_ids))
 
-            table.add_row(*row_data)
+            # Only add row if it has some data (empty row filtering)
+            if any(cell.strip() for cell in row_data[1:]):  # Skip field name in check
+                table.add_row(*row_data)
 
         return table
 
@@ -596,7 +681,8 @@ class HelpModal(ModalScreen):
                     • Ctrl+G - Jump to entity number
                     • ? or F1 - Show this help
                     • Esc - Clear current group selection
-                    • Ctrl+Q - Quit
+                    • ` (backtick) - Toggle between compact and detailed view
+                    • Ctrl+C or Ctrl+Q - Quit
 
                     Visual feedback:
                     • Records are columns, fields are rows
@@ -604,6 +690,11 @@ class HelpModal(ModalScreen):
                     • Each group gets unique colour + symbol combination
                     • Column headers show group assignment with coloured symbols
                     • Status bar shows group counts with visual indicators
+
+                    View modes:
+                    • Compact view (default): Shows non-empty values, one row per field
+                    • Detailed view: Shows source attribution (e.g. "field (source)")
+                    • Empty rows are automatically filtered out in both modes
 
                     Tips for speed:
                     • Press letter with left hand, numbers with right
@@ -638,7 +729,8 @@ class EntityResolutionApp(App):
         ("ctrl+g", "jump_to_entity", "Jump"),
         ("question_mark,f1", "show_help", "Help"),
         ("escape", "clear_assignments", "Clear"),
-        ("ctrl+q", "quit", "Quit"),
+        ("grave_accent", "toggle_view_mode", "Toggle view"),
+        ("ctrl+q,ctrl+c", "quit", "Quit"),
     ]
 
     def __init__(
@@ -757,6 +849,10 @@ class EntityResolutionApp(App):
         """Clear all group assignments and held letters for current entity."""
         self.state.clear_current_assignments()
         self.state.clear_group_selection()
+
+    async def action_toggle_view_mode(self) -> None:
+        """Toggle between compact and detailed view modes."""
+        self.state.toggle_view_mode()
 
     async def action_show_help(self) -> None:
         """Show the help modal."""

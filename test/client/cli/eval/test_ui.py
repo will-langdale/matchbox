@@ -239,13 +239,17 @@ class TestTextualUI:
                     }
                 )
 
-                field_names, data_matrix, processed_leaf_ids = (
-                    create_processed_comparison_data(leaf_data, source_configs[:1])
-                )
+                (
+                    display_dataframe,
+                    field_names,
+                    data_matrix,
+                    processed_leaf_ids,
+                ) = create_processed_comparison_data(leaf_data, source_configs[:1])
 
                 item = EvaluationItem(
                     cluster_id=cluster_id,
                     dataframe=leaf_data,
+                    display_dataframe=display_dataframe,
                     field_names=field_names,
                     data_matrix=data_matrix,
                     leaf_ids=processed_leaf_ids,

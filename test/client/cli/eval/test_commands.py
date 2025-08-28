@@ -225,11 +225,15 @@ class TestFieldProcessing:
         )
 
         # Process the data
-        field_names, data_matrix, leaf_ids = create_processed_comparison_data(
-            df, [source_a, source_b]
-        )
+        (
+            display_dataframe,
+            field_names,
+            data_matrix,
+            leaf_ids,
+        ) = create_processed_comparison_data(df, [source_a, source_b])
 
         # Verify structure
+        assert isinstance(display_dataframe, pl.DataFrame)
         assert isinstance(field_names, list)
         assert isinstance(data_matrix, list)
         assert isinstance(leaf_ids, list)
