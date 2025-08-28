@@ -619,6 +619,13 @@ class TestGetSourceConfig:
     "get_hashes",
     [pytest.param(True, id="with_hashes"), pytest.param(False, id="without_hashes")],
 )
+@pytest.mark.parametrize(
+    "get_probabilities",
+    [
+        pytest.param(True, id="with_probabilities"),
+        pytest.param(False, id="without_probabilities"),
+    ],
+)
 class TestBuildUnifiedQuery:
     """Test unified query building with correct COALESCE expectations."""
 
@@ -626,6 +633,7 @@ class TestBuildUnifiedQuery:
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Should build unified query for source-only scenario."""
@@ -639,6 +647,7 @@ class TestBuildUnifiedQuery:
                 threshold=None,
                 level=level,
                 get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -663,14 +672,19 @@ class TestBuildUnifiedQuery:
 
         if get_hashes:
             expected_columns.update(["root_hash", "leaf_hash"])
-            assert set(result.columns) == expected_columns
-        else:
-            assert set(result.columns) == expected_columns
+
+        if get_probabilities:
+            expected_columns.add("probability")
+            # For source-only queries, all probabilities should be NULL
+            assert all(prob is None for prob in result["probability"])
+
+        assert set(result.columns) == expected_columns
 
     def test_build_unified_mixed_scenario(
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Should build unified query mixing sources and models."""
@@ -684,6 +698,7 @@ class TestBuildUnifiedQuery:
                 threshold=80,  # Override threshold to 80
                 level=level,
                 get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -731,10 +746,25 @@ class TestBuildUnifiedQuery:
             remaining_clusters = cluster_ids - {301}
             assert remaining_clusters == {103, 104, 105}
 
+        if get_probabilities:
+            # Check that probability column exists
+            assert "probability" in result.columns
+
+            # Check specific probability values
+            result_dicts = result.to_dicts()
+            for row in result_dicts:
+                if row["root_id"] == 301:
+                    # C301 should have probability 80
+                    assert row["probability"] == 80
+                else:
+                    # Source clusters should have NULL probability
+                    assert row["probability"] is None
+
     def test_build_unified_linker_all_sources(
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Should build unified query for linker with all sources."""
@@ -749,6 +779,7 @@ class TestBuildUnifiedQuery:
                 threshold=80,  # Override linker threshold to 80 (from default 90)
                 level=level,
                 get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -785,6 +816,7 @@ class TestBuildUnifiedQuery:
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Should exclude linker clusters that don't meet high threshold."""
@@ -799,6 +831,7 @@ class TestBuildUnifiedQuery:
                 threshold=95,  # Very high threshold excludes all linker clusters
                 level=level,
                 get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -827,10 +860,22 @@ class TestBuildUnifiedQuery:
         expected_clusters = {103, 104, 105, 203, 204, 205}
         assert cluster_ids == expected_clusters | {301, 401}
 
+        # Check expected columns based on flags
+        expected_columns = {"root_id", "leaf_id"}
+        if level == "key":
+            expected_columns.add("key")
+        if get_hashes:
+            expected_columns.update(["root_hash", "leaf_hash"])
+        if get_probabilities:
+            expected_columns.add("probability")
+
+        assert set(result.columns) == expected_columns
+
     def test_build_unified_single_source_filter(
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Should filter to single source lineage."""
@@ -844,6 +889,7 @@ class TestBuildUnifiedQuery:
                 threshold=80,  # Override linker threshold to 80
                 level=level,
                 get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -879,10 +925,22 @@ class TestBuildUnifiedQuery:
         unclaimed_source_b = cluster_ids - {503, 502}
         assert unclaimed_source_b == {204}
 
+        # Check expected columns based on flags
+        expected_columns = {"root_id", "leaf_id"}
+        if level == "key":
+            expected_columns.add("key")
+        if get_hashes:
+            expected_columns.update(["root_hash", "leaf_hash"])
+        if get_probabilities:
+            expected_columns.add("probability")
+
+        assert set(result.columns) == expected_columns
+
     def test_build_unified_no_source_filter(
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Should include all sources when no filtering."""
@@ -894,6 +952,8 @@ class TestBuildUnifiedQuery:
                 sources=None,  # No filtering - all sources
                 threshold=80,  # Override linker threshold to 80
                 level=level,
+                get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -925,10 +985,22 @@ class TestBuildUnifiedQuery:
         unclaimed_clusters = cluster_ids - {503, 502}
         assert unclaimed_clusters == {104, 105, 204}
 
+        # Check expected columns based on flags
+        expected_columns = {"root_id", "leaf_id"}
+        if level == "key":
+            expected_columns.add("key")
+        if get_hashes:
+            expected_columns.update(["root_hash", "leaf_hash"])
+        if get_probabilities:
+            expected_columns.add("probability")
+
+        assert set(result.columns) == expected_columns
+
     def test_build_unified_source_only_no_sources_filter(
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Source resolution with sources=None returns that source only."""
@@ -941,6 +1013,7 @@ class TestBuildUnifiedQuery:
                 threshold=None,
                 level=level,
                 get_hashes=get_hashes,
+                get_probabilities=get_probabilities,
             )
 
         with MBDB.get_adbc_connection() as conn:
@@ -958,10 +1031,24 @@ class TestBuildUnifiedQuery:
             cluster_ids = set(result["root_id"])
             assert cluster_ids == {101, 102, 103, 104, 105}
 
+        # Check expected columns based on flags
+        expected_columns = {"root_id", "leaf_id"}
+        if level == "key":
+            expected_columns.add("key")
+        if get_hashes:
+            expected_columns.update(["root_hash", "leaf_hash"])
+        if get_probabilities:
+            expected_columns.add("probability")
+            # For source-only queries, all probabilities should be NULL
+            assert all(prob is None for prob in result["probability"])
+
+        assert set(result.columns) == expected_columns
+
     def test_simple_thresholding(
         self,
         level: Literal["leaf", "key"],
         get_hashes: bool,
+        get_probabilities: bool,
         populated_postgres_db: MatchboxPostgres,
     ):
         """Simple test showing thresholding works."""
@@ -995,6 +1082,49 @@ class TestBuildUnifiedQuery:
         cluster_ids = result[cluster_column].to_list()
         assert 301 not in cluster_ids
         assert 302 in cluster_ids
+
+
+@pytest.mark.docker
+class TestQueryProbabilities:
+    """Test get_probabilities parameter functionality."""
+
+    def test_get_probabilities_flag(self, populated_postgres_db: MatchboxPostgres):
+        """Test that get_probabilities flag works for source-only and model queries."""
+        with MBDB.get_session() as session:
+            source_a_config = session.get(SourceConfigs, 11)  # source_a config
+            dedupe_a_resolution = session.get(Resolutions, 3)  # dedupe_a resolution
+
+            # Test with probabilities enabled
+            query_with_probs = build_unified_query(
+                resolution=dedupe_a_resolution,
+                sources=[source_a_config],
+                threshold=80,
+                level="key",
+                get_probabilities=True,
+            )
+
+            # Test with probabilities disabled (default)
+            query_without_probs = build_unified_query(
+                resolution=dedupe_a_resolution,
+                sources=[source_a_config],
+                threshold=80,
+                level="key",
+                get_probabilities=False,
+            )
+
+        with MBDB.get_adbc_connection() as conn:
+            result_with_probs = sql_to_df(
+                compile_sql(query_with_probs), conn.dbapi_connection, "polars"
+            )
+            result_without_probs = sql_to_df(
+                compile_sql(query_without_probs), conn.dbapi_connection, "polars"
+            )
+
+        # With probabilities: should have probability column
+        assert "probability" in result_with_probs.columns
+
+        # Without probabilities: should NOT have probability column
+        assert "probability" not in result_without_probs.columns
 
 
 @pytest.mark.docker

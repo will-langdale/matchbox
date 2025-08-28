@@ -3,6 +3,7 @@
 from typing import Literal, TypeVar
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from sqlalchemy import (
     CTE,
     ColumnElement,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     and_,
     func,
     join,
+    literal,
     outerjoin,
     select,
     union_all,
@@ -71,7 +73,7 @@ def _build_probability_subquery(
         select(
             contains_alias.leaf.label("leaf"),
             contains_alias.root.label(f"cluster_{subquery_name}"),
-            probabilities_alias.probability,
+            probabilities_alias.probability.label(f"probability_{subquery_name}"),
         )
         .select_from(
             join(
@@ -102,6 +104,7 @@ def build_unified_query(
     threshold: int | None = None,
     level: Literal["leaf", "key"] = "leaf",
     get_hashes: bool = False,
+    get_probabilities: bool = False,
 ) -> Select:
     """Build a query to resolve cluster assignments across resolution hierarchies.
 
@@ -138,6 +141,8 @@ def build_unified_query(
         more rows than `"leaf"` because it needs a row for every key attached to a leaf.
 
     Additionally, if `get_hashes` is set to True, the root and leaf hashes are returned.
+    If `get_probabilities` is set to True, the probability from the winning model
+    resolution is returned (NULL for source-only clusters).
     """
     # Get ordered lineage (already sorted by priority)
     lineage = resolution.get_lineage(sources=sources, threshold=threshold)
@@ -201,16 +206,22 @@ def build_unified_query(
                 ClusterSourceKey.cluster_id == leaf_clusters.cluster_id,
             )
 
+        if get_probabilities:
+            selection.append(literal(None).label("probability"))
+
     else:  # Querying from a resolution not at the bottom
         # Build subqueries for each model resolution
         # Note both subqueries and cluster_columns are in priority order
         subqueries: list[Select] = []
         cluster_columns: list[ColumnElement] = []
+        probability_columns: list[ColumnElement] = []
 
         for i, (res_id, threshold_val) in enumerate(model_resolutions):
             subquery = _build_probability_subquery(res_id, threshold_val, str(i))
             subqueries.append(subquery)
             cluster_columns.append(subquery.c[f"cluster_{i}"])
+            if get_probabilities:
+                probability_columns.append(subquery.c[f"probability_{i}"])
 
         # To get hashes we need to join `Clusters`, here for leaves
         # and later for roots
@@ -239,6 +250,13 @@ def build_unified_query(
             final_root_cluster_id.label("root_id"),
             ClusterSourceKey.cluster_id.label("leaf_id"),
         ]
+
+        if get_probabilities:
+            # Build final probability using parallel COALESCE
+            # Probabilities only exist for model resolutions, not source clusters
+            # Cast to SMALLINT to match database type but ensure uint8 range
+            final_probability = func.coalesce(*probability_columns, literal(None))
+            selection.append(final_probability.label("probability"))
 
         if level == "key":
             selection.append(
@@ -471,6 +489,7 @@ def query(
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     return_leaf_id: bool = False,
+    get_probabilities: bool = False,
     limit: int = None,
 ) -> pa.Table:
     """Queries Matchbox to retrieve linked data for a source.
@@ -485,7 +504,17 @@ def query(
     * Priority resolution: When multiple model resolutions could assign a record to
         different clusters, COALESCE ensures higher-priority resolutions win
 
-    Returns all records with their final resolved cluster IDs.
+    Args:
+        source: Source resolution name to query
+        resolution: Optional resolution to use for querying (defaults to source
+            resolution)
+        threshold: Optional threshold override
+        return_leaf_id: Whether to include leaf cluster IDs in results
+        get_probabilities: Whether to include probability from winning model resolution
+        limit: Optional limit on number of results
+
+    Returns all records with their final resolved cluster IDs and optional
+        probabilities.
     """
     with MBDB.get_session() as session:
         source_config: SourceConfigs = get_source_config(source, session)
@@ -509,6 +538,7 @@ def query(
             sources=[source_config],
             threshold=threshold,
             level="key",
+            get_probabilities=get_probabilities,
         )
 
         if limit:
@@ -521,9 +551,23 @@ def query(
                 stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
             ).rename_columns({"root_id": "id"})
 
+            # Convert probability column from int16 to uint8 if present
+            if get_probabilities and "probability" in id_results.column_names:
+                # Cast probability column to uint8
+                prob_col = id_results.column("probability")
+                prob_uint8 = pc.cast(prob_col, pa.uint8())
+                # Replace the column
+                id_results = id_results.set_column(
+                    id_results.schema.get_field_index("probability"),
+                    "probability",
+                    prob_uint8,
+                )
+
         selection = ["id", "key"]
         if return_leaf_id:
             selection.append("leaf_id")
+        if get_probabilities:
+            selection.append("probability")
 
         return id_results.select(selection)
 

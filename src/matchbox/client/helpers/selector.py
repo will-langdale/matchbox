@@ -153,6 +153,7 @@ def _process_query_result(
     selector: Selector,
     mb_ids: PolarsDataFrame,
     return_leaf_id: bool,
+    get_probabilities: bool = False,
 ) -> PolarsDataFrame:
     """Process query results by joining with matchbox IDs and filtering fields.
 
@@ -161,6 +162,7 @@ def _process_query_result(
         selector: The selector with source and fields information
         mb_ids: The top-level matchbox IDs for the resolution
         return_leaf_id: Whether to return MB IDs of source clusters
+        get_probabilities: Whether to include probability column in results
 
     Returns:
         The processed table with joined matchbox IDs and filtered fields
@@ -178,6 +180,8 @@ def _process_query_result(
         base_fields = ["id"]
         if return_leaf_id:
             base_fields.append("leaf_id")
+        if get_probabilities:
+            base_fields.append("probability")
         keep_cols = base_fields + selector.qualified_fields
         match_cols = [col for col in joined_table.columns if col in keep_cols]
         return joined_table.select(match_cols)
@@ -189,6 +193,7 @@ def _process_selectors(
     selectors: list[Selector],
     resolution: ResolutionName | None,
     return_leaf_id: bool,
+    get_probabilities: bool,
     threshold: int | None,
     batch_size: int | None,
 ) -> Iterator[PolarsDataFrame]:
@@ -206,6 +211,7 @@ def _process_selectors(
                 resolution=resolution,
                 threshold=threshold,
                 return_leaf_id=return_leaf_id,
+                get_probabilities=get_probabilities,
             )
         )
 
@@ -221,6 +227,7 @@ def _process_selectors(
                 selector=selector,
                 mb_ids=mb_ids,
                 return_leaf_id=return_leaf_id,
+                get_probabilities=get_probabilities,
             )
             for b in raw_batches
         ]
@@ -234,6 +241,7 @@ def query(
     resolution: ResolutionName | None = None,
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_leaf_id: bool = True,
+    get_probabilities: bool = False,
     return_type: ReturnTypeStr = "pandas",
     threshold: int | None = None,
     batch_size: int | None = None,
@@ -259,6 +267,8 @@ def query(
                 aggregate to nested lists of unique values. One row per ID,
                 but all requested data is in nested arrays
         return_leaf_id: Whether matchbox IDs for source clusters should also be returned
+        get_probabilities: Whether to include probability from winning model resolution
+            (NULL for source-only clusters)
         return_type: The form to return data in, one of "pandas" or "arrow"
             Defaults to pandas for ease of use
         threshold (optional): The threshold to use for creating clusters
@@ -307,6 +317,7 @@ def query(
         selectors=selectors,
         resolution=resolution,
         return_leaf_id=return_leaf_id,
+        get_probabilities=get_probabilities,
         threshold=threshold,
         batch_size=batch_size,
     )

@@ -7,7 +7,11 @@ from sqlalchemy import Engine
 
 from matchbox import query
 from matchbox.client.helpers import select
-from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
+from matchbox.common.arrow import (
+    SCHEMA_QUERY,
+    SCHEMA_QUERY_WITH_PROBABILITIES,
+    table_to_buffer,
+)
 from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.factories.sources import source_factory, source_from_tuple
@@ -57,6 +61,7 @@ def test_query_no_resolution_ok_various_params(
     assert dict(query_route.calls.last.request.url.params) == {
         "source": testkit.source_config.name,
         "return_leaf_id": "False",
+        "get_probabilities": "False",
     }
 
     # Tests with optional params
@@ -70,6 +75,7 @@ def test_query_no_resolution_ok_various_params(
         "source": testkit.source_config.name,
         "threshold": "50",
         "return_leaf_id": "False",
+        "get_probabilities": "False",
     }
 
 
@@ -150,11 +156,13 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         "source": testkit1.source_config.name,
         "resolution": DEFAULT_RESOLUTION,
         "return_leaf_id": "False",
+        "get_probabilities": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "source": testkit2.source_config.name,
         "resolution": DEFAULT_RESOLUTION,
         "return_leaf_id": "False",
+        "get_probabilities": "False",
     }
 
     # It also works with the selectors specified separately
@@ -274,3 +282,50 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         query(selectors)
+
+
+def test_query_with_get_probabilities(
+    matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
+    """Test that get_probabilities parameter works in client query."""
+    # Dummy data and source
+    testkit = source_from_tuple(
+        data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
+        data_keys=["0", "1"],
+        name="foo",
+        engine=sqlite_warehouse,
+    )
+    testkit.write_to_location(sqlite_warehouse, set_client=True)
+
+    # Mock API
+    matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
+        return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
+    )
+
+    query_route = matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [
+                        {"key": "0", "id": 1, "probability": 100},
+                        {"key": "1", "id": 2, "probability": 95},
+                    ],
+                    schema=SCHEMA_QUERY_WITH_PROBABILITIES,
+                )
+            ).read(),
+        )
+    )
+
+    selectors = select({"foo": ["a", "b"]}, client=sqlite_warehouse)
+
+    # Test with get_probabilities=True
+    results = query(selectors, return_leaf_id=False, get_probabilities=True)
+    assert len(results) == 2
+    assert {"foo_a", "foo_b", "id", "probability"} == set(results.columns)
+
+    assert dict(query_route.calls.last.request.url.params) == {
+        "source": testkit.source_config.name,
+        "return_leaf_id": "False",
+        "get_probabilities": "True",
+    }

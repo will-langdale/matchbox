@@ -18,6 +18,16 @@ SCHEMA_QUERY: Final[pa.Schema] = pa.schema(
 SCHEMA_QUERY_WITH_LEAVES = SCHEMA_QUERY.append(pa.field("leaf_id", pa.int64()))
 """Data transfer schema for root cluster IDs keyed to primary keys and leaf IDs."""
 
+SCHEMA_QUERY_WITH_PROBABILITIES = SCHEMA_QUERY.append(
+    pa.field("probability", pa.uint8())
+)
+"""Data transfer schema for root cluster IDs keyed to primary keys and probabilities."""
+
+SCHEMA_QUERY_WITH_LEAVES_AND_PROBABILITIES = SCHEMA_QUERY_WITH_LEAVES.append(
+    pa.field("probability", pa.uint8())
+)
+"""Data transfer schema for cluster IDs, keys, leaf IDs, and probabilities."""
+
 
 SCHEMA_INDEX: Final[pa.Schema] = pa.schema(
     [("hash", pa.large_binary()), ("keys", pa.large_list(pa.large_string()))]

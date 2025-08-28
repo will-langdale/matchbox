@@ -238,6 +238,7 @@ def query(
     backend: BackendDependency,
     source: SourceResolutionName,
     return_leaf_id: bool,
+    get_probabilities: bool = False,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
@@ -249,6 +250,7 @@ def query(
             resolution=resolution,
             threshold=threshold,
             return_leaf_id=return_leaf_id,
+            get_probabilities=get_probabilities,
             limit=limit,
         )
     except MatchboxResolutionNotFoundError as e:

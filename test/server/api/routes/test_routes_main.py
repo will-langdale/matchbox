@@ -12,7 +12,11 @@ from fastapi.testclient import TestClient
 from matchbox.client.authorisation import (
     generate_json_web_token,
 )
-from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
+from matchbox.common.arrow import (
+    SCHEMA_QUERY,
+    SCHEMA_QUERY_WITH_PROBABILITIES,
+    table_to_buffer,
+)
 from matchbox.common.dtos import (
     BackendResourceType,
     LoginAttempt,
@@ -339,6 +343,39 @@ def test_query(test_client: TestClient):
     # Check response
     assert response.status_code == 200
     assert table.schema.equals(SCHEMA_QUERY)
+
+
+def test_query_with_probabilities(test_client: TestClient):
+    """Test query endpoint with get_probabilities parameter."""
+    # Mock backend
+    mock_backend = Mock()
+    mock_backend.query = Mock(
+        return_value=pa.Table.from_pylist(
+            [
+                {"id": 1, "key": "a", "probability": 100},
+                {"id": 2, "key": "b", "probability": 95},
+            ],
+            schema=SCHEMA_QUERY_WITH_PROBABILITIES,
+        )
+    )
+
+    # Override app dependencies with mocks
+    app.dependency_overrides[backend] = lambda: mock_backend
+
+    # Hit endpoint with get_probabilities=True
+    response = test_client.get(
+        "/query",
+        params={"source": "foo", "return_leaf_id": False, "get_probabilities": True},
+    )
+
+    # Process response
+    buffer = BytesIO(response.content)
+    table = pq.read_table(buffer)
+
+    # Check response
+    assert response.status_code == 200
+    assert table.schema.equals(SCHEMA_QUERY_WITH_PROBABILITIES)
+    assert "probability" in table.column_names
 
 
 def test_query_404_resolution(test_client: TestClient):

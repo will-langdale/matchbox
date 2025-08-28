@@ -17,6 +17,8 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
+    SCHEMA_QUERY_WITH_LEAVES_AND_PROBABILITIES,
+    SCHEMA_QUERY_WITH_PROBABILITIES,
     JudgementsZipFilenames,
     check_schema,
     table_to_buffer,
@@ -163,6 +165,7 @@ def login(user_name: str) -> int:
 def query(
     source: SourceResolutionName,
     return_leaf_id: bool,
+    get_probabilities: bool = False,
     resolution: ResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
@@ -178,6 +181,7 @@ def query(
                 "source": source,
                 "resolution": resolution,
                 "return_leaf_id": return_leaf_id,
+                "get_probabilities": get_probabilities,
                 "threshold": threshold,
                 "limit": limit,
             }
@@ -190,8 +194,12 @@ def query(
     logger.debug("Finished", prefix=log_prefix)
 
     expected_schema = SCHEMA_QUERY
-    if return_leaf_id:
+    if return_leaf_id and get_probabilities:
+        expected_schema = SCHEMA_QUERY_WITH_LEAVES_AND_PROBABILITIES
+    elif return_leaf_id:
         expected_schema = SCHEMA_QUERY_WITH_LEAVES
+    elif get_probabilities:
+        expected_schema = SCHEMA_QUERY_WITH_PROBABILITIES
 
     check_schema(expected_schema, table.schema)
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Matchbox** is a record matching and data linking orchestration framework developed by the UK Department for Business and Trade. It enables collaborative, measurable, and iterative entity matching without organizations sharing sensitive raw data.
+**Matchbox** is a record matching and data linking orchestration framework developed by the UK Department for Business and Trade. It enables collaborative, measurable, and iterative entity matching without organisations sharing sensitive raw data.
 
 ## Technology Stack
 

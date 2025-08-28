@@ -13,6 +13,7 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
+    SCHEMA_QUERY_WITH_PROBABILITIES,
 )
 from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
 from matchbox.common.eval import Judgement
@@ -575,6 +576,20 @@ class TestMatchboxBackend:
 
             assert df_crn_full.num_rows == crn_testkit.query.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY_WITH_LEAVES)
+
+    def test_query_get_probabilities(self):
+        """Test querying data with get_probabilities flag."""
+        with self.scenario(self.backend, "dedupe") as dag:
+            crn_testkit = dag.sources.get("crn")
+
+            df_with_probs = self.backend.query(
+                source=crn_testkit.source_config.name,
+                resolution="naive_test.crn",
+                get_probabilities=True,
+            )
+
+            assert df_with_probs.schema.equals(SCHEMA_QUERY_WITH_PROBABILITIES)
+            assert "probability" in df_with_probs.column_names
 
     def test_query_with_dedupe_model(self):
         """Test querying data from a deduplication point of truth."""

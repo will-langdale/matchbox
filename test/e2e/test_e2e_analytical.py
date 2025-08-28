@@ -1,5 +1,6 @@
 import logging
 
+import polars as pl
 import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
@@ -538,3 +539,119 @@ class TestE2EAnalyticalUser:
         )
 
         logging.debug("E2E test completed successfully!")
+
+    def test_query_with_probabilities_e2e(self):
+        """Test that get_probabilities works end-to-end in analytical workflow."""
+        # === SETUP PHASE ===
+        # Index sources
+        for source_testkit in self.linked_testkit.sources.values():
+            source = source_testkit.source_config
+            index(source_config=source)
+
+        # Create a simple deduper for one source to get some probabilistic results
+        crn_source = self.linked_testkit.sources["crn"]
+        source_config = crn_source.source_config
+
+        # Get and clean data
+        source_select = select(
+            {
+                source_config.name: ["key"]
+                + [field.name for field in source_config.index_fields]
+            },
+            client=self.warehouse_engine,
+        )
+        raw_df = query(source_select, return_type="polars")
+        df = raw_df.drop(source_config.qualified_key)
+        cleaning_dict = self._get_cleaning_dict(source_config.prefix, df.columns)
+        cleaned = clean(df, cleaning_dict)
+
+        # Create and run deduper
+        deduper_name = "test_deduper"
+        feature_names = [
+            f"{source_config.prefix}{feature.name}" for feature in crn_source.features
+        ]
+
+        deduper = make_model(
+            name=deduper_name,
+            description="Test deduper for probability validation",
+            model_class=NaiveDeduper,
+            model_settings={
+                "id": "id",
+                "unique_fields": feature_names,
+            },
+            left_data=cleaned,
+            left_resolution=source_config.name,
+        )
+
+        results = deduper.run()
+        results.to_matchbox()
+        deduper.truth = 1.0
+
+        # === PROBABILITY TESTING ===
+
+        # Test 1: Query source-only (should have all NULL probabilities)
+        source_only_result = query(
+            select(
+                {source_config.name: ["company_name"]}, client=self.warehouse_engine
+            ),
+            get_probabilities=True,
+            return_type="polars",
+        )
+
+        # Verify schema and NULL probabilities for source-only
+        assert "probability" in source_only_result.columns, (
+            "Probability column missing from source-only query"
+        )
+        assert source_only_result["probability"].dtype == pl.UInt8, (
+            "Probability column should be UInt8"
+        )
+        assert source_only_result["probability"].null_count() == len(
+            source_only_result
+        ), "All source-only probabilities should be NULL"
+
+        # Test 2: Query with deduper resolution (should have some non-NULL probs)
+        deduped_result = query(
+            select(
+                {source_config.name: ["company_name"]}, client=self.warehouse_engine
+            ),
+            resolution=deduper_name,
+            get_probabilities=True,
+            return_type="polars",
+        )
+
+        # Verify schema and probability values for model results
+        assert "probability" in deduped_result.columns, (
+            "Probability column missing from deduped query"
+        )
+        assert deduped_result["probability"].dtype == pl.UInt8, (
+            "Probability column should be UInt8"
+        )
+
+        # Should have some non-NULL probabilities (from merged clusters)
+        non_null_probs = deduped_result.filter(pl.col("probability").is_not_null())[
+            "probability"
+        ]
+        if len(non_null_probs) > 0:
+            # Verify probability range (0-100)
+            assert non_null_probs.min() >= 0, "Probabilities should be >= 0"
+            assert non_null_probs.max() <= 100, "Probabilities should be <= 100"
+
+        # Test 3: Query with both leaf_id and get_probabilities
+        combined_result = query(
+            select(
+                {source_config.name: ["company_name"]}, client=self.warehouse_engine
+            ),
+            resolution=deduper_name,
+            return_leaf_id=True,
+            get_probabilities=True,
+            return_type="polars",
+        )
+
+        # Verify both columns present
+        assert "leaf_id" in combined_result.columns, "leaf_id column missing"
+        assert "probability" in combined_result.columns, "Probability column missing"
+        assert combined_result["probability"].dtype == pl.UInt8, (
+            "Probability column should be UInt8"
+        )
+
+        logging.debug("E2E probability test completed successfully!")

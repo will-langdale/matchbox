@@ -233,6 +233,7 @@ class MatchboxDBAdapter(ABC):
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
+        get_probabilities: bool = False,
         limit: int = None,
     ) -> Table:
         """Queries the database from an optional point of truth.
@@ -246,10 +247,12 @@ class MatchboxDBAdapter(ABC):
                 If an integer, uses that threshold for the specified model, and the
                 model's cached thresholds for its ancestors
             return_leaf_id (optional): whether to return cluster ID of leaves
+            get_probabilities (optional): whether to include probability from winning
+                model resolution (NULL for source-only clusters)
             limit (optional): the number to use in a limit clause. Useful for testing
 
         Returns:
-            The resulting matchbox IDs in Arrow format
+            The resulting matchbox IDs in Arrow format with optional probabilities
         """
         ...
 

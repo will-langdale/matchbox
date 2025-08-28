@@ -197,6 +197,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
         resolution: ResolutionName | None = None,
         threshold: int | None = None,
         return_leaf_id: bool = False,
+        get_probabilities: bool = False,
         limit: int | None = None,
     ) -> ArrowTable:
         return query(
@@ -204,6 +205,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             resolution=resolution,
             threshold=threshold,
             return_leaf_id=return_leaf_id,
+            get_probabilities=get_probabilities,
             limit=limit,
         )
 
