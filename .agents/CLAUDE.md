@@ -115,6 +115,20 @@ The project uses a **client-server architecture** with three main packages:
 - **Docker markers**: Tests requiring containerized services use `@pytest.mark.docker`
 - **Test fixtures**: Reusable data in `/test/fixtures/`
 
+There is a house style for parameterising unit tests.
+
+```python
+@pytest.mark.parametrize(
+    ["foo", "bar"],
+    [
+        pytest.param(True, 12, id="test_thing"),
+        pytest.param(False, 16, id="test_other_thing"),
+    ],
+)
+def test_something(foo: bool, bar: int):
+    """Tests that something does something."""
+```
+
 ### Factory System and Test Scenarios
 
 The project uses a sophisticated **factory system** for generating realistic test data and complex integration scenarios. This system is essential for testing entity resolution workflows end-to-end.

@@ -81,10 +81,22 @@ class EvaluationItem(BaseModel):
         if unassigned:
             groups.setdefault("a", []).extend(unassigned)
 
+        # Convert to endorsed format, ensuring no duplicate groups
+        endorsed = []
+        seen_groups = set()
+        for group_items in groups.values():
+            # Remove duplicates within the group and sort for consistent comparison
+            unique_items = sorted(set(group_items))
+            group_tuple = tuple(unique_items)
+            # Only add if we haven't seen this exact group before
+            if group_tuple not in seen_groups:
+                endorsed.append(unique_items)
+                seen_groups.add(group_tuple)
+
         return Judgement(
             user_id=user_id,
             shown=self.cluster_id,
-            endorsed=[list(set(group)) for group in groups.values()],
+            endorsed=endorsed,
         )
 
 

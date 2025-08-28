@@ -779,15 +779,9 @@ class EntityResolutionApp(App):
         # Submit each painted item
         successful_submissions = 0
         for item in painted_items:
-            try:
-                judgement = item.to_judgement(self.state.user_id)
-                _handler.submit_judgement(
-                    judgement=judgement, user_id=self.state.user_id
-                )
-                successful_submissions += 1
-            except Exception:
-                # Continue with other submissions if one fails
-                continue
+            judgement = item.to_judgement(self.state.user_id)
+            _handler.send_eval_judgement(judgement=judgement)
+            successful_submissions += 1
 
         # Remove all painted items from queue (they're done forever)
         self.state.queue.submit_all_painted()

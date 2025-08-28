@@ -3,10 +3,15 @@
 from functools import partial
 from unittest.mock import Mock, patch
 
+import polars as pl
 import pytest
 from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.ui import EntityResolutionApp
+from matchbox.client.cli.eval.utils import (
+    EvaluationItem,
+    create_processed_comparison_data,
+)
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.factories.scenarios import setup_scenario
 
@@ -188,21 +193,97 @@ class TestTextualUI:
                     app.state.queue.total_count >= 0
                 )  # Could be 0 if no evaluation clusters yet
 
-    def test_action_submit_and_fetch_exists(self):
-        """Test that the action_submit_and_fetch method exists and is properly bound."""
-        app = EntityResolutionApp(resolution="test", num_samples=5)
+    @pytest.mark.asyncio
+    async def test_action_submit_and_fetch_functionality(self):
+        """Test that the UI's action_submit_and_fetch properly submits painted items."""
 
-        # Verify the method exists
+        with self.scenario(self.backend, "dedupe") as dag:
+            model_name = list(dag.models.keys())[0] if dag.models else "test"
+            app = EntityResolutionApp(
+                resolution=model_name,
+                num_samples=5,
+                user="test_user",
+                warehouse=str(self.warehouse_engine.url),
+            )
+
+            # Login
+            await app.authenticate()
+
+            # Get cluster data and create evaluation items
+            source_name = model_name.split(".")[-1]
+            model_results = self.backend.query(
+                source=source_name, resolution=model_name, return_leaf_id=True
+            )
+            cluster_data = pl.from_arrow(model_results)
+
+            clusters_with_leaves = (
+                cluster_data.group_by("leaf_id", maintain_order=True)
+                .agg([pl.col("id"), pl.col("key")])
+                .head(2)
+            )
+
+            source_configs = [st.source_config for st in dag.sources.values()]
+
+            items = []
+            for row in clusters_with_leaves.iter_rows(named=True):
+                cluster_id = row["leaf_id"]
+                ids = row["id"]
+                keys = row["key"]
+
+                leaf_data = pl.DataFrame(
+                    {
+                        "root": [cluster_id] * len(ids),
+                        "leaf": ids,
+                        "id": ids,
+                        "key": keys,
+                    }
+                )
+
+                field_names, data_matrix, processed_leaf_ids = (
+                    create_processed_comparison_data(leaf_data, source_configs[:1])
+                )
+
+                item = EvaluationItem(
+                    cluster_id=cluster_id,
+                    dataframe=leaf_data,
+                    field_names=field_names,
+                    data_matrix=data_matrix,
+                    leaf_ids=processed_leaf_ids,
+                    assignments={},
+                )
+                items.append(item)
+
+            # Paint items and add to queue
+            for i, item in enumerate(items):
+                for col_idx in range(len(item.leaf_ids)):
+                    item.assignments[col_idx] = "a" if i == 0 else "b"
+
+            app.state.queue.add_items(items)
+
+            # Test submission workflow
+            initial_judgements, _ = self.backend.get_judgements()
+            initial_count = len(initial_judgements)
+
+            await app.action_submit_and_fetch()
+
+            # Verify judgements were submitted
+            final_judgements, _ = self.backend.get_judgements()
+            final_count = len(final_judgements)
+
+            assert final_count > initial_count
+            new_judgements = final_judgements.to_pylist()[initial_count:]
+
+            submitted_cluster_ids = {j["shown"] for j in new_judgements}
+            expected_cluster_ids = {item.cluster_id for item in items}
+            assert submitted_cluster_ids == expected_cluster_ids
+
+            # Verify painted items were removed from queue
+            assert len(app.state.queue.painted_items) == 0
+
+        # Also verify the spacebar binding
         assert hasattr(app, "action_submit_and_fetch")
-        assert callable(app.action_submit_and_fetch)
-
-        # Verify the spacebar binding exists in BINDINGS
-        space_binding = next(
-            (binding for binding in app.BINDINGS if binding[0] == "space"), None
-        )
-        assert space_binding is not None
+        space_binding = next((b for b in app.BINDINGS if b[0] == "space"), None)
         assert space_binding[1] == "submit_and_fetch"
-        assert space_binding[2] == "Submit & fetch more"
 
     def test_persistent_painting_functionality(self):
         """Test that painting persists across entity navigation."""
