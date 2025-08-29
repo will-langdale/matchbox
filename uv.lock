@@ -1445,6 +1445,7 @@ dependencies = [
     { name = "splink" },
     { name = "sqlalchemy" },
     { name = "sqlglot", extra = ["rs"] },
+    { name = "tenacity" },
 ]
 
 [package.optional-dependencies]
@@ -1517,6 +1518,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "sqlglot", extras = ["rs"], specifier = ">=26.12.1" },
     { name = "streamlit", marker = "extra == 'eval'", specifier = ">=1.45.0" },
+    { name = "tenacity", specifier = ">=9.1.2" },
     { name = "tomli", marker = "extra == 'server'", specifier = ">=2.0.1" },
 ]
 provides-extras = ["server", "eval"]

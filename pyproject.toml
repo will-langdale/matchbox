@@ -26,6 +26,7 @@ dependencies = [
     "splink>=4.0.5,<4.1.0",
     "sqlalchemy>=2.0.35",
     "sqlglot[rs]>=26.12.1",
+    "tenacity>=9.1.2",
 ]
 
 [project.optional-dependencies]
