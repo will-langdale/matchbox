@@ -28,6 +28,7 @@ dependencies = [
     "sqlglot[rs]>=26.12.1",
     "redis>=6.4.0",
     "celery[redis]>=5.3.1",
+    "tenacity>=9.1.2",
 ]
 
 [project.optional-dependencies]
