@@ -98,10 +98,17 @@ plot_str = eval_data.pr_curve_pltx()
 print(plot_str)
 ```
 
-Or get precision and recall at a specific threshold:
+Or get precision and recall at specific thresholds:
 
 ```python
-p, r = eval_data.precision_recall(results, threshold=0.5)
+# Get precision/recall at one or more thresholds
+pr_results = eval_data.precision_recall([0.5])
+threshold, p, r, p_ci, r_ci = pr_results[0]
+
+# Or multiple thresholds at once
+pr_results = eval_data.precision_recall([0.3, 0.5, 0.7])
+for threshold, p, r, p_ci, r_ci in pr_results:
+    print(f"At {threshold}: P={p:.2f} R={r:.2f}")
 ```
 
 !!! tip "Deterministic models"

@@ -200,9 +200,9 @@ def main(
             try:
                 result = subprocess.run(cmd, check=False)
                 raise typer.Exit(result.returncode)
-            except KeyboardInterrupt:
+            except KeyboardInterrupt as e:
                 logger.info("\nKeyboard interrupt received, stopping...")
-                raise typer.Exit(0)
+                raise typer.Exit(0) from e
 
     except KeyboardInterrupt as e:
         logger.info("\nExiting...")

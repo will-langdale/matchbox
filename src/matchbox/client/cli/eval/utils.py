@@ -1,5 +1,6 @@
 """Collection of client-side functions in aid of model evaluation."""
 
+import logging
 import warnings
 from itertools import combinations
 from typing import Any
@@ -20,8 +21,6 @@ from matchbox.common.eval import (
     ModelComparison,
     Pair,
     Pairs,
-    PrecisionRecall,
-    precision_recall,
     process_judgements,
     wilson_confidence_interval,
 )
@@ -595,8 +594,6 @@ class EvalData:
         Returns:
             EvalData instance ready for precision/recall calculations
         """
-        import logging
-
         logger = logging.getLogger(__name__)
         logger.info(f"Starting EvalData.from_resolution() for resolution: {resolution}")
 
@@ -724,20 +721,6 @@ class EvalData:
         logger.info("EvalData.from_resolution() completed successfully")
         return result
 
-    def precision_recall(self, threshold: float) -> PrecisionRecall:
-        """Computes precision and recall at one threshold.
-
-        Args:
-            threshold: Probability threshold (0.0-1.0)
-
-        Returns:
-            Tuple of (precision, recall) values
-        """
-        pr_results = precision_recall([self.root_leaf], self.judgements, self.expansion)
-        result = pr_results[0]
-        p, r, p_ci, r_ci = result
-        return p, r
-
     def refresh_judgements(self) -> None:
         """Refresh judgement data with latest submissions from the server."""
         self.judgements, self.expansion = _handler.download_eval_data()
@@ -757,10 +740,10 @@ class EvalData:
             self._validation_counts = {}
             self._validation_leaves = set()
 
-    def precision_recall_curve(
+    def precision_recall(
         self, thresholds: list[float] | None = None
     ) -> list[tuple[float, float, float, float, float]]:
-        """Unified PR calculation supporting both single and multi-threshold evaluation.
+        """Calculate precision and recall using sweep-based algorithm.
 
         Args:
             thresholds: Optional list of thresholds to override instance thresholds
@@ -771,32 +754,20 @@ class EvalData:
         if thresholds is None:
             thresholds = self.thresholds
 
-        # If judgements are empty, always use original precision_recall function
-        # This preserves the original error handling behavior
-        if len(self.judgements) == 0:
-            threshold = thresholds[0] if thresholds else 1.0
-            pr_results = precision_recall(
-                [self.root_leaf], self.judgements, self.expansion
-            )
-            p, r, p_ci, r_ci = pr_results[0]
-            return [(threshold, p, r, p_ci, r_ci)]
+        if not thresholds:
+            thresholds = [1.0]  # Default to 100% threshold
 
-        # Single threshold - use existing precision_recall function
-        if len(thresholds) <= 1:
-            threshold = thresholds[0] if thresholds else 1.0
-            pr_results = precision_recall(
-                [self.root_leaf], self.judgements, self.expansion
-            )
-            p, r, p_ci, r_ci = pr_results[0]
-            return [(threshold, p, r, p_ci, r_ci)]
-
-        # Multi-threshold - use optimized incremental algorithm
         return self._calculate_optimized_pr_curve(thresholds)
 
     def _calculate_optimized_pr_curve(
         self, thresholds: list[float]
     ) -> list[tuple[float, float, float, float, float]]:
-        """Optimized multi-threshold PR calculation using Union-Find."""
+        """Optimized PR calculation using Union-Find sweep algorithm."""
+        # Handle empty judgements case
+        if len(self.judgements) == 0:
+            # Return zeros for all thresholds when no judgements exist
+            return [(t, 0.0, 0.0, 0.0, 0.0) for t in thresholds]
+
         # Initialize incremental state with cached validation data
         state = IncrementalState(
             self._validation_pairs, self._validation_counts, self._validation_leaves
@@ -817,17 +788,13 @@ class EvalData:
         # Sort results by threshold ascending for consistent output
         return sorted(results, key=lambda x: x[0])
 
-    def get_pr_curve_data(self) -> list[tuple[float, float, float, float, float]]:
-        """Backward compatibility method - delegates to precision_recall_curve."""
-        return self.precision_recall_curve()
-
     def pr_curve_mpl(self) -> Figure:
         """Generate matplotlib precision-recall curve.
 
         Returns:
             Matplotlib Figure object
         """
-        data = self.get_pr_curve_data()
+        data = self.precision_recall()
         all_p = [p for _, p, r, p_ci, r_ci in data]
         all_r = [r for _, p, r, p_ci, r_ci in data]
         all_p_ci = [p_ci for _, p, r, p_ci, r_ci in data]

@@ -250,7 +250,11 @@ class TestE2EModelEvaluation:
             "EvalData should contain submitted judgements"
         )
 
-        pr = eval_data.precision_recall(threshold=0.5)
+        # Get PR at 0.5 threshold
+        pr_results = eval_data.precision_recall([0.5])
+        assert len(pr_results) == 1
+        _, p, r, _, _ = pr_results[0]
+        pr = (p, r)
         assert isinstance(pr, tuple)
         assert len(pr) == 2
 

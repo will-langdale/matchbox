@@ -1,5 +1,7 @@
 """Textual-based entity resolution evaluation tool."""
 
+import logging
+import traceback
 from collections import deque
 from pathlib import Path
 from textwrap import dedent
@@ -23,7 +25,7 @@ from textual_plotext import PlotextPlot
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
-from matchbox.client.cli.eval.utils import EvaluationItem, get_samples
+from matchbox.client.cli.eval.utils import EvalData, EvaluationItem, get_samples
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 
@@ -628,99 +630,97 @@ class PRCurveDisplay(PlotextPlot):
         self.plt.clear_data()
         self.plt.clear_figure()
 
-        # Show loading message
-        if self.state.is_loading_eval_data:
-            self.plt.title("Loading evaluation data...")
-            self._has_plotted = False
-            return
-
-        # Show error state
-        if self.state.eval_data_error:
-            self.plt.title("Error loading data - check status")
-            self._has_plotted = False
-            return
-
-        # No eval data available
-        if self.state.eval_data is None:
-            self.plt.title("No evaluation data loaded")
-            self._has_plotted = False
+        # Handle early exit conditions
+        if self._should_skip_plotting():
             return
 
         try:
-            # Get raw data from EvalData
-            pr_data = self.state.eval_data.get_pr_curve_data()
-
-            if not pr_data:
-                self.plt.title("📊 Submit some judgements first")
-                self._has_plotted = False
-                return
-
-            # Generate the actual precision-recall plot with confidence intervals
-            all_p = [p for _, p, r, p_ci, r_ci in pr_data]
-            all_r = [r for _, p, r, p_ci, r_ci in pr_data]
-            all_p_ci = [p_ci for _, p, r, p_ci, r_ci in pr_data]
-            all_r_ci = [r_ci for _, p, r, p_ci, r_ci in pr_data]
-
-            # Plot with error bars showing confidence intervals (dimmed)
-            self.plt.error(all_r, all_p, xerr=all_r_ci, yerr=all_p_ci, color="gray")
-            self.plt.scatter(all_r, all_p, marker="circle", color="blue")
-            self.plt.plot(all_r, all_p, color="blue")
-            self.plt.xlim(0, 1)
-            self.plt.ylim(0, 1)
-            self.plt.xlabel("Recall")
-            self.plt.ylabel("Precision")
-            self.plt.title("Precision-Recall Curve (95% CI)")
-            self._has_plotted = True
-
+            self._generate_pr_plot()
         except Exception as e:
-            error_str = str(e).lower()
-            # Handle specific error cases with user-friendly messages
-            if "cannot be empty" in error_str and "judgement" in error_str:
-                # This is the expected case when no judgements exist yet
-                self.plt.title("📊 Submit some judgements first")
-            else:
-                # Log comprehensive error information for debugging
-                import logging
-                import traceback
+            self._handle_plot_error(e)
 
-                logger = logging.getLogger(__name__)
-
-                # Log detailed error information
-                exception_type = type(e).__name__
-                error_msg = f"Plot generation failed - Exception type: {exception_type}"
-                logger.error(error_msg)
-                logger.error(f"Exception message: {str(e)}")
-                logger.error(f"Exception repr: {repr(e)}")
-                logger.error(f"Full traceback:\n{traceback.format_exc()}")
-
-                # Log context about what we were trying to plot
-                pr_data_available = "pr_data" in locals()
-                logger.error(f"PR data variable available: {pr_data_available}")
-                if pr_data_available and locals().get("pr_data"):
-                    pr_data_local = locals()["pr_data"]
-                    logger.error(f"PR data length: {len(pr_data_local)}")
-                    logger.error(f"PR data type: {type(pr_data_local)}")
-                    if len(pr_data_local) > 0:
-                        logger.error(f"First 3 PR data points: {pr_data_local[:3]}")
-
-                # Log eval_data state
-                if self.state.eval_data:
-                    logger.error("EvalData object is available")
-                    try:
-                        judgements_info = (
-                            f"length={len(self.state.eval_data.judgements)}"
-                            if self.state.eval_data.judgements is not None
-                            else "None"
-                        )
-                        logger.error(f"EvalData judgements: {judgements_info}")
-                    except Exception as eval_error:
-                        error_msg = f"Error accessing EvalData judgements: {eval_error}"
-                        logger.error(error_msg)
-                else:
-                    logger.error("EvalData object is None")
-
-                self.plt.title("Plot generation failed")
+    def _should_skip_plotting(self) -> bool:
+        """Check if plotting should be skipped due to current state."""
+        if self.state.is_loading_eval_data:
+            self.plt.title("Loading evaluation data...")
             self._has_plotted = False
+            return True
+
+        if self.state.eval_data_error:
+            self.plt.title("Error loading data - check status")
+            self._has_plotted = False
+            return True
+
+        if self.state.eval_data is None:
+            self.plt.title("No evaluation data loaded")
+            self._has_plotted = False
+            return True
+
+        return False
+
+    def _generate_pr_plot(self) -> None:
+        """Generate the precision-recall plot with confidence intervals."""
+        # Get raw data from EvalData
+        pr_data = self.state.eval_data.precision_recall()
+
+        if not pr_data:
+            self.plt.title("📊 Submit some judgements first")
+            self._has_plotted = False
+            return
+
+        # Extract data points for plotting
+        all_p = [p for _, p, r, p_ci, r_ci in pr_data]
+        all_r = [r for _, p, r, p_ci, r_ci in pr_data]
+        all_p_ci = [p_ci for _, p, r, p_ci, r_ci in pr_data]
+        all_r_ci = [r_ci for _, p, r, p_ci, r_ci in pr_data]
+
+        # Generate the plot
+        self.plt.error(all_r, all_p, xerr=all_r_ci, yerr=all_p_ci, color="gray")
+        self.plt.scatter(all_r, all_p, marker="circle", color="blue")
+        self.plt.plot(all_r, all_p, color="blue")
+        self.plt.xlim(0, 1)
+        self.plt.ylim(0, 1)
+        self.plt.xlabel("Recall")
+        self.plt.ylabel("Precision")
+        self.plt.title("Precision-Recall Curve (95% CI)")
+        self._has_plotted = True
+
+    def _handle_plot_error(self, error: Exception) -> None:
+        """Handle errors during plot generation with appropriate user messaging."""
+        error_str = str(error).lower()
+
+        if "cannot be empty" in error_str and "judgement" in error_str:
+            # Expected case when no judgements exist yet
+            self.plt.title("📊 Submit some judgements first")
+        else:
+            # Unexpected error - log details and show generic message
+            self._log_plot_error(error)
+            self.plt.title("Plot generation failed")
+
+        self._has_plotted = False
+
+    def _log_plot_error(self, error: Exception) -> None:
+        """Log comprehensive error information for debugging plot issues."""
+        logger = logging.getLogger(__name__)
+
+        # Log basic error information
+        logger.error(f"Plot generation failed - {type(error).__name__}: {error}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
+        # Log eval_data state for debugging
+        if self.state.eval_data:
+            logger.error("EvalData object is available")
+            try:
+                judgements_info = (
+                    f"length={len(self.state.eval_data.judgements)}"
+                    if self.state.eval_data.judgements is not None
+                    else "None"
+                )
+                logger.error(f"EvalData judgements: {judgements_info}")
+            except Exception as eval_error:
+                logger.error(f"Error accessing EvalData judgements: {eval_error}")
+        else:
+            logger.error("EvalData object is None")
 
     def _on_state_change(self) -> None:
         """Handle state changes by updating the plot."""
@@ -824,7 +824,6 @@ class StatusBarRight(Widget):
             # Validate message length
             if len(self.state.status_message) > self.MAX_STATUS_LENGTH:
                 # This should never happen in production - it's a development error
-                import logging
 
                 logger = logging.getLogger(__name__)
                 msg_len = len(self.state.status_message)
@@ -1030,49 +1029,53 @@ class EntityResolutionApp(App):
         self.state.update_status("⏳ Loading", "yellow")
 
         try:
-            import logging
-
-            from matchbox.client.cli.eval.utils import EvalData
-
-            # Enable debug logging for this operation
-            logger = logging.getLogger("matchbox.client.cli.eval.utils")
-            logger.setLevel(logging.INFO)
-
-            eval_data = EvalData.from_resolution(self.state.resolution)
-            self.state.set_eval_data(eval_data)
-            self.state.update_status("✓ Loaded", "green")
-
-            # Log successful loading details
-            logger.info(
-                f"Successfully loaded EvalData for resolution '{self.state.resolution}'"
-            )
-
-            # Clear status after a delay
-            self.set_timer(2.0, self.state.clear_status)
+            await self._perform_eval_data_loading()
         except Exception as e:
-            import traceback
+            self._handle_eval_data_error(e)
 
-            # Get more detailed error information
-            error_details = str(e)
-            error_type = type(e).__name__
+    async def _perform_eval_data_loading(self) -> None:
+        """Perform the actual EvalData loading operation."""
+        # Enable debug logging for this operation
+        logger = logging.getLogger("matchbox.client.cli.eval.utils")
+        logger.setLevel(logging.INFO)
 
-            # For debugging, also log the full traceback
-            logger = logging.getLogger(__name__)
-            logger.error(f"EvalData loading failed: {error_details}")
-            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        eval_data = EvalData.from_resolution(self.state.resolution)
+        self.state.set_eval_data(eval_data)
+        self.state.update_status("✓ Loaded", "green")
 
-            # Create user-friendly error message
-            if "not found" in error_details.lower():
-                error_msg = f"Model '{self.state.resolution}' not found"
-            elif "empty" in error_details.lower():
-                error_msg = f"No data available for model '{self.state.resolution}'"
-            else:
-                error_msg = f"EvalData error ({error_type}): {error_details}"
+        # Log successful loading
+        logger.info(
+            f"Successfully loaded EvalData for resolution '{self.state.resolution}'"
+        )
 
-            self.state.set_eval_data_error(error_msg)
-            self.state.update_status(error_msg, "red")
-            # Clear status after a longer delay for errors
-            self.set_timer(8.0, self.state.clear_status)
+        # Clear status after a delay
+        self.set_timer(2.0, self.state.clear_status)
+
+    def _handle_eval_data_error(self, error: Exception) -> None:
+        """Handle errors during EvalData loading with appropriate user messaging."""
+        # Log the error details
+        logger = logging.getLogger(__name__)
+        logger.error(f"EvalData loading failed: {error}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
+        # Generate user-friendly error message
+        error_msg = self._create_eval_data_error_message(error)
+
+        self.state.set_eval_data_error(error_msg)
+        self.state.update_status(error_msg, "red")
+        # Clear status after a longer delay for errors
+        self.set_timer(8.0, self.state.clear_status)
+
+    def _create_eval_data_error_message(self, error: Exception) -> str:
+        """Create a user-friendly error message for EvalData loading failures."""
+        error_details = str(error).lower()
+
+        if "not found" in error_details:
+            return f"Model '{self.state.resolution}' not found"
+        elif "empty" in error_details:
+            return f"No data available for model '{self.state.resolution}'"
+        else:
+            return f"EvalData error ({type(error).__name__}): {error}"
 
     async def refresh_display(self) -> None:
         """Refresh display with current queue item."""
@@ -1153,39 +1156,53 @@ class EntityResolutionApp(App):
 
     async def action_toggle_plot(self) -> None:
         """Show precision-recall plot as modal."""
-        # Refresh judgements before showing plot
+        # Refresh judgements before showing plot if eval data is available
         if self.state.eval_data is not None:
-            self.state.update_status("⏳ Loading", "yellow")
-            try:
-                self.state.eval_data.refresh_judgements()
-                # Check if we have any judgements after refresh
-                judgements_count = (
-                    len(self.state.eval_data.judgements)
-                    if self.state.eval_data.judgements is not None
-                    else 0
-                )
-                if judgements_count > 0:
-                    self.state.update_status(f"📊 Got {judgements_count}", "green")
-                else:
-                    self.state.update_status("◯ Empty", "dim")
-                # Clear status after a delay
-                self.set_timer(2.0, self.state.clear_status)
-            except Exception as e:
-                error_str = str(e).lower()
-                if "cannot be empty" in error_str and "judgement" in error_str:
-                    self.state.update_status("◯ Empty", "dim")
-                else:
-                    self.state.update_status("⚠ Error", "red")
-                    # Log the detailed error
-                    import logging
-
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to refresh judgements: {str(e)}")
-                # Clear status after a longer delay for errors
-                self.set_timer(4.0, self.state.clear_status)
+            await self._refresh_judgements_for_plot()
 
         # Show the plot modal
         self.push_screen(PlotModal(self.state))
+
+    async def _refresh_judgements_for_plot(self) -> None:
+        """Refresh judgements data and update status appropriately."""
+        self.state.update_status("⏳ Loading", "yellow")
+
+        try:
+            self.state.eval_data.refresh_judgements()
+            self._update_judgements_status()
+        except Exception as e:
+            self._handle_judgements_refresh_error(e)
+
+    def _update_judgements_status(self) -> None:
+        """Update status based on current judgements count."""
+        judgements_count = (
+            len(self.state.eval_data.judgements)
+            if self.state.eval_data.judgements is not None
+            else 0
+        )
+
+        if judgements_count > 0:
+            self.state.update_status(f"📊 Got {judgements_count}", "green")
+        else:
+            self.state.update_status("◯ Empty", "dim")
+
+        # Clear status after a delay
+        self.set_timer(2.0, self.state.clear_status)
+
+    def _handle_judgements_refresh_error(self, error: Exception) -> None:
+        """Handle errors during judgements refresh with appropriate status."""
+        error_str = str(error).lower()
+
+        if "cannot be empty" in error_str and "judgement" in error_str:
+            self.state.update_status("◯ Empty", "dim")
+        else:
+            self.state.update_status("⚠ Error", "red")
+            # Log the detailed error for debugging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to refresh judgements: {error}")
+
+        # Clear status after a longer delay for errors
+        self.set_timer(4.0, self.state.clear_status)
 
     async def action_show_help(self) -> None:
         """Show the help modal."""
@@ -1220,7 +1237,6 @@ class EntityResolutionApp(App):
         self.state.update_status("✓ Sent", "green")
 
         # Log detailed submission info for debugging
-        import logging
 
         logger = logging.getLogger(__name__)
         logger.info(
@@ -1258,64 +1274,62 @@ class EntityResolutionApp(App):
     async def _backfill_samples(self) -> None:
         """Fetch new samples to replace submitted ones."""
         try:
-            current_count = self.state.queue.total_count
-            desired_count = self.state.sample_limit
-            needed = max(0, desired_count - current_count)
-
-            if needed > 0:
-                self.state.update_status("⚡ Fetching", "yellow")
-
-                # Log detailed backfill info
-                import logging
-
-                logger = logging.getLogger(__name__)
-                logger.info(
-                    f"Backfilling queue: need {needed} samples to reach limit of "
-                    f"{desired_count}"
-                )
-
-                # Fetch replacement samples
-                new_samples_dict = await self._fetch_additional_samples(needed)
-
-                if new_samples_dict and len(new_samples_dict) > 0:
-                    # new_samples_dict now contains EvaluationItems
-                    new_items = list(new_samples_dict.values())
-                    self.state.queue.add_items(new_items)
-
-                    # Update status
-                    self.state.update_status("✓ Ready", "green")
-                    # Log successful backfill
-                    logger.info(
-                        f"Successfully added {len(new_items)} new samples to queue"
-                    )
-
-                    # If we're currently viewing an empty state, refresh display
-                    if self.state.current_df is None and len(new_items) > 0:
-                        await self.refresh_display()
-                else:
-                    self.state.update_status("◯ Empty", "dim")
-                    # Log when no samples are available
-                    logger.warning(
-                        f"No new samples available - requested {needed} but got none"
-                    )
-            else:
-                self.state.update_status("✓ Ready", "green")
-                # Log when queue is already at capacity
-                import logging
-
-                logger = logging.getLogger(__name__)
-                logger.info(
-                    f"Queue already at capacity: {current_count}/{desired_count}"
-                )
-
+            await self._perform_backfill_operation()
         except Exception as e:
-            self.state.update_status("⚠ Error", "red")
-            # Log detailed error information
-            import logging
+            self._handle_backfill_error(e)
 
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to fetch replacement samples: {str(e)}")
-            logger.error(f"Exception type: {type(e).__name__}")
+    async def _perform_backfill_operation(self) -> None:
+        """Perform the backfill operation with appropriate logging."""
+        current_count = self.state.queue.total_count
+        desired_count = self.state.sample_limit
+        needed = max(0, desired_count - current_count)
+
+        logger = logging.getLogger(__name__)
+
+        # Handle case where queue is already at capacity
+        if needed <= 0:
+            self.state.update_status("✓ Ready", "green")
+            logger.info(f"Queue already at capacity: {current_count}/{desired_count}")
+            return
+
+        # Fetch new samples
+        self.state.update_status("⚡ Fetching", "yellow")
+        logger.info(
+            f"Backfilling queue: need {needed} samples "
+            f"to reach limit of {desired_count}"
+        )
+
+        new_samples_dict = await self._fetch_additional_samples(needed)
+
+        if new_samples_dict and len(new_samples_dict) > 0:
+            await self._process_new_samples(new_samples_dict, logger)
+        else:
+            self._handle_no_samples_available(needed, logger)
+
+    async def _process_new_samples(self, new_samples_dict: dict, logger) -> None:
+        """Process newly fetched samples and update the queue."""
+        new_items = list(new_samples_dict.values())
+        self.state.queue.add_items(new_items)
+
+        self.state.update_status("✓ Ready", "green")
+        logger.info(f"Successfully added {len(new_items)} new samples to queue")
+
+        # Refresh display if currently viewing an empty state
+        if self.state.current_df is None and len(new_items) > 0:
+            await self.refresh_display()
+
+    def _handle_no_samples_available(self, needed: int, logger) -> None:
+        """Handle the case where no new samples are available."""
+        self.state.update_status("◯ Empty", "dim")
+        logger.warning(f"No new samples available - requested {needed} but got none")
+
+    def _handle_backfill_error(self, error: Exception) -> None:
+        """Handle errors during backfill operation."""
+        self.state.update_status("⚠ Error", "red")
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to fetch replacement samples: {error}")
+        logger.error(f"Exception type: {type(error).__name__}")
 
     async def _fetch_additional_samples(
         self, count: int

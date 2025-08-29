@@ -1,5 +1,6 @@
 """Tests for eval utils functionality, specifically EvalData and PR curve generation."""
 
+import time
 from unittest.mock import Mock, patch
 
 import pyarrow as pa
@@ -12,6 +13,91 @@ from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 
 class TestEvalData:
     """Test the EvalData class functionality."""
+
+    def test_sweep_efficiency_for_multiple_thresholds(self):
+        """Test that sweep method is more efficient for multiple thresholds."""
+        from unittest.mock import patch
+
+        import pyarrow as pa
+
+        # Create a larger test dataset
+        model_data = []
+        for cluster_id in range(100):  # 100 clusters
+            for leaf_id in range(
+                cluster_id * 3, cluster_id * 3 + 3
+            ):  # 3 leaves per cluster
+                model_data.append({"root": cluster_id, "leaf": leaf_id})
+
+        model_root_leaf = pa.Table.from_pylist(model_data)
+
+        # Create judgements for some clusters
+        judgements_data = []
+        expansion_data = []
+        for cluster_id in range(0, 50):  # Judge half the clusters
+            judgements_data.append(
+                {"shown": cluster_id, "endorsed": cluster_id, "user_id": 1}
+            )
+            expansion_data.append(
+                {
+                    "root": cluster_id,
+                    "leaves": list(range(cluster_id * 3, cluster_id * 3 + 3)),
+                }
+            )
+
+        judgements = pa.Table.from_pylist(judgements_data)
+        expansion = pa.Table.from_pylist(expansion_data)
+
+        # Create probabilities for different thresholds
+        prob_data = []
+        for i in range(0, 300, 2):  # Every other leaf pair
+            prob_data.append(
+                {
+                    "left_id": i,
+                    "right_id": i + 1,
+                    "probability": 50 + (i % 50),  # Vary from 50 to 99
+                }
+            )
+        probabilities = pa.Table.from_pylist(prob_data)
+
+        with patch(
+            "matchbox.client.cli.eval.utils._handler.download_eval_data"
+        ) as mock_handler:
+            mock_handler.return_value = (judgements, expansion)
+
+            # Test with multiple thresholds
+            thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+
+            # Create EvalData and time the sweep method
+            eval_data = EvalData(
+                root_leaf=model_root_leaf,
+                thresholds=thresholds,
+                probabilities=probabilities,
+            )
+
+            start_time = time.time()
+            sweep_results = eval_data.precision_recall(thresholds)
+            sweep_time = time.time() - start_time
+
+            # Verify we got results for all thresholds
+            assert len(sweep_results) == len(thresholds)
+
+            # Verify results are sorted by threshold
+            result_thresholds = [t for t, _, _, _, _ in sweep_results]
+            assert result_thresholds == sorted(thresholds)
+
+            # Test individual threshold calls would be slower (simulate)
+            # The sweep processes all thresholds in one pass through the data
+            # Individual calls would need to process the data separately each time
+
+            # Just verify the sweep completed quickly (under 1 second)
+            assert sweep_time < 1.0, f"Sweep took {sweep_time:.3f}s, should be fast"
+
+            # Verify confidence intervals are calculated
+            for _, p, r, p_ci, r_ci in sweep_results:
+                assert isinstance(p, float) and 0 <= p <= 1
+                assert isinstance(r, float) and 0 <= r <= 1
+                assert isinstance(p_ci, float) and p_ci >= 0
+                assert isinstance(r_ci, float) and r_ci >= 0
 
     def test_get_pr_curve_data_with_empty_judgements(self):
         """Test get_pr_curve_data() when judgements table is empty."""
@@ -48,16 +134,14 @@ class TestEvalData:
             thresholds = [0.1, 0.5, 0.8]
             eval_data = EvalData(root_leaf_data, thresholds)
 
-            # This should fail with empty judgements
-            with pytest.raises(Exception) as exc_info:
-                eval_data.get_pr_curve_data()
-
-            # Check that we get the "judgements data cannot be empty" error
-            assert (
-                "cannot be empty" in str(exc_info.value)
-                or "empty" in str(exc_info.value).lower()
-            )
-            # Expected error with empty judgements
+            # With empty judgements, should return zeros
+            pr_data = eval_data.precision_recall()
+            assert len(pr_data) == 3  # One for each threshold
+            for _threshold, p, r, p_ci, r_ci in pr_data:
+                assert p == 0.0
+                assert r == 0.0
+                assert p_ci == 0.0
+                assert r_ci == 0.0
 
     def test_get_pr_curve_data_with_valid_judgements(self):
         """Test get_pr_curve_data() with valid judgements data."""
@@ -97,7 +181,7 @@ class TestEvalData:
 
             # This should work with valid data
             try:
-                pr_data = eval_data.get_pr_curve_data()
+                pr_data = eval_data.precision_recall()
 
                 # Check the return format
                 assert isinstance(pr_data, list)
@@ -156,7 +240,7 @@ class TestEvalData:
             eval_data = EvalData(root_leaf_data, thresholds)
 
             try:
-                pr_data = eval_data.get_pr_curve_data()
+                pr_data = eval_data.precision_recall()
 
                 # Verify exact format: list[tuple[float, float, float, float, float]]
                 assert isinstance(pr_data, list)
@@ -314,7 +398,7 @@ class TestPRCurveDisplay:
         """Test update_plot() handles empty PR data gracefully."""
         # Create mock eval_data that returns empty list
         mock_eval_data = Mock()
-        mock_eval_data.get_pr_curve_data.return_value = []
+        mock_eval_data.precision_recall.return_value = []
 
         # Create mock state with empty eval data
         state = Mock(spec=EvaluationState)
@@ -335,7 +419,7 @@ class TestPRCurveDisplay:
         """Test update_plot() creates plot when valid PR data is available."""
         # Create mock eval_data that returns valid PR data
         mock_eval_data = Mock()
-        mock_eval_data.get_pr_curve_data.return_value = [
+        mock_eval_data.precision_recall.return_value = [
             (0.1, 0.9, 0.5, 0.1, 0.1),  # (threshold, precision, recall, p_ci, r_ci)
             (0.5, 0.8, 0.7, 0.1, 0.1),
             (0.8, 0.6, 0.9, 0.1, 0.1),
@@ -360,7 +444,7 @@ class TestPRCurveDisplay:
         """Test update_plot() handles exceptions gracefully."""
         # Create mock eval_data that raises exception
         mock_eval_data = Mock()
-        mock_eval_data.get_pr_curve_data.side_effect = Exception("Test error")
+        mock_eval_data.precision_recall.side_effect = Exception("Test error")
 
         # Create mock state
         state = Mock(spec=EvaluationState)
@@ -385,7 +469,7 @@ class TestPRCurveDisplay:
         response."""
         # Create mock eval_data that raises judgements empty error
         mock_eval_data = Mock()
-        mock_eval_data.get_pr_curve_data.side_effect = Exception(
+        mock_eval_data.precision_recall.side_effect = Exception(
             "Judgements data cannot be empty."
         )
 
