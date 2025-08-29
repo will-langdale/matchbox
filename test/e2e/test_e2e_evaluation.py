@@ -243,17 +243,17 @@ class TestE2EModelEvaluation:
         assert len(final_judgements) > 0, "Should have judgements to evaluate with"
 
         # Phase 5: Test EvalData with real submitted judgements and DAG results
-        eval_data = EvalData()
+        eval_data = EvalData.from_results(self.final_resolution_1_results)
         assert SCHEMA_JUDGEMENTS.equals(eval_data.judgements.schema)
         assert SCHEMA_CLUSTER_EXPANSION.equals(eval_data.expansion.schema)
         assert len(eval_data.judgements) > 0, (
             "EvalData should contain submitted judgements"
         )
 
-        pr = eval_data.precision_recall(self.final_resolution_1_results, threshold=0.5)
+        pr = eval_data.precision_recall(threshold=0.5)
         assert isinstance(pr, tuple)
         assert len(pr) == 2
 
         # Test PR curve generation with real judgements
-        pr_curve = eval_data.pr_curve(self.final_resolution_1_results)
+        pr_curve = eval_data.pr_curve_mpl()
         assert isinstance(pr_curve, Figure)

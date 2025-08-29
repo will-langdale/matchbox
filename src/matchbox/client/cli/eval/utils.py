@@ -1,11 +1,14 @@
 """Collection of client-side functions in aid of model evaluation."""
 
 import warnings
+from itertools import combinations
 from typing import Any
 
 import polars as pl
+import pyarrow as pa
 from matplotlib import pyplot as plt
 from matplotlib.pyplot import Figure
+from pydantic import BaseModel, computed_field
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 
@@ -15,26 +18,18 @@ from matchbox.client.results import Results
 from matchbox.common.eval import (
     Judgement,
     ModelComparison,
+    Pair,
+    Pairs,
     PrecisionRecall,
     precision_recall,
+    process_judgements,
+    wilson_confidence_interval,
 )
 from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
-
-try:
-    from pydantic import BaseModel, computed_field
-except ImportError:
-    BaseModel = object
-
-    def computed_field():
-        """Fallback decorator when Pydantic is not available."""
-
-        def decorator(func):
-            return func
-
-        return decorator
+from matchbox.common.transform import DisjointSet
 
 
 class EvaluationItem(BaseModel):
@@ -410,48 +405,458 @@ def get_samples(
             default_client.dispose()
 
 
+class IncrementalState:
+    """Manages incremental state for optimized PR curve calculation using Union-Find."""
+
+    def __init__(
+        self,
+        validation_pairs: Pairs,
+        validation_counts: dict[Pair, float],
+        validation_leaves: set[int],
+    ):
+        """Initialize with preprocessed validation data."""
+        self.validation_pairs = validation_pairs
+        self.validation_counts = validation_counts
+        self.validation_leaves = validation_leaves
+
+        # Union-Find for tracking connected components
+        self.disjoint_set: DisjointSet[int] = DisjointSet()
+
+        # Track current model pairs at this threshold
+        self.current_model_pairs: Pairs = set()
+
+        # Add all validation leaves to disjoint set
+        for leaf in validation_leaves:
+            self.disjoint_set.add(leaf)
+
+    def add_threshold_edges(
+        self, threshold: float, probabilities: pa.Table, model_root_leaf: pa.Table
+    ):
+        """Add edges at the given threshold and update model pairs."""
+        if probabilities is None:
+            # No probabilities - include all model pairs
+            self._add_all_model_pairs(model_root_leaf)
+            return
+
+        # Convert threshold back to percentage for comparison with probabilities
+        threshold_pct = int(threshold * 100)
+
+        # Get edges at this threshold
+        probs_df = pl.from_arrow(probabilities)
+        threshold_edges = probs_df.filter(pl.col("probability") >= threshold_pct)
+
+        if threshold_edges.is_empty():
+            return
+
+        # Add edges to Union-Find and update model pairs
+        for row in threshold_edges.iter_rows(named=True):
+            left_id = row["left_id"]
+            right_id = row["right_id"]
+
+            # Only consider edges between validation leaves
+            if left_id in self.validation_leaves and right_id in self.validation_leaves:
+                # Add to Union-Find
+                self.disjoint_set.union(left_id, right_id)
+
+                # Add pair to current model pairs (sorted for consistency)
+                pair = (min(left_id, right_id), max(left_id, right_id))
+                if pair in self.validation_counts and self.validation_counts[pair] != 0:
+                    self.current_model_pairs.add(pair)
+
+    def _add_all_model_pairs(self, model_root_leaf: pa.Table):
+        """Add all model pairs when no probability filtering is needed."""
+        # Convert model clusters to pairs
+        clusters = (
+            pl.from_arrow(model_root_leaf)
+            .group_by("root")
+            .agg(pl.col("leaf").alias("leaves"))
+            .select("leaves")
+            .to_series()
+            .to_list()
+        )
+
+        for cluster_leaves in clusters:
+            # Generate all pairs within this cluster
+            for left, right in combinations(sorted(cluster_leaves), r=2):
+                if left in self.validation_leaves and right in self.validation_leaves:
+                    # Add to Union-Find
+                    self.disjoint_set.union(left, right)
+
+                    # Add to model pairs if it has judgements
+                    pair = (left, right)
+                    if (
+                        pair in self.validation_counts
+                        and self.validation_counts[pair] != 0
+                    ):
+                        self.current_model_pairs.add(pair)
+
+    def calculate_current_metrics(self) -> tuple[float, float, float, float]:
+        """Calculate precision, recall, and confidence intervals for current state."""
+        # Filter validation pairs to only include positively judged ones
+        positive_validation_pairs = {
+            pair
+            for pair in self.validation_pairs
+            if pair in self.validation_counts and self.validation_counts[pair] > 0
+        }
+
+        # Calculate true positives (intersection of model and positive validation pairs)
+        true_positive_pairs = self.current_model_pairs & positive_validation_pairs
+
+        # Calculate precision and recall
+        precision = (
+            len(true_positive_pairs) / len(self.current_model_pairs)
+            if self.current_model_pairs
+            else 0.0
+        )
+        recall = (
+            len(true_positive_pairs) / len(positive_validation_pairs)
+            if positive_validation_pairs
+            else 0.0
+        )
+
+        # Calculate Wilson confidence intervals
+        precision_ci = wilson_confidence_interval(
+            len(true_positive_pairs), len(self.current_model_pairs)
+        )
+        recall_ci = wilson_confidence_interval(
+            len(true_positive_pairs), len(positive_validation_pairs)
+        )
+
+        return precision, recall, precision_ci, recall_ci
+
+
 class EvalData:
     """Object which caches evaluation data to measure performance of models."""
 
-    def __init__(self):
-        """Initialise evaluation data from resolution name."""
+    def __init__(
+        self,
+        root_leaf: pa.Table,
+        thresholds: list[float],
+        probabilities: pa.Table = None,
+    ):
+        """Initialize evaluation data with root/leaf mapping and thresholds.
+
+        Args:
+            root_leaf: PyArrow table with 'root' and 'leaf' columns
+            thresholds: List of probability thresholds (as floats 0.0-1.0)
+            probabilities: Optional PyArrow table with probability data
+        """
+        self.root_leaf = root_leaf
+        self.thresholds = thresholds
+        self.probabilities = probabilities
         self.judgements, self.expansion = _handler.download_eval_data()
 
-    def precision_recall(self, results: Results, threshold: float) -> PrecisionRecall:
-        """Computes precision and recall at one threshold."""
-        if not len(results.clusters):
-            raise ValueError("No clusters suggested by these results.")
+        # Cache expensive judgement processing for reuse (if judgements exist)
+        if len(self.judgements) > 0:
+            (
+                self._validation_pairs,
+                self._validation_counts,
+                self._validation_leaves,
+            ) = process_judgements(
+                pl.from_arrow(self.judgements), pl.from_arrow(self.expansion)
+            )
+        else:
+            # Handle empty judgements gracefully
+            self._validation_pairs = set()
+            self._validation_counts = {}
+            self._validation_leaves = set()
 
-        threshold = int(threshold * 100)
+    @classmethod
+    def from_results(cls, results: Results) -> "EvalData":
+        """Create EvalData from a Results object (existing functionality).
 
+        Args:
+            results: Results object containing clusters and probabilities
+
+        Returns:
+            EvalData instance ready for precision/recall calculations
+        """
+        # Extract root_leaf mapping from results
         root_leaf = (
             results.root_leaf()
             .rename({"root_id": "root", "leaf_id": "leaf"})
             .to_arrow()
         )
-        return precision_recall([root_leaf], self.judgements, self.expansion)[0]
 
-    def pr_curve(self, results: Results) -> Figure:
-        """Computes precision and recall for each threshold in results."""
-        all_p = []
-        all_r = []
-
+        # Extract thresholds from probabilities
         probs = pl.from_arrow(results.probabilities)
-        thresholds = probs.select("probability").unique().to_series()
-        for i, t in enumerate(sorted(thresholds)):
-            float_thresh = t / 100
-            p, r = self.precision_recall(results=results, threshold=float_thresh)
-            all_p.append(p)
-            all_r.append(r)
-            plt.annotate(float_thresh, (all_r[i], all_p[i]))
+        thresholds = sorted(probs.select("probability").unique().to_series().to_list())
+        thresholds = [t / 100 for t in thresholds]  # Convert to 0.0-1.0 range
+
+        return cls(root_leaf, thresholds, results.probabilities)
+
+    @classmethod
+    def from_resolution(cls, resolution: ModelResolutionName) -> "EvalData":
+        """Create EvalData from a model resolution (new functionality).
+
+        Args:
+            resolution: Model resolution name to build data from
+
+        Returns:
+            EvalData instance ready for precision/recall calculations
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"Starting EvalData.from_resolution() for resolution: {resolution}")
+
+        # Get model configuration
+        logger.info(f"Fetching model config for resolution: {resolution}")
+        model_config = _handler.get_model(resolution)
+        if not model_config:
+            logger.error(f"Model {resolution} not found")
+            raise ValueError(f"Model {resolution} not found")
+        logger.info(
+            f"Model config retrieved: left_resolution={model_config.left_resolution}, "
+            f"right_resolution={model_config.right_resolution}"
+        )
+
+        # Get model probabilities/results
+        logger.info(f"Fetching model results for resolution: {resolution}")
+        probabilities = _handler.get_model_results(resolution)
+        probs_df = pl.from_arrow(probabilities)
+        logger.info(f"Model results retrieved: {len(probs_df)} probability records")
+
+        # Extract thresholds from probabilities
+        logger.info("Extracting thresholds from probabilities")
+        thresholds = sorted(
+            probs_df.select("probability").unique().to_series().to_list()
+        )
+        logger.info(f"Raw thresholds extracted: {thresholds}")
+        thresholds = [t / 100 for t in thresholds]  # Convert to 0.0-1.0 range
+        logger.info(f"Normalized thresholds: {thresholds}")
+
+        # Handle both deduper and linker models
+        if model_config.right_resolution is None:
+            logger.info("Processing deduper model (single source)")
+            # Deduper model - left_resolution is the only source
+            logger.info(f"Querying source data for: {model_config.left_resolution}")
+            source_data = _handler.query(
+                source=model_config.left_resolution,
+                resolution=model_config.left_resolution,
+                return_leaf_id=True,
+            )
+            source_df = pl.from_arrow(source_data)
+            logger.info(f"Source data retrieved: {len(source_df)} records")
+
+            # Create root_leaf mapping from probabilities and leaf_id
+            logger.info("Creating id_to_leaf mapping")
+            id_to_leaf = dict(
+                zip(
+                    source_df["id"].to_list(),
+                    source_df["leaf_id"].to_list(),
+                    strict=False,
+                )
+            )
+            logger.info(f"Created {len(id_to_leaf)} id->leaf mappings")
+
+            # Map left_id and right_id to their leaf_ids
+            logger.info("Building root_leaf data from probabilities")
+            root_leaf_data = []
+            for row in probs_df.iter_rows(named=True):
+                left_leaf = id_to_leaf.get(row["left_id"])
+                right_leaf = id_to_leaf.get(row["right_id"])
+                if left_leaf is not None and right_leaf is not None:
+                    root_leaf_data.append({"root": left_leaf, "leaf": right_leaf})
+
+            root_leaf_df = pl.DataFrame(root_leaf_data).unique()
+            logger.info(
+                f"Created root_leaf dataframe with {len(root_leaf_df)} unique mappings"
+            )
+        else:
+            logger.info("Processing linker model (two sources)")
+            # Linker model - has both left and right sources
+            logger.info(
+                f"Querying left source data for: {model_config.left_resolution}"
+            )
+            left_data = _handler.query(
+                source=model_config.left_resolution,
+                resolution=model_config.left_resolution,
+                return_leaf_id=True,
+            )
+            logger.info(
+                f"Querying right source data for: {model_config.right_resolution}"
+            )
+            right_data = _handler.query(
+                source=model_config.right_resolution,
+                resolution=model_config.right_resolution,
+                return_leaf_id=True,
+            )
+
+            # Build root_leaf mapping manually
+            left_df = pl.from_arrow(left_data)
+            right_df = pl.from_arrow(right_data)
+            logger.info(
+                f"Left data: {len(left_df)} records, "
+                f"Right data: {len(right_df)} records"
+            )
+
+            # Create leaf_id lookup tables
+            logger.info("Creating lookup tables")
+            left_lookup = left_df.select(["id", "leaf_id"]).rename(
+                {"leaf_id": "left_leaf"}
+            )
+            right_lookup = right_df.select(["id", "leaf_id"]).rename(
+                {"leaf_id": "right_leaf"}
+            )
+
+            # Join probabilities with leaf lookups to build root_leaf mapping
+            logger.info("Building root_leaf mapping via joins")
+            root_leaf_df = (
+                probs_df.join(left_lookup, left_on="left_id", right_on="id", how="left")
+                .join(right_lookup, left_on="right_id", right_on="id", how="left")
+                .select(
+                    [
+                        pl.col("left_leaf").alias("root"),
+                        pl.col("right_leaf").alias("leaf"),
+                    ]
+                )
+                .unique()
+            )
+            logger.info(
+                f"Created root_leaf dataframe with {len(root_leaf_df)} unique mappings"
+            )
+
+        logger.info("Converting to Arrow format and creating EvalData instance")
+        root_leaf = root_leaf_df.to_arrow()
+        logger.info(f"Final root_leaf Arrow table: {len(root_leaf)} records")
+        result = cls(root_leaf, thresholds, probabilities)
+        logger.info("EvalData.from_resolution() completed successfully")
+        return result
+
+    def precision_recall(self, threshold: float) -> PrecisionRecall:
+        """Computes precision and recall at one threshold.
+
+        Args:
+            threshold: Probability threshold (0.0-1.0)
+
+        Returns:
+            Tuple of (precision, recall) values
+        """
+        pr_results = precision_recall([self.root_leaf], self.judgements, self.expansion)
+        result = pr_results[0]
+        p, r, p_ci, r_ci = result
+        return p, r
+
+    def refresh_judgements(self) -> None:
+        """Refresh judgement data with latest submissions from the server."""
+        self.judgements, self.expansion = _handler.download_eval_data()
+
+        # Refresh cached judgement processing
+        if len(self.judgements) > 0:
+            (
+                self._validation_pairs,
+                self._validation_counts,
+                self._validation_leaves,
+            ) = process_judgements(
+                pl.from_arrow(self.judgements), pl.from_arrow(self.expansion)
+            )
+        else:
+            # Handle empty judgements gracefully
+            self._validation_pairs = set()
+            self._validation_counts = {}
+            self._validation_leaves = set()
+
+    def precision_recall_curve(
+        self, thresholds: list[float] | None = None
+    ) -> list[tuple[float, float, float, float, float]]:
+        """Unified PR calculation supporting both single and multi-threshold evaluation.
+
+        Args:
+            thresholds: Optional list of thresholds to override instance thresholds
+
+        Returns:
+            List of (threshold, precision, recall, precision_ci, recall_ci) tuples
+        """
+        if thresholds is None:
+            thresholds = self.thresholds
+
+        # If judgements are empty, always use original precision_recall function
+        # This preserves the original error handling behavior
+        if len(self.judgements) == 0:
+            threshold = thresholds[0] if thresholds else 1.0
+            pr_results = precision_recall(
+                [self.root_leaf], self.judgements, self.expansion
+            )
+            p, r, p_ci, r_ci = pr_results[0]
+            return [(threshold, p, r, p_ci, r_ci)]
+
+        # Single threshold - use existing precision_recall function
+        if len(thresholds) <= 1:
+            threshold = thresholds[0] if thresholds else 1.0
+            pr_results = precision_recall(
+                [self.root_leaf], self.judgements, self.expansion
+            )
+            p, r, p_ci, r_ci = pr_results[0]
+            return [(threshold, p, r, p_ci, r_ci)]
+
+        # Multi-threshold - use optimized incremental algorithm
+        return self._calculate_optimized_pr_curve(thresholds)
+
+    def _calculate_optimized_pr_curve(
+        self, thresholds: list[float]
+    ) -> list[tuple[float, float, float, float, float]]:
+        """Optimized multi-threshold PR calculation using Union-Find."""
+        # Initialize incremental state with cached validation data
+        state = IncrementalState(
+            self._validation_pairs, self._validation_counts, self._validation_leaves
+        )
+
+        results = []
+        # Process thresholds in descending order (monotonic progression)
+        for threshold in sorted(thresholds, reverse=True):
+            # Incrementally add edges at this threshold
+            state.add_threshold_edges(threshold, self.probabilities, self.root_leaf)
+
+            # Calculate PR metrics from current state
+            precision, recall, precision_ci, recall_ci = (
+                state.calculate_current_metrics()
+            )
+            results.append((threshold, precision, recall, precision_ci, recall_ci))
+
+        # Sort results by threshold ascending for consistent output
+        return sorted(results, key=lambda x: x[0])
+
+    def get_pr_curve_data(self) -> list[tuple[float, float, float, float, float]]:
+        """Backward compatibility method - delegates to precision_recall_curve."""
+        return self.precision_recall_curve()
+
+    def pr_curve_mpl(self) -> Figure:
+        """Generate matplotlib precision-recall curve.
+
+        Returns:
+            Matplotlib Figure object
+        """
+        data = self.get_pr_curve_data()
+        all_p = [p for _, p, r, p_ci, r_ci in data]
+        all_r = [r for _, p, r, p_ci, r_ci in data]
+        all_p_ci = [p_ci for _, p, r, p_ci, r_ci in data]
+        all_r_ci = [r_ci for _, p, r, p_ci, r_ci in data]
+        thresholds = [t for t, _, _, _, _ in data]
 
         fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        ax.plot(all_r, all_p, marker="o")
+        ax.errorbar(
+            all_r,
+            all_p,
+            xerr=all_r_ci,
+            yerr=all_p_ci,
+            marker="o",
+            capsize=3,
+            capthick=1,
+            elinewidth=1,
+            ecolor="lightgray",
+            alpha=0.7,
+        )
+
+        # Add threshold annotations
+        for i, thresh in enumerate(thresholds):
+            ax.annotate(f"{thresh:.2f}", (all_r[i], all_p[i]))
+
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.set_ylabel("Precision")
         ax.set_xlabel("Recall")
-        ax.set_title("Precision-Recall Curve")
+        ax.set_title("Precision-Recall Curve (95% CI)")
         ax.grid()
 
         return fig

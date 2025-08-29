@@ -123,9 +123,9 @@ def test_precision_recall():
 
     # Validation pairs: (12) (as (45) is more negative; (67) is neutralised)
     # Model 1 pairs: (12), (13), (23) (as (67) is neutralised; (89) has extra leaves)
-    assert pr_scores[0] == (1 / 4, 1)
+    assert pr_scores[0][:2] == (1 / 4, 1)  # Check precision and recall, ignore CI
     # Model 2 pairs: (13) (as (67) is neutralised)
-    assert pr_scores[1] == (0, 0)
+    assert pr_scores[1][:2] == (0, 0)  # Check precision and recall, ignore CI
 
 
 def test_process_judgements():
@@ -207,3 +207,106 @@ def test_process_judgements():
         assert net_counts[pair] == 2
 
     assert leaves == set(range(1, 15))
+
+
+def test_evaldata_unified_pr_calculation():
+    """Test EvalData unified PR calculation with single and multi-threshold modes."""
+    import unittest.mock
+
+    # Create mock handler that returns our test data
+    judgements = pa.table(
+        {
+            "user_id": [1, 1],
+            "shown": [100, 100],
+            "endorsed": [200, 3],
+        }
+    )
+
+    expansion = pa.table(
+        {
+            "root": [100, 200, 3],
+            "leaves": [[1, 2, 3], [1, 2], [3]],
+        }
+    )
+
+    model_root_leaf = pa.table({"root": [1, 2], "leaf": [1, 2]})
+
+    probabilities = pa.table(
+        {
+            "left_id": [1, 2],
+            "right_id": [2, 3],
+            "probability": [90, 70],
+        }
+    )
+
+    # Mock the handler to return our test data
+    with unittest.mock.patch(
+        "matchbox.client.cli.eval.utils._handler.download_eval_data"
+    ) as mock_download:
+        mock_download.return_value = (judgements, expansion)
+
+        from matchbox.client.cli.eval.utils import EvalData
+
+        # Create EvalData instance
+        eval_data = EvalData(
+            root_leaf=model_root_leaf,
+            thresholds=[0.9, 0.7],
+            probabilities=probabilities,
+        )
+
+        # Test single threshold mode
+        single_results = eval_data.precision_recall_curve([0.8])
+        assert len(single_results) == 1
+        assert single_results[0][0] == 0.8  # threshold
+
+        # Test multi-threshold mode (should use optimization)
+        multi_results = eval_data.precision_recall_curve([0.9, 0.7])
+        assert len(multi_results) == 2
+        assert multi_results[0][0] == 0.7  # sorted ascending
+        assert multi_results[1][0] == 0.9
+
+        # Test backward compatibility
+        compat_results = eval_data.get_pr_curve_data()
+        assert len(compat_results) == 2  # Uses instance thresholds
+
+
+def test_evaldata_optimization_consistency():
+    """Test that optimized multi-threshold matches single-threshold results."""
+    import unittest.mock
+
+    # Simple test case with known results
+    judgements = pa.table(
+        {
+            "user_id": [1],
+            "shown": [100],
+            "endorsed": [100],
+        }
+    )
+
+    expansion = pa.table(
+        {
+            "root": [100],
+            "leaves": [[1, 2]],
+        }
+    )
+
+    model_root_leaf = pa.table({"root": [1, 1], "leaf": [1, 2]})
+
+    # Mock the handler
+    with unittest.mock.patch(
+        "matchbox.client.cli.eval.utils._handler.download_eval_data"
+    ) as mock_download:
+        mock_download.return_value = (judgements, expansion)
+
+        from matchbox.client.cli.eval.utils import EvalData
+
+        eval_data = EvalData(
+            root_leaf=model_root_leaf, thresholds=[0.8], probabilities=None
+        )
+
+        # Get results from both single and multi-threshold paths
+        single_result = eval_data.precision_recall_curve([0.8])[0]
+        multi_result = eval_data.precision_recall_curve([0.8, 0.6])[1]  # 0.8 result
+
+        # Results should be identical (excluding threshold value)
+        assert single_result[1:] == multi_result[1:]  # precision, recall, CIs

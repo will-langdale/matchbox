@@ -3,7 +3,7 @@
 from collections import deque
 from pathlib import Path
 from textwrap import dedent
-from typing import Callable
+from typing import Any, Callable
 
 import polars as pl
 from rich.table import Table
@@ -19,6 +19,7 @@ from textual.widgets import (
     Header,
     Static,
 )
+from textual_plotext import PlotextPlot
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
@@ -103,6 +104,12 @@ class EvaluationState:
         # UI State
         self.current_group_selection: str = ""  # Currently selected group letter
         self.compact_view_mode: bool = True  # Default to compact view
+        self.show_plot: bool = False  # Plot display toggle
+
+        # Plot State
+        self.eval_data: Any | None = None  # EvalData object loaded at startup
+        self.is_loading_eval_data: bool = False  # Loading state flag
+        self.eval_data_error: str | None = None  # Error message if loading fails
 
         # Display State (derived from current queue item)
         self.display_leaf_ids: list[int] = []
@@ -115,6 +122,7 @@ class EvaluationState:
 
         # Status/Feedback State
         self.status_message: str = ""
+        self.status_color: str = "bright_white"
         self.is_submitting: bool = False
 
         # Observer pattern for view updates
@@ -171,6 +179,36 @@ class EvaluationState:
     def toggle_view_mode(self) -> None:
         """Toggle between compact and detailed view modes."""
         self.compact_view_mode = not self.compact_view_mode
+        self._notify_listeners()
+
+    def toggle_plot(self) -> None:
+        """Toggle plot display on/off."""
+        self.show_plot = not self.show_plot
+        self._notify_listeners()
+
+    def clear_eval_data(self) -> None:
+        """Clear eval data (e.g., when resolution changes)."""
+        self.eval_data = None
+        self.eval_data_error = None
+
+    def set_eval_data_loading(self, loading: bool) -> None:
+        """Set the loading state for eval data."""
+        self.is_loading_eval_data = loading
+        if loading:
+            self.eval_data_error = None
+        self._notify_listeners()
+
+    def set_eval_data_error(self, error: str) -> None:
+        """Set an error message for eval data loading."""
+        self.eval_data_error = error
+        self.is_loading_eval_data = False
+        self._notify_listeners()
+
+    def set_eval_data(self, eval_data: Any) -> None:
+        """Set the eval data object."""
+        self.eval_data = eval_data
+        self.is_loading_eval_data = False
+        self.eval_data_error = None
         self._notify_listeners()
 
     def assign_column_to_group(self, column_number: int, group: str) -> None:
@@ -246,14 +284,16 @@ class EvaluationState:
         """Check if current entity has any group assignments."""
         return len(self.current_assignments) > 0
 
-    def update_status(self, message: str) -> None:
-        """Update status message."""
+    def update_status(self, message: str, color: str = "bright_white") -> None:
+        """Update status message with optional color."""
         self.status_message = message
+        self.status_color = color
         self._notify_listeners()
 
     def clear_status(self) -> None:
         """Clear status message."""
         self.status_message = ""
+        self.status_color = "bright_white"
         self._notify_listeners()
 
     def add_listener(self, callback: Callable) -> None:
@@ -568,6 +608,125 @@ class GroupStyler:
         cls._symbol_index = 0
 
 
+class PRCurveDisplay(PlotextPlot):
+    """Widget for displaying precision-recall curves using textual-plotext."""
+
+    def __init__(self, state: EvaluationState, **kwargs):
+        """Initialize the PR curve display widget."""
+        super().__init__(**kwargs)
+        self.state = state
+        self.state.add_listener(self._on_state_change)
+        self._has_plotted = False
+
+    def on_mount(self) -> None:
+        """Called when widget is mounted."""
+        self.update_plot()
+
+    def update_plot(self) -> None:
+        """Update the plot based on current state."""
+        # Clear any existing data first
+        self.plt.clear_data()
+        self.plt.clear_figure()
+
+        # Show loading message
+        if self.state.is_loading_eval_data:
+            self.plt.title("Loading evaluation data...")
+            self._has_plotted = False
+            return
+
+        # Show error state
+        if self.state.eval_data_error:
+            self.plt.title("Error loading data - check status")
+            self._has_plotted = False
+            return
+
+        # No eval data available
+        if self.state.eval_data is None:
+            self.plt.title("No evaluation data loaded")
+            self._has_plotted = False
+            return
+
+        try:
+            # Get raw data from EvalData
+            pr_data = self.state.eval_data.get_pr_curve_data()
+
+            if not pr_data:
+                self.plt.title("📊 Submit some judgements first")
+                self._has_plotted = False
+                return
+
+            # Generate the actual precision-recall plot with confidence intervals
+            all_p = [p for _, p, r, p_ci, r_ci in pr_data]
+            all_r = [r for _, p, r, p_ci, r_ci in pr_data]
+            all_p_ci = [p_ci for _, p, r, p_ci, r_ci in pr_data]
+            all_r_ci = [r_ci for _, p, r, p_ci, r_ci in pr_data]
+
+            # Plot with error bars showing confidence intervals (dimmed)
+            self.plt.error(all_r, all_p, xerr=all_r_ci, yerr=all_p_ci, color="gray")
+            self.plt.scatter(all_r, all_p, marker="circle", color="blue")
+            self.plt.plot(all_r, all_p, color="blue")
+            self.plt.xlim(0, 1)
+            self.plt.ylim(0, 1)
+            self.plt.xlabel("Recall")
+            self.plt.ylabel("Precision")
+            self.plt.title("Precision-Recall Curve (95% CI)")
+            self._has_plotted = True
+
+        except Exception as e:
+            error_str = str(e).lower()
+            # Handle specific error cases with user-friendly messages
+            if "cannot be empty" in error_str and "judgement" in error_str:
+                # This is the expected case when no judgements exist yet
+                self.plt.title("📊 Submit some judgements first")
+            else:
+                # Log comprehensive error information for debugging
+                import logging
+                import traceback
+
+                logger = logging.getLogger(__name__)
+
+                # Log detailed error information
+                exception_type = type(e).__name__
+                error_msg = f"Plot generation failed - Exception type: {exception_type}"
+                logger.error(error_msg)
+                logger.error(f"Exception message: {str(e)}")
+                logger.error(f"Exception repr: {repr(e)}")
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
+                # Log context about what we were trying to plot
+                pr_data_available = "pr_data" in locals()
+                logger.error(f"PR data variable available: {pr_data_available}")
+                if pr_data_available and locals().get("pr_data"):
+                    pr_data_local = locals()["pr_data"]
+                    logger.error(f"PR data length: {len(pr_data_local)}")
+                    logger.error(f"PR data type: {type(pr_data_local)}")
+                    if len(pr_data_local) > 0:
+                        logger.error(f"First 3 PR data points: {pr_data_local[:3]}")
+
+                # Log eval_data state
+                if self.state.eval_data:
+                    logger.error("EvalData object is available")
+                    try:
+                        judgements_info = (
+                            f"length={len(self.state.eval_data.judgements)}"
+                            if self.state.eval_data.judgements is not None
+                            else "None"
+                        )
+                        logger.error(f"EvalData judgements: {judgements_info}")
+                    except Exception as eval_error:
+                        error_msg = f"Error accessing EvalData judgements: {eval_error}"
+                        logger.error(error_msg)
+                else:
+                    logger.error("EvalData object is None")
+
+                self.plt.title("Plot generation failed")
+            self._has_plotted = False
+
+    def _on_state_change(self) -> None:
+        """Handle state changes by updating the plot."""
+        self.update_plot()
+
+
 class StatusBarLeft(Widget):
     """Left side of status bar with entity progress and groups."""
 
@@ -631,7 +790,25 @@ class StatusBarLeft(Widget):
 
 
 class StatusBarRight(Widget):
-    """Right side of status bar with status indicator."""
+    """Right side of status bar with status indicator.
+
+    IMPORTANT: This widget has limited display space (~12 characters max).
+    Status messages must be concise and include appropriate symbols/emoji.
+    Messages longer than MAX_STATUS_LENGTH will be rejected with an error.
+
+    Examples of good status messages:
+    - "⏳ Loading"
+    - "✓ Loaded"
+    - "⚡ Working"
+    - "✓ Done"
+    - "⚠ Error"
+    - "◯ Empty"
+    - "📊 Got 5"
+
+    Write status messages to fit within the length limit from the start.
+    """
+
+    MAX_STATUS_LENGTH = 12
 
     def __init__(self, state: EvaluationState, **kwargs):
         """Initialise the right status widget."""
@@ -640,29 +817,31 @@ class StatusBarRight(Widget):
         self.state.add_listener(self._on_state_change)
 
     def render(self) -> Text:
-        """Render status indicator."""
+        """Render status indicator with validation."""
         text = Text()
 
         if self.state.status_message:
-            # Convert verbose messages to symbolic indicators with labels
-            message = self.state.status_message.lower()
-            if "submitting" in message or "fetching" in message:
-                status_text = "⚡ Working"
-                status_style = "yellow"
-            elif "submitted" in message or "complete" in message or "ready" in message:
-                status_text = "✓ Done"
-                status_style = "green"
-            elif "error" in message or "failed" in message:
-                status_text = "⚠ Error"
-                status_style = "red"
-            elif "nothing to submit" in message:
-                status_text = "◯ Nothing"
-                status_style = "dim"
-            else:
-                status_text = "● Status"
-                status_style = "blue"
+            # Validate message length
+            if len(self.state.status_message) > self.MAX_STATUS_LENGTH:
+                # This should never happen in production - it's a development error
+                import logging
 
-            text.append(status_text, style=status_style)
+                logger = logging.getLogger(__name__)
+                msg_len = len(self.state.status_message)
+                logger.error(
+                    f"Status message too long ({msg_len} chars): "
+                    f"'{self.state.status_message}'"
+                )
+                logger.error(
+                    "Status messages must be <= 12 characters. Fix the calling code."
+                )
+
+                # Show error indicator to make the problem visible
+                text.append("⚠ TOO LONG", style="red")
+                return text
+
+            # Simple pass-through - the message should already be properly formatted
+            text.append(self.state.status_message, style=self.state.status_color)
         else:
             # Show placeholder when no status message
             text.append("○ Ready", style="dim")
@@ -724,6 +903,7 @@ class HelpModal(ModalScreen):
                     • ? or F1 - Show this help
                     • Esc - Clear current group selection
                     • ` (backtick) - Toggle between compact and detailed view
+                    • / (slash) - Toggle precision-recall plot display
                     • Ctrl+C or Ctrl+Q - Quit
 
                     Visual feedback:
@@ -759,6 +939,27 @@ class HelpModal(ModalScreen):
             self.dismiss()
 
 
+class PlotModal(ModalScreen):
+    """Modal screen for displaying precision-recall plots."""
+
+    def __init__(self, state: EvaluationState):
+        """Initialize the plot modal with evaluation state."""
+        super().__init__()
+        self.state = state
+
+    def compose(self) -> ComposeResult:
+        """Compose the plot modal UI."""
+        with Container(id="plot-dialog"):
+            yield Static("Precision-Recall Curve", id="plot-title")
+            yield PRCurveDisplay(self.state, id="plot-widget")
+            yield Static("Press Escape to close", id="plot-help")
+
+    def on_key(self, event) -> None:
+        """Handle key events for closing the plot modal."""
+        if event.key == "escape":
+            self.dismiss()
+
+
 class EntityResolutionApp(App):
     """Main Textual application for entity resolution evaluation."""
 
@@ -772,6 +973,7 @@ class EntityResolutionApp(App):
         ("question_mark,f1", "show_help", "Help"),
         ("escape", "clear_assignments", "Clear"),
         ("grave_accent", "toggle_view_mode", "Toggle view"),
+        ("slash", "toggle_plot", "Toggle PR plot"),
         ("ctrl+q,ctrl+c", "quit", "Quit"),
     ]
 
@@ -798,6 +1000,7 @@ class EntityResolutionApp(App):
         """Initialise the application."""
         await self.authenticate()
         await self.load_samples()
+        await self.load_eval_data()
         if self.state.queue.current:
             await self.refresh_display()
 
@@ -817,6 +1020,59 @@ class EntityResolutionApp(App):
         if samples_dict:
             # samples_dict now contains EvaluationItems, not DataFrames
             self.state.queue.add_items(list(samples_dict.values()))
+
+    async def load_eval_data(self) -> None:
+        """Load EvalData for precision/recall calculations."""
+        if not self.state.resolution:
+            return
+
+        self.state.set_eval_data_loading(True)
+        self.state.update_status("⏳ Loading", "yellow")
+
+        try:
+            import logging
+
+            from matchbox.client.cli.eval.utils import EvalData
+
+            # Enable debug logging for this operation
+            logger = logging.getLogger("matchbox.client.cli.eval.utils")
+            logger.setLevel(logging.INFO)
+
+            eval_data = EvalData.from_resolution(self.state.resolution)
+            self.state.set_eval_data(eval_data)
+            self.state.update_status("✓ Loaded", "green")
+
+            # Log successful loading details
+            logger.info(
+                f"Successfully loaded EvalData for resolution '{self.state.resolution}'"
+            )
+
+            # Clear status after a delay
+            self.set_timer(2.0, self.state.clear_status)
+        except Exception as e:
+            import traceback
+
+            # Get more detailed error information
+            error_details = str(e)
+            error_type = type(e).__name__
+
+            # For debugging, also log the full traceback
+            logger = logging.getLogger(__name__)
+            logger.error(f"EvalData loading failed: {error_details}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
+            # Create user-friendly error message
+            if "not found" in error_details.lower():
+                error_msg = f"Model '{self.state.resolution}' not found"
+            elif "empty" in error_details.lower():
+                error_msg = f"No data available for model '{self.state.resolution}'"
+            else:
+                error_msg = f"EvalData error ({error_type}): {error_details}"
+
+            self.state.set_eval_data_error(error_msg)
+            self.state.update_status(error_msg, "red")
+            # Clear status after a longer delay for errors
+            self.set_timer(8.0, self.state.clear_status)
 
     async def refresh_display(self) -> None:
         """Refresh display with current queue item."""
@@ -895,6 +1151,42 @@ class EntityResolutionApp(App):
         """Toggle between compact and detailed view modes."""
         self.state.toggle_view_mode()
 
+    async def action_toggle_plot(self) -> None:
+        """Show precision-recall plot as modal."""
+        # Refresh judgements before showing plot
+        if self.state.eval_data is not None:
+            self.state.update_status("⏳ Loading", "yellow")
+            try:
+                self.state.eval_data.refresh_judgements()
+                # Check if we have any judgements after refresh
+                judgements_count = (
+                    len(self.state.eval_data.judgements)
+                    if self.state.eval_data.judgements is not None
+                    else 0
+                )
+                if judgements_count > 0:
+                    self.state.update_status(f"📊 Got {judgements_count}", "green")
+                else:
+                    self.state.update_status("◯ Empty", "dim")
+                # Clear status after a delay
+                self.set_timer(2.0, self.state.clear_status)
+            except Exception as e:
+                error_str = str(e).lower()
+                if "cannot be empty" in error_str and "judgement" in error_str:
+                    self.state.update_status("◯ Empty", "dim")
+                else:
+                    self.state.update_status("⚠ Error", "red")
+                    # Log the detailed error
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to refresh judgements: {str(e)}")
+                # Clear status after a longer delay for errors
+                self.set_timer(4.0, self.state.clear_status)
+
+        # Show the plot modal
+        self.push_screen(PlotModal(self.state))
+
     async def action_show_help(self) -> None:
         """Show the help modal."""
         self.push_screen(HelpModal())
@@ -905,13 +1197,13 @@ class EntityResolutionApp(App):
         painted_count = len(painted_items)
 
         if painted_count == 0:
-            self.state.update_status("Nothing to submit - no fully painted entities")
+            self.state.update_status("◯ Nothing", "dim")
             self.set_timer(2.0, self.state.clear_status)
             return
 
         # Update status to show we're submitting
         self.state.is_submitting = True
-        self.state.update_status(f"✓ Submitting {painted_count} painted entities...")
+        self.state.update_status("⚡ Sending", "yellow")
 
         # Submit each painted item
         successful_submissions = 0
@@ -925,9 +1217,18 @@ class EntityResolutionApp(App):
 
         # Update status to show completion
         remaining_count = self.state.queue.total_count
-        self.state.update_status(
-            f"✓ Submitted {successful_submissions}/{painted_count} entities, "
-            f"removed from queue ({remaining_count} remaining)"
+        self.state.update_status("✓ Sent", "green")
+
+        # Log detailed submission info for debugging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Successfully submitted {successful_submissions}/{painted_count} "
+            "painted entities"
+        )
+        logger.info(
+            f"Removed submitted items from queue, {remaining_count} entities remaining"
         )
 
         # Refresh display to show current entity (queue auto-advances)
@@ -941,12 +1242,14 @@ class EntityResolutionApp(App):
         # Show final status
         final_count = self.state.queue.total_count
         if final_count > remaining_count:
-            self.state.update_status(
-                f"✓ Queue ready - {final_count} entities available"
-            )
+            self.state.update_status("✓ Ready", "green")
+            # Log detailed backfill info
+            logger.info(f"Queue backfilled: now has {final_count} entities available")
         else:
-            self.state.update_status(
-                f"✓ Submission complete - {final_count} entities in queue"
+            self.state.update_status("✓ Done", "green")
+            # Log completion info
+            logger.info(
+                f"Submission complete: {final_count} entities remaining in queue"
             )
 
         # Clear status after a longer delay to show the result
@@ -960,7 +1263,16 @@ class EntityResolutionApp(App):
             needed = max(0, desired_count - current_count)
 
             if needed > 0:
-                self.state.update_status(f"Fetching {needed} replacement samples...")
+                self.state.update_status("⚡ Fetching", "yellow")
+
+                # Log detailed backfill info
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"Backfilling queue: need {needed} samples to reach limit of "
+                    f"{desired_count}"
+                )
 
                 # Fetch replacement samples
                 new_samples_dict = await self._fetch_additional_samples(needed)
@@ -971,23 +1283,39 @@ class EntityResolutionApp(App):
                     self.state.queue.add_items(new_items)
 
                     # Update status
-                    self.state.update_status(
-                        f"Queue updated: added {len(new_items)} new samples"
+                    self.state.update_status("✓ Ready", "green")
+                    # Log successful backfill
+                    logger.info(
+                        f"Successfully added {len(new_items)} new samples to queue"
                     )
 
                     # If we're currently viewing an empty state, refresh display
-                    if not self.state.current_df and len(new_items) > 0:
+                    if self.state.current_df is None and len(new_items) > 0:
                         await self.refresh_display()
                 else:
-                    self.state.update_status(
-                        "No new samples available - queue exhausted"
+                    self.state.update_status("◯ Empty", "dim")
+                    # Log when no samples are available
+                    logger.warning(
+                        f"No new samples available - requested {needed} but got none"
                     )
             else:
-                self.state.update_status("Queue is at capacity")
+                self.state.update_status("✓ Ready", "green")
+                # Log when queue is already at capacity
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"Queue already at capacity: {current_count}/{desired_count}"
+                )
 
         except Exception as e:
-            error_msg = str(e)[:50] + "..." if len(str(e)) > 50 else str(e)
-            self.state.update_status(f"Error fetching samples: {error_msg}")
+            self.state.update_status("⚠ Error", "red")
+            # Log detailed error information
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to fetch replacement samples: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
 
     async def _fetch_additional_samples(
         self, count: int

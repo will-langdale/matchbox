@@ -298,3 +298,58 @@ class TestTextualUI:
         # Test that set_display_data works
         app.state.set_display_data([1])
         assert app.state.display_leaf_ids == [1]
+
+    def test_status_message_length_validation(self):
+        """Test that status messages are properly validated for length."""
+        from matchbox.client.cli.eval.ui import EvaluationState, StatusBarRight
+
+        state = EvaluationState()
+        status_widget = StatusBarRight(state)
+
+        # Test valid messages (should pass)
+        valid_messages = [
+            "⏳ Loading",
+            "✓ Loaded",
+            "⚡ Sending",
+            "✓ Done",
+            "⚠ Error",
+            "◯ Empty",
+            "📊 Got 5",
+            "✓ Ready",
+        ]
+
+        for msg in valid_messages:
+            state.update_status(msg)
+            text = status_widget.render()
+            # Should not contain error indicator
+            assert "TOO LONG" not in str(text)
+            assert len(msg) <= StatusBarRight.MAX_STATUS_LENGTH
+
+        # Test invalid message (should fail)
+        state.update_status("This message is way too long for the status bar")
+        text = status_widget.render()
+        # Should show error indicator
+        assert "TOO LONG" in str(text)
+
+    def test_status_message_colors(self):
+        """Test that status messages use proper colors."""
+        from matchbox.client.cli.eval.ui import EvaluationState, StatusBarRight
+
+        state = EvaluationState()
+        status_widget = StatusBarRight(state)
+
+        # Test color assignments
+        test_cases = [
+            ("⚠ Error", "red"),
+            ("✓ Ready", "green"),
+            ("⏳ Loading", "yellow"),
+            ("◯ Empty", "dim"),
+        ]
+
+        for message, expected_color in test_cases:
+            state.update_status(message, expected_color)
+            # Verify state stores the color
+            assert state.status_color == expected_color
+            # Verify rendering uses the color
+            text = status_widget.render()
+            assert message in str(text)

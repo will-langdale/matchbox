@@ -26,6 +26,9 @@ site/
 /CLAUDE.md
 /GEMINI.md
 
+# Logs
+*.log
+
 ##########################
 # Boilerplate .gitignore #
 ##########################

@@ -54,5 +54,5 @@ migration-reset:
     uv run alembic --config "src/matchbox/server/postgresql/alembic.ini" downgrade base
 
 # Run evaluation app with scenario data
-eval scenario="":
-    uv run python test/scripts/eval.py {{scenario}}
+eval scenario="" log="":
+    uv run python test/scripts/eval.py {{scenario}} --log "{{log}}"

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Script to run Textual eval app with scenario data."""
+"""Script to run Textual eval app with scenario data via CLI."""
 
 import logging
+import subprocess
+import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,11 +14,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine
 
 from matchbox.client._settings import settings
-from matchbox.client.cli.eval.ui import EntityResolutionApp
 from matchbox.common.factories.scenarios import SCENARIO_REGISTRY, setup_scenario
 from matchbox.common.graph import DEFAULT_RESOLUTION
 from matchbox.server.base import MatchboxDatastoreSettings
 from matchbox.server.postgresql import MatchboxPostgres
+
+# Set up logger for this script
+logger = logging.getLogger(__name__)
 
 
 class DevelopmentSettings(BaseSettings):
@@ -41,15 +45,8 @@ class DevelopmentSettings(BaseSettings):
 
 
 @contextmanager
-def scenario_app(scenario_name: str):
-    """Context manager that sets up scenario, runs app, and cleans up."""
-
-    # Suppress alembic and matchbox backend logs
-    import logging as std_logging
-
-    std_logging.getLogger("alembic").setLevel(std_logging.ERROR)
-    std_logging.getLogger("alembic.runtime.migration").setLevel(std_logging.ERROR)
-    std_logging.getLogger("matchbox").setLevel(std_logging.ERROR)
+def scenario_setup(scenario_name: str):
+    """Context manager that sets up scenario data and yields CLI parameters."""
 
     # Create temporary SQLite database
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -94,7 +91,7 @@ def scenario_app(scenario_name: str):
         backend = MatchboxPostgres(settings=postgres_settings)
         backend.clear(certain=True)
 
-        logging.info(f"Setting up {scenario_name} scenario...")
+        logger.info(f"Setting up {scenario_name} scenario...")
 
         with setup_scenario(
             backend=backend,
@@ -103,9 +100,9 @@ def scenario_app(scenario_name: str):
             n_entities=10,
             seed=42,
         ) as dag:
-            logging.info("Scenario ready! Starting Textual eval app...")
+            logger.info("Scenario ready! Starting Textual eval app via CLI...")
 
-            # Create app with scenario resolution
+            # Determine resolution for scenario
             if scenario_name in ["bare", "index"]:
                 # These scenarios don't have models, use source resolution
                 resolution = (
@@ -117,13 +114,12 @@ def scenario_app(scenario_name: str):
                     list(dag.models.keys())[0] if dag.models else DEFAULT_RESOLUTION
                 )
 
-            app = EntityResolutionApp(
-                resolution=resolution,
-                num_samples=20,
-                warehouse=str(warehouse_engine.url),
-            )
-
-            yield app
+            # Yield CLI parameters instead of app instance
+            yield {
+                "resolution": resolution,
+                "warehouse": str(warehouse_engine.url),
+                "samples": 20,
+            }
 
     finally:
         # Restore original client settings
@@ -150,33 +146,69 @@ def main(
             help=f"Scenario type. Available: {', '.join(SCENARIO_REGISTRY.keys())}"
         ),
     ] = None,
+    log_file: Annotated[
+        str | None,
+        typer.Option(
+            "--log",
+            help="Log file path to redirect all logging output (keeps UI clean)",
+        ),
+    ] = None,
 ):
-    """Run the scenario-based eval app."""
+    """Run the scenario-based eval app via CLI."""
+    # Set up basic logging for this script
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     # If no scenario provided, list available scenarios
     if scenario is None or scenario == "":
         available_scenarios = list(SCENARIO_REGISTRY.keys())
-        logging.info("Available scenarios:")
+        logger.info("Available scenarios:")
         for i, name in enumerate(available_scenarios, 1):
-            logging.info(f"  {i}. {name}")
-        logging.info("\nUsage: uv run python test/scripts/eval.py <scenario>")
+            logger.info(f"  {i}. {name}")
+        logger.info(
+            "\nUsage: uv run python test/scripts/eval.py <scenario> [--log file.log]"
+        )
         raise typer.Exit(0)
 
     if scenario not in SCENARIO_REGISTRY:
         available = ", ".join(SCENARIO_REGISTRY.keys())
-        logging.error(f"Unknown scenario: {scenario}")
-        logging.info(f"Available scenarios: {available}")
+        logger.error(f"Unknown scenario: {scenario}")
+        logger.info(f"Available scenarios: {available}")
         raise typer.Exit(1)
 
     try:
-        with scenario_app(scenario) as app:
-            app.run()
+        with scenario_setup(scenario) as cli_params:
+            # Build CLI command
+            cmd = [
+                sys.executable,
+                "-m",
+                "matchbox.client.cli.main",
+                "eval",
+                "start",
+                "--resolution",
+                cli_params["resolution"],
+                "--warehouse",
+                cli_params["warehouse"],
+                "--samples",
+                str(cli_params["samples"]),
+            ]
+
+            # Add log file if specified and non-empty
+            if log_file and log_file.strip():
+                cmd.extend(["--log", log_file])
+
+            # Run the CLI command
+            try:
+                result = subprocess.run(cmd, check=False)
+                raise typer.Exit(result.returncode)
+            except KeyboardInterrupt:
+                logger.info("\nKeyboard interrupt received, stopping...")
+                raise typer.Exit(0)
+
     except KeyboardInterrupt as e:
-        logging.info("\nExiting...")
+        logger.info("\nExiting...")
         raise typer.Exit(0) from e
     except Exception as e:
-        logging.error(f"Error: {e}")
+        logger.error(f"Error: {e}")
         raise typer.Exit(1) from e
 
 

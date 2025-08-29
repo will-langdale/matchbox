@@ -58,6 +58,12 @@ Screen {
     width: 100%;
 }
 
+#pr-curve-display {
+    height: auto;
+    width: 100%;
+    overflow: auto;
+}
+
 .command-area {
     height: 3;
     background: $panel;

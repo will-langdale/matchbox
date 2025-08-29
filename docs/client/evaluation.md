@@ -80,17 +80,22 @@ model = make_model(
 results = model.run()
 ```
 
-Download validation data:
+Download validation data and create evaluation object:
 
 ```python
-from matchbox.client.eval import EvalData
-eval_data = EvalData()
+from matchbox.client.cli.eval import EvalData
+eval_data = EvalData.from_results(results)
 ```
 
 Plot a precision-recall curve:
 
 ```python
-eval_data.pr_curve(results)
+# Matplotlib version (for notebooks)
+fig = eval_data.pr_curve_mpl()
+
+# Plotext version (for terminals) 
+plot_str = eval_data.pr_curve_pltx()
+print(plot_str)
 ```
 
 Or get precision and recall at a specific threshold:
