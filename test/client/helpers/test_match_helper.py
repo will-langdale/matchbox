@@ -7,6 +7,7 @@ from matchbox import match
 from matchbox.client.helpers.selector import Match
 from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import (
+    MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
@@ -142,6 +143,41 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
     # Use match function
     with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+        match(
+            "target",
+            source="source",
+            key="pk1",
+            resolution="foo",
+        )
+
+
+def test_match_empty_results_raises_exception(
+    matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
+    """Test that match raises MatchboxEmptyServerResponse when no matches are found."""
+    # Set up mocks
+    source_testkit = source_factory(engine=sqlite_warehouse, name="source")
+    source_testkit.write_to_location(sqlite_warehouse, set_client=True)
+    target_testkit = source_factory(engine=sqlite_warehouse, name="target")
+    target_testkit.write_to_location(sqlite_warehouse, set_client=True)
+
+    # Mock empty match results
+    matchbox_api.get("/match").mock(return_value=Response(200, content="[]"))
+    matchbox_api.get(f"/sources/{source_testkit.source_config.name}").mock(
+        return_value=Response(
+            200, json=source_testkit.source_config.model_dump(mode="json")
+        )
+    )
+    matchbox_api.get(f"/sources/{target_testkit.source_config.name}").mock(
+        return_value=Response(
+            200, json=target_testkit.source_config.model_dump(mode="json")
+        )
+    )
+
+    # Test that empty match results raise MatchboxEmptyServerResponse
+    with pytest.raises(
+        MatchboxEmptyServerResponse, match="The match operation returned no data"
+    ):
         match(
             "target",
             source="source",

@@ -38,6 +38,7 @@ from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
+    MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
@@ -196,6 +197,9 @@ def query(
 
     check_schema(expected_schema, table.schema)
 
+    if table.num_rows == 0:
+        raise MatchboxEmptyServerResponse(operation="query")
+
     return table
 
 
@@ -228,7 +232,12 @@ def match(
 
     logger.debug("Finished", prefix=log_prefix)
 
-    return [Match.model_validate(m) for m in res.json()]
+    matches = [Match.model_validate(m) for m in res.json()]
+
+    if not matches:
+        raise MatchboxEmptyServerResponse(operation="match")
+
+    return matches
 
 
 # Data management

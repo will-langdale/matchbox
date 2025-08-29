@@ -7,9 +7,16 @@ from sqlalchemy import Engine
 
 from matchbox import query
 from matchbox.client.helpers import select
-from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
+from matchbox.common.arrow import (
+    SCHEMA_QUERY,
+    SCHEMA_QUERY_WITH_LEAVES,
+    table_to_buffer,
+)
 from matchbox.common.dtos import BackendResourceType, NotFoundError
-from matchbox.common.exceptions import MatchboxResolutionNotFoundError
+from matchbox.common.exceptions import (
+    MatchboxEmptyServerResponse,
+    MatchboxResolutionNotFoundError,
+)
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 from matchbox.common.graph import DEFAULT_RESOLUTION
 
@@ -273,4 +280,35 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
 
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
+        query(selectors)
+
+
+def test_query_empty_results_raises_exception(
+    matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
+    """Test that query raises MatchboxEmptyServerResponse when no data is returned."""
+    testkit = source_factory(engine=sqlite_warehouse, name="foo")
+    testkit.write_to_location(sqlite_warehouse, set_client=True)
+
+    # Mock API
+    matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
+        return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
+    )
+
+    # Mock empty results
+    matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist([], schema=SCHEMA_QUERY_WITH_LEAVES)
+            ).read(),
+        )
+    )
+
+    selectors = select({"foo": ["crn", "company_name"]}, client=sqlite_warehouse)
+
+    # Test that empty results raise MatchboxEmptyServerResponse
+    with pytest.raises(
+        MatchboxEmptyServerResponse, match="The query operation returned no data"
+    ):
         query(selectors)
