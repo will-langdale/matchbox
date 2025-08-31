@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Matchbox** is a record matching and data linking orchestration framework developed by the UK Department for Business and Trade. It enables collaborative, measurable, and iterative entity matching without organizations sharing sensitive raw data.
+**Matchbox** is a record matching and data linking orchestration framework developed by the UK Department for Business and Trade. It enables collaborative, measurable, and iterative entity matching without organisations sharing sensitive raw data.
 
 ## Technology Stack
 
@@ -212,3 +212,43 @@ The factory system is the foundation for all scenario-based testing and provides
 - **Splink integration**: Advanced probabilistic record linking capabilities
 - **Security-first design**: Permission boundaries preserved, secrets scanning enabled
 - **API-first approach**: All client operations go through the FastAPI server
+- **Use modern Python type hints (PEP 604 and PEP 585 syntax).**
+
+## Complexity Management and Collaboration
+
+When working on complex problems, recognise when to step back and collaborate rather than persisting ineffectively.
+
+### Critical Warning Signs - Push Back Immediately When:
+
+- **Tail-chasing pattern**: Spending >3 iterations on the same issue without clear progress
+- Multiple failed approaches to the same core problem
+- Solutions that keep breaking in new ways after each "fix"
+- Constantly hitting unexpected blockers that suggest deeper architectural issues
+- Requirements that keep shifting or expanding as we dig deeper
+- Implementation details require guessing at system behavior
+
+### Complexity Recognition Triggers:
+
+- Tasks requiring >10 interconnected steps across multiple components
+- Problems spanning multiple architectural layers with unclear boundaries
+- Solutions where domain-specific logic can't be validated without deep system knowledge
+- Tasks where the "how" remains unclear even after initial codebase analysis
+
+### Professional Pushback Framework:
+
+When complexity indicators arise, use this approach:
+
+1. **Acknowledge the pattern**: "I'm noticing we're in a debugging loop - let me step back and reframe this"
+2. **Extract the pure problem**: Summarize the core issue without implementation assumptions
+3. **Identify blockers**: Distinguish between what's actually blocking progress vs. what I'm assuming
+4. **Propose collaboration**: "This problem would benefit from offline research/design before implementation"
+
+### Collaborative Reset Process:
+
+- Extract the essential problem from current context
+- Suggest simpler proof-of-concept or isolated testing approaches  
+- Request architectural guidance or constraint clarification
+- Recommend breaking complex tasks into phases with validation points
+- Propose taking core conceptual issues offline for dedicated problem-solving
+
+This approach prevents ineffective persistence and leverages human insight to break through conceptual barriers.

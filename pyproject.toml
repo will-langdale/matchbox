@@ -32,6 +32,7 @@ dependencies = [
     "celery[redis]>=5.3.1",
     "plotext>=5.3.2",
     "textual-plotext>=1.0.1",
+    "scipy>=1.16.1",
 ]
 
 [project.optional-dependencies]
