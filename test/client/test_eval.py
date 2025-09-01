@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 import polars as pl
 import pytest
@@ -7,11 +7,11 @@ from polars.testing import assert_frame_equal
 from pyarrow import Table
 from respx import MockRouter
 from sqlalchemy import Engine
+from sqlalchemy.exc import OperationalError
 
 from matchbox.client.cli.eval import get_samples
 from matchbox.client.cli.eval.utils import EvaluationItem
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
-from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.factories.sources import source_from_tuple
 
 
@@ -190,7 +190,7 @@ def test_get_samples(
 
     # What happens if source cannot be queried using client?
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", "sqlite:///:memory:")
-    with pytest.raises(MatchboxSourceTableError):
+    with pytest.raises(OperationalError):
         get_samples(
             n=10, resolution="resolution", user_id=user_id, use_default_client=True
         )

@@ -359,12 +359,12 @@ def test_evaldata_matches_precision_recall():
         # Verify they match exactly
         assert sweep_p == orig_p, f"Precision mismatch: {sweep_p} != {orig_p}"
         assert sweep_r == orig_r, f"Recall mismatch: {sweep_r} != {orig_r}"
-        assert sweep_p_ci == orig_p_ci, (
-            f"Precision CI mismatch: {sweep_p_ci} != {orig_p_ci}"
-        )
-        assert sweep_r_ci == orig_r_ci, (
-            f"Recall CI mismatch: {sweep_r_ci} != {orig_r_ci}"
-        )
+        assert (
+            sweep_p_ci == orig_p_ci
+        ), f"Precision CI mismatch: {sweep_p_ci} != {orig_p_ci}"
+        assert (
+            sweep_r_ci == orig_r_ci
+        ), f"Recall CI mismatch: {sweep_r_ci} != {orig_r_ci}"
 
         # Also verify the expected values from test_precision_recall
         assert sweep_p == 1 / 4, f"Expected precision 1/4, got {sweep_p}"

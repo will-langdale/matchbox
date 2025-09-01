@@ -217,9 +217,9 @@ class TestE2EModelEvaluation:
 
             # Verify we have painted items
             painted_items = [item for item in app.state.queue.items if item.is_painted]
-            assert len(painted_items) >= 1, (
-                "Should have painted items ready for submission"
-            )
+            assert (
+                len(painted_items) >= 1
+            ), "Should have painted items ready for submission"
 
             # Phase 3: Submit judgements to backend
             initial_judgements, _ = _handler.download_eval_data()
@@ -232,9 +232,9 @@ class TestE2EModelEvaluation:
             final_judgements, _ = _handler.download_eval_data()
             final_count = len(final_judgements)
 
-            assert final_count > initial_count, (
-                "Should have more judgements after submission"
-            )
+            assert (
+                final_count > initial_count
+            ), "Should have more judgements after submission"
 
         # Phase 4: Test evaluation infrastructure with submitted judgements
         final_judgements, expansion = _handler.download_eval_data()
@@ -246,9 +246,9 @@ class TestE2EModelEvaluation:
         eval_data = EvalData.from_results(self.final_resolution_1_results)
         assert SCHEMA_JUDGEMENTS.equals(eval_data.judgements.schema)
         assert SCHEMA_CLUSTER_EXPANSION.equals(eval_data.expansion.schema)
-        assert len(eval_data.judgements) > 0, (
-            "EvalData should contain submitted judgements"
-        )
+        assert (
+            len(eval_data.judgements) > 0
+        ), "EvalData should contain submitted judgements"
 
         # Get PR at 0.5 threshold
         pr_results = eval_data.precision_recall([0.5])

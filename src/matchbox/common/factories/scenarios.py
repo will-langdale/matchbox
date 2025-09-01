@@ -1,7 +1,8 @@
 """Scenario factories for creating TestkitDAG scenarios."""
 
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Callable, Generator, Literal
+from typing import Any, Literal
 
 import pyarrow as pa
 from sqlalchemy import Engine

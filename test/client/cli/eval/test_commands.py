@@ -2,8 +2,9 @@
 
 import polars as pl
 
-from matchbox.client.cli.eval.ui import EvaluationState, GroupStyler
+from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import create_evaluation_item
+from matchbox.client.cli.eval.widgets.styling import GroupStyler
 from matchbox.common.dtos import DataTypes
 from matchbox.common.sources import (
     RelationalDBLocation,
@@ -145,9 +146,9 @@ class TestGroupStyler:
         symbols = [style[1] for style in styles]
 
         # All colours should be unique (no duplicates)
-        assert len(set(colours)) == num_colours, (
-            f"Expected {num_colours} unique colours, got {len(set(colours))}"
-        )
+        assert (
+            len(set(colours)) == num_colours
+        ), f"Expected {num_colours} unique colours, got {len(set(colours))}"
 
         # All symbols should be unique (no duplicates) up to available symbols
         num_symbols = len(GroupStyler.SYMBOLS)

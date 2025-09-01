@@ -1,9 +1,9 @@
 """CLI commands for entity evaluation."""
 
 import logging
+from typing import Annotated
 
 import typer
-from typing_extensions import Annotated
 
 from matchbox.client.cli.eval.ui import EntityResolutionApp
 from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName

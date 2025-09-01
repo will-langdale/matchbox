@@ -11,7 +11,6 @@ from matplotlib import pyplot as plt
 from matplotlib.pyplot import Figure
 from pydantic import BaseModel, computed_field
 from sqlalchemy import create_engine
-from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
@@ -24,7 +23,6 @@ from matchbox.common.eval import (
     process_judgements,
     wilson_confidence_interval,
 )
-from matchbox.common.exceptions import MatchboxSourceTableError
 from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
@@ -182,7 +180,7 @@ class DeduplicationResult:
         display_columns: list[int],
         leaf_to_display_mapping: dict[int, int],
     ):
-        """Initialize deduplication result."""
+        """Initialise deduplication result."""
         self.duplicate_groups = duplicate_groups
         self.display_columns = display_columns
         self.leaf_to_display_mapping = leaf_to_display_mapping
@@ -242,8 +240,7 @@ def deduplicate_columns(display_df: pl.DataFrame) -> DeduplicationResult:
     display_columns = []
     leaf_to_display_mapping = {}
 
-    display_col_index = 0
-    for leaf_group in signature_to_leaves.values():
+    for display_col_index, leaf_group in enumerate(signature_to_leaves.values()):
         # Sort leaf IDs for consistent ordering
         leaf_group = sorted(leaf_group)
 
@@ -256,8 +253,6 @@ def deduplicate_columns(display_df: pl.DataFrame) -> DeduplicationResult:
         # Map all leaves in this group to the same display column index
         for leaf_id in leaf_group:
             leaf_to_display_mapping[leaf_id] = display_col_index
-
-        display_col_index += 1
 
     return DeduplicationResult(
         duplicate_groups, display_columns, leaf_to_display_mapping
@@ -364,16 +359,11 @@ def get_samples(
             samples_by_source = samples.filter(pl.col("source") == source_resolution)
             keys_by_source = samples_by_source["key"].to_list()
 
-            try:
-                source_data = pl.concat(
-                    source_config.query(
-                        batch_size=10_000, qualify_names=True, keys=keys_by_source
-                    )
+            source_data = pl.concat(
+                source_config.query(
+                    batch_size=10_000, qualify_names=True, keys=keys_by_source
                 )
-            except OperationalError as e:
-                raise MatchboxSourceTableError(
-                    "Could not find source using given client."
-                ) from e
+            )
 
             samples_and_source = samples_by_source.join(
                 source_data, left_on="key", right_on=source_config.qualified_key
@@ -381,7 +371,7 @@ def get_samples(
             desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
             results_by_source.append(samples_and_source[desired_columns])
 
-        if not len(results_by_source):
+        if not results_by_source:
             return {}
 
         all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
@@ -405,7 +395,7 @@ def get_samples(
 
 
 class IncrementalState:
-    """Manages incremental state for optimized PR curve calculation using Union-Find."""
+    """Manages incremental state for optimised PR curve calculation using Union-Find."""
 
     def __init__(
         self,
@@ -413,7 +403,7 @@ class IncrementalState:
         validation_counts: dict[Pair, float],
         validation_leaves: set[int],
     ):
-        """Initialize with preprocessed validation data."""
+        """Initialise with preprocessed validation data."""
         self.validation_pairs = validation_pairs
         self.validation_counts = validation_counts
         self.validation_leaves = validation_leaves
@@ -533,7 +523,7 @@ class EvalData:
         thresholds: list[float],
         probabilities: pa.Table = None,
     ):
-        """Initialize evaluation data with root/leaf mapping and thresholds.
+        """Initialise evaluation data with root/leaf mapping and thresholds.
 
         Args:
             root_leaf: PyArrow table with 'root' and 'leaf' columns
@@ -757,18 +747,18 @@ class EvalData:
         if not thresholds:
             thresholds = [1.0]  # Default to 100% threshold
 
-        return self._calculate_optimized_pr_curve(thresholds)
+        return self._calculate_optimised_pr_curve(thresholds)
 
-    def _calculate_optimized_pr_curve(
+    def _calculate_optimised_pr_curve(
         self, thresholds: list[float]
     ) -> list[tuple[float, float, float, float, float]]:
-        """Optimized PR calculation using Union-Find sweep algorithm."""
+        """Optimised PR calculation using Union-Find sweep algorithm."""
         # Handle empty judgements case
         if len(self.judgements) == 0:
             # Return zeros for all thresholds when no judgements exist
             return [(t, 0.0, 0.0, 0.0, 0.0) for t in thresholds]
 
-        # Initialize incremental state with cached validation data
+        # Initialise incremental state with cached validation data
         state = IncrementalState(
             self._validation_pairs, self._validation_counts, self._validation_leaves
         )

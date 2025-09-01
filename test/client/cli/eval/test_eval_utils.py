@@ -6,7 +6,8 @@ from unittest.mock import Mock, patch
 import pyarrow as pa
 import pytest
 
-from matchbox.client.cli.eval.ui import EvaluationState, PRCurveDisplay
+from matchbox.client.cli.eval.plot.widget import PRCurveDisplay
+from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import EvalData
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 
@@ -189,10 +190,10 @@ class TestEvalData:
 
                 for threshold, precision, recall, precision_ci, recall_ci in pr_data:
                     assert isinstance(threshold, float)
-                    assert isinstance(precision, (int, float))
-                    assert isinstance(recall, (int, float))
-                    assert isinstance(precision_ci, (int, float))
-                    assert isinstance(recall_ci, (int, float))
+                    assert isinstance(precision, int | float)
+                    assert isinstance(recall, int | float)
+                    assert isinstance(precision_ci, int | float)
+                    assert isinstance(recall_ci, int | float)
                     assert 0.0 <= precision <= 1.0
                     assert 0.0 <= recall <= 1.0
                     assert precision_ci >= 0.0
@@ -507,5 +508,5 @@ class TestPRCurveDisplay:
             plot_widget.plt.scatter([1, 2, 3], [1, 2, 3])
             plot_widget.plt.title("Test Plot")
             # This should not raise an exception
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             pytest.fail(f"Basic textual-plotext operations failed: {e}")
