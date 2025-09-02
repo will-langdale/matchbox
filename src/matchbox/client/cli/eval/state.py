@@ -99,7 +99,7 @@ class EvaluationState:
 
         # Status/Feedback State
         self.status_message: str = ""
-        self.status_color: str = "bright_white"
+        self.status_colour: str = "bright_white"
         self.is_submitting: bool = False
         self._status_timer_id: str | None = (
             None  # Track current timer to prevent conflicts
@@ -267,14 +267,14 @@ class EvaluationState:
     def update_status(
         self,
         message: str,
-        color: str = "bright_white",
+        colour: str = "bright_white",
         auto_clear_after: float | None = None,
     ) -> None:
-        """Update status message with optional color and auto-clearing.
+        """Update status message with optional colour and auto-clearing.
 
         Args:
             message: Status message to display
-            color: Color for the message
+            colour: Colour for the message
             auto_clear_after: Seconds after which to auto-clear (None = no auto-clear)
         """
         # Cancel any existing status timer to prevent conflicts
@@ -282,7 +282,7 @@ class EvaluationState:
             self._cancel_status_timer()
 
         self.status_message = message
-        self.status_color = color
+        self.status_colour = colour
         self._notify_listeners()
 
         # Set up auto-clear timer if requested
@@ -296,7 +296,7 @@ class EvaluationState:
             self._cancel_status_timer()
 
         self.status_message = ""
-        self.status_color = "bright_white"
+        self.status_colour = "bright_white"
         self._notify_listeners()
 
     def _schedule_status_clear(self, delay: float) -> None:

@@ -28,7 +28,7 @@ class TestMainCLI:
         """Test that eval help command works."""
         result = self.runner.invoke(app, ["eval", "--help"])
         assert result.exit_code == 0
-        assert "Entity evaluation and manual labeling tools" in result.output
+        assert "Entity evaluation and manual labelling tools" in result.output
 
     def test_eval_start_help(self):
         """Test that eval start help works."""

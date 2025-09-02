@@ -332,13 +332,13 @@ class TestTextualUI:
         # Should show error indicator
         assert "TOO LONG" in str(text)
 
-    def test_status_message_colors(self):
-        """Test that status messages use proper colors."""
+    def test_status_message_colours(self):
+        """Test that status messages use proper colours."""
 
         state = EvaluationState()
         status_widget = StatusBarRight(state)
 
-        # Test color assignments
+        # Test colour assignments
         test_cases = [
             ("⚠ Error", "red"),
             ("✓ Ready", "green"),
@@ -346,10 +346,10 @@ class TestTextualUI:
             ("◯ Empty", "dim"),
         ]
 
-        for message, expected_color in test_cases:
-            state.update_status(message, expected_color)
-            # Verify state stores the color
-            assert state.status_color == expected_color
-            # Verify rendering uses the color
+        for message, expected_colour in test_cases:
+            state.update_status(message, expected_colour)
+            # Verify state stores the colour
+            assert state.status_colour == expected_colour
+            # Verify rendering uses the colour
             text = status_widget.render()
             assert message in str(text)

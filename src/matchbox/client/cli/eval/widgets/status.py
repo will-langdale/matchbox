@@ -125,7 +125,7 @@ class StatusBarRight(Widget):
                 return text
 
             # Simple pass-through - the message should already be properly formatted
-            text.append(self.state.status_message, style=self.state.status_color)
+            text.append(self.state.status_message, style=self.state.status_colour)
         else:
             # Show placeholder when no status message
             text.append("○ Ready", style="dim")

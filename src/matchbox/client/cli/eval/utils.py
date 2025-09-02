@@ -155,13 +155,15 @@ def create_display_dataframe(
                     if value is not None:
                         str_value = str(value).strip()
                         if str_value:  # Only add non-empty strings
-                            rows.append({
-                                "field_name": unqualified_field,
-                                "source_name": source_name,
-                                "record_index": record_idx,
-                                "value": str_value,
-                                "leaf_id": leaf_id,
-                            })
+                            rows.append(
+                                {
+                                    "field_name": unqualified_field,
+                                    "source_name": source_name,
+                                    "record_index": record_idx,
+                                    "value": str_value,
+                                    "leaf_id": leaf_id,
+                                }
+                            )
 
     # Create DataFrame from collected rows
     if rows:
@@ -689,22 +691,24 @@ class EvalData:
 
             # Create leaf_id lookup tables
             logger.info("Creating lookup tables")
-            left_lookup = left_df.select(["id", "leaf_id"]).rename({
-                "leaf_id": "left_leaf"
-            })
-            right_lookup = right_df.select(["id", "leaf_id"]).rename({
-                "leaf_id": "right_leaf"
-            })
+            left_lookup = left_df.select(["id", "leaf_id"]).rename(
+                {"leaf_id": "left_leaf"}
+            )
+            right_lookup = right_df.select(["id", "leaf_id"]).rename(
+                {"leaf_id": "right_leaf"}
+            )
 
             # Join probabilities with leaf lookups to build root_leaf mapping
             logger.info("Building root_leaf mapping via joins")
             root_leaf_df = (
                 probs_df.join(left_lookup, left_on="left_id", right_on="id", how="left")
                 .join(right_lookup, left_on="right_id", right_on="id", how="left")
-                .select([
-                    pl.col("left_leaf").alias("root"),
-                    pl.col("right_leaf").alias("leaf"),
-                ])
+                .select(
+                    [
+                        pl.col("left_leaf").alias("root"),
+                        pl.col("right_leaf").alias("leaf"),
+                    ]
+                )
                 .unique()
             )
             logger.info(

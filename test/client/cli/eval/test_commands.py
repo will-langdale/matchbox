@@ -146,9 +146,9 @@ class TestGroupStyler:
         symbols = [style[1] for style in styles]
 
         # All colours should be unique (no duplicates)
-        assert len(set(colours)) == num_colours, (
-            f"Expected {num_colours} unique colours, got {len(set(colours))}"
-        )
+        assert (
+            len(set(colours)) == num_colours
+        ), f"Expected {num_colours} unique colours, got {len(set(colours))}"
 
         # All symbols should be unique (no duplicates) up to available symbols
         num_symbols = len(GroupStyler.SYMBOLS)
@@ -211,17 +211,19 @@ class TestFieldProcessing:
         )
 
         # Create test DataFrame with qualified field names
-        df = pl.DataFrame({
-            "leaf": [1, 2, 3],
-            "source_a_company_name": ["Company A", "Company B", "Company C"],
-            "source_a_registration_id": ["REG001", "REG002", "REG003"],
-            "source_b_company_name": [
-                "Company A Ltd",
-                "Company B Inc",
-                "Company C Corp",
-            ],
-            "source_b_address": ["123 Main St", "456 Oak Ave", "789 Pine Rd"],
-        })
+        df = pl.DataFrame(
+            {
+                "leaf": [1, 2, 3],
+                "source_a_company_name": ["Company A", "Company B", "Company C"],
+                "source_a_registration_id": ["REG001", "REG002", "REG003"],
+                "source_b_company_name": [
+                    "Company A Ltd",
+                    "Company B Inc",
+                    "Company C Corp",
+                ],
+                "source_b_address": ["123 Main St", "456 Oak Ave", "789 Pine Rd"],
+            }
+        )
 
         # Create evaluation item with new paradigm
         evaluation_item = create_evaluation_item(df, [source_a, source_b], 123)

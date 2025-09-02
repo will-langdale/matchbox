@@ -162,7 +162,7 @@ class TestEvaluationState:
         assert state.is_loading_eval_data is False
         assert state.eval_data_error is None
         assert not state.status_message
-        assert state.status_color == "bright_white"
+        assert state.status_colour == "bright_white"
         assert len(state.listeners) == 0
 
     def test_queue_delegation(self, state):
@@ -328,14 +328,14 @@ class TestEvaluationState:
         # Update status
         state.update_status("Test message", "red")
         assert state.status_message == "Test message"
-        assert state.status_color == "red"
+        assert state.status_colour == "red"
         listener.assert_called()
 
         # Clear status
         listener.reset_mock()
         state.clear_status()
         assert not state.status_message
-        assert state.status_color == "bright_white"
+        assert state.status_colour == "bright_white"
         listener.assert_called()
 
     def test_listener_error_handling(self, state):

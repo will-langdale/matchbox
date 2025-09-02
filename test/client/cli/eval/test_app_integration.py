@@ -16,8 +16,8 @@ class TestEntityResolutionAppIntegration:
         """Create app instance for testing."""
         return EntityResolutionApp(resolution="test_resolution", num_samples=5)
 
-    def test_app_initialization(self, app):
-        """Test that app initializes with correct state."""
+    def test_app_initialisation(self, app):
+        """Test that app initialises with correct state."""
         assert app.state.resolution == "test_resolution"
         assert app.state.sample_limit == 5
         assert app.handlers.app is app
