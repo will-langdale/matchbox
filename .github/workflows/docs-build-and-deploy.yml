@@ -1,8 +1,8 @@
 name: Documentation (build and deploy)
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*.*.*"
 
 jobs:
   build:
