@@ -1,6 +1,6 @@
 """Unit tests for UI widgets."""
 
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import polars as pl
 import pytest
@@ -271,7 +271,6 @@ class TestStatusBar:
 
     def test_status_bar_compose(self, mock_state):
         """Test status bar composition."""
-        from unittest.mock import MagicMock, patch
 
         status_bar = StatusBar(mock_state)
 
@@ -316,7 +315,7 @@ class TestGroupStyler:
 
     def test_get_display_text(self):
         """Test display text formatting."""
-        text, color = GroupStyler.get_display_text("test", 5)
+        text, _ = GroupStyler.get_display_text("test", 5)
 
         assert "TEST" in text  # Should be uppercase
         assert "(5)" in text  # Should include count

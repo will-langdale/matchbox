@@ -223,7 +223,13 @@ def _deduplicate_recall_values(
             first_threshold = group[0][0]
 
             deduplicated.append(
-                (first_threshold, avg_precision, recall, avg_p_ci, avg_r_ci)
+                (
+                    first_threshold,
+                    avg_precision,
+                    recall,
+                    avg_p_ci,
+                    avg_r_ci,
+                )
             )
 
     # Sort by recall to ensure strictly increasing sequence
@@ -334,7 +340,7 @@ def plot_pr_envelope(
     r_curve, p_curve, is_extrapolated = interpolate_pr_curve(pr_data)
 
     # Create visualisation
-    fig, ax = plt.subplots(figsize=(12, 8))
+    _, ax = plt.subplots(figsize=(12, 8))
 
     # Confidence envelope
     ax.fill_between(
@@ -457,7 +463,7 @@ def plotext_pr_envelope(
         return
 
     # Extract original data
-    thresholds, precisions, recalls, p_cis, r_cis = zip(*pr_data, strict=False)
+    _, _, _, _, _ = zip(*pr_data, strict=False)
 
     # Compute envelope using the existing compute_pr_envelope function
     r_grid, p_upper, p_lower = compute_pr_envelope(pr_data)

@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
+from textual_plotext import PlotextPlot
 
 from matchbox.client.cli.eval.plot.widget import PRCurveDisplay
 from matchbox.client.cli.eval.state import EvaluationState
@@ -17,9 +18,6 @@ class TestEvalData:
 
     def test_sweep_efficiency_for_multiple_thresholds(self):
         """Test that sweep method is more efficient for multiple thresholds."""
-        from unittest.mock import patch
-
-        import pyarrow as pa
 
         # Create a larger test dataset
         model_data = []
@@ -36,7 +34,11 @@ class TestEvalData:
         expansion_data = []
         for cluster_id in range(0, 50):  # Judge half the clusters
             judgements_data.append(
-                {"shown": cluster_id, "endorsed": cluster_id, "user_id": 1}
+                {
+                    "shown": cluster_id,
+                    "endorsed": cluster_id,
+                    "user_id": 1,
+                }
             )
             expansion_data.append(
                 {
@@ -122,7 +124,10 @@ class TestEvalData:
 
         # Create mock root_leaf data
         root_leaf_data = pa.table(
-            {"root": pa.array([1, 1, 2]), "leaf": pa.array([10, 11, 20])}
+            {
+                "root": pa.array([1, 1, 2]),
+                "leaf": pa.array([10, 11, 20]),
+            }
         )
 
         # Mock the _handler.download_eval_data to return empty data
@@ -167,7 +172,10 @@ class TestEvalData:
 
         # Create mock root_leaf data
         root_leaf_data = pa.table(
-            {"root": pa.array([1, 1]), "leaf": pa.array([10, 11])}
+            {
+                "root": pa.array([1, 1]),
+                "leaf": pa.array([10, 11]),
+            }
         )
 
         # Mock the _handler.download_eval_data
@@ -229,7 +237,10 @@ class TestEvalData:
         )
 
         root_leaf_data = pa.table(
-            {"root": pa.array([1, 1]), "leaf": pa.array([10, 11])}
+            {
+                "root": pa.array([1, 1]),
+                "leaf": pa.array([10, 11]),
+            }
         )
 
         with patch(
@@ -301,7 +312,10 @@ class TestEvalData:
         )
 
         root_leaf_data = pa.table(
-            {"root": pa.array([1, 1]), "leaf": pa.array([10, 11])}
+            {
+                "root": pa.array([1, 1]),
+                "leaf": pa.array([10, 11]),
+            }
         )
 
         with patch(
@@ -492,9 +506,6 @@ class TestPRCurveDisplay:
     def test_textual_plotext_integration(self):
         """Test that textual-plotext integration works correctly."""
         # Create a simple widget to test textual-plotext functionality
-        from textual_plotext import PlotextPlot
-
-        # Create a basic PlotextPlot widget
         plot_widget = PlotextPlot()
 
         # Test that we can access the plt property

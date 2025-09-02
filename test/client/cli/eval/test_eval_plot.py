@@ -1,7 +1,7 @@
 """Minimal coverage tests for eval plot functionality."""
 
 from matchbox.client.cli.eval.plot import (
-    _deduplicate_recall_values,
+    _deduplicate_recall_values,  # noqa: PLC2701
     compute_pr_envelope,
     interpolate_pr_curve,
 )

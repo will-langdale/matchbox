@@ -3,6 +3,7 @@
 import logging
 
 from matchbox.client import _handler
+from matchbox.client.cli.eval.modals import HelpModal, PlotModal
 from matchbox.client.cli.eval.plot.data import (
     can_show_plot,
     refresh_judgements_for_plot,
@@ -79,7 +80,6 @@ class EvaluationHandlers:
 
         # Show the status from refresh, then show modal
         self.state.update_status(refresh_status, "green", auto_clear_after=2.0)
-        from .modals import PlotModal
 
         self.app.push_screen(PlotModal(self.state))
 
@@ -110,8 +110,6 @@ class EvaluationHandlers:
 
     async def action_show_help(self) -> None:
         """Show the help modal."""
-        from .modals import HelpModal
-
         self.app.push_screen(HelpModal())
 
     async def action_submit_and_fetch(self) -> None:

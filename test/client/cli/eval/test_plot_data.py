@@ -74,7 +74,7 @@ class TestCanShowPlot:
         can_show, message = can_show_plot(mock_state)
 
         assert can_show is True
-        assert message == ""
+        assert not message
 
     def test_priority_order_of_checks(self, mock_state):
         """Test that checks are performed in correct priority order."""
@@ -84,17 +84,17 @@ class TestCanShowPlot:
         mock_state.eval_data = None
 
         # Loading state should be checked first
-        can_show, message = can_show_plot(mock_state)
+        _, message = can_show_plot(mock_state)
         assert message == "⏳ Loading"
 
         # Error state should be checked second
         mock_state.is_loading_eval_data = False
-        can_show, message = can_show_plot(mock_state)
+        _, message = can_show_plot(mock_state)
         assert message == "⚠ Error"
 
         # No data should be checked third
         mock_state.eval_data_error = None
-        can_show, message = can_show_plot(mock_state)
+        _, message = can_show_plot(mock_state)
         assert message == "⚠ No data"
 
     def test_precision_recall_method_called(self, mock_state):
@@ -102,7 +102,7 @@ class TestCanShowPlot:
         pr_data = [0.1, 0.5, 0.9]
         mock_state.eval_data.precision_recall.return_value = pr_data
 
-        can_show, message = can_show_plot(mock_state)
+        can_show, _ = can_show_plot(mock_state)
 
         # Verify the method was called
         mock_state.eval_data.precision_recall.assert_called_once()
@@ -294,7 +294,7 @@ class TestSlashKeyRegressionScenarios:
                     f"CRITICAL: Scenario '{scenario_name}' should prevent modal "
                     f"display but returned can_show=True"
                 )
-                assert message != "", (
+                assert message, (
                     f"CRITICAL: Scenario '{scenario_name}' should return status "
                     f"message but got empty string"
                 )

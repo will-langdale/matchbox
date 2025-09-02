@@ -1,5 +1,7 @@
 """Tests for CLI main entry point."""
 
+import re
+
 from typer.testing import CliRunner
 
 from matchbox.client.cli.main import app
@@ -34,8 +36,6 @@ class TestMainCLI:
         assert result.exit_code == 0
 
         # Strip ANSI codes for reliable text matching
-        import re
-
         clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
 
         assert "interactive entity resolution" in clean_output.lower()

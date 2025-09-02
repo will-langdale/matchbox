@@ -159,13 +159,13 @@ class TestEvaluationState:
     def test_initial_state(self, state):
         """Test initial state values."""
         assert state.sample_limit == 100
-        assert state.current_group_selection == ""
+        assert not state.current_group_selection
         assert state.compact_view_mode is True
         assert state.show_plot is False
         assert state.eval_data is None
         assert state.is_loading_eval_data is False
         assert state.eval_data_error is None
-        assert state.status_message == ""
+        assert not state.status_message
         assert state.status_color == "bright_white"
         assert len(state.listeners) == 0
 
@@ -198,13 +198,13 @@ class TestEvaluationState:
         # Clear selection
         listener.reset_mock()
         state.clear_group_selection()
-        assert state.current_group_selection == ""
+        assert not state.current_group_selection
         listener.assert_called_once()
 
         # Invalid group selection
         listener.reset_mock()
         state.set_group_selection("123")  # Not alpha
-        assert state.current_group_selection == ""  # Unchanged
+        assert not state.current_group_selection  # Unchanged
         listener.assert_not_called()
 
     def test_view_mode_toggle(self, state):
@@ -338,13 +338,12 @@ class TestEvaluationState:
         # Clear status
         listener.reset_mock()
         state.clear_status()
-        assert state.status_message == ""
+        assert not state.status_message
         assert state.status_color == "bright_white"
         listener.assert_called()
 
     def test_listener_error_handling(self, state):
         """Test that listener errors are now propagated (no longer swallowed)."""
-        import pytest
 
         # Add a listener that raises an exception
         def failing_listener():

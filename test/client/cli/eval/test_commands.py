@@ -26,7 +26,7 @@ class TestKeyboardShortcuts:
         assert self.state.current_group_selection == "a"
 
         self.state.clear_group_selection()
-        assert self.state.current_group_selection == ""
+        assert not self.state.current_group_selection
 
     def test_group_switching(self):
         """Test switching between different groups."""
@@ -44,7 +44,7 @@ class TestKeyboardShortcuts:
 
         # Clear group
         self.state.clear_group_selection()
-        assert self.state.current_group_selection == ""
+        assert not self.state.current_group_selection
 
     def test_set_group_overrides(self):
         """Test that setting a group overrides the previous group."""

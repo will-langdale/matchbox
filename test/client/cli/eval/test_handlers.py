@@ -360,7 +360,6 @@ class TestEvaluationHandlers:
         @pytest.mark.asyncio
         async def test_backfill_samples_error_handling(self, handlers):
             """Test backfill error handling (error now propagates)."""
-            import pytest
 
             handlers.state.queue.total_count = 80
             handlers.state.sample_limit = 100

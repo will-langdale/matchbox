@@ -8,7 +8,9 @@ import pytest
 from sqlalchemy import Engine
 
 from matchbox.client.cli.eval.app import EntityResolutionApp
+from matchbox.client.cli.eval.state import EvaluationState
 from matchbox.client.cli.eval.utils import create_evaluation_item
+from matchbox.client.cli.eval.widgets.status import StatusBarRight
 from matchbox.common.exceptions import MatchboxClientSettingsException
 from matchbox.common.factories.scenarios import setup_scenario
 
@@ -301,8 +303,6 @@ class TestTextualUI:
 
     def test_status_message_length_validation(self):
         """Test that status messages are properly validated for length."""
-        from matchbox.client.cli.eval.state import EvaluationState
-        from matchbox.client.cli.eval.widgets.status import StatusBarRight
 
         state = EvaluationState()
         status_widget = StatusBarRight(state)
@@ -334,8 +334,6 @@ class TestTextualUI:
 
     def test_status_message_colors(self):
         """Test that status messages use proper colors."""
-        from matchbox.client.cli.eval.state import EvaluationState
-        from matchbox.client.cli.eval.widgets.status import StatusBarRight
 
         state = EvaluationState()
         status_widget = StatusBarRight(state)
