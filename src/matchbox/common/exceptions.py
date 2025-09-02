@@ -65,6 +65,23 @@ class MatchboxUnhandledServerResponse(Exception):
         super().__init__(message)
 
 
+class MatchboxEmptyServerResponse(Exception):
+    """The server returned an empty response when data was expected."""
+
+    def __init__(self, message: str | None = None, operation: str | None = None):
+        """Initialise the exception."""
+        if message is None:
+            message = "The server returned an empty response when data was expected."
+            if operation is not None:
+                message = (
+                    f"The {operation} operation returned no data from the server "
+                    "when data was expected."
+                )
+
+        super().__init__(message)
+        self.operation = operation
+
+
 # -- SourceConfig exceptions --
 
 

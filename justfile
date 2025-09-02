@@ -15,8 +15,9 @@ docs:
 
 # Reformat and lint
 format:
-    uvx ruff format .
-    uvx ruff check . --fix
+    uv run ruff format .
+    uv run ruff check . --fix
+    uvx uv-sort pyproject.toml
 
 # Scan for secrets
 scan:

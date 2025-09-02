@@ -9,6 +9,12 @@ from io import BytesIO
 import httpx
 from pyarrow import Table
 from pyarrow.parquet import read_table
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.client.authorisation import generate_json_web_token
@@ -38,6 +44,7 @@ from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
+    MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxSourceNotFoundError,
@@ -57,6 +64,18 @@ from matchbox.common.logging import logger
 from matchbox.common.sources import Match, SourceConfig
 
 URLEncodeHandledType = str | int | float | bytes
+
+
+# Retry configuration for HTTP operations
+http_retry = retry(
+    stop=stop_after_attempt(5),  # Try up to 5 times
+    wait=wait_exponential(
+        multiplier=1, min=1, max=180
+    ),  # Exponential backoff: 1s, 2s, 4s, 8s, up to 3 minutes
+    retry=retry_if_exception_type(
+        (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)
+    ),
+)
 
 
 def encode_param_value(
@@ -150,6 +169,7 @@ def create_headers(settings: ClientSettings) -> dict[str, str]:
 CLIENT = create_client(settings=settings)
 
 
+@http_retry
 def login(user_name: str) -> int:
     logger.debug(f"Log in attempt for {user_name}")
     response = CLIENT.post(
@@ -161,6 +181,7 @@ def login(user_name: str) -> int:
 # Retrieval
 
 
+@http_retry
 def query(
     source: SourceResolutionName,
     return_leaf_id: bool,
@@ -196,9 +217,13 @@ def query(
 
     check_schema(expected_schema, table.schema)
 
+    if table.num_rows == 0:
+        raise MatchboxEmptyServerResponse(operation="query")
+
     return table
 
 
+@http_retry
 def match(
     targets: list[SourceResolutionName],
     source: SourceResolutionName,
@@ -228,12 +253,18 @@ def match(
 
     logger.debug("Finished", prefix=log_prefix)
 
-    return [Match.model_validate(m) for m in res.json()]
+    matches = [Match.model_validate(m) for m in res.json()]
+
+    if not matches:
+        raise MatchboxEmptyServerResponse(operation="match")
+
+    return matches
 
 
 # Data management
 
 
+@http_retry
 def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
     """Index from a SourceConfig in Matchbox."""
     log_prefix = f"Index {source_config.name}"
@@ -273,6 +304,7 @@ def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
     return status
 
 
+@http_retry
 def get_source_config(name: SourceResolutionName) -> SourceConfig:
     log_prefix = f"SourceConfig {name}"
     logger.debug("Retrieving", prefix=log_prefix)
@@ -282,6 +314,7 @@ def get_source_config(name: SourceResolutionName) -> SourceConfig:
     return SourceConfig.model_validate(res.json())
 
 
+@http_retry
 def get_resolution_source_configs(name: ModelResolutionName) -> list[SourceConfig]:
     log_prefix = f"Resolution {name}"
     logger.debug("Retrieving", prefix=log_prefix)
@@ -291,6 +324,7 @@ def get_resolution_source_configs(name: ModelResolutionName) -> list[SourceConfi
     return [SourceConfig.model_validate(s) for s in res.json()]
 
 
+@http_retry
 def get_resolution_graph() -> ResolutionGraph:
     """Get the resolution graph from Matchbox."""
     log_prefix = "Visualisation"
@@ -303,6 +337,7 @@ def get_resolution_graph() -> ResolutionGraph:
 # Model management
 
 
+@http_retry
 def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
     """Insert a model in Matchbox."""
     log_prefix = f"Model {model_config.name}"
@@ -312,6 +347,7 @@ def insert_model(model_config: ModelConfig) -> ResolutionOperationStatus:
     return ResolutionOperationStatus.model_validate(res.json())
 
 
+@http_retry
 def get_model(name: ModelResolutionName) -> ModelConfig | None:
     """Get model metadata from Matchbox."""
     log_prefix = f"Model {name}"
@@ -324,6 +360,7 @@ def get_model(name: ModelResolutionName) -> ModelConfig | None:
         return None
 
 
+@http_retry
 def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus:
     """Upload model results in Matchbox."""
     log_prefix = f"Model {name}"
@@ -362,6 +399,7 @@ def add_model_results(name: ModelResolutionName, results: Table) -> UploadStatus
     return status
 
 
+@http_retry
 def get_model_results(name: ModelResolutionName) -> Table:
     """Get model results from Matchbox."""
     log_prefix = f"Model {name}"
@@ -372,6 +410,7 @@ def get_model_results(name: ModelResolutionName) -> Table:
     return read_table(buffer)
 
 
+@http_retry
 def set_model_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
     log_prefix = f"Model {name}"
@@ -381,6 +420,7 @@ def set_model_truth(name: ModelResolutionName, truth: int) -> ResolutionOperatio
     return ResolutionOperationStatus.model_validate(res.json())
 
 
+@http_retry
 def get_model_truth(name: ModelResolutionName) -> int:
     """Get the truth threshold for a model in Matchbox."""
     log_prefix = f"Model {name}"
@@ -390,6 +430,7 @@ def get_model_truth(name: ModelResolutionName) -> int:
     return res.json()
 
 
+@http_retry
 def get_model_ancestors(name: ModelResolutionName) -> list[ModelAncestor]:
     """Get the ancestors of a model in Matchbox."""
     log_prefix = f"Model {name}"
@@ -399,6 +440,7 @@ def get_model_ancestors(name: ModelResolutionName) -> list[ModelAncestor]:
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
+@http_retry
 def set_model_ancestors_cache(
     name: ModelResolutionName, ancestors: list[ModelAncestor]
 ) -> ResolutionOperationStatus:
@@ -413,6 +455,7 @@ def set_model_ancestors_cache(
     return ResolutionOperationStatus.model_validate(res.json())
 
 
+@http_retry
 def get_model_ancestors_cache(name: ModelResolutionName) -> list[ModelAncestor]:
     """Get the ancestors cache for a model in Matchbox."""
     log_prefix = f"Model {name}"
@@ -422,6 +465,7 @@ def get_model_ancestors_cache(name: ModelResolutionName) -> list[ModelAncestor]:
     return [ModelAncestor.model_validate(m) for m in res.json()]
 
 
+@http_retry
 def delete_resolution(
     name: ModelResolutionName, certain: bool = False
 ) -> ResolutionOperationStatus:
@@ -436,6 +480,7 @@ def delete_resolution(
 # Evaluation
 
 
+@http_retry
 def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Table:
     res = CLIENT.get(
         "/eval/samples",
@@ -445,12 +490,14 @@ def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Ta
     return read_table(BytesIO(res.content))
 
 
+@http_retry
 def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
     res = CLIENT.get("/eval/compare", params=url_params({"resolutions": resolutions}))
     scores = {resolution: tuple(pr) for resolution, pr in res.json().items()}
     return scores
 
 
+@http_retry
 def send_eval_judgement(judgement: Judgement) -> None:
     logger.debug(
         f"Submitting judgement {judgement.shown}:{judgement.endorsed} "
@@ -459,6 +506,7 @@ def send_eval_judgement(judgement: Judgement) -> None:
     CLIENT.post("/eval/judgements", json=judgement.model_dump())
 
 
+@http_retry
 def download_eval_data() -> tuple[Table, Table]:
     logger.debug("Retrieving all judgements.")
     res = CLIENT.get("/eval/judgements")
@@ -482,6 +530,7 @@ def download_eval_data() -> tuple[Table, Table]:
 # Admin
 
 
+@http_retry
 def count_backend_items(
     entity: BackendCountableType | None = None,
 ) -> dict[str, int]:

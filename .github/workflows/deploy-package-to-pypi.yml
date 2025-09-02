@@ -11,14 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-  
-      - name: "Set up Python"
-        uses: actions/setup-python@v5
-        with:
-          python-version-file: "pyproject.toml"
+        uses: astral-sh/setup-uv@v6
+        with: 
+          python-version: "3.11"
 
       - run: |
           uv build
@@ -42,4 +41,4 @@ jobs:
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages_dir: artifact/
+          packages-dir: artifact/
