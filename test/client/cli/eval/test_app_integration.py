@@ -197,28 +197,31 @@ class TestEntityResolutionAppIntegration:
         assert len(composed) == 3
 
     @pytest.mark.asyncio
-    async def test_warehouse_setting_temporary_patch(self):
-        """Test that warehouse setting is temporarily patched during sample fetch."""
-        app = EntityResolutionApp(warehouse="test_warehouse")
+    async def test_fetch_additional_samples_with_warehouse(self, app):
+        """Test that _fetch_additional_samples creates and disposes of an engine."""
+        app.state.warehouse = "sqlite:///:memory:"
         app.state.user_id = 123
 
-        original_value = "original_warehouse"
-
         with (
-            patch("matchbox.client.cli.eval.app.settings") as mock_settings,
             patch("matchbox.client.cli.eval.app.get_samples") as mock_get_samples,
+            patch("matchbox.client.cli.eval.app.create_engine") as mock_create_engine,
         ):
-            # Set up original value
-            mock_settings.default_warehouse = original_value
+            mock_engine = Mock()
+            mock_create_engine.return_value = mock_engine
             mock_get_samples.return_value = {}
 
             await app._fetch_additional_samples(10)
 
-            # Should have been temporarily set to test_warehouse during the call
-            mock_get_samples.assert_called_once()
-
-            # Should be restored to original value
-            assert mock_settings.default_warehouse == original_value
+            mock_create_engine.assert_called_once_with("sqlite:///:memory:")
+            mock_get_samples.assert_called_once_with(
+                n=10,
+                resolution=app.state.resolution,
+                user_id=app.state.user_id,
+                clients={},
+                use_default_client=True,
+                default_client=mock_engine,
+            )
+            mock_engine.dispose.assert_called_once()
 
     def test_error_message_creation(self):
         """Test creation of user-friendly error messages."""

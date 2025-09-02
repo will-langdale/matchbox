@@ -105,7 +105,7 @@ class TestEvaluationQueue:
         assert sample_items[2] in painted
         assert sample_items[1] not in painted
 
-    def test_submit_all_painted(self, queue, sample_items):
+    def test_submit_painted(self, queue, sample_items):
         """Test submitting painted items removes them from queue."""
         queue.add_items(sample_items)
 
@@ -114,12 +114,8 @@ class TestEvaluationQueue:
         sample_items[2].is_painted = True
 
         # Submit painted items
-        submitted = queue.submit_all_painted()
-
-        # Check submitted items
-        assert len(submitted) == 2
-        assert sample_items[0] in submitted
-        assert sample_items[2] in submitted
+        painted_items = queue.painted_items
+        queue.submit_painted(painted_items)
 
         # Check remaining queue
         assert queue.total_count == 1

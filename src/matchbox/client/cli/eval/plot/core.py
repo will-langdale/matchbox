@@ -222,15 +222,13 @@ def _deduplicate_recall_values(
             # Use threshold from first occurrence
             first_threshold = group[0][0]
 
-            deduplicated.append(
-                (
-                    first_threshold,
-                    avg_precision,
-                    recall,
-                    avg_p_ci,
-                    avg_r_ci,
-                )
-            )
+            deduplicated.append((
+                first_threshold,
+                avg_precision,
+                recall,
+                avg_p_ci,
+                avg_r_ci,
+            ))
 
     # Sort by recall to ensure strictly increasing sequence
     return sorted(deduplicated, key=lambda x: x[2])

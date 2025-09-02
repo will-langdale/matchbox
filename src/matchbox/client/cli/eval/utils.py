@@ -2,6 +2,7 @@
 
 import logging
 import warnings
+from contextlib import contextmanager
 from itertools import combinations
 from typing import Any
 
@@ -27,6 +28,22 @@ from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 from matchbox.common.logging import logger
 from matchbox.common.sources import SourceConfig
 from matchbox.common.transform import DisjointSet
+
+
+@contextmanager
+def temp_warehouse(warehouse: str | None):
+    """Temporarily set the default warehouse in settings."""
+    original_warehouse = getattr(settings, "default_warehouse", None)
+    if warehouse:
+        settings.default_warehouse = warehouse
+    try:
+        yield
+    finally:
+        if warehouse:
+            if original_warehouse:
+                settings.default_warehouse = original_warehouse
+            elif hasattr(settings, "default_warehouse"):
+                delattr(settings, "default_warehouse")
 
 
 class EvaluationItem(BaseModel):
@@ -138,15 +155,13 @@ def create_display_dataframe(
                     if value is not None:
                         str_value = str(value).strip()
                         if str_value:  # Only add non-empty strings
-                            rows.append(
-                                {
-                                    "field_name": unqualified_field,
-                                    "source_name": source_name,
-                                    "record_index": record_idx,
-                                    "value": str_value,
-                                    "leaf_id": leaf_id,
-                                }
-                            )
+                            rows.append({
+                                "field_name": unqualified_field,
+                                "source_name": source_name,
+                                "record_index": record_idx,
+                                "value": str_value,
+                                "leaf_id": leaf_id,
+                            })
 
     # Create DataFrame from collected rows
     if rows:
@@ -295,6 +310,7 @@ def get_samples(
     resolution: ModelResolutionName | None = None,
     clients: dict[str, Any] | None = None,
     use_default_client: bool = False,
+    default_client: Any | None = None,
 ) -> dict[int, EvaluationItem]:
     """Retrieve samples enriched with source data, grouped by resolution cluster.
 
@@ -308,6 +324,7 @@ def get_samples(
         use_default_client: Whether to use for all unset location clients
             a SQLAlchemy engine for the default warehouse set in the environment
             variable `MB__CLIENT__DEFAULT_WAREHOUSE`.
+        default_client: An existing client to use for the default warehouse.
 
     Returns:
         Dictionary of cluster ID to EvaluationItem with processed field data
@@ -322,76 +339,68 @@ def get_samples(
     if not clients:
         clients = {}
 
-    default_client = None
-    if use_default_client:
+    if use_default_client and not default_client:
         if default_clients_uri := settings.default_warehouse:
             default_client = create_engine(default_clients_uri)
             logger.warning("Using default engine")
         else:
             raise ValueError("`MB__CLIENT__DEFAULT_WAREHOUSE` is unset")
 
-    try:
-        samples: pl.DataFrame = pl.from_arrow(
-            _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+    samples: pl.DataFrame = pl.from_arrow(
+        _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+    )
+
+    if not len(samples):
+        return {}
+
+    results_by_source = []
+    source_configs = []
+    for source_resolution in samples["source"].unique():
+        source_config = _handler.get_source_config(source_resolution)
+        source_configs.append(source_config)
+        location_name = source_config.location.name
+        if location_name in clients:
+            source_config.location.add_client(client=clients[location_name])
+        elif default_client:
+            source_config.location.add_client(client=default_client)
+        else:
+            warnings.warn(
+                f"Skipping {source_resolution}, incompatible with given client.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+
+        samples_by_source = samples.filter(pl.col("source") == source_resolution)
+        keys_by_source = samples_by_source["key"].to_list()
+
+        source_data = pl.concat(
+            source_config.query(
+                batch_size=10_000, qualify_names=True, keys=keys_by_source
+            )
         )
 
-        if not len(samples):
-            return {}
+        samples_and_source = samples_by_source.join(
+            source_data, left_on="key", right_on=source_config.qualified_key
+        )
+        desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
+        results_by_source.append(samples_and_source[desired_columns])
 
-        results_by_source = []
-        source_configs = []
-        for source_resolution in samples["source"].unique():
-            source_config = _handler.get_source_config(source_resolution)
-            source_configs.append(source_config)
-            location_name = source_config.location.name
-            if location_name in clients:
-                source_config.location.add_client(client=clients[location_name])
-            elif default_client:
-                source_config.location.add_client(client=default_client)
-            else:
-                warnings.warn(
-                    f"Skipping {source_resolution}, incompatible with given client.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                continue
+    if not results_by_source:
+        return {}
 
-            samples_by_source = samples.filter(pl.col("source") == source_resolution)
-            keys_by_source = samples_by_source["key"].to_list()
+    all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
 
-            source_data = pl.concat(
-                source_config.query(
-                    batch_size=10_000, qualify_names=True, keys=keys_by_source
-                )
-            )
+    results_by_root = {}
+    for root in all_results["root"].unique():
+        cluster_df = all_results.filter(pl.col("root") == root).drop("root")
 
-            samples_and_source = samples_by_source.join(
-                source_data, left_on="key", right_on=source_config.qualified_key
-            )
-            desired_columns = ["root", "leaf", "key"] + source_config.qualified_fields
-            results_by_source.append(samples_and_source[desired_columns])
+        # Create EvaluationItem with deduplication
+        evaluation_item = create_evaluation_item(cluster_df, source_configs, int(root))
 
-        if not results_by_source:
-            return {}
+        results_by_root[int(root)] = evaluation_item
 
-        all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")
-
-        results_by_root = {}
-        for root in all_results["root"].unique():
-            cluster_df = all_results.filter(pl.col("root") == root).drop("root")
-
-            # Create EvaluationItem with deduplication
-            evaluation_item = create_evaluation_item(
-                cluster_df, source_configs, int(root)
-            )
-
-            results_by_root[int(root)] = evaluation_item
-
-        return results_by_root
-    finally:
-        # Always dispose of the default client if we created one
-        if default_client:
-            default_client.dispose()
+    return results_by_root
 
 
 class IncrementalState:
@@ -680,24 +689,22 @@ class EvalData:
 
             # Create leaf_id lookup tables
             logger.info("Creating lookup tables")
-            left_lookup = left_df.select(["id", "leaf_id"]).rename(
-                {"leaf_id": "left_leaf"}
-            )
-            right_lookup = right_df.select(["id", "leaf_id"]).rename(
-                {"leaf_id": "right_leaf"}
-            )
+            left_lookup = left_df.select(["id", "leaf_id"]).rename({
+                "leaf_id": "left_leaf"
+            })
+            right_lookup = right_df.select(["id", "leaf_id"]).rename({
+                "leaf_id": "right_leaf"
+            })
 
             # Join probabilities with leaf lookups to build root_leaf mapping
             logger.info("Building root_leaf mapping via joins")
             root_leaf_df = (
                 probs_df.join(left_lookup, left_on="left_id", right_on="id", how="left")
                 .join(right_lookup, left_on="right_id", right_on="id", how="left")
-                .select(
-                    [
-                        pl.col("left_leaf").alias("root"),
-                        pl.col("right_leaf").alias("leaf"),
-                    ]
-                )
+                .select([
+                    pl.col("left_leaf").alias("root"),
+                    pl.col("right_leaf").alias("leaf"),
+                ])
                 .unique()
             )
             logger.info(

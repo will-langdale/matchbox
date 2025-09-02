@@ -36,14 +36,12 @@ class TestComparisonDisplayTable:
         item.duplicate_groups = [[1], [2], [3]]
 
         # Create a simple test dataframe
-        item.display_dataframe = pl.DataFrame(
-            {
-                "field_name": ["name", "name", "address", "address"],
-                "leaf_id": [1, 2, 1, 3],
-                "value": ["Company A", "Company A", "123 Main St", "123 Main Street"],
-                "source_name": ["crn", "duns", "crn", "cdms"],
-            }
-        )
+        item.display_dataframe = pl.DataFrame({
+            "field_name": ["name", "name", "address", "address"],
+            "leaf_id": [1, 2, 1, 3],
+            "value": ["Company A", "Company A", "123 Main St", "123 Main Street"],
+            "source_name": ["crn", "duns", "crn", "cdms"],
+        })
 
         return item
 

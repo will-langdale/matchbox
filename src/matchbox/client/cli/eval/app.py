@@ -5,6 +5,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import create_engine
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Footer, Header
@@ -13,7 +14,7 @@ from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.cli.eval.handlers import EvaluationHandlers
 from matchbox.client.cli.eval.state import EvaluationState
-from matchbox.client.cli.eval.utils import EvalData, get_samples
+from matchbox.client.cli.eval.utils import EvalData, get_samples, temp_warehouse
 from matchbox.client.cli.eval.widgets.status import StatusBar
 from matchbox.client.cli.eval.widgets.table import ComparisonDisplayTable
 from matchbox.common.exceptions import MatchboxClientSettingsException
@@ -189,29 +190,25 @@ class EntityResolutionApp(App):
 
     async def _fetch_additional_samples(self, count: int) -> dict[int, Any] | None:
         """Fetch additional samples from the server."""
-        # Temporarily patch warehouse setting if provided
-        original_warehouse = None
-        if self.state.warehouse:
-            original_warehouse = getattr(settings, "default_warehouse", None)
-            settings.default_warehouse = self.state.warehouse
+        default_client = None
+        with temp_warehouse(self.state.warehouse):
+            try:
+                if self.state.warehouse:
+                    default_client = create_engine(self.state.warehouse)
 
-        try:
-            return get_samples(
-                n=count,
-                resolution=self.state.resolution,
-                user_id=self.state.user_id,
-                clients={},
-                use_default_client=True,
-            )
-        except Exception:  # noqa: BLE001
-            return None
-        finally:
-            # Restore original warehouse setting
-            if self.state.warehouse:
-                if original_warehouse:
-                    settings.default_warehouse = original_warehouse
-                elif hasattr(settings, "default_warehouse"):
-                    delattr(settings, "default_warehouse")
+                return get_samples(
+                    n=count,
+                    resolution=self.state.resolution,
+                    user_id=self.state.user_id,
+                    clients={},
+                    use_default_client=True,
+                    default_client=default_client,
+                )
+            except Exception:  # noqa: BLE001
+                return None
+            finally:
+                if default_client:
+                    default_client.dispose()
 
     async def action_quit(self) -> None:
         """Quit the application."""

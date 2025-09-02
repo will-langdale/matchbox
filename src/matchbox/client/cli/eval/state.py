@@ -53,14 +53,11 @@ class EvaluationQueue:
             self.items.appendleft(self.items.pop())
             self._position_offset = (self._position_offset - 1) % len(self.items)
 
-    def submit_all_painted(self) -> list[EvaluationItem]:
-        """Remove all painted items permanently."""
-        painted = self.painted_items
-        self.items = deque([item for item in self.items if not item.is_painted])
-        # Reset position offset if we removed items
-        if painted and self.items:
+    def submit_painted(self, painted_items: list[EvaluationItem]):
+        """Remove submitted painted items permanently."""
+        self.items = deque([item for item in self.items if item not in painted_items])
+        if painted_items and self.items:
             self._position_offset = 0
-        return painted
 
     def add_items(self, items: list[EvaluationItem]):
         """Add new items to the end of the queue."""

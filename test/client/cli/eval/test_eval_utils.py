@@ -33,19 +33,15 @@ class TestEvalData:
         judgements_data = []
         expansion_data = []
         for cluster_id in range(0, 50):  # Judge half the clusters
-            judgements_data.append(
-                {
-                    "shown": cluster_id,
-                    "endorsed": cluster_id,
-                    "user_id": 1,
-                }
-            )
-            expansion_data.append(
-                {
-                    "root": cluster_id,
-                    "leaves": list(range(cluster_id * 3, cluster_id * 3 + 3)),
-                }
-            )
+            judgements_data.append({
+                "shown": cluster_id,
+                "endorsed": cluster_id,
+                "user_id": 1,
+            })
+            expansion_data.append({
+                "root": cluster_id,
+                "leaves": list(range(cluster_id * 3, cluster_id * 3 + 3)),
+            })
 
         judgements = pa.Table.from_pylist(judgements_data)
         expansion = pa.Table.from_pylist(expansion_data)
@@ -53,13 +49,11 @@ class TestEvalData:
         # Create probabilities for different thresholds
         prob_data = []
         for i in range(0, 300, 2):  # Every other leaf pair
-            prob_data.append(
-                {
-                    "left_id": i,
-                    "right_id": i + 1,
-                    "probability": 50 + (i % 50),  # Vary from 50 to 99
-                }
-            )
+            prob_data.append({
+                "left_id": i,
+                "right_id": i + 1,
+                "probability": 50 + (i % 50),  # Vary from 50 to 99
+            })
         probabilities = pa.Table.from_pylist(prob_data)
 
         with patch(
@@ -123,12 +117,10 @@ class TestEvalData:
         )
 
         # Create mock root_leaf data
-        root_leaf_data = pa.table(
-            {
-                "root": pa.array([1, 1, 2]),
-                "leaf": pa.array([10, 11, 20]),
-            }
-        )
+        root_leaf_data = pa.table({
+            "root": pa.array([1, 1, 2]),
+            "leaf": pa.array([10, 11, 20]),
+        })
 
         # Mock the _handler.download_eval_data to return empty data
         with patch(
@@ -171,12 +163,10 @@ class TestEvalData:
         )
 
         # Create mock root_leaf data
-        root_leaf_data = pa.table(
-            {
-                "root": pa.array([1, 1]),
-                "leaf": pa.array([10, 11]),
-            }
-        )
+        root_leaf_data = pa.table({
+            "root": pa.array([1, 1]),
+            "leaf": pa.array([10, 11]),
+        })
 
         # Mock the _handler.download_eval_data
         with patch(
@@ -236,12 +226,10 @@ class TestEvalData:
             schema=SCHEMA_CLUSTER_EXPANSION,
         )
 
-        root_leaf_data = pa.table(
-            {
-                "root": pa.array([1, 1]),
-                "leaf": pa.array([10, 11]),
-            }
-        )
+        root_leaf_data = pa.table({
+            "root": pa.array([1, 1]),
+            "leaf": pa.array([10, 11]),
+        })
 
         with patch(
             "matchbox.client.cli.eval.utils._handler.download_eval_data"
@@ -311,12 +299,10 @@ class TestEvalData:
             schema=SCHEMA_CLUSTER_EXPANSION,
         )
 
-        root_leaf_data = pa.table(
-            {
-                "root": pa.array([1, 1]),
-                "leaf": pa.array([10, 11]),
-            }
-        )
+        root_leaf_data = pa.table({
+            "root": pa.array([1, 1]),
+            "leaf": pa.array([10, 11]),
+        })
 
         with patch(
             "matchbox.client.cli.eval.utils._handler.download_eval_data"
