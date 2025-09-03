@@ -212,7 +212,10 @@ def test_get_source_with_valid_location(
     )
 
     # Should succeed when location matches
-    result = get_source("test_source", location=testkit.source_config.location)
+    location = RelationalDBLocation(
+        name=testkit.source_config.location_config.name, client=sqlite_warehouse
+    )
+    result = get_source("test_source", location=location)
     assert result.name == "test_source"
 
 

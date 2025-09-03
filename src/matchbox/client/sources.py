@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from copy import deepcopy
 from functools import wraps
 from typing import (
     Any,
@@ -68,6 +69,16 @@ class Location(ABC):
         """Initialise location."""
         self.config = LocationConfig(type=self.location_type, name=name)
         self.client = client
+
+    def __deepcopy__(self, memo=None):
+        """Create a deep copy of the Location object."""
+        if memo is None:
+            memo = {}
+
+        # Both objects should share the same client
+        obj_copy = type(self)(name=deepcopy(self.config.name, memo), client=self.client)
+
+        return obj_copy
 
     @property
     @abstractmethod
@@ -318,6 +329,16 @@ class Source:
             key_field=typed_key_field,
             index_fields=typed_index_fields,
         )
+
+    def __hash__(self) -> int:
+        """Return a hash of the Source based on its config."""
+        return hash(self.config)
+
+    def __eq__(self, other: Any) -> bool:
+        """Check equality of two Source objects based on their config."""
+        if not isinstance(other, Source):
+            return False
+        return self.config == other.config
 
     def query(
         self,

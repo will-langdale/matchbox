@@ -450,8 +450,8 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         """Create a SourceConfigs instance from a CommonSource object."""
         return cls(
             resolution_id=resolution.resolution_id,
-            location_type=source_config.location.type,
-            location_name=str(source_config.location.name),
+            location_type=str(source_config.location_config.type),
+            location_name=str(source_config.location_config.name),
             extract_transform=source_config.extract_transform,
             key_field=SourceFields(
                 index=0,
@@ -473,7 +473,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         return CommonSourceConfig(
             name=self.name,
             location_config=LocationConfig(
-                type=self.location_name, name=self.location_name
+                type=self.location_type, name=self.location_name
             ),
             extract_transform=self.extract_transform,
             key_field=CommonSourceField(

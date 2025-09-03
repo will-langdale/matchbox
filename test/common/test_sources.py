@@ -16,7 +16,6 @@ from matchbox.client.sources import (
 )
 from matchbox.common.dtos import DataTypes, LocationType, SourceField
 from matchbox.common.exceptions import (
-    MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
 from matchbox.common.factories.sources import (
@@ -26,31 +25,6 @@ from matchbox.common.factories.sources import (
 )
 
 # Locations
-
-
-def test_location_empty_client_error():
-    """Test that operations requiring client fail when client is not set."""
-    location = RelationalDBLocation(
-        name="dbname", client=create_engine("sqlite:///:memory")
-    )
-
-    # Attempting to connect without client should raise an error
-    with pytest.raises(MatchboxSourceClientError):
-        location.connect()
-
-
-def test_location_serialisation(sqlite_warehouse: Engine):
-    """Test serialisation and deserialisation of Location objects."""
-    original = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
-
-    # Convert to dict and back - client should be excluded
-    location_dict = original.model_dump()
-    assert "client" not in location_dict
-
-    # Deserialize back to a Location
-    reconstructed = RelationalDBLocation.model_validate(location_dict)
-    assert reconstructed.type == original.type
-    assert reconstructed.client is None
 
 
 def test_relational_db_location_instantiation():
@@ -311,7 +285,7 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
     )
 
     assert source.config.key_field == SourceField(name="key", type=DataTypes.STRING)
-    assert len(source.index_fields) == 2
+    assert len(source.config.index_fields) == 2
 
     # This should work if the SQL is preserved exactly
     df = next(source.query())
@@ -352,7 +326,7 @@ def test_source_query(sqlite_warehouse: Engine):
     assert "name" in result.columns
 
     # Try applying key filter
-    key_subset = result[source.key_field.name][:2].to_list()
+    key_subset = result[source.config.key_field.name][:2].to_list()
     result = next(source.query(keys=key_subset))
     assert len(result) == 2
 
@@ -371,7 +345,6 @@ def test_source_query(sqlite_warehouse: Engine):
 @patch("matchbox.client.sources.RelationalDBLocation.execute")
 def test_source_query_name_qualification(
     mock_execute: Mock,
-    sqlite_warehouse: Engine,
     qualify_names: bool,
 ):
     """Test that column names are qualified when requested."""
@@ -386,9 +359,8 @@ def test_source_query_name_qualification(
         location=location,
         name="test_source",
         extract_transform="SELECT key, name FROM users",
-        infer_types=True,
-        key_field="key",
-        index_fields=["name"],
+        key_field=SourceField(name="key", type=DataTypes.STRING),
+        index_fields=[SourceField(name="name", type=DataTypes.STRING)],
     )
 
     # Call query with qualification parameter
@@ -437,9 +409,8 @@ def test_source_query_batching(
         location=location,
         name="test_source",
         extract_transform="SELECT key, name FROM users",
-        infer_types=True,
-        key_field="key",
-        index_fields=["name"],
+        key_field=SourceField(name="key", type=DataTypes.STRING),
+        index_fields=[SourceField(name="name", type=DataTypes.STRING)],
     )
 
     # Call query with batching parameters
@@ -500,7 +471,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     assert len(result) == n_true_entities
 
 
-@patch("matchbox.client.sources.SourceConfig.query")
+@patch("matchbox.client.sources.Source.query")
 def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: Engine):
     """Test hash_data raises an error when source primary keys contain nulls."""
     # Create a source
@@ -511,9 +482,8 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
         location=location,
         name="test_source",
         extract_transform="SELECT key, name FROM users",
-        infer_types=True,
-        key_field="key",
-        index_fields=["name"],
+        key_field=SourceField(name="key", type=DataTypes.STRING),
+        index_fields=[SourceField(name="name", type=DataTypes.STRING)],
     )
 
     # Mock query to return data with null keys

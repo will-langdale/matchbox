@@ -213,6 +213,8 @@ class LocationType(StrEnum):
 class LocationConfig(BaseModel):
     """Metadata for a location."""
 
+    model_config = ConfigDict(frozen=True)
+
     type: LocationType
     name: str
 

@@ -528,7 +528,9 @@ class TestMatchboxBackend:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
             crn_source_1 = crn_testkit.source_config.model_copy(
-                update={"location": LocationConfig(LocationType.RDBMS, name="postgres")}
+                update={
+                    "location": LocationConfig(type=LocationType.RDBMS, name="postgres")
+                }
             )
             crn_source_2 = crn_testkit.source_config.model_copy(
                 deep=True,

@@ -163,7 +163,7 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=selector.qualified_key,
+        left_on=selector.source.config.qualified_key,
         right_on="key",
         how="inner",
     )
@@ -173,7 +173,7 @@ def _process_query_result(
         base_fields = ["id"]
         if return_leaf_id:
             base_fields.append("leaf_id")
-        keep_cols = base_fields + selector.qualified_fields
+        keep_cols = base_fields + selector.source.config.qualified_fields
         match_cols = [col for col in joined_table.columns if col in keep_cols]
         return joined_table.select(match_cols)
     else:

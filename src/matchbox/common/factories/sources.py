@@ -230,18 +230,16 @@ class LinkedSourcesTestkit(BaseModel):
             ),
         )
 
-    def write_to_location(self, client: Any, set_client: bool = False) -> None:
+    def write_to_location(self, client: Any) -> None:
         """Write the data to the SourceConfig's location.
 
         The client isn't set in testkits, so it must be provided here.
 
         Args:
             client: Client to use for the location.
-            set_client: Whether to set the client on the SourceConfig.
-                Offered here for convenience as it's often the next step.
         """
         for source_testkit in self.sources.values():
-            source_testkit.write_to_location(client, set_client)
+            source_testkit.write_to_location(client)
 
 
 def generate_rows(
