@@ -1,5 +1,6 @@
 """Matchbox."""
 
+from contextlib import suppress
 from importlib.metadata import PackageNotFoundError, version
 
 from matchbox.common.exceptions import MatchboxClientSettingsException
@@ -13,8 +14,6 @@ except MatchboxClientSettingsException:
         "Impossible to initialise client. "
         "Please ignore if running in server mode. Otherwise, check your .env file.",
     )
-
-from contextlib import suppress
 
 with suppress(PackageNotFoundError):
     __version__ = version("matchbox-db")

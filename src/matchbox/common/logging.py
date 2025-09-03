@@ -41,7 +41,7 @@ def get_logging_plugins():
         for ep in importlib.metadata.entry_points(group="matchbox.logging"):
             try:
                 _PLUGINS.append(ep.load()())
-            except (ImportError, AttributeError, ValueError) as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to load logging plugin: {e}")
     return _PLUGINS
 
@@ -154,7 +154,7 @@ class ASIMFormatter(logging.Formatter):
                 if trace_id:
                     log_entry.update({"trace_id": trace_id, "span_id": span_id})
                 log_entry.update(plugin.get_metadata())
-            except (AttributeError, TypeError, ValueError) as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to get metadata from logging plugin: {e}")
 
         return json.dumps(log_entry)
