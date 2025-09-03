@@ -1,7 +1,8 @@
 """Functions to transform data between tabular and graph structures."""
 
 from collections import defaultdict
-from typing import Any, Callable, Generic, Hashable, Iterable, Self, TypeVar
+from collections.abc import Callable, Hashable, Iterable
+from typing import Any, Generic, Self, TypeVar
 
 import numpy as np
 import pyarrow as pa

@@ -6,7 +6,7 @@ import cProfile
 import io
 import pstats
 import uuid
-from typing import Generator
+from collections.abc import Generator
 
 import pyarrow as pa
 from adbc_driver_manager import ProgrammingError as ADBCProgrammingError
@@ -15,6 +15,7 @@ from pyarrow import Table as ArrowTable
 from sqlalchemy import Column, MetaData, Table, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeMeta
 from sqlalchemy.pool import PoolProxiedConnection
 from sqlalchemy.sql import Select
@@ -313,5 +314,5 @@ def ingest_to_temporary_table(
             with MBDB.get_session() as session:
                 temp_table.drop(session.bind, checkfirst=True)
                 session.commit()
-        except Exception as e:
+        except (SQLAlchemyError, AttributeError) as e:
             logger.warning(f"Failed to drop temp table {temp_table_name}: {e}")

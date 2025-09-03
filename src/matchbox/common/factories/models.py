@@ -2,9 +2,10 @@
 
 import warnings
 from collections import Counter
+from collections.abc import Hashable
 from functools import cache
 from textwrap import dedent
-from typing import Any, Hashable, Literal, TypeVar
+from typing import Any, Literal, TypeVar
 from unittest.mock import Mock, PropertyMock, create_autospec
 
 import numpy as np
@@ -490,9 +491,11 @@ def generate_entity_probabilities(
             for right_entity in right_group:
                 # For deduplication, only include each pair once
                 # and ensure left_id < right_id
-                if right_entities == left_entities:
-                    if left_entity.id >= right_entity.id:
-                        continue
+                if (
+                    right_entities == left_entities
+                    and left_entity.id >= right_entity.id
+                ):
+                    continue
 
                 # Generate random probability in range
                 prob = rng.integers(prob_min, prob_max + 1)

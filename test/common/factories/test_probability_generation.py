@@ -17,8 +17,10 @@ from matchbox.common.factories.models import (
     generate_entity_probabilities,
 )
 from matchbox.common.transform import DisjointSet
-
-from ..factories.test_entity_factory import make_cluster_entity, make_source_entity
+from test.common.factories.test_entity_factory import (
+    make_cluster_entity,
+    make_source_entity,
+)
 
 
 @pytest.mark.parametrize(

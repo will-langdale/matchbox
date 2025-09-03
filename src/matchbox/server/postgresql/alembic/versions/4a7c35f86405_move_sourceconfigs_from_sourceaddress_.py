@@ -8,7 +8,7 @@ Create Date: 2025-05-16 11:46:57.932236
 
 import hashlib
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op

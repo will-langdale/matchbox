@@ -1,6 +1,6 @@
 """Utilities for inserting data into the PostgreSQL backend."""
 
-from typing import Iterator
+from collections.abc import Iterator
 
 import polars as pl
 import pyarrow as pa

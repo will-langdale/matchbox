@@ -14,8 +14,7 @@ except MatchboxClientSettingsException:
         "Please ignore if running in server mode. Otherwise, check your .env file.",
     )
 
-try:
+from contextlib import suppress
+
+with suppress(PackageNotFoundError):
     __version__ = version("matchbox-db")
-except PackageNotFoundError:
-    # package is not installed
-    pass
