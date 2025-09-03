@@ -32,7 +32,7 @@ def test_query_no_resolution_ok_various_params(
         name="foo",
         engine=sqlite_warehouse,
     )
-    testkit.write_to_location(sqlite_warehouse, set_client=True)
+    testkit.write_to_location(sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
@@ -89,7 +89,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         name="foo",
         engine=sqlite_warehouse,
     )
-    testkit1.write_to_location(sqlite_warehouse, set_client=True)
+    testkit1.write_to_location(sqlite_warehouse)
 
     testkit2 = source_from_tuple(
         data_tuple=({"c": "val"}, {"c": "val"}),
@@ -97,7 +97,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         name="foo2",
         engine=sqlite_warehouse,
     )
-    testkit2.write_to_location(sqlite_warehouse, set_client=True)
+    testkit2.write_to_location(sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit1.source_config.name}").mock(
@@ -183,7 +183,7 @@ def test_query_combine_type(
         name="foo",
         engine=sqlite_warehouse,
     )
-    testkit1.write_to_location(sqlite_warehouse, set_client=True)
+    testkit1.write_to_location(sqlite_warehouse)
 
     testkit2 = source_from_tuple(
         data_tuple=({"col": "val1"}, {"col": "val2"}, {"col": "val3"}),
@@ -191,7 +191,7 @@ def test_query_combine_type(
         name="bar",
         engine=sqlite_warehouse,
     )
-    testkit2.write_to_location(sqlite_warehouse, set_client=True)
+    testkit2.write_to_location(sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit1.source_config.name}").mock(
@@ -259,7 +259,7 @@ def test_query_combine_type(
 
 def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     testkit = source_factory(engine=sqlite_warehouse, name="foo")
-    testkit.write_to_location(sqlite_warehouse, set_client=True)
+    testkit.write_to_location(sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
@@ -288,7 +288,7 @@ def test_query_empty_results_raises_exception(
 ):
     """Test that query raises MatchboxEmptyServerResponse when no data is returned."""
     testkit = source_factory(engine=sqlite_warehouse, name="foo")
-    testkit.write_to_location(sqlite_warehouse, set_client=True)
+    testkit.write_to_location(sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(

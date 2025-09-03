@@ -6,25 +6,22 @@ from typing import Any, Iterator, Literal, Self, get_args
 import duckdb
 import polars as pl
 from polars import DataFrame as PolarsDataFrame
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import create_engine
 from sqlglot import expressions, parse_one
 from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
+from matchbox.client.sources import Location, Source, location_type_to_class
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
+from matchbox.common.dtos import Match, SourceField
 from matchbox.common.graph import (
     DEFAULT_RESOLUTION,
     ResolutionName,
     SourceResolutionName,
 )
 from matchbox.common.logging import logger
-from matchbox.common.sources import (
-    Match,
-    SourceConfig,
-    SourceField,
-)
 
 
 class Selector(BaseModel):
@@ -32,31 +29,15 @@ class Selector(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source: SourceConfig
+    source: Source
     fields: list[SourceField]
-
-    @property
-    def qualified_key(self) -> str:
-        """Get the qualified key name for the selected source."""
-        return self.source.qualified_key
-
-    @property
-    def qualified_fields(self: Self) -> list[str]:
-        """Get the qualified field names for the selected fields."""
-        return self.source.f([field.name for field in self.fields])
-
-    @field_validator("source", mode="after")
-    @classmethod
-    def ensure_client(cls: type[Self], source: SourceConfig) -> SourceConfig:
-        """Ensure that the source has client set."""
-        if not source.location.client:
-            raise ValueError("Source client not set")
-        return source
 
     @model_validator(mode="after")
     def ensure_fields(self: Self) -> Self:
         """Ensure that the fields are valid."""
-        allowed_fields = set((self.source.key_field,) + self.source.index_fields)
+        allowed_fields = set(
+            (self.source.config.key_field,) + self.source.config.index_fields
+        )
         if set(self.fields) > allowed_fields:
             raise ValueError(
                 "Selected fields are not valid for the source. "
@@ -78,16 +59,30 @@ class Selector(BaseModel):
             client: The client to use for the source
             fields: A list of fields to select from the source
         """
-        source = _handler.get_source_config(name=name)
-        field_map = {f.name: f for f in set((source.key_field,) + source.index_fields)}
+        source_config = _handler.get_source_config(name=name)
+        field_map = {
+            f.name: f
+            for f in set((source_config.key_field,) + source_config.index_fields)
+        }
 
         # Handle field selection
         if fields:
             selected_fields = [field_map[f] for f in fields]
         else:
-            selected_fields = list(source.index_fields)  # Must actively select key
+            selected_fields = list(
+                source_config.index_fields
+            )  # Must actively select key
 
-        source.location.add_client(client=client)
+        LocClass: type[Location] = location_type_to_class(
+            source_config.location_config.type
+        )
+        source = Source(
+            LocClass(name=source_config.name, client=client),
+            name,
+            source_config.extract_transform,
+            source_config.key_field,
+            source_config.index_fields,
+        )
         return cls(source=source, fields=selected_fields)
 
 
@@ -202,7 +197,7 @@ def _process_selectors(
     for selector in selectors:
         mb_ids = pl.from_arrow(
             _handler.query(
-                source=selector.source.name,
+                source=selector.source.config.name,
                 resolution=resolution,
                 threshold=threshold,
                 return_leaf_id=return_leaf_id,

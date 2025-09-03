@@ -11,6 +11,7 @@ from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
 from matchbox.client.helpers import select
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.factories.sources import (
     FeatureConfig,
     LinkedSourcesTestkit,
@@ -18,7 +19,6 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     linked_sources_factory,
 )
-from matchbox.common.sources import RelationalDBLocation, SourceConfig
 
 
 @pytest.mark.docker
@@ -121,7 +121,7 @@ class TestE2EPipelineBuilder:
 
         # Setup - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
+            source_testkit.write_to_location(client=postgres_warehouse)
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -149,7 +149,7 @@ class TestE2EPipelineBuilder:
         batch_size = 1000
 
         # Create source configs
-        source_a_config = SourceConfig.new(
+        source_a_config = Source(
             location=dw_loc,
             name="source_a",
             extract_transform="""
@@ -160,11 +160,12 @@ class TestE2EPipelineBuilder:
                 from
                     source_a;
             """,
+            infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )
 
-        source_b_config = SourceConfig.new(
+        source_b_config = Source(
             location=dw_loc,
             name="source_b",
             extract_transform="""
@@ -175,6 +176,7 @@ class TestE2EPipelineBuilder:
                 from
                     source_b;
             """,
+            infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )

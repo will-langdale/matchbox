@@ -18,11 +18,11 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can perform the right call for matching."""
     # Set up mocks
     source_testkit = source_factory(engine=sqlite_warehouse, name="source")
-    source_testkit.write_to_location(sqlite_warehouse, set_client=True)
+    source_testkit.write_to_location(sqlite_warehouse)
     target1_testkit = source_factory(engine=sqlite_warehouse, name="target1")
-    target1_testkit.write_to_location(sqlite_warehouse, set_client=True)
+    target1_testkit.write_to_location(sqlite_warehouse)
     target2_testkit = source_factory(engine=sqlite_warehouse, name="target2")
-    target2_testkit.write_to_location(sqlite_warehouse, set_client=True)
+    target2_testkit.write_to_location(sqlite_warehouse)
 
     mock_match1 = Match(
         cluster=1,
@@ -157,9 +157,9 @@ def test_match_empty_results_raises_exception(
     """Test that match raises MatchboxEmptyServerResponse when no matches are found."""
     # Set up mocks
     source_testkit = source_factory(engine=sqlite_warehouse, name="source")
-    source_testkit.write_to_location(sqlite_warehouse, set_client=True)
+    source_testkit.write_to_location(sqlite_warehouse)
     target_testkit = source_factory(engine=sqlite_warehouse, name="target")
-    target_testkit.write_to_location(sqlite_warehouse, set_client=True)
+    target_testkit.write_to_location(sqlite_warehouse)
 
     # Mock empty match results
     matchbox_api.get("/match").mock(return_value=Response(200, content="[]"))

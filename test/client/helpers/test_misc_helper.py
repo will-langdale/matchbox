@@ -56,7 +56,7 @@ def test_select_default_engine(
         name="bar",
         engine=sqlite_warehouse,
     )
-    testkit.write_to_location(sqlite_warehouse, set_client=True)
+    testkit.write_to_location(sqlite_warehouse)
 
     # Mock API
     matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
@@ -81,7 +81,7 @@ def test_select_missing_client():
 def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """We can select specific columns from some of the sources"""
     linked = linked_sources_factory(engine=sqlite_warehouse)
-    linked.write_to_location(sqlite_warehouse, set_client=True)
+    linked.write_to_location(sqlite_warehouse)
 
     source1 = linked.sources["crn"].source_config
     source2 = linked.sources["cdms"].source_config

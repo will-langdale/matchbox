@@ -8,6 +8,7 @@ from matchbox.client import _handler
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
 from matchbox.client.eval import EvalData, compare_models, get_samples
 from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.eval import Judgement
 from matchbox.common.factories.sources import (
@@ -17,7 +18,6 @@ from matchbox.common.factories.sources import (
     SuffixRule,
     linked_sources_factory,
 )
-from matchbox.common.sources import RelationalDBLocation, SourceConfig
 
 
 @pytest.mark.docker
@@ -76,7 +76,7 @@ class TestE2EModelEvaluation:
 
         # Create tables in warehouse
         for source_testkit in linked_testkit.sources.values():
-            source_testkit.write_to_location(client=postgres_warehouse, set_client=True)
+            source_testkit.write_to_location(client=postgres_warehouse)
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})
@@ -86,7 +86,7 @@ class TestE2EModelEvaluation:
         dw_loc = RelationalDBLocation(name="postgres", client=postgres_warehouse)
         batch_size = 1000
 
-        source_a_config = SourceConfig.new(
+        source_a_config = Source(
             location=dw_loc,
             name="source_a",
             extract_transform="""
@@ -97,6 +97,7 @@ class TestE2EModelEvaluation:
                 from
                     source_a;
             """,
+            infer_types=True,
             key_field="id",
             index_fields=["company_name", "registration_id"],
         )

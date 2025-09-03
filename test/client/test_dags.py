@@ -16,8 +16,8 @@ from matchbox.client.dags import (
 from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.client.sources import Source
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.sources import SourceConfig
 
 
 def test_step_input_validation(sqlite_warehouse: Engine):
@@ -116,7 +116,7 @@ def test_step_input_combine_type_in_query(combine_type: str, sqlite_warehouse: E
         query_mock.return_value = pl.DataFrame({"id": [1, 2, 3]})
 
         foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse, set_client=True)
+        foo_testkit.write_to_location(sqlite_warehouse)
         foo = foo_testkit.source_config
         i_foo = IndexStep(source_config=foo)
 
@@ -192,7 +192,7 @@ def test_model_step_validation(sqlite_warehouse: Engine):
 
 
 @patch("matchbox.client.dags._handler.index")
-@patch.object(SourceConfig, "hash_data")
+@patch.object(Source, "hash_data")
 def test_index_step_run(
     hash_data: Mock, handler_index_mock: Mock, sqlite_warehouse: Engine
 ):
@@ -239,7 +239,7 @@ def test_dedupe_step_run(
 
         # Set up and run deduper
         foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse, set_client=True)
+        foo_testkit.write_to_location(sqlite_warehouse)
         foo = foo_testkit.source_config
 
         i_foo = IndexStep(source_config=foo)
@@ -315,11 +315,11 @@ def test_link_step_run(
 
         # Set up and run linker
         foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse, set_client=True)
+        foo_testkit.write_to_location(sqlite_warehouse)
         foo = foo_testkit.source_config
 
         bar_testkit = source_factory(name="bar", engine=sqlite_warehouse)
-        bar_testkit.write_to_location(sqlite_warehouse, set_client=True)
+        bar_testkit.write_to_location(sqlite_warehouse)
         bar = bar_testkit.source_config
 
         i_foo = IndexStep(source_config=foo)
@@ -389,7 +389,7 @@ def test_link_step_run(
 
 
 @patch("matchbox.client.dags._handler.index")
-@patch.object(SourceConfig, "hash_data")
+@patch.object(Source, "hash_data")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
 def test_dag_runs(

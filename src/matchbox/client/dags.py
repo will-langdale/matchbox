@@ -17,9 +17,10 @@ from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
 from matchbox.client.results import Results
+from matchbox.client.sources import RelationalDBLocation, Source
+from matchbox.common.dtos import SourceConfig, SourceField
 from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
-from matchbox.common.sources import RelationalDBLocation, SourceConfig, SourceField
 
 
 class DAGDebugOptions(BaseModel):
@@ -114,21 +115,17 @@ class StepInput(BaseModel):
 class IndexStep(Step):
     """Index step."""
 
-    source_config: SourceConfig
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    source: Source
     batch_size: int | None = Field(default=None)
 
     @model_validator(mode="before")
     @classmethod
     def source_to_attributes(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Convert source config to name and sources attributes."""
-        if "source_config" not in data:
-            raise ValueError("SourceConfig must be provided")
-
-        if not isinstance(data["source_config"], SourceConfig):
-            raise ValueError("SourceConfig must be of type SourceConfig")
-
-        data["name"] = str(data["source_config"].name)
-        data["sources"] = {str(data["source_config"].name)}
+        data["name"] = str(data["source"].config.name)
+        data["sources"] = {str(data["source"].config.name)}
         return data
 
     @property
@@ -138,8 +135,10 @@ class IndexStep(Step):
 
     def run(self) -> Table:
         """Run indexing step."""
-        data_hashes = self.source_config.hash_data(batch_size=self.batch_size)
-        _handler.index(source_config=self.source_config, data_hashes=data_hashes)
+        data_hashes = self.source.hash_data(batch_size=self.batch_size)
+        _handler.create_source(
+            source_config=self.source.config, data_hashes=data_hashes
+        )
 
         return data_hashes
 
@@ -310,17 +309,16 @@ class DAG:
             return inverse_graph, apex_nodes.pop()
 
     def add_sources(
-        self, *source_configs: SourceConfig, batch_size: int | None = None
+        self, *sources: Source, batch_size: int | None = None
     ) -> tuple[IndexStep]:
         """Add sources to DAG.
 
         Args:
-            source_configs: All sources to add.
+            sources: All sources to add.
             batch_size: Batch size for indexing.
         """
         index_steps = tuple(
-            IndexStep(source_config=source_config, batch_size=batch_size)
-            for source_config in source_configs
+            IndexStep(source=source, batch_size=batch_size) for source in sources
         )
         self.add_steps(*index_steps)
         return index_steps
@@ -487,12 +485,10 @@ class DAG:
                         if_table_exists="replace",
                     )
                 node = IndexStep(
-                    source_config=SourceConfig(
+                    source=Source(
                         location=debug_location,
                         name=step_name,
                         extract_transform=f"select * from {step_name}",
-                        key_field=node.source_config.key_field,
-                        index_fields=node.source_config.index_fields,
                     )
                 )
 
