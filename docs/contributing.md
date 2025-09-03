@@ -113,6 +113,15 @@ We have a VSCode default debugging profile called "API debug", which allows you 
 - Change the `MB__CLIENT__API_ROOT` variable to redirect tests to use the debug port (`8080`)
 - Disable time-outs by commenting out the `MB__CLIENT__TIMEOUT` variable
 
+## Releasing
+
+We first tag the commit in main we wish to release using [semantic versioning syntax](https://semver.org) (`vX.X.X`). 
+
+Once deploy GitHub Actions are successfully run, we then draft release notes and attach them to the tag.
+
+> [!CAUTION]
+> Releasing directly can currently cause race conditions in our deployment pipeline. We hope to resolve this soon.
+
 ## Standards
 
 ### Code

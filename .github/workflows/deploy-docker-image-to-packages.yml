@@ -3,8 +3,8 @@ name: Create and Publish the Matchbox Open-Source Docker Image
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
+    tags:
+      - "v*.*.*"
 
 env:
   REGISTRY: ghcr.io
