@@ -168,7 +168,7 @@ def get_backend_settings(
 ) -> type[MatchboxServerSettings]:
     """Get the appropriate settings class based on the backend type."""
     if backend_type == MatchboxBackends.POSTGRES:
-        from matchbox.server.postgresql import MatchboxPostgresSettings
+        from matchbox.server.postgresql import MatchboxPostgresSettings  # noqa: PLC0415
 
         return MatchboxPostgresSettings
     # Add more backend types here as needed
@@ -179,7 +179,7 @@ def get_backend_settings(
 def get_backend_class(backend_type: MatchboxBackends) -> type["MatchboxDBAdapter"]:
     """Get the appropriate backend class based on the backend type."""
     if backend_type == MatchboxBackends.POSTGRES:
-        from matchbox.server.postgresql import MatchboxPostgres
+        from matchbox.server.postgresql import MatchboxPostgres  # noqa: PLC0415
 
         return MatchboxPostgres
     # Add more backend types here as needed

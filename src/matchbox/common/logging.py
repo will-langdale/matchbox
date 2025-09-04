@@ -3,7 +3,7 @@
 import importlib.metadata
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import cached_property
 from typing import Any, Final, Literal, Protocol
 
@@ -41,8 +41,8 @@ def get_logging_plugins():
         for ep in importlib.metadata.entry_points(group="matchbox.logging"):
             try:
                 _PLUGINS.append(ep.load()())
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to load logging plugin: {e}")
     return _PLUGINS
 
 
@@ -137,7 +137,7 @@ class ASIMFormatter(logging.Formatter):
 
     def format(self, record):
         """Convert logs to JSON including basic ASIM fields."""
-        log_time = datetime.fromtimestamp(record.created, timezone.utc).isoformat()
+        log_time = datetime.fromtimestamp(record.created, UTC).isoformat()
         log_entry = {
             "EventCount": 1,
             "EventStartTime": log_time,
@@ -154,7 +154,7 @@ class ASIMFormatter(logging.Formatter):
                 if trace_id:
                     log_entry.update({"trace_id": trace_id, "span_id": span_id})
                 log_entry.update(plugin.get_metadata())
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to get metadata from logging plugin: {e}")
 
         return json.dumps(log_entry)

@@ -1,9 +1,10 @@
 """Factories for generating sources and linked source testkits for testing."""
 
 import warnings
+from collections.abc import Callable
 from functools import cache, wraps
 from itertools import product
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar
 from unittest.mock import Mock, create_autospec
 
 import pandas as pd

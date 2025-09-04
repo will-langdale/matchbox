@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from importlib.metadata import version
-from typing import Callable
 
 import httpx
 import pytest

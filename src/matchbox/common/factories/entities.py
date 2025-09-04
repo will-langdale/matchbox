@@ -474,9 +474,7 @@ def query_to_cluster_entities(
         A set of ClusterEntity objects
     """
     # Convert polars to pandas for compatibility with existing logic
-    if isinstance(query, pl.DataFrame):
-        query = query.to_pandas()
-    elif isinstance(query, pa.Table):
+    if isinstance(query, pl.DataFrame | pa.Table):
         query = query.to_pandas()
 
     must_have_fields = set(["id"] + list(keys.values()))

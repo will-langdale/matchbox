@@ -83,7 +83,7 @@ def encode_param_value(
 ) -> str | list[str]:
     if isinstance(v, str):
         return v
-    elif isinstance(v, (int, float)):
+    elif isinstance(v, int | float):
         return str(v)
     elif isinstance(v, bytes):
         return hash_to_base64(v)

@@ -1,6 +1,7 @@
 """Objects representing the results of running a model client-side."""
 
-from typing import TYPE_CHECKING, Any, Hashable, ParamSpec, TypeVar
+from collections.abc import Hashable
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 import polars as pl
 import pyarrow as pa

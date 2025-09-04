@@ -105,7 +105,12 @@ select = [
     "F",
     "I",
     "B",
-    "D"
+    "D",
+    "UP",
+    "TID",
+    "BLE",
+    "PLC",
+    "SIM"
 ]
 ignore = []
 fixable = ["ALL"]
