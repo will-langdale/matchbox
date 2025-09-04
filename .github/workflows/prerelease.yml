@@ -1,19 +1,15 @@
-name: Create and Publish the Matchbox Open-Source Docker Image
-
+name: Main merge
 on:
   push:
     branches: [main]
-    tags:
-      - "v*.*.*"
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-image:
+  build-and-push-development-image:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
@@ -26,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Log in to the Github "packages" Docker image registry
+      - name: Log in to GitHub packages Docker registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -36,8 +32,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Run uv to extract the version and set as an environment variable
-        run:  echo "MB_VERSION=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_ENV
+      - name: Extract development version
+        run: echo "MB_VERSION=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_ENV
 
       - name: Extract tag metadata for Docker
         id: meta
@@ -46,12 +42,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ env.MB_VERSION }}
-            type=raw,value=development,enable=${{ github.event_name == 'push' }}
-            type=raw,value=development,enable=${{ github.event_name == 'release' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=development
 
-      - name: Build and push Docker image (including version tag)
-        id: push
+      - name: Build and push development Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -59,5 +52,4 @@ jobs:
           push: true
           build-args: |
             MB_VERSION=${{ env.MB_VERSION }}
-          tags: |
-            ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags }}

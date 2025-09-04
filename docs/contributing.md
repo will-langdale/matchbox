@@ -115,12 +115,10 @@ We have a VSCode default debugging profile called "API debug", which allows you 
 
 ## Releasing
 
-We first tag the commit in main we wish to release using [semantic versioning syntax](https://semver.org) (`vX.X.X`). 
-
-Once deploy GitHub Actions are successfully run, we then draft release notes and attach them to the tag.
+We release using our Release GitHub Action using [semantic versioning syntax](https://semver.org) (`vX.X.X`). 
 
 > [!CAUTION]
-> Releasing directly can currently cause race conditions in our deployment pipeline. We hope to resolve this soon.
+> Do not release using GitHub's web mechanism. Artefacts will not build and deploy.
 
 ## Standards
 
