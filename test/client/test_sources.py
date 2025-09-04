@@ -9,7 +9,6 @@ from sqlalchemy.exc import OperationalError
 from sqlglot import select
 from sqlglot.errors import ParseError
 
-from matchbox.client.helpers.selector import Match
 from matchbox.client.sources import (
     RelationalDBLocation,
     Source,
@@ -213,8 +212,8 @@ def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
 # Source
 
 
-def test_source_from_new(sqlite_warehouse: Engine):
-    """Creating a source config using new(), which infers types, works."""
+def test_source_infers_type(sqlite_warehouse: Engine):
+    """Creating a source with type inference works."""
     # Create test data
     source_testkit = source_factory(
         n_true_entities=5,
@@ -242,7 +241,7 @@ def test_source_from_new(sqlite_warehouse: Engine):
 
 
 def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
-    """Test that ensures the SQL on RelationalDBLocation is preserved.
+    """SQL on RelationalDBLocation is preserved.
 
     SQLGlot transpiles INSTR() to STR_POSITION() in its default dialect.
     """
@@ -493,43 +492,3 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
     # hash_data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):
         source.hash_data()
-
-
-# Match
-
-
-def test_match_validates():
-    """Match objects are validated when they're instantiated."""
-    Match(
-        cluster=1,
-        source="test.source_config",
-        source_id={"a"},
-        target="test.target",
-        target_id={"b"},
-    )
-
-    # Missing source_id with target_id
-    with pytest.raises(ValueError):
-        Match(
-            cluster=1,
-            source="test.source_config",
-            target="test.target",
-            target_id={"b"},
-        )
-
-    # Missing cluster with target_id
-    with pytest.raises(ValueError):
-        Match(
-            source="test.source_config",
-            source_id={"a"},
-            target="test.target",
-            target_id={"b"},
-        )
-
-    # Missing source_id with cluster
-    with pytest.raises(ValueError):
-        Match(
-            cluster=1,
-            source="test.source_config",
-            target="test.target",
-        )

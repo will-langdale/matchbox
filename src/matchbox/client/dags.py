@@ -489,6 +489,8 @@ class DAG:
                         location=debug_location,
                         name=step_name,
                         extract_transform=f"select * from {step_name}",
+                        key_field=node.source.config.key_field,
+                        index_fields=node.source.config.index_fields,
                     )
                 )
 

@@ -3,7 +3,7 @@
 import warnings
 from functools import cache, wraps
 from itertools import product
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, Callable, ParamSpec, Self, TypeVar
 from unittest.mock import Mock, create_autospec
 
 import pandas as pd
@@ -131,7 +131,7 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["key"]], names=["id", "key"]
         )
 
-    def write_to_location(self, client: Any) -> None:
+    def write_to_location(self, client: Any | None = None) -> Self:
         """Write the data to the SourceConfig's location.
 
         The client isn't set in testkits, so it must be provided here.
@@ -139,11 +139,14 @@ class SourceTestkit(BaseModel):
         Args:
             client: Client to use for the location.
         """
+        client = client or self.source.location.client
         pl.from_arrow(self.data).write_database(
             table_name=self.source_config.name,
             connection=client,
             if_table_exists="replace",
         )
+
+        return self
 
 
 class LinkedSourcesTestkit(BaseModel):
@@ -822,7 +825,9 @@ def linked_sources_factory(
 
         # Create source config
         source = Source(
-            location=RelationalDBLocation(name=str(parameters.name), client=engine),
+            location=RelationalDBLocation(
+                name=str(parameters.name), client=parameters.engine
+            ),
             name=parameters.name,
             extract_transform=select(
                 cast(column(key_field.name), "string").as_(key_field.name),

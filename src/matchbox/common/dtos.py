@@ -328,8 +328,8 @@ class SourceConfig(BaseModel):
         return self.qualify_field(self.key_field.name)
 
     @property
-    def qualified_fields(self) -> list[str]:
-        """Get the qualified fields for the source."""
+    def qualified_index_fields(self) -> list[str]:
+        """Get the qualified index fields for the source."""
         return [self.qualify_field(field.name) for field in self.index_fields]
 
     def qualify_field(self, field: str) -> str:

@@ -13,7 +13,7 @@ from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
-from matchbox.client.sources import Location, Source, location_type_to_class
+from matchbox.client.sources import Source
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.dtos import Match, SourceField
 from matchbox.common.graph import (
@@ -73,16 +73,8 @@ class Selector(BaseModel):
                 source_config.index_fields
             )  # Must actively select key
 
-        LocClass: type[Location] = location_type_to_class(
-            source_config.location_config.type
-        )
-        source = Source(
-            LocClass(name=source_config.name, client=client),
-            name,
-            source_config.extract_transform,
-            source_config.key_field,
-            source_config.index_fields,
-        )
+        source = Source.from_config(config=source_config, client=client)
+
         return cls(source=source, fields=selected_fields)
 
 
@@ -173,7 +165,9 @@ def _process_query_result(
         base_fields = ["id"]
         if return_leaf_id:
             base_fields.append("leaf_id")
-        keep_cols = base_fields + selector.source.config.qualified_fields
+        keep_cols = base_fields + selector.source.f(
+            [field.name for field in selector.fields]
+        )
         match_cols = [col for col in joined_table.columns if col in keep_cols]
         return joined_table.select(match_cols)
     else:

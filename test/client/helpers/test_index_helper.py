@@ -159,11 +159,11 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
 
     # Spy on the hash_data method to verify batch_size
     with patch.object(
-        Source, "hash_data", wraps=source_testkit.mock_client_source.hash_data
+        Source, "hash_data", wraps=source_testkit.source.hash_data
     ) as spy_hash_data:
         # Call index with batch_size
         index(
-            source=source_testkit.mock_client_source,
+            source=source_testkit.source,
             batch_size=1,
         )
 
@@ -266,6 +266,8 @@ def test_get_source_validation_mismatch(
     )
 
     kwargs = {validation_param: validation_value}
+    if validation_param != "location":
+        kwargs["location"] = testkit.source.location
     with pytest.raises(ValueError, match=expected_error):
         get_source("test_source", **kwargs)
 
@@ -283,4 +285,4 @@ def test_get_source_404_error(matchbox_api: MockRouter):
     )
 
     with pytest.raises(MatchboxSourceNotFoundError, match="nonexistent"):
-        get_source("nonexistent")
+        get_source(name="nonexistent", location=RelationalDBLocation("", None))

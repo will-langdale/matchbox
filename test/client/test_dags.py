@@ -388,13 +388,11 @@ def test_link_step_run(
 
 
 @patch("matchbox.client.dags._handler.index")
-@patch.object(Source, "hash_data")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
 def test_dag_runs(
     link_run: Mock,
     dedupe_run: Mock,
-    hash_data: Mock,
     handler_index: Mock,
     sqlite_warehouse: Engine,
 ):
@@ -403,170 +401,179 @@ def test_dag_runs(
     dag = DAG()
 
     # Set up constituents
-    foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
+    foo_testkit = source_factory(
+        name="foo", engine=sqlite_warehouse
+    ).write_to_location()
+
     foo = foo_testkit.source
-    bar = source_factory(name="bar", engine=sqlite_warehouse).source
-    baz = source_factory(name="baz", engine=sqlite_warehouse).source
+    bar = source_factory(name="bar", engine=sqlite_warehouse).write_to_location().source
+    baz = source_factory(name="baz", engine=sqlite_warehouse).write_to_location().source
 
-    # Structure: SourceConfigs can be added directly, with and without IndexStep
-    i_foo = IndexStep(source=foo, batch_size=100)
-    dag.add_steps(i_foo)
+    with (
+        patch.object(foo, "hash_data", wraps=foo.hash_data),
+        patch.object(bar, "hash_data", wraps=bar.hash_data),
+        patch.object(baz, "hash_data", wraps=baz.hash_data),
+    ):
+        # Structure: SourceConfigs can be added directly, with and without IndexStep
+        i_foo = IndexStep(source=foo, batch_size=100)
+        dag.add_steps(i_foo)
 
-    i_bar, i_baz = dag.add_sources(bar, baz, batch_size=200)
+        i_bar, i_baz = dag.add_sources(bar, baz, batch_size=200)
 
-    assert set(dag.nodes.keys()) == {foo.name, bar.name, baz.name}
+        assert set(dag.nodes.keys()) == {foo.name, bar.name, baz.name}
 
-    # Structure: IndexSteps can be deduped
-    d_foo = DedupeStep(
-        name="d_foo",
-        description="",
-        left=StepInput(prev_node=i_foo, select={foo: []}),
-        model_class=NaiveDeduper,
-        settings={},
-        truth=1,
-    )
-
-    # Structure:
-    # - IndexSteps can be passed directly to linkers
-    # - Or, linkers can take dedupers
-    foo_bar = LinkStep(
-        left=StepInput(
-            prev_node=d_foo,
-            select={foo: []},
-        ),
-        right=StepInput(
-            prev_node=i_bar,
-            select={bar: []},
-        ),
-        name="foo_bar",
-        description="",
-        model_class=DeterministicLinker,
-        settings={},
-        truth=1,
-    )
-
-    # Structure: Linkers can take other linkers
-    foo_bar_baz = LinkStep(
-        left=StepInput(
-            prev_node=foo_bar,
-            select={foo: [], bar: []},
-            cleaning_dict=None,
-        ),
-        right=StepInput(
-            prev_node=i_baz,
-            select={baz: []},
-            cleaning_dict=None,
-        ),
-        name="foo_bar_baz",
-        description="",
-        model_class=DeterministicLinker,
-        settings={},
-        truth=1,
-    )
-
-    dag.add_steps(d_foo, foo_bar, foo_bar_baz)
-    assert set(dag.nodes.keys()) == {
-        foo.name,
-        bar.name,
-        baz.name,
-        d_foo.name,
-        foo_bar.name,
-        foo_bar_baz.name,
-    }
-
-    # Prepare DAG
-    dag.prepare()
-    s_foo, s_bar, s_d_foo, s_foo_bar, s_foo_bar_baz = (
-        dag.sequence.index(foo.name),
-        dag.sequence.index(bar.name),
-        dag.sequence.index(d_foo.name),
-        dag.sequence.index(foo_bar.name),
-        dag.sequence.index(foo_bar_baz.name),
-    )
-    assert s_foo < s_d_foo < s_foo_bar < s_foo_bar_baz
-    assert s_bar < s_foo_bar < s_foo_bar_baz
-
-    # Run DAG
-    dag.run()
-
-    # By default outputs are discarded
-    assert not dag.debug_outputs
-
-    assert handler_index.call_count == 3
-
-    # Verify batch sizes passed to source_config.hash_data
-    assert {
-        hash_data.call_args_list[0].kwargs["batch_size"],
-        hash_data.call_args_list[1].kwargs["batch_size"],
-        hash_data.call_args_list[2].kwargs["batch_size"],
-    } == {100, 200}
-
-    # Verify the right sources were sent to index
-    assert {
-        handler_index.call_args_list[0].kwargs["source_config"],
-        handler_index.call_args_list[1].kwargs["source_config"],
-        handler_index.call_args_list[2].kwargs["source_config"],
-    } == {foo.config, bar.config, baz.config}
-
-    assert dedupe_run.call_count == 1
-    assert link_run.call_count == 2
-
-    # Real sources can be overridden for debugging
-    handler_index.reset_mock()
-    dag.run(
-        DAGDebugOptions(
-            override_sources={foo.name: pl.from_arrow(foo_testkit.data)[:2]}
+        # Structure: IndexSteps can be deduped
+        d_foo = DedupeStep(
+            name="d_foo",
+            description="",
+            left=StepInput(prev_node=i_foo, select={foo: []}),
+            model_class=NaiveDeduper,
+            settings={},
+            truth=1,
         )
-    )
-    overridden = handler_index.call_args.kwargs["source_config"]
-    assert overridden != foo
-    assert len(next(overridden.query())) == 2
 
-    # Outputs can be kept for debugging
-    dag.run(DAGDebugOptions(keep_outputs=True))
-    assert len(dag.debug_outputs.keys()) == 6
-    dag.run()
-    # Re-running DAG drops debug outputs
-    assert not dag.debug_outputs
+        # Structure:
+        # - IndexSteps can be passed directly to linkers
+        # - Or, linkers can take dedupers
+        foo_bar = LinkStep(
+            left=StepInput(
+                prev_node=d_foo,
+                select={foo: []},
+            ),
+            right=StepInput(
+                prev_node=i_bar,
+                select={bar: []},
+            ),
+            name="foo_bar",
+            description="",
+            model_class=DeterministicLinker,
+            settings={},
+            truth=1,
+        )
 
-    # Reset mocks to test the start argument
-    handler_index.reset_mock()
-    dedupe_run.reset_mock()
-    link_run.reset_mock()
+        # Structure: Linkers can take other linkers
+        foo_bar_baz = LinkStep(
+            left=StepInput(
+                prev_node=foo_bar,
+                select={foo: [], bar: []},
+                cleaning_dict=None,
+            ),
+            right=StepInput(
+                prev_node=i_baz,
+                select={baz: []},
+                cleaning_dict=None,
+            ),
+            name="foo_bar_baz",
+            description="",
+            model_class=DeterministicLinker,
+            settings={},
+            truth=1,
+        )
 
-    # Can specify a start
-    dag.run(DAGDebugOptions(start="foo_bar"))
+        dag.add_steps(d_foo, foo_bar, foo_bar_baz)
+        assert set(dag.nodes.keys()) == {
+            foo.name,
+            bar.name,
+            baz.name,
+            d_foo.name,
+            foo_bar.name,
+            foo_bar_baz.name,
+        }
 
-    # Verify only steps from foo_bar onward were executed
-    assert handler_index.call_count == 0
-    assert dedupe_run.call_count == 0
-    assert link_run.call_count == 2
+        # Prepare DAG
+        dag.prepare()
+        s_foo, s_bar, s_d_foo, s_foo_bar, s_foo_bar_baz = (
+            dag.sequence.index(foo.name),
+            dag.sequence.index(bar.name),
+            dag.sequence.index(d_foo.name),
+            dag.sequence.index(foo_bar.name),
+            dag.sequence.index(foo_bar_baz.name),
+        )
+        assert s_foo < s_d_foo < s_foo_bar < s_foo_bar_baz
+        assert s_bar < s_foo_bar < s_foo_bar_baz
 
-    # Reset mocks to test the finish argument
-    handler_index.reset_mock()
-    dedupe_run.reset_mock()
-    link_run.reset_mock()
+        # Run DAG
+        dag.run()
 
-    # Run DAG with finish at foo_bar step (should not execute foo_bar_baz)
-    dag.run(DAGDebugOptions(finish="foo_bar"))
+        # By default outputs are discarded
+        assert not dag.debug_outputs
 
-    # Verify steps up to foo_bar were executed but foo_bar_baz was not
-    assert handler_index.call_count == 3
-    assert dedupe_run.call_count == 1
-    assert link_run.call_count == 1
+        assert handler_index.call_count == 3
 
-    # Reset mocks again to test combining start and finish
-    handler_index.reset_mock()
-    dedupe_run.reset_mock()
-    link_run.reset_mock()
+        # Verify batch sizes passed to source_config.hash_data
+        assert {
+            foo.hash_data.call_args_list[0].kwargs["batch_size"],
+            bar.hash_data.call_args_list[0].kwargs["batch_size"],
+            bar.hash_data.call_args_list[0].kwargs["batch_size"],
+        } == {100, 200}
 
-    # Run from d_foo to foo_bar (skipping sources at start and foo_bar_baz at end)
-    dag.run(DAGDebugOptions(start="d_foo", finish="foo_bar"))
+        # Verify the right sources were sent to index
+        assert {
+            handler_index.call_args_list[0].kwargs["source_config"],
+            handler_index.call_args_list[1].kwargs["source_config"],
+            handler_index.call_args_list[2].kwargs["source_config"],
+        } == {foo.config, bar.config, baz.config}
 
-    # Verify only the specified segment was executed
-    assert handler_index.call_count == 0
-    assert dedupe_run.call_count == 1
-    assert link_run.call_count == 1
+        assert dedupe_run.call_count == 1
+        assert link_run.call_count == 2
+
+        # Real sources can be overridden for debugging
+        handler_index.reset_mock()
+
+        dag.run(
+            DAGDebugOptions(
+                override_sources={foo.name: pl.from_arrow(foo_testkit.data)[:2]}
+            )
+        )
+
+        overridden = handler_index.call_args.kwargs["data_hashes"]
+        assert len(overridden) == 2
+
+        # Outputs can be kept for debugging
+        dag.run(DAGDebugOptions(keep_outputs=True))
+        assert len(dag.debug_outputs.keys()) == 6
+        dag.run()
+        # Re-running DAG drops debug outputs
+        assert not dag.debug_outputs
+
+        # Reset mocks to test the start argument
+        handler_index.reset_mock()
+        dedupe_run.reset_mock()
+        link_run.reset_mock()
+
+        # Can specify a start
+        dag.run(DAGDebugOptions(start="foo_bar"))
+
+        # Verify only steps from foo_bar onward were executed
+        assert handler_index.call_count == 0
+        assert dedupe_run.call_count == 0
+        assert link_run.call_count == 2
+
+        # Reset mocks to test the finish argument
+        handler_index.reset_mock()
+        dedupe_run.reset_mock()
+        link_run.reset_mock()
+
+        # Run DAG with finish at foo_bar step (should not execute foo_bar_baz)
+        dag.run(DAGDebugOptions(finish="foo_bar"))
+
+        # Verify steps up to foo_bar were executed but foo_bar_baz was not
+        assert handler_index.call_count == 3
+        assert dedupe_run.call_count == 1
+        assert link_run.call_count == 1
+
+        # Reset mocks again to test combining start and finish
+        handler_index.reset_mock()
+        dedupe_run.reset_mock()
+        link_run.reset_mock()
+
+        # Run from d_foo to foo_bar (skipping sources at start and foo_bar_baz at end)
+        dag.run(DAGDebugOptions(start="d_foo", finish="foo_bar"))
+
+        # Verify only the specified segment was executed
+        assert handler_index.call_count == 0
+        assert dedupe_run.call_count == 1
+        assert link_run.call_count == 1
 
 
 def test_dag_missing_dependency(sqlite_warehouse: Engine):

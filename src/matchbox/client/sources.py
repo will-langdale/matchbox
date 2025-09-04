@@ -11,6 +11,7 @@ from typing import (
     Iterable,
     Iterator,
     ParamSpec,
+    Self,
     TypeVar,
 )
 
@@ -137,6 +138,11 @@ class Location(ABC):
             AttributeError: If the cliet is not set.
         """
         ...
+
+    def from_config(config: LocationConfig, client: Any) -> Self:
+        """Initialise location from a location config and an appropriate client."""
+        LocClass = location_type_to_class(config.type)
+        return LocClass(name=config.name, client=client)
 
 
 class RelationalDBLocation(Location):
@@ -339,6 +345,17 @@ class Source:
         if not isinstance(other, Source):
             return False
         return self.config == other.config
+
+    @classmethod
+    def from_config(cls, config: SourceConfig, client: Any):
+        """Initialise source from SourceConfig and client."""
+        return cls(
+            location=Location.from_config(config.location_config, client=client),
+            name=config.name,
+            extract_transform=config.extract_transform,
+            key_field=config.key_field,
+            index_fields=config.index_fields,
+        )
 
     def query(
         self,
