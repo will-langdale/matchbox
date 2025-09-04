@@ -58,9 +58,9 @@ def backend_instance(request: pytest.FixtureRequest, backend: str):
 @pytest.mark.docker
 class TestMatchboxBackend:
     @pytest.fixture(autouse=True)
-    def setup(self, backend_instance: str, sqlite_warehouse: Engine):
+    def setup(self, backend_instance: str, postgres_warehouse: Engine):
         self.backend: MatchboxDBAdapter = backend_instance
-        self.scenario = partial(setup_scenario, warehouse=sqlite_warehouse)
+        self.scenario = partial(setup_scenario, warehouse=postgres_warehouse)
 
     def test_properties(self):
         """Test that properties obey their protocol restrictions."""

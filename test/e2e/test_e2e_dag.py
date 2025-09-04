@@ -115,7 +115,7 @@ class TestE2EPipelineBuilder:
 
         # Setup - Create tables in warehouse
         for source_testkit in self.linked_testkit.sources.values():
-            source_testkit.write_to_location(client=postgres_warehouse)
+            source_testkit.write_to_location()
 
         # Clear matchbox database before test
         response = matchbox_client.delete("/database", params={"certain": "true"})

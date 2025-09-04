@@ -79,7 +79,7 @@ def _testkitdag_to_location(client: Engine, dag: TestkitDAG) -> None:
     * Updates the client of all sources in the DAG
     """
     for source_testkit in dag.sources.values():
-        source_testkit.write_to_location(client=client)
+        source_testkit.write_to_location()
 
 
 # Scenario builders

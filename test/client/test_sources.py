@@ -108,8 +108,7 @@ def test_relational_db_infer_types(sqlite_warehouse: Engine):
         data_keys=["a", "b", "c"],
         name="source",
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     query = f"""
@@ -134,8 +133,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
 
     source_testkit = source_factory(
         features=features, n_true_entities=10, engine=sqlite_warehouse
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     sql = select("*").from_(source_testkit.name).sql()
@@ -185,8 +183,7 @@ def test_relational_db_execute_invalid(sqlite_warehouse: Engine):
 
 def test_relational_db_retrieval_and_transformation(sqlite_warehouse: Engine):
     """Test a more complete workflow with data retrieval and transformation."""
-    source_testkit = source_factory(engine=sqlite_warehouse)
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    source_testkit = source_factory(engine=sqlite_warehouse).write_to_location()
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
     # Execute a query with transformation
@@ -221,8 +218,7 @@ def test_source_infers_type(sqlite_warehouse: Engine):
             {"name": "name", "base_generator": "word", "datatype": DataTypes.STRING},
         ],
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
 
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = Source(
@@ -256,8 +252,7 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
             },
         ],
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
 
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
 
@@ -301,8 +296,7 @@ def test_source_query(sqlite_warehouse: Engine):
             {"name": "name", "base_generator": "word", "datatype": DataTypes.STRING},
         ],
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
 
     # Create location and source
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
@@ -443,8 +437,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
             },
         ],
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
 
     # Create location and source
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)

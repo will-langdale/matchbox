@@ -114,8 +114,9 @@ def test_step_input_combine_type_in_query(combine_type: str, sqlite_warehouse: E
     with patch("matchbox.client.dags.query") as query_mock:
         query_mock.return_value = pl.DataFrame({"id": [1, 2, 3]})
 
-        foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse)
+        foo_testkit = source_factory(
+            name="foo", engine=sqlite_warehouse
+        ).write_to_location()
         foo = foo_testkit.source
         i_foo = IndexStep(source=foo)
 
@@ -237,8 +238,9 @@ def test_dedupe_step_run(
         model_mock.run = Mock(return_value=results_mock)
 
         # Set up and run deduper
-        foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse)
+        foo_testkit = source_factory(
+            name="foo", engine=sqlite_warehouse
+        ).write_to_location()
         foo = foo_testkit.source
 
         i_foo = IndexStep(source=foo)
@@ -313,12 +315,14 @@ def test_link_step_run(
         model_mock.run = Mock(return_value=results_mock)
 
         # Set up and run linker
-        foo_testkit = source_factory(name="foo", engine=sqlite_warehouse)
-        foo_testkit.write_to_location(sqlite_warehouse)
+        foo_testkit = source_factory(
+            name="foo", engine=sqlite_warehouse
+        ).write_to_location()
         foo = foo_testkit.source
 
-        bar_testkit = source_factory(name="bar", engine=sqlite_warehouse)
-        bar_testkit.write_to_location(sqlite_warehouse)
+        bar_testkit = source_factory(
+            name="bar", engine=sqlite_warehouse
+        ).write_to_location()
         bar = bar_testkit.source
 
         i_foo = IndexStep(source=foo)

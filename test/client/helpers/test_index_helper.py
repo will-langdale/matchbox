@@ -29,8 +29,7 @@ def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     source_testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(sqlite_warehouse)
+    ).write_to_location()
 
     # Mock the initial source metadata upload
     source_route = matchbox_api.post("/sources").mock(
@@ -77,8 +76,7 @@ def test_index_upload_failure(matchbox_api: MockRouter, sqlite_warehouse: Engine
     source_testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(sqlite_warehouse)
+    ).write_to_location()
 
     # Mock successful source creation
     source_route = matchbox_api.post("/sources").mock(
@@ -129,8 +127,7 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
         data_keys=["1", "2"],
         name="test_companies",
         engine=sqlite_warehouse,
-    )
-    source_testkit.write_to_location(client=sqlite_warehouse)
+    ).write_to_location()
 
     # Mock the API endpoints
     source_route = matchbox_api.post("/sources").mock(
@@ -179,8 +176,9 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
 def test_get_source_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Test successful retrieval of source config."""
     # Create test source
-    testkit = source_factory(engine=sqlite_warehouse, name="test_source")
-    testkit.write_to_location(sqlite_warehouse)
+    testkit = source_factory(
+        engine=sqlite_warehouse, name="test_source"
+    ).write_to_location()
 
     # Mock API response
     matchbox_api.get("/sources/test_source").mock(
@@ -204,8 +202,9 @@ def test_get_source_with_valid_location(
     matchbox_api: MockRouter, sqlite_warehouse: Engine
 ):
     """Test get_source with matching location validation."""
-    testkit = source_factory(engine=sqlite_warehouse, name="test_source")
-    testkit.write_to_location(sqlite_warehouse)
+    testkit = source_factory(
+        engine=sqlite_warehouse, name="test_source"
+    ).write_to_location()
 
     matchbox_api.get("/sources/test_source").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
@@ -258,8 +257,9 @@ def test_get_source_validation_mismatch(
     sqlite_warehouse: Engine,
 ):
     """Test get_source raises error when validation parameters don't match."""
-    testkit = source_factory(engine=sqlite_warehouse, name="test_source")
-    testkit.write_to_location(sqlite_warehouse)
+    testkit = source_factory(
+        engine=sqlite_warehouse, name="test_source"
+    ).write_to_location()
 
     matchbox_api.get("/sources/test_source").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))

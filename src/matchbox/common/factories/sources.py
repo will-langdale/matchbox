@@ -131,18 +131,11 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["key"]], names=["id", "key"]
         )
 
-    def write_to_location(self, client: Any | None = None) -> Self:
-        """Write the data to the SourceConfig's location.
-
-        The client isn't set in testkits, so it must be provided here.
-
-        Args:
-            client: Client to use for the location.
-        """
-        client = client or self.source.location.client
+    def write_to_location(self) -> Self:
+        """Write the data to the SourceConfig's location."""
         pl.from_arrow(self.data).write_database(
             table_name=self.source_config.name,
-            connection=client,
+            connection=self.source.location.client,
             if_table_exists="replace",
         )
 
@@ -233,16 +226,12 @@ class LinkedSourcesTestkit(BaseModel):
             ),
         )
 
-    def write_to_location(self, client: Any) -> None:
-        """Write the data to the SourceConfig's location.
-
-        The client isn't set in testkits, so it must be provided here.
-
-        Args:
-            client: Client to use for the location.
-        """
+    def write_to_location(self) -> Self:
+        """Write the data to the SourceConfig's location."""
         for source_testkit in self.sources.values():
-            source_testkit.write_to_location(client)
+            source_testkit.write_to_location()
+
+        return self
 
 
 def generate_rows(
