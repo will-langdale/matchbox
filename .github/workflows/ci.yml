@@ -82,7 +82,7 @@ jobs:
             trufflesecurity/trufflehog:latest \
             git file:///repo \
             --since-commit main \
-            --branch $(git branch --show-current) \
+            --branch ${{ github.head_ref }} \
             --github-actions \
             --fail
 
@@ -143,7 +143,9 @@ jobs:
   ci-success:
     needs: [format-and-lint, test, scan-for-secrets, build-docs, build-package]
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+    
     steps:
       - name: CI success
         run: echo "All CI checks passed!"
