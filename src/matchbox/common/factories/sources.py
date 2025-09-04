@@ -131,8 +131,15 @@ class SourceTestkit(BaseModel):
             [self.data["id"], self.data["key"]], names=["id", "key"]
         )
 
-    def write_to_location(self) -> Self:
-        """Write the data to the SourceConfig's location."""
+    def write_to_location(self, set_client: Any | None = None) -> Self:
+        """Write the data to the SourceConfig's location.
+
+        Args:
+            set_client: client to replace existing source client
+        """
+        if set_client:
+            self.source.location.client = set_client
+
         pl.from_arrow(self.data).write_database(
             table_name=self.source_config.name,
             connection=self.source.location.client,
