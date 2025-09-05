@@ -276,7 +276,7 @@ def index(source_config: SourceConfig, data_hashes: Table) -> UploadStatus:
     logger.debug("Uploading metadata", prefix=log_prefix)
 
     metadata_res = CLIENT.post(
-        "/resolution", json=source_config.model_dump(mode="json")
+        "/resolutions", json=source_config.model_dump(mode="json")
     )
 
     upload = UploadStatus.model_validate(metadata_res.json())
@@ -312,7 +312,7 @@ def get_source_config(name: SourceResolutionName) -> SourceConfig:
     log_prefix = f"SourceConfig {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolution/{name}")
+    res = CLIENT.get(f"/resolutions/{name}")
 
     return SourceConfig.model_validate(res.json())
 
@@ -322,7 +322,7 @@ def get_resolution_source_configs(name: ModelResolutionName) -> list[SourceConfi
     log_prefix = f"Resolution {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolution/{name}/sources")
+    res = CLIENT.get(f"/resolutions/{name}/sources")
 
     return [SourceConfig.model_validate(s) for s in res.json()]
 
@@ -348,7 +348,7 @@ def create_resolution(
     log_prefix = f"Resolution {resolution.name}"
     logger.debug("Creating", prefix=log_prefix)
 
-    res = CLIENT.post("/resolution", json=resolution.model_dump())
+    res = CLIENT.post("/resolutions", json=resolution.model_dump())
     if isinstance(resolution, SourceConfig):
         return UploadStatus.model_validate(res.json())
     return ResolutionOperationStatus.model_validate(res.json())
@@ -361,7 +361,7 @@ def get_resolution(name: ResolutionName) -> Union[ModelConfig, SourceConfig, Non
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     try:
-        res = CLIENT.get(f"/resolution/{name}")
+        res = CLIENT.get(f"/resolutions/{name}")
         if res.json().get("resolution_type") == "model":
             return ModelConfig.model_validate(res.json())
         return SourceConfig.model_validate(res.json())
@@ -378,7 +378,7 @@ def set_results(name: ModelResolutionName, results: Table) -> UploadStatus:
     buffer = table_to_buffer(table=results)
 
     # Initialise upload
-    metadata_res = CLIENT.post(f"/resolution/{name}/results")
+    metadata_res = CLIENT.post(f"/resolutions/{name}/results")
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -414,7 +414,7 @@ def get_results(name: ModelResolutionName) -> Table:
     log_prefix = f"Model {name}"
     logger.debug("Retrieving results", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolution/{name}/results")
+    res = CLIENT.get(f"/resolutions/{name}/results")
     buffer = BytesIO(res.content)
     return read_table(buffer)
 
@@ -425,7 +425,7 @@ def set_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatu
     log_prefix = f"Model {name}"
     logger.debug("Setting truth value", prefix=log_prefix)
 
-    res = CLIENT.patch(f"/resolution/{name}/truth", json=truth)
+    res = CLIENT.patch(f"/resolutions/{name}/truth", json=truth)
     return ResolutionOperationStatus.model_validate(res.json())
 
 
@@ -435,7 +435,7 @@ def get_truth(name: ModelResolutionName) -> int:
     log_prefix = f"Model {name}"
     logger.debug("Retrieving truth value", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolution/{name}/truth")
+    res = CLIENT.get(f"/resolutions/{name}/truth")
     return res.json()
 
 
@@ -447,7 +447,7 @@ def delete_resolution(
     log_prefix = f"Model {name}"
     logger.debug("Deleting", prefix=log_prefix)
 
-    res = CLIENT.delete(f"/resolution/{name}", params={"certain": certain})
+    res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
     return ResolutionOperationStatus.model_validate(res.json())
 
 

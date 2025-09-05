@@ -27,7 +27,7 @@ from matchbox.server.api.dependencies import (
     authorisation_dependencies,
 )
 
-router = APIRouter(prefix="/resolution", tags=["resolution"])
+router = APIRouter(prefix="/resolutions", tags=["resolution"])
 
 
 @router.post(

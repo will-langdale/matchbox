@@ -58,7 +58,7 @@ def test_select_default_engine(
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/resolution/{testkit.source_config.name}").mock(
+    matchbox_api.get(f"/resolutions/{testkit.source_config.name}").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 
@@ -85,10 +85,10 @@ def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     source2 = linked.sources["cdms"].source_config
 
     # Mock API
-    matchbox_api.get(f"/resolution/{source1.name}").mock(
+    matchbox_api.get(f"/resolutions/{source1.name}").mock(
         return_value=Response(200, json=source1.model_dump(mode="json"))
     )
-    matchbox_api.get(f"/resolution/{source2.name}").mock(
+    matchbox_api.get(f"/resolutions/{source2.name}").mock(
         return_value=Response(200, json=source2.model_dump(mode="json"))
     )
 
@@ -105,7 +105,7 @@ def test_select_mixed_style(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 def test_select_404_source_get(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Handles source 404 error when retrieving source."""
     # Mock API
-    matchbox_api.get("/resolution/foo").mock(
+    matchbox_api.get("/resolutions/foo").mock(
         return_value=Response(
             404,
             json=NotFoundError(
