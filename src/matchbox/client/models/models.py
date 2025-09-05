@@ -8,7 +8,7 @@ from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelAncestor, ModelConfig, ModelType
+from matchbox.common.dtos import ModelConfig, ModelType
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.graph import ModelResolutionName, ResolutionName
 from matchbox.common.logging import logger
@@ -35,73 +35,47 @@ class Model:
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        if model_config := _handler.get_model(name=self.model_config.name):
-            if model_config != self.model_config:
+        if resolution := _handler.get_resolution(name=self.model_config.name):
+            if resolution != self.model_config:
                 raise ValueError(
-                    f"Model {self.model_config.name} already exists with "
-                    "different configuration. Please delete the existing model "
-                    "or use a different name. "
+                    f"Resolution {self.model_config.name} already exists with "
+                    "different source or model configuration. Please delete the "
+                    "existing resolution or use a different name. "
                 )
-            log_prefix = f"Model {model_config.name}"
+            log_prefix = f"Resolution {resolution.name}"
             logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.insert_model(model_config=self.model_config)
+            _handler.create_resolution(resolution=self.model_config)
 
     @property
     def results(self) -> Results:
         """Retrieve results associated with the model from the database."""
-        results = _handler.get_model_results(name=self.model_config.name)
+        results = _handler.get_results(name=self.model_config.name)
         return Results(probabilities=results, metadata=self.model_config)
 
     @results.setter
     def results(self, results: Results) -> None:
         """Write results associated with the model to the database."""
         if results.probabilities.shape[0] > 0:
-            _handler.add_model_results(
+            _handler.set_results(
                 name=self.model_config.name, results=results.probabilities
             )
 
     @property
-    def truth(self) -> float:
-        """Retrieve the truth threshold for the model."""
-        truth = _handler.get_model_truth(name=self.model_config.name)
-        return _truth_int_to_float(truth)
+    def truth(self) -> float | None:
+        """Returns the truth threshold for the model."""
+        if self.model_config.truth is not None:
+            return _truth_int_to_float(self.model_config.truth)
+        return None
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        _handler.set_model_truth(
-            name=self.model_config.name, truth=_truth_float_to_int(truth)
-        )
-
-    @property
-    def ancestors(self) -> dict[str, float]:
-        """Retrieve the ancestors of the model."""
-        return {
-            ancestor.name: _truth_int_to_float(ancestor.truth)
-            for ancestor in _handler.get_model_ancestors(name=self.model_config.name)
-        }
-
-    @property
-    def ancestors_cache(self) -> dict[str, float]:
-        """Retrieve the ancestors cache of the model."""
-        return {
-            ancestor.name: _truth_int_to_float(ancestor.truth)
-            for ancestor in _handler.get_model_ancestors_cache(
-                name=self.model_config.name
-            )
-        }
-
-    @ancestors_cache.setter
-    def ancestors_cache(self, ancestors_cache: dict[str, float]) -> None:
-        """Set the ancestors cache of the model."""
-        _handler.set_model_ancestors_cache(
-            name=self.model_config.name,
-            ancestors=[
-                ModelAncestor(name=k, truth=_truth_float_to_int(v))
-                for k, v in ancestors_cache.items()
-            ],
-        )
+        int_truth = _truth_float_to_int(truth)
+        # Update the config
+        self.model_config = self.model_config.model_copy(update={"truth": int_truth})
+        # Also update the backend
+        _handler.set_truth(name=self.model_config.name, truth=int_truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
@@ -127,6 +101,16 @@ class Model:
             model=self,
             metadata=self.model_config,
         )
+
+    @property
+    def name(self) -> str:
+        """Returns name of the model."""
+        return self.model_config.name
+
+    @property
+    def description(self) -> str | None:
+        """Returns description of the model."""
+        return self.model_config.description
 
 
 def make_model(
@@ -173,7 +157,7 @@ def make_model(
     metadata = ModelConfig(
         name=name,
         description=description,
-        type=model_type.value,
+        type=model_type,
         left_resolution=left_resolution,
         right_resolution=right_resolution,
     )

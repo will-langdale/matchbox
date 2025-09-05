@@ -5,7 +5,7 @@ import textwrap
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Self
+from typing import Literal, Self
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -244,6 +244,10 @@ class SourceConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    resolution_type: Literal["source"] = Field(
+        default="source",
+        description="The type of resolution. Always 'source' for this model.",
+    )
     location_config: LocationConfig = Field(
         description=(
             "The location of the source. Used to run the extract/tansform logic."
@@ -254,6 +258,12 @@ class SourceConfig(BaseModel):
             "A unique, human-readable name of the source resolution this "
             "object configures."
         )
+    )
+    description: str | None = Field(
+        default=None, description="A description of the source."
+    )
+    truth: int | None = Field(
+        default=None, description="Truth threshold value", ge=0, le=100, strict=True
     )
     extract_transform: str = Field(
         description=(
@@ -306,6 +316,14 @@ class SourceConfig(BaseModel):
             raise ValueError("Source names must be alphanumeric and underscore only. ")
         return value
 
+    @field_validator("description", mode="after")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        """Ensure the description is not empty if provided."""
+        if value is not None and not value.strip():
+            raise ValueError("Description cannot be empty if provided.")
+        return value
+
     @model_validator(mode="after")
     def validate_key_field(self) -> Self:
         """Ensure that the key field is a string and not in the index fields."""
@@ -348,11 +366,28 @@ class SourceConfig(BaseModel):
 class ModelConfig(BaseModel):
     """Metadata for a model."""
 
+    resolution_type: Literal["model"] = Field(
+        default="model",
+        description="The type of resolution. Always 'model' for this model.",
+    )
     name: ModelResolutionName
-    description: str
+    description: str | None = Field(
+        default=None, description="A description of the model."
+    )
+    truth: int | None = Field(
+        default=None, description="Truth threshold value", ge=0, le=100, strict=True
+    )
     type: ModelType
     left_resolution: ResolutionName
     right_resolution: ResolutionName | None = None  # Only used for linker models
+
+    @field_validator("description", mode="after")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        """Ensure the description is not empty if provided."""
+        if value is not None and not value.strip():
+            raise ValueError("Description cannot be empty if provided.")
+        return value
 
     def __eq__(self, other: "ModelConfig") -> bool:
         """Check equality of model configurations.
@@ -364,6 +399,7 @@ class ModelConfig(BaseModel):
         return (
             self.name == other.name
             and self.description == other.description
+            and self.truth == other.truth
             and self.type == other.type
             and {self.left_resolution, self.right_resolution}
             == {other.left_resolution, other.right_resolution}

@@ -32,7 +32,7 @@ def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     ).write_to_location()
 
     # Mock the initial source metadata upload
-    source_route = matchbox_api.post("/sources").mock(
+    source_route = matchbox_api.post("/resolutions").mock(
         return_value=Response(
             202,
             content=UploadStatus(
@@ -79,7 +79,7 @@ def test_index_upload_failure(matchbox_api: MockRouter, sqlite_warehouse: Engine
     ).write_to_location()
 
     # Mock successful source creation
-    source_route = matchbox_api.post("/sources").mock(
+    source_route = matchbox_api.post("/resolutions").mock(
         return_value=Response(
             202,
             content=UploadStatus(
@@ -130,7 +130,7 @@ def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engin
     ).write_to_location()
 
     # Mock the API endpoints
-    source_route = matchbox_api.post("/sources").mock(
+    source_route = matchbox_api.post("/resolutions").mock(
         return_value=Response(
             202,
             content=UploadStatus(
@@ -181,7 +181,7 @@ def test_get_source_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     ).write_to_location()
 
     # Mock API response
-    matchbox_api.get("/sources/test_source").mock(
+    matchbox_api.get("/resolutions/test_source").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 
@@ -206,7 +206,7 @@ def test_get_source_with_valid_location(
         engine=sqlite_warehouse, name="test_source"
     ).write_to_location()
 
-    matchbox_api.get("/sources/test_source").mock(
+    matchbox_api.get("/resolutions/test_source").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 
@@ -261,7 +261,7 @@ def test_get_source_validation_mismatch(
         engine=sqlite_warehouse, name="test_source"
     ).write_to_location()
 
-    matchbox_api.get("/sources/test_source").mock(
+    matchbox_api.get("/resolutions/test_source").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 
@@ -274,7 +274,7 @@ def test_get_source_validation_mismatch(
 
 def test_get_source_404_error(matchbox_api: MockRouter):
     """Test get_source handles 404 source not found error."""
-    matchbox_api.get("/sources/nonexistent").mock(
+    matchbox_api.get("/resolutions/nonexistent").mock(
         return_value=Response(
             404,
             json=NotFoundError(

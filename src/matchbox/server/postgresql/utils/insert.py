@@ -60,6 +60,8 @@ def insert_source(
             # Create new resolution without content hash
             resolution = Resolutions(
                 name=source_config.name,
+                description=source_config.description,
+                truth=source_config.truth,
                 hash=None,
                 type=ResolutionNodeType.SOURCE.value,
             )

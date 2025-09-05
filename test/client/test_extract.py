@@ -34,6 +34,8 @@ def test_key_field_map(
         data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
     ).write_to_location()
 
+    resolution_name: str = "companies"
+
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
     expected_foo_bar_mapping = pl.DataFrame(
         [
@@ -48,7 +50,7 @@ def test_key_field_map(
     expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
 
     # Mock API
-    matchbox_api.get("/sources").mock(
+    matchbox_api.get(f"/resolutions/{resolution_name}/sources").mock(
         return_value=Response(
             200,
             json=[
@@ -92,14 +94,14 @@ def test_key_field_map(
 
     # Case 0: No sources are found
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_field_map(resolution="companies", source_filter=["nonexistent"])
+        key_field_map(resolution=resolution_name, source_filter=["nonexistent"])
 
     with pytest.raises(MatchboxSourceNotFoundError):
-        key_field_map(resolution="companies", location_names=["nonexistent"])
+        key_field_map(resolution=resolution_name, location_names=["nonexistent"])
 
     # Case 1: Retrieve single table
     # With URI filter
-    foo_mapping = key_field_map(resolution="companies", location_names=["sqlite"])
+    foo_mapping = key_field_map(resolution=resolution_name, location_names=["sqlite"])
 
     assert_frame_equal(
         pl.from_arrow(foo_mapping),
@@ -109,7 +111,7 @@ def test_key_field_map(
     )
 
     # With source filter
-    foo_mapping = key_field_map(resolution="companies", source_filter="foo")
+    foo_mapping = key_field_map(resolution=resolution_name, source_filter="foo")
 
     assert_frame_equal(
         pl.from_arrow(foo_mapping),
@@ -120,7 +122,7 @@ def test_key_field_map(
 
     # With both filters
     foo_mapping = key_field_map(
-        resolution="companies",
+        resolution=resolution_name,
         source_filter="foo",
         location_names="sqlite",
     )
@@ -134,7 +136,7 @@ def test_key_field_map(
 
     # Case 2: Retrieve multiple tables
     # With no filter
-    foo_bar_mapping = key_field_map(resolution="companies")
+    foo_bar_mapping = key_field_map(resolution=resolution_name)
 
     assert_frame_equal(
         pl.from_arrow(foo_bar_mapping),
@@ -145,7 +147,7 @@ def test_key_field_map(
 
     # With source filter
     foo_bar_mapping = key_field_map(
-        resolution="companies", source_filter=["foo", "bar"]
+        resolution=resolution_name, source_filter=["foo", "bar"]
     )
 
     assert_frame_equal(
