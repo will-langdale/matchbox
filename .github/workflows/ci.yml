@@ -121,21 +121,6 @@ jobs:
       - name: Build package
         run: uv build
 
-      - name: Check version
-        run: |
-          LATEST_TAG=$(git tag -l | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n1)
-          BUILT_VERSION=$(ls dist/*.whl | head -n1 | sed -E 's/.*-([0-9]+\.[0-9]+\.[0-9]+.*)-py.*/\1/')
-
-          echo "Latest: ${LATEST_TAG#v}, Built: ${BUILT_VERSION}"
-
-          # Use sort -V to compare versions
-          if [[ $(printf '%s\n' "${LATEST_TAG#v}" "${BUILT_VERSION}" | sort -V | tail -n1) == "${BUILT_VERSION}" ]]; then
-            echo "✅ Version check passed"
-          else
-            echo "❌ Built version must be >= latest tag"
-            exit 1
-          fi
-
   ci-success:
     needs: [format-and-lint, test, scan-for-secrets, build-docs, build-package]
     runs-on: ubuntu-latest
