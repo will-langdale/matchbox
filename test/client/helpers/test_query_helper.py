@@ -34,7 +34,7 @@ def test_query_no_resolution_ok_various_params(
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit.source_config.name}").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 
@@ -97,11 +97,11 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/sources/{testkit1.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit1.source_config.name}").mock(
         return_value=Response(200, json=testkit1.source_config.model_dump(mode="json"))
     )
 
-    matchbox_api.get(f"/sources/{testkit2.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit2.source_config.name}").mock(
         return_value=Response(200, json=testkit2.source_config.model_dump(mode="json"))
     )
 
@@ -189,11 +189,11 @@ def test_query_combine_type(
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/sources/{testkit1.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit1.source_config.name}").mock(
         return_value=Response(200, json=testkit1.source_config.model_dump(mode="json"))
     )
 
-    matchbox_api.get(f"/sources/{testkit2.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit2.source_config.name}").mock(
         return_value=Response(200, json=testkit2.source_config.model_dump(mode="json"))
     )
 
@@ -256,7 +256,7 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
     testkit = source_factory(engine=sqlite_warehouse, name="foo").write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit.source_config.name}").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 
@@ -284,7 +284,7 @@ def test_query_empty_results_raises_exception(
     testkit = source_factory(engine=sqlite_warehouse, name="foo").write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/sources/{testkit.source_config.name}").mock(
+    matchbox_api.get(f"/resolution/{testkit.source_config.name}").mock(
         return_value=Response(200, json=testkit.source_config.model_dump(mode="json"))
     )
 

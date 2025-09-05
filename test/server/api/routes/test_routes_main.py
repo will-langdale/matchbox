@@ -381,10 +381,9 @@ def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Moc
     test_client, _, _ = api_client_and_mocks
     routes = [
         (test_client.post, "/upload/upload_id"),
-        (test_client.post, "/sources"),
-        (test_client.post, "/models"),
-        (test_client.patch, "/models/name/truth"),
-        (test_client.delete, "/resolutions/name"),
+        (test_client.post, "/resolution"),
+        (test_client.patch, "/resolution/name/truth"),
+        (test_client.delete, "/resolution/name"),
         (test_client.delete, "/database"),
     ]
 

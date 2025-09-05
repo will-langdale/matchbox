@@ -48,7 +48,7 @@ def test_key_field_map(
     expected_foo_mapping = expected_foo_bar_mapping.select(["id", "foo_key"]).unique()
 
     # Mock API
-    matchbox_api.get("/sources").mock(
+    matchbox_api.get("/resolution/companies/sources").mock(
         return_value=Response(
             200,
             json=[

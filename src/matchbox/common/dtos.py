@@ -5,7 +5,7 @@ import textwrap
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Self
+from typing import Literal, Self
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -244,6 +244,10 @@ class SourceConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    resolution_type: Literal["source"] = Field(
+        default="source",
+        description="The type of resolution. Always 'source' for this model.",
+    )
     location_config: LocationConfig = Field(
         description=(
             "The location of the source. Used to run the extract/tansform logic."
@@ -348,6 +352,10 @@ class SourceConfig(BaseModel):
 class ModelConfig(BaseModel):
     """Metadata for a model."""
 
+    resolution_type: Literal["model"] = Field(
+        default="model",
+        description="The type of resolution. Always 'model' for this model.",
+    )
     name: ModelResolutionName
     description: str
     type: ModelType
