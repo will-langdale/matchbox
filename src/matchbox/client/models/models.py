@@ -35,14 +35,14 @@ class Model:
 
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        if model_config := _handler.get_resolution(name=self.model_config.name):
-            if model_config != self.model_config:
+        if resolution := _handler.get_resolution(name=self.model_config.name):
+            if resolution != self.model_config:
                 raise ValueError(
-                    f"Model {self.model_config.name} already exists with "
-                    "different configuration. Please delete the existing model "
-                    "or use a different name. "
+                    f"Resolution {self.model_config.name} already exists with "
+                    "different source or model configuration. Please delete the "
+                    "existing resolution or use a different name. "
                 )
-            log_prefix = f"Model {model_config.name}"
+            log_prefix = f"Resolution {resolution.name}"
             logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
             _handler.create_resolution(resolution=self.model_config)
