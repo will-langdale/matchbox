@@ -188,14 +188,14 @@ class TestE2EAnalyticalUser:
 
         for source_testkit in self.linked_testkit.sources.values():
             # Get source config
-            source_config = source_testkit.source_config
+            source_config = source_testkit.resolution
 
             # Query data from the source
             # keys included then dropped to create ClusterEntity objects for later diff
             source_select = select(
                 {
                     source_config.name: ["key"]
-                    + [field.name for field in source_config.index_fields]
+                    + [field.name for field in source_config.config.index_fields]
                 },
                 client=self.warehouse_engine,
             )
@@ -227,7 +227,7 @@ class TestE2EAnalyticalUser:
                     "unique_fields": feature_names,
                 },
                 left_data=cleaned,
-                left_resolution=source_testkit.source_config.name,
+                left_resolution=source_testkit.resolution.name,
             )
 
             # Run the deduper and store results
@@ -271,8 +271,8 @@ class TestE2EAnalyticalUser:
 
         for left_testkit, right_testkit, common_field in linking_pairs:
             # Get sources
-            left_source = left_testkit.source_config
-            right_source = right_testkit.source_config
+            left_source = left_testkit.resolution
+            right_source = right_testkit.resolution
 
             # Query deduplicated data
             # keys included then dropped to create ClusterEntity objects for later diff
@@ -371,9 +371,9 @@ class TestE2EAnalyticalUser:
 
         # === FINAL LINKING PHASE ===
         # Now link the first linked pair (crn-duns) with the third source (cdms)
-        crn_source = self.linked_testkit.sources["crn"].source_config
-        duns_source = self.linked_testkit.sources["duns"].source_config
-        cdms_source = self.linked_testkit.sources["cdms"].source_config
+        crn_source = self.linked_testkit.sources["crn"].resolution
+        duns_source = self.linked_testkit.sources["duns"].resolution
+        cdms_source = self.linked_testkit.sources["cdms"].resolution
         first_pair = (crn_source.name, duns_source.name)
 
         # Query data from the first linked pair and the third source
@@ -399,7 +399,8 @@ class TestE2EAnalyticalUser:
             return_type="polars",
         )
         right_clusters = query_to_cluster_entities(
-            query=right_raw_df, keys={cdms_source.name: cdms_source.qualified_key}
+            query=right_raw_df,
+            keys={cdms_source.name: cdms_source.qualified_key},
         )
         right_df = right_raw_df.drop(cdms_source.qualified_key)
 
@@ -456,9 +457,9 @@ class TestE2EAnalyticalUser:
 
         # === FINAL VERIFICATION PHASE ===
         # Query the final linked data with specific fields
-        crn_source = self.linked_testkit.sources["crn"].source_config
-        duns_source = self.linked_testkit.sources["duns"].source_config
-        cdms_source = self.linked_testkit.sources["cdms"].source_config
+        crn_source = self.linked_testkit.sources["crn"].resolution
+        duns_source = self.linked_testkit.sources["duns"].resolution
+        cdms_source = self.linked_testkit.sources["cdms"].resolution
 
         # Get necessary field from each source
         final_df = query(
@@ -511,7 +512,7 @@ class TestE2EAnalyticalUser:
         # Delete some resolutions as if my experimental model wasn't good enough
 
         final_linker_name = "__DEFAULT__"
-        crn_source_name = self.linked_testkit.sources["crn"].source_config.name
+        crn_source_name = self.linked_testkit.sources["crn"].resolution.name
 
         counts = _handler.count_backend_items()
         source_config_count = counts["entities"]["sources"]

@@ -26,7 +26,9 @@ def key_field_map(
         sources = [s for s in sources if s.name in source_filter]
 
     if location_names:
-        sources = [s for s in sources if s.location_config.name in location_names]
+        sources = [
+            s for s in sources if s.config.location_config.name in location_names
+        ]
 
     if not sources:
         raise MatchboxSourceNotFoundError("No compatible source was found")
@@ -44,7 +46,7 @@ def key_field_map(
             )
         )
 
-        source_to_key_field[s.name] = s.key_field.name
+        source_to_key_field[s.name] = s.config.key_field.name
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]

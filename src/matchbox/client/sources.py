@@ -30,6 +30,7 @@ from matchbox.common.dtos import (
     DataTypes,
     LocationConfig,
     LocationType,
+    Resolution,
     SourceConfig,
     SourceField,
 )
@@ -315,6 +316,9 @@ class Source:
             raise MatchboxSourceExtractTransformError
 
         self.location = location
+        self.name = name
+        self.description = description
+        self.truth = truth
 
         if infer_types:
             # Assumes client has been set on location
@@ -332,13 +336,40 @@ class Source:
 
         self.config = SourceConfig(
             location_config=location.config,
-            name=name,
-            description=description,
-            truth=truth,
             extract_transform=extract_transform,
             key_field=typed_key_field,
             index_fields=typed_index_fields,
         )
+
+    def to_resolution(self) -> Resolution:
+        """Convert to Resolution for API calls."""
+        return Resolution(
+            name=self.name,
+            description=self.description,
+            truth=self.truth,
+            resolution_type="source",
+            config=self.config,
+        )
+
+    @classmethod
+    def from_resolution(cls, resolution: Resolution, location: Location) -> "Source":
+        """Reconstruct from Resolution."""
+        assert resolution.resolution_type == "source", (
+            "Resolution must be of type 'source'"
+        )
+        assert isinstance(resolution.config, SourceConfig), (
+            "Config must be SourceConfig"
+        )
+
+        # Create a new Source instance
+        source = cls.__new__(cls)  # Create without calling __init__
+        source.location = location
+        source.name = resolution.name
+        source.description = resolution.description
+        source.truth = resolution.truth
+        source.config = resolution.config
+
+        return source
 
     def __hash__(self) -> int:
         """Return a hash of the Source based on its config."""
@@ -352,16 +383,22 @@ class Source:
 
     @classmethod
     def from_config(cls, config: SourceConfig, client: Any):
-        """Initialise source from SourceConfig and client."""
-        return cls(
-            location=Location.from_config(config.location_config, client=client),
-            name=config.name,
-            description=config.description,
-            truth=config.truth,
-            extract_transform=config.extract_transform,
-            key_field=config.key_field,
-            index_fields=config.index_fields,
+        """Initialise source from SourceConfig and client.
+
+        DEPRECATED: Use from_resolution instead for Resolution objects.
+        """
+        # This is for backward compatibility - create a minimal Resolution
+        from matchbox.common.dtos import Resolution
+
+        resolution = Resolution(
+            name="unknown",
+            description=None,
+            truth=None,
+            resolution_type="source",
+            config=config,
         )
+        location = Location.from_config(config.location_config, client=client)
+        return cls.from_resolution(resolution=resolution, location=location)
 
     def query(
         self,
@@ -386,7 +423,7 @@ class Source:
         if qualify_names:
 
             def _rename(c: str) -> str:
-                return self.config.name + "_" + c
+                return self.name + "_" + c
 
         all_fields = self.config.index_fields + tuple([self.config.key_field])
         schema_overrides = {field.name: field.type.to_dtype() for field in all_fields}
@@ -460,20 +497,7 @@ class Source:
 
         return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
 
-    @property
-    def name(self) -> str:
-        """Returns name of underlying source config."""
-        return self.config.name
-
-    @property
-    def description(self) -> str | None:
-        """Returns description of underlying source config."""
-        return self.config.description
-
-    @property
-    def truth(self) -> int | None:
-        """Returns truth threshold of underlying source config."""
-        return self.config.truth
+    # Note: name, description, truth are now instance variables, not properties
 
     def f(self, fields: str | Iterable[str]) -> str | list[str]:
         """Qualify one or more field names with the source name.
@@ -485,6 +509,7 @@ class Source:
             A single qualified field, or a list of qualified field names.
 
         """
+        resolution = self.to_resolution()
         if isinstance(fields, str):
-            return self.config.qualify_field(fields)
-        return [self.config.qualify_field(field_name) for field_name in fields]
+            return resolution.qualify_field(fields)
+        return [resolution.qualify_field(field_name) for field_name in fields]

@@ -47,13 +47,14 @@ def test_clusters_and_root_leaf():
     )
 
     model_config = ModelConfig(
-        name="model",
-        description="description",
         type=ModelType.LINKER,
         left_resolution="source_a",
         right_resolution="source_b",
     )
     model = Model(
+        name="model",
+        description="description",
+        truth=None,
         metadata=model_config,
         model_instance=Linker,
         left_data=left_data,

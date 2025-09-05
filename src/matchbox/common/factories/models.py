@@ -542,7 +542,7 @@ class ModelTestkit(BaseModel):
     @property
     def name(self) -> str:
         """Return the full name of the Model."""
-        return self.model.model_config.name
+        return self.model.name
 
     @property
     def entities(self) -> tuple[ClusterEntity, ...]:
@@ -803,14 +803,15 @@ def model_factory(
 
     # ==== Model creation ====
     metadata = ModelConfig(
-        name=name or generator.unique.word(),
-        description=description or generator.sentence(),
         type=model_type,
         left_resolution=left_resolution,
         right_resolution=right_resolution,
     )
 
     model = Model(
+        name=name or generator.unique.word(),
+        description=description or generator.sentence(),
+        truth=None,
         metadata=metadata,
         model_instance=Mock(),
         left_data=left_query,
@@ -916,8 +917,6 @@ def query_to_model_factory(
 
     # Create model metadata
     metadata = ModelConfig(
-        name=name or generator.unique.word(),
-        description=description or generator.sentence(),
         type=model_type,
         left_resolution=left_resolution,
         right_resolution=right_resolution,
@@ -925,6 +924,9 @@ def query_to_model_factory(
 
     # Create model instance
     model = Model(
+        name=name or generator.unique.word(),
+        description=description or generator.sentence(),
+        truth=None,
         metadata=metadata,
         model_instance=Mock(),
         left_data=left_query,

@@ -74,7 +74,7 @@ def get_samples(
     results_by_source = []
     for source_resolution in samples["source"].unique():
         source_config = _handler.get_source_config(source_resolution)
-        location_name = source_config.location_config.name
+        location_name = source_config.config.location_config.name
         if location_name in clients:
             client = clients[location_name]
         elif default_client:
@@ -87,7 +87,12 @@ def get_samples(
             )
             continue
 
-        source = Source.from_config(config=source_config, client=client)
+        from matchbox.client.sources import Location
+
+        location = Location.from_config(
+            source_config.config.location_config, client=client
+        )
+        source = Source.from_resolution(resolution=source_config, location=location)
 
         samples_by_source = samples.filter(pl.col("source") == source_resolution)
         keys_by_source = samples_by_source["key"].to_list()

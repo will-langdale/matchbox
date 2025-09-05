@@ -380,8 +380,8 @@ def test_model_factory_basic_creation(
     )
 
     # Basic metadata checks
-    assert model.model.model_config.name == name
-    assert model.model.model_config.description == description
+    assert model.model.name == name
+    assert model.model.description == description
     assert str(model.model.model_config.type) == expected_checks["type"]
 
     # Structure checks
@@ -515,21 +515,15 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
     dummy2 = model_factory(seed=seed2)
 
     if should_be_equal:
-        assert dummy1.model.model_config.name == dummy2.model.model_config.name
-        assert (
-            dummy1.model.model_config.description
-            == dummy2.model.model_config.description
-        )
+        assert dummy1.model.name == dummy2.model.name
+        assert dummy1.model.description == dummy2.model.description
         assert dummy1.left_query.equals(dummy2.left_query)
         assert set(dummy1.left_clusters) == set(dummy2.left_clusters)
         assert set(dummy1.entities) == set(dummy2.entities)
         assert dummy1.probabilities.equals(dummy2.probabilities)
     else:
-        assert dummy1.model.model_config.name != dummy2.model.model_config.name
-        assert (
-            dummy1.model.model_config.description
-            != dummy2.model.model_config.description
-        )
+        assert dummy1.model.name != dummy2.model.name
+        assert dummy1.model.description != dummy2.model.description
         assert not dummy1.left_query.equals(dummy2.left_query)
         assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
@@ -687,18 +681,12 @@ def test_query_to_model_factory_seed_behavior(
     )
 
     if should_be_equal:
-        assert model1.model.model_config.name == model2.model.model_config.name
-        assert (
-            model1.model.model_config.description
-            == model2.model.model_config.description
-        )
+        assert model1.model.name == model2.model.name
+        assert model1.model.description == model2.model.description
         assert model1.probabilities.equals(model2.probabilities)
     else:
-        assert model1.model.model_config.name != model2.model.model_config.name
-        assert (
-            model1.model.model_config.description
-            != model2.model.model_config.description
-        )
+        assert model1.model.name != model2.model.name
+        assert model1.model.description != model2.model.description
         if len(model1.probabilities) > 0 and len(model2.probabilities) > 0:
             assert not model1.probabilities.equals(model2.probabilities)
 

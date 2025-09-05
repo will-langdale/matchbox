@@ -8,7 +8,7 @@ from matchbox.client import _handler
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelConfig, ModelType
+from matchbox.common.dtos import ModelConfig, ModelType, Resolution
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.graph import ModelResolutionName, ResolutionName
 from matchbox.common.logging import logger
@@ -22,66 +22,104 @@ class Model:
 
     def __init__(
         self,
+        name: str,
+        description: str | None,
+        truth: int | None,
         metadata: ModelConfig,
         model_instance: Linker | Deduper,
         left_data: pl.DataFrame,
         right_data: pl.DataFrame | None = None,
     ):
         """Create a new model instance."""
+        self.name = name
+        self.description = description
+        self.truth = truth
         self.model_config = metadata
         self.model_instance = model_instance
         self.left_data = left_data
         self.right_data = right_data
 
+    def to_resolution(self) -> Resolution:
+        """Convert to Resolution for API calls."""
+        return Resolution(
+            name=self.name,
+            description=self.description,
+            truth=self.truth,
+            resolution_type="model",
+            config=self.model_config,
+        )
+
+    @classmethod
+    def from_resolution(
+        cls,
+        resolution: Resolution,
+        model_instance: Linker | Deduper,
+        left_data: pl.DataFrame,
+        right_data: pl.DataFrame | None = None,
+    ) -> "Model":
+        """Reconstruct from Resolution."""
+        assert resolution.resolution_type == "model", (
+            "Resolution must be of type 'model'"
+        )
+        assert isinstance(resolution.config, ModelConfig), "Config must be ModelConfig"
+        return cls(
+            name=resolution.name,
+            description=resolution.description,
+            truth=resolution.truth,
+            metadata=resolution.config,
+            model_instance=model_instance,
+            left_data=left_data,
+            right_data=right_data,
+        )
+
     def insert_model(self) -> None:
         """Insert the model into the backend database."""
-        if resolution := _handler.get_resolution(name=self.model_config.name):
-            if resolution != self.model_config:
-                raise ValueError(
-                    f"Resolution {self.model_config.name} already exists with "
-                    "different source or model configuration. Please delete the "
-                    "existing resolution or use a different name. "
-                )
-            log_prefix = f"Resolution {resolution.name}"
+        resolution = self.to_resolution()
+        if existing_resolution := _handler.get_resolution(name=self.name):
+            # Check if config matches
+            if isinstance(existing_resolution, ModelConfig):
+                if existing_resolution != self.model_config:
+                    raise ValueError(
+                        f"Resolution {self.name} already exists with "
+                        "different model configuration. Please delete the "
+                        "existing resolution or use a different name. "
+                    )
+            log_prefix = f"Resolution {self.name}"
             logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
-            _handler.create_resolution(resolution=self.model_config)
+            _handler.create_resolution(resolution=resolution)
 
     @property
     def results(self) -> Results:
         """Retrieve results associated with the model from the database."""
-        results = _handler.get_results(name=self.model_config.name)
+        results = _handler.get_results(name=self.name)
         return Results(probabilities=results, metadata=self.model_config)
 
     @results.setter
     def results(self, results: Results) -> None:
         """Write results associated with the model to the database."""
         if results.probabilities.shape[0] > 0:
-            _handler.set_results(
-                name=self.model_config.name, results=results.probabilities
-            )
+            _handler.set_results(name=self.name, results=results.probabilities)
 
     @property
-    def truth(self) -> float | None:
-        """Returns the truth threshold for the model."""
-        if self.model_config.truth is not None:
-            return _truth_int_to_float(self.model_config.truth)
+    def truth_float(self) -> float | None:
+        """Returns the truth threshold for the model as a float."""
+        if self.truth is not None:
+            return _truth_int_to_float(self.truth)
         return None
 
-    @truth.setter
-    def truth(self, truth: float) -> None:
+    @truth_float.setter
+    def truth_float(self, truth: float) -> None:
         """Set the truth threshold for the model."""
         int_truth = _truth_float_to_int(truth)
-        # Update the config
-        self.model_config = self.model_config.model_copy(update={"truth": int_truth})
+        # Update the instance variable
+        self.truth = int_truth
         # Also update the backend
-        _handler.set_truth(name=self.model_config.name, truth=int_truth)
+        _handler.set_truth(name=self.name, truth=int_truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
-        result = _handler.delete_resolution(
-            name=self.model_config.name, certain=certain
-        )
+        result = _handler.delete_resolution(name=self.name, certain=certain)
         return result.success
 
     def run(self) -> Results:
@@ -102,15 +140,7 @@ class Model:
             metadata=self.model_config,
         )
 
-    @property
-    def name(self) -> str:
-        """Returns name of the model."""
-        return self.model_config.name
-
-    @property
-    def description(self) -> str | None:
-        """Returns description of the model."""
-        return self.model_config.description
+    # Note: name, description, truth are now instance variables, not properties
 
 
 def make_model(
@@ -163,6 +193,9 @@ def make_model(
     )
 
     return Model(
+        name=name,
+        description=description,
+        truth=None,  # Default truth to None
         metadata=metadata,
         model_instance=model_instance,
         left_data=left_data,

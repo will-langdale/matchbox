@@ -54,8 +54,8 @@ def test_key_field_map(
         return_value=Response(
             200,
             json=[
-                foo.source_config.model_dump(mode="json"),
-                bar.source_config.model_dump(mode="json"),
+                foo.resolution.model_dump(mode="json"),
+                bar.resolution.model_dump(mode="json"),
             ],
         )
     )
