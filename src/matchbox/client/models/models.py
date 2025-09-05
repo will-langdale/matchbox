@@ -62,44 +62,20 @@ class Model:
             )
 
     @property
-    def truth(self) -> float:
-        """Retrieve the truth threshold for the model."""
-        truth = _handler.get_truth(name=self.model_config.name)
-        return _truth_int_to_float(truth)
+    def truth(self) -> float | None:
+        """Returns the truth threshold for the model."""
+        if self.model_config.truth is not None:
+            return _truth_int_to_float(self.model_config.truth)
+        return None
 
     @truth.setter
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        _handler.set_truth(
-            name=self.model_config.name, truth=_truth_float_to_int(truth)
-        )
-
-    @property
-    def results(self) -> Results:
-        """Retrieve results associated with the model from the database."""
-        results = _handler.get_results(name=self.model_config.name)
-        return Results(probabilities=results, metadata=self.model_config)
-
-    @results.setter
-    def results(self, results: Results) -> None:
-        """Write results associated with the model to the database."""
-        if results.probabilities.shape[0] > 0:
-            _handler.set_results(
-                name=self.model_config.name, results=results.probabilities
-            )
-
-    @property
-    def truth(self) -> float:
-        """Retrieve the truth threshold for the model."""
-        truth = _handler.get_truth(name=self.model_config.name)
-        return _truth_int_to_float(truth)
-
-    @truth.setter
-    def truth(self, truth: float) -> None:
-        """Set the truth threshold for the model."""
-        _handler.set_truth(
-            name=self.model_config.name, truth=_truth_float_to_int(truth)
-        )
+        int_truth = _truth_float_to_int(truth)
+        # Update the config
+        self.model_config = self.model_config.model_copy(update={"truth": int_truth})
+        # Also update the backend
+        _handler.set_truth(name=self.model_config.name, truth=int_truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
@@ -125,6 +101,16 @@ class Model:
             model=self,
             metadata=self.model_config,
         )
+
+    @property
+    def name(self) -> str:
+        """Returns name of the model."""
+        return self.model_config.name
+
+    @property
+    def description(self) -> str | None:
+        """Returns description of the model."""
+        return self.model_config.description
 
 
 def make_model(
@@ -171,7 +157,7 @@ def make_model(
     metadata = ModelConfig(
         name=name,
         description=description,
-        type=model_type.value,
+        type=model_type,
         left_resolution=left_resolution,
         right_resolution=right_resolution,
     )

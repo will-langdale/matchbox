@@ -472,6 +472,8 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         """Convert ORM source to a matchbox.common SourceConfig object."""
         return CommonSourceConfig(
             name=self.name,
+            description=self.source_resolution.description,
+            truth=self.source_resolution.truth,
             location_config=LocationConfig(
                 type=self.location_type, name=self.location_name
             ),

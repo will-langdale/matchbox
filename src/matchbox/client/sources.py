@@ -306,6 +306,8 @@ class Source:
         extract_transform: str,
         key_field: str | SourceField,
         index_fields: list[str] | list[SourceField],
+        description: str | None = None,
+        truth: int | None = None,
         infer_types=False,
     ):
         """Initialise source."""
@@ -331,6 +333,8 @@ class Source:
         self.config = SourceConfig(
             location_config=location.config,
             name=name,
+            description=description,
+            truth=truth,
             extract_transform=extract_transform,
             key_field=typed_key_field,
             index_fields=typed_index_fields,
@@ -352,6 +356,8 @@ class Source:
         return cls(
             location=Location.from_config(config.location_config, client=client),
             name=config.name,
+            description=config.description,
+            truth=config.truth,
             extract_transform=config.extract_transform,
             key_field=config.key_field,
             index_fields=config.index_fields,
@@ -458,6 +464,16 @@ class Source:
     def name(self) -> str:
         """Returns name of underlying source config."""
         return self.config.name
+
+    @property
+    def description(self) -> str | None:
+        """Returns description of underlying source config."""
+        return self.config.description
+
+    @property
+    def truth(self) -> int | None:
+        """Returns truth threshold of underlying source config."""
+        return self.config.truth
 
     def f(self, fields: str | Iterable[str]) -> str | list[str]:
         """Qualify one or more field names with the source name.

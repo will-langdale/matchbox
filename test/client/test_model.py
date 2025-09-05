@@ -242,19 +242,18 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
 
 
 def test_truth_getter(matchbox_api: MockRouter):
-    """Test getting model truth threshold via the API."""
+    """Test getting model truth threshold from config."""
+    # Create testkit with specific truth value in config
     testkit = model_factory(model_type="linker")
-
-    # Mock the GET /resolution/{name}/truth endpoint
-    route = matchbox_api.get(
-        f"/resolution/{testkit.model.model_config.name}/truth"
-    ).mock(return_value=Response(200, json=90))
+    # Update the config to have a truth value
+    testkit.model.model_config = testkit.model.model_config.model_copy(
+        update={"truth": 90}
+    )
 
     # Get truth
     truth = testkit.model.truth
 
-    # Verify the API call
-    assert route.called
+    # Verify it returns the correct value from config
     assert truth == 0.9
 
 

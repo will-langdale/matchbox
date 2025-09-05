@@ -259,6 +259,12 @@ class SourceConfig(BaseModel):
             "object configures."
         )
     )
+    description: str | None = Field(
+        default=None, description="A description of the source."
+    )
+    truth: int | None = Field(
+        default=None, description="Truth threshold value", ge=0, le=100, strict=True
+    )
     extract_transform: str = Field(
         description=(
             "Logic to extract and transform data from the source. "
@@ -310,6 +316,14 @@ class SourceConfig(BaseModel):
             raise ValueError("Source names must be alphanumeric and underscore only. ")
         return value
 
+    @field_validator("description", mode="after")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        """Ensure the description is not empty if provided."""
+        if value is not None and not value.strip():
+            raise ValueError("Description cannot be empty if provided.")
+        return value
+
     @model_validator(mode="after")
     def validate_key_field(self) -> Self:
         """Ensure that the key field is a string and not in the index fields."""
@@ -357,10 +371,23 @@ class ModelConfig(BaseModel):
         description="The type of resolution. Always 'model' for this model.",
     )
     name: ModelResolutionName
-    description: str
+    description: str | None = Field(
+        default=None, description="A description of the model."
+    )
+    truth: int | None = Field(
+        default=None, description="Truth threshold value", ge=0, le=100, strict=True
+    )
     type: ModelType
     left_resolution: ResolutionName
     right_resolution: ResolutionName | None = None  # Only used for linker models
+
+    @field_validator("description", mode="after")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        """Ensure the description is not empty if provided."""
+        if value is not None and not value.strip():
+            raise ValueError("Description cannot be empty if provided.")
+        return value
 
     def __eq__(self, other: "ModelConfig") -> bool:
         """Check equality of model configurations.
@@ -372,6 +399,7 @@ class ModelConfig(BaseModel):
         return (
             self.name == other.name
             and self.description == other.description
+            and self.truth == other.truth
             and self.type == other.type
             and {self.left_resolution, self.right_resolution}
             == {other.left_resolution, other.right_resolution}
