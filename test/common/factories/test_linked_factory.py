@@ -131,14 +131,10 @@ def test_entity_value_consistency():
 
             # For each feature in the source
             for feature in source.features:
-                if feature.name in base_values:
+                if feature.name in base_values and not feature.drop_base:
                     # The base value should appear in the data
                     # (unless it's marked as drop_base)
-                    if not feature.drop_base:
-                        assert (
-                            base_values[feature.name]
-                            in entity_rows[feature.name].values
-                        )
+                    assert base_values[feature.name] in entity_rows[feature.name].values
 
 
 def test_source_entity_equality():

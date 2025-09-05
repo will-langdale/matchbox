@@ -18,15 +18,11 @@ jobs:
       - name: Install uv and Python
         uses: astral-sh/setup-uv@v6
 
-      - name: Format check
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "format --check"
+      - name: Install just
+        uses: extractions/setup-just@v2
 
-      - name: Lint check
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "check"
+      - name: Format and lint
+        run: just format
 
   test:
     name: test ${{ matrix.python-version }}

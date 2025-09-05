@@ -4,7 +4,7 @@ Revision ID: 40a8e5ed48f2
 Revises: This is the first migration
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from alembic import op
 

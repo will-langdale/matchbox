@@ -3,15 +3,12 @@
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
 from typing import (
     Any,
-    Callable,
-    Generator,
-    Iterable,
-    Iterator,
     Literal,
     ParamSpec,
     Self,
@@ -51,7 +48,7 @@ R = TypeVar("R")
 LocationType = Union["RelationalDBLocation"]
 """Type for Location class. Currently only supports RelationalDBLocation."""
 
-LocationTypeStr = Union[Literal["rdbms"]]
+LocationTypeStr = Union[Literal["rdbms"]]  # noqa: UP007
 """String literal type for Location class. Currently only supports "rdbms"."""
 
 

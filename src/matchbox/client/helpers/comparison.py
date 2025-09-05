@@ -16,7 +16,8 @@ def comparison(sql_condition: str, dialect: str = "postgres") -> str:
 
     for node in parsed_sql.walk():
         if not isinstance(
-            node[0], (exp.Connector, exp.Predicate, exp.Condition, exp.Identifier)
+            node[0],
+            exp.Connector | exp.Predicate | exp.Condition | exp.Identifier,
         ):
             raise ParseError(
                 f"Must be valid WHERE clause statements. Found {type(node[0])}"

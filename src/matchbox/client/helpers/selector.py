@@ -1,7 +1,8 @@
 """Functions to select and retrieve data from the Matchbox server."""
 
 import itertools
-from typing import Any, Iterator, Literal, Self, get_args
+from collections.abc import Iterator
+from typing import Any, Literal, Self, get_args
 
 import duckdb
 import polars as pl

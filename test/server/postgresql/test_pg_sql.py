@@ -9,7 +9,8 @@ representation changes, they should be rewritten in whatever form best-aids the
 development of the new query functions. Don't be precious.
 """
 
-from typing import Generator, Literal
+from collections.abc import Generator
+from typing import Literal
 
 import pytest
 
