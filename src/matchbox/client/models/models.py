@@ -26,9 +26,10 @@ class Model:
         name: str,
         description: str | None,
         truth: int | None,
-        metadata: ModelConfig,
         model_instance: Deduper,
+        left_resolution: ResolutionName,
         left_data: pl.DataFrame,
+        right_resolution: None = None,
         right_data: None = None,
     ) -> None: ...
 
@@ -38,9 +39,10 @@ class Model:
         name: str,
         description: str | None,
         truth: int | None,
-        metadata: ModelConfig,
         model_instance: Linker,
+        left_resolution: ResolutionName,
         left_data: pl.DataFrame,
+        right_resolution: ResolutionName,
         right_data: pl.DataFrame,
     ) -> None: ...
 
@@ -49,9 +51,10 @@ class Model:
         name: str,
         description: str | None,
         truth: int | None,
-        metadata: ModelConfig,
         model_instance: Linker | Deduper,
+        left_resolution: ResolutionName,
         left_data: pl.DataFrame,
+        right_resolution: ResolutionName | None = None,
         right_data: pl.DataFrame | None = None,
     ):
         """Create a new model instance.
@@ -60,18 +63,44 @@ class Model:
             name: Unique name for the model
             description: Optional description of the model
             truth: Optional truth threshold. Can be set later after analysis.
-            metadata: Model configuration metadata
             model_instance: Instance of Linker or Deduper
+            left_resolution: The name of the resolution that produced left_data. This is
+                the only resolution for deduping.
             left_data: Primary data for the model. This is the only data for deduping.
-            right_data: Secondary data for linking.
+            right_resolution: The name of the resolution that produced right_data.
+                Required for linking
+            right_data: Secondary data for the model. Required for linking
         """
         self.name = name
         self.description = description
         self.truth = truth
-        self.model_config = metadata
         self.model_instance = model_instance
         self.left_data = left_data
         self.right_data = right_data
+
+        model_type: ModelType = (
+            ModelType.LINKER
+            if isinstance(model_instance, Linker)
+            else ModelType.DEDUPER
+        )
+
+        if model_type == ModelType.DEDUPER:
+            if right_data is not None:
+                raise ValueError("Deduper cannot have right_query data")
+            if right_resolution is not None:
+                raise ValueError("Deduper cannot have resolution_fields")
+
+        if model_type == ModelType.LINKER:
+            if right_data is None:
+                raise ValueError("Linker requires right_query data")
+            if right_resolution is None:
+                raise ValueError("Linker requires resolution_fields")
+
+        self.config = ModelConfig(
+            type=model_type,
+            left_resolution=left_resolution,
+            right_resolution=right_resolution,
+        )
 
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
@@ -80,7 +109,7 @@ class Model:
             description=self.description,
             truth=self.truth,
             resolution_type="model",
-            config=self.model_config,
+            config=self.config,
         )
 
     @classmethod
@@ -111,8 +140,8 @@ class Model:
         resolution = self.to_resolution()
         if existing_resolution := _handler.get_resolution(name=self.name):
             # Check if config matches
-            if isinstance(existing_resolution, ModelConfig):
-                if existing_resolution != self.model_config:
+            if isinstance(existing_resolution.config, ModelConfig):
+                if existing_resolution.config != self.config:
                     raise ValueError(
                         f"Resolution {self.name} already exists with "
                         "different model configuration. Please delete the "
@@ -127,7 +156,7 @@ class Model:
     def results(self) -> Results:
         """Retrieve results associated with the model from the database."""
         results = _handler.get_results(name=self.name)
-        return Results(probabilities=results, metadata=self.model_config)
+        return Results(probabilities=results, metadata=self.config)
 
     @results.setter
     def results(self, results: Results) -> None:
@@ -158,7 +187,7 @@ class Model:
 
     def run(self) -> Results:
         """Execute the model pipeline and return results."""
-        if self.model_config.type == ModelType.LINKER:
+        if self.config.type == ModelType.LINKER:
             if self.right_data is None:
                 raise MatchboxResolutionNotFoundError("Right data required for linking")
 
@@ -171,7 +200,7 @@ class Model:
         return Results(
             probabilities=results,
             model=self,
-            metadata=self.model_config,
+            metadata=self.config,
         )
 
 
@@ -216,21 +245,14 @@ def make_model(
     else:
         model_instance.prepare(data=left_data)
 
-    metadata = ModelConfig(
-        name=name,
-        description=description,
-        type=model_type,
-        left_resolution=left_resolution,
-        right_resolution=right_resolution,
-    )
-
     return Model(
         name=name,
         description=description,
         truth=None,  # Default truth to None
-        metadata=metadata,
         model_instance=model_instance,
+        left_resolution=left_resolution,
         left_data=left_data,
+        right_resolution=right_resolution,
         right_data=right_data,
     )
 

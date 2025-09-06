@@ -1,3 +1,5 @@
+from unittest.mock import create_autospec
+
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
@@ -6,7 +8,6 @@ from pyarrow import Table
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import Model
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelConfig, ModelType
 
 
 def test_clusters_and_root_leaf():
@@ -46,21 +47,17 @@ def test_clusters_and_root_leaf():
         ]
     )
 
-    model_config = ModelConfig(
-        type=ModelType.LINKER,
-        left_resolution="source_a",
-        right_resolution="source_b",
-    )
     model = Model(
         name="model",
         description="description",
         truth=None,
-        metadata=model_config,
-        model_instance=Linker,
+        model_instance=create_autospec(Linker, instance=True),
+        left_resolution="source_a",
         left_data=left_data,
+        right_resolution="source_b",
         right_data=right_data,
     )
-    results = Results(probabilities=probabilities, metadata=model_config, model=model)
+    results = Results(probabilities=probabilities, metadata=model.config, model=model)
 
     # Check two ways of representing clusters
     clusters = results.clusters_to_polars()
@@ -84,7 +81,7 @@ def test_clusters_and_root_leaf():
         probabilities=Table.from_pydict(
             {"left_id": [], "right_id": [], "probability": []}
         ),
-        metadata=model_config,
+        metadata=model.config,
         model=model,
     )
 

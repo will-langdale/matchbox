@@ -89,7 +89,7 @@ def test_model_type_creation(
     )
 
     # Basic type verification
-    assert model.model.model_config.type == expected_type
+    assert model.model.config.type == expected_type
     assert (model.right_query is not None) == should_have_right
     assert (model.right_clusters is not None) == should_have_right
 
@@ -382,7 +382,7 @@ def test_model_factory_basic_creation(
     # Basic metadata checks
     assert model.model.name == name
     assert model.model.description == description
-    assert str(model.model.model_config.type) == expected_checks["type"]
+    assert str(model.model.config.type) == expected_checks["type"]
 
     # Structure checks
     assert (model.right_query is not None) == expected_checks["has_right"]
@@ -483,7 +483,7 @@ def test_model_factory_with_sources(source_config: dict, expected_checks: dict) 
     )
 
     # Basic type checks
-    assert str(model.model.model_config.type) == expected_checks["type"]
+    assert str(model.model.config.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
@@ -631,7 +631,7 @@ def test_query_to_model_factory_creation(
     )
 
     # Basic type checks
-    assert str(model.model.model_config.type) == expected_checks["type"]
+    assert str(model.model.config.type) == expected_checks["type"]
     assert (model.right_query is not None) == expected_checks["has_right"]
     assert (model.right_clusters is not None) == expected_checks["has_right"]
 
@@ -736,6 +736,4 @@ def test_query_to_model_factory_compare_with_model_factory():
     assert len(standard_model.entities) == len(query_model.entities)
 
     # Compare model type
-    assert str(standard_model.model.model_config.type) == str(
-        query_model.model.model_config.type
-    )
+    assert str(standard_model.model.config.type) == str(query_model.model.config.type)

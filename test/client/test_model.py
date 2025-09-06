@@ -178,7 +178,7 @@ def test_results_setter(matchbox_api: MockRouter):
 
     # Set results
     test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.model_config
+        probabilities=testkit.probabilities, metadata=testkit.model.config
     )
     testkit.model.results = test_results
 
@@ -224,7 +224,7 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
 
     # Attempt to set results and verify it raises an exception
     test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.model_config
+        probabilities=testkit.probabilities, metadata=testkit.model.config
     )
     with pytest.raises(MatchboxServerFileError, match="Invalid data format"):
         testkit.model.results = test_results

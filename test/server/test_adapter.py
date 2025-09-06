@@ -432,7 +432,7 @@ class TestMatchboxBackend:
                     description=model_testkit.model.description,
                     truth=model_testkit.model.truth,
                     resolution_type="model",
-                    config=model_testkit.model.model_config,
+                    config=model_testkit.model.config,
                 )
                 self.backend.insert_model(resolution=model_resolution)
                 self.backend.set_model_results(

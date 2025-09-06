@@ -211,12 +211,12 @@ def test_complete_model_upload_process(
     # Step 7: Additional model-specific verifications
     if model_type == "linker":
         # For linker models, verify left and right resolutions are set
-        assert testkit.model.model_config.left_resolution is not None
-        assert testkit.model.model_config.right_resolution is not None
+        assert testkit.model.config.left_resolution is not None
+        assert testkit.model.config.right_resolution is not None
     else:
         # For deduper models, verify only left resolution is set
-        assert testkit.model.model_config.left_resolution is not None
-        assert testkit.model.model_config.right_resolution is None
+        assert testkit.model.config.left_resolution is not None
+        assert testkit.model.config.right_resolution is None
 
     # Verify the model truth can be set and retrieved
     truth_value = 85

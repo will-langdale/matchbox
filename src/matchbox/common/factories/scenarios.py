@@ -173,7 +173,7 @@ def create_dedupe_scenario(
             description=model_testkit.model.description,
             truth=model_testkit.model.truth,
             resolution_type="model",
-            config=model_testkit.model.model_config,
+            config=model_testkit.model.config,
         )
         backend.insert_model(resolution=model_resolution)
         backend.set_model_results(name=name, results=model_testkit.probabilities)
@@ -225,7 +225,7 @@ def create_probabilistic_dedupe_scenario(
             description=model_testkit.model.description,
             truth=model_testkit.model.truth,
             resolution_type="model",
-            config=model_testkit.model.model_config,
+            config=model_testkit.model.config,
         )
         backend.insert_model(resolution=model_resolution)
         backend.set_model_results(name=name, results=model_testkit.probabilities)
@@ -283,7 +283,7 @@ def create_link_scenario(
         description=crn_duns_model.model.description,
         truth=crn_duns_model.model.truth,
         resolution_type="model",
-        config=crn_duns_model.model.model_config,
+        config=crn_duns_model.model.config,
     )
     backend.insert_model(resolution=crn_duns_resolution)
     backend.set_model_results(name=crn_duns_name, results=crn_duns_model.probabilities)
@@ -309,7 +309,7 @@ def create_link_scenario(
         description=crn_cdms_model.model.description,
         truth=crn_cdms_model.model.truth,
         resolution_type="model",
-        config=crn_cdms_model.model.model_config,
+        config=crn_cdms_model.model.config,
     )
     backend.insert_model(resolution=crn_cdms_resolution)
     backend.set_model_results(name=crn_cdms_name, results=crn_cdms_model.probabilities)
@@ -350,7 +350,7 @@ def create_link_scenario(
         description=final_join_model.model.description,
         truth=final_join_model.model.truth,
         resolution_type="model",
-        config=final_join_model.model.model_config,
+        config=final_join_model.model.config,
     )
     backend.insert_model(resolution=final_join_resolution)
     backend.set_model_results(
@@ -443,7 +443,7 @@ def create_alt_dedupe_scenario(
                 description=model.model.description,
                 truth=model.model.truth,
                 resolution_type="model",
-                config=model.model.model_config,
+                config=model.model.config,
             )
             backend.insert_model(resolution=model_resolution)
             backend.set_model_results(name=model.name, results=model.probabilities)
