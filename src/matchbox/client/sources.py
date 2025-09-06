@@ -13,6 +13,7 @@ from typing import (
     ParamSpec,
     Self,
     TypeVar,
+    overload,
 )
 
 import polars as pl
@@ -44,6 +45,7 @@ from matchbox.common.logging import logger
 T = TypeVar("T")
 P = ParamSpec("P")
 R = TypeVar("R")
+F = TypeVar("F")
 
 
 def requires_client(method: Callable[..., T]) -> Callable[..., T]:
@@ -300,6 +302,30 @@ def location_type_to_class(location_type: LocationType) -> type[Location]:
 class Source:
     """Client-side wrapper for source configs."""
 
+    @overload
+    def __init__(
+        self,
+        location: Location,
+        name: str,
+        extract_transform: str,
+        key_field: str,
+        index_fields: list[str],
+        description: str | None = None,
+        infer_types: bool = True,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        location: Location,
+        name: str,
+        extract_transform: str,
+        key_field: SourceField,
+        index_fields: list[SourceField],
+        description: str | None = None,
+        infer_types: bool = False,
+    ) -> None: ...
+
     def __init__(
         self,
         location: Location,
@@ -308,31 +334,47 @@ class Source:
         key_field: str | SourceField,
         index_fields: list[str] | list[SourceField],
         description: str | None = None,
-        truth: int | None = None,
         infer_types: bool = False,
     ):
-        """Initialise source."""
+        """Initialise source.
+
+        Args:
+            location: The location where the source data is stored.
+            name: The name of the source.
+            description: An optional description of the source.
+            extract_transform: The extract/transform logic to apply to the source data.
+            key_field: The name of the field to use as the key, or a SourceField
+                instance defining the key field. This is the unique identifier we'll
+                use to refer to matched data in the source.
+            index_fields: The names of the fields to use as index fields, or a list
+                of SourceField instances defining the index fields. These are the
+                fields you plan to match on.
+            infer_types: Whether to infer data types for the fields from the source.
+                If False, you must provide SourceField instances for key_field and
+                index_fields.
+        """
         if not location.validate_extract_transform(extract_transform):
             raise MatchboxSourceExtractTransformError
 
         self.location = location
         self.name = name
         self.description = description
-        self.truth = truth
 
         if infer_types:
+            self._validate_fields(key_field, index_fields, str)
+
             # Assumes client has been set on location
             inferred_types = location.infer_types(extract_transform)
             remote_fields = {
                 field_name: SourceField(name=field_name, type=dtype)
                 for field_name, dtype in inferred_types.items()
             }
-
             typed_key_field = SourceField(name=key_field, type=DataTypes.STRING)
             typed_index_fields = tuple(remote_fields[field] for field in index_fields)
         else:
-            typed_key_field = key_field
-            typed_index_fields = index_fields
+            typed_key_field, typed_index_fields = self._validate_fields(
+                key_field, index_fields, SourceField
+            )
 
         self.config = SourceConfig(
             location_config=location.config,
@@ -341,12 +383,31 @@ class Source:
             index_fields=typed_index_fields,
         )
 
+    def _validate_fields(
+        self,
+        key_field: Any,
+        index_fields: list[Any],
+        type_check: type[str] | type[SourceField],
+    ) -> tuple[F, tuple[F, ...]]:
+        """Validate that fields match the expected type (str or SourceField)."""
+        if not isinstance(key_field, type_check):
+            raise ValueError(
+                f"Expected {type_check.__name__}, got {type(key_field).__name__}"
+            )
+
+        if not all(isinstance(f, type_check) for f in index_fields):
+            raise ValueError(
+                f"All index_fields must be {type_check.__name__} instances"
+            )
+
+        return key_field, tuple(index_fields)
+
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
         return Resolution(
             name=self.name,
             description=self.description,
-            truth=self.truth,
+            truth=None,
             resolution_type="source",
             config=self.config,
         )
@@ -366,7 +427,6 @@ class Source:
         source.location = location
         source.name = resolution.name
         source.description = resolution.description
-        source.truth = resolution.truth
         source.config = resolution.config
 
         return source
@@ -380,25 +440,6 @@ class Source:
         if not isinstance(other, Source):
             return False
         return self.config == other.config
-
-    @classmethod
-    def from_config(cls, config: SourceConfig, client: Any):
-        """Initialise source from SourceConfig and client.
-
-        DEPRECATED: Use from_resolution instead for Resolution objects.
-        """
-        # This is for backward compatibility - create a minimal Resolution
-        from matchbox.common.dtos import Resolution
-
-        resolution = Resolution(
-            name="unknown",
-            description=None,
-            truth=None,
-            resolution_type="source",
-            config=config,
-        )
-        location = Location.from_config(config.location_config, client=client)
-        return cls.from_resolution(resolution=resolution, location=location)
 
     def query(
         self,

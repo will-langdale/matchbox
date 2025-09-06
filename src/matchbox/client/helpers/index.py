@@ -72,7 +72,6 @@ def get_source(
         location=location,
         name=resolution.name,
         description=resolution.description,
-        truth=resolution.truth,
         extract_transform=resolution.config.extract_transform,
         key_field=resolution.config.key_field,
         index_fields=resolution.config.index_fields,

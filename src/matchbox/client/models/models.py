@@ -1,6 +1,6 @@
 """Functions and classes to define, run and register models."""
 
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar, overload
 
 import polars as pl
 
@@ -20,6 +20,30 @@ R = TypeVar("R")
 class Model:
     """Unified model class for both linking and deduping operations."""
 
+    @overload
+    def __init__(
+        self,
+        name: str,
+        description: str | None,
+        truth: int | None,
+        metadata: ModelConfig,
+        model_instance: Deduper,
+        left_data: pl.DataFrame,
+        right_data: None = None,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        name: str,
+        description: str | None,
+        truth: int | None,
+        metadata: ModelConfig,
+        model_instance: Linker,
+        left_data: pl.DataFrame,
+        right_data: pl.DataFrame,
+    ) -> None: ...
+
     def __init__(
         self,
         name: str,
@@ -30,7 +54,17 @@ class Model:
         left_data: pl.DataFrame,
         right_data: pl.DataFrame | None = None,
     ):
-        """Create a new model instance."""
+        """Create a new model instance.
+
+        Args:
+            name: Unique name for the model
+            description: Optional description of the model
+            truth: Optional truth threshold. Can be set later after analysis.
+            metadata: Model configuration metadata
+            model_instance: Instance of Linker or Deduper
+            left_data: Primary data for the model. This is the only data for deduping.
+            right_data: Secondary data for linking.
+        """
         self.name = name
         self.description = description
         self.truth = truth
@@ -139,8 +173,6 @@ class Model:
             model=self,
             metadata=self.model_config,
         )
-
-    # Note: name, description, truth are now instance variables, not properties
 
 
 def make_model(
