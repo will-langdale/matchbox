@@ -35,7 +35,9 @@ def test_get_source(
 ):
     source_testkit = source_factory(name="foo")
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_source_config = Mock(return_value=source_testkit.resolution)
+    mock_backend.get_source_config = Mock(
+        return_value=source_testkit.source.to_resolution()
+    )
     mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError)
 
     response = test_client.get("/resolutions/foo")
@@ -421,7 +423,7 @@ def test_delete_resolution_404(
 def test_get_resolution_sources(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
-    source = source_factory().resolution
+    source = source_factory().source.to_resolution()
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution_source_configs = Mock(return_value=[source])
 
@@ -456,7 +458,7 @@ def test_add_source(
     # Make request
     response = test_client.post(
         "/resolutions",
-        json=source_testkit.resolution.model_dump(mode="json"),
+        json=source_testkit.source.to_resolution().model_dump(mode="json"),
     )
 
     # Validate response
@@ -489,7 +491,8 @@ def test_complete_source_upload_process(
 
     # Step 1: Add source
     response = test_client.post(
-        "/resolutions", json=source_testkit.resolution.model_dump(mode="json")
+        "/resolutions",
+        json=source_testkit.source.to_resolution().model_dump(mode="json"),
     )
     assert response.status_code == 202
     upload_id = response.json()["id"]
@@ -538,7 +541,7 @@ def test_complete_source_upload_process(
     mock_backend.index.assert_called_once()
     call_args = mock_backend.index.call_args
     assert (
-        call_args[1]["resolution"] == source_testkit.resolution
+        call_args[1]["resolution"] == source_testkit.source.to_resolution()
     )  # Check resolution matches
     assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
 

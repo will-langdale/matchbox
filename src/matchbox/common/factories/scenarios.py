@@ -124,7 +124,7 @@ def create_index_scenario(
     # Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
-            resolution=source_testkit.resolution,
+            resolution=source_testkit.source.to_resolution(),
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -149,7 +149,7 @@ def create_dedupe_scenario(
 
     # Create and add deduplication models
     for testkit in dag.sources.values():
-        resolution = testkit.resolution
+        resolution = testkit.source.to_resolution()
         name = f"naive_test_{resolution.name}"
 
         # Query the raw data
@@ -200,7 +200,7 @@ def create_probabilistic_dedupe_scenario(
 
     # Create and add deduplication models
     for testkit in dag.sources.values():
-        resolution = testkit.resolution
+        resolution = testkit.source.to_resolution()
         name = f"probabilistic_test_{resolution.name}"
 
         # Query the raw data
@@ -395,13 +395,13 @@ def create_alt_dedupe_scenario(
     # Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
-            resolution=source_testkit.resolution,
+            resolution=source_testkit.source.to_resolution(),
             data_hashes=source_testkit.data_hashes,
         )
 
     # Create and add deduplication models
     for testkit in dag.sources.values():
-        resolution = testkit.resolution
+        resolution = testkit.source.to_resolution()
         model_name1 = f"dedupe_{resolution.name}"
         model_name2 = f"dedupe2_{resolution.name}"
 
@@ -500,13 +500,13 @@ def create_convergent_scenario(
     # Index sources in backend
     for source_testkit in dag.sources.values():
         backend.index(
-            resolution=source_testkit.resolution,
+            resolution=source_testkit.source.to_resolution(),
             data_hashes=source_testkit.data_hashes,
         )
 
     # Create and add deduplication models
     for testkit in dag.sources.values():
-        resolution = testkit.resolution
+        resolution = testkit.source.to_resolution()
         name = f"naive_test_{resolution.name}"
 
         # Query the raw data

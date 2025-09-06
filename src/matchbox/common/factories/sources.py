@@ -19,7 +19,6 @@ from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.arrow import SCHEMA_INDEX
 from matchbox.common.dtos import (
     DataTypes,
-    Resolution,
     SourceConfig,
     SourceField,
 )
@@ -87,11 +86,8 @@ class SourceTestkit(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    resolution: Resolution = Field(
-        description="The Resolution object with source config."
-    )
-    source: Source | None = Field(
-        description="Optional Source object for backward compatibility.", default=None
+    source: Source = Field(
+        description="The Source object containing config and convenience methods."
     )
     features: tuple[FeatureConfig, ...] | None = Field(
         description=(
@@ -108,16 +104,13 @@ class SourceTestkit(BaseModel):
 
     @property
     def name(self) -> str:
-        """Return the resolution name."""
-        return self.resolution.name
+        """Return the source name."""
+        return self.source.name
 
     @property
     def source_config(self) -> SourceConfig:
-        """Return the SourceConfig from the resolution."""
-        assert isinstance(self.resolution.config, SourceConfig), (
-            "Config must be SourceConfig"
-        )
-        return self.resolution.config
+        """Return the SourceConfig from the source."""
+        return self.source.config
 
     @property
     def mock_client_source(self) -> Mock:
@@ -150,8 +143,8 @@ class SourceTestkit(BaseModel):
             self.source.location.client = set_client
 
         pl.from_arrow(self.data).write_database(
-            table_name=self.resolution.name,
-            connection=self.source.location.client if self.source else None,
+            table_name=self.source.name,
+            connection=self.source.location.client,
             if_table_exists="replace",
         )
 
@@ -566,8 +559,7 @@ def source_factory(
     )
 
     return SourceTestkit(
-        resolution=source.to_resolution(),
-        source=source,  # For backward compatibility
+        source=source,
         features=features,
         data=data,
         data_hashes=data_hashes,
@@ -650,8 +642,7 @@ def source_from_tuple(
     data = raw_data.append_column("id", [entity_ids]).append_column("key", raw_keys)
 
     return SourceTestkit(
-        resolution=source.to_resolution(),
-        source=source,  # For backward compatibility
+        source=source,
         data=data,
         data_hashes=data_hashes,
         entities=tuple(sorted(results_entities)),
@@ -851,8 +842,7 @@ def linked_sources_factory(
 
         # Add source to linked.sources
         linked.sources[parameters.name] = SourceTestkit(
-            resolution=source.to_resolution(),
-            source=source,  # For backward compatibility
+            source=source,
             features=tuple(parameters.features),
             data=data,
             data_hashes=data_hashes,

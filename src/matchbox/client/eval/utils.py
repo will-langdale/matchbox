@@ -107,9 +107,9 @@ def get_samples(
             ) from e
 
         samples_and_source = samples_by_source.join(
-            source_data, left_on="key", right_on=source_config.qualified_key
+            source_data, left_on="key", right_on=source.qualified_key
         )
-        desired_columns = ["root", "leaf", "key"] + source_config.qualified_index_fields
+        desired_columns = ["root", "leaf", "key"] + source.qualified_index_fields
         results_by_source.append(samples_and_source[desired_columns])
 
     if not len(results_by_source):

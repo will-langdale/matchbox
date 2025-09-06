@@ -309,7 +309,7 @@ class Source:
         index_fields: list[str] | list[SourceField],
         description: str | None = None,
         truth: int | None = None,
-        infer_types=False,
+        infer_types: bool = False,
     ):
         """Initialise source."""
         if not location.validate_extract_transform(extract_transform):
@@ -499,6 +499,33 @@ class Source:
 
     # Note: name, description, truth are now instance variables, not properties
 
+    @property
+    def prefix(self) -> str:
+        """Get the prefix for the source."""
+        return self.name + "_"
+
+    @property
+    def qualified_key(self) -> str:
+        """Get the qualified key for the source."""
+        return self.qualify_field(self.config.key_field.name)
+
+    @property
+    def qualified_index_fields(self) -> list[str]:
+        """Get the qualified index fields for the source."""
+        return [self.qualify_field(field.name) for field in self.config.index_fields]
+
+    def qualify_field(self, field: str) -> str:
+        """Qualify field names with the source name.
+
+        Args:
+            field: The field name to qualify.
+
+        Returns:
+            A single qualified field.
+
+        """
+        return self.prefix + field
+
     def f(self, fields: str | Iterable[str]) -> str | list[str]:
         """Qualify one or more field names with the source name.
 
@@ -509,7 +536,6 @@ class Source:
             A single qualified field, or a list of qualified field names.
 
         """
-        resolution = self.to_resolution()
         if isinstance(fields, str):
-            return resolution.qualify_field(fields)
-        return [resolution.qualify_field(field_name) for field_name in fields]
+            return self.qualify_field(fields)
+        return [self.qualify_field(field_name) for field_name in fields]

@@ -191,7 +191,7 @@ def test_source_factory_mock_properties():
         assert index_field.type == feature.datatype
 
     # Check default resolution name and default key field
-    assert source_testkit.resolution.name == name
+    assert source_testkit.source.name == name
     assert source_config.key_field.name == "key"
 
     # Verify source properties are preserved through model_dump

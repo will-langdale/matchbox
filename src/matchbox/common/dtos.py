@@ -405,45 +405,6 @@ class Resolution(BaseModel):
             )
         return self
 
-    @property
-    def prefix(self) -> str:
-        """Get the prefix for the resolution (source-specific)."""
-        if self.resolution_type == "source" and isinstance(self.config, SourceConfig):
-            return self.name + "_"
-        raise ValueError("Prefix is only available for source resolutions")
-
-    @property
-    def qualified_key(self) -> str:
-        """Get the qualified key for the source."""
-        if self.resolution_type == "source" and isinstance(self.config, SourceConfig):
-            return self.qualify_field(self.config.key_field.name)
-        raise ValueError("Qualified key is only available for source resolutions")
-
-    @property
-    def qualified_index_fields(self) -> list[str]:
-        """Get the qualified index fields for the source."""
-        if self.resolution_type == "source" and isinstance(self.config, SourceConfig):
-            return [
-                self.qualify_field(field.name) for field in self.config.index_fields
-            ]
-        raise ValueError(
-            "Qualified index fields are only available for source resolutions"
-        )
-
-    def qualify_field(self, field: str) -> str:
-        """Qualify field names with the source name.
-
-        Args:
-            field: The field name to qualify.
-
-        Returns:
-            A single qualified field.
-
-        """
-        if self.resolution_type == "source":
-            return self.prefix + field
-        raise ValueError("Field qualification is only available for source resolutions")
-
 
 class ResolutionOperationStatus(BaseModel):
     """Status response for any resolution operation."""
