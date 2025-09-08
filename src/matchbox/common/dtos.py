@@ -359,7 +359,6 @@ class ModelAncestor(BaseModel):
 class Resolution(BaseModel):
     """Unified resolution type with common fields and discriminated config."""
 
-    # Common fields extracted from configs
     name: str = Field(description="Unique name of the resolution")
     description: str | None = Field(default=None, description="Description")
     truth: int | None = Field(default=None, ge=0, le=100, strict=True)

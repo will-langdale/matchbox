@@ -45,7 +45,7 @@ def get_source(
     Returns:
         A Source object.
     """
-    resolution = _handler.get_source_config(name=name)
+    resolution = _handler.get_source_resolution(name=name)
 
     validations = [
         (location.config, resolution.config.location_config, "location"),

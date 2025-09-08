@@ -20,23 +20,25 @@ def key_field_map(
         location_names: An optional list of location names to filter by.
     """
     # Get all sources in scope of the resolution
-    sources = _handler.get_resolution_source_configs(name=resolution)
+    source_resolutions = _handler.get_resolution_source_resolutions(name=resolution)
 
     if source_filter:
-        sources = [s for s in sources if s.name in source_filter]
+        source_resolutions = [s for s in source_resolutions if s.name in source_filter]
 
     if location_names:
-        sources = [
-            s for s in sources if s.config.location_config.name in location_names
+        source_resolutions = [
+            s
+            for s in source_resolutions
+            if s.config.location_config.name in location_names
         ]
 
-    if not sources:
+    if not source_resolutions:
         raise MatchboxSourceNotFoundError("No compatible source was found")
 
     source_mb_ids: list[ArrowTable] = []
     source_to_key_field: dict[str, str] = {}
 
-    for s in sources:
+    for s in source_resolutions:
         # Get Matchbox IDs from backend
         source_mb_ids.append(
             _handler.query(
@@ -50,10 +52,12 @@ def key_field_map(
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]
-    qualified_key = sources[0].name + "_" + sources[0].config.key_field.name
+    qualified_key = (
+        source_resolutions[0].name + "_" + source_resolutions[0].config.key_field.name
+    )
     mapping = mapping.rename_columns({"key": qualified_key})
-    if len(sources) > 1:
-        for s, mb_ids in zip(sources[1:], source_mb_ids[1:], strict=True):
+    if len(source_resolutions) > 1:
+        for s, mb_ids in zip(source_resolutions[1:], source_mb_ids[1:], strict=True):
             mapping = mapping.join(
                 right_table=mb_ids, keys="id", join_type="full outer"
             )

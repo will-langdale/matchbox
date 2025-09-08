@@ -58,6 +58,7 @@ from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionGraph,
     ResolutionName,
+    ResolutionNodeType,
     SourceResolutionName,
 )
 from matchbox.common.hash import hash_to_base64
@@ -307,17 +308,22 @@ def index(source: Source, data_hashes: Table) -> UploadStatus:
 
 
 @http_retry
-def get_source_config(name: SourceResolutionName) -> Resolution:
-    log_prefix = f"SourceConfig {name}"
+def get_source_resolution(name: SourceResolutionName) -> Resolution:
+    log_prefix = f"Source resolution {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
     res = CLIENT.get(f"/resolutions/{name}")
 
-    return Resolution.model_validate(res.json())
+    resolution = Resolution.model_validate(res.json())
+
+    if resolution.resolution_type != ResolutionNodeType.SOURCE.value:
+        raise MatchboxSourceNotFoundError(f"{name} is not a source resolution")
+
+    return resolution
 
 
 @http_retry
-def get_resolution_source_configs(name: ModelResolutionName) -> list[Resolution]:
+def get_resolution_source_resolutions(name: ModelResolutionName) -> list[Resolution]:
     log_prefix = f"Resolution {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
@@ -348,7 +354,7 @@ def create_resolution(
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post("/resolutions", json=resolution.model_dump())
-    if resolution.resolution_type == "source":
+    if resolution.resolution_type == ResolutionNodeType.SOURCE.value:
         return UploadStatus.model_validate(res.json())
     return ResolutionOperationStatus.model_validate(res.json())
 
