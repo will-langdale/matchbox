@@ -18,6 +18,7 @@ from tenacity import (
 
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.client.authorisation import generate_json_web_token
+from matchbox.client.sources import Source
 from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_JUDGEMENTS,
@@ -37,7 +38,6 @@ from matchbox.common.dtos import (
     NotFoundError,
     Resolution,
     ResolutionOperationStatus,
-    SourceConfig,
     UploadStage,
     UploadStatus,
 )
@@ -265,27 +265,18 @@ def match(
 
 
 @http_retry
-def index(
-    source_config: SourceConfig, data_hashes: Table, source_name: str
-) -> UploadStatus:
+def index(source: Source, data_hashes: Table) -> UploadStatus:
     """Index hashes from a SourceConfig."""
-    log_prefix = f"Index {source_name}"
+    log_prefix = f"Index {source.name}"
 
     buffer = table_to_buffer(table=data_hashes)
 
     # Upload metadata
     logger.debug("Uploading metadata", prefix=log_prefix)
 
-    # Create Resolution object for API
-    resolution = Resolution(
-        name=source_name,
-        description=None,
-        truth=None,
-        resolution_type="source",
-        config=source_config,
+    metadata_res = CLIENT.post(
+        "/resolutions", json=source.to_resolution().model_dump(mode="json")
     )
-
-    metadata_res = CLIENT.post("/resolutions", json=resolution.model_dump(mode="json"))
 
     upload = UploadStatus.model_validate(metadata_res.json())
 

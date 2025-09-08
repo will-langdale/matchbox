@@ -1,3 +1,6 @@
+# Unit testing
+mod test 'test/justfile'
+
 # Build and run all containers
 build *DOCKER_ARGS:
     uv sync --extra server
@@ -24,19 +27,6 @@ scan:
     bash -c "docker run -v "$(pwd):/repo" -i \
         --rm trufflesecurity/trufflehog:latest git \
         file:///repo  --since-commit HEAD --fail"
-
-# Run Python tests (usage: just test [local|docker])
-test ENV="":
-    #!/usr/bin/env bash
-    if [[ "{{ENV}}" == "local" ]]; then
-        uv run pytest -m "not docker"
-    elif [[ "{{ENV}}" == "docker" ]]; then
-        just build -d
-        uv run pytest -m "docker"
-    else
-        just build -d
-        uv run pytest
-    fi
 
 # Bring the database up to the latest migration script (the head)
 migration-apply:

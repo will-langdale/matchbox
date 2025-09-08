@@ -19,9 +19,7 @@ def index(
         raise ValueError("Source client not set")
 
     data_hashes = source.hash_data(batch_size=batch_size)
-    _handler.index(
-        source_config=source.config, data_hashes=data_hashes, source_name=source.name
-    )
+    _handler.index(source=source, data_hashes=data_hashes)
 
 
 def get_source(

@@ -139,9 +139,8 @@ class IndexStep(Step):
         """Run indexing step."""
         data_hashes = self.source.hash_data(batch_size=self.batch_size)
         _handler.index(
-            source_config=self.source.config,
+            source=self.source,
             data_hashes=data_hashes,
-            source_name=self.source.name,
         )
 
         return data_hashes

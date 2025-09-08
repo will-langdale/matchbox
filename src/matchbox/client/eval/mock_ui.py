@@ -57,9 +57,9 @@ def setup_mock_database():
         engine=warehouse,
     ).write_to_location()
 
-    bar = testkit_bar.source_config
+    bar = testkit_bar.source
     bar.location.add_client(warehouse)
-    index(source_config=bar)
+    index(source=bar)
 
     foo_df = query(select("foo", client=warehouse), return_type="polars")
     bar_df = query(select("bar", client=warehouse), return_type="polars")

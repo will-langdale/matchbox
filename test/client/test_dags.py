@@ -206,10 +206,7 @@ def test_index_step_run(
     i_foo.run()
 
     hash_data.assert_called_once_with(batch_size=batch_size)
-    assert (
-        handler_index_mock.call_args_list[0].kwargs["source_config"].model_dump()
-        == foo.config.model_dump()
-    )
+    assert handler_index_mock.call_args_list[0].kwargs["source"] == foo
 
 
 @pytest.mark.parametrize(
@@ -501,7 +498,7 @@ def test_dag_runs(
 
     assert handler_index.call_count == 3
 
-    # Verify batch sizes passed to source_config.hash_data
+    # Verify batch sizes passed to source.hash_data
     assert {
         hash_data_spy.call_args_list[0].kwargs["batch_size"],
         hash_data_spy.call_args_list[1].kwargs["batch_size"],
@@ -510,10 +507,10 @@ def test_dag_runs(
 
     # Verify the right sources were sent to index
     assert {
-        handler_index.call_args_list[0].kwargs["source_config"],
-        handler_index.call_args_list[1].kwargs["source_config"],
-        handler_index.call_args_list[2].kwargs["source_config"],
-    } == {foo.config, bar.config, baz.config}
+        handler_index.call_args_list[0].kwargs["source"],
+        handler_index.call_args_list[1].kwargs["source"],
+        handler_index.call_args_list[2].kwargs["source"],
+    } == {foo, bar, baz}
 
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 2
