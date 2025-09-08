@@ -1,7 +1,6 @@
-name: Main merge
+name: Prerelease
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -63,8 +62,9 @@ jobs:
           name: Development
           prerelease: true
           body: |
-            This is an automated development build from the latest main branch. 
-            Contains the most recent changes and may be unstable.
+            This is a development build, usually from the latest main branch. 
+            
+            May be unstable.
             
             **Version:** ${{ env.MB_VERSION }}
             **Commit:** ${{ github.sha }}
