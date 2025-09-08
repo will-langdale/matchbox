@@ -21,13 +21,14 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
 from sqlalchemy.orm import Session, relationship
 
-from matchbox.common.dtos import LocationConfig, Resolution
+from matchbox.common.dtos import LocationConfig, ModelType, Resolution
+from matchbox.common.dtos import ModelConfig as CommonModelConfig
 from matchbox.common.dtos import SourceConfig as CommonSourceConfig
 from matchbox.common.dtos import SourceField as CommonSourceField
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.graph import ResolutionName
+from matchbox.common.graph import ResolutionName, ResolutionType
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -196,11 +197,32 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                 results
             )
 
+    def to_dto(self) -> Resolution:
+        """Convert ORM resolution to a matchbox.common Resolution object."""
+        if self.type == ResolutionType.SOURCE:
+            return self.source_config.to_dto()
+
+        left_resolution = self.parents[0].name if self.parents else None
+        right_resolution = self.parents[1].name if len(self.parents) > 1 else None
+        model_type = ModelType.LINKER if right_resolution else ModelType.DEDUPER
+
+        return Resolution(
+            name=self.name,
+            description=self.description,
+            resolution_type=self.type,
+            truth=self.truth,
+            config=CommonModelConfig(
+                type=model_type,
+                left_resolution=left_resolution,
+                right_resolution=right_resolution,
+            ),
+        )
+
     @classmethod
     def from_name(
         cls,
         name: ResolutionName,
-        res_type: Literal["model", "source", "human"] | None = None,
+        res_type: ResolutionType | None = None,
         session: Session | None = None,
     ) -> "Resolutions":
         """Resolves a model resolution name to a Resolution object.
@@ -215,7 +237,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         """
         query = select(cls).where(cls.name == name)
         if res_type:
-            query = query.where(cls.type == res_type)
+            query = query.where(cls.type == res_type.value)
 
         if session:
             resolution = session.execute(query).scalar()
@@ -226,7 +248,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         if resolution:
             return resolution
 
-        res_type = res_type or "any"
+        res_type = res_type.value or "any"
         raise MatchboxResolutionNotFoundError(
             message=f"No resolution {name} of {res_type}."
         )

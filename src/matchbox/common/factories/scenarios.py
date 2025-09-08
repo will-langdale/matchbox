@@ -122,8 +122,11 @@ def create_index_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.index(
-            resolution=source_testkit.source.to_resolution(),
+        backend.insert_resolution(
+            resolution=source_testkit.source.to_resolution()
+        )
+        backend.insert_source_data(
+            name=source_testkit.source.name,
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -167,8 +170,8 @@ def create_dedupe_scenario(
         )
 
         # Add to backend and DAG
-        backend.insert_model(resolution=model_testkit.model.to_resolution())
-        backend.set_model_results(name=name, results=model_testkit.probabilities)
+        backend.insert_resolution(resolution=model_testkit.model.to_resolution())
+        backend.insert_model_data(name=name, results=model_testkit.probabilities)
         dag.add_model(model_testkit)
 
     return dag
@@ -212,8 +215,8 @@ def create_probabilistic_dedupe_scenario(
         model_testkit.threshold = 50
 
         # Add to backend and DAG
-        backend.insert_model(resolution=model_testkit.model.to_resolution())
-        backend.set_model_results(name=name, results=model_testkit.probabilities)
+        backend.insert_resolution(resolution=model_testkit.model.to_resolution())
+        backend.insert_model_data(name=name, results=model_testkit.probabilities)
         backend.set_model_truth(name=name, truth=50)
         dag.add_model(model_testkit)
 
@@ -263,8 +266,8 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_model(resolution=crn_duns_model.model.to_resolution())
-    backend.set_model_results(name=crn_duns_name, results=crn_duns_model.probabilities)
+    backend.insert_resolution(resolution=crn_duns_model.model.to_resolution())
+    backend.insert_model_data(name=crn_duns_name, results=crn_duns_model.probabilities)
     dag.add_model(crn_duns_model)
 
     # Create CRN-CDMS link
@@ -283,8 +286,8 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_model(resolution=crn_cdms_model.model.to_resolution())
-    backend.set_model_results(name=crn_cdms_name, results=crn_cdms_model.probabilities)
+    backend.insert_resolution(resolution=crn_cdms_model.model.to_resolution())
+    backend.insert_model_data(name=crn_cdms_name, results=crn_cdms_model.probabilities)
     backend.set_model_truth(name=crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
 
@@ -318,8 +321,8 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_model(resolution=final_join_model.model.to_resolution())
-    backend.set_model_results(
+    backend.insert_resolution(resolution=final_join_model.model.to_resolution())
+    backend.insert_model_data(
         name=final_join_name, results=final_join_model.probabilities
     )
     dag.add_model(final_join_model)
@@ -360,8 +363,11 @@ def create_alt_dedupe_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.index(
-            resolution=source_testkit.source.to_resolution(),
+        backend.insert_resolution(
+            resolution=source_testkit.source.to_resolution()
+        )
+        backend.insert_source_data(
+            name=source_testkit.source.name,
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -404,8 +410,8 @@ def create_alt_dedupe_scenario(
             model.threshold = threshold
 
             # Add both models to backend and DAG
-            backend.insert_model(resolution=model.model.to_resolution())
-            backend.set_model_results(name=model.name, results=model.probabilities)
+            backend.insert_resolution(resolution=model.model.to_resolution())
+            backend.insert_model_data(name=model.name, results=model.probabilities)
             backend.set_model_truth(name=model.name, truth=threshold)
 
             # Add to DAG
@@ -458,8 +464,11 @@ def create_convergent_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.index(
-            resolution=source_testkit.source.to_resolution(),
+        backend.insert_resolution(
+            resolution=source_testkit.source.to_resolution()
+        )
+        backend.insert_source_data(
+            name=source_testkit.source.name,
             data_hashes=source_testkit.data_hashes,
         )
 
