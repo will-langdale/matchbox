@@ -444,12 +444,16 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
     @classmethod
     def from_dto(
         cls,
-        resolution: "Resolutions",
-        source_config: CommonSourceConfig,
+        resolution: Resolution,
+        resolution_id: int,
     ) -> "SourceConfigs":
-        """Create a SourceConfigs instance from a CommonSource object."""
+        """Create a SourceConfigs instance from a Resolution DTO object."""
+        # Extract the source config from the Resolution DTO
+        source_config = resolution.config
+
+        # Create the SourceConfigs object
         return cls(
-            resolution_id=resolution.resolution_id,
+            resolution_id=resolution_id,
             location_type=str(source_config.location_config.type),
             location_name=str(source_config.location_config.name),
             extract_transform=source_config.extract_transform,
@@ -468,25 +472,6 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             ],
         )
 
-    def to_source_config(self) -> CommonSourceConfig:
-        """Convert ORM source to a matchbox.common SourceConfig object."""
-        return CommonSourceConfig(
-            location_config=LocationConfig(
-                type=self.location_type, name=self.location_name
-            ),
-            extract_transform=self.extract_transform,
-            key_field=CommonSourceField(
-                name=self.key_field.name, type=self.key_field.type
-            ),
-            index_fields=[
-                CommonSourceField(
-                    name=field.name,
-                    type=field.type,
-                )
-                for field in self.index_fields
-            ],
-        )
-
     def to_dto(self) -> Resolution:
         """Convert ORM source to a matchbox.common Resolution object."""
         return Resolution(
@@ -494,7 +479,22 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             description=self.source_resolution.description,
             truth=self.source_resolution.truth,
             resolution_type="source",
-            config=self.to_source_config(),
+            config=CommonSourceConfig(
+                location_config=LocationConfig(
+                    type=self.location_type, name=self.location_name
+                ),
+                extract_transform=self.extract_transform,
+                key_field=CommonSourceField(
+                    name=self.key_field.name, type=self.key_field.type
+                ),
+                index_fields=[
+                    CommonSourceField(
+                        name=field.name,
+                        type=field.type,
+                    )
+                    for field in self.index_fields
+                ],
+            ),
         )
 
 

@@ -235,14 +235,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def get_source_config(self, name: SourceResolutionName) -> Resolution:  # noqa: D102
         with MBDB.get_session() as session:
             if source := get_source_config(name, session):
-                resolution = Resolutions.from_name(name=name, res_type="source")
-                return Resolution(
-                    name=resolution.name,
-                    description=resolution.description,
-                    truth=resolution.truth,
-                    resolution_type="source",
-                    config=source.to_source_config(),
-                )
+                return source.to_dto()
 
     def get_resolution_source_configs(  # noqa: D102
         self,

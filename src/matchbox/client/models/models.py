@@ -25,12 +25,12 @@ class Model:
         self,
         name: str,
         description: str | None,
-        truth: int | None,
         model_instance: Deduper,
         left_resolution: ResolutionName,
         left_data: pl.DataFrame,
         right_resolution: None = None,
         right_data: None = None,
+        truth: float = 1.0,
     ) -> None: ...
 
     @overload
@@ -38,31 +38,31 @@ class Model:
         self,
         name: str,
         description: str | None,
-        truth: int | None,
         model_instance: Linker,
         left_resolution: ResolutionName,
         left_data: pl.DataFrame,
         right_resolution: ResolutionName,
         right_data: pl.DataFrame,
+        truth: float = 1.0,
     ) -> None: ...
 
     def __init__(
         self,
         name: str,
         description: str | None,
-        truth: int | None,
         model_instance: Linker | Deduper,
         left_resolution: ResolutionName,
         left_data: pl.DataFrame,
         right_resolution: ResolutionName | None = None,
         right_data: pl.DataFrame | None = None,
+        truth: float = 1.0,
     ):
         """Create a new model instance.
 
         Args:
             name: Unique name for the model
             description: Optional description of the model
-            truth: Optional truth threshold. Can be set later after analysis.
+            truth: Truth threshold. Defaults to 1.0. Can be set later after analysis.
             model_instance: Instance of Linker or Deduper
             left_resolution: The name of the resolution that produced left_data. This is
                 the only resolution for deduping.
@@ -73,10 +73,11 @@ class Model:
         """
         self.name = name
         self.description = description
-        self.truth = truth
         self.model_instance = model_instance
         self.left_data = left_data
         self.right_data = right_data
+
+        self._truth: int = _truth_float_to_int(truth)
 
         model_type: ModelType = (
             ModelType.LINKER
@@ -107,7 +108,7 @@ class Model:
         return Resolution(
             name=self.name,
             description=self.description,
-            truth=self.truth,
+            truth=self._truth,
             resolution_type="model",
             config=self.config,
         )
@@ -165,20 +166,17 @@ class Model:
             _handler.set_results(name=self.name, results=results.probabilities)
 
     @property
-    def truth_float(self) -> float | None:
+    def truth(self) -> float | None:
         """Returns the truth threshold for the model as a float."""
-        if self.truth is not None:
-            return _truth_int_to_float(self.truth)
+        if self._truth is not None:
+            return _truth_int_to_float(self._truth)
         return None
 
-    @truth_float.setter
-    def truth_float(self, truth: float) -> None:
+    @truth.setter
+    def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
-        int_truth = _truth_float_to_int(truth)
-        # Update the instance variable
-        self.truth = int_truth
-        # Also update the backend
-        _handler.set_truth(name=self.name, truth=int_truth)
+        self._truth = _truth_float_to_int(truth)
+        _handler.set_truth(name=self.name, truth=self._truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
@@ -248,7 +246,6 @@ def make_model(
     return Model(
         name=name,
         description=description,
-        truth=None,  # Default truth to None
         model_instance=model_instance,
         left_resolution=left_resolution,
         left_data=left_data,

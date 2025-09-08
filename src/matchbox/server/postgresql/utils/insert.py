@@ -40,7 +40,6 @@ def insert_source(
 ) -> None:
     """Indexes a source within Matchbox."""
     log_prefix = f"Index {resolution.name}"
-    source_config = resolution.config
     content_hash = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:
@@ -85,7 +84,7 @@ def insert_source(
             session.flush()
 
         # Create new source with relationship to resolution
-        source_obj = SourceConfigs.from_dto(db_resolution, source_config)
+        source_obj = SourceConfigs.from_dto(resolution, db_resolution.resolution_id)
         session.add(source_obj)
         session.commit()
 

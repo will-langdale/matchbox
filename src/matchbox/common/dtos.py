@@ -405,6 +405,20 @@ class Resolution(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_truth_matches_type(self):
+        """Ensure truth field matches resolution type requirements."""
+        if self.resolution_type == "source" and self.truth is not None:
+            raise ValueError("Truth must be None for source resolutions")
+        elif self.resolution_type == "model":
+            if self.truth is None:
+                raise ValueError("Truth is required for model resolutions")
+            if not (0 <= self.truth <= 100):
+                raise ValueError(
+                    "Truth must be between 0 and 100 for model resolutions"
+                )
+        return self
+
 
 class ResolutionOperationStatus(BaseModel):
     """Status response for any resolution operation."""

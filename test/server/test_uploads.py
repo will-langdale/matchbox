@@ -143,8 +143,8 @@ class TestUploadTracker:
         model = Resolution(
             name="name",
             description="description",
-            truth=None,
             resolution_type="model",
+            truth=100,
             config=ModelConfig(
                 type=ModelType.DEDUPER,
                 left_resolution="resolution",

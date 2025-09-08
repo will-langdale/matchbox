@@ -238,10 +238,10 @@ def test_truth_getter(matchbox_api: MockRouter):
     # Create testkit with specific truth value
     testkit = model_factory(model_type="linker")
     # Update the model to have a truth value
-    testkit.model.truth = 90  # Integer truth value (90 = 0.9 as float)
+    testkit.model._truth = 90  # Integer truth value (90 = 0.9 as float)
 
     # Get truth as float
-    truth = testkit.model.truth_float
+    truth = testkit.model.truth
 
     # Verify it returns the correct value converted to float
     assert truth == 0.9
@@ -264,7 +264,7 @@ def test_truth_setter(matchbox_api: MockRouter):
     )
 
     # Set truth using the setter that triggers API call
-    testkit.model.truth_float = 0.9
+    testkit.model.truth = 0.9
 
     # Verify the API call
     assert route.called
@@ -277,7 +277,7 @@ def test_truth_setter_validation_error(matchbox_api: MockRouter):
 
     # Attempt to set an invalid truth value using the validated setter
     with pytest.raises(ValueError):
-        testkit.model.truth_float = 1.5
+        testkit.model.truth = 1.5
 
 
 def test_delete_resolution(matchbox_api: MockRouter):

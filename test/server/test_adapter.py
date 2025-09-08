@@ -254,8 +254,8 @@ class TestMatchboxBackend:
                 resolution=Resolution(
                     name="dedupe_1",
                     description="Test deduper 1",
-                    truth=None,
                     resolution_type="model",
+                    truth=100,
                     config=ModelConfig(
                         type=ModelType.DEDUPER,
                         left_resolution=crn_testkit.source.name,
@@ -266,8 +266,8 @@ class TestMatchboxBackend:
                 resolution=Resolution(
                     name="dedupe_2",
                     description="Test deduper 2",
-                    truth=None,
                     resolution_type="model",
+                    truth=100,
                     config=ModelConfig(
                         type=ModelType.DEDUPER,
                         left_resolution=duns_testkit.source.name,
@@ -282,8 +282,8 @@ class TestMatchboxBackend:
                 resolution=Resolution(
                     name="link_1",
                     description="Test linker 1",
-                    truth=None,
                     resolution_type="model",
+                    truth=100,
                     config=ModelConfig(
                         type=ModelType.LINKER,
                         left_resolution="dedupe_1",
@@ -300,8 +300,8 @@ class TestMatchboxBackend:
                     resolution=Resolution(
                         name="link_1",
                         description="Test upsert",
-                        truth=None,
                         resolution_type="model",
+                        truth=100,
                         config=ModelConfig(
                             type=ModelType.LINKER,
                             left_resolution="dedupe_1",
@@ -427,14 +427,9 @@ class TestMatchboxBackend:
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag:
             for model_testkit in dag.models.values():
-                model_resolution = Resolution(
-                    name=model_testkit.model.name,
-                    description=model_testkit.model.description,
-                    truth=model_testkit.model.truth,
-                    resolution_type="model",
-                    config=model_testkit.model.config,
+                self.backend.insert_model(
+                    resolution=model_testkit.model.to_resolution()
                 )
-                self.backend.insert_model(resolution=model_resolution)
                 self.backend.set_model_results(
                     name=model_testkit.name, results=model_testkit.probabilities
                 )

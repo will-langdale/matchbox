@@ -8,7 +8,6 @@ import pyarrow as pa
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
-from matchbox.common.dtos import Resolution
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
@@ -168,14 +167,7 @@ def create_dedupe_scenario(
         )
 
         # Add to backend and DAG
-        model_resolution = Resolution(
-            name=model_testkit.model.name,
-            description=model_testkit.model.description,
-            truth=model_testkit.model.truth,
-            resolution_type="model",
-            config=model_testkit.model.config,
-        )
-        backend.insert_model(resolution=model_resolution)
+        backend.insert_model(resolution=model_testkit.model.to_resolution())
         backend.set_model_results(name=name, results=model_testkit.probabilities)
         dag.add_model(model_testkit)
 
@@ -220,14 +212,7 @@ def create_probabilistic_dedupe_scenario(
         model_testkit.threshold = 50
 
         # Add to backend and DAG
-        model_resolution = Resolution(
-            name=model_testkit.model.name,
-            description=model_testkit.model.description,
-            truth=model_testkit.model.truth,
-            resolution_type="model",
-            config=model_testkit.model.config,
-        )
-        backend.insert_model(resolution=model_resolution)
+        backend.insert_model(resolution=model_testkit.model.to_resolution())
         backend.set_model_results(name=name, results=model_testkit.probabilities)
         backend.set_model_truth(name=name, truth=50)
         dag.add_model(model_testkit)
@@ -278,14 +263,7 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    crn_duns_resolution = Resolution(
-        name=crn_duns_model.model.name,
-        description=crn_duns_model.model.description,
-        truth=crn_duns_model.model.truth,
-        resolution_type="model",
-        config=crn_duns_model.model.config,
-    )
-    backend.insert_model(resolution=crn_duns_resolution)
+    backend.insert_model(resolution=crn_duns_model.model.to_resolution())
     backend.set_model_results(name=crn_duns_name, results=crn_duns_model.probabilities)
     dag.add_model(crn_duns_model)
 
@@ -304,14 +282,8 @@ def create_link_scenario(
         seed=seed,
     )
 
-    crn_cdms_resolution = Resolution(
-        name=crn_cdms_model.model.name,
-        description=crn_cdms_model.model.description,
-        truth=crn_cdms_model.model.truth,
-        resolution_type="model",
-        config=crn_cdms_model.model.config,
-    )
-    backend.insert_model(resolution=crn_cdms_resolution)
+    # Add to backend and DAG
+    backend.insert_model(resolution=crn_cdms_model.model.to_resolution())
     backend.set_model_results(name=crn_cdms_name, results=crn_cdms_model.probabilities)
     backend.set_model_truth(name=crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
@@ -345,14 +317,8 @@ def create_link_scenario(
         seed=seed,
     )
 
-    final_join_resolution = Resolution(
-        name=final_join_model.model.name,
-        description=final_join_model.model.description,
-        truth=final_join_model.model.truth,
-        resolution_type="model",
-        config=final_join_model.model.config,
-    )
-    backend.insert_model(resolution=final_join_resolution)
+    # Add to backend and DAG
+    backend.insert_model(resolution=final_join_model.model.to_resolution())
     backend.set_model_results(
         name=final_join_name, results=final_join_model.probabilities
     )
@@ -438,14 +404,7 @@ def create_alt_dedupe_scenario(
             model.threshold = threshold
 
             # Add both models to backend and DAG
-            model_resolution = Resolution(
-                name=model.model.name,
-                description=model.model.description,
-                truth=model.model.truth,
-                resolution_type="model",
-                config=model.model.config,
-            )
-            backend.insert_model(resolution=model_resolution)
+            backend.insert_model(resolution=model.model.to_resolution())
             backend.set_model_results(name=model.name, results=model.probabilities)
             backend.set_model_truth(name=model.name, truth=threshold)
 

@@ -810,7 +810,7 @@ def model_factory(
     model = Model(
         name=name or generator.unique.word(),
         description=description or generator.sentence(),
-        truth=None,
+        truth=1.0,
         model_instance=model_instance,
         left_resolution=left_resolution,
         left_data=pl.from_arrow(left_query),
@@ -923,7 +923,7 @@ def query_to_model_factory(
     model = Model(
         name=name or generator.unique.word(),
         description=description or generator.sentence(),
-        truth=None,
+        truth=1.0,
         model_instance=model_instance,
         left_resolution=left_resolution,
         left_data=pl.from_arrow(left_query),

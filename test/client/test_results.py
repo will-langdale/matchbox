@@ -50,7 +50,6 @@ def test_clusters_and_root_leaf():
     model = Model(
         name="model",
         description="description",
-        truth=None,
         model_instance=create_autospec(Linker, instance=True),
         left_resolution="source_a",
         left_data=left_data,

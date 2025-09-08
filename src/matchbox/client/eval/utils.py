@@ -12,7 +12,7 @@ from sqlalchemy.exc import OperationalError
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.results import Results
-from matchbox.client.sources import Source
+from matchbox.client.sources import Location, Source
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
@@ -86,8 +86,6 @@ def get_samples(
                 stacklevel=2,
             )
             continue
-
-        from matchbox.client.sources import Location
 
         location = Location.from_config(
             source_config.config.location_config, client=client

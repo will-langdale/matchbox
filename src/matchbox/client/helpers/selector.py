@@ -13,7 +13,7 @@ from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
-from matchbox.client.sources import Source
+from matchbox.client.sources import Location, Source
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.dtos import Match, SourceField
 from matchbox.common.graph import (
@@ -74,8 +74,6 @@ class Selector(BaseModel):
             selected_fields = list(
                 source_config.config.index_fields
             )  # Must actively select key
-
-        from matchbox.client.sources import Location
 
         location = Location.from_config(
             source_config.config.location_config, client=client
