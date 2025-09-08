@@ -1,7 +1,6 @@
-name: Main merge
+name: Prerelease
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -11,7 +10,7 @@ jobs:
   build-and-push-development-image:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
       attestations: write
       id-token: write
@@ -31,6 +30,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
+        with: 
+          python-version: "3.11"
 
       - name: Extract development version
         run: echo "MB_VERSION=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_ENV
@@ -53,3 +54,18 @@ jobs:
           build-args: |
             MB_VERSION=${{ env.MB_VERSION }}
           tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Create development prerelease
+        uses: ncipollo/release-action@v1
+        with:
+          tag: development
+          name: Development
+          prerelease: true
+          body: |
+            This is a development build, usually from the latest main branch. 
+            
+            May be unstable.
+            
+            **Version:** ${{ env.MB_VERSION }}
+            **Commit:** ${{ github.sha }}
+          allowUpdates: true
