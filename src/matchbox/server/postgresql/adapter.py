@@ -245,7 +245,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(children=children)
 
-    def get_resolution_source_configs(self, name: ResolutionName) -> list[Resolution]:  # noqa: D102
+    def get_leaf_source_resolutions(self, name: ResolutionName) -> list[Resolution]:  # noqa: D102
         with MBDB.get_session() as session:
             resolution = Resolutions.from_name(
                 name=name, res_type=ResolutionType.MODEL, session=session

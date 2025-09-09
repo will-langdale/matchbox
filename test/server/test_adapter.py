@@ -151,10 +151,10 @@ class TestMatchboxBackend:
         """Test retrieving sources available to a resolution."""
         with self.scenario(self.backend, "link") as dag:
             crn, duns = dag.sources["crn"], dag.sources["duns"]
-            dedupe_sources = self.backend.get_resolution_source_configs(
+            dedupe_sources = self.backend.get_leaf_source_resolutions(
                 name="naive_test_crn"
             )
-            link_sources = self.backend.get_resolution_source_configs(
+            link_sources = self.backend.get_leaf_source_resolutions(
                 name="deterministic_naive_test_crn_naive_test_duns"
             )
 
@@ -166,7 +166,7 @@ class TestMatchboxBackend:
             }
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution_source_configs(name="nonexistent")
+                self.backend.get_leaf_source_resolutions(name="nonexistent")
 
     def test_get_resolution_graph(self):
         """Test getting the resolution graph."""

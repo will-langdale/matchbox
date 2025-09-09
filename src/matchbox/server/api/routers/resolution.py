@@ -94,13 +94,13 @@ def get_resolution(backend: BackendDependency, name: ResolutionName) -> Resoluti
     "/{name}/sources",
     responses={404: {"model": NotFoundError}},
 )
-def get_resolution_source_configs(
+def get_leaf_source_resolutions(
     backend: BackendDependency,
     name: ResolutionName,
 ) -> list[Resolution]:
     """Get all sources in scope for a resolution."""
     try:
-        return backend.get_resolution_source_configs(name=name)
+        return backend.get_leaf_source_resolutions(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,

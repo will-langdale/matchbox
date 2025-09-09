@@ -429,7 +429,7 @@ def test_get_resolution_sources(
 ):
     source = source_factory().source.to_resolution()
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_resolution_source_configs = Mock(return_value=[source])
+    mock_backend.get_leaf_source_resolutions = Mock(return_value=[source])
 
     response = test_client.get("/resolutions/foo/sources")
     assert response.status_code == 200
@@ -441,7 +441,7 @@ def test_get_resolution_sources_404(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_resolution_source_configs = Mock(
+    mock_backend.get_leaf_source_resolutions = Mock(
         side_effect=MatchboxResolutionNotFoundError
     )
 

@@ -335,7 +335,7 @@ class MatchboxDBAdapter(ABC):
         ...
 
     @abstractmethod
-    def get_resolution_source_configs(self, name: ResolutionName) -> list[Resolution]:
+    def get_leaf_source_resolutions(self, name: ResolutionName) -> list[Resolution]:
         """Get a list of source configurations queriable from a resolution.
 
         Args:
