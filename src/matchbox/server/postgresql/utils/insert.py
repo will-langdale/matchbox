@@ -9,9 +9,11 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.exc import SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import Resolution
-from matchbox.common.exceptions import MatchboxResolutionAlreadyExists
-from matchbox.common.graph import ResolutionType
+from matchbox.common.graph import (
+    ModelResolutionName,
+    ResolutionType,
+    SourceResolutionName,
+)
 from matchbox.common.hash import IntMap, hash_arrow_table
 from matchbox.common.logging import logger
 from matchbox.common.transform import Cluster, DisjointSet
@@ -24,7 +26,6 @@ from matchbox.server.postgresql.orm import (
     Probabilities,
     Resolutions,
     Results,
-    SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
@@ -34,49 +35,32 @@ from matchbox.server.postgresql.utils.db import (
 from matchbox.server.postgresql.utils.query import get_parent_clusters_and_leaves
 
 
-def insert_source(
-    resolution: Resolution, data_hashes: pa.Table, batch_size: int
+def insert_hashes(
+    name: SourceResolutionName,
+    data_hashes: pa.Table,
+    batch_size: int,
 ) -> None:
-    """Indexes a source within Matchbox."""
-    log_prefix = f"Index {resolution.name}"
+    """Indexes hash data for a source within Matchbox.
+
+    Args:
+        name: The name of the source resolution
+        data_hashes: Arrow table containing hash data
+        batch_size: Batch size for bulk operations
+    """
+    log_prefix = f"Index hashes {name}"
     content_hash = hash_arrow_table(data_hashes)
 
     with MBDB.get_session() as session:
-        logger.info("Begin", prefix=log_prefix)
-
-        # TODO: Remove check. Backwards compatibility for current upsert logic
-        # In next PR, insert, update and delete are separate
-        existing = session.scalar(
-            select(Resolutions).where(
-                Resolutions.name == resolution.name,
-                Resolutions.type == ResolutionType.SOURCE,
-            )
+        resolution = Resolutions.from_name(
+            name=name, res_type=ResolutionType.SOURCE, session=session
         )
-        if existing:
-            logger.info("Deleting existing", prefix=log_prefix)
-            session.delete(existing.source_config)
-            session.flush()
+        # Check if the content hash is the same
+        if resolution.hash == content_hash:
+            logger.info("Source data matches index. Finished", prefix=log_prefix)
+            return
 
-        # Create the resolution (will error if it exists)
-        # TODO: Remove try/except. Backwards compatibility for current upsert logic
-        # In next PR, insert, update and delete are separate, and SourceConfigs
-        # are managed through Resolutions alone
-        try:
-            resolution_orm = Resolutions.from_dto(resolution, session)
-        except MatchboxResolutionAlreadyExists:
-            resolution_orm = Resolutions.from_name(resolution.name, session=session)
-            resolution_orm.source_config = SourceConfigs.from_dto(resolution.config)
-
-        resolution_orm.hash = content_hash
-        session.commit()
-
-        logger.info(
-            "Added to Resolutions, SourceConfigs, SourceFields", prefix=log_prefix
-        )
-
-        # Store IDs for later use if needed
-        resolution_id = resolution_orm.resolution_id
-        source_config_id = resolution_orm.source_config.source_config_id
+        resolution_id = resolution.resolution_id
+        source_config_id = resolution.source_config.source_config_id
 
     # Don't insert new hashes, but new keys need existing hash IDs
     with MBDB.get_adbc_connection() as conn:
@@ -107,6 +91,7 @@ def insert_source(
     else:
         # The value of next_cluster_id is irrelevant as cluster_records will be empty
         next_cluster_id = 0
+
     cluster_records = (
         new_hashes.with_row_index("cluster_id")
         .with_columns(
@@ -176,6 +161,7 @@ def insert_source(
                 )
 
             adbc_connection.commit()
+
         except Exception as e:
             # Log the error and rollback
             logger.warning(f"Error, rolling back: {e}", prefix=log_prefix)
@@ -486,7 +472,7 @@ def _results_to_insert_tables(
 
 
 def insert_results(
-    resolution: Resolutions,
+    name: ModelResolutionName,
     results: pa.Table,
     batch_size: int,
 ) -> None:
@@ -501,13 +487,15 @@ def insert_results(
     This allows easy querying of clusters at any threshold.
 
     Args:
-        resolution: Resolution of type model to associate results with
+        name: The name of the model resolution to upload results for
         results: A PyArrow results table with left_id, right_id, probability
         batch_size: Number of records to insert in each batch
 
     Raises:
         MatchboxResolutionNotFoundError: If the specified model doesn't exist.
     """
+    resolution = Resolutions.from_name(name=name, res_type=ResolutionType.MODEL)
+
     log_prefix = f"Model {resolution.name}"
     logger.info(
         f"Writing results data with batch size {batch_size:,}", prefix=log_prefix

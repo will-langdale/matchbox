@@ -19,7 +19,6 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory
@@ -35,10 +34,12 @@ def test_get_source(
 ):
     source_testkit = source_factory(name="foo")
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_source_config = Mock(
-        return_value=source_testkit.source.to_resolution()
+    mock_backend.get_resolution = Mock(
+        side_effect=[
+            MatchboxResolutionNotFoundError(),  # First call (MODEL)
+            source_testkit.source.to_resolution(),  # Second call (SOURCE)
+        ]
     )
-    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError)
 
     response = test_client.get("/resolutions/foo")
     assert response.status_code == 200
@@ -51,7 +52,7 @@ def test_get_model(
 ):
     testkit = model_factory(name="test_model", description="test description")
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model = Mock(return_value=testkit.model.to_resolution())
+    mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
 
     response = test_client.get("/resolutions/test_model")
 
@@ -64,8 +65,7 @@ def test_get_resolution_404(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
-    mock_backend.get_source_config = Mock(side_effect=MatchboxSourceNotFoundError())
+    mock_backend.get_resolution = Mock(side_effect=MatchboxResolutionNotFoundError())
 
     response = test_client.get("/resolutions/nonexistent")
 
@@ -94,14 +94,16 @@ def test_insert_model(
         ).model_dump()
     )
 
-    mock_backend.insert_model.assert_called_once_with(testkit.model.to_resolution())
+    mock_backend.insert_resolution.assert_called_once_with(
+        testkit.model.to_resolution()
+    )
 
 
 def test_insert_model_error(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.insert_model = Mock(side_effect=Exception("Test error"))
+    mock_backend.insert_resolution = Mock(side_effect=Exception("Test error"))
     testkit = model_factory()
 
     response = test_client.post(
@@ -123,7 +125,7 @@ def test_complete_model_upload_process(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.set_model_results = Mock(return_value=None)
+    mock_backend.insert_model_data = Mock(return_value=None)
 
     # Create test bucket
     s3.create_bucket(
@@ -135,8 +137,8 @@ def test_complete_model_upload_process(
     testkit = model_factory(model_type=model_type)
 
     # Set up the mock to return the actual model metadata and data
-    mock_backend.get_model = Mock(return_value=testkit.model.to_resolution())
-    mock_backend.get_model_results = Mock(return_value=testkit.probabilities)
+    mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
+    mock_backend.get_model_data = Mock(return_value=testkit.probabilities)
 
     # Step 1: Create model
     response = test_client.post(
@@ -194,8 +196,8 @@ def test_complete_model_upload_process(
     assert response.status_code == 200
 
     # Step 5: Verify results were stored correctly
-    mock_backend.set_model_results.assert_called_once()
-    call_args = mock_backend.set_model_results.call_args
+    mock_backend.insert_model_data.assert_called_once()
+    call_args = mock_backend.insert_model_data.call_args
     assert (
         call_args[1]["name"] == testkit.model.name
     )  # Check model resolution name matches
@@ -242,7 +244,7 @@ def test_set_results(
 ):
     testkit = model_factory()
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model = Mock(return_value=testkit.model.to_resolution())
+    mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
 
     response = test_client.post(f"/resolutions/{testkit.model.name}/results")
 
@@ -255,7 +257,7 @@ def test_set_results_model_not_found(
 ):
     """Test setting results for a non-existent model."""
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model = Mock(side_effect=MatchboxResolutionNotFoundError())
+    mock_backend.get_resolution = Mock(side_effect=MatchboxResolutionNotFoundError())
 
     response = test_client.post("/resolutions/nonexistent-model/results")
 
@@ -268,7 +270,7 @@ def test_get_results(
 ):
     testkit = model_factory()
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_model_results = Mock(return_value=testkit.probabilities)
+    mock_backend.get_model_data = Mock(return_value=testkit.probabilities)
 
     response = test_client.get(f"/resolutions/{testkit.model.name}/results")
 
@@ -328,7 +330,9 @@ def test_model_get_endpoints_404(
 ) -> None:
     """Test 404 responses for model GET endpoints when model doesn't exist."""
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_method = getattr(mock_backend, f"get_model_{endpoint}")
+    # Map endpoint to actual backend method name
+    method_name = "get_model_data" if endpoint == "results" else f"get_model_{endpoint}"
+    mock_method = getattr(mock_backend, method_name)
     mock_method.side_effect = MatchboxResolutionNotFoundError()
 
     response = test_client.get(f"/resolutions/nonexistent-model/{endpoint}")
@@ -425,7 +429,7 @@ def test_get_resolution_sources(
 ):
     source = source_factory().source.to_resolution()
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_resolution_source_configs = Mock(return_value=[source])
+    mock_backend.get_leaf_source_resolutions = Mock(return_value=[source])
 
     response = test_client.get("/resolutions/foo/sources")
     assert response.status_code == 200
@@ -437,7 +441,7 @@ def test_get_resolution_sources_404(
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_resolution_source_configs = Mock(
+    mock_backend.get_leaf_source_resolutions = Mock(
         side_effect=MatchboxResolutionNotFoundError
     )
 
@@ -451,7 +455,8 @@ def test_add_source(
 ):
     """Test the source addition endpoint."""
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.index = Mock(return_value=None)
+    mock_backend.insert_resolution = Mock(return_value=None)
+    mock_backend.insert_source_data = Mock(return_value=None)
 
     source_testkit = source_factory()
 
@@ -466,7 +471,8 @@ def test_add_source(
     assert response.status_code == 202, response.json()
     assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
     assert response.json().get("id") is not None
-    mock_backend.index.assert_not_called()
+    mock_backend.insert_resolution.assert_not_called()
+    mock_backend.insert_source_data.assert_not_called()
 
 
 def test_complete_source_upload_process(
@@ -478,7 +484,8 @@ def test_complete_source_upload_process(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
-    mock_backend.index = Mock(return_value=None)
+    mock_backend.insert_resolution = Mock(return_value=None)
+    mock_backend.insert_source_data = Mock(return_value=None)
 
     # Create test bucket
     s3.create_bucket(
@@ -537,12 +544,14 @@ def test_complete_source_upload_process(
     assert stage == UploadStage.COMPLETE
     assert response.status_code == 200
 
-    # Verify backend.index was called with correct arguments
-    mock_backend.index.assert_called_once()
-    call_args = mock_backend.index.call_args
-    assert (
-        call_args[1]["resolution"] == source_testkit.source.to_resolution()
-    )  # Check resolution matches
+    # Verify backend methods were called with correct arguments
+    mock_backend.insert_resolution.assert_called_once_with(
+        resolution=source_testkit.source.to_resolution()
+    )
+    mock_backend.insert_source_data.assert_called_once()
+
+    # Check resolution matches
+    call_args = mock_backend.insert_source_data.call_args
     assert call_args[1]["data_hashes"].equals(source_testkit.data_hashes)  # Check data
 
     # Verify file is deleted from S3 after processing

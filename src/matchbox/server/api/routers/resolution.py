@@ -16,7 +16,6 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ModelResolutionName, ResolutionName, ResolutionType
 from matchbox.server.api.dependencies import (
@@ -53,7 +52,7 @@ def create_resolution(
         return upload_tracker.get(upload_id=upload_id).status
 
     try:
-        backend.insert_model(resolution)
+        backend.insert_resolution(resolution)
         return ResolutionOperationStatus(
             success=True,
             name=resolution.name,
@@ -78,11 +77,11 @@ def create_resolution(
 def get_resolution(backend: BackendDependency, name: ResolutionName) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     try:
-        return backend.get_model(name=name)
+        return backend.get_resolution(name=name, validate=ResolutionType.MODEL)
     except MatchboxResolutionNotFoundError:
         try:
-            return backend.get_source_config(name=name)
-        except MatchboxSourceNotFoundError as e:
+            return backend.get_resolution(name=name, validate=ResolutionType.SOURCE)
+        except MatchboxResolutionNotFoundError as e:
             raise HTTPException(
                 status_code=404,
                 detail=NotFoundError(
@@ -95,13 +94,13 @@ def get_resolution(backend: BackendDependency, name: ResolutionName) -> Resoluti
     "/{name}/sources",
     responses={404: {"model": NotFoundError}},
 )
-def get_resolution_source_configs(
+def get_leaf_source_resolutions(
     backend: BackendDependency,
     name: ResolutionName,
 ) -> list[Resolution]:
     """Get all sources in scope for a resolution."""
     try:
-        return backend.get_resolution_source_configs(name=name)
+        return backend.get_leaf_source_resolutions(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -169,7 +168,7 @@ def set_results(
 ) -> UploadStatus:
     """Create an upload task for model results."""
     try:
-        resolution = backend.get_model(name=name)
+        resolution = backend.get_resolution(name=name, validate=ResolutionType.MODEL)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -191,7 +190,7 @@ def get_results(
 ) -> ParquetResponse:
     """Download results for a model as a parquet file."""
     try:
-        res = backend.get_model_results(name=name)
+        res = backend.get_model_data(name=name)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,

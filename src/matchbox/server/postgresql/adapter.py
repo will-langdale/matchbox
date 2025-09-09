@@ -8,18 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import (
-    Match,
-    ModelAncestor,
-    ModelType,
-    Resolution,
-)
+from matchbox.common.dtos import Match, Resolution
 from matchbox.common.eval import Judgement as CommonJudgement
 from matchbox.common.eval import ModelComparison
 from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
-    MatchboxModelConfigError,
     MatchboxNoJudgements,
 )
 from matchbox.common.graph import (
@@ -57,11 +51,10 @@ from matchbox.server.postgresql.utils.db import (
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
+    insert_hashes,
     insert_results,
-    insert_source,
 )
 from matchbox.server.postgresql.utils.query import match, query
-from matchbox.server.postgresql.utils.results import get_model_config
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -140,7 +133,6 @@ class FilteredResolutions(BaseModel):
     """Wrapper class for filtered resolution queries."""
 
     sources: bool = False
-    humans: bool = False
     models: bool = False
 
     def count(self) -> int:
@@ -151,8 +143,6 @@ class FilteredResolutions(BaseModel):
             filter_list = []
             if self.sources:
                 filter_list.append(Resolutions.type == ResolutionType.SOURCE)
-            if self.humans:
-                filter_list.append(Resolutions.type == ResolutionType.HUMAN)
             if self.models:
                 filter_list.append(Resolutions.type == ResolutionType.MODEL)
 
@@ -174,15 +164,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
         PKSpace.initialise()
 
         self.sources = SourceConfigs
-        self.models = FilteredResolutions(sources=False, humans=False, models=True)
-        self.source_resolutions = FilteredResolutions(
-            sources=True, humans=False, models=False
-        )
+        self.models = FilteredResolutions(sources=False, models=True)
         self.data = FilteredClusters(has_source=True)
         self.clusters = FilteredClusters(has_source=False)
-        self.merges = Contains
         self.creates = FilteredProbabilities(over_truth=True)
+        self.merges = Contains
         self.proposes = FilteredProbabilities()
+        self.source_resolutions = FilteredResolutions(sources=True, models=False)
 
     # Retrieval
 
@@ -218,26 +206,46 @@ class MatchboxPostgres(MatchboxDBAdapter):
             threshold=threshold,
         )
 
-    # Data management
+    # Resolution management
 
-    def index(self, resolution: Resolution, data_hashes: Table) -> None:  # noqa: D102
-        insert_source(
-            resolution=resolution,
-            data_hashes=data_hashes,
-            batch_size=self.settings.batch_size,
-        )
-
-    def get_source_config(self, name: SourceResolutionName) -> Resolution:  # noqa: D102
+    def insert_resolution(self, resolution: Resolution) -> None:  # noqa: D102
+        log_prefix = f"Insert {resolution.name}"
         with MBDB.get_session() as session:
-            if resolution := Resolutions.from_name(
-                name=name, res_type=ResolutionType.SOURCE, session=session
-            ):
-                return resolution.to_dto()
+            resolution_orm = Resolutions.from_dto(resolution, session)
+            session.commit()
 
-    def get_resolution_source_configs(  # noqa: D102
-        self,
-        name: ModelResolutionName,
-    ) -> list[Resolution]:
+            logger.info(
+                f"Inserted with ID {resolution_orm.resolution_id}", prefix=log_prefix
+            )
+
+    def get_resolution(  # noqa: D102
+        self, name: ResolutionName, validate: ResolutionType | None = None
+    ) -> Resolution:
+        with MBDB.get_session() as session:
+            resolution = Resolutions.from_name(
+                name=name, res_type=validate, session=session
+            )
+            return resolution.to_dto()
+
+    def delete_resolution(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
+        with MBDB.get_session() as session:
+            resolution = Resolutions.from_name(name=name, session=session)
+            if certain:
+                delete_stmt = delete(Resolutions).where(
+                    Resolutions.resolution_id.in_(
+                        [
+                            resolution.resolution_id,
+                            *(d.resolution_id for d in resolution.descendants),
+                        ]
+                    )
+                )
+                session.execute(delete_stmt)
+                session.commit()
+            else:
+                children = [r.name for r in resolution.descendants]
+                raise MatchboxDeletionNotConfirmed(children=children)
+
+    def get_leaf_source_resolutions(self, name: ResolutionName) -> list[Resolution]:  # noqa: D102
         with MBDB.get_session() as session:
             resolution = Resolutions.from_name(
                 name=name, res_type=ResolutionType.MODEL, session=session
@@ -257,7 +265,57 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
             return [r.to_dto() for r in source_resolutions]
 
-    def validate_ids(self, ids: list[int]) -> None:  # noqa: D102
+    def get_resolution_graph(self) -> ResolutionGraph:  # noqa: D102
+        return get_resolution_graph()
+
+    # Data insertion
+
+    def insert_source_data(  # noqa: D102
+        self, name: SourceResolutionName, data_hashes: Table
+    ) -> None:
+        insert_hashes(
+            name=name,
+            data_hashes=data_hashes,
+            batch_size=self.settings.batch_size,
+        )
+
+    def insert_model_data(self, name: ModelResolutionName, results: Table) -> None:  # noqa: D102
+        insert_results(
+            name=name,
+            results=results,
+            batch_size=self.settings.batch_size,
+        )
+
+    def get_model_data(self, name: ModelResolutionName) -> Table:  # noqa: D102
+        results_query = (
+            select(Results.left_id, Results.right_id, Results.probability)
+            .join(
+                Resolutions,
+                Results.resolution_id == Resolutions.resolution_id,
+            )
+            .where(Resolutions.name == name, Resolutions.type == ResolutionType.MODEL)
+        )
+        with MBDB.get_adbc_connection() as conn:
+            stmt: str = compile_sql(results_query)
+            return sql_to_df(
+                stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
+            )
+
+    def set_model_truth(self, name: ModelResolutionName, truth: int) -> None:  # noqa: D102
+        with MBDB.get_session() as session:
+            resolution = Resolutions.from_name(
+                name=name, res_type=ResolutionType.MODEL, session=session
+            )
+            resolution.truth = truth
+            session.commit()
+
+    def get_model_truth(self, name: ModelResolutionName) -> int:  # noqa: D102
+        resolution = Resolutions.from_name(name=name, res_type=ResolutionType.MODEL)
+        return resolution.truth
+
+    # Data management
+
+    def validate_ids(self, ids: list[int]) -> bool:  # noqa: D102
         with MBDB.get_session() as session:
             data_inner_join = (
                 session.query(Clusters)
@@ -283,7 +341,9 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 data=missing_ids,
             )
 
-    def validate_hashes(self, hashes: list[bytes]) -> None:  # noqa: D102
+        return True
+
+    def validate_hashes(self, hashes: list[bytes]) -> bool:  # noqa: D102
         with MBDB.get_session() as session:
             data_inner_join = (
                 session.query(Clusters)
@@ -309,6 +369,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 data=missing_hashes,
             )
 
+        return True
+
     def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:  # noqa: D102
         initial_dict = {id: None for id in ids}
 
@@ -331,13 +393,10 @@ class MatchboxPostgres(MatchboxDBAdapter):
             item.cluster_id: item.cluster_hash for item in data_inner_join
         }
 
-    def get_resolution_graph(self) -> ResolutionGraph:  # noqa: D102
-        return get_resolution_graph()
-
     def dump(self) -> MatchboxSnapshot:  # noqa: D102
         return dump()
 
-    def drop(self, certain: bool = False) -> None:  # noqa: D102
+    def drop(self, certain: bool) -> None:  # noqa: D102
         if certain:
             MBDB.drop_database()
             PKSpace.initialise()
@@ -348,7 +407,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 "If you're sure you want to continue, rerun with certain=True"
             )
 
-    def clear(self, certain: bool = False) -> None:  # noqa: D102
+    def clear(self, certain: bool) -> None:  # noqa: D102
         if certain:
             MBDB.clear_database()
             PKSpace.initialise()
@@ -372,154 +431,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             batch_size=self.settings.batch_size,
         )
 
-    # Model management
-
-    def insert_model(self, resolution: "Resolution") -> None:  # noqa: D102
-        log_prefix = f"Index {resolution.name}"
-        with MBDB.get_session() as session:
-            # For LINKER models, validate no shared ancestors
-            if resolution.config.type == ModelType.LINKER:
-                left = Resolutions.from_name(
-                    resolution.config.left_resolution, session=session
-                )
-                right = Resolutions.from_name(
-                    resolution.config.right_resolution, session=session
-                )
-
-                left_ancestors = {a.name for a in left.ancestors}
-                right_ancestors = {a.name for a in right.ancestors}
-                shared_ancestors = left_ancestors & right_ancestors
-
-                if shared_ancestors:
-                    raise MatchboxModelConfigError(
-                        f"Resolutions '{left.name}' and '{right.name}' "
-                        f"share common ancestor(s): {', '.join(shared_ancestors)}. "
-                        f"Resolutions cannot share ancestors."
-                    )
-
-            # Create the resolution (will error if it exists)
-            resolution_orm = Resolutions.from_dto(resolution, session)
-            session.commit()
-
-            logger.info(
-                f"Inserted with ID {resolution_orm.resolution_id}", prefix=log_prefix
-            )
-
-    def get_model(self, name: ModelResolutionName) -> Resolution:  # noqa: D102
-        resolution = Resolutions.from_name(name=name, res_type="model")
-        model_config = get_model_config(resolution=resolution)
-        return Resolution(
-            name=resolution.name,
-            description=resolution.description,
-            truth=resolution.truth,
-            resolution_type=ResolutionType.MODEL,
-            config=model_config,
-        )
-
-    def set_model_results(self, name: ModelResolutionName, results: Table) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(name=name, res_type="model")
-        insert_results(
-            results=results,
-            resolution=resolution,
-            batch_size=self.settings.batch_size,
-        )
-
-    def get_model_results(self, name: ModelResolutionName) -> Table:  # noqa: D102
-        results_query = (
-            select(Results.left_id, Results.right_id, Results.probability)
-            .join(
-                Resolutions,
-                Results.resolution_id == Resolutions.resolution_id,
-            )
-            .where(Resolutions.name == name, Resolutions.type == ResolutionType.MODEL)
-        )
-        with MBDB.get_adbc_connection() as conn:
-            stmt: str = compile_sql(results_query)
-            return sql_to_df(
-                stmt=stmt, connection=conn.dbapi_connection, return_type="arrow"
-            )
-
-    def set_model_truth(self, name: ModelResolutionName, truth: int) -> None:  # noqa: D102
-        with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type="model", session=session
-            )
-            resolution.truth = truth
-            session.commit()
-
-    def get_model_truth(self, name: ModelResolutionName) -> int:  # noqa: D102
-        resolution = Resolutions.from_name(name=name, res_type="model")
-        return resolution.truth
-
-    def get_model_ancestors(self, name: ModelResolutionName) -> list[ModelAncestor]:  # noqa: D102
-        resolution = Resolutions.from_name(name=name, res_type="model")
-        return [
-            ModelAncestor(name=resolution.name, truth=resolution.truth)
-            for resolution in resolution.ancestors
-        ]
-
-    def set_model_ancestors_cache(  # noqa: D102
-        self,
-        name: ModelResolutionName,
-        ancestors_cache: list[ModelAncestor],
-    ) -> None:
-        resolution = Resolutions.from_name(name=name, res_type="model")
-        with MBDB.get_session() as session:
-            ancestor_names = [ancestor.name for ancestor in ancestors_cache]
-            name_to_id = dict(
-                session.query(Resolutions.name, Resolutions.resolution_id)
-                .filter(Resolutions.name.in_(ancestor_names))
-                .all()
-            )
-
-            for ancestor in ancestors_cache:
-                parent_id = name_to_id.get(ancestor.name)
-                if parent_id is None:
-                    raise ValueError(f"Model '{ancestor.name}' not found in database")
-
-                session.execute(
-                    ResolutionFrom.__table__.update()
-                    .where(ResolutionFrom.parent == parent_id)
-                    .where(ResolutionFrom.child == resolution.resolution_id)
-                    .values(truth_cache=ancestor.truth)
-                )
-
-            session.commit()
-
-    def get_model_ancestors_cache(  # noqa: D102
-        self, name: ModelResolutionName
-    ) -> list[ModelAncestor]:
-        resolution = Resolutions.from_name(name=name, res_type="model")
-        with MBDB.get_session() as session:
-            query = (
-                select(Resolutions.name, ResolutionFrom.truth_cache)
-                .join(Resolutions, Resolutions.resolution_id == ResolutionFrom.parent)
-                .where(ResolutionFrom.child == resolution.resolution_id)
-                .where(ResolutionFrom.truth_cache.isnot(None))
-            )
-
-            return [
-                ModelAncestor(name=name, truth=truth)
-                for name, truth in session.execute(query).all()
-            ]
-
-    def delete_resolution(self, name: ResolutionName, certain: bool = False) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(name=name)
-        with MBDB.get_session() as session:
-            if certain:
-                delete_stmt = delete(Resolutions).where(
-                    Resolutions.resolution_id.in_(
-                        [
-                            resolution.resolution_id,
-                            *(d.resolution_id for d in resolution.descendants),
-                        ]
-                    )
-                )
-                session.execute(delete_stmt)
-                session.commit()
-            else:
-                children = [r.name for r in resolution.descendants]
-                raise MatchboxDeletionNotConfirmed(childen=children)
+    # User management
 
     def login(self, user_name: str) -> int:  # noqa: D102
         with MBDB.get_session() as session:
@@ -533,6 +445,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
             session.commit()
 
             return user.user_id
+
+    # Evaluation management
 
     def insert_judgement(self, judgement: CommonJudgement) -> None:  # noqa: D102
         # Check that all referenced cluster IDs exist

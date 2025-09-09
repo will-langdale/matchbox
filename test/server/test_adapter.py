@@ -18,7 +18,6 @@ from matchbox.common.dtos import (
     LocationConfig,
     LocationType,
     Match,
-    ModelAncestor,
     ModelConfig,
     ModelType,
     Resolution,
@@ -29,7 +28,6 @@ from matchbox.common.exceptions import (
     MatchboxNoJudgements,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.entities import (
     SourceEntity,
@@ -137,24 +135,26 @@ class TestMatchboxBackend:
         with self.scenario(self.backend, "index") as dag:
             crn_testkit = dag.sources.get("crn")
 
-            crn_retrieved = self.backend.get_source_config(crn_testkit.source.name)
+            crn_retrieved = self.backend.get_resolution(
+                crn_testkit.source.name, validate=ResolutionType.SOURCE
+            )
             # Equality between the two is False because one lacks the Engine
             assert (
                 crn_testkit.source_config.model_dump()
                 == crn_retrieved.config.model_dump()
             )
 
-            with pytest.raises(MatchboxSourceNotFoundError):
-                self.backend.get_source_config(name="foo")
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(name="foo", validate=ResolutionType.SOURCE)
 
     def test_get_resolution_sources(self):
         """Test retrieving sources available to a resolution."""
         with self.scenario(self.backend, "link") as dag:
             crn, duns = dag.sources["crn"], dag.sources["duns"]
-            dedupe_sources = self.backend.get_resolution_source_configs(
+            dedupe_sources = self.backend.get_leaf_source_resolutions(
                 name="naive_test_crn"
             )
-            link_sources = self.backend.get_resolution_source_configs(
+            link_sources = self.backend.get_leaf_source_resolutions(
                 name="deterministic_naive_test_crn_naive_test_duns"
             )
 
@@ -166,7 +166,7 @@ class TestMatchboxBackend:
             }
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution_source_configs(name="nonexistent")
+                self.backend.get_leaf_source_resolutions(name="nonexistent")
 
     def test_get_resolution_graph(self):
         """Test getting the resolution graph."""
@@ -185,12 +185,16 @@ class TestMatchboxBackend:
     def test_get_model(self):
         """Test getting a model from the database."""
         with self.scenario(self.backend, "dedupe"):
-            model = self.backend.get_model(name="naive_test_crn")
+            model = self.backend.get_resolution(
+                name="naive_test_crn", validate=ResolutionType.MODEL
+            )
             assert isinstance(model, Resolution)
             assert isinstance(model.config, ModelConfig)
 
             with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_model(name="nonexistent")
+                self.backend.get_resolution(
+                    name="nonexistent", validate=ResolutionType.MODEL
+                )
 
     def test_delete_resolution(self):
         """
@@ -250,7 +254,7 @@ class TestMatchboxBackend:
             # Test deduper insertion
             models_count = self.backend.models.count()
 
-            self.backend.insert_model(
+            self.backend.insert_resolution(
                 resolution=Resolution(
                     name="dedupe_1",
                     description="Test deduper 1",
@@ -262,7 +266,7 @@ class TestMatchboxBackend:
                     ),
                 )
             )
-            self.backend.insert_model(
+            self.backend.insert_resolution(
                 resolution=Resolution(
                     name="dedupe_2",
                     description="Test deduper 2",
@@ -278,7 +282,7 @@ class TestMatchboxBackend:
             assert self.backend.models.count() == models_count + 2
 
             # Test linker insertion
-            self.backend.insert_model(
+            self.backend.insert_resolution(
                 resolution=Resolution(
                     name="link_1",
                     description="Test linker 1",
@@ -296,7 +300,7 @@ class TestMatchboxBackend:
 
             # Test can't insert duplicate
             with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.insert_model(
+                self.backend.insert_resolution(
                     resolution=Resolution(
                         name="link_1",
                         description="Test upsert",
@@ -334,7 +338,7 @@ class TestMatchboxBackend:
             assert identical, report
 
             # Retrieve
-            pre_results = self.backend.get_model_results(name="naive_test_crn")
+            pre_results = self.backend.get_model_data(name="naive_test_crn")
 
             assert isinstance(pre_results, pa.Table)
             assert len(pre_results) > 0
@@ -357,12 +361,12 @@ class TestMatchboxBackend:
             )
 
             # Set new results
-            self.backend.set_model_results(
+            self.backend.insert_model_data(
                 name="naive_test_crn", results=results_truncated.to_arrow()
             )
 
             # Retrieve again
-            post_results = self.backend.get_model_results(name="naive_test_crn")
+            post_results = self.backend.get_model_data(name="naive_test_crn")
 
             # Check difference
             assert len(pre_results) != len(post_results)
@@ -389,7 +393,7 @@ class TestMatchboxBackend:
             assert identical, report
 
             # Retrieve
-            pre_results = self.backend.get_model_results(name="probabilistic_test_crn")
+            pre_results = self.backend.get_model_data(name="probabilistic_test_crn")
 
             assert isinstance(pre_results, pa.Table)
             assert len(pre_results) > 0
@@ -412,12 +416,12 @@ class TestMatchboxBackend:
             )
 
             # Set new results
-            self.backend.set_model_results(
+            self.backend.insert_model_data(
                 name="probabilistic_test_crn", results=results_truncated.to_arrow()
             )
 
             # Retrieve again
-            post_results = self.backend.get_model_results(name="probabilistic_test_crn")
+            post_results = self.backend.get_model_data(name="probabilistic_test_crn")
 
             # Check difference
             assert len(pre_results) != len(post_results)
@@ -427,10 +431,10 @@ class TestMatchboxBackend:
         """Test that model results data can be inserted when clusters are shared."""
         with self.scenario(self.backend, "convergent") as dag:
             for model_testkit in dag.models.values():
-                self.backend.insert_model(
+                self.backend.insert_resolution(
                     resolution=model_testkit.model.to_resolution()
                 )
-                self.backend.set_model_results(
+                self.backend.insert_model_data(
                     name=model_testkit.name, results=model_testkit.probabilities
                 )
 
@@ -448,52 +452,6 @@ class TestMatchboxBackend:
 
             # Check difference
             assert pre_truth != post_truth
-
-    def test_model_ancestors(self):
-        """Test that a model's ancestors can be retrieved."""
-        with self.scenario(self.backend, "link"):
-            linker_name = "deterministic_naive_test_crn_naive_test_duns"
-            linker_ancestors = self.backend.get_model_ancestors(name=linker_name)
-
-            assert [
-                isinstance(ancestor, ModelAncestor) for ancestor in linker_ancestors
-            ]
-
-            # Not all ancestors have truth values, but one must
-            truth_found = False
-            for ancestor in linker_ancestors:
-                if isinstance(ancestor.truth, int):
-                    truth_found = True
-
-            assert truth_found
-
-    def test_model_ancestors_cache(self):
-        """Test that a model's ancestors cache can be set and retrieved."""
-        with self.scenario(self.backend, "link"):
-            linker_name = "deterministic_naive_test_crn_naive_test_duns"
-
-            # Retrieve
-            pre_ancestors_cache = self.backend.get_model_ancestors_cache(
-                name=linker_name
-            )
-
-            # Set
-            updated_ancestors_cache = [
-                ModelAncestor(name=ancestor.name, truth=90)
-                for ancestor in pre_ancestors_cache
-            ]
-            self.backend.set_model_ancestors_cache(
-                name=linker_name, ancestors_cache=updated_ancestors_cache
-            )
-
-            # Retrieve again
-            post_ancestors_cache = self.backend.get_model_ancestors_cache(
-                name=linker_name
-            )
-
-            # Check difference
-            assert pre_ancestors_cache != post_ancestors_cache
-            assert post_ancestors_cache == updated_ancestors_cache
 
     def test_index(self):
         """Test that indexing data works."""
@@ -513,11 +471,14 @@ class TestMatchboxBackend:
 
             assert self.backend.clusters.count() == 0
 
-            self.backend.index(
-                crn_testkit.source.to_resolution(), crn_testkit.data_hashes
+            self.backend.insert_resolution(crn_testkit.source.to_resolution())
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
             )
 
-            crn_retrieved = self.backend.get_source_config(crn_testkit.source.name)
+            crn_retrieved = self.backend.get_resolution(
+                crn_testkit.source.name, validate=ResolutionType.SOURCE
+            )
 
             # Equality between the two is False because one lacks the Engine
             assert (
@@ -526,8 +487,8 @@ class TestMatchboxBackend:
             )
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             # I can add it again with no consequences
-            self.backend.index(
-                crn_testkit.source.to_resolution(), crn_testkit.data_hashes
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
             )
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 1
@@ -542,16 +503,17 @@ class TestMatchboxBackend:
             )
 
             assert self.backend.data.count() == 0
-            self.backend.index(crn_testkit.source.to_resolution(), data_hashes_halved)
+            self.backend.insert_resolution(crn_testkit.source.to_resolution())
+            self.backend.insert_source_data(crn_testkit.source.name, data_hashes_halved)
             assert self.backend.data.count() == data_hashes_halved.num_rows
-            self.backend.index(
-                crn_testkit.source.to_resolution(), crn_testkit.data_hashes
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
             )
             assert self.backend.data.count() == crn_testkit.data_hashes.num_rows
             assert self.backend.source_resolutions.count() == 1
 
     def test_index_same_resolution(self):
-        """Test that indexing same-name sources in different locations works."""
+        """Test that indexing same-name sources errors."""
         with self.scenario(self.backend, "bare") as dag:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
 
@@ -574,8 +536,13 @@ class TestMatchboxBackend:
                 update={"config": crn_source_config_2}
             )
 
-            self.backend.index(crn_resolution_1, crn_testkit.data_hashes)
-            self.backend.index(crn_resolution_2, crn_testkit.data_hashes)
+            self.backend.insert_resolution(crn_resolution_1)
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
+            )
+
+            with pytest.raises(MatchboxResolutionAlreadyExists):
+                self.backend.insert_resolution(crn_resolution_2)
 
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 1
@@ -586,12 +553,14 @@ class TestMatchboxBackend:
             crn_testkit: SourceTestkit = dag.sources.get("crn")
             duns_testkit: SourceTestkit = dag.sources.get("duns")
 
-            self.backend.index(
-                crn_testkit.source.to_resolution(), crn_testkit.data_hashes
+            self.backend.insert_resolution(crn_testkit.source.to_resolution())
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
             )
             # Different source, same data
-            self.backend.index(
-                duns_testkit.source.to_resolution(), crn_testkit.data_hashes
+            self.backend.insert_resolution(duns_testkit.source.to_resolution())
+            self.backend.insert_source_data(
+                duns_testkit.source.name, crn_testkit.data_hashes
             )
             assert self.backend.data.count() == len(crn_testkit.data_hashes)
             assert self.backend.source_resolutions.count() == 2

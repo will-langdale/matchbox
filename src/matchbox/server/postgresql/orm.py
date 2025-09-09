@@ -29,7 +29,6 @@ from matchbox.common.dtos import SourceField as CommonSourceField
 from matchbox.common.exceptions import (
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionName, ResolutionType
 from matchbox.server.postgresql.db import MBDB
@@ -219,7 +218,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         """
         query = select(cls).where(cls.name == name)
         if res_type:
-            query = query.where(cls.type == res_type)
+            query = query.where(cls.type == res_type.value)
 
         if session:
             resolution = session.execute(query).scalar()
@@ -229,11 +228,6 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         if resolution:
             return resolution
-
-        if res_type == ResolutionType.SOURCE:
-            raise MatchboxSourceNotFoundError from MatchboxResolutionNotFoundError(
-                message=f"No resolution {name} of {res_type}."
-            )
 
         raise MatchboxResolutionNotFoundError(
             message=f"No resolution {name} of {res_type or 'any'}."

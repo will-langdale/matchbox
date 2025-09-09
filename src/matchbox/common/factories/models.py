@@ -627,6 +627,11 @@ class ModelTestkit(BaseModel):
         return mock_model
 
     @property
+    def data(self) -> pa.Table:
+        """Return the probabilities data table."""
+        return self.probabilities
+
+    @property
     def query(self) -> pa.Table:
         """Return a PyArrow table in the same format at matchbox.query()."""
         if self.model.config.type == ModelType.DEDUPER:

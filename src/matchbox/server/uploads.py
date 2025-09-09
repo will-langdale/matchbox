@@ -316,9 +316,10 @@ def process_upload(
         )
 
         if upload.status.entity == BackendUploadType.INDEX:
-            backend.index(resolution=upload.metadata, data_hashes=data)
+            backend.insert_resolution(resolution=upload.metadata)
+            backend.insert_source_data(name=upload.metadata.name, data_hashes=data)
         elif upload.status.entity == BackendUploadType.RESULTS:
-            backend.set_model_results(name=upload.metadata.name, results=data)
+            backend.insert_model_data(name=upload.metadata.name, results=data)
         else:
             raise ValueError(f"Unknown upload type: {upload.status.entity}")
 
