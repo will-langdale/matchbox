@@ -302,10 +302,8 @@ class MatchboxDBAdapter(ABC):
             resolution: Resolution object with a source or model config
 
         Raises:
-            MatchboxDataNotFound: If, for a linker, the source models weren't found in
-                the database
-            MatchboxModelConfigError: If the model configuration is invalid, such as
-                the resolutions sharing ancestors
+            MatchboxModelConfigError: If the configuration is invalid, such as
+                the ModelConfig's resolutions sharing ancestors
         """
         ...
 
