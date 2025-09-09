@@ -21,7 +21,6 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxModelConfigError,
     MatchboxNoJudgements,
-    MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import (
     ModelResolutionName,
@@ -30,6 +29,7 @@ from matchbox.common.graph import (
     ResolutionType,
     SourceResolutionName,
 )
+from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -57,15 +57,10 @@ from matchbox.server.postgresql.utils.db import (
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
-    insert_model,
     insert_results,
     insert_source,
 )
-from matchbox.server.postgresql.utils.query import (
-    get_source_config,
-    match,
-    query,
-)
+from matchbox.server.postgresql.utils.query import match, query
 from matchbox.server.postgresql.utils.results import get_model_config
 
 T = TypeVar("T")
@@ -234,45 +229,33 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_source_config(self, name: SourceResolutionName) -> Resolution:  # noqa: D102
         with MBDB.get_session() as session:
-            if source := get_source_config(name, session):
-                return source.to_dto()
+            if resolution := Resolutions.from_name(
+                name=name, res_type=ResolutionType.SOURCE, session=session
+            ):
+                return resolution.to_dto()
 
     def get_resolution_source_configs(  # noqa: D102
         self,
         name: ModelResolutionName,
     ) -> list[Resolution]:
         with MBDB.get_session() as session:
-            # Find resolution by name
-            resolution: Resolutions | None = (
-                session.query(Resolutions).filter(Resolutions.name == name).first()
-            )
-            if not resolution:
-                raise MatchboxResolutionNotFoundError(name=name)
-            # Find all resolutions in scope (selected + ancestors)
-            relevant_resolutions = (
-                session.query(Resolutions)
-                .filter(
-                    Resolutions.resolution_id.in_(
-                        [
-                            res.resolution_id
-                            for res in resolution.ancestors.union([resolution])
-                        ]
-                    )
-                )
-                .subquery()
+            resolution = Resolutions.from_name(
+                name=name, res_type=ResolutionType.MODEL, session=session
             )
 
-            # Find all sources matching a resolution in scope
-            res_sources: list[SourceConfigs] = (
-                session.query(SourceConfigs)
+            source_resolutions = (
+                session.query(Resolutions)
                 .join(
-                    relevant_resolutions,
-                    SourceConfigs.resolution_id == relevant_resolutions.c.resolution_id,
+                    ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent
+                )
+                .filter(
+                    ResolutionFrom.child == resolution.resolution_id,
+                    Resolutions.type == ResolutionType.SOURCE.value,
                 )
                 .all()
             )
 
-            return [s.to_dto() for s in res_sources]
+            return [r.to_dto() for r in source_resolutions]
 
     def validate_ids(self, ids: list[int]) -> None:  # noqa: D102
         with MBDB.get_session() as session:
@@ -392,47 +375,35 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Model management
 
     def insert_model(self, resolution: "Resolution") -> None:  # noqa: D102
-        model_config = resolution.config
+        log_prefix = f"Index {resolution.name}"
         with MBDB.get_session() as session:
-            left_resolution = (
-                session.query(Resolutions)
-                .filter(Resolutions.name == model_config.left_resolution)
-                .first()
-            )
-            if not left_resolution:
-                raise MatchboxResolutionNotFoundError(name=model_config.left_resolution)
-
-            # Overwritten with actual right model if in a link job
-            right_resolution = left_resolution
-            if model_config.type == ModelType.LINKER:
-                right_resolution = (
-                    session.query(Resolutions)
-                    .filter(Resolutions.name == model_config.right_resolution)
-                    .first()
+            # For LINKER models, validate no shared ancestors
+            if resolution.config.type == ModelType.LINKER:
+                left = Resolutions.from_name(
+                    resolution.config.left_resolution, session=session
                 )
-                if not right_resolution:
-                    raise MatchboxResolutionNotFoundError(
-                        name=model_config.right_resolution
-                    )
+                right = Resolutions.from_name(
+                    resolution.config.right_resolution, session=session
+                )
 
-                left_ancestors = {a.name for a in left_resolution.ancestors}
-                right_ancestors = {a.name for a in right_resolution.ancestors}
+                left_ancestors = {a.name for a in left.ancestors}
+                right_ancestors = {a.name for a in right.ancestors}
                 shared_ancestors = left_ancestors & right_ancestors
 
                 if shared_ancestors:
                     raise MatchboxModelConfigError(
-                        f"Resolutions '{left_resolution.name}' and "
-                        f"'{right_resolution.name}' "
+                        f"Resolutions '{left.name}' and '{right.name}' "
                         f"share common ancestor(s): {', '.join(shared_ancestors)}. "
                         f"Resolutions cannot share ancestors."
                     )
 
-        insert_model(
-            name=resolution.name,
-            left=left_resolution,
-            right=right_resolution,
-            description=resolution.description,
-        )
+            # Create the resolution (will error if it exists)
+            resolution_orm = Resolutions.from_dto(resolution, session)
+            session.commit()
+
+            logger.info(
+                f"Inserted with ID {resolution_orm.resolution_id}", prefix=log_prefix
+            )
 
     def get_model(self, name: ModelResolutionName) -> Resolution:  # noqa: D102
         resolution = Resolutions.from_name(name=name, res_type="model")
