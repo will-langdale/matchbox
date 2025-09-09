@@ -52,16 +52,14 @@ def key_field_map(
 
     # Join Matchbox IDs to form mapping table
     mapping = source_mb_ids[0]
-    qualified_key = (
-        source_resolutions[0].name + "_" + source_resolutions[0].config.key_field.name
+    mapping = mapping.rename_columns(
+        {"key": source_resolutions[0].config.qualified_key(source_resolutions[0].name)}
     )
-    mapping = mapping.rename_columns({"key": qualified_key})
     if len(source_resolutions) > 1:
         for s, mb_ids in zip(source_resolutions[1:], source_mb_ids[1:], strict=True):
             mapping = mapping.join(
                 right_table=mb_ids, keys="id", join_type="full outer"
             )
-            qualified_key = s.name + "_" + s.config.key_field.name
-            mapping = mapping.rename_columns({"key": qualified_key})
+            mapping = mapping.rename_columns({"key": s.config.qualified_key(s.name)})
 
     return mapping
