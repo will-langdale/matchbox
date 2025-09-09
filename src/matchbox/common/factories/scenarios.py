@@ -122,9 +122,7 @@ def create_index_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.insert_resolution(
-            resolution=source_testkit.source.to_resolution()
-        )
+        backend.insert_resolution(resolution=source_testkit.source.to_resolution())
         backend.insert_source_data(
             name=source_testkit.source.name,
             data_hashes=source_testkit.data_hashes,
@@ -363,9 +361,7 @@ def create_alt_dedupe_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.insert_resolution(
-            resolution=source_testkit.source.to_resolution()
-        )
+        backend.insert_resolution(resolution=source_testkit.source.to_resolution())
         backend.insert_source_data(
             name=source_testkit.source.name,
             data_hashes=source_testkit.data_hashes,
@@ -464,9 +460,7 @@ def create_convergent_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.insert_resolution(
-            resolution=source_testkit.source.to_resolution()
-        )
+        backend.insert_resolution(resolution=source_testkit.source.to_resolution())
         backend.insert_source_data(
             name=source_testkit.source.name,
             data_hashes=source_testkit.data_hashes,

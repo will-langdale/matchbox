@@ -16,7 +16,6 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ModelResolutionName, ResolutionName, ResolutionType
 from matchbox.server.api.dependencies import (

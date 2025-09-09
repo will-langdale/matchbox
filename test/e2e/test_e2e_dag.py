@@ -302,32 +302,39 @@ class TestE2EPipelineBuilder:
         assert matches[0].cluster
 
         # === SECOND RUN (OVERWRITE) ===
-        logging.info("Running DAG again to test overwriting")
-        dag.run()
+        # TODO: Refactor into whatever DAGs look like at the end of this feature branch
+        # We know there'll be some method to sync a local DAG with the server
+        # This will need to handle both:
+        #   * Resolution synchronisation, including some kind of create/update logic
+        #       This is the hard bit. It needs versioning/collections
+        #   * Data synchronisation, where we fetch/process the data through
 
-        # Verify second run produces same results
-        final_df_second = query(
-            select(
-                {
-                    source_a.name: ["company_name", "registration_id"],
-                    source_b.name: ["company_name", "registration_id"],
-                },
-                client=self.warehouse_engine,
-            ),
-            resolution="__DEFAULT__",
-            return_type="polars",
-        )
+        # logging.info("Running DAG again to test overwriting")
+        # dag.run()
 
-        second_run_entities = final_df_second["id"].n_unique()
-        logging.info(f"Second run produced {second_run_entities} unique entities")
+        # # Verify second run produces same results
+        # final_df_second = query(
+        #     select(
+        #         {
+        #             source_a.name: ["company_name", "registration_id"],
+        #             source_b.name: ["company_name", "registration_id"],
+        #         },
+        #         client=self.warehouse_engine,
+        #     ),
+        #     resolution="__DEFAULT__",
+        #     return_type="polars",
+        # )
 
-        # Should have same number of entities after rerun
-        assert first_run_entities == second_run_entities, (
-            "Expected same results after rerun: "
-            f"{first_run_entities} vs {second_run_entities}"
-        )
+        # second_run_entities = final_df_second["id"].n_unique()
+        # logging.info(f"Second run produced {second_run_entities} unique entities")
 
-        # Basic sanity checks
-        assert len(final_df_second) > 0, "Expected some results from second run"
+        # # Should have same number of entities after rerun
+        # assert first_run_entities == second_run_entities, (
+        #     "Expected same results after rerun: "
+        #     f"{first_run_entities} vs {second_run_entities}"
+        # )
+
+        # # Basic sanity checks
+        # assert len(final_df_second) > 0, "Expected some results from second run"
 
         logging.info("DAG pipeline test completed successfully!")

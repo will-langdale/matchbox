@@ -221,14 +221,15 @@ class MatchboxPostgres(MatchboxDBAdapter):
     def get_resolution(  # noqa: D102
         self, name: ResolutionName, validate: ResolutionType | None = None
     ) -> Resolution:
-        resolution = Resolutions.from_name(name=name, res_type=validate)
         with MBDB.get_session() as session:
-            session.add(resolution)
+            resolution = Resolutions.from_name(
+                name=name, res_type=validate, session=session
+            )
             return resolution.to_dto()
 
     def delete_resolution(self, name: ResolutionName, certain: bool) -> None:  # noqa: D102
-        resolution = Resolutions.from_name(name=name)
         with MBDB.get_session() as session:
+            resolution = Resolutions.from_name(name=name, session=session)
             if certain:
                 delete_stmt = delete(Resolutions).where(
                     Resolutions.resolution_id.in_(

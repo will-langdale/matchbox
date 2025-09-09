@@ -238,7 +238,9 @@ def test_process_upload_deletes_file_on_failure(s3: S3Client):
     mock_backend = Mock()
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.insert_resolution = Mock(return_value=None)
-    mock_backend.insert_source_data = Mock(side_effect=ValueError("Simulated processing failure"))
+    mock_backend.insert_source_data = Mock(
+        side_effect=ValueError("Simulated processing failure")
+    )
 
     bucket = "test-bucket"
     test_key = "test-upload-id.parquet"

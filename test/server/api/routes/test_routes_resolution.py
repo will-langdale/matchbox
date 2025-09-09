@@ -330,7 +330,9 @@ def test_model_get_endpoints_404(
 ) -> None:
     """Test 404 responses for model GET endpoints when model doesn't exist."""
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_method = getattr(mock_backend, f"get_model_{endpoint}")
+    # Map endpoint to actual backend method name
+    method_name = "get_model_data" if endpoint == "results" else f"get_model_{endpoint}"
+    mock_method = getattr(mock_backend, method_name)
     mock_method.side_effect = MatchboxResolutionNotFoundError()
 
     response = test_client.get(f"/resolutions/nonexistent-model/{endpoint}")
