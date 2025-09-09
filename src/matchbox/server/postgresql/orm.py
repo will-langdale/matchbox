@@ -27,7 +27,7 @@ from matchbox.common.dtos import SourceField as CommonSourceField
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.graph import ResolutionName
+from matchbox.common.graph import ResolutionName, ResolutionType
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
 
@@ -478,7 +478,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
             name=self.name,
             description=self.source_resolution.description,
             truth=self.source_resolution.truth,
-            resolution_type="source",
+            resolution_type=ResolutionType.SOURCE,
             config=CommonSourceConfig(
                 location_config=LocationConfig(
                     type=self.location_type, name=self.location_name

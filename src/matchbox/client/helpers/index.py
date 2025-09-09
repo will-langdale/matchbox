@@ -66,11 +66,4 @@ def get_source(
             f"Source {name} does not match the provided index fields: {index_fields}"
         )
 
-    return Source(
-        location=location,
-        name=resolution.name,
-        description=resolution.description,
-        extract_transform=resolution.config.extract_transform,
-        key_field=resolution.config.key_field,
-        index_fields=resolution.config.index_fields,
-    )
+    return Source.from_resolution(resolution=resolution, location=location)

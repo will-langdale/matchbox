@@ -22,6 +22,7 @@ from matchbox.common.dtos import (
     UploadStatus,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
+from matchbox.common.graph import ResolutionType
 from matchbox.common.logging import logger
 from matchbox.server.base import (
     MatchboxDBAdapter,
@@ -83,7 +84,7 @@ class UploadTracker(ABC):
 
     def add_source(self, metadata: Resolution) -> str:
         """Register source resolution and return ID."""
-        assert metadata.resolution_type == "source"
+        assert metadata.resolution_type == ResolutionType.SOURCE
         entry = self._create_entry(metadata, BackendUploadType.INDEX)
         self._register_entry(entry)
 
@@ -91,7 +92,7 @@ class UploadTracker(ABC):
 
     def add_model(self, metadata: Resolution) -> str:
         """Register model resolution and return ID."""
-        assert metadata.resolution_type == "model"
+        assert metadata.resolution_type == ResolutionType.MODEL
         entry = self._create_entry(metadata, BackendUploadType.RESULTS)
         self._register_entry(entry)
 
@@ -99,7 +100,7 @@ class UploadTracker(ABC):
 
     def add_resolution(self, metadata: Resolution) -> str:
         """Generic add that routes based on type."""
-        if metadata.resolution_type == "source":
+        if metadata.resolution_type == ResolutionType.SOURCE:
             return self.add_source(metadata)
         else:
             return self.add_model(metadata)

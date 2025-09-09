@@ -5,7 +5,7 @@ import textwrap
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Literal, Self
+from typing import Self
 
 import polars as pl
 from pydantic import (
@@ -20,6 +20,7 @@ from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionName,
+    ResolutionType,
 )
 
 
@@ -364,7 +365,7 @@ class Resolution(BaseModel):
     truth: int | None = Field(default=None, ge=0, le=100, strict=True)
 
     # Discriminator field
-    resolution_type: Literal["source", "model"]
+    resolution_type: ResolutionType
 
     # Type-specific config as discriminated union
     config: SourceConfig | ModelConfig
@@ -394,7 +395,7 @@ class Resolution(BaseModel):
     @model_validator(mode="after")
     def validate_resolution_type_matches_config(self):
         """Ensure resolution_type matches the config type."""
-        if self.resolution_type == "source":
+        if self.resolution_type == ResolutionType.SOURCE:
             assert isinstance(self.config, SourceConfig), (
                 "Config must be SourceConfig when resolution_type is 'source'"
             )
@@ -407,9 +408,9 @@ class Resolution(BaseModel):
     @model_validator(mode="after")
     def validate_truth_matches_type(self):
         """Ensure truth field matches resolution type requirements."""
-        if self.resolution_type == "source" and self.truth is not None:
+        if self.resolution_type == ResolutionType.SOURCE and self.truth is not None:
             raise ValueError("Truth must be None for source resolutions")
-        elif self.resolution_type == "model":
+        elif self.resolution_type == ResolutionType.MODEL:
             if self.truth is None:
                 raise ValueError("Truth is required for model resolutions")
             if not (0 <= self.truth <= 100):

@@ -39,6 +39,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
+from matchbox.common.graph import ResolutionType
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
 
@@ -408,14 +409,14 @@ class Source:
             name=self.name,
             description=self.description,
             truth=None,
-            resolution_type="source",
+            resolution_type=ResolutionType.SOURCE,
             config=self.config,
         )
 
     @classmethod
     def from_resolution(cls, resolution: Resolution, location: Location) -> "Source":
         """Reconstruct from Resolution."""
-        assert resolution.resolution_type == "source", (
+        assert resolution.resolution_type == ResolutionType.SOURCE, (
             "Resolution must be of type 'source'"
         )
         assert isinstance(resolution.config, SourceConfig), (

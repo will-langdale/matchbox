@@ -20,7 +20,7 @@ def key_field_map(
         location_names: An optional list of location names to filter by.
     """
     # Get all sources in scope of the resolution
-    source_resolutions = _handler.get_resolution_source_resolutions(name=resolution)
+    source_resolutions = _handler.get_leaf_source_resolutions(name=resolution)
 
     if source_filter:
         source_resolutions = [s for s in source_resolutions if s.name in source_filter]

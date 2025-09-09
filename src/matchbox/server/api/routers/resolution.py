@@ -18,7 +18,7 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxSourceNotFoundError,
 )
-from matchbox.common.graph import ModelResolutionName, ResolutionName
+from matchbox.common.graph import ModelResolutionName, ResolutionName, ResolutionType
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -47,7 +47,7 @@ def create_resolution(
     response: Response,
 ) -> Union[ResolutionOperationStatus, UploadStatus]:
     """Create a resolution (model or source)."""
-    if resolution.resolution_type == "source":
+    if resolution.resolution_type == ResolutionType.SOURCE:
         upload_id = upload_tracker.add_source(metadata=resolution)
         response.status_code = status.HTTP_202_ACCEPTED
         return upload_tracker.get(upload_id=upload_id).status

@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import Resolution
 from matchbox.common.exceptions import MatchboxResolutionAlreadyExists
-from matchbox.common.graph import ModelResolutionName, ResolutionNodeType
+from matchbox.common.graph import ModelResolutionName, ResolutionType
 from matchbox.common.hash import IntMap, hash_arrow_table
 from matchbox.common.logging import logger
 from matchbox.common.transform import Cluster, DisjointSet
@@ -63,7 +63,7 @@ def insert_source(
                 description=resolution.description,
                 truth=resolution.truth,
                 hash=None,
-                type=ResolutionNodeType.SOURCE.value,
+                type=ResolutionType.SOURCE.value,
             )
             session.add(db_resolution)
             session.flush()
@@ -245,7 +245,7 @@ def insert_model(
             raise MatchboxResolutionAlreadyExists
 
         new_res = Resolutions(
-            type=ResolutionNodeType.MODEL.value,
+            type=ResolutionType.MODEL.value,
             name=name,
             description=description,
             truth=100,

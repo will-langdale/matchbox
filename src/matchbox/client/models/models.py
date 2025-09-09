@@ -10,7 +10,7 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.results import Results
 from matchbox.common.dtos import ModelConfig, ModelType, Resolution
 from matchbox.common.exceptions import MatchboxResolutionNotFoundError
-from matchbox.common.graph import ModelResolutionName, ResolutionName
+from matchbox.common.graph import ModelResolutionName, ResolutionName, ResolutionType
 from matchbox.common.logging import logger
 
 P = ParamSpec("P")
@@ -109,7 +109,7 @@ class Model:
             name=self.name,
             description=self.description,
             truth=self._truth,
-            resolution_type="model",
+            resolution_type=ResolutionType.MODEL,
             config=self.config,
         )
 
@@ -122,7 +122,7 @@ class Model:
         right_data: pl.DataFrame | None = None,
     ) -> "Model":
         """Reconstruct from Resolution."""
-        assert resolution.resolution_type == "model", (
+        assert resolution.resolution_type == ResolutionType.MODEL, (
             "Resolution must be of type 'model'"
         )
         assert isinstance(resolution.config, ModelConfig), "Config must be ModelConfig"
@@ -141,13 +141,12 @@ class Model:
         resolution = self.to_resolution()
         if existing_resolution := _handler.get_resolution(name=self.name):
             # Check if config matches
-            if isinstance(existing_resolution.config, ModelConfig):
-                if existing_resolution.config != self.config:
-                    raise ValueError(
-                        f"Resolution {self.name} already exists with "
-                        "different model configuration. Please delete the "
-                        "existing resolution or use a different name. "
-                    )
+            if existing_resolution.config != self.config:
+                raise ValueError(
+                    f"Resolution {self.name} already exists with different "
+                    "configuration. Please delete the existing resolution "
+                    "or use a different name. "
+                )
             log_prefix = f"Resolution {self.name}"
             logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:

@@ -21,6 +21,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory, source_from_tuple
+from matchbox.common.graph import ResolutionType
 
 
 def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
@@ -66,7 +67,7 @@ def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
     # Check key fields match (allowing for different descriptions)
     assert resolution_call.name == source_testkit.source.to_resolution().name
-    assert resolution_call.resolution_type == "source"
+    assert resolution_call.resolution_type == ResolutionType.SOURCE
     assert resolution_call.config == source_testkit.source.to_resolution().config
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
@@ -118,7 +119,7 @@ def test_index_upload_failure(matchbox_api: MockRouter, sqlite_warehouse: Engine
     )
     # Check key fields match (allowing for different descriptions)
     assert resolution_call.name == source_testkit.source.to_resolution().name
-    assert resolution_call.resolution_type == "source"
+    assert resolution_call.resolution_type == ResolutionType.SOURCE
     assert resolution_call.config == source_testkit.source.to_resolution().config
     assert "test-upload-id" in upload_route.calls.last.request.url.path
     assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content

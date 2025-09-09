@@ -27,7 +27,7 @@ from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionGraph,
     ResolutionName,
-    ResolutionNodeType,
+    ResolutionType,
     SourceResolutionName,
 )
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
@@ -155,11 +155,11 @@ class FilteredResolutions(BaseModel):
 
             filter_list = []
             if self.sources:
-                filter_list.append(Resolutions.type == ResolutionNodeType.SOURCE)
+                filter_list.append(Resolutions.type == ResolutionType.SOURCE)
             if self.humans:
-                filter_list.append(Resolutions.type == ResolutionNodeType.HUMAN)
+                filter_list.append(Resolutions.type == ResolutionType.HUMAN)
             if self.models:
-                filter_list.append(Resolutions.type == ResolutionNodeType.MODEL)
+                filter_list.append(Resolutions.type == ResolutionType.MODEL)
 
             if filter_list:
                 query = query.filter(or_(*filter_list))
@@ -441,7 +441,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
             name=resolution.name,
             description=resolution.description,
             truth=resolution.truth,
-            resolution_type="model",
+            resolution_type=ResolutionType.MODEL,
             config=model_config,
         )
 
@@ -460,9 +460,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
                 Resolutions,
                 Results.resolution_id == Resolutions.resolution_id,
             )
-            .where(
-                Resolutions.name == name, Resolutions.type == ResolutionNodeType.MODEL
-            )
+            .where(Resolutions.name == name, Resolutions.type == ResolutionType.MODEL)
         )
         with MBDB.get_adbc_connection() as conn:
             stmt: str = compile_sql(results_query)
