@@ -1,3 +1,5 @@
+# Unit testing
+mod test 'test/justfile'
 # PostgreSQL migration
 mod migrate 'src/matchbox/server/postgresql/justfile'
 # Evaluation app
@@ -29,16 +31,3 @@ scan:
     bash -c "docker run -v "$(pwd):/repo" -i \
         --rm trufflesecurity/trufflehog:latest git \
         file:///repo  --since-commit HEAD --fail"
-
-# Run Python tests (usage: just test [local|docker])
-test ENV="":
-    #!/usr/bin/env bash
-    if [[ "{{ENV}}" == "local" ]]; then
-        uv run pytest -m "not docker"
-    elif [[ "{{ENV}}" == "docker" ]]; then
-        just build -d
-        uv run pytest -m "docker"
-    else
-        just build -d
-        uv run pytest
-    fi

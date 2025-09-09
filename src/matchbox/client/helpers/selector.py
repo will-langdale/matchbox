@@ -13,7 +13,7 @@ from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
-from matchbox.client.sources import Source
+from matchbox.client.sources import Location, Source
 from matchbox.common.db import QueryReturnType, ReturnTypeStr
 from matchbox.common.dtos import Match, SourceField
 from matchbox.common.graph import (
@@ -59,10 +59,15 @@ class Selector(BaseModel):
             client: The client to use for the source
             fields: A list of fields to select from the source
         """
-        source_config = _handler.get_source_config(name=name)
+        resolution = _handler.get_source_resolution(name=name)
+        location = Location.from_config(
+            resolution.config.location_config, client=client
+        )
+        source = Source.from_resolution(resolution=resolution, location=location)
+
         field_map = {
             f.name: f
-            for f in set((source_config.key_field,) + source_config.index_fields)
+            for f in set((source.config.key_field,) + source.config.index_fields)
         }
 
         # Handle field selection
@@ -70,10 +75,8 @@ class Selector(BaseModel):
             selected_fields = [field_map[f] for f in fields]
         else:
             selected_fields = list(
-                source_config.index_fields
+                source.config.index_fields
             )  # Must actively select key
-
-        source = Source.from_config(config=source_config, client=client)
 
         return cls(source=source, fields=selected_fields)
 
@@ -155,7 +158,7 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=selector.source.config.qualified_key,
+        left_on=selector.source.qualified_key,
         right_on="key",
         how="inner",
     )
@@ -191,7 +194,7 @@ def _process_selectors(
     for selector in selectors:
         mb_ids = pl.from_arrow(
             _handler.query(
-                source=selector.source.config.name,
+                source=selector.source.name,
                 resolution=resolution,
                 threshold=threshold,
                 return_leaf_id=return_leaf_id,
@@ -367,7 +370,7 @@ def match(
     """
     # Validate arguments
     for name in targets + (source,):
-        _ = _handler.get_source_config(name=name)
+        _ = _handler.get_source_resolution(name=name)
 
     return _handler.match(
         targets=targets,
