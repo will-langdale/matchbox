@@ -258,7 +258,7 @@ class TestMatchboxBackend:
                 resolution=Resolution(
                     name="dedupe_1",
                     description="Test deduper 1",
-                    resolution_type="model",
+                    resolution_type=ResolutionType.MODEL,
                     truth=100,
                     config=ModelConfig(
                         type=ModelType.DEDUPER,
@@ -270,7 +270,7 @@ class TestMatchboxBackend:
                 resolution=Resolution(
                     name="dedupe_2",
                     description="Test deduper 2",
-                    resolution_type="model",
+                    resolution_type=ResolutionType.MODEL,
                     truth=100,
                     config=ModelConfig(
                         type=ModelType.DEDUPER,
@@ -286,7 +286,7 @@ class TestMatchboxBackend:
                 resolution=Resolution(
                     name="link_1",
                     description="Test linker 1",
-                    resolution_type="model",
+                    resolution_type=ResolutionType.MODEL,
                     truth=100,
                     config=ModelConfig(
                         type=ModelType.LINKER,
@@ -304,7 +304,7 @@ class TestMatchboxBackend:
                     resolution=Resolution(
                         name="link_1",
                         description="Test upsert",
-                        resolution_type="model",
+                        resolution_type=ResolutionType.MODEL,
                         truth=100,
                         config=ModelConfig(
                             type=ModelType.LINKER,

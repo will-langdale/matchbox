@@ -59,12 +59,15 @@ class Selector(BaseModel):
             client: The client to use for the source
             fields: A list of fields to select from the source
         """
-        source_config = _handler.get_source_config(name=name)
+        resolution = _handler.get_source_resolution(name=name)
+        location = Location.from_config(
+            resolution.config.location_config, client=client
+        )
+        source = Source.from_resolution(resolution=resolution, location=location)
+
         field_map = {
             f.name: f
-            for f in set(
-                (source_config.config.key_field,) + source_config.config.index_fields
-            )
+            for f in set((source.config.key_field,) + source.config.index_fields)
         }
 
         # Handle field selection
@@ -72,13 +75,8 @@ class Selector(BaseModel):
             selected_fields = [field_map[f] for f in fields]
         else:
             selected_fields = list(
-                source_config.config.index_fields
+                source.config.index_fields
             )  # Must actively select key
-
-        location = Location.from_config(
-            source_config.config.location_config, client=client
-        )
-        source = Source.from_resolution(resolution=source_config, location=location)
 
         return cls(source=source, fields=selected_fields)
 
@@ -160,7 +158,7 @@ def _process_query_result(
     # Join data with matchbox IDs
     joined_table = data.join(
         other=mb_ids,
-        left_on=f"{selector.source.name}_{selector.source.config.key_field.name}",
+        left_on=selector.source.qualified_key,
         right_on="key",
         how="inner",
     )
@@ -372,7 +370,7 @@ def match(
     """
     # Validate arguments
     for name in targets + (source,):
-        _ = _handler.get_source_config(name=name)
+        _ = _handler.get_source_resolution(name=name)
 
     return _handler.match(
         targets=targets,

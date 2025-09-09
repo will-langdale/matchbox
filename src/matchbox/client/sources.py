@@ -39,6 +39,7 @@ from matchbox.common.exceptions import (
     MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
+from matchbox.common.graph import ResolutionType
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
 
@@ -408,14 +409,14 @@ class Source:
             name=self.name,
             description=self.description,
             truth=None,
-            resolution_type="source",
+            resolution_type=ResolutionType.SOURCE,
             config=self.config,
         )
 
     @classmethod
     def from_resolution(cls, resolution: Resolution, location: Location) -> "Source":
         """Reconstruct from Resolution."""
-        assert resolution.resolution_type == "source", (
+        assert resolution.resolution_type == ResolutionType.SOURCE, (
             "Resolution must be of type 'source'"
         )
         assert isinstance(resolution.config, SourceConfig), (
@@ -543,17 +544,17 @@ class Source:
     @property
     def prefix(self) -> str:
         """Get the prefix for the source."""
-        return self.name + "_"
+        return self.config.prefix(self.name)
 
     @property
     def qualified_key(self) -> str:
         """Get the qualified key for the source."""
-        return self.qualify_field(self.config.key_field.name)
+        return self.config.qualified_key(self.name)
 
     @property
     def qualified_index_fields(self) -> list[str]:
         """Get the qualified index fields for the source."""
-        return [self.qualify_field(field.name) for field in self.config.index_fields]
+        return self.config.qualified_index_fields(self.name)
 
     def qualify_field(self, field: str) -> str:
         """Qualify field names with the source name.
@@ -565,7 +566,7 @@ class Source:
             A single qualified field.
 
         """
-        return self.prefix + field
+        return self.config.qualify_field(self.name, field)
 
     def f(self, fields: str | Iterable[str]) -> str | list[str]:
         """Qualify one or more field names with the source name.
@@ -577,6 +578,4 @@ class Source:
             A single qualified field, or a list of qualified field names.
 
         """
-        if isinstance(fields, str):
-            return self.qualify_field(fields)
-        return [self.qualify_field(field_name) for field_name in fields]
+        return self.config.f(self.name, fields)

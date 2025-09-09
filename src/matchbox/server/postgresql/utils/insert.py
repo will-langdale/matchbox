@@ -9,11 +9,6 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.exc import SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import ModelType, Resolution
-from matchbox.common.exceptions import (
-    MatchboxModelConfigError,
-    MatchboxResolutionAlreadyExists,
-)
 from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionType,
@@ -29,10 +24,8 @@ from matchbox.server.postgresql.orm import (
     Contains,
     PKSpace,
     Probabilities,
-    ResolutionFrom,
     Resolutions,
     Results,
-    SourceConfigs,
 )
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
@@ -40,39 +33,6 @@ from matchbox.server.postgresql.utils.db import (
     large_append,
 )
 from matchbox.server.postgresql.utils.query import get_parent_clusters_and_leaves
-
-
-def insert_source(resolution: Resolution) -> None:
-    """Indexes a source configuration within Matchbox."""
-    log_prefix = f"Index {resolution.name}"
-
-    with MBDB.get_session() as session:
-        logger.info("Begin source configuration", prefix=log_prefix)
-
-        # Check if resolution already exists
-        exists_stmt = select(Resolutions).where(Resolutions.name == resolution.name)
-        if session.scalar(exists_stmt) is not None:
-            raise MatchboxResolutionAlreadyExists
-
-        # Create new resolution
-        db_resolution = Resolutions(
-            name=resolution.name,
-            description=resolution.description,
-            truth=resolution.truth,
-            hash=None,
-            type=ResolutionType.SOURCE.value,
-        )
-        session.add(db_resolution)
-        session.flush()
-
-        # Create new source with relationship to the resolution
-        source_obj = SourceConfigs.from_dto(resolution, db_resolution.resolution_id)
-        session.add(source_obj)
-        session.commit()
-
-        logger.info(
-            "Added to Resolutions, SourceConfigs, SourceFields", prefix=log_prefix
-        )
 
 
 def insert_hashes(
@@ -223,101 +183,6 @@ def insert_hashes(
         logger.info("No new records to add", prefix=log_prefix)
 
     logger.info("Finished", prefix=log_prefix)
-
-
-def insert_model(resolution: Resolution) -> None:
-    """Writes a model resolution to Matchbox with a default truth value of 100.
-
-    Args:
-        resolution: The model resolution to insert
-
-    Raises:
-        MatchboxResolutionNotFoundError: If the specified parent models don't exist.
-        MatchboxResolutionAlreadyExists: If the specified model already exists.
-        MatchboxModelConfigError: If parent resolutions share ancestors.
-    """
-    model_config = resolution.config
-    log_prefix = f"Model {resolution.name}"
-    logger.info("Registering", prefix=log_prefix)
-
-    with MBDB.get_session() as session:
-        # Check if resolution exists
-        exists_stmt = select(Resolutions).where(Resolutions.name == resolution.name)
-        if session.scalar(exists_stmt) is not None:
-            raise MatchboxResolutionAlreadyExists
-
-        # Get parent resolutions
-        left_resolution = Resolutions.from_name(
-            name=model_config.left_resolution, session=session
-        )
-
-        right_resolution = left_resolution
-        if model_config.type == ModelType.LINKER:
-            right_resolution = Resolutions.from_name(
-                name=model_config.right_resolution, session=session
-            )
-
-            # Validate no shared ancestors
-            left_ancestors = {a.name for a in left_resolution.ancestors}
-            right_ancestors = {a.name for a in right_resolution.ancestors}
-            shared_ancestors = left_ancestors & right_ancestors
-
-            if shared_ancestors:
-                raise MatchboxModelConfigError(
-                    f"Resolutions '{left_resolution.name}' and "
-                    f"'{right_resolution.name}' "
-                    f"share common ancestor(s): {', '.join(shared_ancestors)}. "
-                    f"Resolutions cannot share ancestors."
-                )
-
-        # Create the new resolution
-        new_res = Resolutions(
-            type=ResolutionType.MODEL.value,
-            name=resolution.name,
-            description=resolution.description,
-            truth=resolution.truth or 100,
-        )
-        session.add(new_res)
-        session.flush()
-
-        def _create_closure_entries(parent_resolution: Resolutions) -> None:
-            """Create closure entries for the new model."""
-            session.add(
-                ResolutionFrom(
-                    parent=parent_resolution.resolution_id,
-                    child=new_res.resolution_id,
-                    level=1,
-                    truth_cache=parent_resolution.truth,
-                )
-            )
-
-            ancestor_entries = (
-                session.query(ResolutionFrom)
-                .filter(ResolutionFrom.child == parent_resolution.resolution_id)
-                .all()
-            )
-
-            for entry in ancestor_entries:
-                session.add(
-                    ResolutionFrom(
-                        parent=entry.parent,
-                        child=new_res.resolution_id,
-                        level=entry.level + 1,
-                        truth_cache=entry.truth_cache,
-                    )
-                )
-
-        # Create resolution lineage entries
-        _create_closure_entries(parent_resolution=left_resolution)
-
-        if right_resolution != left_resolution:
-            _create_closure_entries(parent_resolution=right_resolution)
-
-        resolution_id = new_res.resolution_id
-        session.commit()
-
-    logger.info(f"Inserted new model with ID {resolution_id}", prefix=log_prefix)
-    logger.info("Done!", prefix=log_prefix)
 
 
 def _build_cluster_objects(

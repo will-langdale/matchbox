@@ -21,6 +21,7 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
 from matchbox.common.factories.sources import source_factory
+from matchbox.common.graph import ResolutionType
 from matchbox.server.uploads import (
     InMemoryUploadTracker,
     UploadTracker,
@@ -143,7 +144,7 @@ class TestUploadTracker:
         model = Resolution(
             name="name",
             description="description",
-            resolution_type="model",
+            resolution_type=ResolutionType.MODEL,
             truth=100,
             config=ModelConfig(
                 type=ModelType.DEDUPER,

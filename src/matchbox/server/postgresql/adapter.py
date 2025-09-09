@@ -15,7 +15,6 @@ from matchbox.common.exceptions import (
     MatchboxDataNotFound,
     MatchboxDeletionNotConfirmed,
     MatchboxNoJudgements,
-    MatchboxResolutionNotFoundError,
 )
 from matchbox.common.graph import (
     ModelResolutionName,
@@ -24,6 +23,7 @@ from matchbox.common.graph import (
     ResolutionType,
     SourceResolutionName,
 )
+from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
 from matchbox.server.postgresql.db import (
     MBDB,
@@ -37,6 +37,7 @@ from matchbox.server.postgresql.orm import (
     EvalJudgements,
     PKSpace,
     Probabilities,
+    ResolutionFrom,
     Resolutions,
     Results,
     SourceConfigs,
@@ -51,9 +52,7 @@ from matchbox.server.postgresql.utils.db import (
 )
 from matchbox.server.postgresql.utils.insert import (
     insert_hashes,
-    insert_model,
     insert_results,
-    insert_source,
 )
 from matchbox.server.postgresql.utils.query import match, query
 
@@ -210,10 +209,14 @@ class MatchboxPostgres(MatchboxDBAdapter):
     # Resolution management
 
     def insert_resolution(self, resolution: Resolution) -> None:  # noqa: D102
-        if resolution.resolution_type == ResolutionType.SOURCE:
-            insert_source(resolution)
-        elif resolution.resolution_type == ResolutionType.MODEL:
-            insert_model(resolution)
+        log_prefix = f"Insert {resolution.name}"
+        with MBDB.get_session() as session:
+            resolution_orm = Resolutions.from_dto(resolution, session)
+            session.commit()
+
+            logger.info(
+                f"Inserted with ID {resolution_orm.resolution_id}", prefix=log_prefix
+            )
 
     def get_resolution(  # noqa: D102
         self, name: ResolutionName, validate: ResolutionType | None = None
@@ -243,37 +246,23 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     def get_resolution_source_configs(self, name: ResolutionName) -> list[Resolution]:  # noqa: D102
         with MBDB.get_session() as session:
-            # Find resolution by name
-            resolution: Resolutions | None = (
-                session.query(Resolutions).filter(Resolutions.name == name).first()
-            )
-            if not resolution:
-                raise MatchboxResolutionNotFoundError(name=name)
-            # Find all resolutions in scope (selected + ancestors)
-            relevant_resolutions = (
-                session.query(Resolutions)
-                .filter(
-                    Resolutions.resolution_id.in_(
-                        [
-                            res.resolution_id
-                            for res in resolution.ancestors.union([resolution])
-                        ]
-                    )
-                )
-                .subquery()
+            resolution = Resolutions.from_name(
+                name=name, res_type=ResolutionType.MODEL, session=session
             )
 
-            # Find all sources matching a resolution in scope
-            res_sources: list[SourceConfigs] = (
-                session.query(SourceConfigs)
+            source_resolutions = (
+                session.query(Resolutions)
                 .join(
-                    relevant_resolutions,
-                    SourceConfigs.resolution_id == relevant_resolutions.c.resolution_id,
+                    ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent
+                )
+                .filter(
+                    ResolutionFrom.child == resolution.resolution_id,
+                    Resolutions.type == ResolutionType.SOURCE.value,
                 )
                 .all()
             )
 
-            return [s.to_dto() for s in res_sources]
+            return [r.to_dto() for r in source_resolutions]
 
     def get_resolution_graph(self) -> ResolutionGraph:  # noqa: D102
         return get_resolution_graph()

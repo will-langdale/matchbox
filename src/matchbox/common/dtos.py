@@ -5,7 +5,7 @@ import textwrap
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Self
+from typing import Iterable, Self
 
 import polars as pl
 from pydantic import (
@@ -306,6 +306,65 @@ class SourceConfig(BaseModel):
 
         return self
 
+    def prefix(self, name: str) -> str:
+        """Get the prefix for the source.
+
+        Args:
+            name: The name of the source.
+
+        Returns:
+            The prefix string (name + "_").
+        """
+        return name + "_"
+
+    def qualified_key(self, name: str) -> str:
+        """Get the qualified key for the source.
+
+        Args:
+            name: The name of the source.
+
+        Returns:
+            The qualified key field name.
+        """
+        return self.qualify_field(name, self.key_field.name)
+
+    def qualified_index_fields(self, name: str) -> list[str]:
+        """Get the qualified index fields for the source.
+
+        Args:
+            name: The name of the source.
+
+        Returns:
+            List of qualified index field names.
+        """
+        return [self.qualify_field(name, field.name) for field in self.index_fields]
+
+    def qualify_field(self, name: str, field: str) -> str:
+        """Qualify field names with the source name.
+
+        Args:
+            name: The name of the source.
+            field: The field name to qualify.
+
+        Returns:
+            A single qualified field.
+        """
+        return self.prefix(name) + field
+
+    def f(self, name: str, fields: str | Iterable[str]) -> str | list[str]:
+        """Qualify one or more field names with the source name.
+
+        Args:
+            name: The name of the source.
+            fields: The field name to qualify, or a list of field names.
+
+        Returns:
+            A single qualified field, or a list of qualified field names.
+        """
+        if isinstance(fields, str):
+            return self.qualify_field(name, fields)
+        return [self.qualify_field(name, field_name) for field_name in fields]
+
 
 class ModelConfig(BaseModel):
     """Metadata for a model."""
@@ -360,7 +419,6 @@ class ModelAncestor(BaseModel):
 class Resolution(BaseModel):
     """Unified resolution type with common fields and discriminated config."""
 
-    # Common fields extracted from configs
     name: str = Field(description="Unique name of the resolution")
     description: str | None = Field(default=None, description="Description")
     truth: int | None = Field(default=None, ge=0, le=100, strict=True)
