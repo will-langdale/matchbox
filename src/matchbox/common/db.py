@@ -6,6 +6,7 @@ from typing import (
     Callable,
     Iterator,
     Literal,
+    TypeAlias,
     TypeVar,
     overload,
 )
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 else:
     ADBCConnection = Any
 
-QueryReturnClass = ArrowTable | PandasDataFrame | PolarsDataFrame
+QueryReturnClass: TypeAlias = ArrowTable | PandasDataFrame | PolarsDataFrame
 
 T = TypeVar("T")
 
