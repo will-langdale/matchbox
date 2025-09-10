@@ -21,6 +21,7 @@ from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionName,
     ResolutionType,
+    SourceResolutionName,
 )
 
 
@@ -364,6 +365,44 @@ class SourceConfig(BaseModel):
         if isinstance(fields, str):
             return self.qualify_field(name, fields)
         return [self.qualify_field(name, field_name) for field_name in fields]
+
+
+class QueryCombineType(StrEnum):
+    """Enumeration of ways to combine multiple rows having the same matchbox ID."""
+
+    CONCAT = "concat"
+    EXPLODE = "explode"
+    SET_AGG = "set_agg"
+
+
+class QueryReturnType(StrEnum):
+    """Enumeration of dataframe types to return from query."""
+
+    PANDAS = "pandas"
+    POLARS = "polars"
+    ARROW = "arrow"
+
+
+class QueryConfig(BaseModel):
+    """Configuration of query generating model inputs."""
+
+    source_resolutions: list[SourceResolutionName]
+    model_resolution: ModelResolutionName | None
+    combine_type: QueryCombineType = QueryCombineType.CONCAT
+    threshold: int | None = None
+    cleaning: dict[str, str] | None = None
+    return_type: QueryReturnType = QueryReturnType.PANDAS
+
+    @model_validator(mode="after")
+    def validate_resolutions(self) -> Self:
+        """Ensure that resolution settings are compatible."""
+        if not self.source_resolutions:
+            raise ValueError("At least one source resolution required.")
+        if len(self.source_resolutions) > 1 and not self.model_resolution:
+            raise ValueError(
+                "A model resolution must be set if querying from multiple sources"
+            )
+        return self
 
 
 class ModelConfig(BaseModel):

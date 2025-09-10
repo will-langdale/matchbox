@@ -14,7 +14,7 @@ from sqlglot import select as sqlglot_select
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.sources import Location, Source
-from matchbox.common.db import QueryReturnType, ReturnTypeStr
+from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import Match, SourceField
 from matchbox.common.graph import (
     DEFAULT_RESOLUTION,
@@ -226,10 +226,10 @@ def query(
     resolution: ResolutionName | None = None,
     combine_type: Literal["concat", "explode", "set_agg"] = "concat",
     return_leaf_id: bool = True,
-    return_type: ReturnTypeStr = "pandas",
+    return_type: QueryReturnType = "pandas",
     threshold: int | None = None,
     batch_size: int | None = None,
-) -> QueryReturnType:
+) -> QueryReturnClass:
     """Runs queries against the selected backend.
 
     Args:
@@ -284,7 +284,7 @@ def query(
     if combine_type not in ("concat", "explode", "set_agg"):
         raise ValueError(f"combine_type of {combine_type} not valid")
 
-    if return_type not in get_args(ReturnTypeStr):
+    if return_type not in get_args(QueryReturnType):
         raise ValueError(f"return_type of {return_type} not valid")
 
     if not selectors:
