@@ -11,7 +11,7 @@ from matchbox.common.arrow import (
     SCHEMA_QUERY_WITH_LEAVES,
     table_to_buffer,
 )
-from matchbox.common.dtos import BackendResourceType, NotFoundError
+from matchbox.common.dtos import BackendResourceType, NotFoundError, QueryConfig
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
@@ -20,10 +20,31 @@ from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory, source_from_tuple
 
 
-def test_query_no_resolution_ok_various_params(
-    matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
-    """Tests that we can avoid passing resolution name, with a variety of parameters."""
+def test_init_query():
+    """Test that query is initialised correctly"""
+    source = source_factory().source
+    model = model_factory().model
+    query = Query(
+        source,
+        model=model,
+        combine_type="explode",
+        threshold=0.32,
+        cleaning={"hello": "hello"},
+        return_type="arrow",
+    )
+
+    assert query.config == QueryConfig(
+        source_resolutions=[source.name],
+        model_resolution=model.name,
+        combine_type="explode",
+        threshold=32,
+        cleaning={"hello": "hello"},
+        return_type="arrow",
+    )
+
+
+def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Tests that we can query from a single source."""
     # Dummy data and source
     testkit = source_from_tuple(
         data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),

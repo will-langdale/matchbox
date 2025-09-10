@@ -163,22 +163,6 @@ class ModelStep(Step):
 
         return self
 
-    @model_validator(mode="after")
-    def init_model_class(self) -> "ModelStep":
-        """Initialise dummy model class for later querying."""
-        self._model = make_model(
-            name=self.name,
-            description=self.description,
-            model_class=self.model_class,
-            model_settings=self.settings,
-            left_data=None,
-            right_data=None,
-            left_resolution=self.left.name,
-            right_resolution=self.right.name if hasattr(self, "right") else None,
-        )
-
-        return self
-
     def query(self, step_input: StepInput) -> pl.DataFrame:
         """Retrieve data for declared step input.
 
@@ -189,10 +173,12 @@ class ModelStep(Step):
             Polars dataframe with retrieved results.
         """
         sources = list(step_input.select.keys())
-
+        resolve_from = None
+        if isinstance(step_input.prev_node, ModelStep):
+            resolve_from = step_input.prev_node._model
         query = Query(
             *sources,
-            model=self._model,
+            model=resolve_from,
             threshold=step_input.threshold,
             return_type="polars",
             combine_type=step_input.combine_type,

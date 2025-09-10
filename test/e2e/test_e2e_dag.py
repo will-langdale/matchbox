@@ -269,7 +269,7 @@ class TestE2EPipelineBuilder:
 
         # Basic verification - we have some linked results and can retrieve them
         final_df = Query(
-            source_a, source_b, model=link_ab.model, return_type="polars"
+            source_a, source_b, model=link_ab._model, return_type="polars"
         ).run()
 
         # Should have linked results

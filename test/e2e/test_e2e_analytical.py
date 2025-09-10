@@ -193,7 +193,7 @@ class TestE2EAnalyticalUser:
             source = source_testkit.source
 
             # Query data from the source
-            raw_df = Query(source, return_type="polars")
+            raw_df = Query(source, return_type="polars").run()
             clusters = query_to_cluster_entities(
                 query=raw_df,
                 keys={source.name: source.qualified_key},
@@ -376,7 +376,7 @@ class TestE2EAnalyticalUser:
         left_df = left_raw_df.drop(crn_source.qualified_key, duns_source.qualified_key)
 
         right_raw_df = Query(
-            cdms_source, model=dedupers[cdms_source], return_type="polars"
+            cdms_source, model=dedupers[cdms_source.name], return_type="polars"
         ).run()
         right_clusters = query_to_cluster_entities(
             query=right_raw_df,
