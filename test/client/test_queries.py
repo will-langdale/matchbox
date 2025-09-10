@@ -77,7 +77,9 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
     }
 
     # Tests with optional params
-    results = Query(testkit.source, threshold=0.5).run(return_leaf_id=False).to_pandas()
+    results = Query(testkit.source, threshold=0.5).run(
+        return_leaf_id=False, return_type="pandas"
+    )
     assert len(results) == 2
     assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 

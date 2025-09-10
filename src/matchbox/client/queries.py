@@ -134,9 +134,9 @@ class Query:
         match return_type:
             case QueryReturnType.POLARS:
                 return result
-            case QueryReturnClass.PANDAS:
+            case QueryReturnType.PANDAS:
                 return result.to_pandas()
-            case QueryReturnClass.ARROW:
+            case QueryReturnType.ARROW:
                 return result.to_arrow()
             case _:
                 raise ValueError(f"Return type {return_type} is invalid")
