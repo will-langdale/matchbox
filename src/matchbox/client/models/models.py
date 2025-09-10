@@ -85,18 +85,6 @@ class Model:
             else ModelType.DEDUPER
         )
 
-        if model_type == ModelType.DEDUPER:
-            if right_data is not None:
-                raise ValueError("Deduper cannot have right_query data")
-            if right_resolution is not None:
-                raise ValueError("Deduper cannot have resolution_fields")
-
-        if model_type == ModelType.LINKER:
-            if right_data is None:
-                raise ValueError("Linker requires right_query data")
-            if right_resolution is None:
-                raise ValueError("Linker requires resolution_fields")
-
         self.config = ModelConfig(
             type=model_type,
             left_resolution=left_resolution,
@@ -229,11 +217,6 @@ def make_model(
     model_type = (
         ModelType.LINKER if issubclass(model_class, Linker) else ModelType.DEDUPER
     )
-
-    if model_type == ModelType.LINKER and (
-        right_data is None or right_resolution is None
-    ):
-        raise ValueError("Linking requires both right_data and right_resolution")
 
     model_instance = model_class.from_settings(**model_settings)
 

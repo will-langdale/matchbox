@@ -23,8 +23,8 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
 
 from matchbox.common.db import (
+    QueryReturnClass,
     QueryReturnType,
-    ReturnTypeStr,
     sql_to_df,
 )
 from matchbox.common.dtos import (
@@ -120,9 +120,9 @@ class Location(ABC):
         extract_transform: str,
         batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
-        return_type: ReturnTypeStr = "polars",
+        return_type: QueryReturnType = QueryReturnType.POLARS,
         keys: tuple[str, list[str]] | None = None,
-    ) -> Iterator[QueryReturnType]:
+    ) -> Iterator[QueryReturnClass]:
         """Execute ET logic against location and return batches.
 
         Args:
@@ -260,10 +260,10 @@ class RelationalDBLocation(Location):
         extract_transform: str,
         batch_size: int | None = None,
         rename: dict[str, str] | Callable | None = None,
-        return_type: ReturnTypeStr = "polars",
+        return_type: QueryReturnType = QueryReturnType.POLARS,
         keys: tuple[str, list[str]] | None = None,
         schema_overrides: dict[str, pl.DataType] | None = None,
-    ) -> Generator[QueryReturnType, None, None]:
+    ) -> Generator[QueryReturnClass, None, None]:
         batch_size = batch_size or 10_000
         with self._get_connection() as conn:
             if keys:
@@ -446,9 +446,9 @@ class Source:
         self,
         qualify_names: bool = False,
         batch_size: int | None = None,
-        return_type: ReturnTypeStr = "polars",
+        return_type: QueryReturnType = QueryReturnType.POLARS,
         keys: list[str] | None = None,
-    ) -> Generator[QueryReturnType, None, None]:
+    ) -> Generator[QueryReturnClass, None, None]:
         """Applies the extract/transform logic to the source and returns the results.
 
         Args:

@@ -123,7 +123,7 @@ class SourceTestkit(BaseModel):
 
     @property
     def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format as matchbox.query()."""
+        """Return a PyArrow table in the same format as matchbox queries."""
         return self.data
 
     @property

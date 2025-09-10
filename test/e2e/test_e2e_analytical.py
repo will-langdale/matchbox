@@ -4,11 +4,12 @@ import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
 
-from matchbox import clean, index, make_model, query, select
+from matchbox import clean, index, make_model
 from matchbox.client import _handler
 from matchbox.client.helpers import delete_resolution
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.client.queries import Query
 from matchbox.common.factories.entities import query_to_cluster_entities
 from matchbox.common.factories.sources import (
     FeatureConfig,
@@ -184,6 +185,7 @@ class TestE2EAnalyticalUser:
             logging.debug(f"Indexed source: {source.name}")
 
         # === DEDUPLICATION PHASE ===
+        dedupers = {}
         deduper_names = {}
 
         for source_testkit in self.linked_testkit.sources.values():
@@ -191,15 +193,7 @@ class TestE2EAnalyticalUser:
             source = source_testkit.source
 
             # Query data from the source
-            # keys included then dropped to create ClusterEntity objects for later diff
-            source_select = select(
-                {
-                    source.name: ["key"]
-                    + [field.name for field in source.config.index_fields]
-                },
-                client=self.warehouse_engine,
-            )
-            raw_df = query(source_select, return_type="polars")
+            raw_df = Query(source).run()
             clusters = query_to_cluster_entities(
                 query=raw_df,
                 keys={source.name: source.qualified_key},
@@ -249,10 +243,12 @@ class TestE2EAnalyticalUser:
             logging.debug(f"Successfully deduplicated {source.name}")
 
             # Store the deduper resolution name for later use
+            dedupers[source.name] = deduper
             deduper_names[source.name] = deduper_name
 
         # === PAIRWISE LINKING PHASE ===
         linker_names = {}
+        linkers = {}
 
         # Define linking pairs based on common fields
         linking_pairs = [
@@ -274,29 +270,15 @@ class TestE2EAnalyticalUser:
             right_source = right_testkit.source
 
             # Query deduplicated data
-            # keys included then dropped to create ClusterEntity objects for later diff
-            left_raw_df = query(
-                select(
-                    {left_source.name: ["key", common_field]},
-                    client=self.warehouse_engine,
-                ),
-                resolution=deduper_names[left_source.name],
-                return_type="polars",
-            )
+            left_raw_df = Query(left_source, model=dedupers[left_source.name]).run()
+
             left_clusters = query_to_cluster_entities(
                 query=left_raw_df,
                 keys={left_source.name: left_source.qualified_key},
             )
             left_df = left_raw_df.drop(left_source.qualified_key)
 
-            right_raw_df = query(
-                select(
-                    {right_source.name: ["key", common_field]},
-                    client=self.warehouse_engine,
-                ),
-                resolution=deduper_names[right_source.name],
-                return_type="polars",
-            )
+            right_raw_df = Query(right_source, model=dedupers[right_source.name]).run()
             right_clusters = query_to_cluster_entities(
                 query=right_raw_df,
                 keys={right_source.name: right_source.qualified_key},
@@ -367,6 +349,7 @@ class TestE2EAnalyticalUser:
 
             # Store the linker resolution name for later use
             linker_names[(left_source.name, right_source.name)] = linker_name
+            linkers[(left_source.name, right_source.name)] = linker
 
         # === FINAL LINKING PHASE ===
         # Now link the first linked pair (crn-duns) with the third source (cdms)
@@ -376,13 +359,7 @@ class TestE2EAnalyticalUser:
         first_pair = (crn_source.name, duns_source.name)
 
         # Query data from the first linked pair and the third source
-        # keys included then dropped to create ClusterEntity objects for later diff
-        left_raw_df = query(
-            select({crn_source.name: ["key", "crn"]}, client=self.warehouse_engine),
-            select({duns_source.name: ["key"]}, client=self.warehouse_engine),
-            resolution=linker_names[first_pair],
-            return_type="polars",
-        )
+        left_raw_df = Query(crn_source, duns_source, model=linkers[first_pair]).run()
         left_clusters = query_to_cluster_entities(
             query=left_raw_df,
             keys={
@@ -392,11 +369,7 @@ class TestE2EAnalyticalUser:
         )
         left_df = left_raw_df.drop(crn_source.qualified_key, duns_source.qualified_key)
 
-        right_raw_df = query(
-            select({cdms_source.name: ["key", "crn"]}, client=self.warehouse_engine),
-            resolution=deduper_names[cdms_source.name],
-            return_type="polars",
-        )
+        right_raw_df = Query(cdms_source, model=dedupers[cdms_source.name]).run()
         right_clusters = query_to_cluster_entities(
             query=right_raw_df,
             keys={cdms_source.name: cdms_source.qualified_key},
@@ -461,18 +434,7 @@ class TestE2EAnalyticalUser:
         cdms_source = self.linked_testkit.sources["cdms"].source
 
         # Get necessary field from each source
-        final_df = query(
-            select(
-                {
-                    crn_source.name: ["key", "company_name", "crn"],
-                    duns_source.name: ["key", "company_name", "duns"],
-                    cdms_source.name: ["key", "crn", "cdms"],
-                },
-                client=self.warehouse_engine,
-            ),
-            resolution=final_linker_name,
-            return_type="polars",
-        )
+        final_df = Query(crn_source, duns_source, cdms_source, model=final_linker).run()
 
         final_clusters = query_to_cluster_entities(
             query=final_df,

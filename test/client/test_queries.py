@@ -1,30 +1,47 @@
 import pyarrow as pa
 import pytest
 from httpx import Response
-from numpy import ndarray
 from respx import MockRouter
 from sqlalchemy import Engine
 
-from matchbox import query
-from matchbox.client.helpers import select
+from matchbox.client.queries import Query
 from matchbox.common.arrow import (
     SCHEMA_QUERY,
     SCHEMA_QUERY_WITH_LEAVES,
     table_to_buffer,
 )
-from matchbox.common.dtos import BackendResourceType, NotFoundError
+from matchbox.common.dtos import BackendResourceType, NotFoundError, QueryConfig
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
 )
+from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import source_factory, source_from_tuple
-from matchbox.common.graph import DEFAULT_RESOLUTION
 
 
-def test_query_no_resolution_ok_various_params(
-    matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
-    """Tests that we can avoid passing resolution name, with a variety of parameters."""
+def test_init_query():
+    """Test that query is initialised correctly"""
+    source = source_factory().source
+    model = model_factory().model
+    query = Query(
+        source,
+        model=model,
+        combine_type="explode",
+        threshold=0.32,
+        cleaning={"hello": "hello"},
+    )
+
+    assert query.config == QueryConfig(
+        source_resolutions=[source.name],
+        model_resolution=model.name,
+        combine_type="explode",
+        threshold=32,
+        cleaning={"hello": "hello"},
+    )
+
+
+def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Tests that we can query from a single source."""
     # Dummy data and source
     testkit = source_from_tuple(
         data_tuple=({"a": 1, "b": "2"}, {"a": 10, "b": "20"}),
@@ -34,12 +51,6 @@ def test_query_no_resolution_ok_various_params(
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
-        return_value=Response(
-            200, json=testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
-
     query_route = matchbox_api.get("/query").mock(
         return_value=Response(
             200,
@@ -55,12 +66,10 @@ def test_query_no_resolution_ok_various_params(
         )
     )
 
-    selectors = select({"foo": ["a", "b"]}, client=sqlite_warehouse)
-
     # Tests with no optional params
-    results = query(selectors, return_leaf_id=False)
+    results = Query(testkit.source).run(return_leaf_id=False)
     assert len(results) == 2
-    assert {"foo_a", "foo_b", "id"} == set(results.columns)
+    assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "source": testkit.source.name,
@@ -68,11 +77,11 @@ def test_query_no_resolution_ok_various_params(
     }
 
     # Tests with optional params
-    results = query(
-        selectors, return_type="arrow", threshold=50, return_leaf_id=False
-    ).to_pandas()
+    results = Query(testkit.source, threshold=0.5).run(
+        return_leaf_id=False, return_type="pandas"
+    )
     assert len(results) == 2
-    assert {"foo_a", "foo_b", "id"} == set(results.columns)
+    assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 
     assert dict(query_route.calls.last.request.url.params) == {
         "source": testkit.source.name,
@@ -99,18 +108,6 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/resolutions/{testkit1.source.name}").mock(
-        return_value=Response(
-            200, json=testkit1.source.to_resolution().model_dump(mode="json")
-        )
-    )
-
-    matchbox_api.get(f"/resolutions/{testkit2.source.name}").mock(
-        return_value=Response(
-            200, json=testkit2.source.to_resolution().model_dump(mode="json")
-        )
-    )
-
     query_route = matchbox_api.get("/query").mock(
         side_effect=[
             Response(
@@ -141,34 +138,31 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         * 2  # 2 calls to `query()` in this test, each querying server twice
     )
 
-    sels = select("foo", {"foo2": ["c"]}, client=sqlite_warehouse)
-
+    model = model_factory().model
     # Validate results
-    results = query(sels, return_leaf_id=False)
+    results = Query(testkit1.source, testkit2.source, model=model).run(
+        return_leaf_id=False
+    )
     assert len(results) == 4
     assert {
-        # All fields except key automatically selected for `foo`
         "foo_a",
         "foo_b",
-        # Only one column selected for `foo2`
+        "foo_key",
         "foo2_c",
-        # The id always comes back
+        "foo2_key",
         "id",
     } == set(results.columns)
 
     assert dict(query_route.calls[-2].request.url.params) == {
         "source": testkit1.source.name,
-        "resolution": DEFAULT_RESOLUTION,
+        "resolution": model.name,
         "return_leaf_id": "False",
     }
     assert dict(query_route.calls[-1].request.url.params) == {
         "source": testkit2.source.name,
-        "resolution": DEFAULT_RESOLUTION,
+        "resolution": model.name,
         "return_leaf_id": "False",
     }
-
-    # It also works with the selectors specified separately
-    query([sels[0]], [sels[1]], return_leaf_id=False)
 
 
 @pytest.mark.parametrize(
@@ -195,18 +189,6 @@ def test_query_combine_type(
     ).write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/resolutions/{testkit1.source.name}").mock(
-        return_value=Response(
-            200, json=testkit1.source.to_resolution().model_dump(mode="json")
-        )
-    )
-
-    matchbox_api.get(f"/resolutions/{testkit2.source.name}").mock(
-        return_value=Response(
-            200, json=testkit2.source.to_resolution().model_dump(mode="json")
-        )
-    )
-
     matchbox_api.get("/query").mock(
         side_effect=[
             Response(
@@ -239,25 +221,35 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    sels = select("foo", "bar", client=sqlite_warehouse)
+    model = model_factory().model
 
     # Validate results
-    results = query(sels, combine_type=combine_type, return_leaf_id=False)
+    results = Query(
+        testkit1.source,
+        testkit2.source,
+        model=model,
+        combine_type=combine_type,
+    ).run(return_leaf_id=False)
 
     if combine_type == "set_agg":
         expected_len = 3
-        for _, row in results.drop(columns=["id"]).iterrows():
-            for cell in row.values:
-                assert isinstance(cell, ndarray)
+
+        # Iterate over rows
+        for row in results.drop("id").iter_rows(named=True):
+            for cell in row.values():
+                assert isinstance(cell, list)
                 # No duplicates
                 assert len(cell) == len(set(cell))
+
     else:
         expected_len = 5
 
     assert len(results) == expected_len
     assert {
         "foo_col",
+        "foo_key",
         "bar_col",
+        "bar_key",
         "id",
     } == set(results.columns)
 
@@ -266,12 +258,6 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
     testkit = source_factory(engine=sqlite_warehouse, name="foo").write_to_location()
 
     # Mock API
-    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
-        return_value=Response(
-            200, json=testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
-
     matchbox_api.get("/query").mock(
         return_value=Response(
             404,
@@ -282,11 +268,9 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
         )
     )
 
-    selectors = select({"foo": ["crn", "company_name"]}, client=sqlite_warehouse)
-
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-        query(selectors)
+        Query(testkit.source).run()
 
 
 def test_query_empty_results_raises_exception(
@@ -294,13 +278,6 @@ def test_query_empty_results_raises_exception(
 ):
     """Test that query raises MatchboxEmptyServerResponse when no data is returned."""
     testkit = source_factory(engine=sqlite_warehouse, name="foo").write_to_location()
-
-    # Mock API
-    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
-        return_value=Response(
-            200, json=testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
 
     # Mock empty results
     matchbox_api.get("/query").mock(
@@ -312,10 +289,8 @@ def test_query_empty_results_raises_exception(
         )
     )
 
-    selectors = select({"foo": ["crn", "company_name"]}, client=sqlite_warehouse)
-
     # Test that empty results raise MatchboxEmptyServerResponse
     with pytest.raises(
         MatchboxEmptyServerResponse, match="The query operation returned no data"
     ):
-        query(selectors)
+        Query(testkit.source).run()
