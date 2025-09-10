@@ -6,11 +6,10 @@ from polars import DataFrame as PolarsDataFrame
 from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.sources import Source
-from matchbox.common.db import QueryReturnClass
+from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
     QueryCombineType,
     QueryConfig,
-    QueryReturnType,
 )
 
 
@@ -24,7 +23,6 @@ class Query:
         combine_type: QueryCombineType = QueryCombineType.CONCAT,
         threshold: float | None = None,
         cleaning: dict[str, str] | None = None,
-        return_type: QueryReturnType = QueryReturnType.PANDAS,
     ):
         """Initialise query.
 
@@ -51,9 +49,6 @@ class Query:
 
             cleaning (optional): A dictionary mapping an output column name to a SQL
                 expression that will populate a new column.
-
-            return_type: The form to return data in, one of "pandas" or "arrow"
-                Defaults to pandas for ease of use
         """
         self.sources = sources
         self.model = model
@@ -63,7 +58,6 @@ class Query:
             combine_type=combine_type,
             threshold=int(threshold * 100) if threshold else None,
             cleaning=cleaning,
-            return_type=return_type,
         )
 
     def run(
@@ -133,11 +127,4 @@ class Query:
                     ]
                     result = result.group_by("id").agg(agg_expressions)
 
-        # Return in requested format
-        match self.config.return_type:
-            case "pandas":
-                return result.to_pandas()
-            case "polars":
-                return result
-            case "arrow":
-                return result.to_arrow()
+        return result

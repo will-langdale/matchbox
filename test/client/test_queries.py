@@ -1,7 +1,6 @@
 import pyarrow as pa
 import pytest
 from httpx import Response
-from numpy import ndarray
 from respx import MockRouter
 from sqlalchemy import Engine
 
@@ -30,7 +29,6 @@ def test_init_query():
         combine_type="explode",
         threshold=0.32,
         cleaning={"hello": "hello"},
-        return_type="arrow",
     )
 
     assert query.config == QueryConfig(
@@ -39,7 +37,6 @@ def test_init_query():
         combine_type="explode",
         threshold=32,
         cleaning={"hello": "hello"},
-        return_type="arrow",
     )
 
 
@@ -86,11 +83,7 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
     }
 
     # Tests with optional params
-    results = (
-        Query(testkit.source, return_type="arrow", threshold=0.5)
-        .run(return_leaf_id=False)
-        .to_pandas()
-    )
+    results = Query(testkit.source, threshold=0.5).run(return_leaf_id=False).to_pandas()
     assert len(results) == 2
     assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 
@@ -268,11 +261,14 @@ def test_query_combine_type(
 
     if combine_type == "set_agg":
         expected_len = 3
-        for _, row in results.drop(columns=["id"]).iterrows():
-            for cell in row.values:
-                assert isinstance(cell, ndarray)
+
+        # Iterate over rows
+        for row in results.drop("id").iter_rows(named=True):
+            for cell in row.values():
+                assert isinstance(cell, list)
                 # No duplicates
                 assert len(cell) == len(set(cell))
+
     else:
         expected_len = 5
 

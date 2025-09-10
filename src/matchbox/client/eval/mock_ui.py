@@ -62,8 +62,8 @@ def setup_mock_database():
     bar.location.add_client(warehouse)
     index(source=bar)
 
-    foo_df = Query(foo, return_type="polars").run()
-    bar_df = Query(bar, return_type="polars").run()
+    foo_df = Query(foo).run()
+    bar_df = Query(bar).run()
 
     foo_df = foo_df.with_columns(
         pl.col("foo_name")

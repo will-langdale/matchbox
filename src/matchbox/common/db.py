@@ -1,5 +1,6 @@
 """Common database utilities for Matchbox."""
 
+from enum import StrEnum
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -18,13 +19,21 @@ from polars import DataFrame as PolarsDataFrame
 from pyarrow import Table as ArrowTable
 from sqlalchemy.engine import Engine
 
-from matchbox.common.dtos import QueryReturnType
 from matchbox.common.exceptions import MatchboxSourceExtractTransformError
 
 if TYPE_CHECKING:
     from adbc_driver_postgresql.dbapi import Connection as ADBCConnection
 else:
     ADBCConnection = Any
+
+
+class QueryReturnType(StrEnum):
+    """Enumeration of dataframe types to return from query."""
+
+    PANDAS = "pandas"
+    POLARS = "polars"
+    ARROW = "arrow"
+
 
 QueryReturnClass: TypeAlias = ArrowTable | PandasDataFrame | PolarsDataFrame
 

@@ -375,14 +375,6 @@ class QueryCombineType(StrEnum):
     SET_AGG = "set_agg"
 
 
-class QueryReturnType(StrEnum):
-    """Enumeration of dataframe types to return from query."""
-
-    PANDAS = "pandas"
-    POLARS = "polars"
-    ARROW = "arrow"
-
-
 class QueryConfig(BaseModel):
     """Configuration of query generating model inputs."""
 
@@ -391,7 +383,6 @@ class QueryConfig(BaseModel):
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
-    return_type: QueryReturnType = QueryReturnType.PANDAS
 
     @model_validator(mode="after")
     def validate_resolutions(self) -> Self:

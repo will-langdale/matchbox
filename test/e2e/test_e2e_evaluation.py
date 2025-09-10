@@ -171,7 +171,7 @@ class TestE2EModelEvaluation:
         assert isinstance(comparison["final"], tuple)
 
         # Create and run a deduper model locally
-        queried_source = Query(self.source_a, return_type="polars").run()
+        queried_source = Query(self.source_a).run()
 
         deduper = make_model(
             name="deduper_alt",

@@ -24,13 +24,13 @@ from sqlalchemy.exc import OperationalError
 
 from matchbox.common.db import (
     QueryReturnClass,
+    QueryReturnType,
     sql_to_df,
 )
 from matchbox.common.dtos import (
     DataTypes,
     LocationConfig,
     LocationType,
-    QueryReturnType,
     Resolution,
     SourceConfig,
     SourceField,

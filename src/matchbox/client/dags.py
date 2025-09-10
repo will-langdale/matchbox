@@ -180,7 +180,6 @@ class ModelStep(Step):
             *sources,
             model=resolve_from,
             threshold=step_input.threshold,
-            return_type="polars",
             combine_type=step_input.combine_type,
         )
 

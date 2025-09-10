@@ -193,7 +193,7 @@ class TestE2EAnalyticalUser:
             source = source_testkit.source
 
             # Query data from the source
-            raw_df = Query(source, return_type="polars").run()
+            raw_df = Query(source).run()
             clusters = query_to_cluster_entities(
                 query=raw_df,
                 keys={source.name: source.qualified_key},
@@ -270,9 +270,7 @@ class TestE2EAnalyticalUser:
             right_source = right_testkit.source
 
             # Query deduplicated data
-            left_raw_df = Query(
-                left_source, model=dedupers[left_source.name], return_type="polars"
-            ).run()
+            left_raw_df = Query(left_source, model=dedupers[left_source.name]).run()
 
             left_clusters = query_to_cluster_entities(
                 query=left_raw_df,
@@ -280,9 +278,7 @@ class TestE2EAnalyticalUser:
             )
             left_df = left_raw_df.drop(left_source.qualified_key)
 
-            right_raw_df = Query(
-                right_source, model=dedupers[right_source.name], return_type="polars"
-            ).run()
+            right_raw_df = Query(right_source, model=dedupers[right_source.name]).run()
             right_clusters = query_to_cluster_entities(
                 query=right_raw_df,
                 keys={right_source.name: right_source.qualified_key},
@@ -363,9 +359,7 @@ class TestE2EAnalyticalUser:
         first_pair = (crn_source.name, duns_source.name)
 
         # Query data from the first linked pair and the third source
-        left_raw_df = Query(
-            crn_source, duns_source, model=linkers[first_pair], return_type="polars"
-        ).run()
+        left_raw_df = Query(crn_source, duns_source, model=linkers[first_pair]).run()
         left_clusters = query_to_cluster_entities(
             query=left_raw_df,
             keys={
@@ -375,9 +369,7 @@ class TestE2EAnalyticalUser:
         )
         left_df = left_raw_df.drop(crn_source.qualified_key, duns_source.qualified_key)
 
-        right_raw_df = Query(
-            cdms_source, model=dedupers[cdms_source.name], return_type="polars"
-        ).run()
+        right_raw_df = Query(cdms_source, model=dedupers[cdms_source.name]).run()
         right_clusters = query_to_cluster_entities(
             query=right_raw_df,
             keys={cdms_source.name: cdms_source.qualified_key},
@@ -442,13 +434,7 @@ class TestE2EAnalyticalUser:
         cdms_source = self.linked_testkit.sources["cdms"].source
 
         # Get necessary field from each source
-        final_df = Query(
-            crn_source,
-            duns_source,
-            cdms_source,
-            model=final_linker,
-            return_type="polars",
-        ).run()
+        final_df = Query(crn_source, duns_source, cdms_source, model=final_linker).run()
 
         final_clusters = query_to_cluster_entities(
             query=final_df,

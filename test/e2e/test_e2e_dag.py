@@ -268,9 +268,7 @@ class TestE2EPipelineBuilder:
         dag.run()
 
         # Basic verification - we have some linked results and can retrieve them
-        final_df = Query(
-            source_a, source_b, model=link_ab._model, return_type="polars"
-        ).run()
+        final_df = Query(source_a, source_b, model=link_ab._model).run()
 
         # Should have linked results
         assert len(final_df) > 0, "Expected some results from first run"
