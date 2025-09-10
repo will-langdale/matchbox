@@ -216,7 +216,7 @@ def test_dedupe_step_run(
 ):
     """Tests that a dedupe step orchestrates lower-level API correctly."""
     with (
-        patch("matchbox.client.dags.make_model") as make_model_mock,
+        patch("matchbox.client.dags.Model.__new__") as make_model_mock,
         patch("matchbox.client.dags.Query.run"),
     ):
         # Complete mock set up
@@ -268,7 +268,7 @@ def test_link_step_run(
 ):
     """Tests that a link step orchestrates lower-level API correctly."""
     with (
-        patch("matchbox.client.dags.make_model") as make_model_mock,
+        patch("matchbox.client.dags.Model.__new__") as make_model_mock,
         patch("matchbox.client.dags.Query.run"),
     ):
         # Complete mock set up

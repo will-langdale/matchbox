@@ -13,6 +13,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    Json,
     field_validator,
     model_validator,
 )
@@ -20,7 +21,6 @@ from pydantic import (
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.graph import (
     ModelResolutionName,
-    ResolutionName,
     ResolutionType,
     SourceResolutionName,
 )
@@ -196,13 +196,6 @@ class BackendUploadType(StrEnum):
             BackendUploadType.INDEX: SCHEMA_INDEX,
             BackendUploadType.RESULTS: SCHEMA_RESULTS,
         }[self]
-
-
-class ModelType(StrEnum):
-    """Enumeration of supported model types."""
-
-    LINKER = "linker"
-    DEDUPER = "deduper"
 
 
 class CRUDOperation(StrEnum):
@@ -397,24 +390,42 @@ class QueryConfig(BaseModel):
         return self
 
 
+class ModelType(StrEnum):
+    """Enumeration of supported model types."""
+
+    LINKER = "linker"
+    DEDUPER = "deduper"
+
+
 class ModelConfig(BaseModel):
-    """Metadata for a model."""
+    """Configuration for model that has or could be added to the server."""
 
     type: ModelType
-    left_resolution: ResolutionName
-    right_resolution: ResolutionName | None = None  # Only used for linker models
+    model_class: str
+    model_settings: Json
+    query: QueryConfig
+    right_query: QueryConfig | None = None  # Only used for linker models
 
-    def __eq__(self, other: "ModelConfig") -> bool:
+    def __eq__(self, other: Self) -> bool:
         """Check equality of model configurations.
 
         Model configurations don't care about the order of left and right resolutions.
         """
-        if not isinstance(other, ModelConfig):
+        if not isinstance(other, Self):
             return NotImplemented
         return self.type == other.type and {
-            self.left_resolution,
-            self.right_resolution,
-        } == {other.left_resolution, other.right_resolution}
+            self.query,
+            self.right_query,
+        } == {other.query, other.right_query}
+
+    @model_validator(mode="after")
+    def validate_right_query(self) -> Self:
+        """Ensure that a right query is set if and only if model is linker."""
+        if self.type == ModelType.DEDUPER and self.right_query is not None:
+            raise ValueError("Right query can't be set for dedupers")
+        if self.type == ModelType.LINKER and self.right_query is None:
+            raise ValueError("Right query must be set for linkers")
+        return self
 
 
 class Match(BaseModel):

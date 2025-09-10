@@ -160,19 +160,19 @@ The `model_factory()` is designed so you can chain together known processes in a
 linked_testkit: LinkedSourcesTestkit = linked_sources_factory()
 
 # Create perfect deduped models first
-left_deduped: ModelTestkit = model_factory(
+left_deduper: ModelTestkit = model_factory(
     left_testkit=linked_testkit.sources["crn"],
     true_entities=linked_testkit.true_entities,
 )
-right_deduped: ModelTestkit = model_factory(
+right_deduper: ModelTestkit = model_factory(
     left_testkit=linked_testkit.sources["cdms"],
     true_entities=linked_testkit.true_entities,
 )
 
 # Create a model and generate probabilities
-model: Model = make_model(
-    left_data=left_deduped.query,
-    right_data=right_deduped.query
+model: Model = Model(
+    query=Query(left, model=left_deduper.model),
+    right_query=Query(right, model=right_deduper.model),
     ...
 )
 results: Results = model.run()

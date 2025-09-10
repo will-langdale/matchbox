@@ -12,10 +12,9 @@ from sqlalchemy import create_engine
 from sqlglot import errors, expressions, parse_one
 
 from matchbox.client import _handler
-from matchbox.client.helpers.selector import clean
+from matchbox.client.models import Model
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
-from matchbox.client.models.models import make_model
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
 from matchbox.client.sources import RelationalDBLocation, Source
@@ -163,8 +162,8 @@ class ModelStep(Step):
 
         return self
 
-    def query(self, step_input: StepInput) -> pl.DataFrame:
-        """Retrieve data for declared step input.
+    def query(self, step_input: StepInput) -> Query:
+        """Generate query for declared step input.
 
         Args:
             step_input: Declared input to this DAG step.
@@ -176,18 +175,17 @@ class ModelStep(Step):
         resolve_from = None
         if isinstance(step_input.prev_node, ModelStep):
             resolve_from = step_input.prev_node._model
-        query = Query(
+
+        return Query(
             *sources,
             model=resolve_from,
             threshold=step_input.threshold,
             combine_type=step_input.combine_type,
+            cleaning=step_input.cleaning_dict,
         )
 
-        return query.run(batch_size=step_input.batch_size, return_leaf_id=False)
-
-    def clean(self, data: pl.DataFrame, step_input: StepInput) -> pl.DataFrame:
-        """Clean data using DuckDB with the provided cleaning SQL."""
-        return clean(data, step_input.cleaning_dict)
+        # TODO
+        # return query.run(batch_size=step_input.batch_size, return_leaf_id=False)
 
 
 class DedupeStep(ModelStep):
@@ -203,16 +201,12 @@ class DedupeStep(ModelStep):
 
     def run(self) -> Results:
         """Run full deduping pipeline and store results."""
-        left_raw = self.query(self.left)
-        left_clean = self.clean(left_raw, self.left)
-
-        self._model = make_model(
+        self._model = Model(
             name=self.name,
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
-            left_data=left_clean,
-            left_resolution=self.left.name,
+            query=self.query(self.left),
         )
 
         results = self._model.run()
@@ -234,21 +228,13 @@ class LinkStep(ModelStep):
 
     def run(self) -> Results:
         """Run whole linking step."""
-        left_raw = self.query(self.left)
-        left_clean = self.clean(left_raw, self.left)
-
-        right_raw = self.query(self.right)
-        right_clean = self.clean(right_raw, self.right)
-
-        self._model = make_model(
+        self._model = Model(
             name=self.name,
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
-            left_data=left_clean,
-            left_resolution=self.left.name,
-            right_data=right_clean,
-            right_resolution=self.right.name,
+            query=self.query(self.left),
+            right_query=self.query(self.right),
         )
 
         results = self._model.run()
