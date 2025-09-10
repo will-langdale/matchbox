@@ -62,13 +62,17 @@ class Query:
 
     def run(
         self,
+        return_type: QueryReturnType = QueryReturnType.POLARS,
         return_leaf_id: bool = True,
         batch_size: int | None = None,
     ) -> QueryReturnClass:
         """Runs queries against the selected backend.
 
         Args:
-            return_leaf_id: Whether matchbox IDs for source clusters should be returned
+            return_type (optional): Type of dataframe returned, defaults to "polars".
+                Other options are "pandas" and "arrow".
+            return_leaf_id (optional): Whether matchbox IDs for source clusters should
+                be returned
             batch_size (optional): The size of each batch when fetching data from the
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
@@ -126,5 +130,15 @@ class Query:
                         pl.col(col).unique() for col in result.columns if col != "id"
                     ]
                     result = result.group_by("id").agg(agg_expressions)
+
+        match return_type:
+            case QueryReturnType.POLARS:
+                return result
+            case QueryReturnClass.PANDAS:
+                return result.to_pandas()
+            case QueryReturnClass.ARROW:
+                return result.to_arrow()
+            case _:
+                raise ValueError(f"Return type {return_type} is invalid")
 
         return result
