@@ -1,5 +1,5 @@
+from collections.abc import Callable, Generator
 from os import environ
-from typing import Callable, Generator
 from unittest.mock import Mock
 
 import pytest

@@ -22,8 +22,8 @@ docs:
 
 # Reformat and lint
 format:
-    uv run ruff format .
-    uv run ruff check . --fix
+    uvx ruff format .
+    uvx ruff check . --fix
     uvx uv-sort pyproject.toml
 
 # Scan for secrets

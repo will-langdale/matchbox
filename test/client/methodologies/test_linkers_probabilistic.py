@@ -1,6 +1,7 @@
 """Test probabilistic behavior of linkers."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import polars as pl

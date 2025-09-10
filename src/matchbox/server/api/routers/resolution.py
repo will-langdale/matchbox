@@ -1,6 +1,6 @@
 """Resolution API routes for the Matchbox server."""
 
-from typing import Annotated, Union
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 
@@ -44,7 +44,7 @@ def create_resolution(
     upload_tracker: UploadTrackerDependency,
     resolution: Resolution,
     response: Response,
-) -> Union[ResolutionOperationStatus, UploadStatus]:
+) -> ResolutionOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
     if resolution.resolution_type == ResolutionType.SOURCE:
         upload_id = upload_tracker.add_source(metadata=resolution)

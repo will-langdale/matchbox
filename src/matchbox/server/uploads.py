@@ -2,9 +2,10 @@
 
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from datetime import datetime
 from functools import partial
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import redis
@@ -258,8 +259,7 @@ def s3_to_recordbatch(
 
     parquet_file = pq.ParquetFile(buffer)
 
-    for batch in parquet_file.iter_batches(batch_size=batch_size):
-        yield batch
+    yield from parquet_file.iter_batches(batch_size=batch_size)
 
 
 # -- Upload tasks --
@@ -350,7 +350,7 @@ def process_upload(
     finally:
         try:
             s3_client.delete_object(Bucket=bucket, Key=filename)
-        except Exception as delete_error:
+        except Exception as delete_error:  # noqa: BLE001
             logger.error(
                 f"Failed to delete S3 file {bucket}/{filename}: {delete_error}"
             )

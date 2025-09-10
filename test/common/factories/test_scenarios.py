@@ -59,11 +59,11 @@ def test_setup_unknown_scenario(
     matchbox_postgres: MatchboxDBAdapter, sqlite_warehouse: Engine
 ):
     """Test that asking for an unknown scenario raises a ValueError."""
-    with pytest.raises(ValueError, match="Unknown scenario type: nonexistent"):
-        with setup_scenario(
-            matchbox_postgres, "nonexistent", warehouse=sqlite_warehouse
-        ):
-            pass
+    with (
+        pytest.raises(ValueError, match="Unknown scenario type: nonexistent"),
+        setup_scenario(matchbox_postgres, "nonexistent", warehouse=sqlite_warehouse),
+    ):
+        pass
 
 
 @pytest.mark.docker

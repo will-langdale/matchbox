@@ -1,15 +1,12 @@
 """Interface to locations where source data is stored."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
 from typing import (
     Any,
-    Callable,
-    Generator,
-    Iterable,
-    Iterator,
     ParamSpec,
     Self,
     TypeVar,

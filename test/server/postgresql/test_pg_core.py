@@ -1,6 +1,7 @@
 import pyarrow as pa
 import pytest
-from sqlalchemy import BIGINT, TEXT, Column, MetaData
+from sqlalchemy import Column, MetaData, func, select
+from sqlalchemy.dialects.postgresql import BIGINT, TEXT
 from sqlalchemy.orm import declarative_base
 
 from matchbox.common.exceptions import MatchboxDatabaseWriteError
@@ -87,7 +88,7 @@ def test_large_append(
         second_id = (
             session.query(DummyTable.key).filter(DummyTable.foo == "val2").scalar()
         )
-    assert 0 < second_id
+    assert second_id > 0
 
     # Upserting not allowed
     with (
@@ -121,8 +122,6 @@ def test_ingest_to_temporary_table(
     matchbox_postgres: MatchboxPostgres,  # will drop dummy table
 ):
     """Test temporary table creation, data ingestion, and automatic cleanup."""
-    from sqlalchemy.dialects.postgresql import BIGINT, TEXT
-
     # Create sample arrow data
     data = pa.Table.from_pylist(
         [
@@ -141,29 +140,29 @@ def test_ingest_to_temporary_table(
     }
 
     # Use the context manager to create and populate a temporary table
-    with ingest_to_temporary_table(
-        table_name=table_name,
-        schema_name=schema_name,
-        data=data,
-        column_types=column_types,
-    ) as temp_table:
+    with (
+        ingest_to_temporary_table(
+            table_name=table_name,
+            schema_name=schema_name,
+            data=data,
+            column_types=column_types,
+        ) as temp_table,
+        MBDB.get_session() as session,
+    ):
         # Verify the table exists and has the expected data
-        with MBDB.get_session() as session:
-            # Check that the table exists using SQLAlchemy syntax
-            from sqlalchemy import func, select
+        # Check that the table exists using SQLAlchemy syntax
+        result = session.execute(select(func.count()).select_from(temp_table)).scalar()
+        assert result == 2
 
-            result = session.execute(
-                select(func.count()).select_from(temp_table)
-            ).scalar()
-            assert result == 2
-
-            # Check a specific value using SQLAlchemy syntax
-            value = session.execute(
-                select(temp_table.c.value).where(temp_table.c.id == 1)
-            ).scalar()
-            assert value == "test1"
+        # Check a specific value using SQLAlchemy syntax
+        value = session.execute(
+            select(temp_table.c.value).where(temp_table.c.id == 1)
+        ).scalar()
+        assert value == "test1"
 
     # After context exit, verify the table no longer exists
-    with MBDB.get_session() as session:
-        with pytest.raises(Exception):  # Should fail as table is dropped # noqa: B017
-            session.execute(select(func.count()).select_from(temp_table))
+    with (
+        MBDB.get_session() as session,
+        pytest.raises(Exception),  # Should fail as table is dropped # noqa: B017
+    ):
+        session.execute(select(func.count()).select_from(temp_table))

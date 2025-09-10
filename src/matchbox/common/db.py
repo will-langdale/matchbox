@@ -1,11 +1,10 @@
 """Common database utilities for Matchbox."""
 
+from collections.abc import Callable, Iterator
 from enum import StrEnum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Iterator,
     Literal,
     TypeAlias,
     TypeVar,

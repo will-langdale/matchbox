@@ -1,6 +1,6 @@
 """A linking methodology based on a deterministic set of conditions."""
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import polars as pl
 from pydantic import Field, field_validator

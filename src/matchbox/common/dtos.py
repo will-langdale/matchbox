@@ -2,10 +2,11 @@
 
 import re
 import textwrap
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Iterable, Self
+from typing import Self
 
 import polars as pl
 from pydantic import (

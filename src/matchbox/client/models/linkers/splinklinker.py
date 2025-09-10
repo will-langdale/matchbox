@@ -1,7 +1,7 @@
 """A linking methodology leveraging Splink."""
 
 import inspect
-from typing import Any, Type
+from typing import Any
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -49,7 +49,7 @@ class SplinkSettings(LinkerSettings):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    database_api: Type[DuckDBAPI] = Field(
+    database_api: type[DuckDBAPI] = Field(
         default=DuckDBAPI,
         description="""
             The Splink DB API, to choose between DuckDB (default) and Spark (untested)

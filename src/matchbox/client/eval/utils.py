@@ -111,7 +111,7 @@ def get_samples(
         desired_columns = ["root", "leaf", "key"] + source.qualified_index_fields
         results_by_source.append(samples_and_source[desired_columns])
 
-    if not len(results_by_source):
+    if not results_by_source:
         return {}
 
     all_results: pl.DataFrame = pl.concat(results_by_source, how="diagonal")

@@ -1,6 +1,7 @@
 """Test deterministic behavior of dedupers."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import polars as pl
 import pytest

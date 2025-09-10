@@ -1,6 +1,6 @@
 """Evaluation logic for PostgreSQL adapter."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import polars as pl
@@ -92,7 +92,7 @@ def insert_judgement(judgement: Judgement):
                     user_id=judgement.user_id,
                     shown_cluster_id=judgement.shown,
                     endorsed_cluster_id=endorsed_cluster_id,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                 )
             )
 
@@ -212,7 +212,7 @@ def sample(n: int, resolution: ModelResolutionName, user_id: int):
 
     # Exclude clusters recently judged by this user
     to_sample = cluster_features.filter(
-        (pl.col("latest_ts") < datetime.now(timezone.utc) - timedelta(days=365))
+        (pl.col("latest_ts") < datetime.now(UTC) - timedelta(days=365))
         | (pl.col("latest_ts").is_null())
     )
 

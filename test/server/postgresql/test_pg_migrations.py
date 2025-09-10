@@ -45,7 +45,7 @@ def test_migrations_stairway(matchbox_postgres_settings: MatchboxPostgresSetting
             upgrade(alembic_config, revision_id)
 
             logger.debug(f"✓ Migration {revision_id} passed")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             pytest.fail(
                 f"Migration {i + 1}/{len(revisions)} '{revision_id}' failed: {str(e)}"
             )
@@ -88,7 +88,7 @@ def test_migrations_stairway_with_data(
                 downgrade(alembic_config, down_revision)
 
                 logger.debug(f"✓ Migration {revision_id} passed")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 pytest.fail(
                     f"Migration {i + 1}/{len(revisions)} '{revision_id}' failed: "
                     f"{str(e)}"

@@ -1052,9 +1052,11 @@ class TestMatchboxBackend:
 
     def test_compare_models_fails(self):
         """Model comparison errors with no judgement data."""
-        with self.scenario(self.backend, "bare"):
-            with pytest.raises(MatchboxNoJudgements):
-                self.backend.compare_models([])
+        with (
+            self.scenario(self.backend, "bare"),
+            pytest.raises(MatchboxNoJudgements),
+        ):
+            self.backend.compare_models([])
 
     def test_compare_models(self):
         """Can compute precision and recall for list of models."""
