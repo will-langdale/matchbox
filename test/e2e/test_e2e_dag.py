@@ -6,11 +6,10 @@ from httpx import Client
 from sqlalchemy import Engine, text
 
 from matchbox import match as mb_match
-from matchbox import query
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, LinkStep, StepInput
-from matchbox.client.helpers import select
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
+from matchbox.client.queries import Query
 from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.factories.sources import (
     FeatureConfig,
@@ -269,18 +268,9 @@ class TestE2EPipelineBuilder:
         dag.run()
 
         # Basic verification - we have some linked results and can retrieve them
-
-        final_df = query(
-            select(
-                {
-                    source_a.name: ["id", "company_name", "registration_id"],
-                    source_b.name: ["id", "company_name", "registration_id"],
-                },
-                client=self.warehouse_engine,
-            ),
-            resolution="__DEFAULT__",
-            return_type="polars",
-        )
+        final_df = Query(
+            source_a, source_b, model=link_ab.model, return_type="polars"
+        ).run()
 
         # Should have linked results
         assert len(final_df) > 0, "Expected some results from first run"

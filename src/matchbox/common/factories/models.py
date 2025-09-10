@@ -633,7 +633,7 @@ class ModelTestkit(BaseModel):
 
     @property
     def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format at matchbox.query()."""
+        """Return a PyArrow table in the same format as matchbox queries."""
         if self.model.config.type == ModelType.DEDUPER:
             query = self.left_query
         else:

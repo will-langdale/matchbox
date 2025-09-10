@@ -19,10 +19,10 @@ class Query:
 
     def __init__(
         self,
-        sources: list[Source],
-        model: Model | None,
+        *sources: Source,
+        model: Model | None = None,
         combine_type: QueryCombineType = QueryCombineType.CONCAT,
-        threshold: int | None = None,
+        threshold: float | None = None,
         cleaning: dict[str, str] | None = None,
         return_type: QueryReturnType = QueryReturnType.PANDAS,
     ):
@@ -61,7 +61,7 @@ class Query:
             source_resolutions=[source.name for source in sources],
             model_resolution=model.name if model else None,
             combine_type=combine_type,
-            threshold=threshold,
+            threshold=int(threshold * 100) if threshold else None,
             cleaning=cleaning,
             return_type=return_type,
         )
@@ -117,7 +117,7 @@ class Query:
             result = pl.DataFrame()
         else:
             # Combine results based on combine_type
-            if self.config.combine_type == QueryCombineType.concat:
+            if self.config.combine_type == QueryCombineType.CONCAT:
                 result = pl.concat(tables, how="diagonal")
             else:
                 result = tables[0]

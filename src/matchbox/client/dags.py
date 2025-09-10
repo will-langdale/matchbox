@@ -12,13 +12,13 @@ from sqlalchemy import create_engine
 from sqlglot import errors, expressions, parse_one
 
 from matchbox.client import _handler
-from matchbox.client.helpers.selector import Selector, clean, query
+from matchbox.client.helpers.selector import clean
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.models import make_model
+from matchbox.client.queries import Query
 from matchbox.client.results import Results
 from matchbox.client.sources import RelationalDBLocation, Source
-from matchbox.common.dtos import SourceField
 from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
 
@@ -153,12 +153,29 @@ class ModelStep(Step):
     left: StepInput
     settings: dict[str, Any]
     truth: float
+    _model: Any
 
     @model_validator(mode="after")
     def init_sources(self) -> "ModelStep":
         """Add sources inherited from all inputs."""
         for step_input in self.inputs:
             self.sources.update(step_input.prev_node.sources)
+
+        return self
+
+    @model_validator(mode="after")
+    def init_model_class(self) -> "ModelStep":
+        """Initialise dummy model class for later querying."""
+        self._model = make_model(
+            name=self.name,
+            description=self.description,
+            model_class=self.model_class,
+            model_settings=self.settings,
+            left_data=None,
+            right_data=None,
+            left_resolution=self.left.name,
+            right_resolution=self.right.name if hasattr(self, "right") else None,
+        )
 
         return self
 
@@ -171,28 +188,17 @@ class ModelStep(Step):
         Returns:
             Polars dataframe with retrieved results.
         """
-        selectors: list[Selector] = []
+        sources = list(step_input.select.keys())
 
-        for source, fields in step_input.select.items():
-            field_lookup: dict[str, SourceField] = {
-                field.name: field for field in source.config.index_fields
-            }
-
-            selected_fields: list[SourceField] = []
-            for field in fields:
-                selected_fields.append(field_lookup[field])
-
-            selectors.append(Selector(source=source, fields=selected_fields))
-
-        return query(
-            selectors,
-            return_leaf_id=False,
-            return_type="polars",
+        query = Query(
+            *sources,
+            model=self._model,
             threshold=step_input.threshold,
-            resolution=step_input.name,
-            batch_size=step_input.batch_size,
+            return_type="polars",
             combine_type=step_input.combine_type,
         )
+
+        return query.run(batch_size=step_input.batch_size, return_leaf_id=False)
 
     def clean(self, data: pl.DataFrame, step_input: StepInput) -> pl.DataFrame:
         """Clean data using DuckDB with the provided cleaning SQL."""
@@ -203,6 +209,7 @@ class DedupeStep(ModelStep):
     """Deduplication step."""
 
     model_class: type[Deduper]
+    model: Any = None
 
     @property
     def inputs(self) -> list[StepInput]:
@@ -214,7 +221,7 @@ class DedupeStep(ModelStep):
         left_raw = self.query(self.left)
         left_clean = self.clean(left_raw, self.left)
 
-        deduper = make_model(
+        self._model = make_model(
             name=self.name,
             description=self.description,
             model_class=self.model_class,
@@ -223,9 +230,9 @@ class DedupeStep(ModelStep):
             left_resolution=self.left.name,
         )
 
-        results = deduper.run()
+        results = self._model.run()
         results.to_matchbox()
-        deduper.truth = self.truth
+        self._model.truth = self.truth
         return results
 
 
@@ -248,7 +255,7 @@ class LinkStep(ModelStep):
         right_raw = self.query(self.right)
         right_clean = self.clean(right_raw, self.right)
 
-        linker = make_model(
+        self._model = make_model(
             name=self.name,
             description=self.description,
             model_class=self.model_class,
@@ -259,9 +266,9 @@ class LinkStep(ModelStep):
             right_resolution=self.right.name,
         )
 
-        results = linker.run()
+        results = self._model.run()
         results.to_matchbox()
-        linker.truth = self.truth
+        self._model.truth = self.truth
         return results
 
 

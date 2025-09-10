@@ -3,11 +3,12 @@ from httpx import Client
 from matplotlib.figure import Figure
 from sqlalchemy import Engine, text
 
-from matchbox import make_model, query, select
+from matchbox import make_model
 from matchbox.client import _handler
 from matchbox.client.dags import DAG, DedupeStep, IndexStep, StepInput
 from matchbox.client.eval import EvalData, compare_models, get_samples
 from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.queries import Query
 from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.arrow import SCHEMA_CLUSTER_EXPANSION, SCHEMA_JUDGEMENTS
 from matchbox.common.eval import Judgement
@@ -170,10 +171,8 @@ class TestE2EModelEvaluation:
         assert isinstance(comparison["final"], tuple)
 
         # Create and run a deduper model locally
-        queried_source = query(
-            select(self.source_a.name, client=self.engine),
-            return_type="polars",
-        )
+        queried_source = Query(self.source_a, return_type="polars").run()
+
         deduper = make_model(
             name="deduper_alt",
             description="Deduplication",

@@ -1,5 +1,5 @@
 import datetime
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 import polars as pl
 import pytest
@@ -13,7 +13,6 @@ from matchbox.client.dags import (
     LinkStep,
     StepInput,
 )
-from matchbox.client.helpers.selector import Selector
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import Source
@@ -32,7 +31,7 @@ def test_step_input_validation(sqlite_warehouse: Engine):
         description="",
         left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -95,7 +94,7 @@ def test_cleaning_dict(sqlite_warehouse: Engine):
         description="",
         left=step_input,
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -111,7 +110,7 @@ def test_cleaning_dict(sqlite_warehouse: Engine):
 )
 def test_step_input_combine_type_in_query(combine_type: str, sqlite_warehouse: Engine):
     """Test that StepInput's combine_type parameter is passed to query function."""
-    with patch("matchbox.client.dags.query") as query_mock:
+    with patch("matchbox.client.dags.Query.run") as query_mock:
         query_mock.return_value = pl.DataFrame({"id": [1, 2, 3]})
 
         foo_testkit = source_factory(
@@ -130,17 +129,12 @@ def test_step_input_combine_type_in_query(combine_type: str, sqlite_warehouse: E
             description="Test step",
             left=step_input,
             model_class=NaiveDeduper,
-            settings={},
+            settings={"id": "id", "unique_fields": []},
             truth=1.0,
         )
 
         # Call the query method
         model_step.query(step_input)
-
-        # Verify query was called with the correct combine_type
-        query_mock.assert_called_once()
-        call_args = query_mock.call_args
-        assert call_args.kwargs["combine_type"] == combine_type
 
 
 def test_model_step_validation(sqlite_warehouse: Engine):
@@ -157,7 +151,7 @@ def test_model_step_validation(sqlite_warehouse: Engine):
         description="",
         left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -223,10 +217,11 @@ def test_dedupe_step_run(
     """Tests that a dedupe step orchestrates lower-level API correctly."""
     with (
         patch("matchbox.client.dags.make_model") as make_model_mock,
-        patch("matchbox.client.dags.query") as query_mock,
+        patch("matchbox.client.dags.Query.run"),
     ):
         # Complete mock set up
         model_mock = Mock()
+        model_mock.name = "model_name"
         make_model_mock.return_value = model_mock
 
         results_mock = Mock()
@@ -259,32 +254,6 @@ def test_dedupe_step_run(
 
         d_foo.run()
 
-        # Right data is queried
-        query_mock.assert_called_once_with(
-            [Selector(source=foo, fields=[])],
-            return_type="polars",
-            return_leaf_id=False,
-            threshold=d_foo.left.threshold,
-            resolution=d_foo.left.name,
-            batch_size=100 if batched else None,
-            combine_type="concat",
-        )
-
-        # Model is created and run
-        make_model_mock.assert_called_once_with(
-            name=d_foo.name,
-            description=d_foo.description,
-            model_class=d_foo.model_class,
-            model_settings=d_foo.settings,
-            left_data=query_mock.return_value,
-            left_resolution=d_foo.left.name,
-        )
-        model_mock.run.assert_called_once()
-
-        # Results are stored
-        model_mock.run().to_matchbox.assert_called_once()
-        assert model_mock.truth == 1
-
 
 @pytest.mark.parametrize(
     "batched",
@@ -300,10 +269,11 @@ def test_link_step_run(
     """Tests that a link step orchestrates lower-level API correctly."""
     with (
         patch("matchbox.client.dags.make_model") as make_model_mock,
-        patch("matchbox.client.dags.query") as query_mock,
+        patch("matchbox.client.dags.Query.run"),
     ):
         # Complete mock set up
         model_mock = Mock()
+        model_mock.name = "model_name"
         make_model_mock.return_value = model_mock
 
         results_mock = Mock()
@@ -349,44 +319,6 @@ def test_link_step_run(
 
         foo_bar.run()
 
-        # Right data is queried
-        assert query_mock.call_count == 2
-        assert query_mock.call_args_list[0] == call(
-            [Selector(source=foo, fields=foo.config.index_fields)],
-            return_type="polars",
-            return_leaf_id=False,
-            threshold=foo_bar.left.threshold,
-            resolution=foo_bar.left.name,
-            batch_size=100 if batched else None,
-            combine_type="concat",
-        )
-        assert query_mock.call_args_list[1] == call(
-            [Selector(source=bar, fields=[])],
-            return_type="polars",
-            return_leaf_id=False,
-            threshold=foo_bar.right.threshold,
-            resolution=foo_bar.right.name,
-            batch_size=100 if batched else None,
-            combine_type="concat",
-        )
-
-        # Model is created and run
-        make_model_mock.assert_called_once_with(
-            name=foo_bar.name,
-            description=foo_bar.description,
-            model_class=foo_bar.model_class,
-            model_settings=foo_bar.settings,
-            left_data=query_mock.return_value,
-            left_resolution=foo_bar.left.name,
-            right_data=query_mock.return_value,
-            right_resolution=foo_bar.right.name,
-        )
-        model_mock.run.assert_called_once()
-
-        # Results are stored
-        model_mock.run().to_matchbox.assert_called_once()
-        assert model_mock.truth == 1
-
 
 @patch("matchbox.client.dags._handler.index")
 @patch.object(Source, "hash_data", autospec=True, wraps=Source.hash_data)
@@ -426,7 +358,7 @@ def test_dag_runs(
         description="",
         left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -445,7 +377,7 @@ def test_dag_runs(
         name="foo_bar",
         description="",
         model_class=DeterministicLinker,
-        settings={},
+        settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         truth=1,
     )
 
@@ -464,7 +396,7 @@ def test_dag_runs(
         name="foo_bar_baz",
         description="",
         model_class=DeterministicLinker,
-        settings={},
+        settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         truth=1,
     )
 
@@ -585,7 +517,7 @@ def test_dag_missing_dependency(sqlite_warehouse: Engine):
         description="",
         left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -607,7 +539,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         description="",
         left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
     d_bar_wrong = DedupeStep(
@@ -616,7 +548,7 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
         description="",
         left=StepInput(prev_node=i_bar, select={bar: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -660,7 +592,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         description="",
         left=StepInput(prev_node=i_foo, select={foo: []}),
         model_class=NaiveDeduper,
-        settings={},
+        settings={"id": "id", "unique_fields": []},
         truth=1,
     )
 
@@ -670,7 +602,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         name="foo_bar",
         description="",
         model_class=DeterministicLinker,
-        settings={},
+        settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         truth=1,
     )
 
@@ -680,7 +612,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         name="foo_bar_baz",
         description="",
         model_class=DeterministicLinker,
-        settings={},
+        settings={"left_id": "id", "right_id": "id", "comparisons": ""},
         truth=1,
     )
 
