@@ -1,5 +1,6 @@
 """Functions and classes to define, run and register models."""
 
+import inspect
 from typing import ParamSpec, TypeVar, overload
 
 import polars as pl
@@ -18,6 +19,24 @@ from matchbox.common.logging import logger
 P = ParamSpec("P")
 R = TypeVar("R")
 
+default_dedupers = {
+    name: obj for name, obj in inspect.getmembers(dedupers, inspect.isclass)
+}
+default_linkers = {
+    name: obj for name, obj in inspect.getmembers(linkers, inspect.isclass)
+}
+
+
+_MODEL_CLASSES = {**default_dedupers, **default_linkers}
+
+
+def add_model_class(ModelClass: type[Linker] | type[Deduper]) -> None:
+    """Add custom deduper or linker."""
+    if issubclass(ModelClass, Linker) or issubclass(ModelClass, Deduper):
+        _MODEL_CLASSES[ModelClass.__name__] = ModelClass
+    else:
+        raise ValueError("The argument is not a proper subclass of Deduper or Linker.")
+
 
 class Model:
     """Unified model class for both linking and deduping operations."""
@@ -32,7 +51,6 @@ class Model:
         left_query: Query,
         right_query: None = None,
         truth: float = 1.0,
-        for_validation: bool = False,
     ) -> None: ...
 
     @overload
@@ -45,7 +63,6 @@ class Model:
         left_query: Query,
         right_query: Query,
         truth: float = 1.0,
-        for_validation: bool = False,
     ) -> None: ...
 
     def __init__(
@@ -78,9 +95,7 @@ class Model:
         self.results: Results | None = None
 
         if isinstance(model_class, str):
-            model_class = getattr(linkers, model_class, None) or getattr(
-                dedupers, model_class, None
-            )
+            model_class: type[Linker | Deduper] = _MODEL_CLASSES[model_class]
         self.model_instance = model_class(settings=model_settings)
 
         model_type: ModelType = (

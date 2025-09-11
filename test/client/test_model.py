@@ -8,11 +8,11 @@ import pytest
 from httpx import Response
 from respx.router import MockRouter
 
-from matchbox.client.models import Model
-from matchbox.client.models.linkers.base import Linker, LinkerSettings
+from matchbox.client.models import Model, add_model_class
+from matchbox.client.models.linkers.base import LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES, SCHEMA_RESULTS
+from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES
 from matchbox.common.dtos import (
     BackendResourceType,
     BackendUploadType,
@@ -27,29 +27,21 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
 )
-from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.models import MockLinker, model_factory
 from matchbox.common.factories.sources import source_factory
-
-
-class MockLinker(Linker):
-    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
-        return self
-
-    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
-        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
 
 
 @patch("matchbox.client.models.models.Query.run")
 def test_init_and_run_model(mock_run: Mock):
     """Test that model can be initialised and run correctly."""
+    # Register "custom" model
+    add_model_class(MockLinker)
+
     foo_query = Query(source_factory().source)
     bar_query = Query(source_factory().source)
 
     mock_run.return_value = pl.from_arrow(
-        pa.Table.from_pylist(
-            [{"id": 1, "key": "a", "leaf_id": 1}],
-            schema=SCHEMA_QUERY_WITH_LEAVES,
-        )
+        pa.Table.from_pylist([], schema=SCHEMA_QUERY_WITH_LEAVES)
     )
 
     model = Model(

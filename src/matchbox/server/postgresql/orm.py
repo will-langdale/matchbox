@@ -81,7 +81,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     source_config = relationship(
         "SourceConfigs", back_populates="source_resolution", uselist=False
     )
-    source_config = relationship(
+    model_config = relationship(
         "ModelConfigs", back_populates="model_resolution", uselist=False
     )
     probabilities = relationship(
