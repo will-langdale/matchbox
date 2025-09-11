@@ -1,15 +1,24 @@
+import json
 from datetime import datetime
+from unittest.mock import Mock, patch
 
+import polars as pl
+import pyarrow as pa
 import pytest
 from httpx import Response
 from respx.router import MockRouter
 
+from matchbox.client.models import Model
+from matchbox.client.models.linkers.base import Linker, LinkerSettings
+from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.arrow import SCHEMA_RESULTS, table_to_buffer
+from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES, SCHEMA_RESULTS
 from matchbox.common.dtos import (
     BackendResourceType,
     BackendUploadType,
     CRUDOperation,
+    ModelConfig,
+    ModelType,
     NotFoundError,
     ResolutionOperationStatus,
     UploadStage,
@@ -17,11 +26,60 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
-    MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
     MatchboxUnhandledServerResponse,
 )
 from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.sources import source_factory
+
+
+class MockLinker(Linker):
+    def prepare(self, left: pl.DataFrame, right: pl.DataFrame) -> None:
+        return self
+
+    def link(self, left: pl.DataFrame, right: pl.DataFrame) -> pl.DataFrame:
+        return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
+
+
+@patch("matchbox.client.models.models.Query.run")
+def test_init_and_run_model(mock_run: Mock):
+    """Test that model can be initialised and run correctly."""
+    foo_query = Query(source_factory().source)
+    bar_query = Query(source_factory().source)
+
+    mock_run.return_value = pl.from_arrow(
+        pa.Table.from_pylist(
+            [{"id": 1, "key": "a", "leaf_id": 1}],
+            schema=SCHEMA_QUERY_WITH_LEAVES,
+        )
+    )
+
+    model = Model(
+        name="name",
+        description="description",
+        model_class=MockLinker,
+        model_settings=LinkerSettings(left_id="left", right_id="right"),
+        query=foo_query,
+        right_query=bar_query,
+    )
+
+    model.run()
+
+    assert model.config == ModelConfig(
+        type=ModelType.LINKER,
+        model_class="MockLinker",
+        model_settings=json.dumps({"left_id": "left", "right_id": "right"}),
+        query=foo_query.config,
+        right_query=bar_query.config,
+    )
+
+    assert model.results.left_data is None
+    assert model.results.right_data is None
+
+    model.for_validation = True
+    model.run()
+    assert model.results.left_data is not None
+    assert model.results.right_data is not None
 
 
 def test_insert_model(matchbox_api: MockRouter):
@@ -94,48 +152,7 @@ def test_insert_model_error(matchbox_api: MockRouter):
     assert insert_route.called
 
 
-def test_results_getter(matchbox_api: MockRouter):
-    """Test getting model results via the API."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the GET /resolutions/{name}/results endpoint
-    route = matchbox_api.get(f"/resolutions/{testkit.model.name}/results").mock(
-        return_value=Response(
-            200, content=table_to_buffer(testkit.probabilities).read()
-        )
-    )
-
-    # Get results
-    results = testkit.model.results
-
-    # Verify the API call
-    assert route.called
-    assert isinstance(results, Results)
-    assert results.probabilities.schema.equals(SCHEMA_RESULTS)
-
-
-def test_results_getter_not_found(matchbox_api: MockRouter):
-    """Test getting model results when they don't exist."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the GET endpoint with a 404 response
-    route = matchbox_api.get(f"/resolutions/{testkit.model.name}/results").mock(
-        return_value=Response(
-            404,
-            json=NotFoundError(
-                details="Results not found", entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        )
-    )
-
-    # Verify that accessing results raises an exception
-    with pytest.raises(MatchboxResolutionNotFoundError, match="Results not found"):
-        _ = testkit.model.results
-
-    assert route.called
-
-
-def test_results_setter(matchbox_api: MockRouter):
+def test_insert_results(matchbox_api: MockRouter):
     """Test setting model results via the API."""
     testkit = model_factory(model_type="linker")
 

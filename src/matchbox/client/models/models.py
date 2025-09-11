@@ -2,6 +2,8 @@
 
 from typing import ParamSpec, TypeVar, overload
 
+import polars as pl
+
 from matchbox.client import _handler
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
@@ -42,6 +44,7 @@ class Model:
         query: Query,
         right_query: None = None,
         truth: float = 1.0,
+        for_validation: bool = False,
     ) -> None: ...
 
     @overload
@@ -54,6 +57,7 @@ class Model:
         query: Query,
         right_query: Query,
         truth: float = 1.0,
+        for_validation: bool = False,
     ) -> None: ...
 
     def __init__(
@@ -65,6 +69,7 @@ class Model:
         query: Query,
         right_query: Query | None = None,
         truth: float = 1.0,
+        for_validation: bool = False,
     ):
         """Create a new model instance.
 
@@ -77,17 +82,23 @@ class Model:
             query: The query that will get the data to deduplicate, or the data to link
                 on the left.
             right_query: The query that will get the data to link on the right.
+            for_validation: Whether to download and store extra data to explore and
+                score results.
         """
         self.name = name
         self.description = description
+        self.for_validation = for_validation
+        self._truth: int = _truth_float_to_int(truth)
+        self.query = query
+        self.right_query = right_query
+        self.results: Results | None = None
 
         if isinstance(model_class, str):
             model_class = MODEL_NAME_TO_CLASS[model_class]
-
-        self._truth: int = _truth_float_to_int(truth)
+        self.model_instance = model_class(settings=model_settings)
 
         model_type: ModelType = (
-            ModelType.LINKER if isinstance(model_class, Linker) else ModelType.DEDUPER
+            ModelType.LINKER if issubclass(model_class, Linker) else ModelType.DEDUPER
         )
 
         self.config = ModelConfig(
@@ -97,8 +108,6 @@ class Model:
             query=query.config,
             right_query=right_query.config,
         )
-
-        self.model_instance = self.model_class(settings=model_settings)
 
     def to_resolution(self) -> Resolution:
         """Convert to Resolution for API calls."""
@@ -143,18 +152,6 @@ class Model:
             _handler.create_resolution(resolution=resolution)
 
     @property
-    def results(self) -> Results:
-        """Retrieve results associated with the model from the database."""
-        results = _handler.get_results(name=self.name)
-        return Results(probabilities=results, metadata=self.config)
-
-    @results.setter
-    def results(self, results: Results) -> None:
-        """Write results associated with the model to the database."""
-        if results.probabilities.shape[0] > 0:
-            _handler.set_results(name=self.name, results=results.probabilities)
-
-    @property
     def truth(self) -> float | None:
         """Returns the truth threshold for the model as a float."""
         if self._truth is not None:
@@ -174,24 +171,35 @@ class Model:
 
     def run(self) -> Results:
         """Execute the model pipeline and return results."""
-        left_df = self.query.run()
+        left_df: pl.DataFrame = self.query.run(return_leaf_id=self.for_validation)
 
         if self.config.type == ModelType.LINKER:
-            right_df = self.right_query.run()
+            right_df: pl.DataFrame = self.right_query.run(
+                return_leaf_id=self.for_validation
+            )
 
             self.model_instance.prepare(left_df, right_df)
-            results = self.model_instance.link(
-                left=self.query.data, right=self.right_query.data
-            )
+            results = self.model_instance.link(left=left_df, right=right_df)
         else:
             self.model_instance.prepare(left_df)
             results = self.model_instance.dedupe(data=self.left_data)
 
-        return Results(
-            probabilities=results,
-            model=self,
-            metadata=self.config,
-        )
+        if not self.for_validation:
+            self.results = Results(probabilities=results)
+        else:
+            self.results = Results(
+                probabilities=results,
+                left_data=left_df.to_arrow(),
+                right_data=right_df.to_arrow(),
+            )
+
+        return self.results
+
+    def to_matchbox(self) -> None:
+        """Writes the results to the Matchbox database."""
+        self.insert_model()
+        if self.results:
+            _handler.set_results(name=self.name, results=self.results.probabilities)
 
 
 def _truth_float_to_int(truth: float) -> int:

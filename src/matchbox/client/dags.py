@@ -184,9 +184,6 @@ class ModelStep(Step):
             cleaning=step_input.cleaning_dict,
         )
 
-        # TODO
-        # return query.run(batch_size=step_input.batch_size, return_leaf_id=False)
-
 
 class DedupeStep(ModelStep):
     """Deduplication step."""

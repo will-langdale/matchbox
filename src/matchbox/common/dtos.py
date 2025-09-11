@@ -372,7 +372,9 @@ class QueryCombineType(StrEnum):
 class QueryConfig(BaseModel):
     """Configuration of query generating model inputs."""
 
-    source_resolutions: list[SourceResolutionName]
+    model_config = ConfigDict(frozen=True)
+
+    source_resolutions: tuple[SourceResolutionName]
     model_resolution: ModelResolutionName | None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
@@ -411,7 +413,7 @@ class ModelConfig(BaseModel):
 
         Model configurations don't care about the order of left and right resolutions.
         """
-        if not isinstance(other, Self):
+        if not isinstance(other, ModelConfig):
             return NotImplemented
         return self.type == other.type and {
             self.query,
