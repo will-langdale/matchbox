@@ -152,7 +152,7 @@ class ModelStep(Step):
     left: StepInput
     settings: dict[str, Any]
     truth: float
-    _model: Any
+    _model: Model
 
     @model_validator(mode="after")
     def init_sources(self) -> "ModelStep":
@@ -189,7 +189,6 @@ class DedupeStep(ModelStep):
     """Deduplication step."""
 
     model_class: type[Deduper]
-    model: Any = None
 
     @property
     def inputs(self) -> list[StepInput]:
@@ -207,8 +206,8 @@ class DedupeStep(ModelStep):
         )
 
         results = self._model.run()
-        results.to_matchbox()
         self._model.truth = self.truth
+        self._model.insert_model()
         return results
 
 
@@ -234,9 +233,9 @@ class LinkStep(ModelStep):
             right_query=self.query(self.right),
         )
 
-        results = self._model.run()
-        results.to_matchbox()
         self._model.truth = self.truth
+        results = self._model.run()
+        self._model.insert_model()
         return results
 
 

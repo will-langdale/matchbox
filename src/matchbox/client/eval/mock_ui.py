@@ -78,8 +78,8 @@ def setup_mock_database():
         ),
     )
 
-    results = linker.run()
-    results.to_matchbox()
+    linker.run()
+    linker.insert_model()
 
     return warehouse.url
 

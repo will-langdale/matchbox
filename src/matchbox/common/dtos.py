@@ -374,7 +374,7 @@ class QueryConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    source_resolutions: tuple[SourceResolutionName]
+    source_resolutions: tuple[SourceResolutionName, ...]
     model_resolution: ModelResolutionName | None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None

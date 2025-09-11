@@ -236,8 +236,8 @@ class TestE2EAnalyticalUser:
 
             assert identical, f"Deduplication of {source.name} failed: {report}"
 
-            results.to_matchbox()
             deduper.truth = 1.0
+            deduper.insert_model()
 
             logging.debug(f"Successfully deduplicated {source.name}")
 
@@ -339,8 +339,8 @@ class TestE2EAnalyticalUser:
                 f"{report_counts}"
             )
 
-            results.to_matchbox()
             linker.truth = 1.0
+            linker.insert_model()
 
             logging.debug(
                 f"Successfully linked {left_testkit.name} and {right_testkit.name}"
@@ -419,8 +419,8 @@ class TestE2EAnalyticalUser:
 
         assert identical, f"Final linking failed: {report_counts}"
 
-        results.to_matchbox()
         final_linker.truth = 1.0
+        final_linker.insert_model()
 
         logging.debug("Successfully linked all sources")
 

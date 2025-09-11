@@ -137,6 +137,11 @@ class Model:
         else:
             _handler.create_resolution(resolution=resolution)
 
+        _handler.set_truth(name=self.name, truth=self._truth)
+
+        if self.results:
+            _handler.set_results(name=self.name, results=self.results.probabilities)
+
     @property
     def truth(self) -> float | None:
         """Returns the truth threshold for the model as a float."""
@@ -148,7 +153,6 @@ class Model:
     def truth(self, truth: float) -> None:
         """Set the truth threshold for the model."""
         self._truth = _truth_float_to_int(truth)
-        _handler.set_truth(name=self.name, truth=self._truth)
 
     def delete(self, certain: bool = False) -> bool:
         """Delete the model from the database."""
@@ -185,12 +189,6 @@ class Model:
             )
 
         return self.results
-
-    def to_matchbox(self) -> None:
-        """Writes the results to the Matchbox database."""
-        self.insert_model()
-        if self.results:
-            _handler.set_results(name=self.name, results=self.results.probabilities)
 
 
 def _truth_float_to_int(truth: float) -> int:
