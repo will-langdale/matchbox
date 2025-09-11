@@ -405,7 +405,7 @@ class ModelConfig(BaseModel):
     type: ModelType
     model_class: str
     model_settings: Json
-    query: QueryConfig
+    left_query: QueryConfig
     right_query: QueryConfig | None = None  # Only used for linker models
 
     def __eq__(self, other: Self) -> bool:
@@ -416,9 +416,9 @@ class ModelConfig(BaseModel):
         if not isinstance(other, ModelConfig):
             return NotImplemented
         return self.type == other.type and {
-            self.query,
+            self.left_query,
             self.right_query,
-        } == {other.query, other.right_query}
+        } == {other.left_query, other.right_query}
 
     @model_validator(mode="after")
     def validate_right_query(self) -> Self:

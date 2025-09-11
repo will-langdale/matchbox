@@ -59,25 +59,23 @@ def test_init_and_run_model(mock_run: Mock):
         description="description",
         model_class=MockLinker,
         model_settings=LinkerSettings(left_id="left", right_id="right"),
-        query=foo_query,
+        left_query=foo_query,
         right_query=bar_query,
     )
-
-    model.run()
 
     assert model.config == ModelConfig(
         type=ModelType.LINKER,
         model_class="MockLinker",
         model_settings=json.dumps({"left_id": "left", "right_id": "right"}),
-        query=foo_query.config,
+        left_query=foo_query.config,
         right_query=bar_query.config,
     )
 
+    model.run()
     assert model.results.left_data is None
     assert model.results.right_data is None
 
-    model.for_validation = True
-    model.run()
+    model.run(for_validation=True)
     assert model.results.left_data is not None
     assert model.results.right_data is not None
 

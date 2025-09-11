@@ -614,7 +614,7 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
     )
     model_class = Column(TEXT, nullable=False)
     model_settings = Column(JSONB, nullable=False)
-    query = Column(JSONB, nullable=False)
+    left_query = Column(JSONB, nullable=False)
     right_query = Column(JSONB, nullable=True)
 
     @property
@@ -624,21 +624,6 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
 
     # Relationships
     model_resolution = relationship("Resolutions", back_populates="model_config")
-    # TODO: what relationships do we want?
-    # cluster_keys = relationship(
-    #     "ClusterSourceKey",
-    #     back_populates="source_config",
-    #     passive_deletes=True,
-    # )
-    # clusters = relationship(
-    #     "Clusters",
-    #     secondary=ClusterSourceKey.__table__,
-    #     primaryjoin=(
-    #         "SourceConfigs.source_config_id == ClusterSourceKey.source_config_id"
-    #     ),
-    #     secondaryjoin="ClusterSourceKey.cluster_id == Clusters.cluster_id",
-    #     viewonly=True,
-    # )
 
     @classmethod
     def list_all(cls) -> list["SourceConfigs"]:
@@ -656,7 +641,7 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
         return cls(
             model_class=config.model_class,
             model_settings=str(config.model_settings),
-            query=config.query.model_dump_json(),
+            left_query=config.left_query.model_dump_json(),
             right_query=(
                 None if not config.right_query else config.right_query.model_dump_json()
             ),
@@ -668,7 +653,7 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
             type=ModelType.LINKER if self.right_query else ModelType.DEDUPER,
             model_class=self.model_class,
             model_settings=self.model_settings,
-            query=self.query,
+            left_query=self.left_query,
             right_query=self.right_query,
         )
 

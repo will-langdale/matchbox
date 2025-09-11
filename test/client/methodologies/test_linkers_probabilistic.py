@@ -240,7 +240,7 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
         description="Testing probability generation",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        query=Query(left_source),
+        left_query=Query(left_source),
         right_query=Query(right_source),
     )
 

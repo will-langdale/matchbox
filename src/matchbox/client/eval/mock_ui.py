@@ -70,7 +70,9 @@ def setup_mock_database():
             "right_id": "id",
             "comparisons": ("l.comp = r.comp",),
         },
-        query=Query(foo, cleaning={"comp": f"split_part({foo.f('name')}, ' ', 1)"}),
+        left_query=Query(
+            foo, cleaning={"comp": f"split_part({foo.f('name')}, ' ', 1)"}
+        ),
         right_query=Query(
             bar, cleaning={"comp": f"split_part({bar.f('name')}, ' ', 1)"}
         ),

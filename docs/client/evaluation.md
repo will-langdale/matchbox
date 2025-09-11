@@ -73,7 +73,7 @@ model = Model(
         "id": "id",
         "unique_fields": ["field1", "field2"],
     },
-    query=Query(source)
+    left_query=Query(source)
 )
 
 results = model.run()

@@ -171,7 +171,7 @@ right_deduper: ModelTestkit = model_factory(
 
 # Create a model and generate probabilities
 model: Model = Model(
-    query=Query(left, model=left_deduper.model),
+    left_query=Query(left, model=left_deduper.model),
     right_query=Query(right, model=right_deduper.model),
     ...
 )

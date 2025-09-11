@@ -88,7 +88,7 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        query=Query(source),
+        left_query=Query(source),
     )
     results: Results = deduper.run()
 

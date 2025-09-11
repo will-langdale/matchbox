@@ -179,7 +179,7 @@ class TestE2EModelEvaluation:
                 "id": "id",
                 "unique_fields": [self.source_a.f("registration_id")],
             },
-            query=Query(self.source_a),
+            left_query=Query(self.source_a),
         )
 
         results = deduper.run()

@@ -5,13 +5,8 @@ from typing import ParamSpec, TypeVar, overload
 import polars as pl
 
 from matchbox.client import _handler
-from matchbox.client.models.dedupers import NaiveDeduper
+from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
-from matchbox.client.models.linkers import (
-    DeterministicLinker,
-    SplinkLinker,
-    WeightedDeterministicLinker,
-)
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
@@ -21,14 +16,6 @@ from matchbox.common.logging import logger
 
 P = ParamSpec("P")
 R = TypeVar("R")
-
-
-MODEL_NAME_TO_CLASS = {
-    "naive_deduper": NaiveDeduper,
-    "deterministic_linker": DeterministicLinker,
-    "weighted_deterministic_linker": WeightedDeterministicLinker,
-    "splink_linker": SplinkLinker,
-}
 
 
 class Model:
@@ -41,7 +28,7 @@ class Model:
         description: str | None,
         model_class: type[Deduper],
         model_settings: DeduperSettings | dict,
-        query: Query,
+        left_query: Query,
         right_query: None = None,
         truth: float = 1.0,
         for_validation: bool = False,
@@ -54,7 +41,7 @@ class Model:
         description: str | None,
         model_class: type[Linker],
         model_settings: LinkerSettings | dict,
-        query: Query,
+        left_query: Query,
         right_query: Query,
         truth: float = 1.0,
         for_validation: bool = False,
@@ -66,10 +53,9 @@ class Model:
         description: str | None,
         model_class: type[Deduper] | type[Linker] | str,
         model_settings: DeduperSettings | LinkerSettings | dict,
-        query: Query,
+        left_query: Query,
         right_query: Query | None = None,
         truth: float = 1.0,
-        for_validation: bool = False,
     ):
         """Create a new model instance.
 
@@ -79,22 +65,21 @@ class Model:
             truth: Truth threshold. Defaults to 1.0. Can be set later after analysis.
             model_class: Class of Linker or Deduper, or its name.
             model_settings: Appropriate settings object to pass to model class.
-            query: The query that will get the data to deduplicate, or the data to link
-                on the left.
+            left_query: The query that will get the data to deduplicate, or the data to
+                link on the left.
             right_query: The query that will get the data to link on the right.
-            for_validation: Whether to download and store extra data to explore and
-                score results.
         """
         self.name = name
         self.description = description
-        self.for_validation = for_validation
         self._truth: int = _truth_float_to_int(truth)
-        self.query = query
+        self.left_query = left_query
         self.right_query = right_query
         self.results: Results | None = None
 
         if isinstance(model_class, str):
-            model_class = MODEL_NAME_TO_CLASS[model_class]
+            model_class = getattr(linkers, model_class, None) or getattr(
+                dedupers, model_class, None
+            )
         self.model_instance = model_class(settings=model_settings)
 
         model_type: ModelType = (
@@ -105,7 +90,7 @@ class Model:
             type=model_type,
             model_class=model_class.__name__,
             model_settings=model_settings.model_dump_json(),
-            query=query.config,
+            left_query=left_query.config,
             right_query=right_query.config,
         )
 
@@ -130,7 +115,7 @@ class Model:
             description=resolution.description,
             model_class=resolution.config.model_class,
             model_settings=resolution.config.model_settings,
-            query=resolution.config.query,
+            left_query=resolution.config.left_query,
             right_query=resolution.config.right_query,
             truth=resolution.truth,
         )
@@ -169,14 +154,17 @@ class Model:
         result = _handler.delete_resolution(name=self.name, certain=certain)
         return result.success
 
-    def run(self) -> Results:
-        """Execute the model pipeline and return results."""
-        left_df: pl.DataFrame = self.query.run(return_leaf_id=self.for_validation)
+    def run(self, for_validation: bool = False) -> Results:
+        """Execute the model pipeline and return results.
+
+        Args:
+            for_validation: Whether to download and store extra data to explore and
+                    score results.
+        """
+        left_df: pl.DataFrame = self.left_query.run(return_leaf_id=for_validation)
 
         if self.config.type == ModelType.LINKER:
-            right_df: pl.DataFrame = self.right_query.run(
-                return_leaf_id=self.for_validation
-            )
+            right_df: pl.DataFrame = self.right_query.run(return_leaf_id=for_validation)
 
             self.model_instance.prepare(left_df, right_df)
             results = self.model_instance.link(left=left_df, right=right_df)
@@ -184,7 +172,7 @@ class Model:
             self.model_instance.prepare(left_df)
             results = self.model_instance.dedupe(data=self.left_data)
 
-        if not self.for_validation:
+        if not for_validation:
             self.results = Results(probabilities=results)
         else:
             self.results = Results(

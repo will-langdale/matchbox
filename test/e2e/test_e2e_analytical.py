@@ -219,7 +219,7 @@ class TestE2EAnalyticalUser:
                     "id": "id",
                     "unique_fields": feature_names,
                 },
-                query=Query(source_testkit.source, cleaning=cleaning_dict),
+                left_query=Query(source_testkit.source, cleaning=cleaning_dict),
             )
 
             # Run the deduper and store results
@@ -314,7 +314,7 @@ class TestE2EAnalyticalUser:
                     "right_id": "id",
                     "comparisons": comparison_clause,
                 },
-                query=left_query,
+                left_query=left_query,
                 right_query=right_query,
             )
 
@@ -397,7 +397,7 @@ class TestE2EAnalyticalUser:
                     f"l.{crn_source.prefix}crn = r.{cdms_source.prefix}crn"
                 ],
             },
-            query=left_query,
+            left_query=left_query,
             right_query=right_query,
         )
 

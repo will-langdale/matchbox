@@ -203,7 +203,7 @@ class DedupeStep(ModelStep):
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
-            query=self.query(self.left),
+            left_query=self.query(self.left),
         )
 
         results = self._model.run()
@@ -230,7 +230,7 @@ class LinkStep(ModelStep):
             description=self.description,
             model_class=self.model_class,
             model_settings=self.settings,
-            query=self.query(self.left),
+            left_query=self.query(self.left),
             right_query=self.query(self.right),
         )
 
