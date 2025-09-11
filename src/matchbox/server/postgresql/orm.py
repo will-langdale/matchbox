@@ -18,7 +18,7 @@ from sqlalchemy import (
     text,
     update,
 )
-from sqlalchemy.dialects.postgresql import BYTEA, TEXT, insert
+from sqlalchemy.dialects.postgresql import BYTEA, JSONB, TEXT, insert
 from sqlalchemy.orm import Session, relationship
 
 from matchbox.common.dtos import LocationConfig, ModelType
@@ -80,6 +80,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     # Relationships
     source_config = relationship(
         "SourceConfigs", back_populates="source_resolution", uselist=False
+    )
+    source_config = relationship(
+        "ModelConfigs", back_populates="model_resolution", uselist=False
     )
     probabilities = relationship(
         "Probabilities",
@@ -273,6 +276,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             resolution_orm.source_config = SourceConfigs.from_dto(resolution.config)
 
         elif resolution.resolution_type == ResolutionType.MODEL:
+            resolution_orm.model_config = ModelConfigs.from_dto(resolution.config)
             # Create lineage
             left_parent = cls.from_name(
                 resolution.config.left_resolution, session=session
@@ -593,6 +597,79 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
                 )
                 for field in self.index_fields
             ],
+        )
+
+
+class ModelConfigs(CountMixin, MBDB.MatchboxBase):
+    """Table of model configs for Matchbox."""
+
+    __tablename__ = "model_configs"
+
+    # Columns
+    model_config_id = Column(BIGINT, Identity(start=1), primary_key=True)
+    resolution_id = Column(
+        BIGINT,
+        ForeignKey("resolutions.resolution_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    model_class = Column(TEXT, nullable=False)
+    model_settings = Column(JSONB, nullable=False)
+    query = Column(JSONB, nullable=False)
+    right_query = Column(JSONB, nullable=True)
+
+    @property
+    def name(self) -> str:
+        """Get the name of the related resolution."""
+        return self.model_resolution.name
+
+    # Relationships
+    model_resolution = relationship("Resolutions", back_populates="model_config")
+    # TODO: what relationships do we want?
+    # cluster_keys = relationship(
+    #     "ClusterSourceKey",
+    #     back_populates="source_config",
+    #     passive_deletes=True,
+    # )
+    # clusters = relationship(
+    #     "Clusters",
+    #     secondary=ClusterSourceKey.__table__,
+    #     primaryjoin=(
+    #         "SourceConfigs.source_config_id == ClusterSourceKey.source_config_id"
+    #     ),
+    #     secondaryjoin="ClusterSourceKey.cluster_id == Clusters.cluster_id",
+    #     viewonly=True,
+    # )
+
+    @classmethod
+    def list_all(cls) -> list["SourceConfigs"]:
+        """Returns all model_configs in the database."""
+        with MBDB.get_session() as session:
+            return session.query(cls).all()
+
+    @classmethod
+    def from_dto(
+        cls,
+        config: CommonModelConfig,
+    ) -> "ModelConfigs":
+        """Create a SourceConfigs instance from a Resolution DTO object."""
+        # Create the SourceConfigs object
+        return cls(
+            model_class=config.model_class,
+            model_settings=str(config.model_settings),
+            query=config.query.model_dump_json(),
+            right_query=(
+                None if not config.right_query else config.right_query.model_dump_json()
+            ),
+        )
+
+    def to_dto(self) -> CommonSourceConfig:
+        """Convert ORM source to a matchbox.common Resolution object."""
+        return CommonModelConfig(
+            type=ModelType.LINKER if self.right_query else ModelType.DEDUPER,
+            model_class=self.model_class,
+            model_settings=self.model_settings,
+            query=self.query,
+            right_query=self.right_query,
         )
 
 
