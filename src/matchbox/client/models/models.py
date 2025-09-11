@@ -5,6 +5,7 @@ from typing import ParamSpec, TypeVar, overload
 import polars as pl
 
 from matchbox.client import _handler
+from matchbox.client._settings import settings
 from matchbox.client.models import dedupers, linkers
 from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
@@ -161,7 +162,9 @@ class Model:
             for_validation: Whether to download and store extra data to explore and
                     score results.
         """
-        left_df: pl.DataFrame = self.left_query.run(return_leaf_id=for_validation)
+        left_df: pl.DataFrame = self.left_query.run(
+            return_leaf_id=for_validation, batch_size=settings.batch_size
+        )
 
         if self.config.type == ModelType.LINKER:
             right_df: pl.DataFrame = self.right_query.run(return_leaf_id=for_validation)
