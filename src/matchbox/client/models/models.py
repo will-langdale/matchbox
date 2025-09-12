@@ -205,6 +205,11 @@ class Model:
         if self.results:
             _handler.set_results(name=self.name, results=self.results.probabilities)
 
+    def download_results(self) -> Results:
+        """Retrieve results associated with the model from the database."""
+        results = _handler.get_results(name=self.name)
+        return Results(probabilities=results, metadata=self.config)
+
 
 def _truth_float_to_int(truth: float) -> int:
     """Convert user input float truth values to int."""
