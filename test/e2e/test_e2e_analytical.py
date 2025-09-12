@@ -4,7 +4,7 @@ import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
 
-from matchbox import clean, index
+from matchbox import clean
 from matchbox.client import _handler
 from matchbox.client.helpers import delete_resolution
 from matchbox.client.models import Model
@@ -182,7 +182,8 @@ class TestE2EAnalyticalUser:
         # Index all sources in the PostgreSQL database
         for source_testkit in self.linked_testkit.sources.values():
             source = source_testkit.source
-            index(source=source)
+            source.run()
+            source.sync()
             logging.debug(f"Indexed source: {source.name}")
 
         # === DEDUPLICATION PHASE ===

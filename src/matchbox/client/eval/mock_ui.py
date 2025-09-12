@@ -44,7 +44,8 @@ def setup_mock_database():
     ).write_to_location()
     foo = testkit_foo.source
 
-    index(source=foo)
+    foo.run()
+    foo.sync()
 
     testkit_bar = source_from_tuple(
         data_tuple=(

@@ -109,7 +109,7 @@ def test_model_sync(matchbox_api: MockRouter):
     )
 
     insert_results_route = matchbox_api.post(
-        f"/resolutions/{testkit.model.name}/results"
+        f"/resolutions/{testkit.model.name}/data"
     ).mock(
         return_value=Response(
             202,

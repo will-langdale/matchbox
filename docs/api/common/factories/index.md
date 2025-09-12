@@ -57,7 +57,7 @@ upload_id = tracker.add_source(source_testkit.source_config)
 Or you're testing the client handler and want to mock the API.
 
 ```python
-@patch("matchbox.client.helpers.index.SourceConfig")
+@patch("matchbox.client.sources.SourceConfig")
 def test_my_api(MockSource: Mock, matchbox_api: MockRouter):
     source_testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}]

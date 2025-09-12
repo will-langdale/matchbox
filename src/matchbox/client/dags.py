@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import create_engine
 from sqlglot import errors, expressions, parse_one
 
-from matchbox.client import _handler
 from matchbox.client.models import Model
 from matchbox.client.models.dedupers.base import Deduper
 from matchbox.client.models.linkers.base import Linker
@@ -136,11 +135,8 @@ class IndexStep(Step):
 
     def run(self) -> Table:
         """Run indexing step."""
-        data_hashes = self.source.hash_data(batch_size=self.batch_size)
-        _handler.index(
-            source=self.source,
-            data_hashes=data_hashes,
-        )
+        data_hashes = self.source.run(batch_size=self.batch_size)
+        self.source.sync()
 
         return data_hashes
 
