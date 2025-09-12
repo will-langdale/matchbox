@@ -207,7 +207,7 @@ class DedupeStep(ModelStep):
 
         results = self._model.run()
         self._model.truth = self.truth
-        self._model.insert_model()
+        self._model.sync()
         return results
 
 
@@ -235,7 +235,7 @@ class LinkStep(ModelStep):
 
         self._model.truth = self.truth
         results = self._model.run()
-        self._model.insert_model()
+        self._model.sync()
         return results
 
 

@@ -136,27 +136,6 @@ class Model:
             truth=resolution.truth,
         )
 
-    def insert_model(self) -> None:
-        """Insert the model into the backend database."""
-        resolution = self.to_resolution()
-        if existing_resolution := _handler.get_resolution(name=self.name):
-            # Check if config matches
-            if existing_resolution.config != self.config:
-                raise ValueError(
-                    f"Resolution {self.name} already exists with different "
-                    "configuration. Please delete the existing resolution "
-                    "or use a different name. "
-                )
-            log_prefix = f"Resolution {self.name}"
-            logger.warning("Already exists. Passing.", prefix=log_prefix)
-        else:
-            _handler.create_resolution(resolution=resolution)
-
-        _handler.set_truth(name=self.name, truth=self._truth)
-
-        if self.results:
-            _handler.set_results(name=self.name, results=self.results.probabilities)
-
     @property
     def truth(self) -> float | None:
         """Returns the truth threshold for the model as a float."""
@@ -204,6 +183,27 @@ class Model:
             )
 
         return self.results
+
+    def sync(self) -> None:
+        """Send the model config, truth and results to the server."""
+        resolution = self.to_resolution()
+        if existing_resolution := _handler.get_resolution(name=self.name):
+            # Check if config matches
+            if existing_resolution.config != self.config:
+                raise ValueError(
+                    f"Resolution {self.name} already exists with different "
+                    "configuration. Please delete the existing resolution "
+                    "or use a different name. "
+                )
+            log_prefix = f"Resolution {self.name}"
+            logger.warning("Already exists. Passing.", prefix=log_prefix)
+        else:
+            _handler.create_resolution(resolution=resolution)
+
+        _handler.set_truth(name=self.name, truth=self._truth)
+
+        if self.results:
+            _handler.set_results(name=self.name, results=self.results.probabilities)
 
 
 def _truth_float_to_int(truth: float) -> int:

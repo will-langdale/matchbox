@@ -70,8 +70,8 @@ def test_init_and_run_model(mock_run: Mock):
     assert model.results.right_data is not None
 
 
-def test_insert_model(matchbox_api: MockRouter):
-    """Test inserting a model with or without truth value and results."""
+def test_model_sync(matchbox_api: MockRouter):
+    """Test syncing a model, its truth and results."""
     # Create test model using factory
     testkit = model_factory(model_type="linker")
 
@@ -146,8 +146,8 @@ def test_insert_model(matchbox_api: MockRouter):
         )
     )
 
-    # Call insert_model
-    testkit.model.insert_model()
+    # Call sync
+    testkit.model.sync()
 
     # Verify the API call
     assert get_route.called
@@ -166,7 +166,7 @@ def test_insert_model(matchbox_api: MockRouter):
     )
 
     testkit.model.results = test_results
-    testkit.model.insert_model()
+    testkit.model.sync()
 
     # Verify API calls
     assert insert_results_route.called

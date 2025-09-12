@@ -221,7 +221,7 @@ def test_dedupe_step_run(
     ):
         # Complete mock set up
         model_mock = Mock()
-        model_mock.insert_model = Mock()
+        model_mock.sync = Mock()
         model_mock.name = "model_name"
         make_model_mock.return_value = model_mock
 
@@ -273,7 +273,7 @@ def test_link_step_run(
     ):
         # Complete mock set up
         model_mock = Mock()
-        model_mock.insert_model = Mock()
+        model_mock.sync = Mock()
         model_mock.name = "model_name"
         make_model_mock.return_value = model_mock
 

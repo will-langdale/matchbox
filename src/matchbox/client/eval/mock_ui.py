@@ -79,7 +79,7 @@ def setup_mock_database():
     )
 
     linker.run()
-    linker.insert_model()
+    linker.sync()
 
     return warehouse.url
 
