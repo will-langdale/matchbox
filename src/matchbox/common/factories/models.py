@@ -57,8 +57,8 @@ class MockDeduper(Deduper):
         """Mock prepare method."""
         return self
 
-    def link(self, left: pl.DataFrame) -> pl.DataFrame:
-        """Mock link method."""
+    def dedupe(self, left: pl.DataFrame) -> pl.DataFrame:
+        """Mock dedupe method."""
         return pl.from_arrow(pa.Table.from_pylist([], schema=SCHEMA_RESULTS))
 
 
@@ -811,8 +811,6 @@ def model_factory(
                     repetition=1,
                 )
             )
-        else:
-            right_entities = None
 
         # Generate linked sources
         linked = linked_sources_factory(
@@ -822,11 +820,16 @@ def model_factory(
         )
 
         # Extract source data
-        left_query = linked.sources["crn"].query
+        left_data = linked.sources["crn"].query
+        left_query = Query(linked.sources["crn"])
         left_entities = linked.sources["crn"].entities
 
+        right_data = None
+        right_query = None
+        right_entities = None
         if resolved_model_type == ModelType.LINKER:
-            right_query = linked.sources["cdms"].query
+            right_data = linked.sources["cdms"].query
+            right_query = Query(linked.sources["cdms"])
             right_entities = linked.sources["cdms"].entities
 
         dummy_true_entities = tuple(linked.true_entities)
@@ -844,8 +847,8 @@ def model_factory(
         description=description or generator.sentence(),
         model_class=model_class,
         model_settings=model_settings,
-        left_query=Query(left_testkit.source),
-        right_query=Query(right_testkit.source),
+        left_query=left_query,
+        right_query=right_query,
     )
 
     # ==== Entity and probability generation ====
@@ -872,9 +875,9 @@ def model_factory(
     # ==== Final model creation ====
     return ModelTestkit(
         model=model,
-        left_query=left_query,
+        left_query=left_data,
         left_clusters={entity.id: entity for entity in left_entities},
-        right_query=right_query,
+        right_query=right_data,
         right_clusters={entity.id: entity for entity in right_entities}
         if right_entities
         else None,

@@ -161,9 +161,7 @@ def test_model_sync(matchbox_api: MockRouter):
     assert not insert_results_route.called
 
     # Set results
-    test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.config
-    )
+    test_results = Results(probabilities=testkit.probabilities)
 
     testkit.model.results = test_results
     testkit.model.sync()

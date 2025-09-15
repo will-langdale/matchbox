@@ -107,7 +107,7 @@ class Model:
             model_class=model_class.__name__,
             model_settings=model_settings.model_dump_json(),
             left_query=left_query.config,
-            right_query=right_query.config,
+            right_query=right_query.config if right_query else None,
         )
 
     def to_resolution(self) -> Resolution:
@@ -203,7 +203,7 @@ class Model:
         _handler.set_truth(name=self.name, truth=self._truth)
 
         if self.results:
-            _handler.set_results(name=self.name, results=self.results.probabilities)
+            _handler.set_data(name=self.name, data=self.results.probabilities)
 
     def download_results(self) -> Results:
         """Retrieve results associated with the model from the database."""
