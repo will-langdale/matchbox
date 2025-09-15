@@ -2,6 +2,8 @@
 
 from matchbox.client import _handler
 from matchbox.client.sources import Location, Source
+from matchbox.common.dtos import ResolutionType
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 
 
 def get_source(
@@ -28,6 +30,8 @@ def get_source(
         A Source object.
     """
     resolution = _handler.get_resolution(name=name)
+    if not resolution or resolution.resolution_type != ResolutionType.SOURCE:
+        raise MatchboxResolutionNotFoundError(f"No source found with name {name}")
 
     validations = [
         (location.config, resolution.config.location_config, "location"),

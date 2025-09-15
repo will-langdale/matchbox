@@ -161,7 +161,7 @@ def set_data(
     name: ResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
-    """Create an upload task for model results."""
+    """Create an upload task for source hashes or model results."""
     try:
         resolution = backend.get_resolution(name=name, validate=validate_type)
     except MatchboxResolutionNotFoundError as e:

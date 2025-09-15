@@ -197,7 +197,7 @@ class TestE2EAnalyticalUser:
             # Query data from the source
             raw_df = Query(source).run()
             clusters = query_to_cluster_entities(
-                query=raw_df,
+                data=raw_df,
                 keys={source.name: source.qualified_key},
             )
             df = raw_df.drop(source.qualified_key)
@@ -274,7 +274,7 @@ class TestE2EAnalyticalUser:
             left_raw_df = left_query.run()
 
             left_clusters = query_to_cluster_entities(
-                query=left_raw_df,
+                data=left_raw_df,
                 keys={left_source.name: left_source.qualified_key},
             )
             left_df = left_raw_df.drop(left_source.qualified_key)
@@ -282,7 +282,7 @@ class TestE2EAnalyticalUser:
             right_query = Query(right_source, model=dedupers[right_source.name])
             right_raw_df = right_query.run()
             right_clusters = query_to_cluster_entities(
-                query=right_raw_df,
+                data=right_raw_df,
                 keys={right_source.name: right_source.qualified_key},
             )
             right_df = right_raw_df.drop(right_source.qualified_key)
@@ -362,7 +362,7 @@ class TestE2EAnalyticalUser:
         left_query = Query(crn_source, duns_source, model=linkers[first_pair])
         left_raw_df = left_query.run()
         left_clusters = query_to_cluster_entities(
-            query=left_raw_df,
+            data=left_raw_df,
             keys={
                 crn_source.name: crn_source.qualified_key,
                 duns_source.name: duns_source.qualified_key,
@@ -373,7 +373,7 @@ class TestE2EAnalyticalUser:
         right_query = Query(cdms_source, model=dedupers[cdms_source.name])
         right_raw_df = right_query.run()
         right_clusters = query_to_cluster_entities(
-            query=right_raw_df,
+            data=right_raw_df,
             keys={cdms_source.name: cdms_source.qualified_key},
         )
         right_df = right_raw_df.drop(cdms_source.qualified_key)
@@ -435,7 +435,7 @@ class TestE2EAnalyticalUser:
         final_df = Query(crn_source, duns_source, cdms_source, model=final_linker).run()
 
         final_clusters = query_to_cluster_entities(
-            query=final_df,
+            data=final_df,
             keys={
                 crn_source.name: crn_source.qualified_key,
                 duns_source.name: duns_source.qualified_key,

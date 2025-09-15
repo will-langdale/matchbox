@@ -266,7 +266,6 @@ def test_link_step_run(
         foo_bar.run()
 
 
-@patch("matchbox.client._handler.index")
 @patch.object(Source, "sync")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
@@ -274,7 +273,6 @@ def test_dag_runs(
     link_run: Mock,
     dedupe_run: Mock,
     source_sync_mock: Mock,
-    index_mock: Mock,
     sqlite_warehouse: Engine,
 ):
     """A legal DAG can be built and run."""

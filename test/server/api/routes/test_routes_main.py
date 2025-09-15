@@ -23,7 +23,6 @@ from matchbox.common.dtos import (
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
 from matchbox.common.graph import ResolutionGraph
@@ -251,7 +250,7 @@ def test_query_404_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock
 
 def test_query_404_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.query = Mock(side_effect=MatchboxSourceNotFoundError())
+    mock_backend.query = Mock(side_effect=MatchboxResolutionNotFoundError())
 
     response = test_client.get(
         "/query",
@@ -309,7 +308,7 @@ def test_match_404_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock
 
 def test_match_404_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.match = Mock(side_effect=MatchboxSourceNotFoundError())
+    mock_backend.match = Mock(side_effect=MatchboxResolutionNotFoundError())
 
     response = test_client.get(
         "/match",

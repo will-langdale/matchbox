@@ -7,6 +7,7 @@ from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
 from matchbox.common.dtos import Match
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.graph import (
     DEFAULT_RESOLUTION,
     ResolutionName,
@@ -47,7 +48,9 @@ def match(
     """
     # Validate arguments
     for name in targets + (source,):
-        _ = _handler.get_resolution(name=name)
+        res = _handler.get_resolution(name=name)
+        if res is None:
+            raise MatchboxResolutionNotFoundError(f"Resolution {name} was not found")
 
     return _handler.match(
         targets=targets,

@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from pydantic import ConfigDict
 
-from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES, SCHEMA_RESULTS, check_schema
+from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.hash import IntMap
 from matchbox.common.transform import to_clusters
 
@@ -47,14 +47,8 @@ class Results:
         self.right_data = None
 
         if left_data is not None:
-            check_schema(
-                expected=SCHEMA_QUERY_WITH_LEAVES, actual=left_data.schema, subset=True
-            )
             self.left_data = left_data
         if right_data is not None:
-            check_schema(
-                expected=SCHEMA_QUERY_WITH_LEAVES, actual=right_data.schema, subset=True
-            )
             self.right_data = right_data
 
         if isinstance(probabilities, pl.DataFrame):

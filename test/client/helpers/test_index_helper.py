@@ -10,7 +10,7 @@ from matchbox.common.dtos import (
     NotFoundError,
 )
 from matchbox.common.exceptions import (
-    MatchboxSourceNotFoundError,
+    MatchboxResolutionNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
 
@@ -134,5 +134,5 @@ def test_get_source_404_error(matchbox_api: MockRouter):
         )
     )
 
-    with pytest.raises(MatchboxSourceNotFoundError, match="nonexistent"):
+    with pytest.raises(MatchboxResolutionNotFoundError, match="nonexistent"):
         get_source(name="nonexistent", location=RelationalDBLocation("", None))

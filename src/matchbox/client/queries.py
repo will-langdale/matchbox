@@ -70,7 +70,7 @@ class Query:
     def run(
         self,
         return_type: QueryReturnType = QueryReturnType.POLARS,
-        return_leaf_id: bool = True,
+        return_leaf_id: bool = False,
         batch_size: int | None = None,
     ) -> QueryReturnClass:
         """Runs queries against the selected backend.
@@ -79,13 +79,15 @@ class Query:
             return_type (optional): Type of dataframe returned, defaults to "polars".
                 Other options are "pandas" and "arrow".
             return_leaf_id (optional): Whether matchbox IDs for source clusters should
-                be returned
+                be returned. Only compatible with concatenated results.
             batch_size (optional): The size of each batch when fetching data from the
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
 
         Returns: Data in the requested return type (DataFrame or ArrowTable).
         """
+        if return_leaf_id and self.config.combine_type != QueryCombineType.CONCAT:
+            raise ValueError("Can only return leaf IDs if the return type is `concat`.")
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
             mb_ids = pl.from_arrow(

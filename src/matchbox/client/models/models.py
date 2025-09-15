@@ -12,7 +12,7 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelConfig, ModelType, Resolution
+from matchbox.common.dtos import ModelConfig, ModelType, QueryCombineType, Resolution
 from matchbox.common.graph import ResolutionType
 from matchbox.common.logging import logger
 
@@ -167,12 +167,22 @@ class Model:
                     score results.
         """
         left_df: pl.DataFrame = self.left_query.run(
-            return_leaf_id=for_validation, batch_size=settings.batch_size
+            return_leaf_id=(
+                for_validation
+                and self.left_query.config.combine_type == QueryCombineType.CONCAT
+            ),
+            batch_size=settings.batch_size,
         )
         right_df = None
 
         if self.config.type == ModelType.LINKER:
-            right_df: pl.DataFrame = self.right_query.run(return_leaf_id=for_validation)
+            right_df: pl.DataFrame = self.right_query.run(
+                return_leaf_id=(
+                    for_validation
+                    and self.right_query.config.combine_type == QueryCombineType.CONCAT
+                ),
+                batch_size=settings.batch_size,
+            )
 
             self.model_instance.prepare(left_df, right_df)
             results = self.model_instance.link(left=left_df, right=right_df)
@@ -183,10 +193,23 @@ class Model:
         if not for_validation:
             self.results = Results(probabilities=results)
         else:
+            # Depending on the query combine type, the queries might need to be repeated
+            if self.left_query.config.combine_type != QueryCombineType.CONCAT:
+                left_df: pl.DataFrame = self.left_query.model_copy(
+                    update={"combine_type": QueryCombineType.CONCAT}
+                ).run(return_leaf_id=True, batch_size=settings.batch_size)
+
+            if (
+                self.right_query
+                and self.right_query.config.combine_type != QueryCombineType.CONCAT
+            ):
+                right_df: pl.DataFrame = self.right_query.model_copy(
+                    update={"combine_type": QueryCombineType.CONCAT}
+                ).run(return_leaf_id=True, batch_size=settings.batch_size)
             self.results = Results(
                 probabilities=results,
                 left_data=left_df.to_arrow(),
-                right_data=right_df.to_arrow() if right_df else None,
+                right_data=right_df.to_arrow() if right_df is not None else None,
             )
 
         return self.results
@@ -209,7 +232,7 @@ class Model:
 
         _handler.set_truth(name=self.name, truth=self._truth)
 
-        if self.results:
+        if self.results and len(self.results.probabilities):
             _handler.set_data(
                 name=self.name,
                 data=self.results.probabilities,

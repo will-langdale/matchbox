@@ -34,10 +34,7 @@ def test_get_source(
     source_testkit = source_factory(name="foo")
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(
-        side_effect=[
-            MatchboxResolutionNotFoundError(),  # First call (MODEL)
-            source_testkit.source.to_resolution(),  # Second call (SOURCE)
-        ]
+        return_value=source_testkit.source.to_resolution(),  # Second call (SOURCE)
     )
 
     response = test_client.get("/resolutions/foo")
@@ -94,7 +91,7 @@ def test_insert_model(
     )
 
     mock_backend.insert_resolution.assert_called_once_with(
-        testkit.model.to_resolution()
+        resolution=testkit.model.to_resolution()
     )
 
 

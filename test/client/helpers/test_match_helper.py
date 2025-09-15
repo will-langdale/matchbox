@@ -9,7 +9,6 @@ from matchbox.common.dtos import BackendResourceType, NotFoundError
 from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
 
@@ -133,12 +132,11 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a source not found error."""
     target_testkit = source_factory(engine=sqlite_warehouse, name="target")
 
-    matchbox_api.get("/resolutions/source").mock(
+    matchbox_api.get("/resolutions/nonexistent").mock(
         return_value=Response(
             404,
             json=NotFoundError(
-                details="SourceConfig 42 not found",
-                entity=BackendResourceType.RESOLUTION,
+                details="", entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         )
     )
@@ -149,10 +147,10 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
 
     # Use match function
-    with pytest.raises(MatchboxSourceNotFoundError, match="42"):
+    with pytest.raises(MatchboxResolutionNotFoundError, match="nonexistent"):
         match(
             "target",
-            source="source",
+            source="nonexistent",
             key="pk1",
             resolution="foo",
         )
