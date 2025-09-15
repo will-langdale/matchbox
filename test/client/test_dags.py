@@ -13,6 +13,7 @@ from matchbox.client.dags import (
     LinkStep,
     StepInput,
 )
+from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import Source
@@ -161,20 +162,12 @@ def test_dedupe_step_run(
     sqlite_warehouse: Engine,
 ):
     """Tests that a dedupe step orchestrates lower-level API correctly."""
+    results_mock = Mock()
     with (
-        patch("matchbox.client.dags.Model.__new__") as make_model_mock,
+        patch.object(Model, "sync"),
+        patch.object(Model, "run", return_value=results_mock),
         patch("matchbox.client.dags.Query.run"),
     ):
-        # Complete mock set up
-        model_mock = Mock()
-        model_mock.sync = Mock()
-        model_mock.name = "model_name"
-        make_model_mock.return_value = model_mock
-
-        results_mock = Mock()
-
-        model_mock.run = Mock(return_value=results_mock)
-
         # Set up and run deduper
         foo_testkit = source_factory(
             name="foo", engine=sqlite_warehouse
@@ -213,20 +206,12 @@ def test_link_step_run(
     sqlite_warehouse: Engine,
 ):
     """Tests that a link step orchestrates lower-level API correctly."""
+    results_mock = Mock()
     with (
-        patch("matchbox.client.dags.Model.__new__") as make_model_mock,
+        patch.object(Model, "sync"),
+        patch.object(Model, "run", return_value=results_mock),
         patch("matchbox.client.dags.Query.run"),
     ):
-        # Complete mock set up
-        model_mock = Mock()
-        model_mock.sync = Mock()
-        model_mock.name = "model_name"
-        make_model_mock.return_value = model_mock
-
-        results_mock = Mock()
-
-        model_mock.run = Mock(return_value=results_mock)
-
         # Set up and run linker
         foo_testkit = source_factory(
             name="foo", engine=sqlite_warehouse
