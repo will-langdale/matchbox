@@ -210,16 +210,6 @@ def test_complete_model_upload_process(
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
 
-    # Step 7: Additional model-specific verifications
-    if model_type == "linker":
-        # For linker models, verify left and right resolutions are set
-        assert testkit.model.config.left_resolution is not None
-        assert testkit.model.config.right_resolution is not None
-    else:
-        # For deduper models, verify only left resolution is set
-        assert testkit.model.config.left_resolution is not None
-        assert testkit.model.config.right_resolution is None
-
     # Verify the model truth can be set and retrieved
     truth_value = 85
     mock_backend.get_model_truth = Mock(return_value=truth_value)

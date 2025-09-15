@@ -11,10 +11,10 @@ from unittest.mock import Mock, PropertyMock, create_autospec
 import numpy as np
 import polars as pl
 import pyarrow as pa
-import pyarrow.compute as pc
 import rustworkx as rx
 from faker import Faker
 from pandas import DataFrame
+from pyarrow import compute as pc
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import create_engine
 
@@ -561,9 +561,11 @@ class ModelTestkit(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: Model
-    left_query: pa.Table
+    left_data: pa.Table
+    left_query: Query
     left_clusters: dict[int, ClusterEntity]
-    right_query: pa.Table | None
+    right_data: pa.Table | None
+    right_query: Query | None
     right_clusters: dict[int, ClusterEntity] | None
     probabilities: pa.Table
 
@@ -575,6 +577,29 @@ class ModelTestkit(BaseModel):
     def name(self) -> str:
         """Return the full name of the Model."""
         return self.model.name
+
+    @property
+    def data(self) -> pa.Table:
+        """Return a PyArrow table in the same format as matchbox queries."""
+        if self.model.config.type == ModelType.DEDUPER:
+            data = self.left_data
+        else:
+            data = pa.concat_tables(
+                [self.left_data, self.right_data], promote_options="default"
+            )
+
+        indices = pc.index_in(data["id"], self._query_lookup["id"])
+        indices = indices.combine_chunks()
+        replacements = pc.take(self._query_lookup["new_id"], indices).combine_chunks()
+
+        new_ids = pc.replace_with_mask(
+            data["id"],
+            pc.is_valid(indices),
+            replacements,
+        )
+
+        id_index = data.schema.get_field_index("id")
+        return data.set_column(id_index, "id", new_ids)
 
     @property
     def entities(self) -> tuple[ClusterEntity, ...]:
@@ -642,7 +667,7 @@ class ModelTestkit(BaseModel):
         )
 
         # Mock results property
-        mock_results = Results(probabilities=self.data, metadata=self.model)
+        mock_results = Results(probabilities=self.probabilities, metadata=self.model)
         type(mock_model).results = PropertyMock(return_value=mock_results)
 
         # Mock run method
@@ -651,40 +676,22 @@ class ModelTestkit(BaseModel):
         # Mock the model instance based on type
         if self.model.type == ModelType.LINKER:
             mock_model.model_instance = MockLinker
-            mock_model.model_instance.link.return_value = self.data
+            mock_model.model_instance.link.return_value = self.probabilities
         else:
             mock_model.model_instance = MockDeduper
-            mock_model.model_instance.dedupe.return_value = self.data
+            mock_model.model_instance.dedupe.return_value = self.probabilities
 
         return mock_model
 
-    @property
-    def data(self) -> pa.Table:
-        """Return the probabilities data table."""
-        return self.probabilities
 
-    @property
-    def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format as matchbox queries."""
-        if self.model.config.type == ModelType.DEDUPER:
-            query = self.left_query
-        else:
-            query = pa.concat_tables(
-                [self.left_query, self.right_query], promote_options="default"
-            )
-
-        indices = pc.index_in(query["id"], self._query_lookup["id"])
-        indices = indices.combine_chunks()
-        replacements = pc.take(self._query_lookup["new_id"], indices).combine_chunks()
-
-        new_ids = pc.replace_with_mask(
-            query["id"],
-            pc.is_valid(indices),
-            replacements,
-        )
-
-        id_index = query.schema.get_field_index("id")
-        return query.set_column(id_index, "id", new_ids)
+def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:
+    if isinstance(testkit, SourceTestkit):
+        return Query(testkit.source)
+    else:
+        all_sources = list(testkit.model.left_query.sources)
+        if testkit.model.right_query is not None:
+            all_sources += list(testkit.model.right_query.sources)
+        return Query(*all_sources, model=testkit.model)
 
 
 def model_factory(
@@ -755,10 +762,18 @@ def model_factory(
     # ==== SourceConfig configuration ====
     if left_testkit is not None:
         # Using provided sources
+        left_data = left_testkit.data
+        left_query = _testkit_to_query(left_testkit)
         left_entities = left_testkit.entities
+
+        right_data = None
+        right_query = None
+        right_entities = None
 
         if right_testkit is not None:
             model_type = ModelType.LINKER
+            right_data = right_testkit.data
+            right_query = _testkit_to_query(right_testkit)
             right_entities = right_testkit.entities
         else:
             model_type = ModelType.DEDUPER
@@ -820,7 +835,7 @@ def model_factory(
         )
 
         # Extract source data
-        left_data = linked.sources["crn"].query
+        left_data = linked.sources["crn"].data
         left_query = Query(linked.sources["crn"])
         left_entities = linked.sources["crn"].entities
 
@@ -828,7 +843,7 @@ def model_factory(
         right_query = None
         right_entities = None
         if resolved_model_type == ModelType.LINKER:
-            right_data = linked.sources["cdms"].query
+            right_data = linked.sources["cdms"].data
             right_query = Query(linked.sources["cdms"])
             right_entities = linked.sources["cdms"].entities
 
@@ -875,9 +890,11 @@ def model_factory(
     # ==== Final model creation ====
     return ModelTestkit(
         model=model,
-        left_query=left_data,
+        left_data=left_data,
+        left_query=left_query,
         left_clusters={entity.id: entity for entity in left_entities},
-        right_query=right_data,
+        right_data=right_data,
+        right_query=right_query,
         right_clusters={entity.id: entity for entity in right_entities}
         if right_entities
         else None,
@@ -974,9 +991,11 @@ def query_to_model_factory(
     # Create ModelTestkit
     return ModelTestkit(
         model=model,
-        left_query=left_data,
+        left_data=left_data,
+        left_query=left_query,
         left_clusters={entity.id: entity for entity in left_clusters},
-        right_query=right_data,
+        right_data=right_data,
+        right_query=right_query,
         right_clusters={entity.id: entity for entity in right_clusters}
         if right_clusters
         else None,

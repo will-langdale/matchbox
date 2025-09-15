@@ -240,8 +240,8 @@ def test_probabilistic_scores_generation(
     right_source = linked.sources["source_right"]
 
     mock_query_run.side_effect = [
-        pl.from_arrow(left_source.query),
-        pl.from_arrow(right_source.query),
+        pl.from_arrow(left_source.data),
+        pl.from_arrow(right_source.data),
     ]
 
     # Configure and run the linker

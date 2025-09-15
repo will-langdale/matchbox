@@ -89,7 +89,7 @@ def test_no_deduplication(
     linked = linked_sources_factory(source_parameters=(source_parameters,), seed=42)
     source_testkit = linked.sources["source_exact"]
 
-    mock_query_run.return_value = pl.from_arrow(source_testkit.query)
+    mock_query_run.return_value = pl.from_arrow(source_testkit.data)
 
     # Mock query to server
 
@@ -143,7 +143,7 @@ def test_exact_duplicate_deduplication(
     linked = linked_sources_factory(source_parameters=(source_parameters,), seed=42)
     source = linked.sources["source_exact"]
 
-    mock_query_run.return_value = pl.from_arrow(source.query)
+    mock_query_run.return_value = pl.from_arrow(source.data)
 
     # Configure and run the deduper
     deduper = Model(

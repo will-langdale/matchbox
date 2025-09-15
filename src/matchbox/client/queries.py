@@ -97,7 +97,7 @@ class Query:
                 )
             )
 
-            raw_batches = source.query(
+            raw_batches = source.fetch(
                 qualify_names=True,
                 batch_size=batch_size,
                 return_type=QueryReturnType.POLARS,

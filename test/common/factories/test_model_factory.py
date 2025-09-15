@@ -101,27 +101,27 @@ def test_model_type_creation(
     # Test threshold setting and querying
     initial_threshold = 80
     model.threshold = initial_threshold
-    initial_query = model.query
-    initial_ids = set(initial_query["id"].to_pylist())
+    initial_data = model.data
+    initial_ids = set(initial_data["id"].to_pylist())
     assert len(initial_ids) > 0
 
     # Test threshold change affects results
     new_threshold = 90
     model.threshold = new_threshold
-    new_query = model.query
-    new_ids = set(new_query["id"].to_pylist())
+    new_data = model.data
+    new_ids = set(new_data["id"].to_pylist())
 
     # Higher threshold should result in more distinct entities, as fewer merge
     assert len(new_ids) >= len(initial_ids)
 
     # Verify schema consistency
-    assert initial_query.schema == new_query.schema
-    assert "id" in initial_query.column_names
+    assert initial_data.schema == new_data.schema
+    assert "id" in initial_data.column_names
 
     # For linkers, verify we maintain separation between left and right IDs
     if expected_type == "linker":
-        left_ids = set(model.left_query["id"].to_pylist())
-        right_ids = set(model.right_query["id"].to_pylist())
+        left_ids = set(model.left_data["id"].to_pylist())
+        right_ids = set(model.right_data["id"].to_pylist())
         assert not (left_ids & right_ids), (
             "Left and right IDs should be disjoint in linker"
         )
@@ -518,14 +518,14 @@ def test_model_factory_seed_behavior(seed1: int, seed2: int, should_be_equal: bo
     if should_be_equal:
         assert dummy1.model.name == dummy2.model.name
         assert dummy1.model.description == dummy2.model.description
-        assert dummy1.left_query.equals(dummy2.left_query)
+        assert dummy1.left_data.equals(dummy2.left_data)
         assert set(dummy1.left_clusters) == set(dummy2.left_clusters)
         assert set(dummy1.entities) == set(dummy2.entities)
         assert dummy1.probabilities.equals(dummy2.probabilities)
     else:
         assert dummy1.model.name != dummy2.model.name
         assert dummy1.model.description != dummy2.model.description
-        assert not dummy1.left_query.equals(dummy2.left_query)
+        assert not dummy1.left_data.equals(dummy2.left_data)
         assert set(dummy1.left_clusters) != set(dummy2.left_clusters)
         assert set(dummy1.entities) != set(dummy2.entities)
         assert not dummy1.probabilities.equals(dummy2.probabilities)
@@ -539,7 +539,7 @@ def test_query_to_model_factory_validation():
     true_entities = tuple(linked.true_entities)
 
     # Extract query and keys for our function
-    left_data = left_testkit.query
+    left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
     # Test invalid probability range
@@ -604,7 +604,7 @@ def test_query_to_model_factory_creation(
 
     # Get left source
     left_testkit = linked.sources["crn"]
-    left_data = left_testkit.query
+    left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
     # Setup right query if needed
@@ -615,7 +615,7 @@ def test_query_to_model_factory_creation(
 
     if test_config["right_args"]:
         right_testkit = linked.sources["cdms"]
-        right_data = right_testkit.query
+        right_data = right_testkit.data
         right_keys = {"cdms": "key"}
         right_query = Query(right_testkit.source)
 
@@ -662,7 +662,7 @@ def test_query_to_model_factory_seed_behavior(
 
     # Get source
     left_testkit = linked.sources["crn"]
-    left_data = left_testkit.query
+    left_data = left_testkit.data
     left_keys = {"crn": "key"}
 
     # Create two models with different seeds
@@ -708,8 +708,8 @@ def test_query_to_model_factory_compare_with_model_factory():
     )
 
     # Extract queries for our new function
-    left_data = linked.sources["crn"].query
-    right_data = linked.sources["cdms"].query
+    left_data = linked.sources["crn"].data
+    right_data = linked.sources["cdms"].data
     left_keys = {"crn": "key"}
     right_keys = {"cdms": "key"}
 

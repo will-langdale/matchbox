@@ -97,7 +97,9 @@ class SourceTestkit(BaseModel):
         ),
         default=None,
     )
-    data: pa.Table = Field(description="The PyArrow table of generated data.")
+    data: pa.Table = Field(
+        description="The generated data, corresponding to the output of queries."
+    )
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
@@ -121,18 +123,6 @@ class SourceTestkit(BaseModel):
         mock_source.hash_data.return_value = self.data_hashes
 
         return mock_source
-
-    @property
-    def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format as matchbox queries."""
-        return self.data
-
-    @property
-    def query_backend(self) -> pa.Table:
-        """Return a PyArrow table in the same format as the SCHEMA_QUERY DTO."""
-        return pa.Table.from_arrays(
-            [self.data["id"], self.data["key"]], names=["id", "key"]
-        )
 
     def write_to_location(self, set_client: Any | None = None) -> Self:
         """Write the data to the SourceConfig's location.

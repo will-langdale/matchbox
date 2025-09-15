@@ -256,12 +256,12 @@ def test_exact_match_linking(
 
     # First left is queried, then right
     mock_query_run.side_effect = [
-        pl.from_arrow(left_source.query),
-        pl.from_arrow(right_source.query),
+        pl.from_arrow(left_source.data),
+        pl.from_arrow(right_source.data),
     ]
 
-    assert left_source.query.select(["company", "email"]).equals(
-        right_source.query.select(["company", "email"])
+    assert left_source.data.select(["company", "email"]).equals(
+        right_source.data.select(["company", "email"])
     )
 
     # Configure and run the linker
@@ -325,8 +325,8 @@ def test_exact_match_with_duplicates_linking(
     right_source = linked.sources["source_right"]
 
     mock_query_run.side_effect = [
-        pl.from_arrow(left_source.query),
-        pl.from_arrow(right_source.query),
+        pl.from_arrow(left_source.data),
+        pl.from_arrow(right_source.data),
     ]
 
     # Configure and run the linker
@@ -395,8 +395,8 @@ def test_partial_entity_linking(
     right_source = linked.sources["source_right"]
 
     mock_query_run.side_effect = [
-        pl.from_arrow(left_source.query),
-        pl.from_arrow(right_source.query),
+        pl.from_arrow(left_source.data),
+        pl.from_arrow(right_source.data),
     ]
 
     # Configure and run the linker
@@ -452,13 +452,13 @@ def test_no_matching_entities_linking(
     )
 
     mock_query_run.side_effect = [
-        pl.from_arrow(left_source.query),
-        pl.from_arrow(right_source.query),
+        pl.from_arrow(left_source.data),
+        pl.from_arrow(right_source.data),
     ]
 
     for column in ("company", "identifier"):
-        l_col = set(left_source.query[column].to_pylist())
-        r_col = set(right_source.query[column].to_pylist())
+        l_col = set(left_source.data[column].to_pylist())
+        r_col = set(right_source.data[column].to_pylist())
         assert l_col.isdisjoint(r_col)
 
     # Configure and run the linker

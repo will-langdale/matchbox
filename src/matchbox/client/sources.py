@@ -441,7 +441,7 @@ class Source:
             return False
         return self.config == other.config
 
-    def query(
+    def fetch(
         self,
         qualify_names: bool = False,
         batch_size: int | None = None,
@@ -512,7 +512,7 @@ class Source:
         index_fields: list[str] = [field.name for field in self.config.index_fields]
 
         all_results: list[pl.DataFrame] = []
-        for batch in self.query(
+        for batch in self.fetch(
             batch_size=batch_size,
             return_type="polars",
         ):

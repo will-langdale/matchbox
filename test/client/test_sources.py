@@ -175,7 +175,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     assert overridden_results[0]["employees"].dtype == pl.String
 
     # Try query with filter
-    keys_to_filter = source_testkit.query["key"][:2].to_pylist()
+    keys_to_filter = source_testkit.data["key"][:2].to_pylist()
     filtered_results = pl.concat(
         location.execute(sql, batch_size, keys=("key", keys_to_filter))
     )
@@ -299,12 +299,12 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
     assert len(source.config.index_fields) == 2
 
     # This should work if the SQL is preserved exactly
-    df = next(source.query())
+    df = next(source.fetch())
     assert isinstance(df, pl.DataFrame)
     assert len(df) == 3
 
 
-def test_source_query(sqlite_warehouse: Engine):
+def test_source_fetch(sqlite_warehouse: Engine):
     """Test the query method with default parameters."""
     # Create test data
     source_testkit = source_factory(
@@ -327,7 +327,7 @@ def test_source_query(sqlite_warehouse: Engine):
     )
 
     # Execute query
-    result = next(source.query())
+    result = next(source.fetch())
 
     # Verify result
     assert isinstance(result, pl.DataFrame)
@@ -337,11 +337,11 @@ def test_source_query(sqlite_warehouse: Engine):
 
     # Try applying key filter
     key_subset = result[source.config.key_field.name][:2].to_list()
-    result = next(source.query(keys=key_subset))
+    result = next(source.fetch(keys=key_subset))
     assert len(result) == 2
 
     # Key filter ineffective with empty list
-    result = next(source.query(keys=[]))
+    result = next(source.fetch(keys=[]))
     assert len(result) == 5
 
 
@@ -353,7 +353,7 @@ def test_source_query(sqlite_warehouse: Engine):
     ],
 )
 @patch("matchbox.client.sources.RelationalDBLocation.execute")
-def test_source_query_name_qualification(
+def test_source_fetch_name_qualification(
     mock_execute: Mock,
     qualify_names: bool,
 ):
@@ -374,7 +374,7 @@ def test_source_query_name_qualification(
     )
 
     # Call query with qualification parameter
-    next(source.query(qualify_names=qualify_names))
+    next(source.fetch(qualify_names=qualify_names))
 
     # Verify the rename parameter passed to execute
     _, kwargs = mock_execute.call_args
@@ -402,7 +402,7 @@ def test_source_query_name_qualification(
     ],
 )
 @patch("matchbox.client.sources.RelationalDBLocation.execute")
-def test_source_query_batching(
+def test_source_fetch_batching(
     mock_execute: Mock,
     batch_size: int,
     expected_call_kwargs: dict,
@@ -424,7 +424,7 @@ def test_source_query_batching(
     )
 
     # Call query with batching parameters
-    next(source.query(batch_size=batch_size))
+    next(source.fetch(batch_size=batch_size))
 
     # Verify parameters passed to execute
     _, kwargs = mock_execute.call_args
@@ -480,8 +480,8 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     assert len(result) == n_true_entities
 
 
-@patch("matchbox.client.sources.Source.query")
-def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: Engine):
+@patch("matchbox.client.sources.Source.fetch")
+def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: Engine):
     """Test hash_data raises an error when source primary keys contain nulls."""
     # Create a source
     location = RelationalDBLocation(
@@ -497,7 +497,7 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
 
     # Mock query to return data with null keys
     mock_df = pl.DataFrame({"key": ["1", None], "name": ["a", "b"]})
-    mock_query.return_value = (x for x in [mock_df])
+    mock_fetch.return_value = (x for x in [mock_df])
 
     # hash_data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):

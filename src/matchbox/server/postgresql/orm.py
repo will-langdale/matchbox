@@ -279,13 +279,13 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             resolution_orm.model_config = ModelConfigs.from_dto(resolution.config)
             # Create lineage
             left_parent = cls.from_name(
-                resolution.config.left_resolution, session=session
+                resolution.config.left_query.point_of_truth, session=session
             )
             cls._create_closure_entries(session, resolution_orm, left_parent)
 
             if resolution.config.type == ModelType.LINKER:
                 right_parent = cls.from_name(
-                    resolution.config.right_resolution, session=session
+                    resolution.config.right_query.point_of_truth, session=session
                 )
                 cls._create_closure_entries(session, resolution_orm, right_parent)
 

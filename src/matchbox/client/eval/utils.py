@@ -98,7 +98,7 @@ def get_samples(
 
         try:
             source_data = pl.concat(
-                source.query(batch_size=10_000, qualify_names=True, keys=keys_by_source)
+                source.fetch(batch_size=10_000, qualify_names=True, keys=keys_by_source)
             )
         except OperationalError as e:
             raise MatchboxSourceTableError(
