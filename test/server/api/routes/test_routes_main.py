@@ -322,7 +322,7 @@ def test_match_404_source(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     )
 
     assert response.status_code == 404
-    assert response.json()["entity"] == BackendResourceType.SOURCE
+    assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
 
 # Admin

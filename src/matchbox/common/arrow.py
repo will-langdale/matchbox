@@ -95,15 +95,14 @@ def check_schema(expected: Schema, actual: Schema, subset: bool = False) -> None
             ]
         )
 
-    def field_signature(field: pa.Field):
-        return (
-            field.name,
-            field.type,
-            field.nullable,
-        )
+    # Make comparison invariant to order
+    actual = pa.schema(
+        [
+            (name, actual.field(name).type)
+            for name in expected.names
+            if name in actual.names
+        ]
+    )
 
-    fields_actual = {field_signature(field) for field in actual}
-    fields_expected = {field_signature(field) for field in expected}
-
-    if not fields_actual == fields_expected:
+    if not actual.equals(expected):
         raise MatchboxArrowSchemaMismatch(expected=expected, actual=actual)

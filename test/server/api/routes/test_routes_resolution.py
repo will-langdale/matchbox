@@ -14,7 +14,6 @@ from matchbox.common.dtos import (
     Resolution,
     ResolutionOperationStatus,
     UploadStage,
-    UploadStatus,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
@@ -440,40 +439,22 @@ def test_get_resolution_sources_404(
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
 
-def test_add_source(
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test the source addition endpoint."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.insert_resolution = Mock(return_value=None)
-    mock_backend.insert_source_data = Mock(return_value=None)
-
-    source_testkit = source_factory()
-
-    # Make request
-    response = test_client.post(
-        "/resolutions",
-        json=source_testkit.source.to_resolution().model_dump(mode="json"),
-    )
-
-    # Validate response
-    assert UploadStatus.model_validate(response.json())
-    assert response.status_code == 202, response.json()
-    assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
-    assert response.json().get("id") is not None
-    mock_backend.insert_resolution.assert_not_called()
-    mock_backend.insert_source_data.assert_not_called()
-
-
 def test_complete_source_upload_process(
     s3: S3Client,
     api_client_and_mocks: tuple[TestClient, Mock, Mock],
 ):
     """Test the complete upload process from source creation through processing."""
+    # Create test data
+    source_testkit = source_factory()
+
     # Setup the backend
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.settings.datastore.get_client.return_value = s3
     mock_backend.settings.datastore.cache_bucket_name = "test-bucket"
+
+    mock_backend.get_resolution = Mock(
+        return_value=source_testkit.source.to_resolution()
+    )
     mock_backend.insert_resolution = Mock(return_value=None)
     mock_backend.insert_source_data = Mock(return_value=None)
 
@@ -483,16 +464,25 @@ def test_complete_source_upload_process(
         CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
     )
 
-    # Create test data
-    source_testkit = source_factory()
-
     # Step 1: Add source
     response = test_client.post(
         "/resolutions",
         json=source_testkit.source.to_resolution().model_dump(mode="json"),
     )
-    assert response.status_code == 202
+    assert response.status_code == 201
+    status = ResolutionOperationStatus.model_validate(response.json())
+    assert response.status_code == 201, response.json()
+    assert status.name == source_testkit.name
+
+    # Assert backend given the config but not yet the data
+    mock_backend.insert_resolution.assert_called_once_with(
+        resolution=source_testkit.source.to_resolution()
+    )
+    mock_backend.insert_source_data.assert_not_called()
+
+    response = test_client.post(f"/resolutions/{source_testkit.name}/data")
     upload_id = response.json()["id"]
+    assert response.status_code == 202
     assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
 
     # Step 2: Upload file with real background tasks
@@ -535,9 +525,6 @@ def test_complete_source_upload_process(
     assert response.status_code == 200
 
     # Verify backend methods were called with correct arguments
-    mock_backend.insert_resolution.assert_called_once_with(
-        resolution=source_testkit.source.to_resolution()
-    )
     mock_backend.insert_source_data.assert_called_once()
 
     # Check resolution matches

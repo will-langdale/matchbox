@@ -47,7 +47,7 @@ def match(
     """
     # Validate arguments
     for name in targets + (source,):
-        _ = _handler.get_source_resolution(name=name)
+        _ = _handler.get_resolution(name=name)
 
     return _handler.match(
         targets=targets,

@@ -73,7 +73,7 @@ def get_samples(
 
     results_by_source = []
     for source_resolution in samples["source"].unique():
-        resolution = _handler.get_source_resolution(source_resolution)
+        resolution = _handler.get_resolution(source_resolution)
         location_name = resolution.config.location_config.name
 
         if location_name in clients:

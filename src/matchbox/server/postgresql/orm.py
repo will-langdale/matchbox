@@ -234,7 +234,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
             return resolution
 
         raise MatchboxResolutionNotFoundError(
-            message=f"No resolution {name} of {res_type or 'any'}."
+            message=f"No resolution {name} of type {res_type or 'any'}."
         )
 
     @classmethod

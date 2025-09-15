@@ -37,6 +37,7 @@ from matchbox.common.dtos import (
     NotFoundError,
     Resolution,
     ResolutionOperationStatus,
+    ResolutionType,
     UploadStage,
     UploadStatus,
 )
@@ -47,7 +48,6 @@ from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
-    MatchboxSourceNotFoundError,
     MatchboxTooManySamplesRequested,
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
@@ -57,7 +57,6 @@ from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionGraph,
     ResolutionName,
-    ResolutionType,
     SourceResolutionName,
 )
 from matchbox.common.hash import hash_to_base64
@@ -118,8 +117,6 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     if res.status_code == 404:
         error = NotFoundError.model_validate(res.json())
         match error.entity:
-            case BackendResourceType.SOURCE:
-                raise MatchboxSourceNotFoundError(error.details)
             case BackendResourceType.RESOLUTION:
                 raise MatchboxResolutionNotFoundError(error.details)
             case BackendResourceType.CLUSTER:
@@ -265,21 +262,6 @@ def match(
 
 
 @http_retry
-def get_source_resolution(name: SourceResolutionName) -> Resolution:
-    log_prefix = f"Source resolution {name}"
-    logger.debug("Retrieving", prefix=log_prefix)
-
-    res = CLIENT.get(f"/resolutions/{name}")
-
-    resolution = Resolution.model_validate(res.json())
-
-    if resolution.resolution_type != ResolutionType.SOURCE:
-        raise MatchboxSourceNotFoundError(f"{name} is not a source resolution")
-
-    return resolution
-
-
-@http_retry
 def get_leaf_source_resolutions(name: ModelResolutionName) -> list[Resolution]:
     log_prefix = f"Resolution {name}"
     logger.debug("Retrieving", prefix=log_prefix)
@@ -326,15 +308,19 @@ def get_resolution(name: ResolutionName) -> Resolution | None:
 
 
 @http_retry
-def set_data(name: ResolutionName, data: Table) -> UploadStatus:
+def set_data(
+    name: ResolutionName, data: Table, validate_type: ResolutionType
+) -> UploadStatus:
     """Upload source hashes or model results to server."""
-    log_prefix = f"Model {name}"
+    log_prefix = f"Resolution {name}"
     logger.debug("Uploading results", prefix=log_prefix)
 
     buffer = table_to_buffer(table=data)
 
     # Initialise upload
-    metadata_res = CLIENT.post(f"/resolutions/{name}/data")
+    metadata_res = CLIENT.post(
+        f"/resolutions/{name}/data", params={"validate_type": str(validate_type)}
+    )
 
     upload = UploadStatus.model_validate(metadata_res.json())
 

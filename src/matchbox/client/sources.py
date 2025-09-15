@@ -610,4 +610,6 @@ class Source:
             _handler.create_resolution(resolution=resolution)
 
         if self.hashes:
-            _handler.set_data(name=self.name, data=self.hashes)
+            _handler.set_data(
+                name=self.name, data=self.hashes, validate_type=ResolutionType.SOURCE
+            )

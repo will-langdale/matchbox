@@ -138,7 +138,7 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             404,
             json=NotFoundError(
                 details="SourceConfig 42 not found",
-                entity=BackendResourceType.SOURCE,
+                entity=BackendResourceType.RESOLUTION,
             ).model_dump(),
         )
     )

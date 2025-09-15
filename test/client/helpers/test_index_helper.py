@@ -129,7 +129,7 @@ def test_get_source_404_error(matchbox_api: MockRouter):
             404,
             json=NotFoundError(
                 details="SourceConfig nonexistent not found",
-                entity=BackendResourceType.SOURCE,
+                entity=BackendResourceType.RESOLUTION,
             ).model_dump(),
         )
     )

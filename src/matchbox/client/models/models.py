@@ -169,6 +169,7 @@ class Model:
         left_df: pl.DataFrame = self.left_query.run(
             return_leaf_id=for_validation, batch_size=settings.batch_size
         )
+        right_df = None
 
         if self.config.type == ModelType.LINKER:
             right_df: pl.DataFrame = self.right_query.run(return_leaf_id=for_validation)
@@ -185,7 +186,7 @@ class Model:
             self.results = Results(
                 probabilities=results,
                 left_data=left_df.to_arrow(),
-                right_data=right_df.to_arrow(),
+                right_data=right_df.to_arrow() if right_df else None,
             )
 
         return self.results
@@ -209,7 +210,11 @@ class Model:
         _handler.set_truth(name=self.name, truth=self._truth)
 
         if self.results:
-            _handler.set_data(name=self.name, data=self.results.probabilities)
+            _handler.set_data(
+                name=self.name,
+                data=self.results.probabilities,
+                validate_type=ResolutionType.MODEL,
+            )
 
     def download_results(self) -> Results:
         """Retrieve results associated with the model from the database."""

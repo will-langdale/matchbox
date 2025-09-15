@@ -45,7 +45,7 @@ def create_resolution(
 ) -> ResolutionOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
     try:
-        backend.insert_resolution(resolution)
+        backend.insert_resolution(resolution=resolution)
         return ResolutionOperationStatus(
             success=True,
             name=resolution.name,
@@ -67,20 +67,21 @@ def create_resolution(
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-def get_resolution(backend: BackendDependency, name: ResolutionName) -> Resolution:
+def get_resolution(
+    backend: BackendDependency,
+    name: ResolutionName,
+    validate_type: ResolutionType | None = None,
+) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     try:
-        return backend.get_resolution(name=name, validate=ResolutionType.MODEL)
-    except MatchboxResolutionNotFoundError:
-        try:
-            return backend.get_resolution(name=name, validate=ResolutionType.SOURCE)
-        except MatchboxResolutionNotFoundError as e:
-            raise HTTPException(
-                status_code=404,
-                detail=NotFoundError(
-                    details=str(e), entity=BackendResourceType.RESOLUTION
-                ).model_dump(),
-            ) from e
+        return backend.get_resolution(name=name, validate=validate_type)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
 @router.get(
@@ -157,11 +158,12 @@ def delete_resolution(
 def set_data(
     backend: BackendDependency,
     upload_tracker: UploadTrackerDependency,
-    name: ModelResolutionName,
+    name: ResolutionName,
+    validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
     """Create an upload task for model results."""
     try:
-        resolution = backend.get_resolution(name=name, validate=ResolutionType.MODEL)
+        resolution = backend.get_resolution(name=name, validate=validate_type)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,

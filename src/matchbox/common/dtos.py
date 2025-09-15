@@ -171,7 +171,6 @@ class ModelResultsType(StrEnum):
 class BackendResourceType(StrEnum):
     """Enumeration of resources types referenced by client or API."""
 
-    SOURCE = "source"
     RESOLUTION = "resolution"
     CLUSTER = "cluster"
     USER = "user"

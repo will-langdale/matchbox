@@ -182,7 +182,7 @@ class TestE2EModelEvaluation:
             left_query=Query(self.source_a),
         )
 
-        results = deduper.run()
+        results = deduper.run(for_validation=True)
 
         # We can download judgements locally
         eval_data = EvalData()
