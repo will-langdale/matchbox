@@ -80,6 +80,8 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
 def check_schema(expected: Schema, actual: Schema, subset: bool = False) -> None:
     """Validate equality of Arrow schemas.
 
+    It will ignore field metadata and order of fields.
+
     Args:
         expected: Schema to check against
         actual: Schema to check
@@ -92,5 +94,16 @@ def check_schema(expected: Schema, actual: Schema, subset: bool = False) -> None
                 for name in set(expected.names) & set(actual.names)
             ]
         )
-    if expected.equals(actual):
+
+    def field_signature(field: pa.Field):
+        return (
+            field.name,
+            field.type,
+            field.nullable,
+        )
+
+    fields_actual = {field_signature(field) for field in actual}
+    fields_expected = {field_signature(field) for field in expected}
+
+    if not fields_actual == fields_expected:
         raise MatchboxArrowSchemaMismatch(expected=expected, actual=actual)

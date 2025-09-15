@@ -2,8 +2,10 @@
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import Mock, patch
 
 import numpy as np
+import polars as pl
 import pytest
 from splink import SettingsCreator
 from splink import comparison_library as cl
@@ -199,7 +201,10 @@ PROBABILISTIC_LINKERS = [
 
 
 @pytest.mark.parametrize(("Linker", "configure_linker"), PROBABILISTIC_LINKERS)
-def test_probabilistic_scores_generation(Linker, configure_linker):
+@patch.object(Query, "run")
+def test_probabilistic_scores_generation(
+    mock_query_run: Mock, Linker, configure_linker
+):
     """Test that linkers can generate varying probability scores."""
 
     # Create sources with variations
@@ -233,6 +238,11 @@ def test_probabilistic_scores_generation(Linker, configure_linker):
     linked = linked_sources_factory(source_parameters=configs, seed=42)
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
+
+    mock_query_run.side_effect = [
+        pl.from_arrow(left_source.query),
+        pl.from_arrow(right_source.query),
+    ]
 
     # Configure and run the linker
     linker = Model(

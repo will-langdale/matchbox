@@ -2,7 +2,9 @@
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import Mock, patch
 
+import polars as pl
 import pytest
 from splink import SettingsCreator
 from splink import blocking_rule_library as brl
@@ -218,7 +220,10 @@ LINKERS = [
 
 
 @pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
-def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurator):
+@patch.object(Query, "run")
+def test_exact_match_linking(
+    mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
+):
     """Test linking with exact matches between sources."""
     # Create sources with the same entities
     features = (
@@ -249,6 +254,12 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
+    # First left is queried, then right
+    mock_query_run.side_effect = [
+        pl.from_arrow(left_source.query),
+        pl.from_arrow(right_source.query),
+    ]
+
     assert left_source.query.select(["company", "email"]).equals(
         right_source.query.select(["company", "email"])
     )
@@ -259,8 +270,8 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
         description="Linking with exact matches",
         model_class=Linker,
         model_settings=configure_linker(left_source, right_source),
-        left_query=Query(left_source),
-        right_query=Query(right_source),
+        left_query=Query(left_source.source),
+        right_query=Query(right_source.source),
     )
     results: Results = linker.run()
 
@@ -277,8 +288,9 @@ def test_exact_match_linking(Linker: Linker, configure_linker: LinkerConfigurato
 
 
 @pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
+@patch.object(Query, "run")
 def test_exact_match_with_duplicates_linking(
-    Linker: Linker, configure_linker: LinkerConfigurator
+    mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
 ):
     """Test linking with exact matches between sources, where data is duplicated."""
     # Create sources with the same entities
@@ -312,6 +324,11 @@ def test_exact_match_with_duplicates_linking(
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
+    mock_query_run.side_effect = [
+        pl.from_arrow(left_source.query),
+        pl.from_arrow(right_source.query),
+    ]
+
     # Configure and run the linker
     linker = Model(
         name="exact_match_linker",
@@ -336,7 +353,10 @@ def test_exact_match_with_duplicates_linking(
 
 
 @pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
-def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigurator):
+@patch.object(Query, "run")
+def test_partial_entity_linking(
+    mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
+):
     """Test linking when one source contains only a subset of entities.
 
     This tests that the linker correctly handles when the right source
@@ -374,6 +394,11 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
     left_source = linked.sources["source_left"]
     right_source = linked.sources["source_right"]
 
+    mock_query_run.side_effect = [
+        pl.from_arrow(left_source.query),
+        pl.from_arrow(right_source.query),
+    ]
+
     # Configure and run the linker
     linker = Model(
         name="partial_match_linker",
@@ -398,8 +423,9 @@ def test_partial_entity_linking(Linker: Linker, configure_linker: LinkerConfigur
 
 
 @pytest.mark.parametrize(("Linker", "configure_linker"), LINKERS)
+@patch.object(Query, "run")
 def test_no_matching_entities_linking(
-    Linker: Linker, configure_linker: LinkerConfigurator
+    mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
 ):
     """Test linking when there are no matching entities between sources.
 
@@ -424,6 +450,11 @@ def test_no_matching_entities_linking(
     right_source = source_factory(
         name="source_right", features=features, n_true_entities=10, seed=159
     )
+
+    mock_query_run.side_effect = [
+        pl.from_arrow(left_source.query),
+        pl.from_arrow(right_source.query),
+    ]
 
     for column in ("company", "identifier"):
         l_col = set(left_source.query[column].to_pylist())

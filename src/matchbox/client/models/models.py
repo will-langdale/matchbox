@@ -102,10 +102,16 @@ class Model:
             ModelType.LINKER if issubclass(model_class, Linker) else ModelType.DEDUPER
         )
 
+        if isinstance(model_settings, dict):
+            SettingsClass = self.model_instance.__annotations__["settings"]
+            model_settings = SettingsClass(**model_settings)
+
+        serialised_settings = model_settings.model_dump_json()
+
         self.config = ModelConfig(
             type=model_type,
             model_class=model_class.__name__,
-            model_settings=model_settings.model_dump_json(),
+            model_settings=serialised_settings,
             left_query=left_query.config,
             right_query=right_query.config if right_query else None,
         )
@@ -171,7 +177,7 @@ class Model:
             results = self.model_instance.link(left=left_df, right=right_df)
         else:
             self.model_instance.prepare(left_df)
-            results = self.model_instance.dedupe(data=self.left_data)
+            results = self.model_instance.dedupe(data=left_df)
 
         if not for_validation:
             self.results = Results(probabilities=results)

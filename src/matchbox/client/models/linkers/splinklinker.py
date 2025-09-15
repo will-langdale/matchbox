@@ -1,10 +1,18 @@
 """A linking methodology leveraging Splink."""
 
 import inspect
+import json
 from typing import Any
 
 import polars as pl
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from splink import DuckDBAPI, SettingsCreator
 from splink import Linker as SplinkLibLinkerClass
 from splink.internals.linker_components.training import LinkerTraining
@@ -48,13 +56,6 @@ class SplinkSettings(LinkerSettings):
     """A data class to enforce the Splink linker's settings dictionary shape."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    database_api: type[DuckDBAPI] = Field(
-        default=DuckDBAPI,
-        description="""
-            The Splink DB API, to choose between DuckDB (default) and Spark (untested)
-        """,
-    )
 
     linker_training_functions: list[SplinkLinkerFunction] = Field(
         description="""
@@ -156,6 +157,18 @@ class SplinkSettings(LinkerSettings):
         self.linker_settings.unique_id_column_name = self.left_id
         return self
 
+    @field_validator("linker_settings", mode="before")
+    def load_linker_settings(cls, value: str) -> SettingsCreator:
+        """Load serialised settings into SettingsCreator."""
+        if isinstance(value, str):
+            value = SettingsCreator.from_path_or_dict(json.loads(value))
+        return value
+
+    @field_serializer("linker_settings")
+    def serialize_timestamp(self, value: SettingsCreator, info: Any) -> str:
+        """Convert Splink settings to string."""
+        return json.dumps(value.create_settings_dict("duckdb"))
+
 
 class SplinkLinker(Linker):
     """A linker that leverages Bayesian record linkage using Splink."""
@@ -189,7 +202,7 @@ class SplinkLinker(Linker):
             input_table_or_tables=[left_pd, right_pd],
             input_table_aliases=["l", "r"],
             settings=self.settings.linker_settings,
-            db_api=self.settings.database_api(),
+            db_api=DuckDBAPI(),
         )
 
         for func in self.settings.linker_training_functions:

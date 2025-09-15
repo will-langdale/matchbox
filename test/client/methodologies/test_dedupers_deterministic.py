@@ -2,7 +2,9 @@
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import Mock, patch
 
+import polars as pl
 import pytest
 
 from matchbox.client.models import Model
@@ -58,7 +60,12 @@ DEDUPERS = [
 
 
 @pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
-def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurator):
+@patch.object(Query, "run")
+def test_no_deduplication(
+    mock_query_run: Mock,
+    Deduper: Deduper,
+    configure_deduper: DeduperConfigurator,
+):
     """Test deduplication where there aren't actually any duplicates."""
     # Create a source with exact duplicates
     features = (
@@ -80,22 +87,26 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
     )
 
     linked = linked_sources_factory(source_parameters=(source_parameters,), seed=42)
-    source = linked.sources["source_exact"]
+    source_testkit = linked.sources["source_exact"]
+
+    mock_query_run.return_value = pl.from_arrow(source_testkit.query)
+
+    # Mock query to server
 
     # Configure and run the deduper
     deduper = Model(
         name="exact_deduper",
         description="Deduplication of exact duplicates",
         model_class=Deduper,
-        model_settings=configure_deduper(source),
-        left_query=Query(source),
+        model_settings=configure_deduper(source_testkit),
+        left_query=Query(source_testkit.source),
     )
     results: Results = deduper.run()
 
     # Validate results against ground truth
     identical, report = linked.diff_results(
         probabilities=results.probabilities,
-        left_clusters=source.entities,
+        left_clusters=source_testkit.entities,
         right_clusters=None,
         sources=["source_exact"],
         threshold=0,
@@ -105,8 +116,9 @@ def test_no_deduplication(Deduper: Deduper, configure_deduper: DeduperConfigurat
 
 
 @pytest.mark.parametrize(("Deduper", "configure_deduper"), DEDUPERS)
+@patch.object(Query, "run")
 def test_exact_duplicate_deduplication(
-    Deduper: Deduper, configure_deduper: DeduperConfigurator
+    mock_query_run: Mock, Deduper: Deduper, configure_deduper: DeduperConfigurator
 ):
     """Test deduplication with exact duplicates."""
     # Create a source with exact duplicates
@@ -131,13 +143,15 @@ def test_exact_duplicate_deduplication(
     linked = linked_sources_factory(source_parameters=(source_parameters,), seed=42)
     source = linked.sources["source_exact"]
 
+    mock_query_run.return_value = pl.from_arrow(source.query)
+
     # Configure and run the deduper
     deduper = Model(
         name="exact_deduper",
         description="Deduplication of exact duplicates",
         model_class=Deduper,
         model_settings=configure_deduper(source),
-        left_query=Query(source),
+        left_query=Query(source.source),
     )
     results: Results = deduper.run()
 
