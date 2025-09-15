@@ -9,10 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import redis
-from celery import Celery
-from fastapi import (
-    UploadFile,
-)
+from celery import Celery, Task
+from fastapi import UploadFile
 from pyarrow import parquet as pq
 from pydantic import BaseModel
 
@@ -36,6 +34,11 @@ if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 else:
     S3Client = Any
+
+from celery.exceptions import MaxRetriesExceededError
+from celery.utils.log import get_task_logger
+
+celery_logger = get_task_logger(__name__)
 
 # -- Upload trackers --
 
@@ -262,6 +265,8 @@ CELERY_TRACKER: UploadTracker | None = None
 
 celery = Celery("matchbox", broker=CELERY_SETTINGS.redis_uri)
 celery.conf.update(
+    # Hard time limit for tasks (in seconds)
+    task_time_limit=CELERY_SETTINGS.uploads_expiry_minutes * 60,
     # Only acknowledge task (remove it from queue) after task completion
     task_acks_late=True,
     # Reduce pre-fetching (workers reserving tasks while they're still busy)
@@ -346,8 +351,9 @@ def process_upload(
             )
 
 
-@celery.task(ignore_result=True)
+@celery.task(ignore_result=True, bind=True, max_retries=3)
 def process_upload_celery(
+    self: Task,
     upload_type: str,
     resolution_name: str,
     upload_id: str,
@@ -357,15 +363,38 @@ def process_upload_celery(
     """Celery task to process uploaded file, with only serialisable arguments."""
     initialise_celery_worker()
 
-    partial(
+    celery_logger.info(
+        "Uploading data for resolution %s, ID %s", resolution_name, upload_id
+    )
+
+    upload_function = partial(
         process_upload,
         backend=CELERY_BACKEND,
         tracker=CELERY_TRACKER,
         s3_client=CELERY_BACKEND.settings.datastore.get_client(),
-    )(
-        upload_type=upload_type,
-        resolution_name=resolution_name,
-        upload_id=upload_id,
-        bucket=bucket,
-        filename=filename,
     )
+
+    try:
+        upload_function(
+            upload_type=upload_type,
+            resolution_name=resolution_name,
+            upload_id=upload_id,
+            bucket=bucket,
+            filename=filename,
+        )
+    except Exception as exc:  # noqa: BLE001
+        celery_logger.error(
+            "Upload failed for resolution %s, ID %s. Retrying...",
+            resolution_name,
+            upload_id,
+        )
+        try:
+            raise self.retry(exc=exc) from None
+        except MaxRetriesExceededError:
+            if CELERY_TRACKER:
+                CELERY_TRACKER.update(
+                    upload_id, UploadStage.FAILED, f"Max retries exceeded: {exc}"
+                )
+            raise
+
+    celery_logger.info("Upload complete for %s, ID %s", resolution_name, upload_id)
