@@ -1,12 +1,8 @@
-from unittest.mock import create_autospec
-
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 from pyarrow import Table
 
-from matchbox.client.models.linkers.base import Linker
-from matchbox.client.models.models import Model
 from matchbox.client.results import Results
 
 
@@ -47,16 +43,11 @@ def test_clusters_and_root_leaf():
         ]
     )
 
-    model = Model(
-        name="model",
-        description="description",
-        model_instance=create_autospec(Linker, instance=True),
-        left_resolution="source_a",
-        left_data=left_data,
-        right_resolution="source_b",
-        right_data=right_data,
+    results = Results(
+        probabilities=probabilities,
+        left_data=left_data.to_arrow(),
+        right_data=right_data.to_arrow(),
     )
-    results = Results(probabilities=probabilities, metadata=model.config, model=model)
 
     # Check two ways of representing clusters
     clusters = results.clusters_to_polars()
@@ -80,8 +71,8 @@ def test_clusters_and_root_leaf():
         probabilities=Table.from_pydict(
             {"left_id": [], "right_id": [], "probability": []}
         ),
-        metadata=model.config,
-        model=model,
+        left_data=left_data.to_arrow(),
+        right_data=right_data.to_arrow(),
     )
 
     assert len(empty_results.clusters_to_polars()) == 0
@@ -99,7 +90,6 @@ def test_clusters_and_root_leaf():
     )
 
     # The above was only possible because leaf IDs were present in the inputs
-    left_data.drop_in_place("leaf_id")
-    right_data.drop_in_place("leaf_id")
-    with pytest.raises(RuntimeError, match="must contain leaf IDs"):
-        results.root_leaf()
+    only_prob_results = Results(probabilities=probabilities)
+    with pytest.raises(RuntimeError, match="instantiated for validation"):
+        only_prob_results.root_leaf()

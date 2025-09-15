@@ -47,10 +47,14 @@ class Results:
         self.right_data = None
 
         if left_data is not None:
-            check_schema(expected=SCHEMA_QUERY_WITH_LEAVES, actual=left_data.schema)
+            check_schema(
+                expected=SCHEMA_QUERY_WITH_LEAVES, actual=left_data.schema, subset=True
+            )
             self.left_data = left_data
         if right_data is not None:
-            check_schema(expected=SCHEMA_QUERY_WITH_LEAVES, actual=right_data.schema)
+            check_schema(
+                expected=SCHEMA_QUERY_WITH_LEAVES, actual=right_data.schema, subset=True
+            )
             self.right_data = right_data
 
         if isinstance(probabilities, pl.DataFrame):
@@ -188,10 +192,13 @@ class Results:
                 "This Results object wasn't instantiated for validation features."
             )
 
-        parents_root_leaf = self.left_data.select(["id", "leaf_id"])
+        parents_root_leaf = pl.from_arrow(self.left_data.select(["id", "leaf_id"]))
         if self.right_data is not None:
             parents_root_leaf = pl.concat(
-                [parents_root_leaf, self.right_data.select(["id", "leaf_id"])]
+                [
+                    parents_root_leaf,
+                    pl.from_arrow(self.right_data.select(["id", "leaf_id"])),
+                ]
             )
 
         # Go from parent-child (where child could be the root of another model)

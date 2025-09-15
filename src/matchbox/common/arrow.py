@@ -77,7 +77,20 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
     return sink
 
 
-def check_schema(expected: Schema, actual: Schema) -> None:
-    """Validate equality of Arrow schemas."""
-    if expected != actual:
+def check_schema(expected: Schema, actual: Schema, subset: bool = False) -> None:
+    """Validate equality of Arrow schemas.
+
+    Args:
+        expected: Schema to check against
+        actual: Schema to check
+        subset: Whether a subset of the expected schema will pass validation
+    """
+    if subset:
+        actual = pa.schema(
+            [
+                (name, actual.field(name).type)
+                for name in set(expected.names) & set(actual.names)
+            ]
+        )
+    if expected.equals(actual):
         raise MatchboxArrowSchemaMismatch(expected=expected, actual=actual)
