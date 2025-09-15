@@ -1,5 +1,6 @@
 """ORM classes for the Matchbox PostgreSQL database."""
 
+import json
 from typing import Literal
 
 from sqlalchemy import (
@@ -296,13 +297,7 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         if self.type == ResolutionType.SOURCE:
             config = self.source_config.to_dto()
         else:
-            left_resolution = self.parents[0].name
-            right_resolution = self.parents[1].name if len(self.parents) > 1 else None
-            config = CommonModelConfig(
-                type=ModelType.LINKER if right_resolution else ModelType.DEDUPER,
-                left_resolution=left_resolution,
-                right_resolution=right_resolution,
-            )
+            config = self.model_config.to_dto()
 
         return CommonResolution(
             name=self.name,
@@ -640,7 +635,7 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
         # Create the SourceConfigs object
         return cls(
             model_class=config.model_class,
-            model_settings=str(config.model_settings),
+            model_settings=config.model_settings,
             left_query=config.left_query.model_dump_json(),
             right_query=(
                 None if not config.right_query else config.right_query.model_dump_json()
@@ -653,8 +648,8 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
             type=ModelType.LINKER if self.right_query else ModelType.DEDUPER,
             model_class=self.model_class,
             model_settings=self.model_settings,
-            left_query=self.left_query,
-            right_query=self.right_query,
+            left_query=json.loads(self.left_query),
+            right_query=json.loads(self.right_query) if self.right_query else None,
         )
 
 

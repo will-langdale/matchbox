@@ -165,7 +165,7 @@ class SplinkSettings(LinkerSettings):
         return value
 
     @field_serializer("linker_settings")
-    def serialize_timestamp(self, value: SettingsCreator, info: Any) -> str:
+    def serialise_timestamp(self, value: SettingsCreator, info: Any) -> str:
         """Convert Splink settings to string."""
         return json.dumps(value.create_settings_dict("duckdb"))
 

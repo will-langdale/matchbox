@@ -312,7 +312,7 @@ def test_get_truth(
 
 @pytest.mark.parametrize(
     "endpoint",
-    ["results", "truth"],
+    ["data", "truth"],
 )
 def test_model_get_endpoints_404(
     endpoint: str,
@@ -321,7 +321,7 @@ def test_model_get_endpoints_404(
     """Test 404 responses for model GET endpoints when model doesn't exist."""
     test_client, mock_backend, _ = api_client_and_mocks
     # Map endpoint to actual backend method name
-    method_name = "get_model_data" if endpoint == "results" else f"get_model_{endpoint}"
+    method_name = "get_model_data" if endpoint == "data" else f"get_model_{endpoint}"
     mock_method = getattr(mock_backend, method_name)
     mock_method.side_effect = MatchboxResolutionNotFoundError()
 

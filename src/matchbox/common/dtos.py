@@ -1,11 +1,13 @@
 """Data transfer objects for Matchbox API."""
 
+import json
 import re
 import textwrap
 from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
+from json import JSONDecodeError
 from typing import Self
 
 import polars as pl
@@ -13,7 +15,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    Json,
     field_validator,
     model_validator,
 )
@@ -375,7 +376,7 @@ class QueryConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     source_resolutions: tuple[SourceResolutionName, ...]
-    model_resolution: ModelResolutionName | None
+    model_resolution: ModelResolutionName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
@@ -411,7 +412,7 @@ class ModelConfig(BaseModel):
 
     type: ModelType
     model_class: str
-    model_settings: Json
+    model_settings: str
     left_query: QueryConfig
     right_query: QueryConfig | None = None  # Only used for linker models
 
@@ -435,6 +436,16 @@ class ModelConfig(BaseModel):
         if self.type == ModelType.LINKER and self.right_query is None:
             raise ValueError("Right query must be set for linkers")
         return self
+
+    @field_validator("model_settings", mode="after")
+    @classmethod
+    def validate_settings_json(cls, value: str) -> str:
+        """Ensure that the model settings is valid JSON."""
+        try:
+            isinstance(json.loads(value), dict)
+        except JSONDecodeError as e:
+            raise ValueError("Model settings are not valid JSON") from e
+        return value
 
 
 class Match(BaseModel):

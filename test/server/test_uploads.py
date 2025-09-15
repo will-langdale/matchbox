@@ -14,6 +14,7 @@ from matchbox.common.dtos import (
     BackendUploadType,
     ModelConfig,
     ModelType,
+    QueryConfig,
     Resolution,
     UploadStage,
 )
@@ -59,7 +60,7 @@ def test_file_to_s3(s3: S3Client):
             },
         ],
     )
-    all_companies = source_testkit.query.to_pandas()
+    all_companies = source_testkit.data.to_pandas()
 
     # Test 1: Upload a parquet file
     # Create a mock UploadFile
@@ -148,7 +149,9 @@ class TestUploadTracker:
             truth=100,
             config=ModelConfig(
                 type=ModelType.DEDUPER,
-                left_resolution="resolution",
+                left_query=QueryConfig(source_resolutions=["source"]),
+                model_class="NaiveDeduper",
+                model_settings="{}",
             ),
         )
 
