@@ -308,8 +308,7 @@ def create_resolution(
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post("/resolutions", json=resolution.model_dump())
-    if resolution.resolution_type == ResolutionType.SOURCE:
-        return UploadStatus.model_validate(res.json())
+
     return ResolutionOperationStatus.model_validate(res.json())
 
 
@@ -327,9 +326,7 @@ def get_resolution(name: ResolutionName) -> Resolution | None:
 
 
 @http_retry
-def set_data(
-    name: ResolutionName, data: Table, resolution_type: ResolutionType
-) -> UploadStatus:
+def set_data(name: ResolutionName, data: Table) -> UploadStatus:
     """Upload source hashes or model results to server."""
     log_prefix = f"Model {name}"
     logger.debug("Uploading results", prefix=log_prefix)

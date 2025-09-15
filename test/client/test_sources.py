@@ -1,9 +1,12 @@
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import polars as pl
 import pyarrow as pa
 import pytest
+from httpx import Response
 from polars.testing import assert_frame_equal
+from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import OperationalError
 from sqlglot import select
@@ -13,8 +16,21 @@ from matchbox.client.sources import (
     RelationalDBLocation,
     Source,
 )
-from matchbox.common.dtos import DataTypes, LocationType, SourceField
+from matchbox.common.dtos import (
+    BackendResourceType,
+    BackendUploadType,
+    CRUDOperation,
+    DataTypes,
+    LocationType,
+    NotFoundError,
+    Resolution,
+    ResolutionOperationStatus,
+    SourceField,
+    UploadStage,
+    UploadStatus,
+)
 from matchbox.common.exceptions import (
+    MatchboxServerFileError,
     MatchboxSourceExtractTransformError,
 )
 from matchbox.common.factories.sources import (
@@ -22,6 +38,7 @@ from matchbox.common.factories.sources import (
     source_factory,
     source_from_tuple,
 )
+from matchbox.common.graph import ResolutionType
 
 # Locations
 
@@ -485,3 +502,91 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
     # hash_data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):
         source.hash_data()
+
+
+def test_sync_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Test successful source syncing flow through the API."""
+    # Mock Source
+    testkit = source_factory(
+        features=[{"name": "company_name", "base_generator": "company"}],
+        engine=sqlite_warehouse,
+    ).write_to_location()
+
+    # Mock the routes
+    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Model not found", entity=BackendResourceType.RESOLUTION
+            ).model_dump(),
+        )
+    )
+    insert_config_route = matchbox_api.post("/resolutions").mock(
+        return_value=Response(
+            201,
+            json=ResolutionOperationStatus(
+                success=True,
+                name=testkit.source.name,
+                operation=CRUDOperation.CREATE,
+            ).model_dump(),
+        )
+    )
+    matchbox_api.post(f"/resolutions/{testkit.source.name}/data").mock(
+        return_value=Response(
+            202,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.AWAITING_UPLOAD,
+                update_timestamp=datetime.now(),
+                entity=BackendUploadType.RESULTS,
+            ).model_dump_json(),
+        )
+    )
+
+    # Mock the data upload
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
+        return_value=Response(
+            202,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.COMPLETE,
+                update_timestamp=datetime.now(),
+                entity=BackendUploadType.INDEX,
+            ).model_dump_json(),
+        )
+    )
+
+    # Index the source
+    testkit.source.run()
+    testkit.source.sync()
+
+    # Verify the API calls
+    resolution_call = Resolution.model_validate_json(
+        insert_config_route.calls.last.request.content.decode("utf-8")
+    )
+    # Check key fields match (allowing for different descriptions)
+    assert resolution_call.name == testkit.source.to_resolution().name
+    assert resolution_call.resolution_type == ResolutionType.SOURCE
+    assert resolution_call.config == testkit.source.to_resolution().config
+    assert "test-upload-id" in upload_route.calls.last.request.url.path
+    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
+    assert b"PAR1" in upload_route.calls.last.request.content
+
+    # Now check client handling of server error
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
+        return_value=Response(
+            400,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.FAILED,
+                update_timestamp=datetime.now(),
+                details="Invalid schema",
+                entity=BackendUploadType.INDEX,
+            ).model_dump_json(),
+        )
+    )
+
+    # Verify the error is propagated
+    with pytest.raises(MatchboxServerFileError):
+        testkit.source.run()
+        testkit.source.sync()
