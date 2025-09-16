@@ -137,16 +137,18 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.name, validate=ResolutionType.SOURCE
+                crn_testkit.name, validate=ResolutionType.SOURCE
             )
-            # Equality between the two is False because one lacks the Engine
-            assert (
-                crn_testkit.source_config.model_dump()
-                == crn_retrieved.config.model_dump()
-            )
+            assert isinstance(crn_retrieved, Resolution)
+            assert crn_testkit.source_config == crn_retrieved.config
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(name="foo", validate=ResolutionType.SOURCE)
+
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(
+                    name=crn_testkit.name, validate=ResolutionType.MODEL
+                )
 
     def test_get_resolution_sources(self):
         """Test retrieving sources available to a resolution."""
@@ -185,16 +187,25 @@ class TestMatchboxBackend:
 
     def test_get_model(self):
         """Test getting a model from the database."""
-        with self.scenario(self.backend, "dedupe"):
-            model = self.backend.get_resolution(
-                name="naive_test_crn", validate=ResolutionType.MODEL
+        with self.scenario(self.backend, "dedupe") as dag:
+            model_testkit = dag.models.get("naive_test_crn")
+
+            model_retrieved = self.backend.get_resolution(
+                name=model_testkit.name, validate=ResolutionType.MODEL
             )
-            assert isinstance(model, Resolution)
-            assert isinstance(model.config, ModelConfig)
+
+            assert isinstance(model_retrieved, Resolution)
+
+            assert model_testkit.model.config == model_retrieved.config
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(
                     name="nonexistent", validate=ResolutionType.MODEL
+                )
+
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(
+                    name=model_testkit.name, validate=ResolutionType.SOURCE
                 )
 
     def test_delete_resolution(self):
