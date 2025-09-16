@@ -11,6 +11,7 @@ from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
 from matchbox.common.dtos import ModelConfig, ModelType, Resolution
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.graph import ResolutionType
 from matchbox.common.logging import logger
 
@@ -196,16 +197,21 @@ class Model:
     def sync(self) -> None:
         """Send the model config, truth and results to the server."""
         resolution = self.to_resolution()
-        if existing_resolution := _handler.get_resolution(name=self.name):
-            # Check if config matches
+        try:
+            existing_resolution = _handler.get_resolution(name=self.name)
+        except MatchboxResolutionNotFoundError:
+            existing_resolution = None
+        # Check if config matches
+        if existing_resolution:
             if existing_resolution.config != self.config:
                 raise ValueError(
                     f"Resolution {self.name} already exists with different "
                     "configuration. Please delete the existing resolution "
                     "or use a different name. "
                 )
-            log_prefix = f"Resolution {self.name}"
-            logger.warning("Already exists. Passing.", prefix=log_prefix)
+            else:
+                log_prefix = f"Resolution {self.name}"
+                logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
             _handler.create_resolution(resolution=resolution)
 

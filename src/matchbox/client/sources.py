@@ -34,6 +34,7 @@ from matchbox.common.dtos import (
     SourceField,
 )
 from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
     MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
@@ -583,16 +584,21 @@ class Source:
     def sync(self) -> None:
         """Send the source config and hashes to the server."""
         resolution = self.to_resolution()
-        if existing_resolution := _handler.get_resolution(name=self.name):
-            # Check if config matches
+        try:
+            existing_resolution = _handler.get_resolution(name=self.name)
+        except MatchboxResolutionNotFoundError:
+            existing_resolution = None
+        # Check if config matches
+        if existing_resolution:
             if existing_resolution.config != self.config:
                 raise ValueError(
                     f"Resolution {self.name} already exists with different "
                     "configuration. Please delete the existing resolution "
                     "or use a different name. "
                 )
-            log_prefix = f"Resolution {self.name}"
-            logger.warning("Already exists. Passing.", prefix=log_prefix)
+            else:
+                log_prefix = f"Resolution {self.name}"
+                logger.warning("Already exists. Passing.", prefix=log_prefix)
         else:
             _handler.create_resolution(resolution=resolution)
 

@@ -3,6 +3,7 @@
 import time
 import zipfile
 from collections.abc import Iterable
+from enum import StrEnum
 from importlib.metadata import version
 from io import BytesIO
 
@@ -82,7 +83,7 @@ def encode_param_value(
 ) -> str | list[str]:
     if isinstance(v, str):
         return v
-    elif isinstance(v, int | float):
+    if isinstance(v, StrEnum | int | float):
         return str(v)
     elif isinstance(v, bytes):
         return hash_to_base64(v)
@@ -295,16 +296,18 @@ def create_resolution(
 
 
 @http_retry
-def get_resolution(name: ResolutionName) -> Resolution | None:
+def get_resolution(
+    name: ResolutionName, validate_type: ResolutionType | None = None
+) -> Resolution | None:
     """Get a resolution from Matchbox."""
     log_prefix = f"Resolution {name}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
-    try:
-        res = CLIENT.get(f"/resolutions/{name}")
-        return Resolution.model_validate(res.json())
-    except MatchboxResolutionNotFoundError:
-        return None
+    res = CLIENT.get(
+        f"/resolutions/{name}",
+        params=url_params({"validate_type": validate_type}),
+    )
+    return Resolution.model_validate(res.json())
 
 
 @http_retry
