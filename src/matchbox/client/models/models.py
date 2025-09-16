@@ -125,12 +125,12 @@ class Model:
             config=self.config,
         )
 
+    @classmethod
     def from_resolution(cls, resolution: Resolution) -> "Model":
         """Reconstruct from Resolution."""
-        assert resolution.resolution_type == "model", (
-            "Resolution must be of type 'model'"
-        )
-        assert isinstance(resolution.config, ModelConfig), "Config must be ModelConfig"
+        if resolution.resolution_type != ResolutionType.MODEL:
+            raise ValueError("Resolution must be of type 'model'")
+
         return cls(
             name=resolution.name,
             description=resolution.description,

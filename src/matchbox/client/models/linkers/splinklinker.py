@@ -158,14 +158,14 @@ class SplinkSettings(LinkerSettings):
         return self
 
     @field_validator("linker_settings", mode="before")
-    def load_linker_settings(cls, value: str) -> SettingsCreator:
+    def load_linker_settings(cls, value: str | SettingsCreator) -> SettingsCreator:
         """Load serialised settings into SettingsCreator."""
         if isinstance(value, str):
             value = SettingsCreator.from_path_or_dict(json.loads(value))
         return value
 
     @field_serializer("linker_settings")
-    def serialise_timestamp(self, value: SettingsCreator, info: Any) -> str:
+    def serialise_settings(self, value: SettingsCreator, info: Any) -> str:
         """Convert Splink settings to string."""
         return json.dumps(value.create_settings_dict("duckdb"))
 

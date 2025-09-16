@@ -415,21 +415,18 @@ class Source:
     @classmethod
     def from_resolution(cls, resolution: Resolution, location: Location) -> "Source":
         """Reconstruct from Resolution."""
-        assert resolution.resolution_type == ResolutionType.SOURCE, (
-            "Resolution must be of type 'source'"
-        )
-        assert isinstance(resolution.config, SourceConfig), (
-            "Config must be SourceConfig"
-        )
+        if resolution.resolution_type != ResolutionType.SOURCE:
+            raise ValueError("Resolution must be of type 'source'")
 
-        # Create a new Source instance
-        source = cls.__new__(cls)  # Create without calling __init__
-        source.location = location
-        source.name = resolution.name
-        source.description = resolution.description
-        source.config = resolution.config
-
-        return source
+        return cls(
+            location=location,
+            name=resolution.name,
+            extract_transform=resolution.config.extract_transform,
+            key_field=resolution.config.key_field,
+            index_fields=resolution.config.index_fields,
+            description=resolution.description,
+            infer_types=False,
+        )
 
     def __hash__(self) -> int:
         """Return a hash of the Source based on its config."""
