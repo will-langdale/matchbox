@@ -39,17 +39,17 @@ class Results:
     def __init__(
         self,
         probabilities: pa.Table | pl.DataFrame,
-        left_data: pa.Table | None = None,
-        right_data: pa.Table | None = None,
+        left_root_leaf: pa.Table | None = None,
+        right_root_leaf: pa.Table | None = None,
     ) -> None:
         """Initialises and validates results."""
-        self.left_data = None
-        self.right_data = None
+        self.left_root_leaf = None
+        self.right_root_leaf = None
 
-        if left_data is not None:
-            self.left_data = left_data
-        if right_data is not None:
-            self.right_data = right_data
+        if left_root_leaf is not None:
+            self.left_root_leaf = left_root_leaf
+        if right_root_leaf is not None:
+            self.right_root_leaf = right_root_leaf
 
         if isinstance(probabilities, pl.DataFrame):
             probabilities = probabilities.to_arrow()
@@ -156,10 +156,6 @@ class Results:
             right_merge_col="right_id",
         )
 
-    def clusters_to_polars(self) -> pl.DataFrame:
-        """Returns the cluster results as a polars DataFrame."""
-        return pl.from_arrow(self.clusters)
-
     def inspect_clusters(
         self,
         left_data: pl.DataFrame,
@@ -169,7 +165,7 @@ class Results:
     ) -> pl.DataFrame:
         """Enriches the cluster results with the source data."""
         return self._merge_with_source_data(
-            base_df=self.clusters_to_polars(),
+            base_df=pl.from_arrow(self.clusters),
             base_df_cols=["parent", "child", "probability"],
             left_data=left_data,
             left_key=left_key,
@@ -181,17 +177,17 @@ class Results:
 
     def root_leaf(self):
         """Returns all roots and leaves implied by these results."""
-        if self.left_data is None:
+        if self.left_root_leaf is None:
             raise RuntimeError(
                 "This Results object wasn't instantiated for validation features."
             )
 
-        parents_root_leaf = pl.from_arrow(self.left_data.select(["id", "leaf_id"]))
-        if self.right_data is not None:
+        parents_root_leaf = pl.from_arrow(self.left_root_leaf.select(["id", "leaf_id"]))
+        if self.right_root_leaf is not None:
             parents_root_leaf = pl.concat(
                 [
                     parents_root_leaf,
-                    pl.from_arrow(self.right_data.select(["id", "leaf_id"])),
+                    pl.from_arrow(self.right_root_leaf.select(["id", "leaf_id"])),
                 ]
             )
 

@@ -3,8 +3,6 @@
 import inspect
 from typing import ParamSpec, TypeVar, overload
 
-import polars as pl
-
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.models import dedupers, linkers
@@ -12,7 +10,7 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.dtos import ModelConfig, ModelType, QueryCombineType, Resolution
+from matchbox.common.dtos import ModelConfig, ModelType, Resolution
 from matchbox.common.graph import ResolutionType
 from matchbox.common.logging import logger
 
@@ -166,51 +164,42 @@ class Model:
             for_validation: Whether to download and store extra data to explore and
                     score results.
         """
-        left_df: pl.DataFrame = self.left_query.run(
-            return_leaf_id=(
-                for_validation
-                and self.left_query.config.combine_type == QueryCombineType.CONCAT
-            ),
-            batch_size=settings.batch_size,
-        )
         right_df = None
-
-        if self.config.type == ModelType.LINKER:
-            right_df: pl.DataFrame = self.right_query.run(
-                return_leaf_id=(
-                    for_validation
-                    and self.right_query.config.combine_type == QueryCombineType.CONCAT
-                ),
-                batch_size=settings.batch_size,
+        if for_validation:
+            left_df, left_root_leaf = self.left_query.run(
+                return_leaf_id=True, batch_size=settings.batch_size
             )
 
-            self.model_instance.prepare(left_df, right_df)
-            results = self.model_instance.link(left=left_df, right=right_df)
-        else:
-            self.model_instance.prepare(left_df)
-            results = self.model_instance.dedupe(data=left_df)
+            if self.config.type == ModelType.LINKER:
+                right_df, right_root_leaf = self.right_query.run(
+                    return_leaf_id=True, batch_size=settings.batch_size
+                )
 
-        if not for_validation:
-            self.results = Results(probabilities=results)
-        else:
-            # Depending on the query combine type, the queries might need to be repeated
-            if self.left_query.config.combine_type != QueryCombineType.CONCAT:
-                left_df: pl.DataFrame = self.left_query.model_copy(
-                    update={"combine_type": QueryCombineType.CONCAT}
-                ).run(return_leaf_id=True, batch_size=settings.batch_size)
+                self.model_instance.prepare(left_df, right_df)
+                results = self.model_instance.link(left=left_df, right=right_df)
+            else:
+                self.model_instance.prepare(left_df)
+                results = self.model_instance.dedupe(data=left_df)
 
-            if (
-                self.right_query
-                and self.right_query.config.combine_type != QueryCombineType.CONCAT
-            ):
-                right_df: pl.DataFrame = self.right_query.model_copy(
-                    update={"combine_type": QueryCombineType.CONCAT}
-                ).run(return_leaf_id=True, batch_size=settings.batch_size)
             self.results = Results(
                 probabilities=results,
-                left_data=left_df.to_arrow(),
-                right_data=right_df.to_arrow() if right_df is not None else None,
+                left_root_leaf=left_root_leaf.to_arrow(),
+                right_root_leaf=right_root_leaf.to_arrow()
+                if right_df is not None
+                else None,
             )
+        else:
+            left_df = self.left_query.run(batch_size=settings.batch_size)
+            if self.config.type == ModelType.LINKER:
+                right_df = self.right_query.run(batch_size=settings.batch_size)
+
+                self.model_instance.prepare(left_df, right_df)
+                results = self.model_instance.link(left=left_df, right=right_df)
+            else:
+                self.model_instance.prepare(left_df)
+                results = self.model_instance.dedupe(data=left_df)
+
+            self.results = Results(probabilities=results)
 
         return self.results
 

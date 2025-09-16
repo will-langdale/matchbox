@@ -1,6 +1,6 @@
 """Definition of model inputs."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 import polars as pl
 from polars import DataFrame as PolarsDataFrame
@@ -67,12 +67,28 @@ class Query:
             cleaning=cleaning,
         )
 
+    @overload
     def run(
         self,
         return_type: QueryReturnType = QueryReturnType.POLARS,
         return_leaf_id: bool = False,
         batch_size: int | None = None,
-    ) -> QueryReturnClass:
+    ) -> QueryReturnClass: ...
+
+    @overload
+    def run(
+        self,
+        return_type: QueryReturnType = QueryReturnType.POLARS,
+        return_leaf_id: bool = True,
+        batch_size: int | None = None,
+    ) -> tuple[QueryReturnClass, PolarsDataFrame]: ...
+
+    def run(
+        self,
+        return_type: QueryReturnType = QueryReturnType.POLARS,
+        return_leaf_id: bool = False,
+        batch_size: int | None = None,
+    ) -> QueryReturnClass | tuple[QueryReturnClass, PolarsDataFrame]:
         """Runs queries against the selected backend.
 
         Args:
@@ -84,10 +100,10 @@ class Query:
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
 
-        Returns: Data in the requested return type (DataFrame or ArrowTable).
+        Returns: Data in the requested return type. By default, just the query results.
+            If return_leaf_id is True, a 2-tuple, where the second value is a Polars
+            dataframe mapping matchbox root IDs to matchbox leaf IDs.
         """
-        if return_leaf_id and self.config.combine_type != QueryCombineType.CONCAT:
-            raise ValueError("Can only return leaf IDs if the return type is `concat`.")
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
             mb_ids = pl.from_arrow(
@@ -121,35 +137,46 @@ class Query:
 
         # Make sure we have some results
         if not tables:
-            result = pl.DataFrame()
+            data = pl.DataFrame()
+            leaf_id = pl.DataFrame()
         else:
             # Combine results based on combine_type
-            if self.config.combine_type == QueryCombineType.CONCAT:
-                result = pl.concat(tables, how="diagonal")
-            else:
-                result = tables[0]
-                for table in tables[1:]:
-                    result = result.join(table, on="id", how="full", coalesce=True)
+            if return_leaf_id:
+                concatenated = pl.concat(tables, how="diagonal")
+                leaf_id = concatenated.select(["id", "leaf_id"])
 
-                result = result.select(["id", pl.all().exclude("id")])
+            if self.config.combine_type == QueryCombineType.CONCAT:
+                if return_leaf_id:
+                    data = concatenated.drop(["id", "leaf_id"])
+                else:
+                    data = pl.concat(tables, how="diagonal")
+            else:
+                data = tables[0]
+                for table in tables[1:]:
+                    data = data.join(table, on="id", how="full", coalesce=True)
+
+                data = data.select(["id", pl.all().exclude("id")])
 
                 if self.config.combine_type == QueryCombineType.SET_AGG:
                     # Aggregate into lists
                     agg_expressions = [
-                        pl.col(col).unique() for col in result.columns if col != "id"
+                        pl.col(col).unique() for col in data.columns if col != "id"
                     ]
-                    result = result.group_by("id").agg(agg_expressions)
+                    data = data.group_by("id").agg(agg_expressions)
 
-        result = clean(result, self.config.cleaning)
+        data = clean(data, self.config.cleaning)
 
         match return_type:
             case QueryReturnType.POLARS:
-                return result
+                pass
             case QueryReturnType.PANDAS:
-                return result.to_pandas()
+                data = data.to_pandas()
             case QueryReturnType.ARROW:
-                return result.to_arrow()
+                data = data.to_arrow()
             case _:
                 raise ValueError(f"Return type {return_type} is invalid")
 
-        return result
+        if return_leaf_id:
+            return data, leaf_id
+
+        return data
