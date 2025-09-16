@@ -24,6 +24,7 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
+    MatchboxServerFileError,
 )
 from matchbox.common.factories.models import MockLinker, model_factory
 from matchbox.common.factories.sources import source_factory
@@ -193,6 +194,32 @@ def test_model_sync(matchbox_api: MockRouter):
     assert (
         b"PAR1" in upload_route.calls.last.request.content
     )  # Check for parquet file signature
+
+    # Mock the upload endpoint with a failure
+    matchbox_api.post("/upload/test-upload-id").mock(
+        return_value=Response(
+            400,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.FAILED,
+                update_timestamp=datetime.now(),
+                entity=BackendUploadType.RESULTS,
+                details="Invalid data format",
+            ).model_dump_json(),
+        )
+    )
+
+    with pytest.raises(MatchboxServerFileError, match="Invalid data format"):
+        testkit.model.sync()
+
+    # Mock earlier endpoint generating a name clash
+    source = source_factory().source
+    matchbox_api.get(f"/resolutions/{testkit.model.name}").mock(
+        return_value=Response(200, json=source.to_resolution().model_dump())
+    )
+
+    with pytest.raises(ValueError, match="existing resolution"):
+        testkit.model.sync()
 
 
 def test_truth_getter():

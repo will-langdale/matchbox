@@ -33,6 +33,7 @@ from matchbox.common.exceptions import (
     MatchboxServerFileError,
     MatchboxSourceExtractTransformError,
 )
+from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import (
     FeatureConfig,
     source_factory,
@@ -501,8 +502,8 @@ def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: En
         source.run()
 
 
-def test_sync_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Test successful source syncing flow through the API."""
+def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Test source syncing flow through the API."""
     # Mock Source
     testkit = source_factory(
         features=[{"name": "company_name", "base_generator": "company"}],
@@ -570,7 +571,7 @@ def test_sync_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     assert b"PAR1" in upload_route.calls.last.request.content
 
     # Now check client handling of server error
-    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
+    matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             400,
             content=UploadStatus(
@@ -585,5 +586,13 @@ def test_sync_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
     # Verify the error is propagated
     with pytest.raises(MatchboxServerFileError):
-        testkit.source.run()
+        testkit.source.sync()
+
+    # Mock earlier endpoint generating a name clash
+    model = model_factory().model
+    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
+        return_value=Response(200, json=model.to_resolution().model_dump())
+    )
+
+    with pytest.raises(ValueError, match="existing resolution"):
         testkit.source.sync()
