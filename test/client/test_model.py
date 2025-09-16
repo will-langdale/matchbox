@@ -1,8 +1,6 @@
 import json
 from datetime import datetime
-from unittest.mock import Mock, patch
 
-import polars as pl
 import pyarrow as pa
 import pytest
 from httpx import Response
@@ -12,7 +10,7 @@ from matchbox.client.models import Model, add_model_class
 from matchbox.client.models.linkers.base import LinkerSettings
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.arrow import SCHEMA_QUERY_WITH_LEAVES
+from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
     BackendUploadType,
@@ -31,18 +29,40 @@ from matchbox.common.factories.models import MockLinker, model_factory
 from matchbox.common.factories.sources import source_factory
 
 
-@patch("matchbox.client.models.models.Query.run")
-def test_init_and_run_model(mock_run: Mock):
+def test_init_and_run_model(matchbox_api: MockRouter):
     """Test that model can be initialised and run correctly."""
     # Register "custom" model
     add_model_class(MockLinker)
 
-    foo_query = Query(source_factory().source)
-    bar_query = Query(source_factory().source)
+    # Mock API
+    foo = source_factory().write_to_location()
+    bar = source_factory().write_to_location()
 
-    mock_run.return_value = pl.from_arrow(
-        pa.Table.from_pylist([], schema=SCHEMA_QUERY_WITH_LEAVES)
+    foo_leafy_data = foo.data.append_column(
+        "leaf_id", pa.array(range(len(foo.data)), type=pa.int64())
     )
+    bar_leafy_data = foo.data.append_column(
+        "leaf_id",
+        pa.array(
+            range(len(foo_leafy_data), len(foo_leafy_data) + len(bar.data)),
+            type=pa.int64(),
+        ),
+    )
+
+    # Mock API
+    matchbox_api.get("/query").mock(
+        side_effect=[
+            # First query
+            Response(200, content=table_to_buffer(foo.data).read()),
+            Response(200, content=table_to_buffer(bar.data).read()),
+            # Second query (for validation)
+            Response(200, content=table_to_buffer(foo_leafy_data).read()),
+            Response(200, content=table_to_buffer(bar_leafy_data).read()),
+        ]
+    )
+
+    foo_query = Query(foo.source)
+    bar_query = Query(bar.source)
 
     model = Model(
         name="name",
@@ -62,12 +82,12 @@ def test_init_and_run_model(mock_run: Mock):
     )
 
     model.run()
-    assert model.results.left_data is None
-    assert model.results.right_data is None
+    assert model.results.left_root_leaf is None
+    assert model.results.right_root_leaf is None
 
     model.run(for_validation=True)
-    assert model.results.left_data is not None
-    assert model.results.right_data is not None
+    assert model.results.left_root_leaf is not None
+    assert model.results.right_root_leaf is not None
 
 
 def test_model_sync(matchbox_api: MockRouter):

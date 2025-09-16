@@ -85,6 +85,9 @@ class Query:
                 Default is None.
 
         Returns: Data in the requested return type
+
+        Raises:
+            MatchboxEmptyServerResponse: If no data was returned by the server.
         """
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
@@ -117,33 +120,29 @@ class Query:
         # Process all data and return a single result
         tables: list[PolarsDataFrame] = list(source_results)
 
-        # Make sure we have some results
-        if not tables:
-            data = pl.DataFrame()
-        else:
-            # Combine results based on combine_type
-            if return_leaf_id:
-                concatenated = pl.concat(tables, how="diagonal")
-                self.leaf_id = concatenated.select(["id", "leaf_id"])
+        # Combine results based on combine_type
+        if return_leaf_id:
+            concatenated = pl.concat(tables, how="diagonal")
+            self.leaf_id = concatenated.select(["id", "leaf_id"])
 
-            if self.config.combine_type == QueryCombineType.CONCAT:
-                if return_leaf_id:  # can reuse the concatenated dataframe
-                    data = concatenated.drop(["id", "leaf_id"])
-                else:
-                    data = pl.concat(tables, how="diagonal")
+        if self.config.combine_type == QueryCombineType.CONCAT:
+            if return_leaf_id:  # can reuse the concatenated dataframe
+                data = concatenated.drop(["id", "leaf_id"])
             else:
-                data = tables[0]
-                for table in tables[1:]:
-                    data = data.join(table, on="id", how="full", coalesce=True)
+                data = pl.concat(tables, how="diagonal")
+        else:
+            data = tables[0]
+            for table in tables[1:]:
+                data = data.join(table, on="id", how="full", coalesce=True)
 
-                data = data.select(["id", pl.all().exclude("id")])
+            data = data.select(["id", pl.all().exclude("id")])
 
-                if self.config.combine_type == QueryCombineType.SET_AGG:
-                    # Aggregate into lists
-                    agg_expressions = [
-                        pl.col(col).unique() for col in data.columns if col != "id"
-                    ]
-                    data = data.group_by("id").agg(agg_expressions)
+            if self.config.combine_type == QueryCombineType.SET_AGG:
+                # Aggregate into lists
+                agg_expressions = [
+                    pl.col(col).unique() for col in data.columns if col != "id"
+                ]
+                data = data.group_by("id").agg(agg_expressions)
 
         data = clean(data, self.config.cleaning)
 

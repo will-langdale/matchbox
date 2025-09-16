@@ -10,13 +10,13 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from faker import Faker
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Engine, create_engine
 from sqlglot import cast, select
 from sqlglot.expressions import column
 
 from matchbox.client.sources import RelationalDBLocation, Source
-from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
 from matchbox.common.dtos import (
     DataTypes,
     SourceConfig,
@@ -103,6 +103,15 @@ class SourceTestkit(BaseModel):
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
     )
+
+    @field_validator("data")
+    def cast_table(cls, value: pa.Table) -> pa.Table:
+        """Ensure that the data matches the query schema."""
+        for col in SCHEMA_QUERY.names:
+            cast_col = value[col].cast(SCHEMA_QUERY.field(col).type)
+            value = value.set_column(value.schema.get_field_index(col), col, cast_col)
+
+        return value
 
     @property
     def name(self) -> str:
