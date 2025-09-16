@@ -127,13 +127,18 @@ class Query:
 
         if self.config.combine_type == QueryCombineType.CONCAT:
             if return_leaf_id:  # can reuse the concatenated dataframe
-                data = concatenated.drop(["id", "leaf_id"])
+                data = concatenated.drop(["leaf_id"])
             else:
                 data = pl.concat(tables, how="diagonal")
         else:
-            data = tables[0]
+            data = tables[0].drop("leaf_id", strict=False)
             for table in tables[1:]:
-                data = data.join(table, on="id", how="full", coalesce=True)
+                data = data.join(
+                    table.drop("leaf_id", strict=False),
+                    on="id",
+                    how="full",
+                    coalesce=True,
+                )
 
             data = data.select(["id", pl.all().exclude("id")])
 

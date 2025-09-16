@@ -9,27 +9,27 @@ from matchbox.client.results import Results
 def test_clusters_and_root_leaf():
     """From a results object, we can derive clusters at various levels."""
     # Prepare dummy data and model
-    left_data = pl.DataFrame(
+    left_root_leaf = pl.DataFrame(
         [
             # Two keys per root
-            {"foo": "a", "id": 10, "leaf_id": 1, "key": "1"},
-            {"foo": "a", "id": 10, "leaf_id": 1, "key": "1bis"},
-            # Two leaves per root
-            {"foo": "b", "id": 20, "leaf_id": 2, "key": "2"},
-            {"foo": "c", "id": 20, "leaf_id": 3, "key": "3"},
+            {"id": 10, "leaf_id": 1},
+            {"id": 10, "leaf_id": 1},
+            # Two leaves per root (same representation)
+            {"id": 20, "leaf_id": 2},
+            {"id": 20, "leaf_id": 3},
             # Singleton cluster with two keys
-            {"foo": "d", "id": 4, "leaf_id": 4, "key": "4"},
-            {"foo": "d", "id": 4, "leaf_id": 4, "key": "4bis"},
+            {"id": 4, "leaf_id": 4},
+            {"id": 4, "leaf_id": 4},
         ]
     )
 
-    right_data = pl.DataFrame(
+    right_root_leaf = pl.DataFrame(
         # For simplicity, all these are singleton clusters
         [
-            {"foo": "d", "id": 5, "leaf_id": 5, "key": "5"},
-            {"foo": "a", "id": 6, "leaf_id": 6, "key": "6"},
-            {"foo": "a", "id": 7, "leaf_id": 7, "key": "7"},
-            {"foo": "b", "id": 8, "leaf_id": 8, "key": "8"},
+            {"id": 5, "leaf_id": 5},
+            {"id": 6, "leaf_id": 6},
+            {"id": 7, "leaf_id": 7},
+            {"id": 8, "leaf_id": 8},
         ]
     )
 
@@ -45,12 +45,12 @@ def test_clusters_and_root_leaf():
 
     results = Results(
         probabilities=probabilities,
-        left_data=left_data.to_arrow(),
-        right_data=right_data.to_arrow(),
+        left_root_leaf=left_root_leaf.to_arrow(),
+        right_root_leaf=right_root_leaf.to_arrow(),
     )
 
     # Check two ways of representing clusters
-    clusters = results.clusters_to_polars()
+    clusters = pl.from_arrow(results.clusters)
     grouped_children = {
         tuple(sorted(group))
         for group in clusters.group_by("parent").agg("child")["child"]
@@ -71,15 +71,15 @@ def test_clusters_and_root_leaf():
         probabilities=Table.from_pydict(
             {"left_id": [], "right_id": [], "probability": []}
         ),
-        left_data=left_data.to_arrow(),
-        right_data=right_data.to_arrow(),
+        left_root_leaf=left_root_leaf.to_arrow(),
+        right_root_leaf=right_root_leaf.to_arrow(),
     )
 
-    assert len(empty_results.clusters_to_polars()) == 0
+    assert len(empty_results.clusters) == 0
     expected_empty_root_leaf = pl.concat(
         [
-            left_data.select(["id", "leaf_id"]).rename({"id": "root_id"}),
-            right_data.select(["id", "leaf_id"]).rename({"id": "root_id"}),
+            left_root_leaf.rename({"id": "root_id"}),
+            right_root_leaf.rename({"id": "root_id"}),
         ]
     ).unique()
     assert_frame_equal(

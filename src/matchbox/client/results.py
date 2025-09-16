@@ -194,7 +194,7 @@ class Results:
         # Go from parent-child (where child could be the root of another model)
         # to root-leaf, where leaf is a source cluster ID
         root_leaf_res = (
-            self.clusters_to_polars()
+            pl.from_arrow(self.clusters)
             .rename({"parent": "root_id"})
             .join(parents_root_leaf, left_on="child", right_on="id")
             .select(["root_id", "leaf_id"])
@@ -205,7 +205,7 @@ class Results:
         unmerged_ids_rows = (
             parents_root_leaf.select("id", "leaf_id")
             .join(
-                self.clusters_to_polars().select("child"),
+                pl.from_arrow(self.clusters).select("child"),
                 left_on="id",
                 right_on="child",
                 how="anti",

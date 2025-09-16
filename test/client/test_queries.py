@@ -311,7 +311,8 @@ def test_query_leaf_ids(
     query = Query(
         testkit1.source, testkit2.source, model=model, combine_type=combine_type
     )
-    query.run(return_leaf_id=True)
+    data: pl.DataFrame = query.run(return_leaf_id=True)
+    assert set(data.columns) == {"foo_key", "foo_col", "bar_key", "bar_col", "id"}
 
     assert_frame_equal(
         pl.DataFrame(query.leaf_id),

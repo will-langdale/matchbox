@@ -136,7 +136,7 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         return_value=Response(
             404,
             json=NotFoundError(
-                details="", entity=BackendResourceType.RESOLUTION
+                details="nonexistent", entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         )
     )
