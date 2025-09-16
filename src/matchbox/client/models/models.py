@@ -164,41 +164,31 @@ class Model:
             for_validation: Whether to download and store extra data to explore and
                     score results.
         """
+        left_df = self.left_query.run(
+            return_leaf_id=for_validation, batch_size=settings.batch_size
+        )
         right_df = None
-        if for_validation:
-            left_df, left_root_leaf = self.left_query.run(
-                return_leaf_id=True, batch_size=settings.batch_size
+
+        if self.config.type == ModelType.LINKER:
+            right_df = self.right_query.run(
+                return_leaf_id=for_validation, batch_size=settings.batch_size
             )
 
-            if self.config.type == ModelType.LINKER:
-                right_df, right_root_leaf = self.right_query.run(
-                    return_leaf_id=True, batch_size=settings.batch_size
-                )
+            self.model_instance.prepare(left_df, right_df)
+            results = self.model_instance.link(left=left_df, right=right_df)
+        else:
+            self.model_instance.prepare(left_df)
+            results = self.model_instance.dedupe(data=left_df)
 
-                self.model_instance.prepare(left_df, right_df)
-                results = self.model_instance.link(left=left_df, right=right_df)
-            else:
-                self.model_instance.prepare(left_df)
-                results = self.model_instance.dedupe(data=left_df)
-
+        if for_validation:
             self.results = Results(
                 probabilities=results,
-                left_root_leaf=left_root_leaf.to_arrow(),
-                right_root_leaf=right_root_leaf.to_arrow()
+                left_root_leaf=self.left_query.leaf_id.to_arrow(),
+                right_root_leaf=self.right_query.leaf_id.to_arrow()
                 if right_df is not None
                 else None,
             )
         else:
-            left_df = self.left_query.run(batch_size=settings.batch_size)
-            if self.config.type == ModelType.LINKER:
-                right_df = self.right_query.run(batch_size=settings.batch_size)
-
-                self.model_instance.prepare(left_df, right_df)
-                results = self.model_instance.link(left=left_df, right=right_df)
-            else:
-                self.model_instance.prepare(left_df)
-                results = self.model_instance.dedupe(data=left_df)
-
             self.results = Results(probabilities=results)
 
         return self.results

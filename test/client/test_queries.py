@@ -1,7 +1,9 @@
+import polars as pl
 import pyarrow as pa
 import pytest
 from httpx import Response
 from pandas import DataFrame as PandasDataFrame
+from polars.testing import assert_frame_equal
 from respx import MockRouter
 from sqlalchemy import Engine
 
@@ -250,6 +252,84 @@ def test_query_combine_type(
     } == set(results.columns)
 
 
+@pytest.mark.parametrize(
+    "combine_type",
+    ["concat", "set_agg", "explode"],
+)
+def test_query_leaf_ids(
+    combine_type: str, matchbox_api: MockRouter, sqlite_warehouse: Engine
+):
+    """Leaf IDs can be derived as a query byproduct."""
+    testkit1 = source_from_tuple(
+        data_tuple=({"col": 20}, {"col": 40}, {"col": 60}),
+        data_keys=["0", "1", "2"],
+        name="foo",
+        engine=sqlite_warehouse,
+    ).write_to_location()
+
+    testkit2 = source_from_tuple(
+        data_tuple=({"col": "val1"}, {"col": "val2"}, {"col": "val3"}),
+        data_keys=["3", "4", "5"],
+        name="bar",
+        engine=sqlite_warehouse,
+    ).write_to_location()
+
+    matchbox_api.get("/query").mock(
+        side_effect=[
+            Response(
+                200,
+                content=table_to_buffer(
+                    pa.Table.from_pylist(
+                        [
+                            {"key": "0", "id": 12, "leaf_id": 1},
+                            {"key": "1", "id": 12, "leaf_id": 2},
+                            {"key": "2", "id": 345, "leaf_id": 3},
+                        ],
+                        schema=SCHEMA_QUERY_WITH_LEAVES,
+                    )
+                ).read(),
+            ),
+            Response(
+                200,
+                content=table_to_buffer(
+                    pa.Table.from_pylist(
+                        [
+                            # Creating a duplicate value for the same Matchbox ID
+                            {"key": "3", "id": 345, "leaf_id": 4},
+                            {"key": "3", "id": 345, "leaf_id": 5},
+                            {"key": "4", "id": 6, "leaf_id": 6},
+                        ],
+                        schema=SCHEMA_QUERY_WITH_LEAVES,
+                    )
+                ).read(),
+            ),
+        ]  # two sources to query
+    )
+
+    model = model_factory().model
+
+    query = Query(
+        testkit1.source, testkit2.source, model=model, combine_type=combine_type
+    )
+    query.run(return_leaf_id=True)
+
+    assert_frame_equal(
+        pl.DataFrame(query.leaf_id),
+        pl.DataFrame(
+            [
+                {"leaf_id": 1, "id": 12},
+                {"leaf_id": 2, "id": 12},
+                {"leaf_id": 3, "id": 345},
+                {"leaf_id": 4, "id": 345},
+                {"leaf_id": 5, "id": 345},
+                {"leaf_id": 6, "id": 6},
+            ]
+        ),
+        check_column_order=False,
+        check_row_order=False,
+    )
+
+
 def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     testkit = source_factory(engine=sqlite_warehouse, name="foo").write_to_location()
 
@@ -280,7 +360,7 @@ def test_query_empty_results_raises_exception(
         return_value=Response(
             200,
             content=table_to_buffer(
-                pa.Table.from_pylist([], schema=SCHEMA_QUERY_WITH_LEAVES)
+                pa.Table.from_pylist([], schema=SCHEMA_QUERY)
             ).read(),
         )
     )

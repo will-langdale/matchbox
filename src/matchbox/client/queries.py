@@ -1,6 +1,6 @@
 """Definition of model inputs."""
 
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars import DataFrame as PolarsDataFrame
@@ -67,42 +67,24 @@ class Query:
             cleaning=cleaning,
         )
 
-    @overload
     def run(
         self,
         return_type: QueryReturnType = QueryReturnType.POLARS,
         return_leaf_id: bool = False,
         batch_size: int | None = None,
-    ) -> QueryReturnClass: ...
-
-    @overload
-    def run(
-        self,
-        return_type: QueryReturnType = QueryReturnType.POLARS,
-        return_leaf_id: bool = True,
-        batch_size: int | None = None,
-    ) -> tuple[QueryReturnClass, PolarsDataFrame]: ...
-
-    def run(
-        self,
-        return_type: QueryReturnType = QueryReturnType.POLARS,
-        return_leaf_id: bool = False,
-        batch_size: int | None = None,
-    ) -> QueryReturnClass | tuple[QueryReturnClass, PolarsDataFrame]:
+    ) -> QueryReturnClass:
         """Runs queries against the selected backend.
 
         Args:
             return_type (optional): Type of dataframe returned, defaults to "polars".
                 Other options are "pandas" and "arrow".
             return_leaf_id (optional): Whether matchbox IDs for source clusters should
-                be returned. Only compatible with concatenated results.
+                be saved as a byproduct in the `leaf_ids` attribute.
             batch_size (optional): The size of each batch when fetching data from the
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
 
-        Returns: Data in the requested return type. By default, just the query results.
-            If return_leaf_id is True, a 2-tuple, where the second value is a Polars
-            dataframe mapping matchbox root IDs to matchbox leaf IDs.
+        Returns: Data in the requested return type
         """
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
@@ -138,15 +120,14 @@ class Query:
         # Make sure we have some results
         if not tables:
             data = pl.DataFrame()
-            leaf_id = pl.DataFrame()
         else:
             # Combine results based on combine_type
             if return_leaf_id:
                 concatenated = pl.concat(tables, how="diagonal")
-                leaf_id = concatenated.select(["id", "leaf_id"])
+                self.leaf_id = concatenated.select(["id", "leaf_id"])
 
             if self.config.combine_type == QueryCombineType.CONCAT:
-                if return_leaf_id:
+                if return_leaf_id:  # can reuse the concatenated dataframe
                     data = concatenated.drop(["id", "leaf_id"])
                 else:
                     data = pl.concat(tables, how="diagonal")
@@ -168,15 +149,10 @@ class Query:
 
         match return_type:
             case QueryReturnType.POLARS:
-                pass
+                return data
             case QueryReturnType.PANDAS:
-                data = data.to_pandas()
+                return data.to_pandas()
             case QueryReturnType.ARROW:
-                data = data.to_arrow()
+                return data.to_arrow()
             case _:
                 raise ValueError(f"Return type {return_type} is invalid")
-
-        if return_leaf_id:
-            return data, leaf_id
-
-        return data
