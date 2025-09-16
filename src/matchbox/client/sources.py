@@ -14,7 +14,6 @@ from typing import (
 )
 
 import polars as pl
-import pyarrow as pa
 import sqlglot
 from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine
@@ -487,8 +486,8 @@ class Source:
                 return_type=return_type,
             )
 
-    def hash_data(self, batch_size: int | None = None) -> ArrowTable:
-        """Retrieve and hash a dataset from its warehouse, ready to be inserted.
+    def run(self, batch_size: int | None = None) -> ArrowTable:
+        """Hash a dataset from its warehouse, ready to be inserted, and cache hashes.
 
         Hashes the index fields defined in the source based on the
         extract/transform logic.
@@ -534,9 +533,11 @@ class Source:
             )
             all_results.append(result)
 
-        processed_df = pl.concat(all_results)
+        self.hashes = (
+            pl.concat(all_results).group_by("hash").agg(pl.col("keys")).to_arrow()
+        )
 
-        return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
+        return self.hashes
 
     # Note: name, description, truth are now instance variables, not properties
 
@@ -578,20 +579,6 @@ class Source:
 
         """
         return self.config.f(self.name, fields)
-
-    def run(self, batch_size: int | None = None) -> pa.Table:
-        """Download and cache the hashes to be indexed on the server.
-
-        Args:
-            batch_size: the size of each batch when fetching data from the warehouse,
-                which helps reduce the load on the database. Default is None.
-
-        """
-        if not self.location.client:
-            raise ValueError("Source client not set")
-        self.hashes = self.hash_data(batch_size=batch_size)
-
-        return self.hashes
 
     def sync(self) -> None:
         """Send the source config and hashes to the server."""

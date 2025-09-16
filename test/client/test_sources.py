@@ -468,10 +468,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     )
 
     # Execute hash_data with different batching parameters
-    if batch_size:
-        result = source.hash_data(batch_size=batch_size)
-    else:
-        result = source.hash_data()
+    result = source.run(batch_size=batch_size) if batch_size else source.run()
 
     # Verify result
     assert isinstance(result, pa.Table)
@@ -482,7 +479,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
 
 @patch("matchbox.client.sources.Source.fetch")
 def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: Engine):
-    """Test hash_data raises an error when source primary keys contain nulls."""
+    """Test hashing data raises an error when source primary keys contain nulls."""
     # Create a source
     location = RelationalDBLocation(
         name="sqlite", client=create_engine("sqlite:///:memory:")
@@ -499,9 +496,9 @@ def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: En
     mock_df = pl.DataFrame({"key": ["1", None], "name": ["a", "b"]})
     mock_fetch.return_value = (x for x in [mock_df])
 
-    # hash_data should raise ValueErrors for null keys
+    # hashing data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):
-        source.hash_data()
+        source.run()
 
 
 def test_sync_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):

@@ -41,10 +41,7 @@ def key_field_map(
     for s in source_resolutions:
         # Get Matchbox IDs from backend
         source_mb_ids.append(
-            _handler.query(
-                source=s.name,
-                resolution=resolution,
-            )
+            _handler.query(source=s.name, resolution=resolution, return_leaf_id=False)
         )
 
         source_to_key_field[s.name] = s.config.key_field.name

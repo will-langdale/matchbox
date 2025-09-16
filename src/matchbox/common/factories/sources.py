@@ -5,7 +5,6 @@ from collections.abc import Callable
 from functools import cache, wraps
 from itertools import product
 from typing import Any, ParamSpec, Self, TypeVar
-from unittest.mock import Mock, create_autospec
 
 import pandas as pd
 import polars as pl
@@ -114,15 +113,6 @@ class SourceTestkit(BaseModel):
     def source_config(self) -> SourceConfig:
         """Return the SourceConfig from the source."""
         return self.source.config
-
-    @property
-    def mock_client_source(self) -> Mock:
-        """Create a mock SourceConfig object with this testkit's configuration."""
-        mock_source = create_autospec(Source)
-
-        mock_source.hash_data.return_value = self.data_hashes
-
-        return mock_source
 
     def write_to_location(self, set_client: Any | None = None) -> Self:
         """Write the data to the SourceConfig's location.
