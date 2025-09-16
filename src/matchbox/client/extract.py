@@ -44,7 +44,6 @@ def key_field_map(
             _handler.query(
                 source=s.name,
                 resolution=resolution,
-                return_leaf_id=False,
             )
         )
 

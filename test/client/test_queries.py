@@ -1,6 +1,7 @@
 import pyarrow as pa
 import pytest
 from httpx import Response
+from pandas import DataFrame as PandasDataFrame
 from respx import MockRouter
 from sqlalchemy import Engine
 
@@ -67,7 +68,7 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
     )
 
     # Tests with no optional params
-    results = Query(testkit.source).run(return_leaf_id=False)
+    results = Query(testkit.source).run()
     assert len(results) == 2
     assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 
@@ -77,9 +78,9 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
     }
 
     # Tests with optional params
-    results = Query(testkit.source, threshold=0.5).run(
-        return_leaf_id=False, return_type="pandas"
-    )
+    results = Query(testkit.source, threshold=0.5).run(return_type="pandas")
+
+    assert isinstance(results, PandasDataFrame)
     assert len(results) == 2
     assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 
@@ -140,9 +141,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
 
     model = model_factory().model
     # Validate results
-    results = Query(testkit1.source, testkit2.source, model=model).run(
-        return_leaf_id=False
-    )
+    results = Query(testkit1.source, testkit2.source, model=model).run()
     assert len(results) == 4
     assert {
         "foo_a",
@@ -225,11 +224,8 @@ def test_query_combine_type(
 
     # Validate results
     results = Query(
-        testkit1.source,
-        testkit2.source,
-        model=model,
-        combine_type=combine_type,
-    ).run(return_leaf_id=False)
+        testkit1.source, testkit2.source, model=model, combine_type=combine_type
+    ).run()
 
     if combine_type == "set_agg":
         expected_len = 3
