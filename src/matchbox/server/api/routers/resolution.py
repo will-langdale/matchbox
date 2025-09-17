@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
@@ -41,18 +41,11 @@ router = APIRouter(prefix="/resolutions", tags=["resolution"])
 )
 def create_resolution(
     backend: BackendDependency,
-    upload_tracker: UploadTrackerDependency,
     resolution: Resolution,
-    response: Response,
 ) -> ResolutionOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
-    if resolution.resolution_type == ResolutionType.SOURCE:
-        upload_id = upload_tracker.add_source(metadata=resolution)
-        response.status_code = status.HTTP_202_ACCEPTED
-        return upload_tracker.get(upload_id=upload_id).status
-
     try:
-        backend.insert_resolution(resolution)
+        backend.insert_resolution(resolution=resolution)
         return ResolutionOperationStatus(
             success=True,
             name=resolution.name,
@@ -74,20 +67,21 @@ def create_resolution(
     "/{name}",
     responses={404: {"model": NotFoundError}},
 )
-def get_resolution(backend: BackendDependency, name: ResolutionName) -> Resolution:
+def get_resolution(
+    backend: BackendDependency,
+    name: ResolutionName,
+    validate_type: ResolutionType | None = None,
+) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     try:
-        return backend.get_resolution(name=name, validate=ResolutionType.MODEL)
-    except MatchboxResolutionNotFoundError:
-        try:
-            return backend.get_resolution(name=name, validate=ResolutionType.SOURCE)
-        except MatchboxResolutionNotFoundError as e:
-            raise HTTPException(
-                status_code=404,
-                detail=NotFoundError(
-                    details=str(e), entity=BackendResourceType.RESOLUTION
-                ).model_dump(),
-            ) from e
+        return backend.get_resolution(name=name, validate=validate_type)
+    except MatchboxResolutionNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=NotFoundError(
+                details=str(e), entity=BackendResourceType.RESOLUTION
+            ).model_dump(),
+        ) from e
 
 
 @router.get(
@@ -156,19 +150,20 @@ def delete_resolution(
 
 
 @router.post(
-    "/{name}/results",
+    "/{name}/data",
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
 )
-def set_results(
+def set_data(
     backend: BackendDependency,
     upload_tracker: UploadTrackerDependency,
-    name: ModelResolutionName,
+    name: ResolutionName,
+    validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
-    """Create an upload task for model results."""
+    """Create an upload task for source hashes or model results."""
     try:
-        resolution = backend.get_resolution(name=name, validate=ResolutionType.MODEL)
+        resolution = backend.get_resolution(name=name, validate=validate_type)
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -177,12 +172,16 @@ def set_results(
             ).model_dump(),
         ) from e
 
+    if resolution.resolution_type == ResolutionType.SOURCE:
+        upload_id = upload_tracker.add_source(metadata=resolution)
+        return upload_tracker.get(upload_id=upload_id).status
+
     upload_id = upload_tracker.add_model(metadata=resolution)
     return upload_tracker.get(upload_id=upload_id).status
 
 
 @router.get(
-    "/{name}/results",
+    "/{name}/data",
     responses={404: {"model": NotFoundError}},
 )
 def get_results(

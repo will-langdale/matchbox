@@ -37,7 +37,6 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.server.api.dependencies import (
@@ -279,13 +278,6 @@ def query(
                 details=str(e), entity=BackendResourceType.RESOLUTION
             ).model_dump(),
         ) from e
-    except MatchboxSourceNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.SOURCE
-            ).model_dump(),
-        ) from e
 
     buffer = table_to_buffer(res)
     return ParquetResponse(buffer.getvalue())
@@ -317,13 +309,6 @@ def match(
             status_code=404,
             detail=NotFoundError(
                 details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
-    except MatchboxSourceNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.SOURCE
             ).model_dump(),
         ) from e
 

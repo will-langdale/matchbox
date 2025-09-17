@@ -8,7 +8,7 @@ from sqlalchemy import Engine, create_engine
 
 from matchbox.client.extract import key_field_map
 from matchbox.common.arrow import SCHEMA_QUERY, table_to_buffer
-from matchbox.common.exceptions import MatchboxSourceNotFoundError
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.factories.sources import source_from_tuple
 
 
@@ -93,10 +93,10 @@ def test_key_field_map(
     )
 
     # Case 0: No sources are found
-    with pytest.raises(MatchboxSourceNotFoundError):
+    with pytest.raises(MatchboxResolutionNotFoundError):
         key_field_map(resolution=resolution_name, source_filter=["nonexistent"])
 
-    with pytest.raises(MatchboxSourceNotFoundError):
+    with pytest.raises(MatchboxResolutionNotFoundError):
         key_field_map(resolution=resolution_name, location_names=["nonexistent"])
 
     # Case 1: Retrieve single table

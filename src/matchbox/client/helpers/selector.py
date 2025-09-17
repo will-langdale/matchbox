@@ -6,7 +6,7 @@ from sqlglot import expressions, parse_one
 from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
-from matchbox.common.dtos import Match
+from matchbox.common.dtos import Match, ResolutionType
 from matchbox.common.graph import (
     DEFAULT_RESOLUTION,
     ResolutionName,
@@ -47,7 +47,7 @@ def match(
     """
     # Validate arguments
     for name in targets + (source,):
-        _ = _handler.get_source_resolution(name=name)
+        _handler.get_resolution(name=name, validate_type=ResolutionType.SOURCE)
 
     return _handler.match(
         targets=targets,

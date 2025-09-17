@@ -5,19 +5,18 @@ from collections.abc import Callable
 from functools import cache, wraps
 from itertools import product
 from typing import Any, ParamSpec, Self, TypeVar
-from unittest.mock import Mock, create_autospec
 
 import pandas as pd
 import polars as pl
 import pyarrow as pa
 from faker import Faker
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Engine, create_engine
 from sqlglot import cast, select
 from sqlglot.expressions import column
 
 from matchbox.client.sources import RelationalDBLocation, Source
-from matchbox.common.arrow import SCHEMA_INDEX
+from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_QUERY
 from matchbox.common.dtos import (
     DataTypes,
     SourceConfig,
@@ -97,11 +96,22 @@ class SourceTestkit(BaseModel):
         ),
         default=None,
     )
-    data: pa.Table = Field(description="The PyArrow table of generated data.")
+    data: pa.Table = Field(
+        description="The generated data, corresponding to the output of queries."
+    )
     data_hashes: pa.Table = Field(description="A PyArrow table of hashes for the data.")
     entities: tuple[ClusterEntity, ...] = Field(
         description="ClusterEntities that were generated from the source."
     )
+
+    @field_validator("data")
+    def cast_table(cls, value: pa.Table) -> pa.Table:
+        """Ensure that the data matches the query schema."""
+        for col in SCHEMA_QUERY.names:
+            cast_col = value[col].cast(SCHEMA_QUERY.field(col).type)
+            value = value.set_column(value.schema.get_field_index(col), col, cast_col)
+
+        return value
 
     @property
     def name(self) -> str:
@@ -112,27 +122,6 @@ class SourceTestkit(BaseModel):
     def source_config(self) -> SourceConfig:
         """Return the SourceConfig from the source."""
         return self.source.config
-
-    @property
-    def mock_client_source(self) -> Mock:
-        """Create a mock SourceConfig object with this testkit's configuration."""
-        mock_source = create_autospec(Source)
-
-        mock_source.hash_data.return_value = self.data_hashes
-
-        return mock_source
-
-    @property
-    def query(self) -> pa.Table:
-        """Return a PyArrow table in the same format as matchbox queries."""
-        return self.data
-
-    @property
-    def query_backend(self) -> pa.Table:
-        """Return a PyArrow table in the same format as the SCHEMA_QUERY DTO."""
-        return pa.Table.from_arrays(
-            [self.data["id"], self.data["key"]], names=["id", "key"]
-        )
 
     def write_to_location(self, set_client: Any | None = None) -> Self:
         """Write the data to the SourceConfig's location.

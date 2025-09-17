@@ -20,6 +20,7 @@ from matchbox.common.dtos import (
     Match,
     ModelConfig,
     ModelType,
+    QueryConfig,
     Resolution,
 )
 from matchbox.common.eval import Judgement
@@ -136,16 +137,18 @@ class TestMatchboxBackend:
             crn_testkit = dag.sources.get("crn")
 
             crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.name, validate=ResolutionType.SOURCE
+                crn_testkit.name, validate=ResolutionType.SOURCE
             )
-            # Equality between the two is False because one lacks the Engine
-            assert (
-                crn_testkit.source_config.model_dump()
-                == crn_retrieved.config.model_dump()
-            )
+            assert isinstance(crn_retrieved, Resolution)
+            assert crn_testkit.source_config == crn_retrieved.config
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(name="foo", validate=ResolutionType.SOURCE)
+
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(
+                    name=crn_testkit.name, validate=ResolutionType.MODEL
+                )
 
     def test_get_resolution_sources(self):
         """Test retrieving sources available to a resolution."""
@@ -184,16 +187,25 @@ class TestMatchboxBackend:
 
     def test_get_model(self):
         """Test getting a model from the database."""
-        with self.scenario(self.backend, "dedupe"):
-            model = self.backend.get_resolution(
-                name="naive_test_crn", validate=ResolutionType.MODEL
+        with self.scenario(self.backend, "dedupe") as dag:
+            model_testkit = dag.models.get("naive_test_crn")
+
+            model_retrieved = self.backend.get_resolution(
+                name=model_testkit.name, validate=ResolutionType.MODEL
             )
-            assert isinstance(model, Resolution)
-            assert isinstance(model.config, ModelConfig)
+
+            assert isinstance(model_retrieved, Resolution)
+
+            assert model_testkit.model.config == model_retrieved.config
 
             with pytest.raises(MatchboxResolutionNotFoundError):
                 self.backend.get_resolution(
                     name="nonexistent", validate=ResolutionType.MODEL
+                )
+
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(
+                    name=model_testkit.name, validate=ResolutionType.SOURCE
                 )
 
     def test_delete_resolution(self):
@@ -262,7 +274,11 @@ class TestMatchboxBackend:
                     truth=100,
                     config=ModelConfig(
                         type=ModelType.DEDUPER,
-                        left_resolution=crn_testkit.source.name,
+                        model_class="NaiveDeduper",
+                        model_settings="{}",
+                        left_query=QueryConfig(
+                            source_resolutions=[crn_testkit.source.name]
+                        ),
                     ),
                 )
             )
@@ -274,7 +290,11 @@ class TestMatchboxBackend:
                     truth=100,
                     config=ModelConfig(
                         type=ModelType.DEDUPER,
-                        left_resolution=duns_testkit.source.name,
+                        model_class="NaiveDeduper",
+                        model_settings="{}",
+                        left_query=QueryConfig(
+                            source_resolutions=[duns_testkit.source.name]
+                        ),
                     ),
                 )
             )
@@ -282,37 +302,30 @@ class TestMatchboxBackend:
             assert self.backend.models.count() == models_count + 2
 
             # Test linker insertion
-            self.backend.insert_resolution(
-                resolution=Resolution(
-                    name="link_1",
-                    description="Test linker 1",
-                    resolution_type=ResolutionType.MODEL,
-                    truth=100,
-                    config=ModelConfig(
-                        type=ModelType.LINKER,
-                        left_resolution="dedupe_1",
-                        right_resolution="dedupe_2",
+            linker_resolution = Resolution(
+                name="link_1",
+                description="Test linker 1",
+                resolution_type=ResolutionType.MODEL,
+                truth=100,
+                config=ModelConfig(
+                    type=ModelType.LINKER,
+                    model_class="NaiveDeduper",
+                    model_settings="{}",
+                    left_query=QueryConfig(
+                        source_resolutions=["crn"], model_resolution="dedupe_1"
                     ),
-                )
+                    right_query=QueryConfig(
+                        source_resolutions=["duns"], model_resolution="dedupe_2"
+                    ),
+                ),
             )
+            self.backend.insert_resolution(resolution=linker_resolution)
 
             assert self.backend.models.count() == models_count + 3
 
             # Test can't insert duplicate
             with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.insert_resolution(
-                    resolution=Resolution(
-                        name="link_1",
-                        description="Test upsert",
-                        resolution_type=ResolutionType.MODEL,
-                        truth=100,
-                        config=ModelConfig(
-                            type=ModelType.LINKER,
-                            left_resolution="dedupe_1",
-                            right_resolution="dedupe_2",
-                        ),
-                    )
-                )
+                self.backend.insert_resolution(linker_resolution)
 
             assert self.backend.models.count() == models_count + 3
 
@@ -326,7 +339,7 @@ class TestMatchboxBackend:
                 resolution="naive_test_crn",
             )
             res_clusters = query_to_cluster_entities(
-                query=res,
+                data=res,
                 keys={dag.sources["crn"].name: "key"},
             )
 
@@ -382,7 +395,7 @@ class TestMatchboxBackend:
                 resolution="probabilistic_test_crn",
             )
             res_clusters = query_to_cluster_entities(
-                query=res,
+                data=res,
                 keys={dag.sources["crn"].name: "key"},
             )
 
@@ -580,7 +593,7 @@ class TestMatchboxBackend:
 
             df_crn_full = self.backend.query(source=crn_testkit.source.name)
 
-            assert df_crn_full.num_rows == crn_testkit.query.num_rows
+            assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY)
 
     def test_query_return_leaf_ids(self):
@@ -592,7 +605,7 @@ class TestMatchboxBackend:
                 source=crn_testkit.source.name, return_leaf_id=True
             )
 
-            assert df_crn_full.num_rows == crn_testkit.query.num_rows
+            assert df_crn_full.num_rows == crn_testkit.data.num_rows
             assert df_crn_full.schema.equals(SCHEMA_QUERY_WITH_LEAVES)
 
     def test_query_with_dedupe_model(self):
@@ -606,7 +619,7 @@ class TestMatchboxBackend:
             )
 
             assert isinstance(df_crn, pa.Table)
-            assert df_crn.num_rows == crn_testkit.query.num_rows
+            assert df_crn.num_rows == crn_testkit.data.num_rows
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
             sources_dict = dag.get_sources_for_model("naive_test_crn")
@@ -630,7 +643,7 @@ class TestMatchboxBackend:
             )
 
             assert isinstance(df_crn, pa.Table)
-            assert df_crn.num_rows == crn_testkit.query.num_rows
+            assert df_crn.num_rows == crn_testkit.data.num_rows
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
             df_duns = self.backend.query(
@@ -639,7 +652,7 @@ class TestMatchboxBackend:
             )
 
             assert isinstance(df_duns, pa.Table)
-            assert df_duns.num_rows == duns_testkit.query.num_rows
+            assert df_duns.num_rows == duns_testkit.data.num_rows
             assert df_duns.schema.equals(SCHEMA_QUERY)
 
             sources_dict = dag.get_sources_for_model(linker_name)
@@ -667,7 +680,7 @@ class TestMatchboxBackend:
             )
 
             assert isinstance(df_crn, pa.Table)
-            assert df_crn.num_rows == crn_testkit.query.num_rows
+            assert df_crn.num_rows == crn_testkit.data.num_rows
             assert df_crn.schema.equals(SCHEMA_QUERY)
 
             df_cdms = self.backend.query(
@@ -676,7 +689,7 @@ class TestMatchboxBackend:
             )
 
             assert isinstance(df_cdms, pa.Table)
-            assert df_cdms.num_rows == cdms_testkit.query.num_rows
+            assert df_cdms.num_rows == cdms_testkit.data.num_rows
             assert df_cdms.schema.equals(SCHEMA_QUERY)
 
             sources_dict = dag.get_sources_for_model(linker_name)

@@ -3,6 +3,7 @@
 import time
 import zipfile
 from collections.abc import Iterable
+from enum import StrEnum
 from importlib.metadata import version
 from io import BytesIO
 
@@ -18,7 +19,6 @@ from tenacity import (
 
 from matchbox.client._settings import ClientSettings, settings
 from matchbox.client.authorisation import generate_json_web_token
-from matchbox.client.sources import Source
 from matchbox.common.arrow import (
     SCHEMA_CLUSTER_EXPANSION,
     SCHEMA_JUDGEMENTS,
@@ -38,6 +38,7 @@ from matchbox.common.dtos import (
     NotFoundError,
     Resolution,
     ResolutionOperationStatus,
+    ResolutionType,
     UploadStage,
     UploadStatus,
 )
@@ -48,7 +49,6 @@ from matchbox.common.exceptions import (
     MatchboxEmptyServerResponse,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
-    MatchboxSourceNotFoundError,
     MatchboxTooManySamplesRequested,
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
@@ -58,7 +58,6 @@ from matchbox.common.graph import (
     ModelResolutionName,
     ResolutionGraph,
     ResolutionName,
-    ResolutionType,
     SourceResolutionName,
 )
 from matchbox.common.hash import hash_to_base64
@@ -84,7 +83,7 @@ def encode_param_value(
 ) -> str | list[str]:
     if isinstance(v, str):
         return v
-    elif isinstance(v, int | float):
+    if isinstance(v, StrEnum | int | float):
         return str(v)
     elif isinstance(v, bytes):
         return hash_to_base64(v)
@@ -119,8 +118,6 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
     if res.status_code == 404:
         error = NotFoundError.model_validate(res.json())
         match error.entity:
-            case BackendResourceType.SOURCE:
-                raise MatchboxSourceNotFoundError(error.details)
             case BackendResourceType.RESOLUTION:
                 raise MatchboxResolutionNotFoundError(error.details)
             case BackendResourceType.CLUSTER:
@@ -262,64 +259,7 @@ def match(
     return matches
 
 
-# Data management
-
-
-@http_retry
-def index(source: Source, data_hashes: Table) -> UploadStatus:
-    """Index hashes from a SourceConfig."""
-    log_prefix = f"Index {source.name}"
-
-    buffer = table_to_buffer(table=data_hashes)
-
-    # Upload metadata
-    logger.debug("Uploading metadata", prefix=log_prefix)
-
-    metadata_res = CLIENT.post(
-        "/resolutions", json=source.to_resolution().model_dump(mode="json")
-    )
-
-    upload = UploadStatus.model_validate(metadata_res.json())
-
-    # Upload data
-    logger.debug("Uploading data", prefix=log_prefix)
-
-    upload_res = CLIENT.post(
-        f"/upload/{upload.id}",
-        files={"file": (f"{upload.id}.parquet", buffer, "application/octet-stream")},
-    )
-
-    # Poll until complete with retry/timeout configuration
-    status = UploadStatus.model_validate(upload_res.json())
-    while status.stage not in [UploadStage.COMPLETE, UploadStage.FAILED]:
-        status_res = CLIENT.get(f"/upload/{upload.id}/status")
-        status = UploadStatus.model_validate(status_res.json())
-
-        logger.debug(f"Uploading data: {status.stage}", prefix=log_prefix)
-
-        if status.stage == UploadStage.FAILED:
-            raise MatchboxServerFileError(status.details)
-
-        time.sleep(settings.retry_delay)
-
-    logger.debug("Finished")
-
-    return status
-
-
-@http_retry
-def get_source_resolution(name: SourceResolutionName) -> Resolution:
-    log_prefix = f"Source resolution {name}"
-    logger.debug("Retrieving", prefix=log_prefix)
-
-    res = CLIENT.get(f"/resolutions/{name}")
-
-    resolution = Resolution.model_validate(res.json())
-
-    if resolution.resolution_type != ResolutionType.SOURCE:
-        raise MatchboxSourceNotFoundError(f"{name} is not a source resolution")
-
-    return resolution
+# Resolution management
 
 
 @http_retry
@@ -342,9 +282,6 @@ def get_resolution_graph() -> ResolutionGraph:
     return ResolutionGraph.model_validate(res.json())
 
 
-# Resolution management
-
-
 @http_retry
 def create_resolution(
     resolution: Resolution,
@@ -354,34 +291,39 @@ def create_resolution(
     logger.debug("Creating", prefix=log_prefix)
 
     res = CLIENT.post("/resolutions", json=resolution.model_dump())
-    if resolution.resolution_type == ResolutionType.SOURCE:
-        return UploadStatus.model_validate(res.json())
+
     return ResolutionOperationStatus.model_validate(res.json())
 
 
 @http_retry
-def get_resolution(name: ResolutionName) -> Resolution | None:
+def get_resolution(
+    name: ResolutionName, validate_type: ResolutionType | None = None
+) -> Resolution | None:
     """Get a resolution from Matchbox."""
     log_prefix = f"Resolution {name}"
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
-    try:
-        res = CLIENT.get(f"/resolutions/{name}")
-        return Resolution.model_validate(res.json())
-    except MatchboxResolutionNotFoundError:
-        return None
+    res = CLIENT.get(
+        f"/resolutions/{name}",
+        params=url_params({"validate_type": validate_type}),
+    )
+    return Resolution.model_validate(res.json())
 
 
 @http_retry
-def set_results(name: ModelResolutionName, results: Table) -> UploadStatus:
-    """Upload model results in Matchbox."""
-    log_prefix = f"Model {name}"
+def set_data(
+    name: ResolutionName, data: Table, validate_type: ResolutionType
+) -> UploadStatus:
+    """Upload source hashes or model results to server."""
+    log_prefix = f"Resolution {name}"
     logger.debug("Uploading results", prefix=log_prefix)
 
-    buffer = table_to_buffer(table=results)
+    buffer = table_to_buffer(table=data)
 
     # Initialise upload
-    metadata_res = CLIENT.post(f"/resolutions/{name}/results")
+    metadata_res = CLIENT.post(
+        f"/resolutions/{name}/data", params=url_params({"validate_type": validate_type})
+    )
 
     upload = UploadStatus.model_validate(metadata_res.json())
 
@@ -417,7 +359,7 @@ def get_results(name: ModelResolutionName) -> Table:
     log_prefix = f"Model {name}"
     logger.debug("Retrieving results", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolutions/{name}/results")
+    res = CLIENT.get(f"/resolutions/{name}/data")
     buffer = BytesIO(res.content)
     return read_table(buffer)
 

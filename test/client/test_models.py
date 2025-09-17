@@ -1,15 +1,22 @@
+import json
 from datetime import datetime
 
+import pyarrow as pa
 import pytest
 from httpx import Response
 from respx.router import MockRouter
 
+from matchbox.client.models import Model, add_model_class
+from matchbox.client.models.linkers.base import LinkerSettings
+from matchbox.client.queries import Query
 from matchbox.client.results import Results
-from matchbox.common.arrow import SCHEMA_RESULTS, table_to_buffer
+from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
     BackendUploadType,
     CRUDOperation,
+    ModelConfig,
+    ModelType,
     NotFoundError,
     ResolutionOperationStatus,
     UploadStage,
@@ -17,19 +24,79 @@ from matchbox.common.dtos import (
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
-    MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
-    MatchboxUnhandledServerResponse,
 )
-from matchbox.common.factories.models import model_factory
+from matchbox.common.factories.models import MockLinker, model_factory
+from matchbox.common.factories.sources import source_factory
 
 
-def test_insert_model(matchbox_api: MockRouter):
-    """Test inserting a model via the API."""
+def test_init_and_run_model(matchbox_api: MockRouter):
+    """Test that model can be initialised and run correctly."""
+    # Register "custom" model
+    add_model_class(MockLinker)
+
+    # Mock API
+    foo = source_factory().write_to_location()
+    bar = source_factory().write_to_location()
+
+    foo_leafy_data = foo.data.append_column(
+        "leaf_id", pa.array(range(len(foo.data)), type=pa.int64())
+    )
+    bar_leafy_data = foo.data.append_column(
+        "leaf_id",
+        pa.array(
+            range(len(foo_leafy_data), len(foo_leafy_data) + len(bar.data)),
+            type=pa.int64(),
+        ),
+    )
+
+    # Mock API
+    matchbox_api.get("/query").mock(
+        side_effect=[
+            # First query
+            Response(200, content=table_to_buffer(foo.data).read()),
+            Response(200, content=table_to_buffer(bar.data).read()),
+            # Second query (for validation)
+            Response(200, content=table_to_buffer(foo_leafy_data).read()),
+            Response(200, content=table_to_buffer(bar_leafy_data).read()),
+        ]
+    )
+
+    foo_query = Query(foo.source)
+    bar_query = Query(bar.source)
+
+    model = Model(
+        name="name",
+        description="description",
+        model_class=MockLinker,
+        model_settings=LinkerSettings(left_id="left", right_id="right"),
+        left_query=foo_query,
+        right_query=bar_query,
+    )
+
+    assert model.config == ModelConfig(
+        type=ModelType.LINKER,
+        model_class="MockLinker",
+        model_settings=json.dumps({"left_id": "left", "right_id": "right"}),
+        left_query=foo_query.config,
+        right_query=bar_query.config,
+    )
+
+    model.run()
+    assert model.results.left_root_leaf is None
+    assert model.results.right_root_leaf is None
+
+    model.run(for_validation=True)
+    assert model.results.left_root_leaf is not None
+    assert model.results.right_root_leaf is not None
+
+
+def test_model_sync(matchbox_api: MockRouter):
+    """Test syncing a model, its truth and results."""
     # Create test model using factory
     testkit = model_factory(model_type="linker")
 
-    # Mock the POST /resolutions endpoint
+    # Mock endpoints
     get_route = matchbox_api.get(f"/resolutions/{testkit.model.name}").mock(
         return_value=Response(
             404,
@@ -38,7 +105,7 @@ def test_insert_model(matchbox_api: MockRouter):
             ).model_dump(),
         )
     )
-    insert_route = matchbox_api.post("/resolutions").mock(
+    insert_config_route = matchbox_api.post("/resolutions").mock(
         return_value=Response(
             201,
             json=ResolutionOperationStatus(
@@ -49,98 +116,22 @@ def test_insert_model(matchbox_api: MockRouter):
         )
     )
 
-    # Call insert_model
-    testkit.model.insert_model()
-
-    # Verify the API call
-    assert get_route.called
-    assert insert_route.called
-    assert (
-        insert_route.calls.last.request.content.decode()
-        == testkit.model.to_resolution().model_dump_json()
-    )
-
-
-def test_insert_model_error(matchbox_api: MockRouter):
-    """Test handling of model insertion errors."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the POST /resolutions endpoint with an error response
-    get_route = matchbox_api.get(f"/resolutions/{testkit.model.name}").mock(
+    set_truth_route = matchbox_api.patch(
+        f"/resolutions/{testkit.model.name}/truth"
+    ).mock(
         return_value=Response(
-            404,
-            json=NotFoundError(
-                details="Model not found", entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        )
-    )
-    insert_route = matchbox_api.post("/resolutions").mock(
-        return_value=Response(
-            500,
+            200,
             json=ResolutionOperationStatus(
-                success=False,
+                success=True,
                 name=testkit.model.name,
-                operation=CRUDOperation.CREATE,
-                details="Internal server error",
+                operation=CRUDOperation.UPDATE,
             ).model_dump(),
         )
     )
 
-    # Call insert_model and verify it raises an exception
-    with pytest.raises(MatchboxUnhandledServerResponse, match="Internal server error"):
-        testkit.model.insert_model()
-
-    assert get_route.called
-    assert insert_route.called
-
-
-def test_results_getter(matchbox_api: MockRouter):
-    """Test getting model results via the API."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the GET /resolutions/{name}/results endpoint
-    route = matchbox_api.get(f"/resolutions/{testkit.model.name}/results").mock(
-        return_value=Response(
-            200, content=table_to_buffer(testkit.probabilities).read()
-        )
-    )
-
-    # Get results
-    results = testkit.model.results
-
-    # Verify the API call
-    assert route.called
-    assert isinstance(results, Results)
-    assert results.probabilities.schema.equals(SCHEMA_RESULTS)
-
-
-def test_results_getter_not_found(matchbox_api: MockRouter):
-    """Test getting model results when they don't exist."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the GET endpoint with a 404 response
-    route = matchbox_api.get(f"/resolutions/{testkit.model.name}/results").mock(
-        return_value=Response(
-            404,
-            json=NotFoundError(
-                details="Results not found", entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        )
-    )
-
-    # Verify that accessing results raises an exception
-    with pytest.raises(MatchboxResolutionNotFoundError, match="Results not found"):
-        _ = testkit.model.results
-
-    assert route.called
-
-
-def test_results_setter(matchbox_api: MockRouter):
-    """Test setting model results via the API."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the endpoints needed for results upload
-    init_route = matchbox_api.post(f"/resolutions/{testkit.model.name}/results").mock(
+    insert_results_route = matchbox_api.post(
+        f"/resolutions/{testkit.model.name}/data"
+    ).mock(
         return_value=Response(
             202,
             content=UploadStatus(
@@ -176,40 +167,36 @@ def test_results_setter(matchbox_api: MockRouter):
         )
     )
 
-    # Set results
-    test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.config
+    # Call sync
+    testkit.model.sync()
+
+    # Verify the API call
+    assert get_route.called
+    assert insert_config_route.called
+    assert (
+        insert_config_route.calls.last.request.content.decode()
+        == testkit.model.to_resolution().model_dump_json()
     )
+    assert set_truth_route.called
+    assert float(set_truth_route.calls.last.request.read()) == 100
+    assert not insert_results_route.called
+
+    # Set results
+    test_results = Results(probabilities=testkit.probabilities)
+
     testkit.model.results = test_results
+    testkit.model.sync()
 
     # Verify API calls
-    assert init_route.called
+    assert insert_results_route.called
     assert upload_route.called
     assert status_route.called
     assert (
         b"PAR1" in upload_route.calls.last.request.content
     )  # Check for parquet file signature
 
-
-def test_results_setter_upload_failure(matchbox_api: MockRouter):
-    """Test handling of upload failures when setting results."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the initial POST endpoint
-    init_route = matchbox_api.post(f"/resolutions/{testkit.model.name}/results").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.AWAITING_UPLOAD,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.RESULTS,
-            ).model_dump_json(),
-        )
-    )
-
     # Mock the upload endpoint with a failure
-    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
+    matchbox_api.post("/upload/test-upload-id").mock(
         return_value=Response(
             400,
             content=UploadStatus(
@@ -222,18 +209,20 @@ def test_results_setter_upload_failure(matchbox_api: MockRouter):
         )
     )
 
-    # Attempt to set results and verify it raises an exception
-    test_results = Results(
-        probabilities=testkit.probabilities, metadata=testkit.model.config
-    )
     with pytest.raises(MatchboxServerFileError, match="Invalid data format"):
-        testkit.model.results = test_results
+        testkit.model.sync()
 
-    assert init_route.called
-    assert upload_route.called
+    # Mock earlier endpoint generating a name clash
+    source = source_factory().source
+    matchbox_api.get(f"/resolutions/{testkit.model.name}").mock(
+        return_value=Response(200, json=source.to_resolution().model_dump())
+    )
+
+    with pytest.raises(ValueError, match="existing resolution"):
+        testkit.model.sync()
 
 
-def test_truth_getter(matchbox_api: MockRouter):
+def test_truth_getter():
     """Test getting model truth threshold from config."""
     # Create testkit with specific truth value
     testkit = model_factory(model_type="linker")
@@ -247,31 +236,7 @@ def test_truth_getter(matchbox_api: MockRouter):
     assert truth == 0.9
 
 
-def test_truth_setter(matchbox_api: MockRouter):
-    """Test setting model truth threshold via the API."""
-    testkit = model_factory(model_type="linker")
-
-    # Mock the PATCH /resolutions/{name}/truth endpoint
-    route = matchbox_api.patch(f"/resolutions/{testkit.model.name}/truth").mock(
-        return_value=Response(
-            200,
-            json=ResolutionOperationStatus(
-                success=True,
-                name=testkit.model.name,
-                operation=CRUDOperation.UPDATE,
-            ).model_dump(),
-        )
-    )
-
-    # Set truth using the setter that triggers API call
-    testkit.model.truth = 0.9
-
-    # Verify the API call
-    assert route.called
-    assert float(route.calls.last.request.read()) == 90
-
-
-def test_truth_setter_validation_error(matchbox_api: MockRouter):
+def test_truth_setter_validation_error():
     """Test setting invalid truth values."""
     testkit = model_factory(model_type="linker")
 

@@ -125,33 +125,6 @@ def test_source_factory_data_hashes_integrity():
     assert len(hashes_df["hash"].unique()) == expected_hash_groups
 
 
-def test_source_testkit_to_mock():
-    """SourceTestkit.mock_client_source creates a correctly configured mock."""
-    # Create a source testkit with some test data
-    features = [
-        FeatureConfig(
-            name="test_field",
-            base_generator="word",
-            variations=[SuffixRule(suffix="_variant")],
-        )
-    ]
-
-    source_testkit = source_factory(
-        features=features, name="test_config", n_true_entities=2, seed=42
-    )
-
-    # Create the mock
-    mock_source = source_testkit.mock_client_source
-
-    # Test that method calls are tracked
-    mock_source.hash_data()
-
-    mock_source.hash_data.assert_called_once()
-
-    # Test method return values
-    assert mock_source.hash_data() == source_testkit.data_hashes
-
-
 def test_source_factory_mock_properties():
     """Test that properties set in source_factory match generated SourceConfig."""
     # Create source with specific features and name

@@ -1,9 +1,12 @@
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import polars as pl
 import pyarrow as pa
 import pytest
+from httpx import Response
 from polars.testing import assert_frame_equal
+from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import OperationalError
 from sqlglot import select
@@ -13,15 +16,30 @@ from matchbox.client.sources import (
     RelationalDBLocation,
     Source,
 )
-from matchbox.common.dtos import DataTypes, LocationType, SourceField
+from matchbox.common.dtos import (
+    BackendResourceType,
+    BackendUploadType,
+    CRUDOperation,
+    DataTypes,
+    LocationType,
+    NotFoundError,
+    Resolution,
+    ResolutionOperationStatus,
+    SourceField,
+    UploadStage,
+    UploadStatus,
+)
 from matchbox.common.exceptions import (
+    MatchboxServerFileError,
     MatchboxSourceExtractTransformError,
 )
+from matchbox.common.factories.models import model_factory
 from matchbox.common.factories.sources import (
     FeatureConfig,
     source_factory,
     source_from_tuple,
 )
+from matchbox.common.graph import ResolutionType
 
 # Locations
 
@@ -158,7 +176,7 @@ def test_relational_db_execute(sqlite_warehouse: Engine):
     assert overridden_results[0]["employees"].dtype == pl.String
 
     # Try query with filter
-    keys_to_filter = source_testkit.query["key"][:2].to_pylist()
+    keys_to_filter = source_testkit.data["key"][:2].to_pylist()
     filtered_results = pl.concat(
         location.execute(sql, batch_size, keys=("key", keys_to_filter))
     )
@@ -282,12 +300,12 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
     assert len(source.config.index_fields) == 2
 
     # This should work if the SQL is preserved exactly
-    df = next(source.query())
+    df = next(source.fetch())
     assert isinstance(df, pl.DataFrame)
     assert len(df) == 3
 
 
-def test_source_query(sqlite_warehouse: Engine):
+def test_source_fetch(sqlite_warehouse: Engine):
     """Test the query method with default parameters."""
     # Create test data
     source_testkit = source_factory(
@@ -310,7 +328,7 @@ def test_source_query(sqlite_warehouse: Engine):
     )
 
     # Execute query
-    result = next(source.query())
+    result = next(source.fetch())
 
     # Verify result
     assert isinstance(result, pl.DataFrame)
@@ -320,11 +338,11 @@ def test_source_query(sqlite_warehouse: Engine):
 
     # Try applying key filter
     key_subset = result[source.config.key_field.name][:2].to_list()
-    result = next(source.query(keys=key_subset))
+    result = next(source.fetch(keys=key_subset))
     assert len(result) == 2
 
     # Key filter ineffective with empty list
-    result = next(source.query(keys=[]))
+    result = next(source.fetch(keys=[]))
     assert len(result) == 5
 
 
@@ -336,7 +354,7 @@ def test_source_query(sqlite_warehouse: Engine):
     ],
 )
 @patch("matchbox.client.sources.RelationalDBLocation.execute")
-def test_source_query_name_qualification(
+def test_source_fetch_name_qualification(
     mock_execute: Mock,
     qualify_names: bool,
 ):
@@ -357,7 +375,7 @@ def test_source_query_name_qualification(
     )
 
     # Call query with qualification parameter
-    next(source.query(qualify_names=qualify_names))
+    next(source.fetch(qualify_names=qualify_names))
 
     # Verify the rename parameter passed to execute
     _, kwargs = mock_execute.call_args
@@ -385,7 +403,7 @@ def test_source_query_name_qualification(
     ],
 )
 @patch("matchbox.client.sources.RelationalDBLocation.execute")
-def test_source_query_batching(
+def test_source_fetch_batching(
     mock_execute: Mock,
     batch_size: int,
     expected_call_kwargs: dict,
@@ -407,7 +425,7 @@ def test_source_query_batching(
     )
 
     # Call query with batching parameters
-    next(source.query(batch_size=batch_size))
+    next(source.fetch(batch_size=batch_size))
 
     # Verify parameters passed to execute
     _, kwargs = mock_execute.call_args
@@ -451,10 +469,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     )
 
     # Execute hash_data with different batching parameters
-    if batch_size:
-        result = source.hash_data(batch_size=batch_size)
-    else:
-        result = source.hash_data()
+    result = source.run(batch_size=batch_size) if batch_size else source.run()
 
     # Verify result
     assert isinstance(result, pa.Table)
@@ -463,9 +478,9 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     assert len(result) == n_true_entities
 
 
-@patch("matchbox.client.sources.Source.query")
-def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: Engine):
-    """Test hash_data raises an error when source primary keys contain nulls."""
+@patch("matchbox.client.sources.Source.fetch")
+def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: Engine):
+    """Test hashing data raises an error when source primary keys contain nulls."""
     # Create a source
     location = RelationalDBLocation(
         name="sqlite", client=create_engine("sqlite:///:memory:")
@@ -480,8 +495,104 @@ def test_source_hash_data_null_identifier(mock_query: Mock, sqlite_warehouse: En
 
     # Mock query to return data with null keys
     mock_df = pl.DataFrame({"key": ["1", None], "name": ["a", "b"]})
-    mock_query.return_value = (x for x in [mock_df])
+    mock_fetch.return_value = (x for x in [mock_df])
 
-    # hash_data should raise ValueErrors for null keys
+    # hashing data should raise ValueErrors for null keys
     with pytest.raises(ValueError, match="keys column contains null values"):
-        source.hash_data()
+        source.run()
+
+
+def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Test source syncing flow through the API."""
+    # Mock Source
+    testkit = source_factory(
+        features=[{"name": "company_name", "base_generator": "company"}],
+        engine=sqlite_warehouse,
+    ).write_to_location()
+
+    # Mock the routes
+    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
+        return_value=Response(
+            404,
+            json=NotFoundError(
+                details="Model not found", entity=BackendResourceType.RESOLUTION
+            ).model_dump(),
+        )
+    )
+    insert_config_route = matchbox_api.post("/resolutions").mock(
+        return_value=Response(
+            201,
+            json=ResolutionOperationStatus(
+                success=True,
+                name=testkit.source.name,
+                operation=CRUDOperation.CREATE,
+            ).model_dump(),
+        )
+    )
+    matchbox_api.post(f"/resolutions/{testkit.source.name}/data").mock(
+        return_value=Response(
+            202,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.AWAITING_UPLOAD,
+                update_timestamp=datetime.now(),
+                entity=BackendUploadType.RESULTS,
+            ).model_dump_json(),
+        )
+    )
+
+    # Mock the data upload
+    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
+        return_value=Response(
+            202,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.COMPLETE,
+                update_timestamp=datetime.now(),
+                entity=BackendUploadType.INDEX,
+            ).model_dump_json(),
+        )
+    )
+
+    # Index the source
+    testkit.source.run()
+    testkit.source.sync()
+
+    # Verify the API calls
+    resolution_call = Resolution.model_validate_json(
+        insert_config_route.calls.last.request.content.decode("utf-8")
+    )
+    # Check key fields match (allowing for different descriptions)
+    assert resolution_call.name == testkit.source.to_resolution().name
+    assert resolution_call.resolution_type == ResolutionType.SOURCE
+    assert resolution_call.config == testkit.source.to_resolution().config
+    assert "test-upload-id" in upload_route.calls.last.request.url.path
+    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
+    assert b"PAR1" in upload_route.calls.last.request.content
+
+    # Now check client handling of server error
+    matchbox_api.post("/upload/test-upload-id").mock(
+        return_value=Response(
+            400,
+            content=UploadStatus(
+                id="test-upload-id",
+                stage=UploadStage.FAILED,
+                update_timestamp=datetime.now(),
+                details="Invalid schema",
+                entity=BackendUploadType.INDEX,
+            ).model_dump_json(),
+        )
+    )
+
+    # Verify the error is propagated
+    with pytest.raises(MatchboxServerFileError):
+        testkit.source.sync()
+
+    # Mock earlier endpoint generating a name clash
+    model = model_factory().model
+    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
+        return_value=Response(200, json=model.to_resolution().model_dump())
+    )
+
+    with pytest.raises(ValueError, match="existing resolution"):
+        testkit.source.sync()

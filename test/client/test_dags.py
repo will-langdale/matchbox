@@ -13,6 +13,7 @@ from matchbox.client.dags import (
     LinkStep,
     StepInput,
 )
+from matchbox.client.models import Model
 from matchbox.client.models.dedupers import NaiveDeduper
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.sources import Source
@@ -66,42 +67,6 @@ def test_step_input_select_fields(sqlite_warehouse: Engine):
     # Verify empty list selection works
     assert step_input_all.select[foo] == []
     assert len(step_input_all.select) == 1
-
-
-def test_cleaning_dict(sqlite_warehouse: Engine):
-    """Test that cleaning works in a StepInput."""
-    foo = source_factory(name="foo", engine=sqlite_warehouse).source
-    i_foo = IndexStep(source=foo)
-
-    test_data = pl.DataFrame(
-        {
-            "id": [1, 2, 3],
-            "foo_name": ["A", "B", "C"],
-            "foo_status": ["active", "inactive", "active"],
-        }
-    )
-
-    step_input = StepInput(
-        prev_node=i_foo,
-        select={foo: ["name", "status"]},
-        cleaning_dict={
-            "name": "lower(foo_name)",
-        },
-    )
-
-    d_foo = DedupeStep(
-        name="d_foo",
-        description="",
-        left=step_input,
-        model_class=NaiveDeduper,
-        settings={"id": "id", "unique_fields": []},
-        truth=1,
-    )
-
-    result = d_foo.clean(test_data, step_input)
-    assert len(result) == 3
-    assert result["name"].to_list() == ["a", "b", "c"]
-    assert set(result.columns) == {"id", "name", "foo_status"}
 
 
 @pytest.mark.parametrize(
@@ -185,24 +150,6 @@ def test_model_step_validation(sqlite_warehouse: Engine):
     assert foo_bar_baz.sources == {foo.name, bar.name, baz.name}
 
 
-@patch("matchbox.client.dags._handler.index")
-@patch.object(Source, "hash_data")
-def test_index_step_run(
-    hash_data: Mock, handler_index_mock: Mock, sqlite_warehouse: Engine
-):
-    """Tests that an index step correctly calls the index handler."""
-    foo = source_factory(name="foo", engine=sqlite_warehouse).source
-
-    # Test with batch size
-    batch_size = 100
-
-    i_foo = IndexStep(source=foo, batch_size=batch_size)
-    i_foo.run()
-
-    hash_data.assert_called_once_with(batch_size=batch_size)
-    assert handler_index_mock.call_args_list[0].kwargs["source"] == foo
-
-
 @pytest.mark.parametrize(
     "batched",
     [
@@ -215,20 +162,12 @@ def test_dedupe_step_run(
     sqlite_warehouse: Engine,
 ):
     """Tests that a dedupe step orchestrates lower-level API correctly."""
+    results_mock = Mock()
     with (
-        patch("matchbox.client.dags.make_model") as make_model_mock,
+        patch.object(Model, "sync"),
+        patch.object(Model, "run", return_value=results_mock),
         patch("matchbox.client.dags.Query.run"),
     ):
-        # Complete mock set up
-        model_mock = Mock()
-        model_mock.name = "model_name"
-        make_model_mock.return_value = model_mock
-
-        results_mock = Mock()
-        results_mock.to_matchbox = Mock()
-
-        model_mock.run = Mock(return_value=results_mock)
-
         # Set up and run deduper
         foo_testkit = source_factory(
             name="foo", engine=sqlite_warehouse
@@ -267,20 +206,12 @@ def test_link_step_run(
     sqlite_warehouse: Engine,
 ):
     """Tests that a link step orchestrates lower-level API correctly."""
+    results_mock = Mock()
     with (
-        patch("matchbox.client.dags.make_model") as make_model_mock,
+        patch.object(Model, "sync"),
+        patch.object(Model, "run", return_value=results_mock),
         patch("matchbox.client.dags.Query.run"),
     ):
-        # Complete mock set up
-        model_mock = Mock()
-        model_mock.name = "model_name"
-        make_model_mock.return_value = model_mock
-
-        results_mock = Mock()
-        results_mock.to_matchbox = Mock()
-
-        model_mock.run = Mock(return_value=results_mock)
-
         # Set up and run linker
         foo_testkit = source_factory(
             name="foo", engine=sqlite_warehouse
@@ -320,15 +251,13 @@ def test_link_step_run(
         foo_bar.run()
 
 
-@patch("matchbox.client.dags._handler.index")
-@patch.object(Source, "hash_data", autospec=True, wraps=Source.hash_data)
+@patch.object(Source, "sync")
 @patch.object(DedupeStep, "run")
 @patch.object(LinkStep, "run")
 def test_dag_runs(
     link_run: Mock,
     dedupe_run: Mock,
-    hash_data_spy: Mock,
-    handler_index: Mock,
+    source_sync_mock: Mock,
     sqlite_warehouse: Engine,
 ):
     """A legal DAG can be built and run."""
@@ -428,36 +357,19 @@ def test_dag_runs(
     # By default outputs are discarded
     assert not dag.debug_outputs
 
-    assert handler_index.call_count == 3
-
-    # Verify batch sizes passed to source.hash_data
-    assert {
-        hash_data_spy.call_args_list[0].kwargs["batch_size"],
-        hash_data_spy.call_args_list[1].kwargs["batch_size"],
-        hash_data_spy.call_args_list[2].kwargs["batch_size"],
-    } == {100, 200}
-
-    # Verify the right sources were sent to index
-    assert {
-        handler_index.call_args_list[0].kwargs["source"],
-        handler_index.call_args_list[1].kwargs["source"],
-        handler_index.call_args_list[2].kwargs["source"],
-    } == {foo, bar, baz}
+    assert source_sync_mock.call_count == 3
 
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 2
 
     # Real sources can be overridden for debugging
-    handler_index.reset_mock()
+    source_sync_mock.reset_mock()
 
     dag.run(
         DAGDebugOptions(
             override_sources={foo.name: pl.from_arrow(foo_testkit.data)[:2]}
         )
     )
-
-    overridden = handler_index.call_args.kwargs["data_hashes"]
-    assert len(overridden) == 2
 
     # Outputs can be kept for debugging
     dag.run(DAGDebugOptions(keep_outputs=True))
@@ -467,7 +379,7 @@ def test_dag_runs(
     assert not dag.debug_outputs
 
     # Reset mocks to test the start argument
-    handler_index.reset_mock()
+    source_sync_mock.reset_mock()
     dedupe_run.reset_mock()
     link_run.reset_mock()
 
@@ -475,12 +387,12 @@ def test_dag_runs(
     dag.run(DAGDebugOptions(start="foo_bar"))
 
     # Verify only steps from foo_bar onward were executed
-    assert handler_index.call_count == 0
+    assert source_sync_mock.call_count == 0
     assert dedupe_run.call_count == 0
     assert link_run.call_count == 2
 
     # Reset mocks to test the finish argument
-    handler_index.reset_mock()
+    source_sync_mock.reset_mock()
     dedupe_run.reset_mock()
     link_run.reset_mock()
 
@@ -488,12 +400,12 @@ def test_dag_runs(
     dag.run(DAGDebugOptions(finish="foo_bar"))
 
     # Verify steps up to foo_bar were executed but foo_bar_baz was not
-    assert handler_index.call_count == 3
+    assert source_sync_mock.call_count == 3
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 1
 
     # Reset mocks again to test combining start and finish
-    handler_index.reset_mock()
+    source_sync_mock.reset_mock()
     dedupe_run.reset_mock()
     link_run.reset_mock()
 
@@ -501,7 +413,7 @@ def test_dag_runs(
     dag.run(DAGDebugOptions(start="d_foo", finish="foo_bar"))
 
     # Verify only the specified segment was executed
-    assert handler_index.call_count == 0
+    assert source_sync_mock.call_count == 0
     assert dedupe_run.call_count == 1
     assert link_run.call_count == 1
 

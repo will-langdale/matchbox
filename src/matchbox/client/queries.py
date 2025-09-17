@@ -1,16 +1,23 @@
 """Definition of model inputs."""
 
+from typing import TYPE_CHECKING, Any
+
 import polars as pl
 from polars import DataFrame as PolarsDataFrame
 
 from matchbox.client import _handler
-from matchbox.client.models import Model
+from matchbox.client.helpers import clean
 from matchbox.client.sources import Source
 from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
     QueryCombineType,
     QueryConfig,
 )
+
+if TYPE_CHECKING:
+    from matchbox.client.models import Model
+else:
+    Model = Any
 
 
 class Query:
@@ -63,7 +70,7 @@ class Query:
     def run(
         self,
         return_type: QueryReturnType = QueryReturnType.POLARS,
-        return_leaf_id: bool = True,
+        return_leaf_id: bool = False,
         batch_size: int | None = None,
     ) -> QueryReturnClass:
         """Runs queries against the selected backend.
@@ -72,12 +79,15 @@ class Query:
             return_type (optional): Type of dataframe returned, defaults to "polars".
                 Other options are "pandas" and "arrow".
             return_leaf_id (optional): Whether matchbox IDs for source clusters should
-                be returned
+                be saved as a byproduct in the `leaf_ids` attribute.
             batch_size (optional): The size of each batch when fetching data from the
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
 
-        Returns: Data in the requested return type (DataFrame or ArrowTable).
+        Returns: Data in the requested return type
+
+        Raises:
+            MatchboxEmptyServerResponse: If no data was returned by the server.
         """
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
@@ -90,7 +100,7 @@ class Query:
                 )
             )
 
-            raw_batches = source.query(
+            raw_batches = source.fetch(
                 qualify_names=True,
                 batch_size=batch_size,
                 return_type=QueryReturnType.POLARS,
@@ -110,35 +120,43 @@ class Query:
         # Process all data and return a single result
         tables: list[PolarsDataFrame] = list(source_results)
 
-        # Make sure we have some results
-        if not tables:
-            result = pl.DataFrame()
-        else:
-            # Combine results based on combine_type
-            if self.config.combine_type == QueryCombineType.CONCAT:
-                result = pl.concat(tables, how="diagonal")
+        # Combine results based on combine_type
+        if return_leaf_id:
+            concatenated = pl.concat(tables, how="diagonal")
+            self.leaf_id = concatenated.select(["id", "leaf_id"])
+
+        if self.config.combine_type == QueryCombineType.CONCAT:
+            if return_leaf_id:  # can reuse the concatenated dataframe
+                data = concatenated.drop(["leaf_id"])
             else:
-                result = tables[0]
-                for table in tables[1:]:
-                    result = result.join(table, on="id", how="full", coalesce=True)
+                data = pl.concat(tables, how="diagonal")
+        else:
+            data = tables[0].drop("leaf_id", strict=False)
+            for table in tables[1:]:
+                data = data.join(
+                    table.drop("leaf_id", strict=False),
+                    on="id",
+                    how="full",
+                    coalesce=True,
+                )
 
-                result = result.select(["id", pl.all().exclude("id")])
+            data = data.select(["id", pl.all().exclude("id")])
 
-                if self.config.combine_type == QueryCombineType.SET_AGG:
-                    # Aggregate into lists
-                    agg_expressions = [
-                        pl.col(col).unique() for col in result.columns if col != "id"
-                    ]
-                    result = result.group_by("id").agg(agg_expressions)
+            if self.config.combine_type == QueryCombineType.SET_AGG:
+                # Aggregate into lists
+                agg_expressions = [
+                    pl.col(col).unique() for col in data.columns if col != "id"
+                ]
+                data = data.group_by("id").agg(agg_expressions)
+
+        data = clean(data, self.config.cleaning)
 
         match return_type:
             case QueryReturnType.POLARS:
-                return result
+                return data
             case QueryReturnType.PANDAS:
-                return result.to_pandas()
+                return data.to_pandas()
             case QueryReturnType.ARROW:
-                return result.to_arrow()
+                return data.to_arrow()
             case _:
                 raise ValueError(f"Return type {return_type} is invalid")
-
-        return result

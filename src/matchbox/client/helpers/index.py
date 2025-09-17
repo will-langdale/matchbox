@@ -2,24 +2,7 @@
 
 from matchbox.client import _handler
 from matchbox.client.sources import Location, Source
-
-
-def index(
-    source: Source,
-    batch_size: int | None = None,
-) -> None:
-    """Indexes data in Matchbox.
-
-    Args:
-        source: A Source
-        batch_size: the size of each batch when fetching data from the warehouse,
-            which helps reduce the load on the database. Default is None.
-    """
-    if not source.location.client:
-        raise ValueError("Source client not set")
-
-    data_hashes = source.hash_data(batch_size=batch_size)
-    _handler.index(source=source, data_hashes=data_hashes)
+from matchbox.common.dtos import ResolutionType
 
 
 def get_source(
@@ -45,7 +28,7 @@ def get_source(
     Returns:
         A Source object.
     """
-    resolution = _handler.get_source_resolution(name=name)
+    resolution = _handler.get_resolution(name=name, validate_type=ResolutionType.SOURCE)
 
     validations = [
         (location.config, resolution.config.location_config, "location"),

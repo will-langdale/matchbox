@@ -21,7 +21,6 @@ from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import Match
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
-    MatchboxSourceNotFoundError,
 )
 from matchbox.common.graph import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
@@ -49,7 +48,7 @@ def get_source_config(name: SourceResolutionName, session: Session) -> SourceCon
         .first()
     )
     if source_config is None:
-        raise MatchboxSourceNotFoundError(name=name)
+        raise MatchboxResolutionNotFoundError(name=name)
 
     return source_config
 

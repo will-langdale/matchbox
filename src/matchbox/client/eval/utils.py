@@ -13,6 +13,7 @@ from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.results import Results
 from matchbox.client.sources import Location, Source
+from matchbox.common.dtos import ResolutionType
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
@@ -73,7 +74,9 @@ def get_samples(
 
     results_by_source = []
     for source_resolution in samples["source"].unique():
-        resolution = _handler.get_source_resolution(source_resolution)
+        resolution = _handler.get_resolution(
+            source_resolution, validate_type=ResolutionType.SOURCE
+        )
         location_name = resolution.config.location_config.name
 
         if location_name in clients:
@@ -98,7 +101,7 @@ def get_samples(
 
         try:
             source_data = pl.concat(
-                source.query(batch_size=10_000, qualify_names=True, keys=keys_by_source)
+                source.fetch(batch_size=10_000, qualify_names=True, keys=keys_by_source)
             )
         except OperationalError as e:
             raise MatchboxSourceTableError(

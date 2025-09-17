@@ -1,183 +1,18 @@
-from datetime import datetime
-from unittest.mock import patch
-
 import pytest
 from httpx import Response
 from respx import MockRouter
 from sqlalchemy import Engine, create_engine
 
-from matchbox.client.helpers.index import get_source, index
+from matchbox.client.helpers.index import get_source
 from matchbox.client.sources import RelationalDBLocation, Source
 from matchbox.common.dtos import (
     BackendResourceType,
-    BackendUploadType,
     NotFoundError,
-    Resolution,
-    UploadStage,
-    UploadStatus,
 )
 from matchbox.common.exceptions import (
-    MatchboxServerFileError,
-    MatchboxSourceNotFoundError,
+    MatchboxResolutionNotFoundError,
 )
-from matchbox.common.factories.sources import source_factory, source_from_tuple
-from matchbox.common.graph import ResolutionType
-
-
-def test_index_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Test successful indexing flow through the API."""
-    # Mock Source
-    source_testkit = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}],
-        engine=sqlite_warehouse,
-    ).write_to_location()
-
-    # Mock the initial source metadata upload
-    source_route = matchbox_api.post("/resolutions").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.AWAITING_UPLOAD,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.INDEX,
-            ).model_dump_json(),
-        )
-    )
-
-    # Mock the data upload
-    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.COMPLETE,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.INDEX,
-            ).model_dump_json(),
-        )
-    )
-
-    # Call the index function
-    index(source=source_testkit.source)
-
-    # Verify the API calls
-    resolution_call = Resolution.model_validate_json(
-        source_route.calls.last.request.content.decode("utf-8")
-    )
-    # Check key fields match (allowing for different descriptions)
-    assert resolution_call.name == source_testkit.source.to_resolution().name
-    assert resolution_call.resolution_type == ResolutionType.SOURCE
-    assert resolution_call.config == source_testkit.source.to_resolution().config
-    assert "test-upload-id" in upload_route.calls.last.request.url.path
-    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
-    assert b"PAR1" in upload_route.calls.last.request.content
-
-
-def test_index_upload_failure(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Test handling of upload failures."""
-    # Mock Source
-    source_testkit = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}],
-        engine=sqlite_warehouse,
-    ).write_to_location()
-
-    # Mock successful source creation
-    source_route = matchbox_api.post("/resolutions").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.AWAITING_UPLOAD,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.INDEX,
-            ).model_dump_json(),
-        )
-    )
-
-    # Mock failed upload
-    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
-        return_value=Response(
-            400,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.FAILED,
-                update_timestamp=datetime.now(),
-                details="Invalid schema",
-                entity=BackendUploadType.INDEX,
-            ).model_dump_json(),
-        )
-    )
-
-    # Verify the error is propagated
-    with pytest.raises(MatchboxServerFileError):
-        index(source=source_testkit.source)
-
-    # Verify API calls
-    resolution_call = Resolution.model_validate_json(
-        source_route.calls.last.request.content.decode("utf-8")
-    )
-    # Check key fields match (allowing for different descriptions)
-    assert resolution_call.name == source_testkit.source.to_resolution().name
-    assert resolution_call.resolution_type == ResolutionType.SOURCE
-    assert resolution_call.config == source_testkit.source.to_resolution().config
-    assert "test-upload-id" in upload_route.calls.last.request.url.path
-    assert b"Content-Disposition: form-data;" in upload_route.calls.last.request.content
-    assert b"PAR1" in upload_route.calls.last.request.content
-
-
-def test_index_with_batch_size(matchbox_api: MockRouter, sqlite_warehouse: Engine):
-    """Test that batch_size is passed correctly to hash_data when indexing."""
-    # Dummy data and source
-    source_testkit = source_from_tuple(
-        data_tuple=({"company_name": "Company A"}, {"company_name": "Company B"}),
-        data_keys=["1", "2"],
-        name="test_companies",
-        engine=sqlite_warehouse,
-    ).write_to_location()
-
-    # Mock the API endpoints
-    source_route = matchbox_api.post("/resolutions").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.AWAITING_UPLOAD,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.INDEX,
-            ).model_dump_json(),
-        )
-    )
-
-    upload_route = matchbox_api.post("/upload/test-upload-id").mock(
-        return_value=Response(
-            202,
-            content=UploadStatus(
-                id="test-upload-id",
-                stage=UploadStage.COMPLETE,
-                update_timestamp=datetime.now(),
-                entity=BackendUploadType.INDEX,
-            ).model_dump_json(),
-        )
-    )
-
-    # Spy on the hash_data method to verify batch_size
-    with patch.object(
-        Source, "hash_data", wraps=source_testkit.source.hash_data
-    ) as spy_hash_data:
-        # Call index with batch_size
-        index(
-            source=source_testkit.source,
-            batch_size=1,
-        )
-
-        # Verify batch_size was passed to hash_data
-        spy_hash_data.assert_called_once()
-        assert spy_hash_data.call_args.kwargs["batch_size"] == 1
-
-        # Verify endpoints were called only once, despite multiple batches
-        assert source_route.call_count == 1
-        assert upload_route.call_count == 1
+from matchbox.common.factories.sources import source_factory
 
 
 def test_get_source_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
@@ -294,10 +129,10 @@ def test_get_source_404_error(matchbox_api: MockRouter):
             404,
             json=NotFoundError(
                 details="SourceConfig nonexistent not found",
-                entity=BackendResourceType.SOURCE,
+                entity=BackendResourceType.RESOLUTION,
             ).model_dump(),
         )
     )
 
-    with pytest.raises(MatchboxSourceNotFoundError, match="nonexistent"):
+    with pytest.raises(MatchboxResolutionNotFoundError, match="nonexistent"):
         get_source(name="nonexistent", location=RelationalDBLocation("", None))

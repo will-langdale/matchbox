@@ -19,6 +19,7 @@ from pyarrow import Table as ArrowTable
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
 
+from matchbox.client import _handler
 from matchbox.common.db import (
     QueryReturnClass,
     QueryReturnType,
@@ -33,6 +34,7 @@ from matchbox.common.dtos import (
     SourceField,
 )
 from matchbox.common.exceptions import (
+    MatchboxResolutionNotFoundError,
     MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
@@ -413,21 +415,18 @@ class Source:
     @classmethod
     def from_resolution(cls, resolution: Resolution, location: Location) -> "Source":
         """Reconstruct from Resolution."""
-        assert resolution.resolution_type == ResolutionType.SOURCE, (
-            "Resolution must be of type 'source'"
-        )
-        assert isinstance(resolution.config, SourceConfig), (
-            "Config must be SourceConfig"
-        )
+        if resolution.resolution_type != ResolutionType.SOURCE:
+            raise ValueError("Resolution must be of type 'source'")
 
-        # Create a new Source instance
-        source = cls.__new__(cls)  # Create without calling __init__
-        source.location = location
-        source.name = resolution.name
-        source.description = resolution.description
-        source.config = resolution.config
-
-        return source
+        return cls(
+            location=location,
+            name=resolution.name,
+            extract_transform=resolution.config.extract_transform,
+            key_field=resolution.config.key_field,
+            index_fields=resolution.config.index_fields,
+            description=resolution.description,
+            infer_types=False,
+        )
 
     def __hash__(self) -> int:
         """Return a hash of the Source based on its config."""
@@ -439,7 +438,7 @@ class Source:
             return False
         return self.config == other.config
 
-    def query(
+    def fetch(
         self,
         qualify_names: bool = False,
         batch_size: int | None = None,
@@ -485,8 +484,8 @@ class Source:
                 return_type=return_type,
             )
 
-    def hash_data(self, batch_size: int | None = None) -> ArrowTable:
-        """Retrieve and hash a dataset from its warehouse, ready to be inserted.
+    def run(self, batch_size: int | None = None) -> ArrowTable:
+        """Hash a dataset from its warehouse, ready to be inserted, and cache hashes.
 
         Hashes the index fields defined in the source based on the
         extract/transform logic.
@@ -510,7 +509,7 @@ class Source:
         index_fields: list[str] = [field.name for field in self.config.index_fields]
 
         all_results: list[pl.DataFrame] = []
-        for batch in self.query(
+        for batch in self.fetch(
             batch_size=batch_size,
             return_type="polars",
         ):
@@ -532,9 +531,11 @@ class Source:
             )
             all_results.append(result)
 
-        processed_df = pl.concat(all_results)
+        self.hashes = (
+            pl.concat(all_results).group_by("hash").agg(pl.col("keys")).to_arrow()
+        )
 
-        return processed_df.group_by("hash").agg(pl.col("keys")).to_arrow()
+        return self.hashes
 
     # Note: name, description, truth are now instance variables, not properties
 
@@ -576,3 +577,29 @@ class Source:
 
         """
         return self.config.f(self.name, fields)
+
+    def sync(self) -> None:
+        """Send the source config and hashes to the server."""
+        resolution = self.to_resolution()
+        try:
+            existing_resolution = _handler.get_resolution(name=self.name)
+        except MatchboxResolutionNotFoundError:
+            existing_resolution = None
+        # Check if config matches
+        if existing_resolution:
+            if existing_resolution.config != self.config:
+                raise ValueError(
+                    f"Resolution {self.name} already exists with different "
+                    "configuration. Please delete the existing resolution "
+                    "or use a different name. "
+                )
+            else:
+                log_prefix = f"Resolution {self.name}"
+                logger.warning("Already exists. Passing.", prefix=log_prefix)
+        else:
+            _handler.create_resolution(resolution=resolution)
+
+        if self.hashes:
+            _handler.set_data(
+                name=self.name, data=self.hashes, validate_type=ResolutionType.SOURCE
+            )

@@ -3,7 +3,7 @@
 from pyarrow import Table as ArrowTable
 
 from matchbox.client import _handler
-from matchbox.common.exceptions import MatchboxSourceNotFoundError
+from matchbox.common.exceptions import MatchboxResolutionNotFoundError
 from matchbox.common.graph import ModelResolutionName, SourceResolutionName
 
 
@@ -33,7 +33,7 @@ def key_field_map(
         ]
 
     if not source_resolutions:
-        raise MatchboxSourceNotFoundError("No compatible source was found")
+        raise MatchboxResolutionNotFoundError("No compatible source was found")
 
     source_mb_ids: list[ArrowTable] = []
     source_to_key_field: dict[str, str] = {}
@@ -41,11 +41,7 @@ def key_field_map(
     for s in source_resolutions:
         # Get Matchbox IDs from backend
         source_mb_ids.append(
-            _handler.query(
-                source=s.name,
-                resolution=resolution,
-                return_leaf_id=False,
-            )
+            _handler.query(source=s.name, resolution=resolution, return_leaf_id=False)
         )
 
         source_to_key_field[s.name] = s.config.key_field.name

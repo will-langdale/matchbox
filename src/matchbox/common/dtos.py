@@ -1,11 +1,13 @@
 """Data transfer objects for Matchbox API."""
 
+import json
 import re
 import textwrap
 from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
+from json import JSONDecodeError
 from typing import Self
 
 import polars as pl
@@ -20,7 +22,6 @@ from pydantic import (
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
 from matchbox.common.graph import (
     ModelResolutionName,
-    ResolutionName,
     ResolutionType,
     SourceResolutionName,
 )
@@ -170,7 +171,6 @@ class ModelResultsType(StrEnum):
 class BackendResourceType(StrEnum):
     """Enumeration of resources types referenced by client or API."""
 
-    SOURCE = "source"
     RESOLUTION = "resolution"
     CLUSTER = "cluster"
     USER = "user"
@@ -196,13 +196,6 @@ class BackendUploadType(StrEnum):
             BackendUploadType.INDEX: SCHEMA_INDEX,
             BackendUploadType.RESULTS: SCHEMA_RESULTS,
         }[self]
-
-
-class ModelType(StrEnum):
-    """Enumeration of supported model types."""
-
-    LINKER = "linker"
-    DEDUPER = "deduper"
 
 
 class CRUDOperation(StrEnum):
@@ -379,8 +372,10 @@ class QueryCombineType(StrEnum):
 class QueryConfig(BaseModel):
     """Configuration of query generating model inputs."""
 
-    source_resolutions: list[SourceResolutionName]
-    model_resolution: ModelResolutionName | None
+    model_config = ConfigDict(frozen=True)
+
+    source_resolutions: tuple[SourceResolutionName, ...]
+    model_resolution: ModelResolutionName | None = None
     combine_type: QueryCombineType = QueryCombineType.CONCAT
     threshold: int | None = None
     cleaning: dict[str, str] | None = None
@@ -396,15 +391,31 @@ class QueryConfig(BaseModel):
             )
         return self
 
+    @property
+    def point_of_truth(self):
+        """Return name of resolution that will be used as point of truth."""
+        if self.model_resolution:
+            return self.model_resolution
+        return self.source_resolutions[0]
+
+
+class ModelType(StrEnum):
+    """Enumeration of supported model types."""
+
+    LINKER = "linker"
+    DEDUPER = "deduper"
+
 
 class ModelConfig(BaseModel):
-    """Metadata for a model."""
+    """Configuration for model that has or could be added to the server."""
 
     type: ModelType
-    left_resolution: ResolutionName
-    right_resolution: ResolutionName | None = None  # Only used for linker models
+    model_class: str
+    model_settings: str
+    left_query: QueryConfig
+    right_query: QueryConfig | None = None  # Only used for linker models
 
-    def __eq__(self, other: "ModelConfig") -> bool:
+    def __eq__(self, other: Self) -> bool:
         """Check equality of model configurations.
 
         Model configurations don't care about the order of left and right resolutions.
@@ -412,9 +423,28 @@ class ModelConfig(BaseModel):
         if not isinstance(other, ModelConfig):
             return NotImplemented
         return self.type == other.type and {
-            self.left_resolution,
-            self.right_resolution,
-        } == {other.left_resolution, other.right_resolution}
+            self.left_query,
+            self.right_query,
+        } == {other.left_query, other.right_query}
+
+    @model_validator(mode="after")
+    def validate_right_query(self) -> Self:
+        """Ensure that a right query is set if and only if model is linker."""
+        if self.type == ModelType.DEDUPER and self.right_query is not None:
+            raise ValueError("Right query can't be set for dedupers")
+        if self.type == ModelType.LINKER and self.right_query is None:
+            raise ValueError("Right query must be set for linkers")
+        return self
+
+    @field_validator("model_settings", mode="after")
+    @classmethod
+    def validate_settings_json(cls, value: str) -> str:
+        """Ensure that the model settings is valid JSON."""
+        try:
+            isinstance(json.loads(value), dict)
+        except JSONDecodeError as e:
+            raise ValueError("Model settings are not valid JSON") from e
+        return value
 
 
 class Match(BaseModel):
