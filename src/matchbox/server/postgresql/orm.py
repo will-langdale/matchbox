@@ -576,7 +576,7 @@ class SourceConfigs(CountMixin, MBDB.MatchboxBase):
         )
 
     def to_dto(self) -> CommonSourceConfig:
-        """Convert ORM source to a matchbox.common Resolution object."""
+        """Convert ORM source to a matchbox.common.SourceConfig object."""
         return CommonSourceConfig(
             location_config=LocationConfig(
                 type=self.location_type, name=self.location_name
@@ -642,8 +642,8 @@ class ModelConfigs(CountMixin, MBDB.MatchboxBase):
             ),
         )
 
-    def to_dto(self) -> CommonSourceConfig:
-        """Convert ORM source to a matchbox.common Resolution object."""
+    def to_dto(self) -> CommonModelConfig:
+        """Convert ORM source to a matchbox.common.ModelConfig object."""
         return CommonModelConfig(
             type=ModelType.LINKER if self.right_query else ModelType.DEDUPER,
             model_class=self.model_class,

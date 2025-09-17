@@ -18,15 +18,11 @@ from matchbox.common.logging import logger
 P = ParamSpec("P")
 R = TypeVar("R")
 
-default_dedupers = {
-    name: obj for name, obj in inspect.getmembers(dedupers, inspect.isclass)
-}
-default_linkers = {
-    name: obj for name, obj in inspect.getmembers(linkers, inspect.isclass)
-}
 
-
-_MODEL_CLASSES = {**default_dedupers, **default_linkers}
+_MODEL_CLASSES = {
+    **{name: obj for name, obj in inspect.getmembers(dedupers, inspect.isclass)},
+    **{name: obj for name, obj in inspect.getmembers(linkers, inspect.isclass)},
+}
 
 
 def add_model_class(ModelClass: type[Linker] | type[Deduper]) -> None:

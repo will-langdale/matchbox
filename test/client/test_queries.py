@@ -166,6 +166,40 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
     }
 
 
+def test_queries_clean(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Test that cleaning in a query is applied."""
+    testkit = source_from_tuple(
+        data_tuple=({"val": "a", "val2": 1}, {"val": "b", "val2": 2}),
+        data_keys=["0", "1"],
+        name="foo",
+        engine=sqlite_warehouse,
+    ).write_to_location()
+
+    # Mock API
+    matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [
+                        {"key": "0", "id": 1},
+                        {"key": "1", "id": 2},
+                    ],
+                    schema=SCHEMA_QUERY,
+                )
+            ).read(),
+        )
+    )
+
+    result = Query(
+        testkit.source, cleaning={"new_val": f"lower({testkit.source.f('val')})"}
+    ).run()
+
+    assert len(result) == 2
+    assert result["new_val"].to_list() == ["a", "b"]
+    assert set(result.columns) == {"id", "foo_key", "new_val", "foo_val2"}
+
+
 @pytest.mark.parametrize(
     "combine_type",
     ["set_agg", "explode"],

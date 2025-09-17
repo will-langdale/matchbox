@@ -11,6 +11,7 @@ from splink import SettingsCreator
 from splink import comparison_library as cl
 
 from matchbox.client.models import Model
+from matchbox.client.models.linkers.base import Linker
 from matchbox.client.models.linkers.splinklinker import SplinkLinker, SplinkSettings
 from matchbox.client.models.linkers.weighteddeterministic import (
     WeightedDeterministicLinker,
@@ -203,7 +204,7 @@ PROBABILISTIC_LINKERS = [
 @pytest.mark.parametrize(("Linker", "configure_linker"), PROBABILISTIC_LINKERS)
 @patch.object(Query, "run")
 def test_probabilistic_scores_generation(
-    mock_query_run: Mock, Linker, configure_linker
+    mock_query_run: Mock, Linker: Linker, configure_linker: LinkerConfigurator
 ):
     """Test that linkers can generate varying probability scores."""
 

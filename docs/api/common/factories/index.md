@@ -54,16 +54,6 @@ tracker = InMemoryUploadTracker()
 upload_id = tracker.add_source(source_testkit.source_config)
 ```
 
-Or you're testing the client handler and want to mock the API.
-
-```python
-@patch("matchbox.client.sources.SourceConfig")
-def test_my_api(MockSource: Mock, matchbox_api: MockRouter):
-    source_testkit = source_factory(
-        features=[{"name": "company_name", "base_generator": "company"}]
-    )
-    MockSource.return_value = source_testkit.mock
-```
 
 `source_factory()` can be configured with a powerful range of [`FeatureConfig`][matchbox.common.factories.entities.FeatureConfig] objects, including a [variety of rules][matchbox.common.factories.entities.VariationRule] which distort and duplicate the data in predictable ways. These use [Faker](https://faker.readthedocs.io/) to generate data.
 

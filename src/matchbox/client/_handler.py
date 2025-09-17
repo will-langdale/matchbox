@@ -322,7 +322,7 @@ def set_data(
 
     # Initialise upload
     metadata_res = CLIENT.post(
-        f"/resolutions/{name}/data", params={"validate_type": str(validate_type)}
+        f"/resolutions/{name}/data", params=url_params({"validate_type": validate_type})
     )
 
     upload = UploadStatus.model_validate(metadata_res.json())

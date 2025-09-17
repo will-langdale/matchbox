@@ -6,14 +6,12 @@ from collections.abc import Hashable
 from functools import cache
 from textwrap import dedent
 from typing import Any, Literal, TypeVar
-from unittest.mock import Mock, PropertyMock, create_autospec
 
 import numpy as np
 import polars as pl
 import pyarrow as pa
 import rustworkx as rx
 from faker import Faker
-from pandas import DataFrame
 from pyarrow import compute as pc
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import create_engine
@@ -23,7 +21,6 @@ from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
-from matchbox.client.results import Results
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import (
     ModelType,
@@ -653,35 +650,6 @@ class ModelTestkit(BaseModel):
         """Initialize the query lookup table."""
         self.threshold = 0
         return self
-
-    @property
-    def mock(self) -> Mock:
-        """Create a mock Model object with this testkit's configuration."""
-        mock_model = create_autospec(Model)
-
-        # Set basic attributes
-        mock_model.config = self.model
-        mock_model.left_data = DataFrame()  # Default empty DataFrame
-        mock_model.right_data = (
-            DataFrame() if self.model.type == ModelType.LINKER else None
-        )
-
-        # Mock results property
-        mock_results = Results(probabilities=self.probabilities, metadata=self.model)
-        type(mock_model).results = PropertyMock(return_value=mock_results)
-
-        # Mock run method
-        mock_model.run.return_value = mock_results
-
-        # Mock the model instance based on type
-        if self.model.type == ModelType.LINKER:
-            mock_model.model_instance = MockLinker
-            mock_model.model_instance.link.return_value = self.probabilities
-        else:
-            mock_model.model_instance = MockDeduper
-            mock_model.model_instance.dedupe.return_value = self.probabilities
-
-        return mock_model
 
 
 def _testkit_to_query(testkit: SourceTestkit | ModelTestkit) -> Query:

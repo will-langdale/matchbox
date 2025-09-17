@@ -4,7 +4,6 @@ import pytest
 from httpx import Client
 from sqlalchemy import Engine, text
 
-from matchbox import clean
 from matchbox.client import _handler
 from matchbox.client.helpers import delete_resolution
 from matchbox.client.models import Model
@@ -270,7 +269,14 @@ class TestE2EAnalyticalUser:
             right_source = right_testkit.source
 
             # Query deduplicated data
-            left_query = Query(left_source, model=dedupers[left_source.name])
+            left_cleaning_dict = self._get_cleaning_dict(
+                left_source.prefix, left_source.qualified_index_fields
+            )
+            left_query = Query(
+                left_source,
+                model=dedupers[left_source.name],
+                cleaning=left_cleaning_dict,
+            )
             left_raw_df = left_query.run()
 
             left_clusters = query_to_cluster_entities(
@@ -279,24 +285,21 @@ class TestE2EAnalyticalUser:
             )
             left_df = left_raw_df.drop(left_source.qualified_key)
 
-            right_query = Query(right_source, model=dedupers[right_source.name])
+            right_cleaning_dict = self._get_cleaning_dict(
+                right_source.prefix, right_source.qualified_index_fields
+            )
+
+            right_query = Query(
+                right_source,
+                model=dedupers[right_source.name],
+                cleaning=right_cleaning_dict,
+            )
             right_raw_df = right_query.run()
             right_clusters = query_to_cluster_entities(
                 data=right_raw_df,
                 keys={right_source.name: right_source.qualified_key},
             )
             right_df = right_raw_df.drop(right_source.qualified_key)
-
-            # Apply cleaning
-            left_cleaning_dict = self._get_cleaning_dict(
-                left_source.prefix, left_df.columns
-            )
-            clean(left_df, left_cleaning_dict)
-
-            right_cleaning_dict = self._get_cleaning_dict(
-                right_source.prefix, right_df.columns
-            )
-            clean(right_df, right_cleaning_dict)
 
             # Build comparison clause
             comparison_clause = (

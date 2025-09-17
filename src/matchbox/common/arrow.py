@@ -77,24 +77,13 @@ def table_to_buffer(table: pa.Table) -> BytesIO:
     return sink
 
 
-def check_schema(expected: Schema, actual: Schema, subset: bool = False) -> None:
-    """Validate equality of Arrow schemas.
-
-    It will ignore field metadata and order of fields.
+def check_schema(expected: Schema, actual: Schema) -> None:
+    """Validate equality of Arrow schemas, ignoring field order and metadata.
 
     Args:
         expected: Schema to check against
         actual: Schema to check
-        subset: Whether a subset of the expected schema will pass validation
     """
-    if subset:
-        actual = pa.schema(
-            [
-                (name, actual.field(name).type)
-                for name in set(expected.names) & set(actual.names)
-            ]
-        )
-
     # Make comparison invariant to order
     actual = pa.schema(
         [
