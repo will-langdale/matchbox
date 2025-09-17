@@ -34,7 +34,11 @@ jobs:
           python-version: "3.11"
 
       - name: Extract development version
-        run: echo "MB_VERSION=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_ENV
+        run: |
+          echo "MB_VERSION=$( \
+            SETUPTOOLS_SCM_PRETEND_METADATA='{distance=1}' \
+            uv run --frozen python -m setuptools_scm \
+          )" >> $GITHUB_ENV
 
       - name: Extract tag metadata for Docker
         id: meta
@@ -45,15 +49,11 @@ jobs:
             type=raw,value=${{ env.MB_VERSION }}
             type=raw,value=development
 
-      - name: Build and push development Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: src/matchbox/server/Dockerfile
-          push: true
-          build-args: |
-            MB_VERSION=${{ env.MB_VERSION }}
-          tags: ${{ steps.meta.outputs.tags }}
+      - name: Delete existing development release if it exists
+        run: |
+          gh release delete development --yes || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create development prerelease
         uses: ncipollo/release-action@v1
@@ -68,4 +68,3 @@ jobs:
             
             **Version:** ${{ env.MB_VERSION }}
             **Commit:** ${{ github.sha }}
-          allowUpdates: true
