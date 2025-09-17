@@ -23,6 +23,7 @@ jobs:
     
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -39,27 +40,30 @@ jobs:
             exit 1
           fi
 
-      - name: Validate and normalise version
+      - name: Process version and tag
         id: version
         run: |
-          version="${{ github.event.inputs.version }}"
-          clean_version=${version#v}
+          input_version="${{ github.event.inputs.version }}"
+          clean_version=${input_version#v}
           
+          # Validate version format
           if ! echo "$clean_version" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Error: Version must be in format x.x.x"
+            echo "Error: Version must be in format x.x.x (with or without v prefix)"
             exit 1
           fi
           
-          final_tag="v$clean_version"
-          echo "tag=$final_tag" >> $GITHUB_OUTPUT
-
-      - name: Check if tag already exists
-        run: |
-          tag="${{ steps.version.outputs.tag }}"
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Error: Tag $tag already exists"
+          git_tag="v$clean_version"
+          
+          # Check if tag already exists
+          if git rev-parse "$git_tag" >/dev/null 2>&1; then
+            echo "Error: Tag $git_tag already exists"
             exit 1
           fi
+          
+          echo "version=$clean_version" >> $GITHUB_OUTPUT
+          echo "tag=$git_tag" >> $GITHUB_OUTPUT
+          echo "Clean version: $clean_version"
+          echo "Git tag: $git_tag"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -67,6 +71,8 @@ jobs:
           python-version: "3.11"
 
       - name: Build package
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
         run: uv build
 
       - name: Upload package artifacts
@@ -93,16 +99,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract release version
-        run: echo "MB_VERSION=$(uv run --frozen python -m setuptools_scm)" >> $GITHUB_ENV
-
       - name: Extract tag metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ env.MB_VERSION }}
+            type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
 
       - name: Build Docker image
@@ -113,8 +116,20 @@ jobs:
           push: false
           load: true
           build-args: |
-            MB_VERSION=${{ env.MB_VERSION }}
+            MB_VERSION=${{ steps.version.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Save Docker image
+        run: |
+          # Save all tags created by the build
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+            > ${{ runner.temp }}/docker-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}/docker-image.tar
 
   deploy-package:
     needs: build
@@ -189,5 +204,5 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.build.outputs.tag }}
-          name: Release ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.tag }}
           generateReleaseNotes: true
