@@ -49,6 +49,16 @@ jobs:
             type=raw,value=${{ env.MB_VERSION }}
             type=raw,value=development
 
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/matchbox/server/Dockerfile
+          push: true
+          build-args: |
+            MB_VERSION=${{ env.MB_VERSION }}
+          tags: ${{ steps.meta.outputs.tags }}
+
       - name: Delete existing development release if it exists
         run: |
           gh release delete development --yes || true
