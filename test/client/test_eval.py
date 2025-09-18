@@ -8,6 +8,7 @@ from pyarrow import Table
 from respx import MockRouter
 from sqlalchemy import Engine
 
+from matchbox.client.dags import DAG
 from matchbox.client.eval import get_samples
 from matchbox.common.arrow import SCHEMA_EVAL_SAMPLES, table_to_buffer
 from matchbox.common.exceptions import MatchboxSourceTableError
@@ -91,6 +92,7 @@ def test_get_samples(
     with pytest.warns(UserWarning, match="Skipping"):
         samples = get_samples(
             n=10,
+            dag=DAG(name="dag"),
             resolution="resolution",
             user_id=user_id,
             clients={"db": sqlite_warehouse},
@@ -143,6 +145,7 @@ def test_get_samples(
 
     no_samples = get_samples(
         n=10,
+        dag=DAG(name="dag"),
         resolution="resolution",
         user_id=user_id,
         clients={"db": sqlite_warehouse},
@@ -164,7 +167,7 @@ def test_get_samples(
         UserWarning, match="Skipping baz, incompatible with given client"
     ):
         no_accessible_samples = get_samples(
-            n=10, resolution="resolution", user_id=user_id
+            n=10, dag=DAG(name="dag"), resolution="resolution", user_id=user_id
         )
     assert no_accessible_samples == {}
 
@@ -172,7 +175,11 @@ def test_get_samples(
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", str(sqlite_warehouse.url))
 
     samples_default_creds = get_samples(
-        n=10, resolution="resolution", user_id=user_id, use_default_client=True
+        n=10,
+        dag=DAG(name="dag"),
+        resolution="resolution",
+        user_id=user_id,
+        use_default_client=True,
     )
     assert len(samples_default_creds) == 1
 
@@ -180,5 +187,9 @@ def test_get_samples(
     env_setter("MB__CLIENT__DEFAULT_WAREHOUSE", "sqlite:///:memory:")
     with pytest.raises(MatchboxSourceTableError):
         get_samples(
-            n=10, resolution="resolution", user_id=user_id, use_default_client=True
+            n=10,
+            dag=DAG(name="dag"),
+            resolution="resolution",
+            user_id=user_id,
+            use_default_client=True,
         )
