@@ -62,7 +62,7 @@ def test_init_and_run_model(matchbox_api: MockRouter):
             Response(200, content=table_to_buffer(bar_leafy_data).read()),
         ]
     )
-    dag = DAG()
+    dag = DAG("collection")
     foo_query = Query(foo.source, dag=dag)
     bar_query = Query(bar.source, dag=dag)
 

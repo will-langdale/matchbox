@@ -110,7 +110,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         data_keys=["2", "3"],
         name="foo2",
         engine=sqlite_warehouse,
-        dag=testkit1.dag,
+        dag=testkit1.source.dag,
     ).write_to_location()
 
     # Mock API
@@ -144,7 +144,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         * 2  # 2 calls to `query()` in this test, each querying server twice
     )
 
-    model = model_factory(dag=testkit1.dag).model
+    model = model_factory(dag=testkit1.source.dag).model
     # Validate results
     results = Query(
         testkit1.source, testkit2.source, model=model, dag=testkit1.source.dag
@@ -199,7 +199,7 @@ def test_queries_clean(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     result = Query(
         testkit.source,
         cleaning={"new_val": f"lower({testkit.source.f('val')})"},
-        dag=testkit.dag,
+        dag=testkit.source.dag,
     ).run()
 
     assert len(result) == 2
@@ -228,7 +228,7 @@ def test_query_combine_type(
         data_keys=["3", "4", "5"],
         name="bar",
         engine=sqlite_warehouse,
-        dag=testkit1.dag,
+        dag=testkit1.source.dag,
     ).write_to_location()
 
     # Mock API
@@ -264,7 +264,7 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    model = model_factory(dag=testkit1.dag).model
+    model = model_factory(dag=testkit1.source.dag).model
 
     # Validate results
     results = Query(
@@ -272,7 +272,7 @@ def test_query_combine_type(
         testkit2.source,
         model=model,
         combine_type=combine_type,
-        dag=testkit1.dag,
+        dag=testkit1.source.dag,
     ).run()
 
     if combine_type == "set_agg":
@@ -318,7 +318,7 @@ def test_query_leaf_ids(
         data_keys=["3", "4", "5"],
         name="bar",
         engine=sqlite_warehouse,
-        dag=testkit1.dag,
+        dag=testkit1.source.dag,
     ).write_to_location()
 
     matchbox_api.get("/query").mock(
@@ -353,14 +353,14 @@ def test_query_leaf_ids(
         ]  # two sources to query
     )
 
-    model = model_factory(dag=testkit1.dag).model
+    model = model_factory(dag=testkit1.source.dag).model
 
     query = Query(
         testkit1.source,
         testkit2.source,
         model=model,
         combine_type=combine_type,
-        dag=testkit1.dag,
+        dag=testkit1.source.dag,
     )
     data: pl.DataFrame = query.run(return_leaf_id=True)
     assert set(data.columns) == {"foo_key", "foo_col", "bar_key", "bar_col", "id"}
@@ -398,7 +398,7 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
 
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-        Query(testkit.source, dag=testkit.dag).run()
+        Query(testkit.source, dag=testkit.source.dag).run()
 
 
 def test_query_empty_results_raises_exception(
@@ -421,4 +421,4 @@ def test_query_empty_results_raises_exception(
     with pytest.raises(
         MatchboxEmptyServerResponse, match="The query operation returned no data"
     ):
-        Query(testkit.source, dag=testkit.dag).run()
+        Query(testkit.source, dag=testkit.source.dag).run()

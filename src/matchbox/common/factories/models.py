@@ -741,7 +741,10 @@ def model_factory(
         left_data = left_testkit.data
         left_query = _testkit_to_query(left_testkit)
         left_entities = left_testkit.entities
-        dag = left_testkit.source.dag
+        if isinstance(left_testkit, SourceTestkit):
+            dag = left_testkit.source.dag
+        else:
+            dag = left_testkit.model.dag
 
         right_data = None
         right_query = None
@@ -756,6 +759,8 @@ def model_factory(
             model_type = ModelType.DEDUPER
             right_entities = None
     else:
+        if dag is None:
+            dag = DAG("collection")
         # Create default sources
         engine = create_engine("sqlite:///:memory:")
         resolved_model_type = ModelType(model_type.lower() if model_type else "deduper")
@@ -806,6 +811,7 @@ def model_factory(
 
         # Generate linked sources
         linked = linked_sources_factory(
+            dag=dag,
             source_parameters=tuple(source_parameters),
             n_true_entities=n_true_entities,
             seed=seed,

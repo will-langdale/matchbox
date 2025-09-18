@@ -157,7 +157,7 @@ class LinkedSourcesTestkit(BaseModel):
     """Container for multiple related SourceConfig testkits with entity tracking."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
+    dag: DAG = DAG(collection_name="collection")
     true_entities: set[SourceEntity] = Field(default_factory=set)
     sources: dict[str, SourceTestkit]
 
@@ -810,6 +810,7 @@ def linked_sources_factory(
     # Initialize LinkedSourcesTestkit
     true_entity_lookup = {entity.id: entity for entity in all_entities}
     linked = LinkedSourcesTestkit(
+        dag=dag,
         true_entities=all_entities,
         sources={},
     )

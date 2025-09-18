@@ -545,7 +545,7 @@ class Source:
             pl.concat(all_results).group_by("hash").agg(pl.col("keys")).to_arrow()
         )
 
-        self.last_run = datetime.datetime.now()
+        self.last_run = datetime.now()
 
         return self.hashes
 
