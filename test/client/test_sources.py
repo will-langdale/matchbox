@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 from sqlglot import select
 from sqlglot.errors import ParseError
 
+from matchbox.client.dags import DAG
 from matchbox.client.sources import (
     RelationalDBLocation,
     Source,
@@ -240,6 +241,7 @@ def test_source_infers_type(sqlite_warehouse: Engine):
 
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = Source(
+        dag=source_testkit.source.dag,
         location=location,
         name="test_source",
         extract_transform=source_testkit.source_config.extract_transform,
@@ -288,6 +290,7 @@ def test_source_sampling_preserves_original_sql(sqlite_warehouse: Engine):
     # This should work since INSTR is valid SQLite
     # Would fail if validation transpiles INSTR to POSITION() or similar
     source = Source(
+        dag=source_testkit.source.dag,
         location=location,
         name="test_source",
         extract_transform=extract_transform,
@@ -319,6 +322,7 @@ def test_source_fetch(sqlite_warehouse: Engine):
     # Create location and source
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = Source(
+        dag=source_testkit.source.dag,
         location=location,
         name="test_source",
         extract_transform=source_testkit.source_config.extract_transform,
@@ -367,6 +371,7 @@ def test_source_fetch_name_qualification(
 
     # Create source
     source = Source(
+        dag=DAG("collection"),
         location=location,
         name="test_source",
         extract_transform="SELECT key, name FROM users",
@@ -417,6 +422,7 @@ def test_source_fetch_batching(
 
     # Create source
     source = Source(
+        dag=DAG("collection"),
         location=location,
         name="test_source",
         extract_transform="SELECT key, name FROM users",
@@ -460,6 +466,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     # Create location and source
     location = RelationalDBLocation(name="dbname", client=sqlite_warehouse)
     source = Source(
+        dag=source_testkit.source.dag,
         location=location,
         name="test_source",
         extract_transform=source_testkit.source_config.extract_transform,
@@ -486,6 +493,7 @@ def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: En
         name="sqlite", client=create_engine("sqlite:///:memory:")
     )
     source = Source(
+        dag=DAG("collection"),
         location=location,
         name="test_source",
         extract_transform="SELECT key, name FROM users",

@@ -1,12 +1,15 @@
 """Definition of model inputs."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import polars as pl
 from polars import DataFrame as PolarsDataFrame
 
 from matchbox.client import _handler
 from matchbox.client.helpers import clean
+from matchbox.client.models import Model
+from matchbox.client.models.dedupers.base import Deduper, DeduperSettings
+from matchbox.client.models.linkers.base import Linker, LinkerSettings
 from matchbox.client.sources import Source
 from matchbox.common.db import QueryReturnClass, QueryReturnType
 from matchbox.common.dtos import (
@@ -15,9 +18,9 @@ from matchbox.common.dtos import (
 )
 
 if TYPE_CHECKING:
-    from matchbox.client.models import Model
+    from matchbox.client.dags import DAG
 else:
-    Model = Any
+    DAG = Any
 
 
 class Query:
@@ -26,6 +29,7 @@ class Query:
     def __init__(
         self,
         *sources: Source,
+        dag: DAG,
         model: Model | None = None,
         combine_type: QueryCombineType = QueryCombineType.CONCAT,
         threshold: float | None = None,
@@ -35,6 +39,7 @@ class Query:
 
         Args:
             sources: List of sources to query from
+            dag: DAG containing sources and models.
             model (optional): Model to use to resolve sources. It can only be missing
                 if querying from a single source.
             combine_type (optional): How to combine the data from different sources.
@@ -57,6 +62,7 @@ class Query:
             cleaning (optional): A dictionary mapping an output column name to a SQL
                 expression that will populate a new column.
         """
+        self.dag = dag
         self.sources = sources
         self.model = model
         self.config = QueryConfig(
@@ -160,3 +166,37 @@ class Query:
                 return data.to_arrow()
             case _:
                 raise ValueError(f"Return type {return_type} is invalid")
+
+    def deduper(
+        self,
+        name: str,
+        model_class: Deduper,
+        model_settings: DeduperSettings,
+        description: str | None = None,
+    ) -> Model:
+        """Create deduper for data in this query."""
+        return self.dag.model(
+            name=name,
+            description=description,
+            model_class=model_class,
+            model_settings=model_settings,
+            left_query=self,
+        )
+
+    def linker(
+        self,
+        other_query: Self,
+        name: str,
+        model_class: Linker,
+        model_settings: LinkerSettings,
+        description: str | None = None,
+    ) -> Model:
+        """Create linker for data in this query and another query."""
+        return self.dag.model(
+            name=name,
+            description=description,
+            model_class=model_class,
+            model_settings=model_settings,
+            left_query=self,
+            right_query=other_query,
+        )

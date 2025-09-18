@@ -25,9 +25,10 @@ from matchbox.common.factories.sources import source_factory, source_from_tuple
 def test_init_query():
     """Test that query is initialised correctly"""
     source = source_factory().source
-    model = model_factory().model
+    model = model_factory(dag=source.dag).model
     query = Query(
         source,
+        dag=source.dag,
         model=model,
         combine_type="explode",
         threshold=0.32,
@@ -68,9 +69,8 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
             ).read(),
         )
     )
-
     # Tests with no optional params
-    results = Query(testkit.source).run()
+    results = Query(testkit.source, dag=testkit.source.dag).run()
     assert len(results) == 2
     assert {"foo_a", "foo_b", "foo_key", "id"} == set(results.columns)
 
@@ -80,7 +80,9 @@ def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine)
     }
 
     # Tests with optional params
-    results = Query(testkit.source, threshold=0.5).run(return_type="pandas")
+    results = Query(testkit.source, threshold=0.5, dag=testkit.source.dag).run(
+        return_type="pandas"
+    )
 
     assert isinstance(results, PandasDataFrame)
     assert len(results) == 2
@@ -108,6 +110,7 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         data_keys=["2", "3"],
         name="foo2",
         engine=sqlite_warehouse,
+        dag=testkit1.dag,
     ).write_to_location()
 
     # Mock API
@@ -141,9 +144,11 @@ def test_query_multiple_sources(matchbox_api: MockRouter, sqlite_warehouse: Engi
         * 2  # 2 calls to `query()` in this test, each querying server twice
     )
 
-    model = model_factory().model
+    model = model_factory(dag=testkit1.dag).model
     # Validate results
-    results = Query(testkit1.source, testkit2.source, model=model).run()
+    results = Query(
+        testkit1.source, testkit2.source, model=model, dag=testkit1.source.dag
+    ).run()
     assert len(results) == 4
     assert {
         "foo_a",
@@ -192,7 +197,9 @@ def test_queries_clean(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     )
 
     result = Query(
-        testkit.source, cleaning={"new_val": f"lower({testkit.source.f('val')})"}
+        testkit.source,
+        cleaning={"new_val": f"lower({testkit.source.f('val')})"},
+        dag=testkit.dag,
     ).run()
 
     assert len(result) == 2
@@ -221,6 +228,7 @@ def test_query_combine_type(
         data_keys=["3", "4", "5"],
         name="bar",
         engine=sqlite_warehouse,
+        dag=testkit1.dag,
     ).write_to_location()
 
     # Mock API
@@ -256,11 +264,15 @@ def test_query_combine_type(
         ]  # two sources to query
     )
 
-    model = model_factory().model
+    model = model_factory(dag=testkit1.dag).model
 
     # Validate results
     results = Query(
-        testkit1.source, testkit2.source, model=model, combine_type=combine_type
+        testkit1.source,
+        testkit2.source,
+        model=model,
+        combine_type=combine_type,
+        dag=testkit1.dag,
     ).run()
 
     if combine_type == "set_agg":
@@ -306,6 +318,7 @@ def test_query_leaf_ids(
         data_keys=["3", "4", "5"],
         name="bar",
         engine=sqlite_warehouse,
+        dag=testkit1.dag,
     ).write_to_location()
 
     matchbox_api.get("/query").mock(
@@ -340,10 +353,14 @@ def test_query_leaf_ids(
         ]  # two sources to query
     )
 
-    model = model_factory().model
+    model = model_factory(dag=testkit1.dag).model
 
     query = Query(
-        testkit1.source, testkit2.source, model=model, combine_type=combine_type
+        testkit1.source,
+        testkit2.source,
+        model=model,
+        combine_type=combine_type,
+        dag=testkit1.dag,
     )
     data: pl.DataFrame = query.run(return_leaf_id=True)
     assert set(data.columns) == {"foo_key", "foo_col", "bar_key", "bar_col", "id"}
@@ -381,7 +398,7 @@ def test_query_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
 
     # Test with no optional params
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
-        Query(testkit.source).run()
+        Query(testkit.source, dag=testkit.dag).run()
 
 
 def test_query_empty_results_raises_exception(
@@ -404,4 +421,4 @@ def test_query_empty_results_raises_exception(
     with pytest.raises(
         MatchboxEmptyServerResponse, match="The query operation returned no data"
     ):
-        Query(testkit.source).run()
+        Query(testkit.source, dag=testkit.dag).run()

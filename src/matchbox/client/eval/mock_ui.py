@@ -61,7 +61,7 @@ def setup_mock_database():
     bar = testkit_bar.source
     bar.location.add_client(warehouse)
     index(source=bar)
-
+    # TODO
     linker = Model(
         name=DEFAULT_RESOLUTION,
         description="Linking model",

@@ -6,6 +6,7 @@ import pytest
 from httpx import Response
 from respx.router import MockRouter
 
+from matchbox.client.dags import DAG
 from matchbox.client.models import Model, add_model_class
 from matchbox.client.models.linkers.base import LinkerSettings
 from matchbox.client.queries import Query
@@ -61,11 +62,12 @@ def test_init_and_run_model(matchbox_api: MockRouter):
             Response(200, content=table_to_buffer(bar_leafy_data).read()),
         ]
     )
-
-    foo_query = Query(foo.source)
-    bar_query = Query(bar.source)
+    dag = DAG()
+    foo_query = Query(foo.source, dag=dag)
+    bar_query = Query(bar.source, dag=dag)
 
     model = Model(
+        dag=dag,
         name="name",
         description="description",
         model_class=MockLinker,

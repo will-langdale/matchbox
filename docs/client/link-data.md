@@ -12,9 +12,9 @@ This guide walks through creating complete matching pipelines using the Matchbox
 
 A DAG (Directed Acyclic Graph) represents a sequence of operations where each step depends on the outputs of previous steps, without any circular dependencies. In Matchbox, a DAG consists of:
 
-1. [`IndexStep`s][matchbox.client.dags.IndexStep]: Loading and indexing data from sources
-2. [`DedupeStep`s][matchbox.client.dags.DedupeStep]: Removing duplicates within a source
-3. [`LinkStep`s][matchbox.client.dags.LinkStep]: Connecting records between different sources
+1. `IndexStep`s: Loading and indexing data from sources
+2. `DedupeStep`s: Removing duplicates within a source
+3. `LinkStep`s: Connecting records between different sources
 
 ## Setting up your environment
 
@@ -151,7 +151,7 @@ Only data indexed in Matchbox can we used to match.
     i_exporters = IndexStep(source_config=exporters, batch_size=batch_size)
     ```
 
-Each [`IndexStep`][matchbox.client.dags.IndexStep] requires:
+Each `IndexStep` requires:
 
 - A `source` object
 - An optional `batch_size` for processing large data in chunks
@@ -189,12 +189,12 @@ Dedupe steps identify and resolve duplicates within a single source.
     )
     ```
 
-A [`DedupeStep`][matchbox.client.dags.DedupeStep] requires:
+A `DedupeStep` requires:
 
-- A `left` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
+- A `left` input, defined as a `StepInput` that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
-    - Cleaning operations to apply ([`cleaning_dict`][matchbox.client.helpers.selector.clean])
+    - Cleaning operations to apply (`cleaning_dict`)
     - Optional batch size
 - A unique `name` for the step
 - A `description` explaining the purpose of the step
@@ -346,9 +346,9 @@ Link steps connect records between different sources.
     )
     ```
 
-A [`LinkStep`][matchbox.client.dags.LinkStep] requires:
+A `LinkStep` requires:
 
-- A `left` and `right` input, defined as a [`StepInput`][matchbox.client.dags.StepInput] that specifies:
+- A `left` and `right` input, defined as a `StepInput` that specifies:
     - The previous step (`prev_node`)
     - Which fields to select (`select`)
     - Cleaning operations to apply ([`cleaning_dict`][matchbox.client.helpers.selector.clean])
