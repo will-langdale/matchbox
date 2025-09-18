@@ -423,12 +423,15 @@ class Source:
         )
 
     @classmethod
-    def from_resolution(cls, resolution: Resolution, location: Location) -> "Source":
+    def from_resolution(
+        cls, resolution: Resolution, dag: DAG, location: Location
+    ) -> "Source":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.SOURCE:
             raise ValueError("Resolution must be of type 'source'")
 
         return cls(
+            dag=dag,
             location=location,
             name=resolution.name,
             extract_transform=resolution.config.extract_transform,

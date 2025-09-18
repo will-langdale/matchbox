@@ -30,7 +30,6 @@ nav:
     - Queries: api/client/queries.md
     - Models: api/client/models.md
     - Evaluation: api/client/eval.md
-    - Helpers: api/client/helpers.md
     - Results: api/client/results.md
     - Visualisation: api/client/visualisation.md
     - Extract: api/client/extract.md

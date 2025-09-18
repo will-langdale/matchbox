@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
+from matchbox.client.dags import DAG
 from matchbox.client.results import Results
 from matchbox.client.sources import Location, Source
 from matchbox.common.dtos import ResolutionType
@@ -26,6 +27,7 @@ from matchbox.common.logging import logger
 
 def get_samples(
     n: int,
+    dag: DAG,
     user_id: int,
     resolution: ModelResolutionName | None = None,
     clients: dict[str, Any] | None = None,
@@ -35,6 +37,7 @@ def get_samples(
 
     Args:
         n: Number of clusters to sample
+        dag: DAG for which to retrieve samples
         user_id: ID of the user requesting the samples
         resolution: Model resolution proposing the clusters. If not set, will
             use a default resolution.
@@ -94,7 +97,9 @@ def get_samples(
         location = Location.from_config(
             resolution.config.location_config, client=client
         )
-        source = Source.from_resolution(resolution=resolution, location=location)
+        source = Source.from_resolution(
+            resolution=resolution, dag=dag, location=location
+        )
 
         samples_by_source = samples.filter(pl.col("source") == source_resolution)
         keys_by_source = samples_by_source["key"].to_list()

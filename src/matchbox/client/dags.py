@@ -13,12 +13,11 @@ from matchbox.common.logging import logger
 class DAG:
     """Self-sufficient pipeline of indexing, deduping and linking steps."""
 
-    def __init__(self, collection_name: str):
+    def __init__(self, name: str, new: bool = False):
         """Initialises empty DAG."""
-        self.collection_name = collection_name
+        self.name = name
         self.nodes: dict[str, Source | Model] = {}
         self.graph: dict[str, list[str]] = {}
-        self.sequence: list[str] = []
 
     def _check_dag(self, dag: Self):
         if self != dag:
@@ -189,14 +188,14 @@ class DAG:
 
         inverse_sequence = []
         depth_first(apex, inverse_sequence)
-        self.sequence = list(reversed(inverse_sequence))
+        sequence = list(reversed(inverse_sequence))
 
         # Identify skipped nodes
         skipped_nodes = []
         if start:
             try:
-                start_index = self.sequence.index(start)
-                skipped_nodes = self.sequence[:start_index]
+                start_index = sequence.index(start)
+                skipped_nodes = sequence[:start_index]
             except ValueError as e:
                 raise ValueError(f"Step {start} not in DAG") from e
         else:
@@ -205,17 +204,17 @@ class DAG:
         # Determine end index
         if finish:
             try:
-                end_index = self.sequence.index(finish) + 1
-                skipped_nodes.extend(self.sequence[end_index:])
+                end_index = sequence.index(finish) + 1
+                skipped_nodes.extend(sequence[end_index:])
             except ValueError as e:
                 raise ValueError(f"Step {finish} not in DAG") from e
         else:
-            end_index = len(self.sequence)
+            end_index = len(sequence)
 
-        sequence = self.sequence[start_index:end_index]
+        sequence = sequence[start_index:end_index]
         if not full_rerun:
             # Exclude nodes that already run, unless a full re-run is forced
-            already_run = [node for node in self.sequence if self.nodes[node].last_run]
+            already_run = [node for node in sequence if self.nodes[node].last_run]
             skipped_nodes.extend(already_run)
             sequence = [node for node in sequence if node not in already_run]
 

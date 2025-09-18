@@ -155,12 +155,13 @@ class Model:
         )
 
     @classmethod
-    def from_resolution(cls, resolution: Resolution) -> "Model":
+    def from_resolution(cls, resolution: Resolution, dag: DAG) -> "Model":
         """Reconstruct from Resolution."""
         if resolution.resolution_type != ResolutionType.MODEL:
             raise ValueError("Resolution must be of type 'model'")
 
         return cls(
+            dag=dag,
             name=resolution.name,
             description=resolution.description,
             model_class=resolution.config.model_class,

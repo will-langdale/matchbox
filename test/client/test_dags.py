@@ -29,7 +29,7 @@ def test_dag_run_and_sync(
     bar_tkit = source_factory(name="bar", engine=sqlite_warehouse).write_to_location()
     baz_tkit = source_factory(name="baz", engine=sqlite_warehouse).write_to_location()
 
-    dag = DAG(collection_name="default")
+    dag = DAG(name="dag")
 
     # Structure: sources can be added
     foo = dag.source(**foo_tkit.into_dag())
@@ -171,7 +171,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
     bar_tkit = source_factory(name="bar", engine=sqlite_warehouse).write_to_location()
     baz_tkit = source_factory(name="baz", engine=sqlite_warehouse).write_to_location()
 
-    dag = DAG(collection_name="default")
+    dag = DAG(name="default")
 
     # Structure: sources can be added
     foo = dag.source(**foo_tkit.into_dag())
