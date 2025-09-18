@@ -9,8 +9,8 @@ nav:
   - Use cases: use-cases.md
 - Client:
   - Installation: client/install.md
-  - Explore resolutions: client/explore-resolutions.md
-  - Retrieve: client/query-data.md
+  - Explore DAGs: client/explore-dags.md
+  - Retrieve matches: client/query-data.md
   - Link and deduplicate: client/link-data.md
   - Evaluate models: client/evaluation.md
   - API: 
@@ -25,11 +25,12 @@ nav:
 - API reference:
   - Client:
     - Overview: api/client/index.md
-    - Sources: api/client/sources.md
     - DAGs: api/client/dags.md
+    - Sources: api/client/sources.md
+    - Queries: api/client/queries.md
+    - Models: api/client/models.md
     - Evaluation: api/client/eval.md
     - Helpers: api/client/helpers.md
-    - Models: api/client/models.md
     - Results: api/client/results.md
     - Visualisation: api/client/visualisation.md
     - Extract: api/client/extract.md
