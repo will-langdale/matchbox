@@ -488,21 +488,6 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     matchbox_api.get("/match").mock(
         return_value=Response(200, content=serialised_matches)
     )
-    matchbox_api.get(f"/resolutions/{foo.name}").mock(
-        return_value=Response(
-            200, json=foo_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
-    matchbox_api.get(f"/resolutions/{bar.name}").mock(
-        return_value=Response(
-            200, json=bar_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
-    matchbox_api.get(f"/resolutions/{baz.name}").mock(
-        return_value=Response(
-            200, json=baz_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
 
     # Use lookup function
     matches = dag.lookup_key(from_source="foo", to_sources=["bar", "baz"], key="pk1")
@@ -512,7 +497,7 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
 
 def test_lookup_key_404_source(matchbox_api: MockRouter):
-    """The client can handle a resolution not found error."""
+    """Key lookup throws a resolution not found error."""
     # Set up dummy data
     source_testkit = source_factory(name="source")
     target_testkit = source_factory(name="target")
@@ -534,26 +519,14 @@ def test_lookup_key_404_source(matchbox_api: MockRouter):
             ).model_dump(),
         )
     )
-    matchbox_api.get(f"/resolutions/{source_testkit.name}").mock(
-        return_value=Response(
-            200, json=source_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
-    matchbox_api.get(f"/resolutions/{target_testkit.name}").mock(
-        return_value=Response(
-            200, json=target_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
 
     # Use match function
     with pytest.raises(MatchboxResolutionNotFoundError, match="42"):
         dag.lookup_key(from_source="source", to_sources=["target"], key="pk1")
 
 
-def test_match_empty_results_raises_exception(
-    matchbox_api: MockRouter, sqlite_warehouse: Engine
-):
-    """Test that match raises MatchboxEmptyServerResponse when no matches are found."""
+def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engine):
+    """Key lookup raises MatchboxEmptyServerResponse when no matches are found."""
     # Set up dummy data
     source_testkit = source_factory(
         engine=sqlite_warehouse, name="source"
@@ -572,16 +545,6 @@ def test_match_empty_results_raises_exception(
 
     # Mock empty match results
     matchbox_api.get("/match").mock(return_value=Response(200, content="[]"))
-    matchbox_api.get(f"/resolutions/{source_testkit.source.to_resolution().name}").mock(
-        return_value=Response(
-            200, json=source_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
-    matchbox_api.get(f"/resolutions/{target_testkit.source.to_resolution().name}").mock(
-        return_value=Response(
-            200, json=target_testkit.source.to_resolution().model_dump(mode="json")
-        )
-    )
 
     # Test that empty match results raise MatchboxEmptyServerResponse
     with pytest.raises(
