@@ -125,7 +125,7 @@ class SourceTestkit(BaseModel):
         return self.source.config
 
     def into_dag(self) -> dict:
-        """Turn source into kwargs for `dag.source()`, without collection name."""
+        """Turn source into kwargs for `dag.source()`, detaching from original DAG."""
         return {
             "location": self.source.location,
             "name": self.source.name,

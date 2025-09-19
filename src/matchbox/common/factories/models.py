@@ -926,7 +926,7 @@ def query_to_model_factory(
 
     dag = left_query.dag
     if right_query.dag != dag:
-        raise ValueError("Collection names for left and right query must match.")
+        raise ValueError("DAGs for left and right query must match.")
 
     # Check if right-side arguments are consistently provided
     right_args = [right_query, right_data, right_keys]
