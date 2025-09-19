@@ -21,7 +21,7 @@ from matchbox.common.eval import (
     precision_recall,
 )
 from matchbox.common.exceptions import MatchboxSourceTableError
-from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
+from matchbox.common.graph import ModelResolutionName
 from matchbox.common.logging import logger
 
 
@@ -29,7 +29,6 @@ def get_samples(
     n: int,
     dag: DAG,
     user_id: int,
-    resolution: ModelResolutionName | None = None,
     clients: dict[str, Any] | None = None,
     use_default_client: bool = False,
 ) -> dict[int, pl.DataFrame]:
@@ -39,8 +38,6 @@ def get_samples(
         n: Number of clusters to sample
         dag: DAG for which to retrieve samples
         user_id: ID of the user requesting the samples
-        resolution: Model resolution proposing the clusters. If not set, will
-            use a default resolution.
         clients: Dictionary from location names to valid client for each.
             Locations whose name is missing from the dictionary will be skipped.
         use_default_client: Whether to use for all unset location clients
@@ -54,9 +51,6 @@ def get_samples(
         MatchboxSourceTableError: If a source cannot be queried from a location using
             provided or default clients.
     """
-    if not resolution:
-        resolution = DEFAULT_RESOLUTION
-
     if not clients:
         clients = {}
 
@@ -69,7 +63,7 @@ def get_samples(
             raise ValueError("`MB__CLIENT__DEFAULT_WAREHOUSE` is unset")
 
     samples: pl.DataFrame = pl.from_arrow(
-        _handler.sample_for_eval(n=n, resolution=resolution, user_id=user_id)
+        _handler.sample_for_eval(n=n, resolution=dag.final_step, user_id=user_id)
     )
 
     if not len(samples):
