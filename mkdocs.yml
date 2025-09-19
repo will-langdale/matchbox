@@ -31,7 +31,6 @@ nav:
     - Models: api/client/models.md
     - Evaluation: api/client/eval.md
     - Results: api/client/results.md
-    - Visualisation: api/client/visualisation.md
     - Extract: api/client/extract.md
   - Server: 
     - Overview: api/server/index.md

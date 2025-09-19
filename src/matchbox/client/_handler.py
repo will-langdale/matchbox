@@ -56,7 +56,6 @@ from matchbox.common.exceptions import (
 )
 from matchbox.common.graph import (
     ModelResolutionName,
-    ResolutionGraph,
     ResolutionName,
     SourceResolutionName,
 )
@@ -270,16 +269,6 @@ def get_leaf_source_resolutions(name: ModelResolutionName) -> list[Resolution]:
     res = CLIENT.get(f"/resolutions/{name}/sources")
 
     return [Resolution.model_validate(s) for s in res.json()]
-
-
-@http_retry
-def get_resolution_graph() -> ResolutionGraph:
-    """Get the resolution graph from Matchbox."""
-    log_prefix = "Visualisation"
-    logger.debug("Fetching resolution graph", prefix=log_prefix)
-
-    res = CLIENT.get("/report/resolutions")
-    return ResolutionGraph.model_validate(res.json())
 
 
 @http_retry
