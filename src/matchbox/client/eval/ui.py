@@ -5,21 +5,24 @@ import streamlit as st
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
+from matchbox.client.dags import DAG
 from matchbox.client.eval import get_samples
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import MatchboxClientSettingsException
-from matchbox.common.graph import DEFAULT_RESOLUTION
 
 
 def fetch_samples():
     """Download same samples to evaluate and add to session."""
-    st.session_state.resolution = st.session_state.get(
-        "resolution_input", DEFAULT_RESOLUTION
-    )
+    st.session_state.dag_name = st.session_state.get("dag_name")
+    if not st.session_state.dag_name_input:
+        raise RuntimeError("A DAG name must be set in environment variables.")
+
+    dag = DAG(st.session_state.dag_name)
+
     with st.spinner("Loading samples..."):
         st.session_state.samples = get_samples(
+            dag=dag,
             n=100,
-            resolution=st.session_state.resolution,
             user_id=st.session_state.user_id,
             use_default_client=True,
         )
@@ -37,9 +40,7 @@ if "step" not in st.session_state:
 
 
 if st.session_state.step == "ready":
-    st.text_input(
-        "Resolution to sample from", DEFAULT_RESOLUTION, key="resolution_input"
-    )
+    st.text_input("DAG to sample from", key="dag_name_input")
     st.button("Fetch samples", type="primary", on_click=fetch_samples)
 
 
@@ -55,7 +56,7 @@ if st.session_state.step == "eval":
 
     st.markdown(
         f"Welcome **{st.session_state.user_name}**. "
-        f"Sampling from resolution: `{st.session_state.resolution}`"
+        f"Sampling from DAG: `{st.session_state.dag_name}`"
     )
     edited_df = st.data_editor(
         st.session_state.df,

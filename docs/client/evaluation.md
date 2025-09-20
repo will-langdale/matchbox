@@ -106,4 +106,4 @@ p, r = eval_data.precision_recall(results, threshold=0.5)
     * The precision and recall scores will be the same at all thresholds.
 
     On the other hand, probabilistic models (like `SplinkLinker`), can output **any value between 0.0 and 1.0**.
-# TODO: How do you compare models?
+    
