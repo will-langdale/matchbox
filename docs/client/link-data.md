@@ -30,12 +30,12 @@ deduper = source.query().deduper(...)
 linker = deduper.query().linker(other_source.query())
 ```
 
-All these objects are lazy: they don't actually retrieve any data unless you run them:
+All these objects are lazy: they don't actually retrieve any data unless you run them, for example:
 
 ```python
-source.run()
-deduper.run()
-linker.run()
+queried_data = query.run()
+deduper_results = deduper.run()
+linker_results = linker.run()
 ```
 
 The steps need to be run in order, but once you've finalised your DAG, it's better to automatically run all of them using a single DAG command, as is shown later. When you run a step, either directly or through the DAG, its data is cached so that running it again won't do anything, unless you force a re-run.

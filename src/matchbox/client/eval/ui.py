@@ -2,6 +2,7 @@
 
 import polars as pl
 import streamlit as st
+from sqlalchemy import create_engine
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
@@ -20,12 +21,14 @@ def fetch_samples():
     dag = DAG(st.session_state.dag_name)
 
     with st.spinner("Loading samples..."):
+        default_client = create_engine(settings.default_warehouse)
         st.session_state.samples = get_samples(
             dag=dag,
             n=100,
             user_id=st.session_state.user_id,
-            use_default_client=True,
+            default_client=default_client,
         )
+        default_client.dispose()
     st.session_state.step = "eval" if st.session_state.samples else "done"
 
 

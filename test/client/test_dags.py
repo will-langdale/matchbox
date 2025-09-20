@@ -435,6 +435,9 @@ def test_extract_lookup(sqlite_warehouse: Engine, matchbox_api: MockRouter):
         check_column_order=False,
     )
 
+    # Dispose of temporary warehouse
+    sqlite_memory_warehouse.dispose()
+
 
 def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The DAG can map between single keys."""
