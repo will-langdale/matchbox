@@ -7,7 +7,7 @@ import pytest
 from httpx import Response
 from polars.testing import assert_frame_equal
 from respx import MockRouter
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
 from sqlglot import select
 from sqlglot.errors import ParseError
@@ -45,11 +45,9 @@ from matchbox.common.graph import ResolutionType
 # Locations
 
 
-def test_relational_db_location_instantiation():
+def test_relational_db_location_instantiation(sqlite_in_memory_warehouse: Engine):
     """Test that RelationalDBLocation can be instantiated with valid parameters."""
-    location = RelationalDBLocation(
-        name="dbname", client=create_engine("sqlite:///:memory:")
-    )
+    location = RelationalDBLocation(name="dbname", client=sqlite_in_memory_warehouse)
     assert location.config.type == LocationType.RDBMS
     assert location.config.name == "dbname"
 
@@ -103,11 +101,11 @@ def test_relational_db_location_instantiation():
         ),
     ],
 )
-def test_relational_db_extract_transform(sql: str, is_valid: bool):
+def test_relational_db_extract_transform(
+    sql: str, is_valid: bool, sqlite_in_memory_warehouse: Engine
+):
     """Test SQL validation in validate_extract_transform."""
-    location = RelationalDBLocation(
-        name="dbname", client=create_engine("sqlite:///:memory:")
-    )
+    location = RelationalDBLocation(name="dbname", client=sqlite_in_memory_warehouse)
 
     if is_valid:
         assert location.validate_extract_transform(sql)
@@ -359,15 +357,12 @@ def test_source_fetch(sqlite_warehouse: Engine):
 )
 @patch("matchbox.client.sources.RelationalDBLocation.execute")
 def test_source_fetch_name_qualification(
-    mock_execute: Mock,
-    qualify_names: bool,
+    mock_execute: Mock, qualify_names: bool, sqlite_in_memory_warehouse: Engine
 ):
     """Test that column names are qualified when requested."""
     # Mock the location execute method to verify parameters
     mock_execute.return_value = (x for x in [None])  # execute needs to be a generator
-    location = RelationalDBLocation(
-        name="sqlite", client=create_engine("sqlite:///:memory:")
-    )
+    location = RelationalDBLocation(name="sqlite", client=sqlite_in_memory_warehouse)
 
     # Create source
     source = Source(
@@ -412,13 +407,12 @@ def test_source_fetch_batching(
     mock_execute: Mock,
     batch_size: int,
     expected_call_kwargs: dict,
+    sqlite_in_memory_warehouse: Engine,
 ):
     """Test query with batching options."""
     # Mock the location execute method to verify parameters
     mock_execute.return_value = (x for x in [None])  # execute needs to be a generator
-    location = RelationalDBLocation(
-        name="sqlite", client=create_engine("sqlite:///:memory:")
-    )
+    location = RelationalDBLocation(name="sqlite", client=sqlite_in_memory_warehouse)
 
     # Create source
     source = Source(
@@ -486,12 +480,12 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
 
 
 @patch("matchbox.client.sources.Source.fetch")
-def test_source_hash_data_null_identifier(mock_fetch: Mock, sqlite_warehouse: Engine):
+def test_source_hash_data_null_identifier(
+    mock_fetch: Mock, sqlite_in_memory_warehouse: Engine
+):
     """Test hashing data raises an error when source primary keys contain nulls."""
     # Create a source
-    location = RelationalDBLocation(
-        name="sqlite", client=create_engine("sqlite:///:memory:")
-    )
+    location = RelationalDBLocation(name="sqlite", client=sqlite_in_memory_warehouse)
     source = Source(
         dag=DAG("collection"),
         location=location,

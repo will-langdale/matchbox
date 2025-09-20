@@ -7,7 +7,7 @@ import pytest
 from httpx import Response
 from polars.testing import assert_frame_equal
 from respx import MockRouter
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG
 from matchbox.client.models import Model
@@ -292,10 +292,13 @@ def test_dag_draw(sqlite_warehouse: Engine):
 # Lookups
 
 
-def test_extract_lookup(sqlite_warehouse: Engine, matchbox_api: MockRouter):
+def test_extract_lookup(
+    sqlite_warehouse: Engine,
+    sqlite_in_memory_warehouse: Engine,
+    matchbox_api: MockRouter,
+):
     """Entire lookup can be extracted from DAG."""
     # Make dummy data
-    sqlite_memory_warehouse = create_engine("sqlite:///:memory:")
 
     foo = source_from_tuple(
         name="foo",
@@ -307,7 +310,7 @@ def test_extract_lookup(sqlite_warehouse: Engine, matchbox_api: MockRouter):
     bar = source_from_tuple(
         name="bar",
         location_name="sqlite_memory",
-        engine=sqlite_memory_warehouse,
+        engine=sqlite_in_memory_warehouse,
         data_keys=["a", "b", "c"],
         data_tuple=({"col": 10}, {"col": 11}, {"col": 12}),
     ).write_to_location()
@@ -434,9 +437,6 @@ def test_extract_lookup(sqlite_warehouse: Engine, matchbox_api: MockRouter):
         check_row_order=False,
         check_column_order=False,
     )
-
-    # Dispose of temporary warehouse
-    sqlite_memory_warehouse.dispose()
 
 
 def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):

@@ -2,7 +2,7 @@
 
 import polars as pl
 import streamlit as st
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 
 from matchbox.client import _handler
 from matchbox.client._settings import settings
@@ -10,6 +10,13 @@ from matchbox.client.dags import DAG
 from matchbox.client.eval import get_samples
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import MatchboxClientSettingsException
+
+
+@st.cache_resource
+def init_engine() -> Engine:
+    """Create a single SQLAlchemy engine."""
+    engine = create_engine(settings.default_warehouse)
+    return engine
 
 
 def fetch_samples():
@@ -21,14 +28,12 @@ def fetch_samples():
     dag = DAG(st.session_state.dag_name)
 
     with st.spinner("Loading samples..."):
-        default_client = create_engine(settings.default_warehouse)
         st.session_state.samples = get_samples(
             dag=dag,
             n=100,
             user_id=st.session_state.user_id,
-            default_client=default_client,
+            default_client=init_engine(),
         )
-        default_client.dispose()
     st.session_state.step = "eval" if st.session_state.samples else "done"
 
 

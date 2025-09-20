@@ -6,7 +6,7 @@ from httpx import Response
 from polars.testing import assert_frame_equal
 from pyarrow import Table
 from respx import MockRouter
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 
 from matchbox.client.dags import DAG
 from matchbox.client.eval import get_samples
@@ -19,6 +19,7 @@ from matchbox.common.factories.sources import source_from_tuple
 def test_get_samples(
     matchbox_api: MockRouter,
     sqlite_warehouse: Engine,
+    sqlite_in_memory_warehouse: Engine,
     env_setter: Callable[[str, str], None],
 ):
     # Make dummmy data
@@ -198,12 +199,10 @@ def test_get_samples(
     assert len(samples_default_creds) == 1
 
     # What happens if source cannot be queried using client?
-    default_client = create_engine("sqlite:///:memory:")
     with pytest.raises(MatchboxSourceTableError):
         get_samples(
             n=10,
             dag=dag,
             user_id=user_id,
-            default_client=default_client,
+            default_client=sqlite_in_memory_warehouse,
         )
-    default_client.dispose()
