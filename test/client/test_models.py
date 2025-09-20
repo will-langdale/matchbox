@@ -71,7 +71,7 @@ def test_init_and_run_model(matchbox_api: MockRouter):
         name="name",
         description="description",
         model_class=MockLinker,
-        model_settings=LinkerSettings(left_id="left", right_id="right"),
+        model_settings=LinkerSettings(),
         left_query=foo_query,
         right_query=bar_query,
     )

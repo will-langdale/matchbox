@@ -60,11 +60,7 @@ def setup_mock_database():
         bar.query(cleaning={"comp": f"split_part({bar.f('name')}, ' ', 1)"}),
         name="final",
         model_class=DeterministicLinker,
-        model_settings={
-            "left_id": "id",
-            "right_id": "id",
-            "comparisons": ("l.comp = r.comp",),
-        },
+        model_settings={"comparisons": "l.comp = r.comp"},
     )
 
     dag.run_and_sync()

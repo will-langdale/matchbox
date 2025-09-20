@@ -182,10 +182,7 @@ class TestE2EPipelineBuilder:
             name="dedupe_source_a",
             description="Deduplicate source A",
             model_class=NaiveDeduper,
-            model_settings={
-                "id": "id",
-                "unique_fields": [source_a.f("registration_id")],
-            },
+            model_settings={"unique_fields": [source_a.f("registration_id")]},
         )
 
         dedupe_b = source_b.query(
@@ -196,10 +193,7 @@ class TestE2EPipelineBuilder:
             name="dedupe_source_b",
             description="Deduplicate source B",
             model_class=NaiveDeduper,
-            model_settings={
-                "id": "id",
-                "unique_fields": [source_b.f("registration_id")],
-            },
+            model_settings={"unique_fields": [source_b.f("registration_id")]},
         )
 
         # Link deduplicated sources A and B
@@ -222,11 +216,7 @@ class TestE2EPipelineBuilder:
             name="final",
             description="Link sources A and B on registration_id",
             model_class=DeterministicLinker,
-            model_settings={
-                "left_id": "id",
-                "right_id": "id",
-                "comparisons": ["l.registration_id = r.registration_id"],
-            },
+            model_settings={"comparisons": ["l.registration_id = r.registration_id"]},
         )
 
         # === FIRST RUN ===

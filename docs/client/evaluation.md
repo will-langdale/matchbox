@@ -72,7 +72,6 @@ model = source.query().deduper(
     description=f"description",
     model_class=NaiveDeduper,
     model_settings={
-        "id": "id",
         "unique_fields": ["field1", "field2"],
     },
 )

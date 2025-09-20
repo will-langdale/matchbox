@@ -162,7 +162,6 @@ Dedupe steps identify and resolve duplicates within a single source.
         description="Deduplication based on company name",
         model_class=NaiveDeduper,
         model_settings={
-            "id": "id",
             "unique_fields": ["company_name"],
         },
         truth=1.0,

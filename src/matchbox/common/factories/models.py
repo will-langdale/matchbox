@@ -836,9 +836,7 @@ def model_factory(
     # ==== Model creation ====
     model_class = MockLinker if model_type == ModelType.LINKER else MockDeduper
     model_settings = (
-        LinkerSettings(left_id="left", right_id="right")
-        if model_type == ModelType.LINKER
-        else DeduperSettings(id="key")
+        LinkerSettings() if model_type == ModelType.LINKER else DeduperSettings()
     )
     model = Model(
         dag=dag,
@@ -952,11 +950,7 @@ def query_to_model_factory(
 
     # Create model metadata
     model_class = MockLinker if right_data is not None else MockDeduper
-    model_settings = (
-        LinkerSettings(left_id="left", right_id="right")
-        if right_data is not None
-        else DeduperSettings(id="key")
-    )
+    model_settings = LinkerSettings() if right_data is not None else DeduperSettings()
 
     model = Model(
         dag=dag,

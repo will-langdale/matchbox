@@ -107,10 +107,7 @@ class TestE2EModelEvaluation:
             name="final",
             description="Deduplicate source A",
             model_class=NaiveDeduper,
-            model_settings={
-                "id": "id",
-                "unique_fields": [source_a.f("registration_id")],
-            },
+            model_settings={"unique_fields": [source_a.f("registration_id")]},
         )
 
         dag.run_and_sync()
@@ -157,10 +154,7 @@ class TestE2EModelEvaluation:
         new_deduper = source_a.query().deduper(
             name="alt_deduper",
             model_class=NaiveDeduper,
-            model_settings={
-                "id": "id",
-                "unique_fields": [source_a.f("registration_id")],
-            },
+            model_settings={"unique_fields": [source_a.f("registration_id")]},
         )
 
         results = new_deduper.run(for_validation=True)

@@ -51,9 +51,7 @@ def test_dag_run_and_sync(
 
     # Structure: sources can be deduped
     d_foo = foo.query().deduper(
-        name="d_foo",
-        model_class=NaiveDeduper,
-        model_settings={"id": "id", "unique_fields": []},
+        name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
 
     # Structure:
@@ -63,7 +61,7 @@ def test_dag_run_and_sync(
         bar.query(),
         name="foo_bar",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     # Structure: linkers can take other linkers
@@ -71,7 +69,7 @@ def test_dag_run_and_sync(
         baz.query(),
         name="foo_bar_baz",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     assert set(dag.nodes.keys()) == {
@@ -102,7 +100,7 @@ def test_dags_missing_dependency(sqlite_warehouse: Engine):
             left_query=foo.query(),
             name="d_foo",
             model_class=NaiveDeduper,
-            model_settings={"id": "id", "unique_fields": []},
+            model_settings={"unique_fields": []},
         )
 
     # Failure leads to no dags being added
@@ -124,7 +122,7 @@ def test_mixing_dags_fails(sqlite_warehouse: Engine):
             left_query=foo.query(),
             name="d_foo",
             model_class=NaiveDeduper,
-            model_settings={"id": "id", "unique_fields": []},
+            model_settings={"unique_fields": []},
         )
 
     # Failure leads to no dags being added
@@ -143,16 +141,12 @@ def test_dag_name_clash(sqlite_warehouse: Engine):
     bar = dag.source(**bar_tkit.into_dag())
 
     d_foo = foo.query().deduper(
-        name="d_foo",
-        model_class=NaiveDeduper,
-        model_settings={"id": "id", "unique_fields": []},
+        name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
 
     with pytest.raises(ValueError, match="already taken"):
         bar.query().deduper(
-            name="d_foo",
-            model_class=NaiveDeduper,
-            model_settings={"id": "id", "unique_fields": []},
+            name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
         )
 
     # DAG is not modified by failed attempt
@@ -190,16 +184,14 @@ def test_dag_draw(sqlite_warehouse: Engine):
     baz = dag.source(**baz_tkit.into_dag())
 
     d_foo = foo.query().deduper(
-        name="d_foo",
-        model_class=NaiveDeduper,
-        model_settings={"id": "id", "unique_fields": []},
+        name="d_foo", model_class=NaiveDeduper, model_settings={"unique_fields": []}
     )
 
     foo_bar = d_foo.query(foo).linker(
         bar.query(),
         name="foo_bar",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     # Structure: linkers can take other linkers
@@ -207,7 +199,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         baz.query(),
         name="foo_bar_baz",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     # Prepare the DAG and draw it
@@ -325,7 +317,7 @@ def test_extract_lookup(sqlite_warehouse: Engine, matchbox_api: MockRouter):
         dag.source(**bar.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
@@ -466,12 +458,12 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         bar.query(),
         name="linker1",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     ).query(foo, bar).linker(
         baz.query(),
         name="linker2",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     mock_match1 = Match(
@@ -507,7 +499,7 @@ def test_lookup_key_404_source(matchbox_api: MockRouter):
         dag.source(**target_testkit.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     matchbox_api.get("/match").mock(
@@ -540,7 +532,7 @@ def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engin
         dag.source(**target_testkit.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
-        model_settings={"left_id": "id", "right_id": "id", "comparisons": ""},
+        model_settings={"comparisons": ""},
     )
 
     # Mock empty match results
