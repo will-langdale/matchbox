@@ -233,7 +233,7 @@ class DAG:
                 )
             )
             try:
-                node.run()
+                node.run(full_rerun=full_rerun)
                 node.sync()
             except Exception as e:
                 logger.error(f"❌ {node.name} failed: {e}")

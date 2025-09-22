@@ -1,5 +1,7 @@
 """Definition of model inputs."""
 
+import warnings
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Self
 
 import duckdb
@@ -64,6 +66,8 @@ class Query:
             cleaning (optional): A dictionary mapping an output column name to a SQL
                 expression that will populate a new column.
         """
+        self.last_run: datetime | None = None
+        self.raw_data: PolarsDataFrame | None = None
         self.dag = dag
         self.sources = sources
         self.model = model
@@ -80,6 +84,8 @@ class Query:
         return_type: QueryReturnType = QueryReturnType.POLARS,
         return_leaf_id: bool = False,
         batch_size: int | None = None,
+        full_rerun: bool = False,
+        cache_raw: bool = False,
     ) -> QueryReturnClass:
         """Runs queries against the selected backend.
 
@@ -91,12 +97,18 @@ class Query:
             batch_size (optional): The size of each batch when fetching data from the
                 warehouse, which helps reduce memory usage and load on the database.
                 Default is None.
+            full_rerun: Whether to force a re-run of the query
+            cache_raw: Whether to store the pre-cleaned data to iterate on cleaning.
 
         Returns: Data in the requested return type
 
         Raises:
             MatchboxEmptyServerResponse: If no data was returned by the server.
         """
+        if self.last_run and not full_rerun:
+            warnings.warn("Query already run, skipping.", UserWarning, stacklevel=2)
+            return self.data
+
         source_results: list[PolarsDataFrame] = []
         for source in self.sources:
             mb_ids = pl.from_arrow(
@@ -135,39 +147,64 @@ class Query:
 
         if self.config.combine_type == QueryCombineType.CONCAT:
             if return_leaf_id:  # can reuse the concatenated dataframe
-                data = concatenated.drop(["leaf_id"])
+                raw_data = concatenated.drop(["leaf_id"])
             else:
-                data = pl.concat(tables, how="diagonal")
+                raw_data = pl.concat(tables, how="diagonal")
         else:
-            data = tables[0].drop("leaf_id", strict=False)
+            raw_data = tables[0].drop("leaf_id", strict=False)
             for table in tables[1:]:
-                data = data.join(
+                raw_data = raw_data.join(
                     table.drop("leaf_id", strict=False),
                     on="id",
                     how="full",
                     coalesce=True,
                 )
 
-            data = data.select(["id", pl.all().exclude("id")])
+            raw_data = raw_data.select(["id", pl.all().exclude("id")])
 
             if self.config.combine_type == QueryCombineType.SET_AGG:
                 # Aggregate into lists
                 agg_expressions = [
-                    pl.col(col).unique() for col in data.columns if col != "id"
+                    pl.col(col).unique() for col in raw_data.columns if col != "id"
                 ]
-                data = data.group_by("id").agg(agg_expressions)
+                raw_data = raw_data.group_by("id").agg(agg_expressions)
 
-        data = clean(data, self.config.cleaning)
+        if cache_raw:
+            self.raw_data = raw_data
+        clean_data = _convert_df(
+            clean(raw_data, self.config.cleaning), return_type=return_type
+        )
 
-        match return_type:
-            case QueryReturnType.POLARS:
-                return data
-            case QueryReturnType.PANDAS:
-                return data.to_pandas()
-            case QueryReturnType.ARROW:
-                return data.to_arrow()
-            case _:
-                raise ValueError(f"Return type {return_type} is invalid")
+        self.data = clean_data
+        self.last_run = datetime.now()
+
+        return self.data
+
+    def clean(
+        self,
+        cleaning: dict[str, str] | None,
+        return_type: QueryReturnType = QueryReturnType.POLARS,
+    ) -> QueryReturnClass:
+        """Change cleaning dictionary and re-apply cleaning, if raw data was cached.
+
+        Args:
+            cleaning: A dictionary mapping field aliases to SQL expressions.
+                The SQL expressions can reference columns in the data using their names.
+                If None, no cleaning is applied and the original data is returned.
+                `SourceConfig.f()` can be used to help reference qualified fields.
+            return_type (optional): Type of dataframe returned, defaults to "polars".
+                    Other options are "pandas" and "arrow".
+        """
+        if self.raw_data is None:
+            raise RuntimeError("No raw data is stored in this query.")
+
+        self.config = self.config.model_copy(update={"cleaning": cleaning})
+
+        self.data = _convert_df(
+            data=clean(data=self.raw_data, cleaning_dict=cleaning),
+            return_type=return_type,
+        )
+        return self.data
 
     def deduper(
         self,
@@ -340,3 +377,15 @@ def clean(data: pl.DataFrame, cleaning_dict: dict[str, str] | None) -> pl.DataFr
     with duckdb.connect(":memory:") as conn:
         conn.register("data", data)
         return conn.execute(query.sql(dialect="duckdb")).pl()
+
+
+def _convert_df(data: PolarsDataFrame, return_type: QueryReturnType):
+    match return_type:
+        case QueryReturnType.POLARS:
+            return data
+        case QueryReturnType.PANDAS:
+            return data.to_pandas()
+        case QueryReturnType.ARROW:
+            return data.to_arrow()
+        case _:
+            raise ValueError(f"Return type {return_type} is invalid")

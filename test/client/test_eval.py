@@ -59,12 +59,12 @@ def test_get_samples(
         bar.query(),
         name="linker1",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.key=r.key"},
     ).query(foo, bar).linker(
         baz.query(),
         name="linker2",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.key=r.key"},
     )
 
     # Mock API endpoints

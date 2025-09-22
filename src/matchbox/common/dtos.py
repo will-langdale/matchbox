@@ -11,7 +11,14 @@ from json import JSONDecodeError
 from typing import Self
 
 import polars as pl
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from sqlglot import errors, expressions, parse_one
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
@@ -493,6 +500,11 @@ class Match(BaseModel):
         if self.cluster and not self.source_id:
             raise ValueError("A match must have source if cluster is set.")
         return self
+
+    @field_serializer("source_id", "target_id")
+    def serialise_ids(self, id_set: set[str]):
+        """Turn set to sorted list when serialising."""
+        return sorted(id_set)
 
 
 class ModelAncestor(BaseModel):

@@ -32,11 +32,11 @@ class DeterministicSettings(LinkerSettings):
 
     @field_validator("comparisons", mode="before")
     @classmethod
-    def validate_comparison(cls, v: str | list[str]) -> list[str]:
+    def validate_comparison(cls, value: str | list[str]) -> list[str]:
         """Turn single string into list of one string."""
-        if isinstance(v, str):
-            return [comparison(v)]
-        return comparison(v)
+        if isinstance(value, str):
+            return [comparison(value)]
+        return [comparison(v) for v in value]
 
 
 class DeterministicLinker(Linker):

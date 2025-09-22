@@ -1,5 +1,6 @@
 """Interface to locations where source data is stored."""
 
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
@@ -497,7 +498,9 @@ class Source:
                 return_type=return_type,
             )
 
-    def run(self, batch_size: int | None = None) -> ArrowTable:
+    def run(
+        self, batch_size: int | None = None, full_rerun: bool = False
+    ) -> ArrowTable:
         """Hash a dataset from its warehouse, ready to be inserted, and cache hashes.
 
         Hashes the index fields defined in the source based on the
@@ -508,10 +511,16 @@ class Source:
         Args:
             batch_size: If set, process data in batches internally. Indicates the
                 size of each batch.
+            full_rerun: Whether to force a re-run even if the hashes are cached
+
 
         Returns:
             A PyArrow Table containing source keys and their hashes.
         """
+        if self.last_run and not full_rerun:
+            warnings.warn("Source already run, skipping.", UserWarning, stacklevel=2)
+            return self.hashes
+
         log_prefix = f"Hash {self.name}"
         batch_info = (
             f"with batch size {batch_size:,}" if batch_size else "without batching"

@@ -80,16 +80,19 @@ def test_init_and_run_model(sqlite_warehouse: Engine, matchbox_api: MockRouter):
     assert model.config == ModelConfig(
         type=ModelType.LINKER,
         model_class="MockLinker",
-        model_settings=json.dumps({"left_id": "left", "right_id": "right"}),
+        model_settings=json.dumps({"left_id": "l.field", "right_id": "r.field"}),
         left_query=foo_query.config,
         right_query=bar_query.config,
     )
 
     model.run()
+    # This won't actually run anything new
+    with pytest.warns(match="already run"):
+        model.run(for_validation=True)
     assert model.results.left_root_leaf is None
     assert model.results.right_root_leaf is None
 
-    model.run(for_validation=True)
+    model.run(for_validation=True, full_rerun=True)
     assert model.results.left_root_leaf is not None
     assert model.results.right_root_leaf is not None
 

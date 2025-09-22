@@ -440,8 +440,8 @@ def test_source_fetch_batching(
         pytest.param(2, id="with_batching"),
     ],
 )
-def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
-    """Test the hash_data method produces expected hash format."""
+def test_source_run(sqlite_warehouse: Engine, batch_size: int):
+    """Test the run method produces expected hash format."""
     # Create test data with unique values
     n_true_entities = 3
     source_testkit = source_factory(
@@ -469,7 +469,7 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
         index_fields=["name", "age"],
     )
 
-    # Execute hash_data with different batching parameters
+    # Execute run with different batching parameters
     result = source.run(batch_size=batch_size) if batch_size else source.run()
 
     # Verify result
@@ -478,9 +478,14 @@ def test_source_hash_data(sqlite_warehouse: Engine, batch_size: int):
     assert "keys" in result.column_names
     assert len(result) == n_true_entities
 
+    with pytest.warns(match="already run"):
+        source.run()
+
+    source.run(full_rerun=True)
+
 
 @patch("matchbox.client.sources.Source.fetch")
-def test_source_hash_data_null_identifier(
+def test_source_run_null_identifier(
     mock_fetch: Mock, sqlite_in_memory_warehouse: Engine
 ):
     """Test hashing data raises an error when source primary keys contain nulls."""

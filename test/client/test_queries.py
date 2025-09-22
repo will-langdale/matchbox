@@ -45,6 +45,88 @@ def test_init_query():
     )
 
 
+def test_query_multiple_runs(sqlite_warehouse: Engine, matchbox_api: MockRouter):
+    """Can run a query multiple times and clean separately."""
+    source = (
+        source_from_tuple(
+            data_tuple=({"col1": " a "}, {"col1": " b "}),
+            data_keys=["0", "1"],
+            name="foo",
+            engine=sqlite_warehouse,
+        )
+        .write_to_location()
+        .source
+    )
+
+    query = Query(
+        source,
+        dag=source.dag,
+        cleaning={"col1": f"upper({source.f('col1')})"},
+    )
+
+    query_route = matchbox_api.get("/query").mock(
+        return_value=Response(
+            200,
+            content=table_to_buffer(
+                pa.Table.from_pylist(
+                    [
+                        {"key": "0", "id": 1},
+                        {"key": "1", "id": 2},
+                    ],
+                    schema=SCHEMA_QUERY,
+                )
+            ).read(),
+        )
+    )
+
+    assert not query.last_run
+    query.run()
+    assert query.last_run
+    assert query_route.call_count == 1
+
+    # Re-running does nothing
+    with pytest.warns(match="already run"):
+        query.run()
+    assert query_route.call_count == 1
+
+    # Re-run must be forced
+    query.run(full_rerun=True)
+    assert query_route.call_count == 2
+
+    new_cleaning = {"col1": f"trim(upper({source.f('col1')}))"}
+
+    with pytest.raises(RuntimeError, match="raw data"):
+        query.clean(new_cleaning)
+
+    cleaned1_expected = pl.DataFrame(
+        [
+            {"id": 1, "col1": " A ", "foo_key": "0"},
+            {"id": 2, "col1": " B ", "foo_key": "1"},
+        ]
+    )
+    cleaned1 = query.run(full_rerun=True, cache_raw=True)
+    assert_frame_equal(
+        cleaned1,
+        cleaned1_expected,
+        check_column_order=False,
+        check_row_order=False,
+    )
+    cleaned2_expected = pl.DataFrame(
+        [
+            {"id": 1, "col1": "A", "foo_key": "0"},
+            {"id": 2, "col1": "B", "foo_key": "1"},
+        ]
+    )
+    cleaned2 = query.clean(cleaning=new_cleaning)
+    assert_frame_equal(
+        cleaned2,
+        cleaned2_expected,
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert query.config.cleaning == new_cleaning
+
+
 def test_query_single_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """Tests that we can query from a single source."""
     # Dummy data and source

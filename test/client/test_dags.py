@@ -62,7 +62,7 @@ def test_dag_run_and_sync(
         bar.query(),
         name="foo_bar",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     # Structure: linkers can take other linkers
@@ -70,7 +70,7 @@ def test_dag_run_and_sync(
         baz.query(),
         name="foo_bar_baz",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     assert set(dag.nodes.keys()) == {
@@ -192,7 +192,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         bar.query(),
         name="foo_bar",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     # Structure: linkers can take other linkers
@@ -200,7 +200,7 @@ def test_dag_draw(sqlite_warehouse: Engine):
         baz.query(),
         name="foo_bar_baz",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     # Prepare the DAG and draw it
@@ -321,7 +321,7 @@ def test_extract_lookup(
         dag.source(**bar.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     # Because of FULL OUTER JOIN, we expect some values to be null, and some explosions
@@ -462,12 +462,12 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         bar.query(),
         name="linker1",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     ).query(foo, bar).linker(
         baz.query(),
         name="linker2",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     mock_match1 = Match(
@@ -503,7 +503,7 @@ def test_lookup_key_404_source(matchbox_api: MockRouter):
         dag.source(**target_testkit.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     matchbox_api.get("/match").mock(
@@ -536,7 +536,7 @@ def test_lookup_key_no_matches(matchbox_api: MockRouter, sqlite_warehouse: Engin
         dag.source(**target_testkit.into_dag()).query(),
         name="root",
         model_class=DeterministicLinker,
-        model_settings={"comparisons": ""},
+        model_settings={"comparisons": "l.field=r.field"},
     )
 
     # Mock empty match results

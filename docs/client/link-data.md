@@ -273,6 +273,20 @@ model_settings = {
 
 Note that because we didn't clean `company_number` it needs to be qualified here, rather than in the cleaning dictionary.
 
+If you want to test and improve your cleaning dictionary iteratively, but don't want to re-run a full query each time, you can do:
+
+```python
+old_cleaning = ...
+# Store inside the query object the raw data
+query = source.query(cleaning=old_cleaning, cache_raw=True)
+query.run()
+
+new_cleaning = ...
+# Will apply new cleaning without re-fetching the data, and also update the query
+# configuration with the new cleaning
+query.clean(new_cleaning)
+```
+
 ## 4. Creating link steps
 
 Link steps connect records between different sources.
