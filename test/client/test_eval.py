@@ -51,13 +51,13 @@ def test_get_samples(
     ).write_to_location()
     source_baz = testkit_baz.source.to_resolution()
 
-    matchbox_api.get("/resolutions/foo").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/foo").mock(
         return_value=Response(200, content=source_foo.model_dump_json())
     )
-    matchbox_api.get("/resolutions/bar").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/bar").mock(
         return_value=Response(200, content=source_bar.model_dump_json())
     )
-    matchbox_api.get("/resolutions/baz").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/baz").mock(
         return_value=Response(200, content=source_baz.model_dump_json())
     )
 

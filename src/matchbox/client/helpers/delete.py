@@ -1,7 +1,7 @@
 """Functions to delete resolutions from the Matchbox server."""
 
 from matchbox.client import _handler
-from matchbox.common.graph import ResolutionName
+from matchbox.common.dtos import ResolutionName
 
 
 def delete_resolution(name: ResolutionName, certain: bool = False) -> None:

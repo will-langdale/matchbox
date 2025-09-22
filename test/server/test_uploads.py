@@ -16,13 +16,13 @@ from matchbox.common.dtos import (
     ModelType,
     QueryConfig,
     Resolution,
+    ResolutionType,
     UploadStage,
 )
 from matchbox.common.exceptions import (
     MatchboxServerFileError,
 )
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.graph import ResolutionType
 from matchbox.server.uploads import (
     InMemoryUploadTracker,
     UploadTracker,

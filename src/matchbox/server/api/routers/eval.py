@@ -2,15 +2,15 @@
 
 import zipfile
 from io import BytesIO
-from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from matchbox.common.arrow import JudgementsZipFilenames, table_to_buffer
 from matchbox.common.dtos import (
     BackendParameterType,
     BackendResourceType,
     InvalidParameterError,
+    ModelResolutionName,
     NotFoundError,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -21,7 +21,6 @@ from matchbox.common.exceptions import (
     MatchboxTooManySamplesRequested,
     MatchboxUserNotFoundError,
 )
-from matchbox.common.graph import ModelResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -81,16 +80,13 @@ def get_judgements(backend: BackendDependency) -> ParquetResponse:
     return ZipResponse(zip_buffer.getvalue())
 
 
-@router.get(
+@router.post(
     "/compare",
     responses={404: {"model": NotFoundError}},
 )
 def compare_models(
     backend: BackendDependency,
-    resolutions: Annotated[
-        list[ModelResolutionName],
-        Query(description="The resolution names for the models to compare."),
-    ],
+    resolutions: list[ModelResolutionName],
 ) -> ModelComparison:
     """Return comparison of selected models."""
     try:

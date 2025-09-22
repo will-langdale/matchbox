@@ -22,13 +22,18 @@ from matchbox.common.dtos import (
     ModelType,
     QueryConfig,
     Resolution,
+    ResolutionType,
 )
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import (
+    MatchboxCollectionAlreadyExists,
+    MatchboxCollectionNotFoundError,
     MatchboxDataNotFound,
     MatchboxNoJudgements,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
+    MatchboxVersionAlreadyExists,
+    MatchboxVersionNotFoundError,
 )
 from matchbox.common.factories.entities import (
     SourceEntity,
@@ -37,8 +42,6 @@ from matchbox.common.factories.entities import (
 )
 from matchbox.common.factories.scenarios import setup_scenario
 from matchbox.common.factories.sources import SourceTestkit
-from matchbox.common.graph import ResolutionGraph, ResolutionType
-from matchbox.common.hash import HASH_FUNC
 from matchbox.server.base import MatchboxDBAdapter
 
 backends = [
@@ -74,509 +77,7 @@ class TestMatchboxBackend:
             assert isinstance(self.backend.merges.count(), int)
             assert isinstance(self.backend.proposes.count(), int)
 
-    def test_validate_ids(self):
-        """Test validating data IDs."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.sources.get("crn")
-
-            df_crn = self.backend.query(
-                source=crn_testkit.source.name,
-                resolution="naive_test_crn",
-            )
-
-            ids = df_crn["id"].to_pylist()
-            assert len(ids) > 0
-            self.backend.validate_ids(ids=ids)
-
-            with pytest.raises(MatchboxDataNotFound):
-                self.backend.validate_ids(ids=[-6])
-
-    def test_validate_hashes(self):
-        """Test validating data hashes."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.sources.get("crn")
-
-            df_crn = self.backend.query(
-                source=crn_testkit.source.name,
-                resolution="naive_test_crn",
-            )
-
-            ids = df_crn["id"].to_pylist()
-            hashes = list(self.backend.cluster_id_to_hash(ids=ids).values())
-            assert len(hashes) > 0
-            self.backend.validate_hashes(hashes=hashes)
-
-            with pytest.raises(MatchboxDataNotFound):
-                self.backend.validate_hashes(
-                    hashes=[HASH_FUNC(b"nonexistent").digest()]
-                )
-
-    def test_cluster_id_to_hash(self):
-        """Test getting ID to Cluster hash lookup from the database."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            crn_testkit = dag.sources.get("crn")
-
-            df_crn = self.backend.query(
-                source=crn_testkit.source.name,
-                resolution="naive_test_crn",
-            )
-
-            ids = df_crn["id"].to_pylist()
-            assert len(ids) > 0
-
-            hashes = self.backend.cluster_id_to_hash(ids=ids)
-            assert len(hashes) == len(set(ids))
-            assert set(ids) == set(hashes.keys())
-            assert all(isinstance(h, bytes) for h in hashes.values())
-
-            assert self.backend.cluster_id_to_hash(ids=[-6]) == {-6: None}
-
-    def test_get_source(self):
-        """Test querying data from the database."""
-        with self.scenario(self.backend, "index") as dag:
-            crn_testkit = dag.sources.get("crn")
-
-            crn_retrieved = self.backend.get_resolution(
-                crn_testkit.name, validate=ResolutionType.SOURCE
-            )
-            assert isinstance(crn_retrieved, Resolution)
-            assert crn_testkit.source_config == crn_retrieved.config
-
-            with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution(name="foo", validate=ResolutionType.SOURCE)
-
-            with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution(
-                    name=crn_testkit.name, validate=ResolutionType.MODEL
-                )
-
-    def test_get_resolution_sources(self):
-        """Test retrieving sources available to a resolution."""
-        with self.scenario(self.backend, "link") as dag:
-            crn, duns = dag.sources["crn"], dag.sources["duns"]
-            dedupe_sources = self.backend.get_leaf_source_resolutions(
-                name="naive_test_crn"
-            )
-            link_sources = self.backend.get_leaf_source_resolutions(
-                name="deterministic_naive_test_crn_naive_test_duns"
-            )
-
-            assert {s.name for s in dedupe_sources} == {crn.source.name}
-
-            assert {s.name for s in link_sources} == {
-                crn.source.name,
-                duns.source.name,
-            }
-
-            with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_leaf_source_resolutions(name="nonexistent")
-
-    def test_get_resolution_graph(self):
-        """Test getting the resolution graph."""
-        graph = self.backend.get_resolution_graph()
-        assert len(graph.nodes) == 0
-        assert len(graph.edges) == 0
-        assert isinstance(graph, ResolutionGraph)
-
-        with self.scenario(self.backend, "link"):
-            graph = self.backend.get_resolution_graph()
-            # Nodes: 3 sources, 3 dedupers, and 3 linkers
-            # Edges: 1 per deduper, 2 per linker
-            assert len(graph.nodes) == 9
-            assert len(graph.edges) == 9
-
-    def test_get_model(self):
-        """Test getting a model from the database."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            model_testkit = dag.models.get("naive_test_crn")
-
-            model_retrieved = self.backend.get_resolution(
-                name=model_testkit.name, validate=ResolutionType.MODEL
-            )
-
-            assert isinstance(model_retrieved, Resolution)
-
-            assert model_testkit.model.config == model_retrieved.config
-
-            with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution(
-                    name="nonexistent", validate=ResolutionType.MODEL
-                )
-
-            with pytest.raises(MatchboxResolutionNotFoundError):
-                self.backend.get_resolution(
-                    name=model_testkit.name, validate=ResolutionType.SOURCE
-                )
-
-    def test_delete_resolution(self):
-        """
-        Tests the deletion of:
-
-        * The resolution from the resolutions table
-        * The source configuration attached to the resolution
-        * Any models that depended on this model (descendants)
-        * All probabilities for all descendants
-        """
-        with self.scenario(self.backend, "link") as dag:
-            resolution_to_delete = dag.sources["crn"].source.name
-            total_sources = len(dag.sources)
-            total_models = len(dag.models)
-
-            source_configs_pre_delete = self.backend.sources.count()
-            sources_pre_delete = self.backend.source_resolutions.count()
-            models_pre_delete = self.backend.models.count()
-            cluster_count_pre_delete = self.backend.clusters.count()
-            cluster_assoc_count_pre_delete = self.backend.creates.count()
-            proposed_merge_probs_pre_delete = self.backend.proposes.count()
-
-            assert sources_pre_delete == total_sources
-            assert models_pre_delete == total_models
-            assert cluster_count_pre_delete > 0
-            assert cluster_assoc_count_pre_delete > 0
-            assert proposed_merge_probs_pre_delete > 0
-
-            # Perform deletion
-            self.backend.delete_resolution(resolution_to_delete, certain=True)
-
-            source_configs_post_delete = self.backend.sources.count()
-            sources_post_delete = self.backend.source_resolutions.count()
-            models_post_delete = self.backend.models.count()
-            cluster_count_post_delete = self.backend.clusters.count()
-            cluster_assoc_count_post_delete = self.backend.creates.count()
-            proposed_merge_probs_post_delete = self.backend.proposes.count()
-
-            # 1 source, 1 index, (1 deduper + 3 linkers) = 4 models are gone
-            assert source_configs_post_delete == source_configs_pre_delete - 1
-            assert sources_post_delete == sources_pre_delete - 1
-            assert models_post_delete == models_pre_delete - 4
-
-            # We've lost some composite clusters
-            assert cluster_count_post_delete < cluster_count_pre_delete
-
-            # Count of propose and create edges has dropped
-            assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
-            assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
-
-    def test_insert_model(self):
-        """Test that models can be inserted."""
-        with self.scenario(self.backend, "index") as dag:
-            crn_testkit = dag.sources.get("crn")
-            duns_testkit = dag.sources.get("duns")
-
-            # Test deduper insertion
-            models_count = self.backend.models.count()
-
-            self.backend.insert_resolution(
-                resolution=Resolution(
-                    name="dedupe_1",
-                    description="Test deduper 1",
-                    resolution_type=ResolutionType.MODEL,
-                    truth=100,
-                    config=ModelConfig(
-                        type=ModelType.DEDUPER,
-                        model_class="NaiveDeduper",
-                        model_settings="{}",
-                        left_query=QueryConfig(
-                            source_resolutions=[crn_testkit.source.name]
-                        ),
-                    ),
-                )
-            )
-            self.backend.insert_resolution(
-                resolution=Resolution(
-                    name="dedupe_2",
-                    description="Test deduper 2",
-                    resolution_type=ResolutionType.MODEL,
-                    truth=100,
-                    config=ModelConfig(
-                        type=ModelType.DEDUPER,
-                        model_class="NaiveDeduper",
-                        model_settings="{}",
-                        left_query=QueryConfig(
-                            source_resolutions=[duns_testkit.source.name]
-                        ),
-                    ),
-                )
-            )
-
-            assert self.backend.models.count() == models_count + 2
-
-            # Test linker insertion
-            linker_resolution = Resolution(
-                name="link_1",
-                description="Test linker 1",
-                resolution_type=ResolutionType.MODEL,
-                truth=100,
-                config=ModelConfig(
-                    type=ModelType.LINKER,
-                    model_class="NaiveDeduper",
-                    model_settings="{}",
-                    left_query=QueryConfig(
-                        source_resolutions=["crn"], model_resolution="dedupe_1"
-                    ),
-                    right_query=QueryConfig(
-                        source_resolutions=["duns"], model_resolution="dedupe_2"
-                    ),
-                ),
-            )
-            self.backend.insert_resolution(resolution=linker_resolution)
-
-            assert self.backend.models.count() == models_count + 3
-
-            # Test can't insert duplicate
-            with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.insert_resolution(linker_resolution)
-
-            assert self.backend.models.count() == models_count + 3
-
-    def test_model_results_basic(self):
-        """Test that a model's results data can be set and retrieved."""
-        with self.scenario(self.backend, "dedupe") as dag:
-            # Query returns the same results as the testkit, showing
-            # that processing was performed accurately
-            res = self.backend.query(
-                source=dag.sources["crn"].source.name,
-                resolution="naive_test_crn",
-            )
-            res_clusters = query_to_cluster_entities(
-                data=res,
-                keys={dag.sources["crn"].name: "key"},
-            )
-
-            identical, report = diff_results(
-                expected=dag.models["naive_test_crn"].entities,
-                actual=res_clusters,
-            )
-
-            assert identical, report
-
-            # Retrieve
-            pre_results = self.backend.get_model_data(name="naive_test_crn")
-
-            assert isinstance(pre_results, pa.Table)
-            assert len(pre_results) > 0
-
-            # Validate IDs
-            self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
-            self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
-
-            # Wrangle in polars
-            pre_results_pl = pl.from_arrow(pre_results)
-
-            # Remove a single row from the results
-            target_row = pre_results_pl.row(0, named=True)
-
-            results_truncated = pre_results_pl.filter(
-                ~(
-                    (pl.col("left_id") == target_row["left_id"])
-                    & (pl.col("right_id") == target_row["right_id"])
-                )
-            )
-
-            # Set new results
-            self.backend.insert_model_data(
-                name="naive_test_crn", results=results_truncated.to_arrow()
-            )
-
-            # Retrieve again
-            post_results = self.backend.get_model_data(name="naive_test_crn")
-
-            # Check difference
-            assert len(pre_results) != len(post_results)
-            assert len(post_results) == len(pre_results) - 1
-
-    def test_model_results_probabilistic(self):
-        """Test that a probabilistic model's results data can be set and retrieved."""
-        with self.scenario(self.backend, "probabilistic_dedupe") as dag:
-            # Query returns the same results as the testkit, showing
-            # that processing was performed accurately
-            res = self.backend.query(
-                source=dag.sources["crn"].source.name,
-                resolution="probabilistic_test_crn",
-            )
-            res_clusters = query_to_cluster_entities(
-                data=res,
-                keys={dag.sources["crn"].name: "key"},
-            )
-
-            identical, report = diff_results(
-                expected=dag.models["probabilistic_test_crn"].entities,
-                actual=res_clusters,
-            )
-            assert identical, report
-
-            # Retrieve
-            pre_results = self.backend.get_model_data(name="probabilistic_test_crn")
-
-            assert isinstance(pre_results, pa.Table)
-            assert len(pre_results) > 0
-
-            # Validate IDs
-            self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
-            self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
-
-            # Wrangle in polars
-            pre_results_pl = pl.from_arrow(pre_results)
-
-            # Remove a single row from the results
-            target_row = pre_results_pl.row(0, named=True)
-
-            results_truncated = pre_results_pl.filter(
-                ~(
-                    (pl.col("left_id") == target_row["left_id"])
-                    & (pl.col("right_id") == target_row["right_id"])
-                )
-            )
-
-            # Set new results
-            self.backend.insert_model_data(
-                name="probabilistic_test_crn", results=results_truncated.to_arrow()
-            )
-
-            # Retrieve again
-            post_results = self.backend.get_model_data(name="probabilistic_test_crn")
-
-            # Check difference
-            assert len(pre_results) != len(post_results)
-            assert len(post_results) == len(pre_results) - 1
-
-    def test_model_results_shared_clusters(self):
-        """Test that model results data can be inserted when clusters are shared."""
-        with self.scenario(self.backend, "convergent") as dag:
-            for model_testkit in dag.models.values():
-                self.backend.insert_resolution(
-                    resolution=model_testkit.model.to_resolution()
-                )
-                self.backend.insert_model_data(
-                    name=model_testkit.name, results=model_testkit.probabilities
-                )
-
-    def test_model_truth(self):
-        """Test that a model's truth can be set and retrieved."""
-        with self.scenario(self.backend, "dedupe"):
-            # Retrieve
-            pre_truth = self.backend.get_model_truth(name="naive_test_crn")
-
-            # Set
-            self.backend.set_model_truth(name="naive_test_crn", truth=75)
-
-            # Retrieve again
-            post_truth = self.backend.get_model_truth(name="naive_test_crn")
-
-            # Check difference
-            assert pre_truth != post_truth
-
-    def test_index(self):
-        """Test that indexing data works."""
-        assert self.backend.data.count() == 0
-
-        with self.scenario(self.backend, "index") as dag:
-            assert self.backend.data.count() == (
-                len(dag.sources["crn"].entities)
-                + len(dag.sources["cdms"].entities)
-                + len(dag.sources["duns"].entities)
-            )
-
-    def test_index_new_source(self):
-        """Test that indexing identical works."""
-        with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.sources.get("crn")
-
-            assert self.backend.clusters.count() == 0
-
-            self.backend.insert_resolution(crn_testkit.source.to_resolution())
-            self.backend.insert_source_data(
-                crn_testkit.source.name, crn_testkit.data_hashes
-            )
-
-            crn_retrieved = self.backend.get_resolution(
-                crn_testkit.source.name, validate=ResolutionType.SOURCE
-            )
-
-            # Equality between the two is False because one lacks the Engine
-            assert (
-                crn_testkit.source_config.model_dump()
-                == crn_retrieved.config.model_dump()
-            )
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            # I can add it again with no consequences
-            self.backend.insert_source_data(
-                crn_testkit.source.name, crn_testkit.data_hashes
-            )
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 1
-
-    def test_index_duplicate_clusters(self):
-        """Test that indexing new data with duplicate hashes works."""
-        with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.sources.get("crn")
-
-            data_hashes_halved = crn_testkit.data_hashes.slice(
-                0, crn_testkit.data_hashes.num_rows // 2
-            )
-
-            assert self.backend.data.count() == 0
-            self.backend.insert_resolution(crn_testkit.source.to_resolution())
-            self.backend.insert_source_data(crn_testkit.source.name, data_hashes_halved)
-            assert self.backend.data.count() == data_hashes_halved.num_rows
-            self.backend.insert_source_data(
-                crn_testkit.source.name, crn_testkit.data_hashes
-            )
-            assert self.backend.data.count() == crn_testkit.data_hashes.num_rows
-            assert self.backend.source_resolutions.count() == 1
-
-    def test_index_same_resolution(self):
-        """Test that indexing same-name sources errors."""
-        with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.sources.get("crn")
-
-            crn_source_config_1 = crn_testkit.source_config.model_copy(
-                update={
-                    "location": LocationConfig(type=LocationType.RDBMS, name="postgres")
-                }
-            )
-            crn_source_config_2 = crn_testkit.source_config.model_copy(
-                deep=True,
-                update={
-                    "location": LocationConfig(type=LocationType.RDBMS, name="mongodb")
-                },
-            )
-
-            crn_resolution_1 = crn_testkit.source.to_resolution().model_copy(
-                update={"config": crn_source_config_1}
-            )
-            crn_resolution_2 = crn_testkit.source.to_resolution().model_copy(
-                update={"config": crn_source_config_2}
-            )
-
-            self.backend.insert_resolution(crn_resolution_1)
-            self.backend.insert_source_data(
-                crn_testkit.source.name, crn_testkit.data_hashes
-            )
-
-            with pytest.raises(MatchboxResolutionAlreadyExists):
-                self.backend.insert_resolution(crn_resolution_2)
-
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 1
-
-    def test_index_different_resolution_same_hashes(self):
-        """Test that indexing data with the same hashes but different sources works."""
-        with self.scenario(self.backend, "bare") as dag:
-            crn_testkit: SourceTestkit = dag.sources.get("crn")
-            duns_testkit: SourceTestkit = dag.sources.get("duns")
-
-            self.backend.insert_resolution(crn_testkit.source.to_resolution())
-            self.backend.insert_source_data(
-                crn_testkit.source.name, crn_testkit.data_hashes
-            )
-            # Different source, same data
-            self.backend.insert_resolution(duns_testkit.source.to_resolution())
-            self.backend.insert_source_data(
-                duns_testkit.source.name, crn_testkit.data_hashes
-            )
-            assert self.backend.data.count() == len(crn_testkit.data_hashes)
-            assert self.backend.source_resolutions.count() == 2
+    # Retrieval
 
     def test_query_only_source(self):
         """Test querying data from a link point of truth."""
@@ -875,6 +376,478 @@ class TestMatchboxBackend:
             # exceeds match probability
             assert len(res[0].target_id) < len(source_entity.keys["duns"])
 
+    # Collection management
+
+    def test_collections(self):
+        """Test creating, listing, getting and deleting collections."""
+        with self.scenario(self.backend, "bare") as _:
+            collections_pre = self.backend.list_collections()
+            assert "test_collection" not in collections_pre
+
+            self.backend.create_collection("test_collection")
+
+            collections_post = self.backend.list_collections()
+            assert "test_collection" in collections_post
+
+            with pytest.raises(MatchboxCollectionAlreadyExists):
+                self.backend.create_collection("test_collection")
+
+            test_collection = self.backend.get_collection("test_collection")
+
+            assert test_collection == {None: []}  # No versions yet
+
+            self.backend.delete_collection("test_collection", certain=True)
+
+            with pytest.raises(MatchboxCollectionNotFoundError):
+                self.backend.get_collection("test_collection")
+
+            with pytest.raises(MatchboxCollectionNotFoundError):
+                self.backend.delete_collection("test_collection", certain=False)
+
+    # Version management
+
+    def test_versions(self):
+        """Test creating, listing, getting and deleting versions."""
+        with self.scenario(self.backend, "bare") as _:
+            collections_pre = self.backend.list_collections()
+            assert "test_collection" not in collections_pre
+
+            self.backend.create_collection("test_collection")
+            test_collection_pre = self.backend.get_collection("test_collection")
+            assert "v1" not in test_collection_pre
+
+            self.backend.create_version("test_collection", "v1")
+
+            test_collection_post = self.backend.get_collection("test_collection")
+            assert "v1" in test_collection_post
+
+            with pytest.raises(MatchboxVersionAlreadyExists):
+                self.backend.create_version("test_collection", "v1")
+
+            test_version = self.backend.get_version("test_collection", "v1")
+
+            assert test_version == []  # No resolutions yet
+
+            self.backend.delete_version("test_collection", "v1", certain=True)
+
+            with pytest.raises(MatchboxVersionNotFoundError):
+                self.backend.get_version("test_collection", "v1")
+
+            with pytest.raises(MatchboxVersionNotFoundError):
+                self.backend.delete_version("test_collection", "v1", certain=False)
+
+    # Resolution management
+
+    def test_get_source(self):
+        """Test querying data from the database."""
+        with self.scenario(self.backend, "index") as dag:
+            crn_testkit = dag.sources.get("crn")
+
+            crn_retrieved = self.backend.get_resolution(
+                crn_testkit.name, validate=ResolutionType.SOURCE
+            )
+            assert isinstance(crn_retrieved, Resolution)
+            assert crn_testkit.source_config == crn_retrieved.config
+
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(name="foo", validate=ResolutionType.SOURCE)
+
+            with pytest.raises(MatchboxResolutionNotFoundError):
+                self.backend.get_resolution(
+                    name=crn_testkit.name, validate=ResolutionType.MODEL
+                )
+
+    def test_delete_resolution(self):
+        """
+        Tests the deletion of:
+
+        * The resolution from the resolutions table
+        * The source configuration attached to the resolution
+        * Any models that depended on this model (descendants)
+        * All probabilities for all descendants
+        """
+        with self.scenario(self.backend, "link") as dag:
+            resolution_to_delete = dag.sources["crn"].source.name
+            total_sources = len(dag.sources)
+            total_models = len(dag.models)
+
+            source_configs_pre_delete = self.backend.sources.count()
+            sources_pre_delete = self.backend.source_resolutions.count()
+            models_pre_delete = self.backend.models.count()
+            cluster_count_pre_delete = self.backend.clusters.count()
+            cluster_assoc_count_pre_delete = self.backend.creates.count()
+            proposed_merge_probs_pre_delete = self.backend.proposes.count()
+
+            assert sources_pre_delete == total_sources
+            assert models_pre_delete == total_models
+            assert cluster_count_pre_delete > 0
+            assert cluster_assoc_count_pre_delete > 0
+            assert proposed_merge_probs_pre_delete > 0
+
+            # Perform deletion
+            self.backend.delete_resolution(resolution_to_delete, certain=True)
+
+            source_configs_post_delete = self.backend.sources.count()
+            sources_post_delete = self.backend.source_resolutions.count()
+            models_post_delete = self.backend.models.count()
+            cluster_count_post_delete = self.backend.clusters.count()
+            cluster_assoc_count_post_delete = self.backend.creates.count()
+            proposed_merge_probs_post_delete = self.backend.proposes.count()
+
+            # 1 source, 1 index, (1 deduper + 3 linkers) = 4 models are gone
+            assert source_configs_post_delete == source_configs_pre_delete - 1
+            assert sources_post_delete == sources_pre_delete - 1
+            assert models_post_delete == models_pre_delete - 4
+
+            # We've lost some composite clusters
+            assert cluster_count_post_delete < cluster_count_pre_delete
+
+            # Count of propose and create edges has dropped
+            assert cluster_assoc_count_post_delete < cluster_assoc_count_pre_delete
+            assert proposed_merge_probs_post_delete < proposed_merge_probs_pre_delete
+
+    def test_insert_model(self):
+        """Test that models can be inserted."""
+        with self.scenario(self.backend, "index") as dag:
+            crn_testkit = dag.sources.get("crn")
+            duns_testkit = dag.sources.get("duns")
+
+            # Test deduper insertion
+            models_count = self.backend.models.count()
+
+            self.backend.insert_resolution(
+                resolution=Resolution(
+                    name="dedupe_1",
+                    description="Test deduper 1",
+                    resolution_type=ResolutionType.MODEL,
+                    truth=100,
+                    config=ModelConfig(
+                        type=ModelType.DEDUPER,
+                        model_class="NaiveDeduper",
+                        model_settings="{}",
+                        left_query=QueryConfig(
+                            source_resolutions=[crn_testkit.source.name]
+                        ),
+                    ),
+                )
+            )
+            self.backend.insert_resolution(
+                resolution=Resolution(
+                    name="dedupe_2",
+                    description="Test deduper 2",
+                    resolution_type=ResolutionType.MODEL,
+                    truth=100,
+                    config=ModelConfig(
+                        type=ModelType.DEDUPER,
+                        model_class="NaiveDeduper",
+                        model_settings="{}",
+                        left_query=QueryConfig(
+                            source_resolutions=[duns_testkit.source.name]
+                        ),
+                    ),
+                )
+            )
+
+            assert self.backend.models.count() == models_count + 2
+
+            # Test linker insertion
+            linker_resolution = Resolution(
+                name="link_1",
+                description="Test linker 1",
+                resolution_type=ResolutionType.MODEL,
+                truth=100,
+                config=ModelConfig(
+                    type=ModelType.LINKER,
+                    model_class="NaiveDeduper",
+                    model_settings="{}",
+                    left_query=QueryConfig(
+                        source_resolutions=["crn"], model_resolution="dedupe_1"
+                    ),
+                    right_query=QueryConfig(
+                        source_resolutions=["duns"], model_resolution="dedupe_2"
+                    ),
+                ),
+            )
+            self.backend.insert_resolution(resolution=linker_resolution)
+
+            assert self.backend.models.count() == models_count + 3
+
+            # Test can't insert duplicate
+            with pytest.raises(MatchboxResolutionAlreadyExists):
+                self.backend.insert_resolution(linker_resolution)
+
+            assert self.backend.models.count() == models_count + 3
+
+    # Data insertion
+
+    def test_index(self):
+        """Test that indexing data works."""
+        assert self.backend.data.count() == 0
+
+        with self.scenario(self.backend, "index") as dag:
+            assert self.backend.data.count() == (
+                len(dag.sources["crn"].entities)
+                + len(dag.sources["cdms"].entities)
+                + len(dag.sources["duns"].entities)
+            )
+
+    def test_index_new_source(self):
+        """Test that indexing identical works."""
+        with self.scenario(self.backend, "bare") as dag:
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
+
+            assert self.backend.clusters.count() == 0
+
+            self.backend.insert_resolution(crn_testkit.source.to_resolution())
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
+            )
+
+            crn_retrieved = self.backend.get_resolution(
+                crn_testkit.source.name, validate=ResolutionType.SOURCE
+            )
+
+            # Equality between the two is False because one lacks the Engine
+            assert (
+                crn_testkit.source_config.model_dump()
+                == crn_retrieved.config.model_dump()
+            )
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            # I can add it again with no consequences
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
+            )
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            assert self.backend.source_resolutions.count() == 1
+
+    def test_index_duplicate_clusters(self):
+        """Test that indexing new data with duplicate hashes works."""
+        with self.scenario(self.backend, "bare") as dag:
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
+
+            data_hashes_halved = crn_testkit.data_hashes.slice(
+                0, crn_testkit.data_hashes.num_rows // 2
+            )
+
+            assert self.backend.data.count() == 0
+            self.backend.insert_resolution(crn_testkit.source.to_resolution())
+            self.backend.insert_source_data(crn_testkit.source.name, data_hashes_halved)
+            assert self.backend.data.count() == data_hashes_halved.num_rows
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
+            )
+            assert self.backend.data.count() == crn_testkit.data_hashes.num_rows
+            assert self.backend.source_resolutions.count() == 1
+
+    def test_index_same_resolution(self):
+        """Test that indexing same-name sources errors."""
+        with self.scenario(self.backend, "bare") as dag:
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
+
+            crn_source_config_1 = crn_testkit.source_config.model_copy(
+                update={
+                    "location": LocationConfig(type=LocationType.RDBMS, name="postgres")
+                }
+            )
+            crn_source_config_2 = crn_testkit.source_config.model_copy(
+                deep=True,
+                update={
+                    "location": LocationConfig(type=LocationType.RDBMS, name="mongodb")
+                },
+            )
+
+            crn_resolution_1 = crn_testkit.source.to_resolution().model_copy(
+                update={"config": crn_source_config_1}
+            )
+            crn_resolution_2 = crn_testkit.source.to_resolution().model_copy(
+                update={"config": crn_source_config_2}
+            )
+
+            self.backend.insert_resolution(crn_resolution_1)
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
+            )
+
+            with pytest.raises(MatchboxResolutionAlreadyExists):
+                self.backend.insert_resolution(crn_resolution_2)
+
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            assert self.backend.source_resolutions.count() == 1
+
+    def test_index_different_resolution_same_hashes(self):
+        """Test that indexing data with the same hashes but different sources works."""
+        with self.scenario(self.backend, "bare") as dag:
+            crn_testkit: SourceTestkit = dag.sources.get("crn")
+            duns_testkit: SourceTestkit = dag.sources.get("duns")
+
+            self.backend.insert_resolution(crn_testkit.source.to_resolution())
+            self.backend.insert_source_data(
+                crn_testkit.source.name, crn_testkit.data_hashes
+            )
+            # Different source, same data
+            self.backend.insert_resolution(duns_testkit.source.to_resolution())
+            self.backend.insert_source_data(
+                duns_testkit.source.name, crn_testkit.data_hashes
+            )
+            assert self.backend.data.count() == len(crn_testkit.data_hashes)
+            assert self.backend.source_resolutions.count() == 2
+
+    def test_model_results_basic(self):
+        """Test that a model's results data can be set and retrieved."""
+        with self.scenario(self.backend, "dedupe") as dag:
+            # Query returns the same results as the testkit, showing
+            # that processing was performed accurately
+            res = self.backend.query(
+                source=dag.sources["crn"].source.name,
+                resolution="naive_test_crn",
+            )
+            res_clusters = query_to_cluster_entities(
+                data=res,
+                keys={dag.sources["crn"].name: "key"},
+            )
+
+            identical, report = diff_results(
+                expected=dag.models["naive_test_crn"].entities,
+                actual=res_clusters,
+            )
+
+            assert identical, report
+
+            # Retrieve
+            pre_results = self.backend.get_model_data(name="naive_test_crn")
+
+            assert isinstance(pre_results, pa.Table)
+            assert len(pre_results) > 0
+
+            # Validate IDs
+            self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
+            self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
+
+            # Wrangle in polars
+            pre_results_pl = pl.from_arrow(pre_results)
+
+            # Remove a single row from the results
+            target_row = pre_results_pl.row(0, named=True)
+
+            results_truncated = pre_results_pl.filter(
+                ~(
+                    (pl.col("left_id") == target_row["left_id"])
+                    & (pl.col("right_id") == target_row["right_id"])
+                )
+            )
+
+            # Set new results
+            self.backend.insert_model_data(
+                name="naive_test_crn", results=results_truncated.to_arrow()
+            )
+
+            # Retrieve again
+            post_results = self.backend.get_model_data(name="naive_test_crn")
+
+            # Check difference
+            assert len(pre_results) != len(post_results)
+            assert len(post_results) == len(pre_results) - 1
+
+    def test_model_results_probabilistic(self):
+        """Test that a probabilistic model's results data can be set and retrieved."""
+        with self.scenario(self.backend, "probabilistic_dedupe") as dag:
+            # Query returns the same results as the testkit, showing
+            # that processing was performed accurately
+            res = self.backend.query(
+                source=dag.sources["crn"].source.name,
+                resolution="probabilistic_test_crn",
+            )
+            res_clusters = query_to_cluster_entities(
+                data=res,
+                keys={dag.sources["crn"].name: "key"},
+            )
+
+            identical, report = diff_results(
+                expected=dag.models["probabilistic_test_crn"].entities,
+                actual=res_clusters,
+            )
+            assert identical, report
+
+            # Retrieve
+            pre_results = self.backend.get_model_data(name="probabilistic_test_crn")
+
+            assert isinstance(pre_results, pa.Table)
+            assert len(pre_results) > 0
+
+            # Validate IDs
+            self.backend.validate_ids(ids=pre_results["left_id"].to_pylist())
+            self.backend.validate_ids(ids=pre_results["right_id"].to_pylist())
+
+            # Wrangle in polars
+            pre_results_pl = pl.from_arrow(pre_results)
+
+            # Remove a single row from the results
+            target_row = pre_results_pl.row(0, named=True)
+
+            results_truncated = pre_results_pl.filter(
+                ~(
+                    (pl.col("left_id") == target_row["left_id"])
+                    & (pl.col("right_id") == target_row["right_id"])
+                )
+            )
+
+            # Set new results
+            self.backend.insert_model_data(
+                name="probabilistic_test_crn", results=results_truncated.to_arrow()
+            )
+
+            # Retrieve again
+            post_results = self.backend.get_model_data(name="probabilistic_test_crn")
+
+            # Check difference
+            assert len(pre_results) != len(post_results)
+            assert len(post_results) == len(pre_results) - 1
+
+    def test_model_results_shared_clusters(self):
+        """Test that model results data can be inserted when clusters are shared."""
+        with self.scenario(self.backend, "convergent") as dag:
+            for model_testkit in dag.models.values():
+                self.backend.insert_resolution(
+                    resolution=model_testkit.model.to_resolution()
+                )
+                self.backend.insert_model_data(
+                    name=model_testkit.name, results=model_testkit.probabilities
+                )
+
+    def test_model_truth(self):
+        """Test that a model's truth can be set and retrieved."""
+        with self.scenario(self.backend, "dedupe"):
+            # Retrieve
+            pre_truth = self.backend.get_model_truth(name="naive_test_crn")
+
+            # Set
+            self.backend.set_model_truth(name="naive_test_crn", truth=75)
+
+            # Retrieve again
+            post_truth = self.backend.get_model_truth(name="naive_test_crn")
+
+            # Check difference
+            assert pre_truth != post_truth
+
+    # Data management
+
+    def test_validate_ids(self):
+        """Test validating data IDs."""
+        with self.scenario(self.backend, "dedupe") as dag:
+            crn_testkit = dag.sources.get("crn")
+
+            df_crn = self.backend.query(
+                source=crn_testkit.source.name,
+                resolution="naive_test_crn",
+            )
+
+            ids = df_crn["id"].to_pylist()
+            assert len(ids) > 0
+            self.backend.validate_ids(ids=ids)
+
+            with pytest.raises(MatchboxDataNotFound):
+                self.backend.validate_ids(ids=[-6])
+
     def test_clear(self):
         """Test deleting all rows in the database."""
         with self.scenario(self.backend, "dedupe"):
@@ -954,12 +927,16 @@ class TestMatchboxBackend:
             # Verify counts still match
             assert get_counts() == pre_dump_counts
 
+    # User management
+
     def test_login(self):
         """Can swap user name with user ID."""
         with self.scenario(self.backend, "bare"):
             alice_id = self.backend.login("alice")
             assert alice_id == self.backend.login("alice")
             assert alice_id != self.backend.login("bob")
+
+    # Evaluation management
 
     def test_insert_and_get_judgement(self):
         """Can insert and retrieve judgements."""

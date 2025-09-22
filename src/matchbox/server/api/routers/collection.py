@@ -1,4 +1,4 @@
-"""Resolution API routes for the Matchbox server."""
+"""Resolution API routes for the Matchbox server, scoped by collection and version."""
 
 from typing import Annotated
 
@@ -7,17 +7,22 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from matchbox.common.arrow import table_to_buffer
 from matchbox.common.dtos import (
     BackendResourceType,
+    CollectionName,
     CRUDOperation,
     NotFoundError,
     Resolution,
+    ResolutionName,
     ResolutionOperationStatus,
+    ResolutionType,
+    UnqualifiedModelResolutionName,
+    UnqualifiedResolutionName,
     UploadStatus,
+    VersionName,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
 )
-from matchbox.common.graph import ModelResolutionName, ResolutionName, ResolutionType
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -25,11 +30,11 @@ from matchbox.server.api.dependencies import (
     authorisation_dependencies,
 )
 
-router = APIRouter(prefix="/resolutions", tags=["resolution"])
+router = APIRouter(prefix="/collections", tags=["collection"])
 
 
 @router.post(
-    "",
+    "/{collection}/versions/{version}/resolutions",
     responses={
         500: {
             "model": ResolutionOperationStatus,
@@ -41,11 +46,17 @@ router = APIRouter(prefix="/resolutions", tags=["resolution"])
 )
 def create_resolution(
     backend: BackendDependency,
+    collection: CollectionName,
+    version: VersionName,
     resolution: Resolution,
 ) -> ResolutionOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
     try:
-        backend.insert_resolution(resolution=resolution)
+        backend.insert_resolution(
+            resolution=resolution,
+            collection=collection,
+            version=version,
+        )
         return ResolutionOperationStatus(
             success=True,
             name=resolution.name,
@@ -64,37 +75,22 @@ def create_resolution(
 
 
 @router.get(
-    "/{name}",
+    "/collections/{collection}/versions/{version}/resolutions/{name}",
     responses={404: {"model": NotFoundError}},
 )
 def get_resolution(
     backend: BackendDependency,
-    name: ResolutionName,
+    collection: CollectionName,
+    version: VersionName,
+    name: UnqualifiedResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> Resolution:
     """Get a resolution (model or source) from the backend."""
     try:
-        return backend.get_resolution(name=name, validate=validate_type)
-    except MatchboxResolutionNotFoundError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=NotFoundError(
-                details=str(e), entity=BackendResourceType.RESOLUTION
-            ).model_dump(),
-        ) from e
-
-
-@router.get(
-    "/{name}/sources",
-    responses={404: {"model": NotFoundError}},
-)
-def get_leaf_source_resolutions(
-    backend: BackendDependency,
-    name: ResolutionName,
-) -> list[Resolution]:
-    """Get all sources in scope for a resolution."""
-    try:
-        return backend.get_leaf_source_resolutions(name=name)
+        return backend.get_resolution(
+            name=ResolutionName(collection=collection, version=version, name=name),
+            validate=validate_type,
+        )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -105,7 +101,7 @@ def get_leaf_source_resolutions(
 
 
 @router.delete(
-    "/{name}",
+    "/collections/{collection}/versions/{version}/resolutions/{name}",
     responses={
         404: {"model": NotFoundError},
         409: {
@@ -117,14 +113,19 @@ def get_leaf_source_resolutions(
 )
 def delete_resolution(
     backend: BackendDependency,
-    name: ResolutionName,
+    collection: CollectionName,
+    version: VersionName,
+    name: UnqualifiedResolutionName,
     certain: Annotated[
         bool, Query(description="Confirm deletion of the resolution")
     ] = False,
 ) -> ResolutionOperationStatus:
     """Delete a resolution from the backend."""
     try:
-        backend.delete_resolution(name=name, certain=certain)
+        backend.delete_resolution(
+            name=ResolutionName(collection=collection, version=version, name=name),
+            certain=certain,
+        )
         return ResolutionOperationStatus(
             success=True,
             name=name,
@@ -150,7 +151,7 @@ def delete_resolution(
 
 
 @router.post(
-    "/{name}/data",
+    "/collections/{collection}/versions/{version}/resolutions/{name}/data",
     responses={404: {"model": NotFoundError}},
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(authorisation_dependencies)],
@@ -158,12 +159,18 @@ def delete_resolution(
 def set_data(
     backend: BackendDependency,
     upload_tracker: UploadTrackerDependency,
-    name: ResolutionName,
+    collection: CollectionName,
+    version: VersionName,
+    name: UnqualifiedModelResolutionName,
     validate_type: ResolutionType | None = None,
 ) -> UploadStatus:
     """Create an upload task for source hashes or model results."""
     try:
-        resolution = backend.get_resolution(name=name, validate=validate_type)
+        # Get resolution from the mutable draft (no version specified)
+        resolution = backend.get_resolution(
+            name=ResolutionName(collection=collection, version=version, name=name),
+            validate=validate_type,
+        )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -181,15 +188,20 @@ def set_data(
 
 
 @router.get(
-    "/{name}/data",
+    "/collections/{collection}/versions/{version}/resolutions/{name}/data",
     responses={404: {"model": NotFoundError}},
 )
 def get_results(
-    backend: BackendDependency, name: ModelResolutionName
+    backend: BackendDependency,
+    collection: CollectionName,
+    version: VersionName,
+    name: UnqualifiedModelResolutionName,
 ) -> ParquetResponse:
     """Download results for a model as a parquet file."""
     try:
-        res = backend.get_model_data(name=name)
+        res = backend.get_model_data(
+            name=ResolutionName(collection=collection, version=version, name=name)
+        )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,
@@ -203,7 +215,7 @@ def get_results(
 
 
 @router.patch(
-    "/{name}/truth",
+    "/collections/{collection}/versions/{version}/resolutions/{name}/truth",
     responses={
         404: {"model": NotFoundError},
         500: {
@@ -215,13 +227,17 @@ def get_results(
 )
 def set_truth(
     backend: BackendDependency,
-    name: ModelResolutionName,
+    collection: CollectionName,
+    version: VersionName,
+    name: UnqualifiedModelResolutionName,
     truth: Annotated[int, Body(ge=0, le=100)],
 ) -> ResolutionOperationStatus:
     """Set truth data for a resolution."""
     try:
-        # This will fail for a source, which is what we want for now
-        backend.set_model_truth(name=name, truth=truth)
+        backend.set_model_truth(
+            name=ResolutionName(collection=collection, version=version, name=name),
+            truth=truth,
+        )
         return ResolutionOperationStatus(
             success=True,
             name=name,
@@ -247,13 +263,20 @@ def set_truth(
 
 
 @router.get(
-    "/{name}/truth",
+    "/collections/{collection}/versions/{version}/resolutions/{name}/truth",
     responses={404: {"model": NotFoundError}},
 )
-def get_truth(backend: BackendDependency, name: ModelResolutionName) -> float:
+def get_truth(
+    backend: BackendDependency,
+    collection: CollectionName,
+    version: VersionName,
+    name: UnqualifiedModelResolutionName,
+) -> float:
     """Get truth data for a resolution."""
     try:
-        return backend.get_model_truth(name=name)
+        return backend.get_model_truth(
+            name=ResolutionName(collection=collection, version=version, name=name)
+        )
     except MatchboxResolutionNotFoundError as e:
         raise HTTPException(
             status_code=404,

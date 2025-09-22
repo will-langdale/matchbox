@@ -22,7 +22,14 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import BYTEA, JSONB, TEXT, insert
 from sqlalchemy.orm import Session, relationship
 
-from matchbox.common.dtos import LocationConfig, ModelType
+from matchbox.common.dtos import (
+    CollectionName,
+    LocationConfig,
+    ModelType,
+    ResolutionName,
+    ResolutionType,
+    VersionName,
+)
 from matchbox.common.dtos import ModelConfig as CommonModelConfig
 from matchbox.common.dtos import Resolution as CommonResolution
 from matchbox.common.dtos import SourceConfig as CommonSourceConfig
@@ -30,10 +37,57 @@ from matchbox.common.dtos import SourceField as CommonSourceField
 from matchbox.common.exceptions import (
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
+    MatchboxVersionNotFoundError,
 )
-from matchbox.common.graph import ResolutionName, ResolutionType
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.mixin import CountMixin
+
+
+class Collections(CountMixin, MBDB.MatchboxBase):
+    """Named collections of resolutions and versions."""
+
+    __tablename__ = "collections"
+
+    collection_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    name = Column(TEXT, nullable=False)
+
+    # Relationships
+    versions = relationship("Versions", back_populates="collection")
+
+    # Constraints
+    __table_args__ = (UniqueConstraint("name", name="collections_name_key"),)
+
+
+class Versions(CountMixin, MBDB.MatchboxBase):
+    """Named versions of collections of resolutions."""
+
+    __tablename__ = "versions"
+
+    version_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    collection_id = Column(
+        BIGINT,
+        ForeignKey("collections.collection_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(TEXT, nullable=False)
+    is_mutable = Column(BOOLEAN, default=False)
+    is_default = Column(BOOLEAN, default=False)
+
+    # Relationships
+    collection = relationship("Collections", back_populates="versions")
+    resolutions = relationship("Resolutions", back_populates="version")
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("collection_id", "version_id", name="unique_version_id"),
+        UniqueConstraint("collection_id", "name", name="unique_version_name"),
+        Index(
+            "ix_default_version_collection",
+            "collection_id",
+            unique=True,
+            postgresql_where=text("is_default = true"),
+        ),
+    )
 
 
 class ResolutionFrom(CountMixin, MBDB.MatchboxBase):
@@ -72,6 +126,9 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
     # Columns
     resolution_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    version_id = Column(
+        BIGINT, ForeignKey("versions.version_id", ondelete="CASCADE"), nullable=False
+    )
     name = Column(TEXT, nullable=False)
     description = Column(TEXT, nullable=True)
     type = Column(TEXT, nullable=False)
@@ -102,14 +159,15 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         secondaryjoin="Resolutions.resolution_id == ResolutionFrom.child",
         backref="parents",
     )
+    version = relationship("Versions", back_populates="resolutions")
 
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            "type IN ('model', 'source', 'human')",
+            "type IN ('model', 'source')",
             name="resolution_type_constraints",
         ),
-        UniqueConstraint("name", name="resolutions_name_key"),
+        UniqueConstraint("version_id", "name", name="resolutions_name_key"),
     )
 
     @property
@@ -210,17 +268,27 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
         res_type: ResolutionType | None = None,
         session: Session | None = None,
     ) -> "Resolutions":
-        """Resolves a model resolution name to a Resolution object.
+        """Resolves a resolution name to a Resolution object.
 
         Args:
-            name: The name of the model to resolve.
+            name: The qualified name of the resolution to resolve.
             res_type: A resolution type to use as filter.
             session: A session to get the resolution for updates.
 
         Raises:
-            MatchboxResolutionNotFoundError: If the model doesn't exist.
+            MatchboxResolutionNotFoundError: If the resolution doesn't exist.
         """
-        query = select(cls).where(cls.name == name)
+        query = (
+            select(cls)
+            .join(cls.version)
+            .join(Versions.collection)
+            .where(
+                cls.name == name.name,
+                Versions.name == name.version,
+                Collections.name == name.collection,
+            )
+        )
+
         if res_type:
             query = query.where(cls.type == res_type.value)
 
@@ -241,6 +309,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
     def from_dto(
         cls,
         resolution: CommonResolution,
+        collection: CollectionName,
+        version: VersionName,
         session: Session,
     ) -> "Resolutions":
         """Create a Resolutions instance from a Resolution DTO object.
@@ -251,6 +321,8 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
 
         Args:
             resolution: The Resolution DTO to convert
+            collection: The name of the collection to insert to
+            version: The name of the version to insert to
             session: Database session (caller must commit)
 
         Returns:
@@ -263,8 +335,19 @@ class Resolutions(CountMixin, MBDB.MatchboxBase):
                 f"Resolution {resolution.name} already exists"
             )
 
+        # Find the version ID for the given collection and version names
+        version_obj = session.execute(
+            select(Versions)
+            .join(Collections)
+            .where(Collections.name == collection, Versions.name == version)
+        ).scalar_one_or_none()
+
+        if not version_obj:
+            raise MatchboxVersionNotFoundError(name=version)
+
         # Create new resolution
         resolution_orm = cls(
+            version_id=version_obj.version_id,
             name=resolution.name,
             description=resolution.description,
             type=resolution.resolution_type.value,

@@ -6,22 +6,29 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 from pyarrow import Table
 from pydantic import BaseModel
 from sqlalchemy import and_, bindparam, delete, func, or_, select
+from sqlalchemy.orm import selectinload
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.dtos import Match, Resolution
-from matchbox.common.eval import Judgement as CommonJudgement
-from matchbox.common.eval import ModelComparison
-from matchbox.common.exceptions import (
-    MatchboxDataNotFound,
-    MatchboxDeletionNotConfirmed,
-    MatchboxNoJudgements,
-)
-from matchbox.common.graph import (
+from matchbox.common.dtos import (
+    CollectionName,
+    Match,
     ModelResolutionName,
-    ResolutionGraph,
+    Resolution,
     ResolutionName,
     ResolutionType,
     SourceResolutionName,
+    VersionName,
+)
+from matchbox.common.eval import Judgement as CommonJudgement
+from matchbox.common.eval import ModelComparison
+from matchbox.common.exceptions import (
+    MatchboxCollectionAlreadyExists,
+    MatchboxCollectionNotFoundError,
+    MatchboxDataNotFound,
+    MatchboxDeletionNotConfirmed,
+    MatchboxNoJudgements,
+    MatchboxVersionAlreadyExists,
+    MatchboxVersionNotFoundError,
 )
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
@@ -33,21 +40,21 @@ from matchbox.server.postgresql.db import (
 from matchbox.server.postgresql.orm import (
     Clusters,
     ClusterSourceKey,
+    Collections,
     Contains,
     EvalJudgements,
     PKSpace,
     Probabilities,
-    ResolutionFrom,
     Resolutions,
     Results,
     SourceConfigs,
     Users,
+    Versions,
 )
 from matchbox.server.postgresql.utils import evaluation
 from matchbox.server.postgresql.utils.db import (
     compile_sql,
     dump,
-    get_resolution_graph,
     restore,
 )
 from matchbox.server.postgresql.utils.insert import (
@@ -206,12 +213,161 @@ class MatchboxPostgres(MatchboxDBAdapter):
             threshold=threshold,
         )
 
+    # Collection management
+
+    def create_collection(self, name: CollectionName) -> None:  # noqa: D102
+        with MBDB.get_session() as session:
+            if (session.query(Collections).filter_by(name=name).first()) is None:
+                new_collection = Collections(name=name)
+                session.add(new_collection)
+                session.commit()
+            else:
+                raise MatchboxCollectionAlreadyExists
+
+    def get_collection(  # noqa: D102
+        self, name: CollectionName
+    ) -> dict[VersionName, list[Resolution]]:
+        with MBDB.get_session() as session:
+            # Eagerly load all relationships needed to build the Resolution DTOs
+            # to prevent N+1 query problems.
+            collection_orm = session.execute(
+                select(Collections)
+                .where(Collections.name == name)
+                .options(
+                    selectinload(Collections.versions)
+                    .selectinload(Versions.resolutions)
+                    # Eager load nested configs required by resolution.to_dto()
+                    .selectinload(Resolutions.source_config)
+                    .selectinload(SourceConfigs.fields),
+                    selectinload(Collections.versions)
+                    .selectinload(Versions.resolutions)
+                    .selectinload(Resolutions.model_config),
+                )
+            ).scalar_one_or_none()
+
+            if not collection_orm:
+                raise MatchboxCollectionNotFoundError(f"Collection '{name}' not found.")
+
+            result: dict[VersionName, list[Resolution]] = {
+                version_orm.name: [res.to_dto() for res in version_orm.resolutions]
+                for version_orm in collection_orm.versions
+            }
+
+            return result if result else {None: []}
+
+    def list_collections(self) -> list[CollectionName]:  # noqa: D102
+        with MBDB.get_session() as session:
+            collections = (
+                session.execute(select(Collections.name).order_by(Collections.name))
+                .scalars()
+                .all()
+            )
+            return list(collections)
+
+    def delete_collection(self, name: CollectionName, certain: bool) -> None:  # noqa: D102
+        with MBDB.get_session() as session:
+            collection_orm = session.execute(
+                select(Collections)
+                .where(Collections.name == name)
+                .options(selectinload(Collections.versions))
+            ).scalar_one_or_none()
+
+            if not collection_orm:
+                raise MatchboxCollectionNotFoundError(name=name)
+
+            if not certain:
+                version_names = [v.name for v in collection_orm.versions]
+                raise MatchboxDeletionNotConfirmed(children=version_names)
+
+            session.execute(
+                delete(Collections).where(
+                    Collections.collection_id == collection_orm.collection_id
+                )
+            )
+            session.commit()
+
+    # Version management
+
+    def create_version(self, collection: CollectionName, name: VersionName) -> None:  # noqa: D102
+        with MBDB.get_session() as session:
+            collection_orm = session.execute(
+                select(Collections).where(Collections.name == collection)
+            ).scalar_one_or_none()
+
+            if not collection_orm:
+                raise MatchboxCollectionNotFoundError(name=collection)
+
+            if name in [v.name for v in collection_orm.versions]:
+                raise MatchboxVersionAlreadyExists
+
+            new_version = Versions(
+                collection_id=collection_orm.collection_id,
+                name=name,
+                is_mutable=True,
+                is_default=False,
+            )
+            session.add(new_version)
+            session.commit()
+
+    def get_version(  # noqa: D102
+        self, collection: CollectionName, name: VersionName
+    ) -> list[Resolution]:
+        with MBDB.get_session() as session:
+            version_orm = session.execute(
+                select(Versions)
+                .join(Collections)
+                .where(Collections.name == collection, Versions.name == name)
+                .options(
+                    selectinload(Versions.resolutions)
+                    .selectinload(Resolutions.source_config)
+                    .selectinload(SourceConfigs.fields),
+                    selectinload(Versions.resolutions).selectinload(
+                        Resolutions.model_config
+                    ),
+                )
+            ).scalar_one_or_none()
+
+            if not version_orm:
+                raise MatchboxVersionNotFoundError(name=name)
+
+            return [res.to_dto() for res in version_orm.resolutions]
+
+    def delete_version(  # noqa: D102
+        self, collection: CollectionName, name: VersionName, certain: bool
+    ) -> None:
+        with MBDB.get_session() as session:
+            version_orm = session.execute(
+                select(Versions)
+                .join(Collections)
+                .where(Collections.name == collection, Versions.name == name)
+                .options(selectinload(Versions.resolutions))
+            ).scalar_one_or_none()
+
+            if not version_orm:
+                raise MatchboxVersionNotFoundError(name=name)
+
+            if not certain:
+                resolution_names = [res.name for res in version_orm.resolutions]
+                raise MatchboxDeletionNotConfirmed(children=resolution_names)
+
+            session.execute(
+                delete(Versions).where(Versions.version_id == version_orm.version_id)
+            )
+            session.commit()
+
     # Resolution management
 
-    def insert_resolution(self, resolution: Resolution) -> None:  # noqa: D102
+    def insert_resolution(  # noqa: D102
+        self, resolution: Resolution, collection: CollectionName, version: VersionName
+    ) -> None:
         log_prefix = f"Insert {resolution.name}"
         with MBDB.get_session() as session:
-            resolution_orm = Resolutions.from_dto(resolution, session)
+            resolution_orm = Resolutions.from_dto(
+                resolution=resolution,
+                collection=collection,
+                version=version,
+                session=session,
+            )
             session.commit()
 
             logger.info(
@@ -244,29 +400,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
             else:
                 children = [r.name for r in resolution.descendants]
                 raise MatchboxDeletionNotConfirmed(children=children)
-
-    def get_leaf_source_resolutions(self, name: ResolutionName) -> list[Resolution]:  # noqa: D102
-        with MBDB.get_session() as session:
-            resolution = Resolutions.from_name(
-                name=name, res_type=ResolutionType.MODEL, session=session
-            )
-
-            source_resolutions = (
-                session.query(Resolutions)
-                .join(
-                    ResolutionFrom, Resolutions.resolution_id == ResolutionFrom.parent
-                )
-                .filter(
-                    ResolutionFrom.child == resolution.resolution_id,
-                    Resolutions.type == ResolutionType.SOURCE.value,
-                )
-                .all()
-            )
-
-            return [r.to_dto() for r in source_resolutions]
-
-    def get_resolution_graph(self) -> ResolutionGraph:  # noqa: D102
-        return get_resolution_graph()
 
     # Data insertion
 
@@ -342,56 +475,6 @@ class MatchboxPostgres(MatchboxDBAdapter):
             )
 
         return True
-
-    def validate_hashes(self, hashes: list[bytes]) -> bool:  # noqa: D102
-        with MBDB.get_session() as session:
-            data_inner_join = (
-                session.query(Clusters)
-                .filter(
-                    Clusters.cluster_hash.in_(
-                        bindparam(
-                            "ins_hashs",
-                            hashes,
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
-            )
-
-        existing_hashes = {item.cluster_hash for item in data_inner_join}
-        missing_hashes = set(hashes) - existing_hashes
-
-        if missing_hashes:
-            raise MatchboxDataNotFound(
-                message="Some items don't exist in Clusters table.",
-                table=Clusters.__tablename__,
-                data=missing_hashes,
-            )
-
-        return True
-
-    def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:  # noqa: D102
-        initial_dict = {id: None for id in ids}
-
-        with MBDB.get_session() as session:
-            data_inner_join = (
-                session.query(Clusters)
-                .filter(
-                    Clusters.cluster_id.in_(
-                        bindparam(
-                            "ins_ids",
-                            ids,
-                            expanding=True,
-                        )
-                    )
-                )
-                .all()
-            )
-
-        return initial_dict | {
-            item.cluster_id: item.cluster_hash for item in data_inner_join
-        }
 
     def dump(self) -> MatchboxSnapshot:  # noqa: D102
         return dump()

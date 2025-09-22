@@ -32,15 +32,22 @@ from matchbox.common.dtos import (
     BackendCountableType,
     BackendParameterType,
     BackendResourceType,
+    CollectionName,
     LoginAttempt,
     LoginResult,
     Match,
+    ModelResolutionName,
     NotFoundError,
     Resolution,
+    ResolutionName,
     ResolutionOperationStatus,
     ResolutionType,
+    UnqualifiedModelResolutionName,
+    UnqualifiedResolutionName,
+    UnqualifiedSourceResolutionName,
     UploadStage,
     UploadStatus,
+    VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.exceptions import (
@@ -53,12 +60,6 @@ from matchbox.common.exceptions import (
     MatchboxUnhandledServerResponse,
     MatchboxUnparsedClientRequest,
     MatchboxUserNotFoundError,
-)
-from matchbox.common.graph import (
-    ModelResolutionName,
-    ResolutionGraph,
-    ResolutionName,
-    SourceResolutionName,
 )
 from matchbox.common.hash import hash_to_base64
 from matchbox.common.logging import logger
@@ -181,9 +182,9 @@ def login(user_name: str) -> int:
 
 @http_retry
 def query(
-    source: SourceResolutionName,
+    source: UnqualifiedSourceResolutionName,
     return_leaf_id: bool,
-    resolution: ResolutionName | None = None,
+    resolution: UnqualifiedResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> Table:
@@ -195,6 +196,8 @@ def query(
         "/query",
         params=url_params(
             {
+                "collection": "default",
+                "version": "v1",
                 "source": source,
                 "resolution": resolution,
                 "return_leaf_id": return_leaf_id,
@@ -223,10 +226,10 @@ def query(
 
 @http_retry
 def match(
-    targets: list[SourceResolutionName],
-    source: SourceResolutionName,
+    targets: list[UnqualifiedSourceResolutionName],
+    source: UnqualifiedSourceResolutionName,
     key: str,
-    resolution: ResolutionName,
+    resolution: UnqualifiedResolutionName,
     threshold: int | None = None,
 ) -> Match:
     """Match a source against a list of targets."""
@@ -240,6 +243,8 @@ def match(
         "/match",
         params=url_params(
             {
+                "collection": "default",
+                "version": "v1",
                 "targets": targets,
                 "source": source,
                 "key": key,
@@ -259,27 +264,22 @@ def match(
     return matches
 
 
-# Resolution management
+# Collection management
 
 
 @http_retry
-def get_leaf_source_resolutions(name: ModelResolutionName) -> list[Resolution]:
-    log_prefix = f"Resolution {name}"
+def get_collection(name: CollectionName) -> dict[VersionName, list[Resolution]]:
+    """Get all versions and resolutions in a collection."""
+    log_prefix = f"Collection {name}"
     logger.debug("Retrieving", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolutions/{name}/sources")
+    res = CLIENT.get(f"/collections/{name}")
+    return {
+        v: [Resolution.model_validate(r) for r in vs] for v, vs in res.json().items()
+    }
 
-    return [Resolution.model_validate(s) for s in res.json()]
 
-
-@http_retry
-def get_resolution_graph() -> ResolutionGraph:
-    """Get the resolution graph from Matchbox."""
-    log_prefix = "Visualisation"
-    logger.debug("Fetching resolution graph", prefix=log_prefix)
-
-    res = CLIENT.get("/report/resolutions")
-    return ResolutionGraph.model_validate(res.json())
+# Resolution management
 
 
 @http_retry
@@ -290,7 +290,9 @@ def create_resolution(
     log_prefix = f"Resolution {resolution.name}"
     logger.debug("Creating", prefix=log_prefix)
 
-    res = CLIENT.post("/resolutions", json=resolution.model_dump())
+    res = CLIENT.post(
+        "/collections/default/versions/v1/resolutions", json=resolution.model_dump()
+    )
 
     return ResolutionOperationStatus.model_validate(res.json())
 
@@ -304,7 +306,7 @@ def get_resolution(
     logger.debug("Retrieving metadata", prefix=log_prefix)
 
     res = CLIENT.get(
-        f"/resolutions/{name}",
+        f"/collections/default/versions/v1/resolutions/{name}",
         params=url_params({"validate_type": validate_type}),
     )
     return Resolution.model_validate(res.json())
@@ -322,7 +324,8 @@ def set_data(
 
     # Initialise upload
     metadata_res = CLIENT.post(
-        f"/resolutions/{name}/data", params=url_params({"validate_type": validate_type})
+        f"/collections/default/versions/v1/resolutions/{name}/data",
+        params=url_params({"validate_type": validate_type}),
     )
 
     upload = UploadStatus.model_validate(metadata_res.json())
@@ -359,7 +362,7 @@ def get_results(name: ModelResolutionName) -> Table:
     log_prefix = f"Model {name}"
     logger.debug("Retrieving results", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolutions/{name}/data")
+    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{name}/data")
     buffer = BytesIO(res.content)
     return read_table(buffer)
 
@@ -370,7 +373,9 @@ def set_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatu
     log_prefix = f"Model {name}"
     logger.debug("Setting truth value", prefix=log_prefix)
 
-    res = CLIENT.patch(f"/resolutions/{name}/truth", json=truth)
+    res = CLIENT.patch(
+        f"/collections/default/versions/v1/resolutions/{name}/truth", json=truth
+    )
     return ResolutionOperationStatus.model_validate(res.json())
 
 
@@ -380,7 +385,7 @@ def get_truth(name: ModelResolutionName) -> int:
     log_prefix = f"Model {name}"
     logger.debug("Retrieving truth value", prefix=log_prefix)
 
-    res = CLIENT.get(f"/resolutions/{name}/truth")
+    res = CLIENT.get(f"/collections/default/versions/v1/resolutions/{name}/truth")
     return res.json()
 
 
@@ -392,7 +397,10 @@ def delete_resolution(
     log_prefix = f"Model {name}"
     logger.debug("Deleting", prefix=log_prefix)
 
-    res = CLIENT.delete(f"/resolutions/{name}", params={"certain": certain})
+    res = CLIENT.delete(
+        f"/collections/default/versions/v1/resolutions/{name}",
+        params={"certain": certain},
+    )
     return ResolutionOperationStatus.model_validate(res.json())
 
 
@@ -400,24 +408,45 @@ def delete_resolution(
 
 
 @http_retry
-def sample_for_eval(n: int, resolution: ModelResolutionName, user_id: int) -> Table:
+def sample_for_eval(
+    n: int, resolution: UnqualifiedModelResolutionName, user_id: int
+) -> Table:
+    """Sample model results for evaluation."""
     res = CLIENT.get(
         "/eval/samples",
-        params=url_params({"n": n, "resolution": resolution, "user_id": user_id}),
+        params=url_params(
+            {
+                "n": n,
+                "resolution": ModelResolutionName(
+                    collection="default", version="v1", name=resolution
+                ),
+                "user_id": user_id,
+            }
+        ),
     )
 
     return read_table(BytesIO(res.content))
 
 
 @http_retry
-def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:
-    res = CLIENT.get("/eval/compare", params=url_params({"resolutions": resolutions}))
+def compare_models(
+    resolutions: list[UnqualifiedModelResolutionName],
+) -> ModelComparison:
+    """Get a model comparison for a set of model resolutions."""
+    qualified_resolution = [
+        ModelResolutionName(collection="default", version="v1", name=resolution)
+        for resolution in resolutions
+    ]
+    res = CLIENT.post(
+        "/eval/compare", json=[r.model_dump() for r in qualified_resolution]
+    )
     scores = {resolution: tuple(pr) for resolution, pr in res.json().items()}
     return scores
 
 
 @http_retry
 def send_eval_judgement(judgement: Judgement) -> None:
+    """Send judgements to the server."""
     logger.debug(
         f"Submitting judgement {judgement.shown}:{judgement.endorsed} "
         f"for {judgement.user_id}"
@@ -427,6 +456,7 @@ def send_eval_judgement(judgement: Judgement) -> None:
 
 @http_retry
 def download_eval_data() -> tuple[Table, Table]:
+    """Download all judgements from the server."""
     logger.debug("Retrieving all judgements.")
     res = CLIENT.get("/eval/judgements")
 

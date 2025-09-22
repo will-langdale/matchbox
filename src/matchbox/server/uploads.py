@@ -17,11 +17,11 @@ from pydantic import BaseModel
 from matchbox.common.dtos import (
     BackendUploadType,
     Resolution,
+    ResolutionType,
     UploadStage,
     UploadStatus,
 )
 from matchbox.common.exceptions import MatchboxServerFileError
-from matchbox.common.graph import ResolutionType
 from matchbox.common.logging import logger
 from matchbox.server.base import (
     MatchboxDBAdapter,

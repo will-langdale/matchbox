@@ -4,8 +4,6 @@ import warnings
 from typing import Any
 
 import polars as pl
-from matplotlib import pyplot as plt
-from matplotlib.pyplot import Figure
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 
@@ -13,14 +11,13 @@ from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.results import Results
 from matchbox.client.sources import Location, Source
-from matchbox.common.dtos import ResolutionType
+from matchbox.common.dtos import DEFAULT_RESOLUTION, ModelResolutionName, ResolutionType
 from matchbox.common.eval import (
     ModelComparison,
     PrecisionRecall,
     precision_recall,
 )
 from matchbox.common.exceptions import MatchboxSourceTableError
-from matchbox.common.graph import DEFAULT_RESOLUTION, ModelResolutionName
 from matchbox.common.logging import logger
 
 
@@ -147,31 +144,6 @@ class EvalData:
             .to_arrow()
         )
         return precision_recall([root_leaf], self.judgements, self.expansion)[0]
-
-    def pr_curve(self, results: Results) -> Figure:
-        """Computes precision and recall for each threshold in results."""
-        all_p = []
-        all_r = []
-
-        probs = pl.from_arrow(results.probabilities)
-        thresholds = probs.select("probability").unique().to_series()
-        for i, t in enumerate(sorted(thresholds)):
-            float_thresh = t / 100
-            p, r = self.precision_recall(results=results, threshold=float_thresh)
-            all_p.append(p)
-            all_r.append(r)
-            plt.annotate(float_thresh, (all_r[i], all_p[i]))
-
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        ax.plot(all_r, all_p, marker="o")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.set_ylabel("Precision")
-        ax.set_xlabel("Recall")
-        ax.set_title("Precision-Recall Curve")
-        ax.grid()
-
-        return fig
 
 
 def compare_models(resolutions: list[ModelResolutionName]) -> ModelComparison:

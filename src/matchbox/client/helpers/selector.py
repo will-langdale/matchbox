@@ -6,10 +6,11 @@ from sqlglot import expressions, parse_one
 from sqlglot import select as sqlglot_select
 
 from matchbox.client import _handler
-from matchbox.common.dtos import Match, ResolutionType
-from matchbox.common.graph import (
+from matchbox.common.dtos import (
     DEFAULT_RESOLUTION,
+    Match,
     ResolutionName,
+    ResolutionType,
     SourceResolutionName,
 )
 

@@ -17,8 +17,7 @@ from faker import Faker
 from frozendict import frozendict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from matchbox.common.dtos import DataTypes
-from matchbox.common.graph import SourceResolutionName
+from matchbox.common.dtos import DataTypes, SourceResolutionName
 from matchbox.common.transform import DisjointSet
 
 if TYPE_CHECKING:

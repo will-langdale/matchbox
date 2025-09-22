@@ -23,7 +23,9 @@ from matchbox.client.models.models import Model
 from matchbox.client.queries import Query
 from matchbox.common.arrow import SCHEMA_RESULTS
 from matchbox.common.dtos import (
+    ModelResolutionName,
     ModelType,
+    SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -37,10 +39,6 @@ from matchbox.common.factories.sources import (
     SourceTestkit,
     SourceTestkitParameters,
     linked_sources_factory,
-)
-from matchbox.common.graph import (
-    ModelResolutionName,
-    SourceResolutionName,
 )
 from matchbox.common.transform import DisjointSet, graph_results
 

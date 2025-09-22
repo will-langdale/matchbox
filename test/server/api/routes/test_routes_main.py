@@ -25,7 +25,6 @@ from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
 )
 from matchbox.common.factories.sources import source_factory
-from matchbox.common.graph import ResolutionGraph
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -382,9 +381,9 @@ def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Moc
     test_client, _, _ = api_client_and_mocks
     routes = [
         (test_client.post, "/upload/upload_id"),
-        (test_client.post, "/resolutions"),
-        (test_client.patch, "/resolutions/name/truth"),
-        (test_client.delete, "/resolutions/name"),
+        (test_client.post, "/collections/default/versions/v1/resolutions"),
+        (test_client.patch, "/collections/default/versions/v1/resolutions/name/truth"),
+        (test_client.delete, "/collections/default/versions/v1/resolutions/name"),
         (test_client.delete, "/database"),
     ]
 
@@ -418,16 +417,3 @@ def test_api_key_authorisation(api_client_and_mocks: tuple[TestClient, Mock, Moc
         response = method(url)
         assert response.status_code == 401
         assert response.content == b'"JWT required but not provided."'
-
-
-def test_get_resolution_graph(
-    resolution_graph: ResolutionGraph,
-    api_client_and_mocks: tuple[TestClient, Mock, Mock],
-):
-    """Test the resolution graph report endpoint."""
-    test_client, mock_backend, _ = api_client_and_mocks
-    mock_backend.get_resolution_graph = Mock(return_value=resolution_graph)
-
-    response = test_client.get("/report/resolutions")
-    assert response.status_code == 200
-    assert ResolutionGraph.model_validate(response.json())

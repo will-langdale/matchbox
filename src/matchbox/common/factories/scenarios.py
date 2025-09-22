@@ -10,6 +10,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine
 
 from matchbox.client.queries import Query
+from matchbox.common.dtos import (
+    ModelResolutionName,
+    ResolutionName,
+    SourceResolutionName,
+)
 from matchbox.common.factories.dags import TestkitDAG
 from matchbox.common.factories.entities import FeatureConfig, SuffixRule
 from matchbox.common.factories.models import query_to_model_factory
@@ -98,6 +103,10 @@ def create_bare_scenario(
     """Create a bare TestkitDAG scenario."""
     dag = TestkitDAG()
 
+    # Create collection and version
+    backend.create_collection(name=dag.collection)
+    backend.create_version(collection=dag.collection, name=dag.version)
+
     # Create linked sources
     linked = linked_sources_factory(
         n_true_entities=n_entities, seed=seed, engine=warehouse_engine
@@ -124,9 +133,17 @@ def create_index_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.insert_resolution(resolution=source_testkit.source.to_resolution())
+        backend.insert_resolution(
+            resolution=source_testkit.source.to_resolution(),
+            collection=dag.collection,
+            version=dag.version,
+        )
         backend.insert_source_data(
-            name=source_testkit.source.name,
+            name=SourceResolutionName(
+                collection=dag.collection,
+                version=dag.version,
+                name=source_testkit.source.name,
+            ),
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -170,8 +187,19 @@ def create_dedupe_scenario(
         )
 
         # Add to backend and DAG
-        backend.insert_resolution(resolution=model_testkit.model.to_resolution())
-        backend.insert_model_data(name=name, results=model_testkit.probabilities)
+        backend.insert_resolution(
+            resolution=model_testkit.model.to_resolution(),
+            collection=dag.collection,
+            version=dag.version,
+        )
+        backend.insert_model_data(
+            name=ModelResolutionName(
+                collection=dag.collection,
+                version=dag.version,
+                name=model_testkit.model.name,
+            ),
+            results=model_testkit.probabilities,
+        )
         dag.add_model(model_testkit)
 
     return dag
@@ -199,7 +227,11 @@ def create_probabilistic_dedupe_scenario(
         name = f"probabilistic_test_{resolution.name}"
 
         # Query the raw data
-        source_data = backend.query(source=resolution.name)
+        source_data = backend.query(
+            source=SourceResolutionName(
+                collection=dag.collection, version=dag.version, name=resolution.name
+            )
+        )
 
         # Build model testkit using query data
         model_testkit = query_to_model_factory(
@@ -215,9 +247,21 @@ def create_probabilistic_dedupe_scenario(
         model_testkit.threshold = 50
 
         # Add to backend and DAG
-        backend.insert_resolution(resolution=model_testkit.model.to_resolution())
-        backend.insert_model_data(name=name, results=model_testkit.probabilities)
-        backend.set_model_truth(name=name, truth=50)
+        backend.insert_resolution(
+            resolution=model_testkit.model.to_resolution(),
+            collection=dag.collection,
+            version=dag.version,
+        )
+        qualified_model_name = ModelResolutionName(
+            collection=dag.collection,
+            version=dag.version,
+            name=model_testkit.model.name,
+        )
+        backend.insert_model_data(
+            name=qualified_model_name,
+            results=model_testkit.probabilities,
+        )
+        backend.set_model_truth(name=qualified_model_name, truth=50)
         dag.add_model(model_testkit)
 
     return dag
@@ -245,9 +289,30 @@ def create_link_scenario(
     cdms_model = dag.models["naive_test_cdms"]
 
     # Query data for each resolution
-    crn_data = backend.query(source="crn", resolution=crn_model.name)
-    duns_data = backend.query(source="duns", resolution=duns_model.name)
-    cdms_data = backend.query(source="cdms", resolution=cdms_model.name)
+    crn_data = backend.query(
+        source=SourceResolutionName(
+            collection=dag.collection, version=dag.version, name="crn"
+        ),
+        resolution=ResolutionName(
+            collection=dag.collection, version=dag.version, name=crn_model.name
+        ),
+    )
+    duns_data = backend.query(
+        source=SourceResolutionName(
+            collection=dag.collection, version=dag.version, name="duns"
+        ),
+        resolution=ResolutionName(
+            collection=dag.collection, version=dag.version, name=duns_model.name
+        ),
+    )
+    cdms_data = backend.query(
+        source=SourceResolutionName(
+            collection=dag.collection, version=dag.version, name="cdms"
+        ),
+        resolution=ResolutionName(
+            collection=dag.collection, version=dag.version, name=cdms_model.name
+        ),
+    )
 
     # Create CRN-DUNS link
     crn_duns_name = "deterministic_naive_test_crn_naive_test_duns"
@@ -266,8 +331,18 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_resolution(resolution=crn_duns_model.model.to_resolution())
-    backend.insert_model_data(name=crn_duns_name, results=crn_duns_model.probabilities)
+    backend.insert_resolution(
+        resolution=crn_duns_model.model.to_resolution(),
+        collection=dag.collection,
+        version=dag.version,
+    )
+    qualified_crn_duns_name = ModelResolutionName(
+        collection=dag.collection, version=dag.version, name=crn_duns_name
+    )
+    backend.insert_model_data(
+        name=qualified_crn_duns_name,
+        results=crn_duns_model.probabilities,
+    )
     dag.add_model(crn_duns_model)
 
     # Create CRN-CDMS link
@@ -286,25 +361,39 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_resolution(resolution=crn_cdms_model.model.to_resolution())
-    backend.insert_model_data(name=crn_cdms_name, results=crn_cdms_model.probabilities)
-    backend.set_model_truth(name=crn_cdms_name, truth=75)
+    backend.insert_resolution(
+        resolution=crn_cdms_model.model.to_resolution(),
+        collection=dag.collection,
+        version=dag.version,
+    )
+    qualified_crn_cdms_name = ModelResolutionName(
+        collection=dag.collection, version=dag.version, name=crn_cdms_name
+    )
+    backend.insert_model_data(
+        name=qualified_crn_cdms_name, results=crn_cdms_model.probabilities
+    )
+    backend.set_model_truth(name=qualified_crn_cdms_name, truth=75)
     dag.add_model(crn_cdms_model)
 
     # Create final join
     # Query the previous link's results
     crn_cdms_data_crn_only = backend.query(
-        source="crn", resolution=crn_cdms_name
+        source="crn", resolution=qualified_crn_cdms_name
     ).rename_columns(["id", "keys_crn"])
     crn_cdms_data_cdms_only = backend.query(
-        source="cdms", resolution=crn_cdms_name
+        source="cdms", resolution=qualified_crn_cdms_name
     ).rename_columns(["id", "keys_cdms"])
     crn_cdms_data = pa.concat_tables(
         [crn_cdms_data_crn_only, crn_cdms_data_cdms_only],
         promote_options="default",
     ).combine_chunks()
 
-    duns_data_linked = backend.query(source="duns", resolution=duns_model.name)
+    duns_data_linked = backend.query(
+        source="duns",
+        resolution=ModelResolutionName(
+            collection=dag.collection, version=dag.version, name=duns_model.name
+        ),
+    )
 
     final_join_name = "final_join"
     final_join_model = query_to_model_factory(
@@ -325,9 +414,16 @@ def create_link_scenario(
     )
 
     # Add to backend and DAG
-    backend.insert_resolution(resolution=final_join_model.model.to_resolution())
+    backend.insert_resolution(
+        resolution=final_join_model.model.to_resolution(),
+        collection=dag.collection,
+        version=dag.version,
+    )
     backend.insert_model_data(
-        name=final_join_name, results=final_join_model.probabilities
+        name=ModelResolutionName(
+            collection=dag.collection, version=dag.version, name=final_join_name
+        ),
+        results=final_join_model.probabilities,
     )
     dag.add_model(final_join_model)
 
@@ -367,9 +463,17 @@ def create_alt_dedupe_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.insert_resolution(resolution=source_testkit.source.to_resolution())
+        backend.insert_resolution(
+            resolution=source_testkit.source.to_resolution(),
+            collection=dag.collection,
+            version=dag.version,
+        )
         backend.insert_source_data(
-            name=source_testkit.source.name,
+            name=SourceResolutionName(
+                source_testkit.source.name,
+                collection=dag.collection,
+                version=dag.version,
+            ),
             data_hashes=source_testkit.data_hashes,
         )
 
@@ -380,7 +484,11 @@ def create_alt_dedupe_scenario(
         model_name2 = f"dedupe2_{resolution.name}"
 
         # Query the raw data
-        source_data = backend.query(source=resolution.name)
+        source_data = backend.query(
+            source=SourceResolutionName(
+                collection=dag.collection, version=dag.version, name=resolution.name
+            )
+        )
 
         # Build model testkit using query data
         model_testkit1 = query_to_model_factory(
@@ -412,9 +520,16 @@ def create_alt_dedupe_scenario(
             model.threshold = threshold
 
             # Add both models to backend and DAG
-            backend.insert_resolution(resolution=model.model.to_resolution())
-            backend.insert_model_data(name=model.name, results=model.probabilities)
-            backend.set_model_truth(name=model.name, truth=threshold)
+            backend.insert_resolution(
+                resolution=model.model.to_resolution(),
+                collection=dag.collection,
+                version=dag.version,
+            )
+            qualified_name = ModelResolutionName(
+                collection=dag.collection, version=dag.version, name=model.name
+            )
+            backend.insert_model_data(name=qualified_name, results=model.probabilities)
+            backend.set_model_truth(name=qualified_name, truth=threshold)
 
             # Add to DAG
             dag.add_model(model)
@@ -466,9 +581,17 @@ def create_convergent_scenario(
 
     # Index sources in backend
     for source_testkit in dag.sources.values():
-        backend.insert_resolution(resolution=source_testkit.source.to_resolution())
+        backend.insert_resolution(
+            resolution=source_testkit.source.to_resolution(),
+            collection=dag.collection,
+            version=dag.version,
+        )
         backend.insert_source_data(
-            name=source_testkit.source.name,
+            name=SourceResolutionName(
+                collection=dag.collection,
+                version=dag.version,
+                name=source_testkit.source.name,
+            ),
             data_hashes=source_testkit.data_hashes,
         )
 

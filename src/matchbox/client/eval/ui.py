@@ -6,9 +6,9 @@ import streamlit as st
 from matchbox.client import _handler
 from matchbox.client._settings import settings
 from matchbox.client.eval import get_samples
+from matchbox.common.dtos import DEFAULT_RESOLUTION
 from matchbox.common.eval import Judgement
 from matchbox.common.exceptions import MatchboxClientSettingsException
-from matchbox.common.graph import DEFAULT_RESOLUTION
 
 
 def fetch_samples():

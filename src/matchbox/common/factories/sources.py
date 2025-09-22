@@ -21,6 +21,7 @@ from matchbox.common.dtos import (
     DataTypes,
     SourceConfig,
     SourceField,
+    SourceResolutionName,
 )
 from matchbox.common.factories.entities import (
     ClusterEntity,
@@ -32,7 +33,6 @@ from matchbox.common.factories.entities import (
     generate_entities,
     probabilities_to_results_entities,
 )
-from matchbox.common.graph import SourceResolutionName
 from matchbox.common.hash import hash_values
 
 P = ParamSpec("P")

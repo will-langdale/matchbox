@@ -24,21 +24,26 @@ from matchbox.common.dtos import (
     BackendCountableType,
     BackendResourceType,
     BackendUploadType,
+    CollectionName,
     CountResult,
     LoginAttempt,
     LoginResult,
     Match,
     NotFoundError,
     OKMessage,
+    ResolutionName,
+    SourceResolutionName,
+    UnqualifiedModelResolutionName,
+    UnqualifiedSourceResolutionName,
     UploadStage,
     UploadStatus,
+    VersionName,
 )
 from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxResolutionNotFoundError,
     MatchboxServerFileError,
 )
-from matchbox.common.graph import ResolutionGraph, ResolutionName, SourceResolutionName
 from matchbox.server.api.dependencies import (
     BackendDependency,
     ParquetResponse,
@@ -47,7 +52,7 @@ from matchbox.server.api.dependencies import (
     authorisation_dependencies,
     lifespan,
 )
-from matchbox.server.api.routers import eval, resolution
+from matchbox.server.api.routers import collection, eval
 from matchbox.server.uploads import process_upload, process_upload_celery, table_to_s3
 
 app = FastAPI(
@@ -55,7 +60,7 @@ app = FastAPI(
     version=version("matchbox_db"),
     lifespan=lifespan,
 )
-app.include_router(resolution.router)
+app.include_router(collection.router)
 app.include_router(eval.router)
 
 
@@ -256,17 +261,25 @@ def get_upload_status(
 )
 def query(
     backend: BackendDependency,
-    source: SourceResolutionName,
+    collection: CollectionName,
+    version: VersionName,
+    source: UnqualifiedSourceResolutionName,
     return_leaf_id: bool,
-    resolution: ResolutionName | None = None,
+    resolution: UnqualifiedModelResolutionName | None = None,
     threshold: int | None = None,
     limit: int | None = None,
 ) -> ParquetResponse:
     """Query Matchbox for matches based on a source resolution name."""
     try:
         res = backend.query(
-            source=source,
-            resolution=resolution,
+            source=SourceResolutionName(
+                collection=collection,
+                version=version,
+                name=source,
+            ),
+            resolution=ResolutionName(
+                collection=collection, version=version, name=resolution
+            ),
             threshold=threshold,
             return_leaf_id=return_leaf_id,
             limit=limit,
@@ -289,19 +302,33 @@ def query(
 )
 def match(
     backend: BackendDependency,
-    targets: Annotated[list[SourceResolutionName], Query()],
-    source: SourceResolutionName,
+    collection: CollectionName,
+    version: VersionName,
+    targets: Annotated[list[UnqualifiedSourceResolutionName], Query()],
+    source: UnqualifiedSourceResolutionName,
     key: str,
-    resolution: ResolutionName,
+    resolution: UnqualifiedModelResolutionName,
     threshold: int | None = None,
 ) -> list[Match]:
     """Match a source key against a list of target source resolutions."""
+    targets = [
+        SourceResolutionName(collection=collection, version=version, name=t)
+        for t in targets
+    ]
     try:
         res = backend.match(
             key=key,
-            source=source,
+            source=SourceResolutionName(
+                collection=collection,
+                version=version,
+                name=source,
+            ),
             targets=targets,
-            resolution=resolution,
+            resolution=ResolutionName(
+                collection=collection,
+                version=version,
+                name=resolution,
+            ),
             threshold=threshold,
         )
     except MatchboxResolutionNotFoundError as e:
@@ -316,12 +343,6 @@ def match(
 
 
 # Admin
-
-
-@app.get("/report/resolutions")
-def get_resolutions(backend: BackendDependency) -> ResolutionGraph:
-    """Get the resolution graph."""
-    return backend.get_resolution_graph()
 
 
 @app.get("/database/count")

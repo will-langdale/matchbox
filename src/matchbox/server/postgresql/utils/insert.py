@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.exc import SQLAlchemyError
 
 from matchbox.common.db import sql_to_df
-from matchbox.common.graph import (
+from matchbox.common.dtos import (
     ModelResolutionName,
     ResolutionType,
     SourceResolutionName,

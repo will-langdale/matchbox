@@ -23,7 +23,7 @@ def test_get_source_success(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     ).write_to_location()
 
     # Mock API response
-    matchbox_api.get("/resolutions/test_source").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/test_source").mock(
         return_value=Response(
             200, json=testkit.source.to_resolution().model_dump(mode="json")
         )
@@ -51,7 +51,7 @@ def test_get_source_with_valid_location(
         engine=sqlite_warehouse, name="test_source"
     ).write_to_location()
 
-    matchbox_api.get("/resolutions/test_source").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/test_source").mock(
         return_value=Response(
             200, json=testkit.source.to_resolution().model_dump(mode="json")
         )
@@ -109,7 +109,7 @@ def test_get_source_validation_mismatch(
         engine=sqlite_warehouse, name="test_source"
     ).write_to_location()
 
-    matchbox_api.get("/resolutions/test_source").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/test_source").mock(
         return_value=Response(
             200, json=testkit.source.to_resolution().model_dump(mode="json")
         )
@@ -124,7 +124,7 @@ def test_get_source_validation_mismatch(
 
 def test_get_source_404_error(matchbox_api: MockRouter):
     """Test get_source handles 404 source not found error."""
-    matchbox_api.get("/resolutions/nonexistent").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/nonexistent").mock(
         return_value=Response(
             404,
             json=NotFoundError(

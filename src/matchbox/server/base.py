@@ -11,15 +11,17 @@ from pyarrow import Table
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from matchbox.common.dtos import Match, Resolution
-from matchbox.common.eval import Judgement, ModelComparison
-from matchbox.common.graph import (
+from matchbox.common.dtos import (
+    CollectionName,
+    Match,
     ModelResolutionName,
-    ResolutionGraph,
+    Resolution,
     ResolutionName,
     ResolutionType,
     SourceResolutionName,
+    VersionName,
 )
+from matchbox.common.eval import Judgement, ModelComparison
 from matchbox.common.logging import LogLevelType
 
 if TYPE_CHECKING:
@@ -292,14 +294,104 @@ class MatchboxDBAdapter(ABC):
         """
         ...
 
+    # Collection management
+
+    @abstractmethod
+    def create_collection(self, name: CollectionName) -> None:
+        """Create a new collection.
+
+        Args:
+            name: The name of the collection to create.
+        """
+
+    @abstractmethod
+    def get_collection(
+        self, name: CollectionName
+    ) -> dict[VersionName, list[Resolution]]:
+        """Get collection metadata.
+
+        Args:
+            name: The name of the collection to get.
+
+        Returns:
+            A dictionary mapping version names to their resolutions.
+        """
+        ...
+
+    @abstractmethod
+    def list_collections(self) -> list[CollectionName]:
+        """List all collection names.
+
+        Returns:
+            A list of collection names.
+        """
+        ...
+
+    @abstractmethod
+    def delete_collection(self, name: CollectionName, certain: bool) -> None:
+        """Delete a collection and all its versions.
+
+        Args:
+            name: The name of the collection to delete.
+            certain: Whether to delete the collection without confirmation.
+        """
+        ...
+
+    # Version management
+
+    @abstractmethod
+    def create_version(self, collection: CollectionName, version: VersionName) -> None:
+        """Create a new version label.
+
+        Args:
+            collection: The name of the collection to create the version in.
+            version: The name of the version to create.
+        """
+        ...
+
+    @abstractmethod
+    def get_version(
+        self, collection: CollectionName, version: VersionName
+    ) -> list[Resolution]:
+        """Get version metadata and resolutions.
+
+        Args:
+            collection: The name of the collection to get the version from.
+            version: The name of the version to get.
+
+        Returns:
+            A list of Resolution objects.
+        """
+        ...
+
+    @abstractmethod
+    def delete_version(
+        self, collection: CollectionName, version: VersionName, certain: bool
+    ) -> None:
+        """Delete a version and all its resolutions.
+
+        Args:
+            collection: The name of the collection to delete the version from.
+            version: The name of the version to delete.
+            certain: Whether to delete the version without confirmation.
+        """
+        ...
+
     # Resolution management
 
     @abstractmethod
-    def insert_resolution(self, resolution: "Resolution") -> None:
+    def insert_resolution(
+        self,
+        resolution: "Resolution",
+        collection: CollectionName,
+        version: VersionName,
+    ) -> None:
         """Writes a resolution to Matchbox.
 
         Args:
             resolution: Resolution object with a source or model config
+            collection: The name of the collection to insert the resolution into.
+            version: The name of the version to insert the resolution into.
 
         Raises:
             MatchboxModelConfigError: If the configuration is invalid, such as
@@ -330,23 +422,6 @@ class MatchboxDBAdapter(ABC):
             name: The name of the resolution to delete.
             certain: Whether to delete the model without confirmation.
         """
-        ...
-
-    @abstractmethod
-    def get_leaf_source_resolutions(self, name: ResolutionName) -> list[Resolution]:
-        """Get a list of source configurations queriable from a resolution.
-
-        Args:
-            name: Name of the resolution to query.
-
-        Returns:
-            List of relevant Resolution objects.
-        """
-        ...
-
-    @abstractmethod
-    def get_resolution_graph(self) -> ResolutionGraph:
-        """Get the full resolution graph."""
         ...
 
     # Data insertion
@@ -394,30 +469,6 @@ class MatchboxDBAdapter(ABC):
 
         Raises:
             MatchboxDataNotFound: If some items don't exist in the target table.
-        """
-        ...
-
-    @abstractmethod
-    def validate_hashes(self, hashes: list[bytes]) -> bool:
-        """Validates a list of hashes exist in the database.
-
-        Args:
-            hashes: A list of hashes to validate.
-
-        Raises:
-            MatchboxDataNotFound: If some items don't exist in the target table.
-        """
-        ...
-
-    @abstractmethod
-    def cluster_id_to_hash(self, ids: list[int]) -> dict[int, bytes | None]:
-        """Get a lookup of Cluster hashes from a list of IDs.
-
-        Args:
-            ids: A list of IDs to get hashes for.
-
-        Returns:
-            A dictionary mapping IDs to hashes.
         """
         ...
 

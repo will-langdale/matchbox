@@ -95,14 +95,18 @@ def test_get_judgements(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 
 def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test errors in requesting samples."""
     test_client, mock_backend, _ = api_client_and_mocks
     mock_pr = {"a": (1, 0.5), "b": (0.5, 1)}
-    mock_backend.compare_models = Mock(return_value=mock_pr)
+    mock_backend.compare_models.return_value = mock_pr
 
-    response = test_client.get(
+    resolutions_payload = [
+        {"collection": "default", "version": "v1", "name": "a"},
+        {"collection": "default", "version": "v1", "name": "b"},
+    ]
+
+    response = test_client.post(
         "/eval/compare",
-        params={"resolutions": ["a", "b"]},
+        json=resolutions_payload,
     )
 
     assert response.status_code == 200
@@ -113,23 +117,26 @@ def test_compare_models_ok(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
 
 
 def test_compare_models_404(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
-    """Test errors in requesting samples."""
     test_client, mock_backend, _ = api_client_and_mocks
 
-    # Resolution not found
-    mock_backend.compare_models = Mock(side_effect=MatchboxResolutionNotFoundError)
-    response = test_client.get(
+    resolutions_payload = [
+        {"collection": "default", "version": "v1", "name": "a"},
+        {"collection": "default", "version": "v1", "name": "b"},
+        {"collection": "default", "version": "v1", "name": "c"},
+    ]
+
+    mock_backend.compare_models.side_effect = MatchboxResolutionNotFoundError
+    response = test_client.post(
         "/eval/compare",
-        params={"resolutions": ["a", "b", "c"]},
+        json=resolutions_payload,
     )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
-    # No judgements available
-    mock_backend.compare_models = Mock(side_effect=MatchboxNoJudgements)
-    response = test_client.get(
+    mock_backend.compare_models.side_effect = MatchboxNoJudgements
+    response = test_client.post(
         "/eval/compare",
-        params={"resolutions": ["a", "b", "c"]},
+        json=resolutions_payload,
     )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.JUDGEMENT

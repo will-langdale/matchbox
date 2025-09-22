@@ -15,8 +15,8 @@ from matchbox.client._settings import settings as client_settings
 from matchbox.client.models import Model
 from matchbox.client.models.linkers import DeterministicLinker
 from matchbox.client.queries import Query
+from matchbox.common.dtos import DEFAULT_RESOLUTION
 from matchbox.common.factories.sources import source_from_tuple
-from matchbox.common.graph import DEFAULT_RESOLUTION
 
 MOCK_WH_FILE = "sqlite:///eval_mock.db"
 

@@ -17,7 +17,7 @@ from matchbox.client.models.linkers.base import Linker
 from matchbox.client.queries import Query
 from matchbox.client.results import Results
 from matchbox.client.sources import RelationalDBLocation, Source
-from matchbox.common.graph import ResolutionName, SourceResolutionName
+from matchbox.common.dtos import ResolutionName, SourceResolutionName
 from matchbox.common.logging import logger
 
 

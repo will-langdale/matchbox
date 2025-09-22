@@ -37,7 +37,7 @@ def test_get_source(
         return_value=source_testkit.source.to_resolution(),  # Second call (SOURCE)
     )
 
-    response = test_client.get("/resolutions/foo")
+    response = test_client.get("/collections/default/versions/v1/resolutions/foo")
     assert response.status_code == 200
     assert response.json()["name"] == "foo"
     assert response.json()["resolution_type"] == "source"
@@ -50,7 +50,9 @@ def test_get_model(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
 
-    response = test_client.get("/resolutions/test_model")
+    response = test_client.get(
+        "/collections/default/versions/v1/resolutions/test_model"
+    )
 
     assert response.status_code == 200
     assert response.json()["name"] == testkit.model.name
@@ -63,7 +65,9 @@ def test_get_resolution_404(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(side_effect=MatchboxResolutionNotFoundError())
 
-    response = test_client.get("/resolutions/nonexistent")
+    response = test_client.get(
+        "/collections/default/versions/v1/resolutions/nonexistent"
+    )
 
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
@@ -76,7 +80,8 @@ def test_insert_model(
     test_client, mock_backend, _ = api_client_and_mocks
 
     response = test_client.post(
-        "/resolutions", json=testkit.model.to_resolution().model_dump()
+        "/collections/default/versions/v1/resolutions",
+        json=testkit.model.to_resolution().model_dump(),
     )
 
     assert response.status_code == 201
@@ -103,7 +108,8 @@ def test_insert_model_error(
     testkit = model_factory()
 
     response = test_client.post(
-        "/resolutions", json=testkit.model.to_resolution().model_dump()
+        "/collections/default/versions/v1/resolutions",
+        json=testkit.model.to_resolution().model_dump(),
     )
 
     assert response.status_code == 500
@@ -138,14 +144,17 @@ def test_complete_model_upload_process(
 
     # Step 1: Create model
     response = test_client.post(
-        "/resolutions", json=testkit.model.to_resolution().model_dump()
+        "/collections/default/versions/v1/resolutions",
+        json=testkit.model.to_resolution().model_dump(),
     )
     assert response.status_code == 201
     assert response.json()["success"] is True
     assert response.json()["name"] == testkit.model.name
 
     # Step 2: Initialize results upload
-    response = test_client.post(f"/resolutions/{testkit.model.name}/data")
+    response = test_client.post(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"
+    )
     assert response.status_code == 202
     upload_id = response.json()["id"]
     assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
@@ -202,7 +211,9 @@ def test_complete_model_upload_process(
     )  # Check results data matches
 
     # Step 6: Verify we can retrieve the results
-    response = test_client.get(f"/resolutions/{testkit.model.name}/data")
+    response = test_client.get(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"
+    )
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
 
@@ -211,12 +222,14 @@ def test_complete_model_upload_process(
     mock_backend.get_model_truth = Mock(return_value=truth_value)
 
     response = test_client.patch(
-        f"/resolutions/{testkit.model.name}/truth",
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth",
         json=truth_value,
     )
     assert response.status_code == 200
 
-    response = test_client.get(f"/resolutions/{testkit.model.name}/truth")
+    response = test_client.get(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth"
+    )
     assert response.status_code == 200
     assert response.json() == truth_value
 
@@ -232,7 +245,9 @@ def test_set_results(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(return_value=testkit.model.to_resolution())
 
-    response = test_client.post(f"/resolutions/{testkit.model.name}/data")
+    response = test_client.post(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"
+    )
 
     assert response.status_code == 202
     assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD
@@ -245,7 +260,9 @@ def test_set_results_model_not_found(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_resolution = Mock(side_effect=MatchboxResolutionNotFoundError())
 
-    response = test_client.post("/resolutions/nonexistent-model/data")
+    response = test_client.post(
+        "/collections/default/versions/v1/resolutions/nonexistent-model/data"
+    )
 
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
@@ -258,7 +275,9 @@ def test_get_results(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_model_data = Mock(return_value=testkit.probabilities)
 
-    response = test_client.get(f"/resolutions/{testkit.model.name}/data")
+    response = test_client.get(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/data"
+    )
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/octet-stream"
@@ -270,7 +289,10 @@ def test_set_truth(
     testkit = model_factory()
     test_client, mock_backend, _ = api_client_and_mocks
 
-    response = test_client.patch(f"/resolutions/{testkit.model.name}/truth", json=95)
+    response = test_client.patch(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth",
+        json=95,
+    )
 
     assert response.status_code == 200
     assert response.json()["success"] is True
@@ -285,11 +307,17 @@ def test_set_truth_invalid_value(api_client_and_mocks: tuple[TestClient, Mock, M
     test_client, _, _ = api_client_and_mocks
 
     # Test value > 1
-    response = test_client.patch(f"/resolutions/{testkit.model.name}/truth", json=150)
+    response = test_client.patch(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth",
+        json=150,
+    )
     assert response.status_code == 422
 
     # Test value < 0
-    response = test_client.patch(f"/resolutions/{testkit.model.name}/truth", json=-50)
+    response = test_client.patch(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth",
+        json=-50,
+    )
     assert response.status_code == 422
 
 
@@ -300,7 +328,9 @@ def test_get_truth(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_model_truth = Mock(return_value=95)
 
-    response = test_client.get(f"/resolutions/{testkit.model.name}/truth")
+    response = test_client.get(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}/truth"
+    )
 
     assert response.status_code == 200
     assert response.json() == 95
@@ -321,7 +351,9 @@ def test_model_get_endpoints_404(
     mock_method = getattr(mock_backend, method_name)
     mock_method.side_effect = MatchboxResolutionNotFoundError()
 
-    response = test_client.get(f"/resolutions/nonexistent-model/{endpoint}")
+    response = test_client.get(
+        f"/collections/default/versions/v1/resolutions/nonexistent-model/{endpoint}"
+    )
 
     assert response.status_code == 404
     error = NotFoundError.model_validate(response.json())
@@ -345,7 +377,8 @@ def test_model_patch_endpoints_404(
     mock_method.side_effect = MatchboxResolutionNotFoundError()
 
     response = test_client.patch(
-        f"/resolutions/nonexistent-model/{endpoint}", json=payload
+        f"/collections/default/versions/v1/resolutions/nonexistent-model/{endpoint}",
+        json=payload,
     )
 
     assert response.status_code == 404
@@ -358,7 +391,7 @@ def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     testkit = model_factory()
     test_client, _, _ = api_client_and_mocks
     response = test_client.delete(
-        f"/resolutions/{testkit.model.name}",
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}",
         params={"certain": True},
     )
 
@@ -384,7 +417,9 @@ def test_delete_resolution_needs_confirmation(
     )
 
     testkit = model_factory()
-    response = test_client.delete(f"/resolutions/{testkit.model.name}")
+    response = test_client.delete(
+        f"/collections/default/versions/v1/resolutions/{testkit.model.name}"
+    )
 
     assert response.status_code == 409
     assert response.json()["success"] is False
@@ -402,7 +437,8 @@ def test_delete_resolution_404(
     mock_backend.delete_resolution.side_effect = MatchboxResolutionNotFoundError()
 
     response = test_client.delete(
-        "/resolutions/nonexistent-model", params={"certain": certain}
+        "/collections/default/versions/v1/resolutions/nonexistent-model",
+        params={"certain": certain},
     )
 
     assert response.status_code == 404
@@ -417,7 +453,9 @@ def test_get_resolution_sources(
     test_client, mock_backend, _ = api_client_and_mocks
     mock_backend.get_leaf_source_resolutions = Mock(return_value=[source])
 
-    response = test_client.get("/resolutions/foo/sources")
+    response = test_client.get(
+        "/collections/default/versions/v1/resolutions/foo/sources"
+    )
     assert response.status_code == 200
     for s in response.json():
         assert Resolution.model_validate(s)
@@ -431,7 +469,9 @@ def test_get_resolution_sources_404(
         side_effect=MatchboxResolutionNotFoundError
     )
 
-    response = test_client.get("/resolutions/foo/sources")
+    response = test_client.get(
+        "/collections/default/versions/v1/resolutions/foo/sources"
+    )
     assert response.status_code == 404
     assert response.json()["entity"] == BackendResourceType.RESOLUTION
 
@@ -463,7 +503,7 @@ def test_complete_source_upload_process(
 
     # Step 1: Add source
     response = test_client.post(
-        "/resolutions",
+        "/collections/default/versions/v1/resolutions",
         json=source_testkit.source.to_resolution().model_dump(mode="json"),
     )
     assert response.status_code == 201
@@ -477,7 +517,9 @@ def test_complete_source_upload_process(
     )
     mock_backend.insert_source_data.assert_not_called()
 
-    response = test_client.post(f"/resolutions/{source_testkit.name}/data")
+    response = test_client.post(
+        f"/collections/default/versions/v1/resolutions/{source_testkit.name}/data"
+    )
     upload_id = response.json()["id"]
     assert response.status_code == 202
     assert response.json()["stage"] == UploadStage.AWAITING_UPLOAD

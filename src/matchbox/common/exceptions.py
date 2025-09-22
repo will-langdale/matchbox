@@ -1,10 +1,19 @@
 """Custom exceptions for Matchbox."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pyarrow import Schema
 
-from matchbox.common.graph import ResolutionName
+if TYPE_CHECKING:
+    from matchbox.common.dtos import (
+        CollectionName,
+        UnqualifiedResolutionName,
+        VersionName,
+    )
+else:
+    CollectionName = Any
+    UnqualifiedResolutionName = Any
+    VersionName = Any
 
 # -- Common data objects exceptions --
 
@@ -171,12 +180,42 @@ class MatchboxUserNotFoundError(Exception):
 class MatchboxResolutionNotFoundError(Exception):
     """Resolution not found."""
 
-    def __init__(self, message: str | None = None, name: ResolutionName | None = None):
+    def __init__(
+        self, message: str | None = None, name: UnqualifiedResolutionName | None = None
+    ):
         """Initialise the exception."""
         if message is None:
             message = "Resolution not found."
             if name is not None:
                 message = f"Resolution {name} not found."
+
+        super().__init__(message)
+        self.name = name
+
+
+class MatchboxCollectionNotFoundError(Exception):
+    """Collection not found."""
+
+    def __init__(self, message: str | None = None, name: CollectionName | None = None):
+        """Initialise the exception."""
+        if message is None:
+            message = "Collection not found."
+            if name is not None:
+                message = f"Collection {name} not found."
+
+        super().__init__(message)
+        self.name = name
+
+
+class MatchboxVersionNotFoundError(Exception):
+    """Version not found."""
+
+    def __init__(self, message: str | None = None, name: VersionName | None = None):
+        """Initialise the exception."""
+        if message is None:
+            message = "Version not found."
+            if name is not None:
+                message = f"Version {name} not found."
 
         super().__init__(message)
         self.name = name
@@ -234,6 +273,14 @@ class MatchboxDeletionNotConfirmed(Exception):
 
 class MatchboxResolutionAlreadyExists(Exception):
     """Resolution already exists."""
+
+
+class MatchboxCollectionAlreadyExists(Exception):
+    """Collection already exists."""
+
+
+class MatchboxVersionAlreadyExists(Exception):
+    """Version already exists."""
 
 
 class MatchboxTooManySamplesRequested(Exception):

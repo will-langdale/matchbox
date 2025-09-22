@@ -7,7 +7,7 @@ import polars as pl
 from pyarrow import Table
 from pydantic import BaseModel, Field, field_validator
 
-from matchbox.common.graph import ModelResolutionName
+from matchbox.common.dtos import ModelResolutionName
 
 Pair: TypeAlias = tuple[int, int]
 Pairs: TypeAlias = set[Pair]

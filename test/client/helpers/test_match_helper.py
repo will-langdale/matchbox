@@ -48,20 +48,22 @@ def test_match_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     match_route = matchbox_api.get("/match").mock(
         return_value=Response(200, content=serialised_matches)
     )
-    matchbox_api.get(f"/resolutions/{source_testkit.source.to_resolution().name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{source_testkit.source.to_resolution().name}"
+    ).mock(
         return_value=Response(
             200, json=source_testkit.source.to_resolution().model_dump(mode="json")
         )
     )
     matchbox_api.get(
-        f"/resolutions/{target1_testkit.source.to_resolution().name}"
+        f"/collections/default/versions/v1/resolutions/{target1_testkit.source.to_resolution().name}"
     ).mock(
         return_value=Response(
             200, json=target1_testkit.source.to_resolution().model_dump(mode="json")
         )
     )
     matchbox_api.get(
-        f"/resolutions/{target2_testkit.source.to_resolution().name}"
+        f"/collections/default/versions/v1/resolutions/{target2_testkit.source.to_resolution().name}"
     ).mock(
         return_value=Response(
             200, json=target2_testkit.source.to_resolution().model_dump(mode="json")
@@ -107,12 +109,16 @@ def test_match_404_resolution(matchbox_api: MockRouter, sqlite_warehouse: Engine
             ).model_dump(),
         )
     )
-    matchbox_api.get(f"/resolutions/{source_testkit.source.to_resolution().name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{source_testkit.source.to_resolution().name}"
+    ).mock(
         return_value=Response(
             200, json=source_testkit.source.to_resolution().model_dump(mode="json")
         )
     )
-    matchbox_api.get(f"/resolutions/{target_testkit.source.to_resolution().name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{target_testkit.source.to_resolution().name}"
+    ).mock(
         return_value=Response(
             200, json=target_testkit.source.to_resolution().model_dump(mode="json")
         )
@@ -132,7 +138,7 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     """The client can handle a source not found error."""
     target_testkit = source_factory(engine=sqlite_warehouse, name="target")
 
-    matchbox_api.get("/resolutions/nonexistent").mock(
+    matchbox_api.get("/collections/default/versions/v1/resolutions/nonexistent").mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -140,7 +146,9 @@ def test_match_404_source(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             ).model_dump(),
         )
     )
-    matchbox_api.get(f"/resolutions/{target_testkit.source.to_resolution().name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{target_testkit.source.to_resolution().name}"
+    ).mock(
         return_value=Response(
             200, json=target_testkit.source.to_resolution().model_dump(mode="json")
         )
@@ -170,12 +178,16 @@ def test_match_empty_results_raises_exception(
 
     # Mock empty match results
     matchbox_api.get("/match").mock(return_value=Response(200, content="[]"))
-    matchbox_api.get(f"/resolutions/{source_testkit.source.to_resolution().name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{source_testkit.source.to_resolution().name}"
+    ).mock(
         return_value=Response(
             200, json=source_testkit.source.to_resolution().model_dump(mode="json")
         )
     )
-    matchbox_api.get(f"/resolutions/{target_testkit.source.to_resolution().name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{target_testkit.source.to_resolution().name}"
+    ).mock(
         return_value=Response(
             200, json=target_testkit.source.to_resolution().model_dump(mode="json")
         )

@@ -25,6 +25,7 @@ from matchbox.common.dtos import (
     NotFoundError,
     Resolution,
     ResolutionOperationStatus,
+    ResolutionType,
     SourceField,
     UploadStage,
     UploadStatus,
@@ -39,7 +40,6 @@ from matchbox.common.factories.sources import (
     source_factory,
     source_from_tuple,
 )
-from matchbox.common.graph import ResolutionType
 
 # Locations
 
@@ -511,7 +511,9 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     ).write_to_location()
 
     # Mock the routes
-    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{testkit.source.name}"
+    ).mock(
         return_value=Response(
             404,
             json=NotFoundError(
@@ -519,7 +521,9 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             ).model_dump(),
         )
     )
-    insert_config_route = matchbox_api.post("/resolutions").mock(
+    insert_config_route = matchbox_api.post(
+        "/collections/default/versions/v1/resolutions"
+    ).mock(
         return_value=Response(
             201,
             json=ResolutionOperationStatus(
@@ -529,7 +533,9 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
             ).model_dump(),
         )
     )
-    matchbox_api.post(f"/resolutions/{testkit.source.name}/data").mock(
+    matchbox_api.post(
+        f"/collections/default/versions/v1/resolutions/{testkit.source.name}/data"
+    ).mock(
         return_value=Response(
             202,
             content=UploadStatus(
@@ -590,9 +596,9 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
 
     # Mock earlier endpoint generating a name clash
     model = model_factory().model
-    matchbox_api.get(f"/resolutions/{testkit.source.name}").mock(
-        return_value=Response(200, json=model.to_resolution().model_dump())
-    )
+    matchbox_api.get(
+        f"/collections/default/versions/v1/resolutions/{testkit.source.name}"
+    ).mock(return_value=Response(200, json=model.to_resolution().model_dump()))
 
     with pytest.raises(ValueError, match="existing resolution"):
         testkit.source.sync()

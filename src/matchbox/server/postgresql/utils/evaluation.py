@@ -14,12 +14,12 @@ from matchbox.common.arrow import (
     SCHEMA_JUDGEMENTS,
 )
 from matchbox.common.db import sql_to_df
+from matchbox.common.dtos import ModelResolutionName
 from matchbox.common.eval import Judgement, precision_recall
 from matchbox.common.exceptions import (
     MatchboxResolutionNotFoundError,
     MatchboxUserNotFoundError,
 )
-from matchbox.common.graph import ModelResolutionName
 from matchbox.common.transform import hash_cluster_leaves
 from matchbox.server.postgresql.db import MBDB
 from matchbox.server.postgresql.orm import (

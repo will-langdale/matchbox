@@ -2,18 +2,22 @@
 
 from pydantic import BaseModel
 
-from matchbox.common.factories.models import ModelTestkit
-from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
-from matchbox.common.graph import (
+from matchbox.common.dtos import (
+    CollectionName,
     ModelResolutionName,
     ResolutionName,
     SourceResolutionName,
+    VersionName,
 )
+from matchbox.common.factories.models import ModelTestkit
+from matchbox.common.factories.sources import LinkedSourcesTestkit, SourceTestkit
 
 
 class TestkitDAG(BaseModel):
     """Simple DAG container for testkits."""
 
+    collection: CollectionName = "default"
+    version: VersionName = "v1"
     sources: dict[SourceResolutionName, SourceTestkit] = {}
     linked: dict[str, LinkedSourcesTestkit] = {}
     source_to_linked: dict[SourceResolutionName, str] = {}

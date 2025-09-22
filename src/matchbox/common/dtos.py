@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from json import JSONDecodeError
-from typing import Self
+from typing import Self, TypeAlias
 
 import polars as pl
 from pydantic import (
@@ -20,11 +20,6 @@ from pydantic import (
 )
 
 from matchbox.common.arrow import SCHEMA_INDEX, SCHEMA_RESULTS
-from matchbox.common.graph import (
-    ModelResolutionName,
-    ResolutionType,
-    SourceResolutionName,
-)
 
 
 class DataTypes(StrEnum):
@@ -210,6 +205,55 @@ class LocationType(StrEnum):
     """Enumeration of location types."""
 
     RDBMS = "rdbms"
+
+
+CollectionName: TypeAlias = str
+"""Type alias for collection names."""
+
+VersionName: TypeAlias = str
+"""Type alias for version names."""
+
+UnqualifiedSourceResolutionName: TypeAlias = str
+"""Type alias for unqualified source resolution names."""
+
+UnqualifiedModelResolutionName: TypeAlias = str
+"""Type alias for unqualified model resolution names."""
+
+UnqualifiedResolutionName: TypeAlias = (
+    UnqualifiedSourceResolutionName | UnqualifiedModelResolutionName
+)
+"""Type alias for any unqualified resolution names."""
+
+
+class ResolutionName(BaseModel):
+    """Base resolution identifier with collection, version, and name."""
+
+    model_config = ConfigDict(frozen=True)
+
+    collection: CollectionName = "default"
+    version: VersionName = "v1"
+    name: UnqualifiedResolutionName
+
+    def __str__(self) -> str:
+        """String representation of the resolution name."""
+        return f"{self.collection}/{self.version}/{self.name}"
+
+
+SourceResolutionName: TypeAlias = ResolutionName
+"""Type alias for source resolution names."""
+
+ModelResolutionName: TypeAlias = ResolutionName
+"""Type alias for model resolution names."""
+
+
+DEFAULT_RESOLUTION: ResolutionName = ResolutionName(name="__DEFAULT__")
+
+
+class ResolutionType(StrEnum):
+    """Types of nodes in a resolution."""
+
+    SOURCE = "source"
+    MODEL = "model"
 
 
 class LocationConfig(BaseModel):
@@ -559,7 +603,11 @@ class ResolutionOperationStatus(BaseModel):
                             "summary": "Delete operation requires confirmation. ",
                             "value": cls(
                                 success=False,
-                                name="example_model",
+                                name=ModelResolutionName(
+                                    collection="default",
+                                    version="v1",
+                                    name="example_model",
+                                ),
                                 operation=CRUDOperation.DELETE,
                                 details=(
                                     "This operation will delete the resolutions "
@@ -592,7 +640,11 @@ class ResolutionOperationStatus(BaseModel):
                             ),
                             "value": cls(
                                 success=False,
-                                name="example_model",
+                                name=ModelResolutionName(
+                                    collection="default",
+                                    version="v1",
+                                    name="example_model",
+                                ),
                                 operation=CRUDOperation.UPDATE,
                             ).model_dump(),
                         },

@@ -30,6 +30,7 @@ from matchbox.common.dtos import (
     LocationConfig,
     LocationType,
     Resolution,
+    ResolutionType,
     SourceConfig,
     SourceField,
 )
@@ -38,7 +39,6 @@ from matchbox.common.exceptions import (
     MatchboxSourceClientError,
     MatchboxSourceExtractTransformError,
 )
-from matchbox.common.graph import ResolutionType
 from matchbox.common.hash import HashMethod, hash_rows
 from matchbox.common.logging import logger
 
