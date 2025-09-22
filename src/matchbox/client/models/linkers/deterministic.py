@@ -3,6 +3,7 @@
 import polars as pl
 from pydantic import Field, field_validator
 
+from matchbox.client.models import comparison
 from matchbox.client.models.linkers.base import Linker, LinkerSettings
 
 
@@ -34,8 +35,8 @@ class DeterministicSettings(LinkerSettings):
     def validate_comparison(cls, v: str | list[str]) -> list[str]:
         """Turn single string into list of one string."""
         if isinstance(v, str):
-            return [v]
-        return v
+            return [comparison(v)]
+        return comparison(v)
 
 
 class DeterministicLinker(Linker):

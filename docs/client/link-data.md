@@ -11,7 +11,7 @@ A DAG (Directed Acyclic Graph) represents a sequence of operations where each st
 * [`Source`s][matchbox.client.sources.Source]: indexing data from sources
 * [`Model`s][matchbox.client.models.Model]: Removing duplicates within one data input, or linking two data inputs. As data inputs, `Model`s can take `Source`s or other `Model`s.
 
-`Source`s and `Model`s can form [`Query`][matchbox.client.models.Model] objects, which allow to retrieve the version of the data implied by that DAG step. Querying a source gives you the records in that source, and querying from a model gives you the deduplicated or linked records at that point in the DAG. When querying from a model, you need to specify which sources you want to query from that model's lineage.
+`Source`s and `Model`s can form [`Query`][matchbox.client.models.Model] objects, which allow you to retrieve the version of the data implied by that DAG step. Querying a source gives you the records in that source, and querying from a model gives you the deduplicated or linked records at that point in the DAG. When querying from a model, you need to specify which sources you want to query from that model's lineage.
 
 ```python
 source: Source
@@ -40,7 +40,6 @@ linker_results = linker.run()
 
 The steps need to be run in order, but once you've finalised your DAG, it's better to automatically run all of them using a single DAG command, as is shown later. When you run a step, either directly or through the DAG, its data is cached so that running it again won't do anything, unless you force a re-run.
 
-
 ## Setting up your environment
 
 Before building a pipeline, it's worth configuring logging:
@@ -68,8 +67,8 @@ You will also need to define the engine to read your data sources:
 === "Example"
     ```python
     # Get your database engine
-    from your_utils import get_database_engine
-    engine = get_database_engine()
+    from sqlalchemy import create_engine
+    engine = create_engine("postgresql://user:password@host:port/")
     ```
 
 ## 1. Defining a new DAG
@@ -316,7 +315,7 @@ Link steps connect records between different sources.
 
 A linker requires:
 
-- A second query to link (against the first query, which generated the linker)
+- A second query which represents the data to link on the right side
 - A unique `name` for the step
 - An optional `description` explaining the purpose of the step
 - The linking algorithm to use (`model_class`)
@@ -410,7 +409,7 @@ Once you're happy with your results, you need to publish your DAG so that other 
 
 
 
-### Visualising DAG Execution
+### Visualising DAG execution
 
 When you run a DAG, Matchbox provides real-time status information:
 

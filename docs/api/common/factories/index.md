@@ -81,6 +81,7 @@ source_factory(
 ```
 
 By default, each `SourceTestkit` or `ModelTestkit` creates a new [`DAG`][matchbox.client.dags.DAG]. If membership to the right DAG is important, you can either set it manually:
+
 ```python
 dag = DAG("companies", new=True)
 source_testkit = source_factory(dag=dag)

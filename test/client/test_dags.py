@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from unittest.mock import Mock, patch
 
@@ -476,8 +477,8 @@ def test_lookup_key_ok(matchbox_api: MockRouter, sqlite_warehouse: Engine):
         cluster=1, source="foo", source_id={"a"}, target="baz", target_id={"b"}
     )
     # The standard JSON serialiser does not handle Pydantic objects
-    serialised_matches = (
-        f"[{mock_match1.model_dump_json()}, {mock_match2.model_dump_json()}]"
+    serialised_matches = json.dumps(
+        [m.model_dump() for m in [mock_match1, mock_match2]]
     )
 
     matchbox_api.get("/match").mock(
