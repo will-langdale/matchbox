@@ -1,10 +1,9 @@
 """All client-side functionalities of Matchbox."""
 
-from matchbox.client import dags
-from matchbox.client.helpers.selector import clean, match
+from matchbox.client.dags import DAG
+from matchbox.client.sources import RelationalDBLocation
 
 __all__ = (
-    "dags",
-    "match",
-    "clean",
+    "DAG",
+    "RelationalDBLocation",
 )

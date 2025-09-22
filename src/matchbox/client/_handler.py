@@ -231,7 +231,7 @@ def match(
     key: str,
     resolution: UnqualifiedResolutionName,
     threshold: int | None = None,
-) -> Match:
+) -> list[Match]:
     """Match a source against a list of targets."""
     log_prefix = f"Query {source}"
     logger.debug(
