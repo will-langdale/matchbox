@@ -40,8 +40,8 @@ from matchbox.common.dtos import (
     NotFoundError,
     Resolution,
     ResolutionName,
-    ResolutionOperationStatus,
     ResolutionType,
+    ResourceOperationStatus,
     UnqualifiedModelResolutionName,
     UnqualifiedResolutionName,
     UnqualifiedSourceResolutionName,
@@ -129,7 +129,7 @@ def handle_http_code(res: httpx.Response) -> httpx.Response:
                 raise RuntimeError(f"Unexpected 404 error: {error.details}")
 
     if res.status_code == 409:
-        error = ResolutionOperationStatus.model_validate(res.json())
+        error = ResourceOperationStatus.model_validate(res.json())
         raise MatchboxDeletionNotConfirmed(message=error.details)
 
     if res.status_code == 422:
@@ -285,7 +285,7 @@ def get_collection(name: CollectionName) -> dict[VersionName, list[Resolution]]:
 @http_retry
 def create_resolution(
     resolution: Resolution,
-) -> ResolutionOperationStatus | UploadStatus:
+) -> ResourceOperationStatus | UploadStatus:
     """Create a resolution (model or source)."""
     log_prefix = f"Resolution {resolution.name}"
     logger.debug("Creating", prefix=log_prefix)
@@ -294,7 +294,7 @@ def create_resolution(
         "/collections/default/versions/v1/resolutions", json=resolution.model_dump()
     )
 
-    return ResolutionOperationStatus.model_validate(res.json())
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
@@ -368,7 +368,7 @@ def get_results(name: ModelResolutionName) -> Table:
 
 
 @http_retry
-def set_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatus:
+def set_truth(name: ModelResolutionName, truth: int) -> ResourceOperationStatus:
     """Set the truth threshold for a model in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Setting truth value", prefix=log_prefix)
@@ -376,7 +376,7 @@ def set_truth(name: ModelResolutionName, truth: int) -> ResolutionOperationStatu
     res = CLIENT.patch(
         f"/collections/default/versions/v1/resolutions/{name}/truth", json=truth
     )
-    return ResolutionOperationStatus.model_validate(res.json())
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 @http_retry
@@ -392,7 +392,7 @@ def get_truth(name: ModelResolutionName) -> int:
 @http_retry
 def delete_resolution(
     name: ModelResolutionName, certain: bool = False
-) -> ResolutionOperationStatus:
+) -> ResourceOperationStatus:
     """Delete a resolution in Matchbox."""
     log_prefix = f"Model {name}"
     logger.debug("Deleting", prefix=log_prefix)
@@ -401,7 +401,7 @@ def delete_resolution(
         f"/collections/default/versions/v1/resolutions/{name}",
         params={"certain": certain},
     )
-    return ResolutionOperationStatus.model_validate(res.json())
+    return ResourceOperationStatus.model_validate(res.json())
 
 
 # Evaluation

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from matchbox.common.dtos import (
+    Collection,
     CollectionName,
     Match,
     ModelResolutionName,
@@ -19,6 +20,7 @@ from matchbox.common.dtos import (
     ResolutionName,
     ResolutionType,
     SourceResolutionName,
+    Version,
     VersionName,
 )
 from matchbox.common.eval import Judgement, ModelComparison
@@ -297,24 +299,25 @@ class MatchboxDBAdapter(ABC):
     # Collection management
 
     @abstractmethod
-    def create_collection(self, name: CollectionName) -> None:
+    def create_collection(self, name: CollectionName) -> Collection:
         """Create a new collection.
 
         Args:
             name: The name of the collection to create.
+
+        Returns:
+            A Collection object containing its metadata, versions, and resolutions.
         """
 
     @abstractmethod
-    def get_collection(
-        self, name: CollectionName
-    ) -> dict[VersionName, list[Resolution]]:
+    def get_collection(self, name: CollectionName) -> Collection:
         """Get collection metadata.
 
         Args:
             name: The name of the collection to get.
 
         Returns:
-            A dictionary mapping version names to their resolutions.
+            A Collection object containing its metadata, versions, and resolutions.
         """
         ...
 
@@ -340,19 +343,54 @@ class MatchboxDBAdapter(ABC):
     # Version management
 
     @abstractmethod
-    def create_version(self, collection: CollectionName, version: VersionName) -> None:
+    def create_version(
+        self, collection: CollectionName, version: VersionName
+    ) -> Version:
         """Create a new version label.
 
         Args:
             collection: The name of the collection to create the version in.
             version: The name of the version to create.
+
+        Returns:
+            A Version object containing its metadata and resolutions.
         """
         ...
 
     @abstractmethod
-    def get_version(
-        self, collection: CollectionName, version: VersionName
-    ) -> list[Resolution]:
+    def set_version_mutable(
+        self, collection: CollectionName, version: VersionName, mutable: bool
+    ) -> Version:
+        """Set the mutability of a version.
+
+        Args:
+            collection: The name of the collection containing the version.
+            version: The name of the version to update.
+            mutable: Whether the version should be mutable.
+
+        Returns:
+            The updated Version object.
+        """
+        ...
+
+    @abstractmethod
+    def set_version_default(
+        self, collection: CollectionName, version: VersionName, default: bool
+    ) -> Version:
+        """Set the default status of a version.
+
+        Args:
+            collection: The name of the collection containing the version.
+            version: The name of the version to update.
+            default: Whether the version should be the default version.
+
+        Returns:
+            The updated Version object.
+        """
+        ...
+
+    @abstractmethod
+    def get_version(self, collection: CollectionName, version: VersionName) -> Version:
         """Get version metadata and resolutions.
 
         Args:
@@ -360,7 +398,7 @@ class MatchboxDBAdapter(ABC):
             version: The name of the version to get.
 
         Returns:
-            A list of Resolution objects.
+            A Version object containing its metadata and resolutions.
         """
         ...
 

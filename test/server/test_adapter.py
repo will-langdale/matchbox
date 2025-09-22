@@ -384,20 +384,26 @@ class TestMatchboxBackend:
             collections_pre = self.backend.list_collections()
             assert "test_collection" not in collections_pre
 
-            self.backend.create_collection("test_collection")
+            # Create new collection and verify its initial properties
+            test_collection_created = self.backend.create_collection("test_collection")
+
+            assert test_collection_created.name == "test_collection"
+            assert test_collection_created.versions == {None: []}  # No versions yet
 
             collections_post = self.backend.list_collections()
             assert "test_collection" in collections_post
 
+            # Verify duplicate creation is rejected
             with pytest.raises(MatchboxCollectionAlreadyExists):
                 self.backend.create_collection("test_collection")
 
             test_collection = self.backend.get_collection("test_collection")
 
-            assert test_collection == {None: []}  # No versions yet
+            assert test_collection == test_collection_created
 
             self.backend.delete_collection("test_collection", certain=True)
 
+            # Verify collection is properly removed
             with pytest.raises(MatchboxCollectionNotFoundError):
                 self.backend.get_collection("test_collection")
 
@@ -412,24 +418,43 @@ class TestMatchboxBackend:
             collections_pre = self.backend.list_collections()
             assert "test_collection" not in collections_pre
 
-            self.backend.create_collection("test_collection")
-            test_collection_pre = self.backend.get_collection("test_collection")
-            assert "v1" not in test_collection_pre
+            # Create parent collection with no versions initially
+            test_collection_pre = self.backend.create_collection("test_collection")
+            assert "v1" not in test_collection_pre.versions
 
-            self.backend.create_version("test_collection", "v1")
+            # Create first version and check default properties
+            v1 = self.backend.create_version("test_collection", "v1")
+
+            assert v1.name == "v1"
+            assert v1.is_default is False  # New versions aren't default by default
+            assert v1.is_mutable is True  # New versions are mutable by default
+            assert v1.resolutions == []  # No resolutions yet
 
             test_collection_post = self.backend.get_collection("test_collection")
-            assert "v1" in test_collection_post
+            assert "v1" in test_collection_post.versions
 
             with pytest.raises(MatchboxVersionAlreadyExists):
                 self.backend.create_version("test_collection", "v1")
 
-            test_version = self.backend.get_version("test_collection", "v1")
+            _ = self.backend.create_version("test_collection", "v2")
+            _ = self.backend.set_version_mutable("test_collection", "v1", False)
+            _ = self.backend.set_version_default("test_collection", "v1", True)
 
-            assert test_version == []  # No resolutions yet
+            # Setting v2 as default should automatically unset v1 as default
+            _ = self.backend.set_version_default("test_collection", "v2", True)
+
+            v1 = self.backend.get_version("test_collection", "v1")
+            v2 = self.backend.get_version("test_collection", "v2")
+
+            assert v1.is_mutable is False
+            assert v1.is_default is False
+
+            assert v2.is_mutable is True
+            assert v2.is_default is True
 
             self.backend.delete_version("test_collection", "v1", certain=True)
 
+            # Verify version is properly removed
             with pytest.raises(MatchboxVersionNotFoundError):
                 self.backend.get_version("test_collection", "v1")
 

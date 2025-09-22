@@ -24,8 +24,8 @@ from matchbox.common.dtos import (
     LocationType,
     NotFoundError,
     Resolution,
-    ResolutionOperationStatus,
     ResolutionType,
+    ResourceOperationStatus,
     SourceField,
     UploadStage,
     UploadStatus,
@@ -526,7 +526,7 @@ def test_source_sync(matchbox_api: MockRouter, sqlite_warehouse: Engine):
     ).mock(
         return_value=Response(
             201,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.source.name,
                 operation=CRUDOperation.CREATE,

@@ -20,8 +20,9 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import BYTEA, JSONB, TEXT, insert
-from sqlalchemy.orm import Session, relationship
+from sqlalchemy.orm import Session, relationship, selectinload
 
+from matchbox.common.dtos import Collection as CommonCollection
 from matchbox.common.dtos import (
     CollectionName,
     LocationConfig,
@@ -34,7 +35,9 @@ from matchbox.common.dtos import ModelConfig as CommonModelConfig
 from matchbox.common.dtos import Resolution as CommonResolution
 from matchbox.common.dtos import SourceConfig as CommonSourceConfig
 from matchbox.common.dtos import SourceField as CommonSourceField
+from matchbox.common.dtos import Version as CommonVersion
 from matchbox.common.exceptions import (
+    MatchboxCollectionNotFoundError,
     MatchboxResolutionAlreadyExists,
     MatchboxResolutionNotFoundError,
     MatchboxVersionNotFoundError,
@@ -56,6 +59,90 @@ class Collections(CountMixin, MBDB.MatchboxBase):
 
     # Constraints
     __table_args__ = (UniqueConstraint("name", name="collections_name_key"),)
+
+    @classmethod
+    def from_name(
+        cls,
+        name: CollectionName,
+        session: Session | None = None,
+    ) -> "Collections":
+        """Resolve a collection name to a Collections object.
+
+        Args:
+            name: The name of the collection to resolve.
+            session: Optional session to use for the query.
+
+        Raises:
+            MatchboxCollectionNotFoundError: If the collection doesn't exist.
+        """
+        query = (
+            select(cls)
+            .where(cls.name == name)
+            .options(
+                selectinload(cls.versions)
+                .selectinload(Versions.resolutions)
+                .selectinload(Resolutions.source_config)
+                .selectinload(SourceConfigs.fields),
+                selectinload(cls.versions)
+                .selectinload(Versions.resolutions)
+                .selectinload(Resolutions.model_config),
+            )
+        )
+
+        if session:
+            collection = session.execute(query).scalar_one_or_none()
+        else:
+            with MBDB.get_session() as session:
+                collection = session.execute(query).scalar_one_or_none()
+
+        if not collection:
+            raise MatchboxCollectionNotFoundError(f"Collection '{name}' not found.")
+
+        return collection
+
+    @classmethod
+    def from_dto(
+        cls,
+        collection: CommonCollection,
+        session: Session,
+    ) -> "Collections":
+        """Create a Collections instance from a Collection DTO object.
+
+        The collection will be added to the session and flushed (but not committed).
+
+        Args:
+            collection: The Collection DTO to convert
+            session: Database session (caller must commit)
+
+        Returns:
+            A Collections ORM instance with ID and relationships established
+        """
+        # Create new collection
+        collection_orm = cls(name=collection.name)
+        session.add(collection_orm)
+        session.flush()  # Get collection_id
+
+        # Create versions
+        for version_dto in collection.versions:
+            version_orm = Versions.from_dto(
+                version=version_dto,
+                collection_id=collection_orm.collection_id,
+                session=session,
+            )
+            collection_orm.versions.append(version_orm)
+
+        return collection_orm
+
+    def to_dto(self) -> CommonCollection:
+        """Convert ORM collection to a matchbox.common Collection object."""
+        versions: dict[VersionName, list[CommonVersion]] = {}
+        if self.versions:
+            versions = {version.name: version.to_dto() for version in self.versions}
+
+        return CommonCollection(
+            name=self.name,
+            versions=versions,
+        )
 
 
 class Versions(CountMixin, MBDB.MatchboxBase):
@@ -88,6 +175,102 @@ class Versions(CountMixin, MBDB.MatchboxBase):
             postgresql_where=text("is_default = true"),
         ),
     )
+
+    @classmethod
+    def from_name(
+        cls,
+        collection: CollectionName,
+        name: VersionName,
+        session: Session | None = None,
+    ) -> "Versions":
+        """Resolve a collection and version name to a Versions object.
+
+        Args:
+            collection: The name of the collection.
+            name: The name of the version within that collection.
+            session: Optional session to use for the query.
+
+        Raises:
+            MatchboxVersionNotFoundError: If the version doesn't exist.
+        """
+        query = (
+            select(cls)
+            .join(Collections)
+            .where(Collections.name == collection, cls.name == name)
+            .options(
+                selectinload(cls.resolutions)
+                .selectinload(Resolutions.source_config)
+                .selectinload(SourceConfigs.fields),
+                selectinload(cls.resolutions).selectinload(Resolutions.model_config),
+            )
+        )
+
+        if session:
+            version_orm = session.execute(query).scalar_one_or_none()
+        else:
+            with MBDB.get_session() as session:
+                version_orm = session.execute(query).scalar_one_or_none()
+
+        if not version_orm:
+            raise MatchboxVersionNotFoundError
+
+        return version_orm
+
+    @classmethod
+    def from_dto(
+        cls,
+        version: CommonVersion,
+        collection_id: int,
+        session: Session,
+    ) -> "Versions":
+        """Create a Versions instance from a Version DTO object.
+
+        The version will be added to the session and flushed (but not committed).
+
+        Args:
+            version: The Version DTO to convert
+            collection_id: The ID of the parent collection
+            session: Database session (caller must commit)
+
+        Returns:
+            A Versions ORM instance with ID and relationships established
+        """
+        # Create new version
+        version_orm = cls(
+            collection_id=collection_id,
+            name=version.name,
+            is_default=version.is_default,
+            is_mutable=version.is_mutable,
+        )
+        session.add(version_orm)
+        session.flush()  # Get version_id
+
+        # Create resolutions
+        for resolution_dto in version.resolutions:
+            # We need the collection name for the Resolutions.from_dto method
+            collection = session.get(Collections, collection_id)
+            resolution_orm = Resolutions.from_dto(
+                resolution=resolution_dto,
+                collection=collection.name,
+                version=version.name,
+                session=session,
+            )
+            version_orm.resolutions.append(resolution_orm)
+
+        return version_orm
+
+    def to_dto(self) -> CommonVersion:
+        """Convert ORM version to a matchbox.common Version object."""
+        resolutions: list[CommonResolution] = []
+        if self.resolutions:
+            resolutions = [resolution.to_dto() for resolution in self.resolutions]
+
+        return CommonVersion(
+            name=self.name,
+            is_default=self.is_default,
+            is_mutable=self.is_mutable,
+            resolutions=resolutions,
+        )
 
 
 class ResolutionFrom(CountMixin, MBDB.MatchboxBase):

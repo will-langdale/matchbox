@@ -584,11 +584,64 @@ class Resolution(BaseModel):
         return self
 
 
-class ResolutionOperationStatus(BaseModel):
-    """Status response for any resolution operation."""
+class Version(BaseModel):
+    """A version within a collection."""
+
+    name: str = Field(description="Unique name of the version")
+    is_default: bool = Field(
+        default=False,
+        description="Whether this version is the default in its collection",
+    )
+    is_mutable: bool = Field(
+        default=False, description="Whether this version can be modified"
+    )
+    resolutions: list[Resolution] = Field(
+        default_factory=list, description="List of resolutions in this version"
+    )
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Ensure the name is a valid version name.
+
+        Raises:
+            ValueError: If the name is not a valid version name.
+        """
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
+            raise ValueError(
+                "Version names must be alphanumeric, underscore, dot or hyphen only."
+            )
+        return value
+
+
+class Collection(BaseModel):
+    """A collection of versions."""
+
+    name: str = Field(description="Unique name of the collection")
+    versions: dict[VersionName, Version] = Field(
+        default_factory=dict, description="Dictionary of versions in this collection"
+    )
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Ensure the name is a valid collection name.
+
+        Raises:
+            ValueError: If the name is not a valid collection name.
+        """
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", value):
+            raise ValueError(
+                "Collection names must be alphanumeric, underscore, dot or hyphen only."
+            )
+        return value
+
+
+class ResourceOperationStatus(BaseModel):
+    """Status response for any resource operation."""
 
     success: bool
-    name: ModelResolutionName
+    name: ResolutionName | CollectionName | VersionName
     operation: CRUDOperation
     details: str | None = None
 

@@ -12,7 +12,7 @@ from matchbox.common.dtos import (
     CRUDOperation,
     NotFoundError,
     Resolution,
-    ResolutionOperationStatus,
+    ResourceOperationStatus,
     UploadStage,
 )
 from matchbox.common.exceptions import (
@@ -87,7 +87,7 @@ def test_insert_model(
     assert response.status_code == 201
     assert (
         response.json()
-        == ResolutionOperationStatus(
+        == ResourceOperationStatus(
             success=True,
             name="test_model",
             operation=CRUDOperation.CREATE,
@@ -398,7 +398,7 @@ def test_delete_resolution(api_client_and_mocks: tuple[TestClient, Mock, Mock]):
     assert response.status_code == 200
     assert (
         response.json()
-        == ResolutionOperationStatus(
+        == ResourceOperationStatus(
             success=True,
             name=testkit.model.name,
             operation=CRUDOperation.DELETE,
@@ -507,7 +507,7 @@ def test_complete_source_upload_process(
         json=source_testkit.source.to_resolution().model_dump(mode="json"),
     )
     assert response.status_code == 201
-    status = ResolutionOperationStatus.model_validate(response.json())
+    status = ResourceOperationStatus.model_validate(response.json())
     assert response.status_code == 201, response.json()
     assert status.name == source_testkit.name
 

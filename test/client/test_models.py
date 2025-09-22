@@ -18,7 +18,7 @@ from matchbox.common.dtos import (
     ModelConfig,
     ModelType,
     NotFoundError,
-    ResolutionOperationStatus,
+    ResourceOperationStatus,
     UploadStage,
     UploadStatus,
 )
@@ -112,7 +112,7 @@ def test_model_sync(matchbox_api: MockRouter):
     ).mock(
         return_value=Response(
             201,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.model.name,
                 operation=CRUDOperation.CREATE,
@@ -125,7 +125,7 @@ def test_model_sync(matchbox_api: MockRouter):
     ).mock(
         return_value=Response(
             200,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.model.name,
                 operation=CRUDOperation.UPDATE,
@@ -261,7 +261,7 @@ def test_delete_resolution(matchbox_api: MockRouter):
     ).mock(
         return_value=Response(
             200,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=True,
                 name=testkit.model.name,
                 operation=CRUDOperation.DELETE,
@@ -290,7 +290,7 @@ def test_delete_resolution_needs_confirmation(matchbox_api: MockRouter):
     ).mock(
         return_value=Response(
             409,
-            json=ResolutionOperationStatus(
+            json=ResourceOperationStatus(
                 success=False,
                 name=testkit.model.name,
                 operation=CRUDOperation.DELETE,

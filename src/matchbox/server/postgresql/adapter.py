@@ -5,11 +5,12 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 from pyarrow import Table
 from pydantic import BaseModel
-from sqlalchemy import and_, bindparam, delete, func, or_, select
+from sqlalchemy import and_, bindparam, delete, func, or_, select, update
 from sqlalchemy.orm import selectinload
 
 from matchbox.common.db import sql_to_df
 from matchbox.common.dtos import (
+    Collection,
     CollectionName,
     Match,
     ModelResolutionName,
@@ -17,6 +18,7 @@ from matchbox.common.dtos import (
     ResolutionName,
     ResolutionType,
     SourceResolutionName,
+    Version,
     VersionName,
 )
 from matchbox.common.eval import Judgement as CommonJudgement
@@ -28,7 +30,6 @@ from matchbox.common.exceptions import (
     MatchboxDeletionNotConfirmed,
     MatchboxNoJudgements,
     MatchboxVersionAlreadyExists,
-    MatchboxVersionNotFoundError,
 )
 from matchbox.common.logging import logger
 from matchbox.server.base import MatchboxDBAdapter, MatchboxSnapshot
@@ -215,12 +216,13 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Collection management
 
-    def create_collection(self, name: CollectionName) -> None:  # noqa: D102
+    def create_collection(self, name: CollectionName) -> Collection:  # noqa: D102
         with MBDB.get_session() as session:
             if (session.query(Collections).filter_by(name=name).first()) is None:
                 new_collection = Collections(name=name)
                 session.add(new_collection)
                 session.commit()
+                return new_collection.to_dto()
             else:
                 raise MatchboxCollectionAlreadyExists
 
@@ -228,32 +230,8 @@ class MatchboxPostgres(MatchboxDBAdapter):
         self, name: CollectionName
     ) -> dict[VersionName, list[Resolution]]:
         with MBDB.get_session() as session:
-            # Eagerly load all relationships needed to build the Resolution DTOs
-            # to prevent N+1 query problems.
-            collection_orm = session.execute(
-                select(Collections)
-                .where(Collections.name == name)
-                .options(
-                    selectinload(Collections.versions)
-                    .selectinload(Versions.resolutions)
-                    # Eager load nested configs required by resolution.to_dto()
-                    .selectinload(Resolutions.source_config)
-                    .selectinload(SourceConfigs.fields),
-                    selectinload(Collections.versions)
-                    .selectinload(Versions.resolutions)
-                    .selectinload(Resolutions.model_config),
-                )
-            ).scalar_one_or_none()
-
-            if not collection_orm:
-                raise MatchboxCollectionNotFoundError(f"Collection '{name}' not found.")
-
-            result: dict[VersionName, list[Resolution]] = {
-                version_orm.name: [res.to_dto() for res in version_orm.resolutions]
-                for version_orm in collection_orm.versions
-            }
-
-            return result if result else {None: []}
+            collection_orm = Collections.from_name(name, session)
+            return collection_orm.to_dto()
 
     def list_collections(self) -> list[CollectionName]:  # noqa: D102
         with MBDB.get_session() as session:
@@ -288,7 +266,7 @@ class MatchboxPostgres(MatchboxDBAdapter):
 
     # Version management
 
-    def create_version(self, collection: CollectionName, name: VersionName) -> None:  # noqa: D102
+    def create_version(self, collection: CollectionName, name: VersionName) -> Version:  # noqa: D102
         with MBDB.get_session() as session:
             collection_orm = session.execute(
                 select(Collections).where(Collections.name == collection)
@@ -309,42 +287,51 @@ class MatchboxPostgres(MatchboxDBAdapter):
             session.add(new_version)
             session.commit()
 
+            return new_version.to_dto()
+
+    def set_version_mutable(  # noqa: D102
+        self, collection: CollectionName, name: VersionName, mutable: bool
+    ) -> Version:
+        with MBDB.get_session() as session:
+            version_orm = Versions.from_name(collection, name, session)
+            version_orm.is_mutable = mutable
+            session.commit()
+
+            return version_orm.to_dto()
+
+    def set_version_default(  # noqa: D102
+        self, collection: CollectionName, name: VersionName, default: bool
+    ) -> Version:
+        with MBDB.get_session() as session:
+            version_orm = Versions.from_name(collection, name, session)
+            if default:
+                # Unset any existing default version for the collection
+                session.execute(
+                    update(Versions)
+                    .where(
+                        Versions.collection_id == version_orm.collection_id,
+                        Versions.is_default.is_(True),
+                    )
+                    .values(is_default=False)
+                )
+
+            version_orm.is_default = default
+            session.commit()
+
+            return version_orm.to_dto()
+
     def get_version(  # noqa: D102
         self, collection: CollectionName, name: VersionName
     ) -> list[Resolution]:
         with MBDB.get_session() as session:
-            version_orm = session.execute(
-                select(Versions)
-                .join(Collections)
-                .where(Collections.name == collection, Versions.name == name)
-                .options(
-                    selectinload(Versions.resolutions)
-                    .selectinload(Resolutions.source_config)
-                    .selectinload(SourceConfigs.fields),
-                    selectinload(Versions.resolutions).selectinload(
-                        Resolutions.model_config
-                    ),
-                )
-            ).scalar_one_or_none()
-
-            if not version_orm:
-                raise MatchboxVersionNotFoundError(name=name)
-
-            return [res.to_dto() for res in version_orm.resolutions]
+            version_orm = Versions.from_name(collection, name, session)
+            return version_orm.to_dto()
 
     def delete_version(  # noqa: D102
         self, collection: CollectionName, name: VersionName, certain: bool
     ) -> None:
         with MBDB.get_session() as session:
-            version_orm = session.execute(
-                select(Versions)
-                .join(Collections)
-                .where(Collections.name == collection, Versions.name == name)
-                .options(selectinload(Versions.resolutions))
-            ).scalar_one_or_none()
-
-            if not version_orm:
-                raise MatchboxVersionNotFoundError(name=name)
+            version_orm = Versions.from_name(collection, name, session)
 
             if not certain:
                 resolution_names = [res.name for res in version_orm.resolutions]
